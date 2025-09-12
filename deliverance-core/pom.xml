@@ -1,0 +1,87 @@
+<project>
+  <parent>
+    <groupId>io.teknek</groupId>
+    <artifactId>deliverance-parent</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+  </parent>
+  <modelVersion>4.0.0</modelVersion>
+  <artifactId>deliverance-core</artifactId>
+  <properties>
+    <maven.compiler.source>24</maven.compiler.source>
+    <maven.compiler.target>24</maven.compiler.target>
+    <maven.compiler.release>24</maven.compiler.release>
+    <build.plugins.plugin.version>3.5.3</build.plugins.plugin.version>
+    <guava.version>32.0.1-jre</guava.version>
+    <jackson.version>2.15.2</jackson.version>
+    <slf-simple.version>2.0.17</slf-simple.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-api</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>net.serenity-bdd</groupId>
+      <artifactId>serenity-junit5</artifactId>
+      <version>${serenity.base.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-simple</artifactId>
+      <version>${slf-simple.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>${jackson.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>com.google.guava</groupId>
+      <artifactId>guava</artifactId>
+      <version>${guava.version}</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <release>24</release>
+          <jdkToolchain>
+            <version>24</version>
+          </jdkToolchain>
+          <compilerArgs>
+            <arg>--add-modules</arg>
+            <arg>jdk.incubator.vector</arg>
+          </compilerArgs>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>${surefire.version}</version>
+        <configuration>
+          <argLine>
+            --add-modules jdk.incubator.vector
+            -Djdk.attach.allowAttachSelf=true
+          </argLine>
+        </configuration>
+      </plugin>
+      <plugin>
+       <groupId>net.serenity-bdd.maven.plugins</groupId>
+       <artifactId>serenity-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>  

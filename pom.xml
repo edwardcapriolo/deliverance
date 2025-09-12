@@ -1,0 +1,106 @@
+<project>
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>io.teknek</groupId>
+    <artifactId>deliverance-parent</artifactId>
+    <packaging>pom</packaging>
+
+    <version>0.0.1-SNAPSHOT</version>
+
+    <properties>
+        <junit.version>5.11.4</junit.version>
+        <owasp.version>12.1.0</owasp.version>
+        <serenity.base.version>4.2.13</serenity.base.version>
+
+        <serenity.plugin.version>${serenity.base.version}</serenity.plugin.version>
+        <maven.compiler.source>24</maven.compiler.source>
+        <maven.compiler.target>24</maven.compiler.target>
+        <maven.compiler.release>24</maven.compiler.release>
+
+        <surefire.version>3.5.3</surefire.version>
+    </properties>
+
+    <modules>
+        <module>deliverance-core</module>
+    </modules>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.owasp</groupId>
+                <artifactId>dependency-check-maven</artifactId>
+                <version>${owasp.version}</version>
+                <configuration>
+                    <assemblyAnalyzerEnabled>false</assemblyAnalyzerEnabled>
+                </configuration>
+            </plugin>
+            <!--
+            -DskipTests
+            -DskipUnitTests
+            -DskipIntegrationTests
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${surefire.version}</version>
+                <configuration>
+                    <skipTests>${skipUnitTests}</skipTests>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <includes>
+                        <include>**/*IT.java</include>
+                    </includes>
+                    <skipTests>${skipIntegrationTests}</skipTests>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <release>24</release>
+                    <jdkToolchain><version>24</version></jdkToolchain>
+                    <compilerArgs>
+                        <arg>--add-modules</arg>
+                        <arg>jdk.incubator.vector</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
+            <!-- find bugs -->
+            <!-- sonar -->
+        </plugins>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.14.0</version>
+                </plugin>
+                <plugin>
+                    <groupId>net.serenity-bdd.maven.plugin</groupId>
+                    <artifactId>serenity-maven.plugin</artifactId>
+                    <version>${serenity.plugin.version}</version>
+                    <executions>
+                        <execution>
+                            <id>serenity-reports</id>
+                            <phase>post-integration-test</phase>
+                            <goals>
+                                <goal>aggregate</goal>
+                                <goal>check</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>
