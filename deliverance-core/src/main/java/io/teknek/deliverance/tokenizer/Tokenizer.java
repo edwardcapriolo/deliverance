@@ -7,12 +7,5 @@ public interface Tokenizer {
     List<String> tokenize(String sentence);
     long [] encode(String sentence);
     String decode(long id);
-    /*
-    Optional<PromptSupport> promptSupport();
-
-
-    TokenizerModel getModel();
-
-     */
     TokenizerModel getModel();
 }

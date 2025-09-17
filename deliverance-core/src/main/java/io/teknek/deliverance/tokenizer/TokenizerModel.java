@@ -40,7 +40,7 @@ public class TokenizerModel {
     public final Map<String, Long> merges;
 
     private PreTokenizer preTokenizer;
-    //private Normalizer normalizer;
+    private Normalizer normalizer;
     private BiMap<String, Long> addedTokens = HashBiMap.create();
     private BiMap<String, Long> specialTokens = HashBiMap.create();
 
@@ -81,7 +81,7 @@ public class TokenizerModel {
         }
     }
 
-    public static TokenizerModel load(File tokenizerJson){
+    public static TokenizerModel load(File tokenizerJson, File tokenizerConfigJson){
         JsonNode rootNode = null;
         try {
             rootNode = om.readTree(tokenizerJson);
@@ -96,6 +96,41 @@ public class TokenizerModel {
             if (rootNode.has("pre_tokenizer") && rootNode.get("pre_tokenizer") != null) model.setPreTokenizer(
                     om.treeToValue(rootNode.get("pre_tokenizer"), PreTokenizer.class)
             );
+            if (rootNode.has("normalizer") && rootNode.get("normalizer") != null) model.setNormalizer(
+                    om.treeToValue(rootNode.get("normalizer"), Normalizer.class)
+            );
+            //File tokenizerConfigJson = modelRoot.resolve("tokenizer_config.json").toFile();
+            if (tokenizerConfigJson.exists()) {
+                JsonNode configNode = om.readTree(tokenizerConfigJson);
+                if (configNode.has("legacy")) {
+                    model.setLegacy(configNode.get("legacy").asBoolean());
+                }
+                if (configNode.has("chat_template")) {
+                    JsonNode chatTemplateNode = configNode.get("chat_template");
+                    Map<String, String> promptTemplates = new HashMap<>();
+                    if (chatTemplateNode.isTextual()) {
+                        promptTemplates.put("default", chatTemplateNode.asText());
+                    } else if (chatTemplateNode.isArray()) {
+                        List<Map<String, String>> chatTemplates = om.convertValue(chatTemplateNode, List.class);
+                        for (Map<String, String> chatTemplate : chatTemplates) {
+                            if (chatTemplate.containsKey("name") && chatTemplate.containsKey("template")) {
+                                promptTemplates.put(chatTemplate.get("name"), chatTemplate.get("template"));
+                            } else {
+                                throw new IllegalArgumentException("Invalid chat_template format");
+                            }
+                        }
+                    } else {
+                        throw new IllegalArgumentException("Invalid chat_template format");
+                    }
+                    model.setPromptTemplates(promptTemplates);
+                }
+                if (configNode.has("eos_token")) {
+                    model.setEosToken(configNode.get("eos_token").asText());
+                }
+                if (configNode.has("bos_token")) {
+                    model.setBosToken(configNode.get("bos_token").asText());
+                }
+            }
             return model;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
@@ -126,6 +161,36 @@ public class TokenizerModel {
                 regex.append(java.util.regex.Pattern.quote(delimiters.get(i)));
             }
             this.addedTokenPattern = java.util.regex.Pattern.compile(regex.toString());
+        }
+    }
+
+    public void setNormalizer(Normalizer n){
+        this.normalizer = n;
+    }
+
+    public Normalizer getNormalizer(){
+        return normalizer;
+    }
+
+    public void setLegacy(Boolean b){
+        this.legacy = b;
+    }
+
+    public void setBosToken(String s){
+        this.bosToken = s;
+    }
+
+    public String getBosToken(){
+        return bosToken;
+    }
+    public void setEosToken(String s){
+        this.eosToken = s;
+    }
+
+    public void setPromptTemplates(Map<String, String> promptTemplates) {
+        if (promptTemplates != null) {
+            hasToolSupport = promptTemplates.values().stream().anyMatch(s -> s.toLowerCase().contains("tools"));
+            this.promptTemplates = Optional.of(promptTemplates);
         }
     }
 

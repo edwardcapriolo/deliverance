@@ -50,25 +50,10 @@ public class PretokenizerItem {
             case "Split" -> splitRegex(sentence);
             case "Digits" -> splitDigits(sentence);
             case "ByteLevel" ->
-                // if (use_regex) return splitGpt2(sentence);
-                // Rather than deal with this, we'll just force byte fallback (only difference is how unk is
-                // handled)
-                    Collections.singletonList(sentence);
+                    throw new IllegalArgumentException("suspicious renable");
             default -> throw new IllegalArgumentException("Invalid pre-tokenizer type: " + type);
         };
     }
-
-    /*
-    private List<String> byteLevel(String sentence) {
-        return List.of(
-                sentence.codePoints().map(c -> alteredBytes.getOrDefault(c, c)).mapToObj(Character::toString).collect(Collectors.joining())
-        );
-    }*/
-
-    /*
-    private List<String> splitGpt2(String sentence) {
-        return List.of(TokenizerModel.gpt2Pattern.split(sentence));
-    }*/
 
     @VisibleForTesting
     List<String> splitRegex(String s) {
