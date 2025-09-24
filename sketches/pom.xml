@@ -5,7 +5,7 @@
     <version>0.0.1-SNAPSHOT</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
-  <artifactId>deliverance-core</artifactId>
+  <artifactId>skeches</artifactId>
   <properties>
     <maven.compiler.source>24</maven.compiler.source>
     <maven.compiler.target>24</maven.compiler.target>
@@ -15,8 +15,6 @@
     <jackson.version>2.15.2</jackson.version>
     <slf-simple.version>2.0.17</slf-simple.version>
     <slf4j-api.version>2.0.17</slf4j-api.version>
-    <jafama.version>2.3.2</jafama.version>
-    <jcttools.version>4.0.1</jcttools.version>
   </properties>
 
 
@@ -47,31 +45,6 @@
       <scope>test</scope>
     </dependency>
 
-    <dependency>
-      <groupId>org.jctools</groupId>
-      <artifactId>jctools-core</artifactId>
-      <version>${jcttools.version}</version>
-    </dependency>
-
-
-
-    <dependency>
-      <groupId>net.jafama</groupId>
-      <artifactId>jafama</artifactId>
-      <version>${jafama.version}</version>
-    </dependency>
-
-    <dependency>
-      <groupId>com.fasterxml.jackson.core</groupId>
-      <artifactId>jackson-databind</artifactId>
-      <version>${jackson.version}</version>
-    </dependency>
-
-    <dependency>
-      <groupId>com.google.guava</groupId>
-      <artifactId>guava</artifactId>
-      <version>${guava.version}</version>
-    </dependency>
   </dependencies>
 
   <build>

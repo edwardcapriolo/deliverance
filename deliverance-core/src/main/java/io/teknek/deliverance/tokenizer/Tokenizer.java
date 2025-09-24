@@ -8,4 +8,6 @@ public interface Tokenizer {
     long [] encode(String sentence);
     String decode(long id);
     TokenizerModel getModel();
+
+    String preProcess(String sentence);
 }

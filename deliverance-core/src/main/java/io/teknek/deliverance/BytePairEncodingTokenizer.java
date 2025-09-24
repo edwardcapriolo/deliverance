@@ -143,4 +143,8 @@ public abstract class BytePairEncodingTokenizer implements Tokenizer {
     public TokenizerModel getModel() {
         return null;
     }
+
+    public BiMap<Integer, Integer> getAlteredBytes(){
+        return this.alteredBytes;
+    }
 }

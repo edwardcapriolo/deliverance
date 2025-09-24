@@ -1,0 +1,4 @@
+Deliverence 
+Copyright 2025 Edward Guy Capriolo
+
+Some of the code inside this project is copied/derived/imspired by JLama https://github.com/tjake/Jlama Jan 2024 T Jake Luciani

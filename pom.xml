@@ -21,6 +21,7 @@
 
     <modules>
         <module>deliverance-core</module>
+        <module>sketches</module>
     </modules>
     <build>
         <plugins>

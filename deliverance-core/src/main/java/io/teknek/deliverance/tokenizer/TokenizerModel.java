@@ -99,7 +99,6 @@ public class TokenizerModel {
             if (rootNode.has("normalizer") && rootNode.get("normalizer") != null) model.setNormalizer(
                     om.treeToValue(rootNode.get("normalizer"), Normalizer.class)
             );
-            //File tokenizerConfigJson = modelRoot.resolve("tokenizer_config.json").toFile();
             if (tokenizerConfigJson.exists()) {
                 JsonNode configNode = om.readTree(tokenizerConfigJson);
                 if (configNode.has("legacy")) {
@@ -243,5 +242,9 @@ public class TokenizerModel {
 
     public Pattern getAddedTokenPattern() {
         return addedTokenPattern;
+    }
+
+    public boolean isLegacy(){
+        return this.legacy;
     }
 }
