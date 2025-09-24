@@ -5,15 +5,15 @@ import com.google.common.collect.ImmutableBiMap;
 import io.teknek.deliverance.tokenizer.Tokenizer;
 import io.teknek.deliverance.tokenizer.TokenizerModel;
 
+import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.*;
 
 public abstract class BytePairEncodingTokenizer implements Tokenizer {
 
-    private BiMap<Integer, Integer> alteredBytes;
+    private final ImmutableBiMap<Integer, Integer> alteredBytes;
     protected final TokenizerModel tokenizerModel;
-
 
     public BytePairEncodingTokenizer(Path modelRoot){
         {
@@ -28,8 +28,8 @@ public abstract class BytePairEncodingTokenizer implements Tokenizer {
             }
             alteredBytes = ImmutableBiMap.copyOf(tmpAlteredBytes);
         }
-        java.io.File tokenizerFile = modelRoot.resolve("tokenizer.json").toFile();
-        java.io.File tokenizerConfigFile = modelRoot.resolve("tokenizer_config.json").toFile();
+        File tokenizerFile = modelRoot.resolve("tokenizer.json").toFile();
+        File tokenizerConfigFile = modelRoot.resolve("tokenizer_config.json").toFile();
         this.tokenizerModel = TokenizerModel.load(tokenizerFile, tokenizerConfigFile);
     }
 
@@ -141,10 +141,10 @@ public abstract class BytePairEncodingTokenizer implements Tokenizer {
 
     @Override
     public TokenizerModel getModel() {
-        return null;
+        return tokenizerModel;
     }
 
     public BiMap<Integer, Integer> getAlteredBytes(){
-        return this.alteredBytes;
+        return alteredBytes;
     }
 }
