@@ -50,9 +50,8 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
     public static AbstractTensor make(DType dType, TensorShape shape) {
         return switch (dType) {
             case F32 -> new FloatBufferTensor(shape);
-            /*
             case BF16 -> new BFloat16BufferTensor(shape);
-            case I8 -> new Q8ByteBufferTensor(shape);*/
+            case I8 -> new Q8ByteBufferTensor(shape);
             default -> throw new RuntimeException("Unsupported tensor type: " + dType);
         };
     }
@@ -130,7 +129,9 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
         }
 
         AbstractTensor r = this.make(totalOffset, (int) slicedShape.size(), slicedShape, cacheInnerSlice);
-        if (dims.length == 1 && sliceCache != null) sliceCache[dims[0]] = r;
+        if (dims.length == 1 && sliceCache != null) {
+            sliceCache[dims[0]] = r;
+        }
         return r;
     }
 
@@ -227,8 +228,9 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
 
             // 1000(0), 100(0), 10(1) -> 1
             // 10, 100, 1000 -> 10001
-            for (int i = 0; i < tcursor.length; i++)
+            for (int i = 0; i < tcursor.length; i++) {
                 tcursor[i] = cursor[cursor.length - i - 1];
+            }
 
             tt.set(v, tcursor);
         } while (iterate(cursor));
@@ -311,5 +313,8 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
             }
             System.out.println(String.format("%s = %.5f", id, tmp));
         }
+    }
+    public DType getDType(){
+        return this.dType;
     }
 }

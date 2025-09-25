@@ -5,6 +5,8 @@ import com.google.common.collect.BiMap;
 import com.google.common.collect.ImmutableBiMap;
 import com.google.common.io.Files;
 import io.teknek.deliverance.math.ActivationFunction;
+import io.teknek.deliverance.model.DistributedContext;
+import io.teknek.deliverance.tensor.TensorCache;
 
 import java.io.File;
 import java.util.List;
@@ -37,10 +39,10 @@ public class Config {
     //public final Optional<float[][]> ropeFreqs;
     public final Optional<BiMap<String, Integer>> classifcationLabels;
 
-    //private volatile DistributedContext dctx;
+    private volatile DistributedContext dctx;
     private volatile File workingDirectory;
 
-    //public final TensorCache tensorCache;
+    public final TensorCache tensorCache;
 
     public Config(
             int contextLength,
@@ -244,7 +246,7 @@ public class Config {
         this.vocabularySize = vocabularySize;
         this.bosToken = bosToken;
         this.eosTokens = eosTokens;
-      //  this.tensorCache = TensorCache.instance;
+        this.tensorCache = TensorCache.instance;
         this.headSize = headSize;
         this.headGroupSize = numberOfHeads / numberOfKeyValueHeads;
         this.kvLength = numberOfKeyValueHeads * headSize;
@@ -267,7 +269,7 @@ public class Config {
         this.logitMultiplier = logitMultiplier;
 
         // Set default values
-        //this.dctx = DistributedContext.builder(this).build();
+        this.dctx = DistributedContext.builder(this).build();
     }
 
     /*
@@ -289,10 +291,10 @@ public class Config {
         return Optional.ofNullable(this.workingDirectory);
     }
 
-    /*
+
     public DistributedContext dctx() {
         return dctx;
-    }*/
+    }
 
     public int maybeMapToGroupHead(int head) {
         if (!isGQA) return head;

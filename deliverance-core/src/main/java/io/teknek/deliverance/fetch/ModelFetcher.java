@@ -43,7 +43,7 @@ public class ModelFetcher {
             return modelDir.toFile();
         } else {
             try {
-                return maybeDownloadModel(modelDir.toString(), Optional.of(this.owner), this.name, true, Optional.empty(), Optional.empty());
+                return maybeDownloadModel(baseDir.toString(), Optional.of(this.owner), this.name, true, Optional.empty(), Optional.empty());
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
