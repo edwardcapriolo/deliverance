@@ -1,10 +1,10 @@
 package io.teknek.deliverance.safetensors;
 
 import io.teknek.deliverance.fetch.ModelFetcher;
-import io.teknek.deliverance.tensor.AbstractTensor;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
+import java.io.IOException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class WeightLoaderTest {
 
     @Test
-    void loadUpTest(){
+    void loadUpTest() throws IOException {
         String modelName = "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4";
         String modelOwner = "tjake";
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
@@ -20,8 +20,13 @@ public class WeightLoaderTest {
         DefaultWeightLoader wl = new DefaultWeightLoader(f);
         assertTrue(wl.tensorInfoMap().containsKey("model.norm.weight"));
         assertTrue(wl.tensorInfoMap().containsKey("model.layers.1.self_attn.o_proj.weight"));
-        //AbstractTensor tensor = wl.load("a-test-name");
-        //assertEquals("5", tensor.shape());
 
+        wl.close();
+        assertEquals(0, wl.tensorInfoMap().size());
+        wl.loadWeights();
+        assertTrue(wl.tensorInfoMap().containsKey("model.layers.1.self_attn.o_proj.weight"));
+        assertTrue(wl.isWeightPresent("model.layers.1.self_attn.o_proj.weight"));
+        assertEquals(355, wl.tensorInfoMap().size());
+        wl.close();
     }
 }

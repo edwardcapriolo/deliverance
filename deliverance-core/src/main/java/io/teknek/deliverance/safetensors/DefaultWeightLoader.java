@@ -201,7 +201,9 @@ public class DefaultWeightLoader implements WeightLoader {
                             splits.put(List.of(offset, chunkEnd), List.of(chunkName));
 
                             // Add TensorInfo for the chunk
-                            assert info.shape.length == 2 : "Only 2D tensors supported";
+                            if (info.shape.length != 2){
+                                throw new RuntimeException("Only 2D tensors supported");
+                            }
                             int numRowsInChunk = Ints.checkedCast((chunkEnd - offset) / bytesPerColumn);
 
                             // This tensorInfo is relative to the split which we know is at least the mmap limit
@@ -265,8 +267,19 @@ public class DefaultWeightLoader implements WeightLoader {
     }
 
     @Override
-    public void close() throws Exception {
+    public void close() {
+        for (Map.Entry<?, RandomAccessFile> entry : fileMap.entrySet()){
+            try {
+                entry.getValue().close();
+            } catch (IOException e){
+                LOGGER.warn("issue during close", e);
+            }
 
+        }
+        //this.index = null;
+        this.allTensorInfoMap.clear();
+        this.weightMap.clear();
+        this.fileMap.clear();
     }
 
     @Override
