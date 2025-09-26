@@ -1,0 +1,28 @@
+package io.teknek.deliverance.model;
+
+import io.teknek.deliverance.DType;
+import io.teknek.deliverance.fetch.ModelFetcher;
+import io.teknek.deliverance.model.llama.LlamaTokenizer;
+import io.teknek.deliverance.tensor.KvBufferCache;
+import org.junit.jupiter.api.Test;
+
+import java.io.File;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+public class ModelSupportTest {
+
+    @Test
+    void load(){
+        String modelName = "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4";
+        String modelOwner = "tjake";
+        ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
+        File f = fetch.maybeDownload();
+        AbstractModel z = ModelSupport.loadModel(f, DType.F32, DType.F32);
+        assertEquals(z.tokenizer.getClass(), LlamaTokenizer.class);
+        KvBufferCache.KvBuffer kvBuffer = z.kvBufferCache.getEphemeralKvBuffer();
+        assertEquals(0, kvBuffer.getCurrentContextPosition());
+        kvBuffer.incrementContextPosition();
+        assertEquals(1, kvBuffer.getCurrentContextPosition());
+    }
+}

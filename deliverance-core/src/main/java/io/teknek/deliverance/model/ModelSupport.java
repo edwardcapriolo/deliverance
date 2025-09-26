@@ -1,6 +1,7 @@
 package io.teknek.deliverance.model;
 
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.model.llama.LlamaModel;
 import io.teknek.deliverance.model.llama.LlamaModelType;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.DefaultWeightLoader;
@@ -10,7 +11,7 @@ import io.teknek.deliverance.tokenizer.Tokenizer;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.UncheckedIOException;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Path;
 import java.util.Map;
@@ -31,7 +32,7 @@ public class ModelSupport {
         return registry.get(modelType);
     }
 
-    AbstractModel loadModel(File model, DType workingMemoryType, DType workingQuantizationType){
+    public static AbstractModel loadModel(File model, DType workingMemoryType, DType workingQuantizationType){
         File configFile = new File(model, "config.json");
         if (!configFile.exists()){
             throw new RuntimeException("expecting to find config " + configFile);
@@ -40,10 +41,14 @@ public class ModelSupport {
         try {
             Config c = om.readValue(configFile, modelType.getConfigClass());
             c.setWorkingDirectory(null);
-
             Tokenizer tokenizer = modelType.getTokenizerClass().getConstructor(Path.class).newInstance(model.toPath());
             WeightLoader wl = new DefaultWeightLoader(model);
-/*
+
+            Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
+                    WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class);
+            return cons.newInstance(AbstractModel.InferenceType.FULL_GENERATION, c, wl, tokenizer, workingMemoryType, workingQuantizationType, Optional.empty());
+            
+            /*
             return modelType.getModelClass()
                     .getConstructor(
                             AbstractModel.InferenceType.class,
@@ -54,13 +59,13 @@ public class ModelSupport {
                             DType.class,
                             Optional.class
                     )
-                    .newInstance(AbstractModel.InferenceType, c, wl, t, workingMemoryType, workingQuantizationType, modelQuantization);*/
+                    .newInstance(AbstractModel.InferenceType.FULL_GENERATION, c, wl, tokenizer,
+                            workingMemoryType, workingQuantizationType, Optional.empty());*/
+            //return new LlamaModel(AbstractModel.InferenceType.FULL_GENERATION, c , wl, tokenizer, workingMemoryType, workingQuantizationType, Optional.empty());
 
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }
-
-        return null;
     }
 
 }

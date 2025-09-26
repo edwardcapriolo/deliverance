@@ -10,8 +10,8 @@ import java.util.Optional;
 
 public class LlamaModel extends AbstractModel {
 
-    protected LlamaModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
-                         DType workingMemoryQType, Optional<DType> modelQType) {
+    public LlamaModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
+                      DType workingMemoryQType, Optional<DType> modelQType) {
         super(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType);
     }
 }
