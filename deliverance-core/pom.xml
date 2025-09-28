@@ -12,7 +12,7 @@
     <maven.compiler.release>24</maven.compiler.release>
     <build.plugins.plugin.version>3.5.3</build.plugins.plugin.version>
     <guava.version>32.0.1-jre</guava.version>
-    <jackson.version>2.15.2</jackson.version>
+    <jackson.version>2.14.0</jackson.version>
     <slf-simple.version>2.0.17</slf-simple.version>
     <slf4j-api.version>2.0.17</slf4j-api.version>
     <jafama.version>2.3.2</jafama.version>
@@ -53,6 +53,17 @@
       <version>${jcttools.version}</version>
     </dependency>
 
+    <dependency>
+      <groupId>com.hubspot.jinjava</groupId>
+      <artifactId>jinjava</artifactId>
+      <version>2.8.1</version>
+      <exclusions>
+        <exclusion>
+          <groupId>com.google.guava</groupId>
+          <artifactId>guava</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
 
 
     <dependency>
@@ -64,6 +75,12 @@
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
+      <version>${jackson.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-core</artifactId>
       <version>${jackson.version}</version>
     </dependency>
 

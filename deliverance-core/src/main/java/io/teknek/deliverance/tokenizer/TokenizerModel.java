@@ -182,6 +182,7 @@ public class TokenizerModel {
     public String getBosToken(){
         return bosToken;
     }
+    public String getEosToken() { return eosToken; }
     public void setEosToken(String s){
         this.eosToken = s;
     }
@@ -191,6 +192,9 @@ public class TokenizerModel {
             hasToolSupport = promptTemplates.values().stream().anyMatch(s -> s.toLowerCase().contains("tools"));
             this.promptTemplates = Optional.of(promptTemplates);
         }
+    }
+    public Optional<Map<String,String>> getPromptTemplates(){
+        return this.promptTemplates;
     }
 
     public static String[] split(java.util.regex.Pattern p, CharSequence input, int limit, boolean withDelimiters) {
@@ -246,5 +250,9 @@ public class TokenizerModel {
 
     public boolean isLegacy(){
         return this.legacy;
+    }
+
+    public boolean hasToolSupport() {
+        return hasToolSupport;
     }
 }

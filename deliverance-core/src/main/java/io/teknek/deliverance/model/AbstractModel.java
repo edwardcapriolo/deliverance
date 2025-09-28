@@ -21,6 +21,7 @@ import java.util.stream.Collectors;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
+import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.Q8ByteBufferTensor;
@@ -192,4 +193,9 @@ public abstract class AbstractModel implements Generator {
     public DType getWorkingDType() {
         return workingDType;
     }
+
+    public Optional<PromptSupport> promptSupport() {
+        return tokenizer.promptSupport();
+    }
+
 }

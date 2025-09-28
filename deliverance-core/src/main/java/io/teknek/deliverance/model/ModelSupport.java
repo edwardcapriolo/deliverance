@@ -47,22 +47,6 @@ public class ModelSupport {
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
                     WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class);
             return cons.newInstance(AbstractModel.InferenceType.FULL_GENERATION, c, wl, tokenizer, workingMemoryType, workingQuantizationType, Optional.empty());
-            
-            /*
-            return modelType.getModelClass()
-                    .getConstructor(
-                            AbstractModel.InferenceType.class,
-                            Config.class,
-                            WeightLoader.class,
-                            Tokenizer.class,
-                            DType.class,
-                            DType.class,
-                            Optional.class
-                    )
-                    .newInstance(AbstractModel.InferenceType.FULL_GENERATION, c, wl, tokenizer,
-                            workingMemoryType, workingQuantizationType, Optional.empty());*/
-            //return new LlamaModel(AbstractModel.InferenceType.FULL_GENERATION, c , wl, tokenizer, workingMemoryType, workingQuantizationType, Optional.empty());
-
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }

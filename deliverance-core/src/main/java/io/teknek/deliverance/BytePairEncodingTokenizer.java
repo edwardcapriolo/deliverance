@@ -2,6 +2,7 @@ package io.teknek.deliverance;
 
 import com.google.common.collect.BiMap;
 import com.google.common.collect.ImmutableBiMap;
+import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.tokenizer.Tokenizer;
 import io.teknek.deliverance.tokenizer.TokenizerModel;
 
@@ -14,6 +15,7 @@ public abstract class BytePairEncodingTokenizer implements Tokenizer {
 
     private final ImmutableBiMap<Integer, Integer> alteredBytes;
     protected final TokenizerModel tokenizerModel;
+    protected final PromptSupport promptSupport;
 
     public BytePairEncodingTokenizer(Path modelRoot){
         {
@@ -31,6 +33,7 @@ public abstract class BytePairEncodingTokenizer implements Tokenizer {
         File tokenizerFile = modelRoot.resolve("tokenizer.json").toFile();
         File tokenizerConfigFile = modelRoot.resolve("tokenizer_config.json").toFile();
         this.tokenizerModel = TokenizerModel.load(tokenizerFile, tokenizerConfigFile);
+        this.promptSupport = new PromptSupport(tokenizerModel);
     }
 
     @Override
@@ -147,4 +150,10 @@ public abstract class BytePairEncodingTokenizer implements Tokenizer {
     public BiMap<Integer, Integer> getAlteredBytes(){
         return alteredBytes;
     }
+
+    @Override
+    public Optional<PromptSupport> promptSupport() {
+        return tokenizerModel.getPromptTemplates().isPresent() ? Optional.of(promptSupport) : Optional.empty();
+    }
+
 }

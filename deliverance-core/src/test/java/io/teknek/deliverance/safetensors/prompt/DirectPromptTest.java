@@ -1,0 +1,44 @@
+package io.teknek.deliverance.safetensors.prompt;
+
+import io.teknek.deliverance.DType;
+import io.teknek.deliverance.fetch.ModelFetcher;
+import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.ModelSupport;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+
+import java.io.File;
+import java.io.IOException;
+
+public class DirectPromptTest {
+
+
+    @Test
+    public void sample() throws IOException {
+        String modelName = "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4";
+        String modelOwner = "tjake";
+        ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
+        File f = fetch.maybeDownload();
+        AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8);
+
+        String prompt = "What is the best season to plant avocados?";
+        PromptContext ctx;
+        PromptSupport ps = m.promptSupport().get();
+        ctx = ps.builder().addSystemMessage("You are a chatbot that writes short correct responses.")
+                .addUserMessage(prompt).build();
+        String expected = """
+                <|system|>
+                You are a chatbot that writes short correct responses.</s>
+                <|user|>
+                What is the best season to plant avocados?</s>
+                <|assistant|>
+                """;
+        Assertions.assertEquals(expected, ctx.getPrompt());
+        // Generates a response to the prompt and prints it
+        // The api allows for streaming or non-streaming responses
+        // The response is generated with a temperature of 0.7 and a max token length of 256
+
+        //Generator.Response r = m.generate(UUID.randomUUID(), ctx, 0.0f, 256, (s, f) -> {});
+        //System.out.println(r.responseText);
+    }
+}
