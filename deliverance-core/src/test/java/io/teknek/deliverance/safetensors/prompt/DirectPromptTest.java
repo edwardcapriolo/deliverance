@@ -2,6 +2,7 @@ package io.teknek.deliverance.safetensors.prompt;
 
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.fetch.ModelFetcher;
+import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.ModelSupport;
 import org.junit.jupiter.api.Assertions;
@@ -9,9 +10,11 @@ import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class DirectPromptTest {
-
 
     @Test
     public void sample() throws IOException {
@@ -23,17 +26,36 @@ public class DirectPromptTest {
 
         String prompt = "What is the best season to plant avocados?";
         PromptContext ctx;
-        PromptSupport ps = m.promptSupport().get();
-        ctx = ps.builder().addSystemMessage("You are a chatbot that writes short correct responses.")
-                .addUserMessage(prompt).build();
-        String expected = """
-                <|system|>
-                You are a chatbot that writes short correct responses.</s>
-                <|user|>
-                What is the best season to plant avocados?</s>
-                <|assistant|>
-                """;
-        Assertions.assertEquals(expected, ctx.getPrompt());
+        {
+            PromptSupport ps = m.promptSupport().get();
+            ctx = ps.builder().addSystemMessage("You are a chatbot that writes short correct responses.")
+                    .addUserMessage(prompt).build();
+            String expected = """
+                    <|system|>
+                    You are a chatbot that writes short correct responses.</s>
+                    <|user|>
+                    What is the best season to plant avocados?</s>
+                    <|assistant|>
+                    """;
+            assertEquals(expected, ctx.getPrompt());
+        }
+        {
+            PromptSupport ps = m.promptSupport().get();
+            Tool t = Tool.from(Function.builder().name("hello").build());
+            ctx = ps.builder().addSystemMessage("You are a chatbot that writes short correct responses.")
+                    .addUserMessage(prompt).build(t);
+            String expected = """
+                    <|system|>
+                    You are a chatbot that writes short correct responses.</s>
+                    <|user|>
+                    What is the best season to plant avocados?</s>
+                    <|assistant|>
+                    """;
+            assertEquals(expected, ctx.getPrompt());// it does not change the prompt to have tools
+        }
+
+        //Response r = m.generate(UUID.randomUUID(), ctx, 0.0f, 256, (s1, f1) -> {});
+        //assertEquals("yo", r.responseText);
         // Generates a response to the prompt and prints it
         // The api allows for streaming or non-streaming responses
         // The response is generated with a temperature of 0.7 and a max token length of 256

@@ -1,7 +1,6 @@
 package io.teknek.deliverance.model;
 
 import io.teknek.deliverance.DType;
-import io.teknek.deliverance.model.llama.LlamaModel;
 import io.teknek.deliverance.model.llama.LlamaModelType;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.DefaultWeightLoader;
@@ -43,7 +42,6 @@ public class ModelSupport {
             c.setWorkingDirectory(null);
             Tokenizer tokenizer = modelType.getTokenizerClass().getConstructor(Path.class).newInstance(model.toPath());
             WeightLoader wl = new DefaultWeightLoader(model);
-
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
                     WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class);
             return cons.newInstance(AbstractModel.InferenceType.FULL_GENERATION, c, wl, tokenizer, workingMemoryType, workingQuantizationType, Optional.empty());

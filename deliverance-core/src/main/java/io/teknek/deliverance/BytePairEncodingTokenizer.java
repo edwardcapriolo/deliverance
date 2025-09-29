@@ -45,11 +45,29 @@ public abstract class BytePairEncodingTokenizer implements Tokenizer {
         /*
         if (model.preTokenizer() == null && model.addedTokenPattern() == null) Collections.singletonList(sentence);
         */
+
         List<String> sentencePieces = new ArrayList<>();
-        if (tokenizerModel.getAddedTokenPattern() != null){
-            //String[] pieces = TokenizerModel.split(model.getAddedTokenPattern(), sentence, 0, true);
+        if (tokenizerModel.getAddedTokenPattern() != null) {
+            // Split the sentence into pieces using the added token pattern
+            // Any non-added token is split into pieces using the pre-tokenizer
+            String[] pieces = TokenizerModel.split(tokenizerModel.getAddedTokenPattern(), sentence, 0, true);
+            for (String piece : pieces) {
+                if (!piece.isEmpty()) {
+                    if (tokenizerModel.getAddedTokens().containsKey(piece)) {
+                        sentencePieces.add(piece);
+                    } else if (tokenizerModel.getPreTokenizer() != null) {
+                        sentencePieces.addAll(tokenizerModel.getPreTokenizer().pretokenize(piece));
+                    } else {
+                        sentencePieces.add(piece);
+                    }
+                }
+            }
+        } else if (tokenizerModel.getPreTokenizer() != null) {
+            sentencePieces.addAll(tokenizerModel.getPreTokenizer().pretokenize(sentence));
+        } else {
+            sentencePieces.add(sentence);
         }
-        return null;
+        return sentencePieces;
     }
 
     @Override

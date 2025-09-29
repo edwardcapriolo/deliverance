@@ -255,4 +255,11 @@ public class TokenizerModel {
     public boolean hasToolSupport() {
         return hasToolSupport;
     }
+    public BiMap<String, Long> getAddedTokens(){
+        return this.addedTokens;
+    }
+
+    public PreTokenizer getPreTokenizer(){
+        return this.preTokenizer;
+    }
 }

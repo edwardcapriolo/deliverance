@@ -19,8 +19,11 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.generator.Generator;
+import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
+import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
@@ -33,9 +36,7 @@ import net.jafama.FastMath;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-interface Generator extends Closeable {
 
-}
 public abstract class AbstractModel implements Generator {
     private static final Logger logger = LoggerFactory.getLogger(AbstractModel.class);
 
@@ -197,5 +198,16 @@ public abstract class AbstractModel implements Generator {
     public Optional<PromptSupport> promptSupport() {
         return tokenizer.promptSupport();
     }
+
+    public Response generate(UUID session, PromptContext promptContext, float temperature, int ntokens,
+                      BiConsumer<String, Float> onTokenWithTimings) {
+        long[] encoded = tokenizer.encode(promptContext.getPrompt());
+        if (encoded.length > 0 && encoded[0] == c.bosToken) {
+            encoded = Arrays.copyOfRange(encoded, 1, encoded.length);
+        }
+        Preconditions.checkArgument(encoded.length < c.contextLength && encoded.length < ntokens, "Prompt exceeds max tokens");
+        return null;
+    }
+
 
 }
