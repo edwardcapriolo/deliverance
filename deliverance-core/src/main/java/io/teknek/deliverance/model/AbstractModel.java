@@ -210,4 +210,7 @@ public abstract class AbstractModel implements Generator {
     }
 
 
+    public Tokenizer getTokenizer(){
+        return this.tokenizer;
+    }
 }

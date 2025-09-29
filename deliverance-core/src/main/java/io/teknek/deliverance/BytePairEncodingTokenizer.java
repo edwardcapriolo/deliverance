@@ -7,15 +7,20 @@ import io.teknek.deliverance.tokenizer.Tokenizer;
 import io.teknek.deliverance.tokenizer.TokenizerModel;
 
 import java.io.File;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.stream.Collectors;
 
 public abstract class BytePairEncodingTokenizer implements Tokenizer {
 
     private final ImmutableBiMap<Integer, Integer> alteredBytes;
     protected final TokenizerModel tokenizerModel;
     protected final PromptSupport promptSupport;
+
+    //this buffer here looks strange
+    protected final ByteBuffer decodeBuffer = ByteBuffer.allocate(4);
 
     public BytePairEncodingTokenizer(Path modelRoot){
         {
@@ -155,9 +160,36 @@ public abstract class BytePairEncodingTokenizer implements Tokenizer {
             return s;
         });
     }
+
+    protected String postProcess(String sentence) {
+        return sentence;
+    }
+
     @Override
     public String decode(long id) {
-        return "";
+        return maybeDecodeTokenAsCharacter(id).map(c -> {
+            // We have a continuation byte or are buffering them
+            if (Character.isUnicodeIdentifierPart(c) || decodeBuffer.remaining() < 4) {
+                decodeBuffer.put((byte) c.charValue());
+
+                // Unicode symbol is ready
+                if (decodeBuffer.remaining() == 0) {
+                    String s = new String(decodeBuffer.array());
+                    decodeBuffer.rewind();
+                    return s;
+                }
+
+                return "";
+            }
+            return Character.toString(c);
+        }).orElseGet(() -> postProcessToken(tokenizerModel.vocabLookup.inverse().get(id)));
+    }
+
+
+
+    @Override
+    public String decode(long [] ids) {
+        return postProcess(Arrays.stream(ids).mapToObj(this::decode).collect(Collectors.joining()));
     }
 
     @Override
@@ -174,4 +206,10 @@ public abstract class BytePairEncodingTokenizer implements Tokenizer {
         return tokenizerModel.getPromptTemplates().isPresent() ? Optional.of(promptSupport) : Optional.empty();
     }
 
+    protected String postProcessToken(String decoded) {
+        if (decoded == null) {
+            decoded = tokenizerModel.unkToken;
+        }
+        return decoded;
+    }
 }

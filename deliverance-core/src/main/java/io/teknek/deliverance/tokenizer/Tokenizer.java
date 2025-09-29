@@ -9,7 +9,8 @@ public interface Tokenizer {
 
     List<String> tokenize(String sentence);
     long [] encode(String sentence);
-    String decode(long id);
+    String decode(long  id);
+    String decode(long [] ids);
     TokenizerModel getModel();
 
     String preProcess(String sentence);
