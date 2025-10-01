@@ -2,6 +2,7 @@ package io.teknek.deliverance.tensor.operations;
 
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.math.PhysicalCoreExecutor;
 import io.teknek.deliverance.tensor.*;
 import jdk.incubator.vector.*;
 import org.slf4j.Logger;
@@ -52,8 +53,8 @@ public final class PanamaTensorOperations implements TensorOperations {
     }
 
     public int parallelSplitSize() {
-        return 2;
-        //return PhysicalCoreExecutor.instance.get().getCoreCount();
+        //return 2;
+        return PhysicalCoreExecutor.instance.get().getCoreCount();
     }
 
     /**
@@ -434,8 +435,8 @@ public final class PanamaTensorOperations implements TensorOperations {
 
                     {
                         // Make 16 bytes -> 32 4bit -> 32 bytes -> 32 32F
-                        var scale0 = FloatVector.broadcast(FloatVector.SPECIES_512, b.getFactorForIndex(j + 0, boffset));
-                        var bf0 = b.getVector(ByteVector.SPECIES_128, j + 0, boffset);
+                        var scale0 = FloatVector.broadcast(FloatVector.SPECIES_512, b.getFactorForIndex(j, boffset));
+                        var bf0 = b.getVector(ByteVector.SPECIES_128, j, boffset);
 
                         // Convert the first 4 bits into bytes
                         var low0 = bf0.lanewise(VectorOperators.AND, Q4_BYTE_MASK_128)

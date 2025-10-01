@@ -2,21 +2,13 @@ package io.teknek.deliverance.model;
 
 
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-
 import com.google.common.base.Preconditions;
 import com.google.common.primitives.Ints;
 
-import java.io.Closeable;
-import java.nio.ByteOrder;
-import java.nio.FloatBuffer;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.*;
@@ -26,6 +18,7 @@ import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.tensor.*;
+import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.TensorOperationsProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
 import jdk.incubator.vector.FloatVector;
@@ -81,17 +74,11 @@ public abstract class AbstractModel implements Generator {
     //protected Optional<PoolingLayer> poolingLayer;
     protected TransformerBlock[] transformerBlocks;
     protected KvBufferCache kvBufferCache;
+    protected final ConfigurableTensorProvider configurableTensorProvider;
 
 
-    protected AbstractModel(
-            InferenceType inferenceType,
-            Config c,
-            WeightLoader w,
-            Tokenizer t,
-            DType workingMemoryDType,
-            DType workingMemoryQType,
-            Optional<DType> modelQType
-    ) {
+    protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
+                            DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider provider) {
         this.inferenceType = inferenceType;
         this.c = c;
         this.weights = w;
@@ -101,9 +88,10 @@ public abstract class AbstractModel implements Generator {
         this.workingDType = workingMemoryDType;
         this.modelQType = modelQType;
         this.kvBufferCache = new KvBufferCache(this);
+        this.configurableTensorProvider = provider;
 
         if (workingMemoryQType == null) {
-            workingMemoryQType = TensorOperationsProvider.get().preferredWorkingQuantizedType();
+            workingMemoryQType = configurableTensorProvider.get().preferredWorkingQuantizedType();
         }
 
         // FIXME: This is a hack to support Avoid Q8F32 evals
@@ -134,14 +122,14 @@ public abstract class AbstractModel implements Generator {
         }
 
         // Some operation providers don't support Q4I8
-        if (modelDType == DType.Q4 && workingMemoryQType.size() < TensorOperationsProvider.get().preferredWorkingQuantizedType().size()) {
-            workingMemoryQType = TensorOperationsProvider.get().preferredWorkingQuantizedType();
+        if (modelDType == DType.Q4 && workingMemoryQType.size() < configurableTensorProvider.get().preferredWorkingQuantizedType().size()) {
+            workingMemoryQType = configurableTensorProvider.get().preferredWorkingQuantizedType();
         }
 
         if (workingMemoryQType != workingMemoryDType) {
             boolean supportsQType;
             AbstractTensor tmp = makeDenseTensor(Q8ByteBufferTensor.BLOCK_SIZE);
-            try (AbstractTensor tmp2 = TensorOperationsProvider.get().quantize(tmp, workingMemoryQType, 0, Q8ByteBufferTensor.BLOCK_SIZE)) {
+            try (AbstractTensor tmp2 = configurableTensorProvider.get().quantize(tmp, workingMemoryQType, 0, Q8ByteBufferTensor.BLOCK_SIZE)) {
                 supportsQType = tmp2.dType() == workingMemoryQType;
                 if (!supportsQType) {
                     logger.warn("Quantized memory type {} not supported, falling back to {}", workingMemoryQType, workingMemoryDType);
@@ -154,12 +142,8 @@ public abstract class AbstractModel implements Generator {
             this.workingQType = workingMemoryQType;
         }
 
-        logger.info(
-                "Model type = {}, Working memory type = {}, Quantized memory type = {}",
-                this.modelDType,
-                this.workingDType,
-                this.workingQType
-        );
+        logger.info("Model type = {}, Working memory type = {}, Quantized memory type = {}", modelDType, workingDType,
+                workingQType);
 
         this.embedInput = inferenceType.isInput ? loadInputWeights() : null;
         this.transformerBlocks = inferenceType.isFwdPass ? loadTransformerBlockWeights() : null;
@@ -296,17 +280,9 @@ public abstract class AbstractModel implements Generator {
                 }
 
                 long end = System.currentTimeMillis();
-
-                Response response = new Response(
-                        responseText.toString(),
-                        responseTextWithSpecialTokens.toString(),
-                        reason,
-                        promptLength,
-                        tokensGenerated,
-                        promptBatchTime,
-                        end - start
-                );
-
+                Response response = new Response(responseText.toString(), responseTextWithSpecialTokens.toString(),
+                        reason, promptLength, tokensGenerated, promptBatchTime, end - start);
+                //post process response is still missing
                 return response;
             }
 
@@ -319,12 +295,12 @@ public abstract class AbstractModel implements Generator {
         try (AbstractTensor embedding = sampleOutput.getOutputLayerNorm().forward(output)) {
             // This is a mix of argmax and sampling with softmax
             VectorMath.pchunk(0, c.vocabularySize, (chunkStart, chunkSize) -> {
-                TensorOperationsProvider.get()
+                configurableTensorProvider.get()
                         .dotProductChunk(logits, embedding, sampleOutput.getOutputLogitsWeights(), 0, c.embeddingLength, chunkStart, chunkSize);
             });
 
             if (c.logitMultiplier != null) {
-                TensorOperationsProvider.get().scale(1.0f / c.logitMultiplier, logits, 0, c.vocabularySize);
+                configurableTensorProvider.get().scale(1.0f / c.logitMultiplier, logits, 0, c.vocabularySize);
             }
 
             int maxi = Integer.MIN_VALUE;

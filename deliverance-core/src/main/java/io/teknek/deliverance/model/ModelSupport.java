@@ -6,6 +6,7 @@ import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.DefaultWeightLoader;
 import io.teknek.deliverance.safetensors.SafeTensorSupport;
 import io.teknek.deliverance.safetensors.WeightLoader;
+import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
 
 import java.io.File;
@@ -44,9 +45,10 @@ public class ModelSupport {
             WeightLoader wl = new DefaultWeightLoader(model);
 
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
-                    WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class);
+                    WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class, ConfigurableTensorProvider.class);
 
-            return cons.newInstance(AbstractModel.InferenceType.FULL_GENERATION, c, wl, tokenizer, workingMemoryType, workingQuantizationType, Optional.empty());
+            return cons.newInstance(AbstractModel.InferenceType.FULL_GENERATION, c, wl, tokenizer,
+                    workingMemoryType, workingQuantizationType, Optional.empty(), new ConfigurableTensorProvider());
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }

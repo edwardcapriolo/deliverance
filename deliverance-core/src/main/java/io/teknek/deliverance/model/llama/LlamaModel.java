@@ -8,6 +8,7 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.TensorOperationsProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
 
@@ -18,8 +19,8 @@ public class LlamaModel extends AbstractModel {
 
     private volatile AbstractTensor embedTokenWeights;
     public LlamaModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
-                      DType workingMemoryQType, Optional<DType> modelQType) {
-        super(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType);
+                      DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider configurableTensorProvider) {
+        super(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType, configurableTensorProvider);
     }
 
     @Override
@@ -29,7 +30,7 @@ public class LlamaModel extends AbstractModel {
         // but we ae calling quantize in the if?
         if (embedTokenWeights == null) {
             embedTokenWeights = weights.load("model.embed_tokens.weight").quantize(workingDType);
-            TensorOperationsProvider.get().registerModelTensor(embedTokenWeights);
+            configurableTensorProvider.get().registerModelTensor(embedTokenWeights);
         }
 
         return (inputToken, position) -> {
@@ -109,7 +110,7 @@ public class LlamaModel extends AbstractModel {
                 ? weights.load("lm_head.weight").quantize(workingDType)
                 : embedTokenWeights == null ? embedTokenWeights = weights.load("model.embed_tokens.weight")
                 : embedTokenWeights;
-        TensorOperationsProvider.get().registerModelTensor(classificationWeights);
+        configurableTensorProvider.get().registerModelTensor(classificationWeights);
         return new SampleOutput() {
             @Override
             public LayerNorm getOutputLayerNorm() {
@@ -128,6 +129,6 @@ public class LlamaModel extends AbstractModel {
         if (t.dType() == workingQType) {
             return super.maybeQuantize(t);
         }
-        return TensorOperationsProvider.get().quantize(t, workingQType, 0, Ints.checkedCast(t.shape().last()));
+        return configurableTensorProvider.get().quantize(t, workingQType, 0, Ints.checkedCast(t.shape().last()));
     }
 }
