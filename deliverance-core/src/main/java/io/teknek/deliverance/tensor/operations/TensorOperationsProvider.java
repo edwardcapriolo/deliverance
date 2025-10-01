@@ -4,6 +4,7 @@ package io.teknek.deliverance.tensor.operations;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+@Deprecated
 public class TensorOperationsProvider {
     static {
         System.setProperty("jdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK", "0");
@@ -63,9 +64,11 @@ public class TensorOperationsProvider {
             }
         }
 
-        if (pick == null) pick = MachineSpec.VECTOR_TYPE == MachineSpec.Type.NONE
-                ? new NaiveTensorOperations()
-                : new PanamaTensorOperations(MachineSpec.VECTOR_TYPE);
+        if (pick == null) {
+            pick = MachineSpec.VECTOR_TYPE == MachineSpec.Type.NONE
+                    ? new NaiveTensorOperations()
+                    : new PanamaTensorOperations(MachineSpec.VECTOR_TYPE);
+        }
 
         logger.info("Using {} ({})", pick.name(), "OffHeap");
         return pick;
