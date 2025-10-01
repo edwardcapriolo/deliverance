@@ -28,6 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import static io.teknek.deliverance.JsonUtils.om;
+import static io.teknek.deliverance.safetensors.Weights.findDType;
 
 public class DefaultWeightLoader implements WeightLoader {
 
@@ -40,6 +41,8 @@ public class DefaultWeightLoader implements WeightLoader {
     private final Map<String, TensorInfo> allTensorInfoMap = new ConcurrentHashMap<>();
     private final Map<String, Weights> weightMap = new ConcurrentHashMap<>();
     private final Path modelRoot;
+    private final DType majorityDType;
+
 
     public DefaultWeightLoader(File baseDir){
         this.modelRoot = Paths.get(baseDir.toURI());
@@ -51,7 +54,7 @@ public class DefaultWeightLoader implements WeightLoader {
         } else {
             throw new IllegalArgumentException("weights not found");
         }
-
+        this.majorityDType = findDType(allTensorInfoMap);
         try {
             loadWeights();
         } catch (IOException e) {
@@ -258,12 +261,14 @@ public class DefaultWeightLoader implements WeightLoader {
 
     @Override
     public AbstractTensor load(String name, DistributedContext dctx, boolean sparseRows, boolean sparseColumns) {
-        return null;
+        Weights w = this.weightMap.get(name);
+        return w.load(name);
     }
 
     @Override
     public DType getModelDType() {
-        return null;
+
+        return this.majorityDType;
     }
 
     @Override

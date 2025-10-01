@@ -262,4 +262,12 @@ public class TokenizerModel {
     public PreTokenizer getPreTokenizer(){
         return this.preTokenizer;
     }
+
+    public boolean isSpecialToken(long token) {
+        return specialTokens.containsValue(token);
+    }
+
+    public boolean isSpecialToken(String token) {
+        return specialTokens.containsKey(token);
+    }
 }

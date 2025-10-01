@@ -64,27 +64,23 @@ public class TensorCache {
                 queueFactory
         );
         AbstractTensor t = availableQueue.poll();
-
-        if (t != null) return t;
-
+        if (t != null) {
+            return t;
+        }
         t = switch (dType) {
             case F32 -> new FloatBufferTensor(shape);
-
             case F16 -> new Float16BufferTensor(shape);
             case BF16 -> new BFloat16BufferTensor(shape);
             case I8 -> new Q8ByteBufferTensor(shape);
             case Q4 -> new Q4ByteBufferTensor(shape);
             default -> throw new RuntimeException("Unsupported tensor type: " + dType);
         };
-
-        // Assign to this cache or just over allocate
         if (currentBytes.addAndGet(t.size()) < bytesCapacity) {
             t.setOwnerCache(this);
         } else {
             logger.debug("Full!");
             currentBytes.addAndGet(-t.size());
         }
-
         return t;
     }
 

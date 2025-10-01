@@ -5,6 +5,7 @@ import com.google.common.collect.BiMap;
 import com.google.common.collect.ImmutableBiMap;
 import com.google.common.io.Files;
 import io.teknek.deliverance.math.ActivationFunction;
+import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.model.DistributedContext;
 import io.teknek.deliverance.tensor.TensorCache;
 
@@ -36,7 +37,7 @@ public class Config {
     public final int vocabularySize;
     public final int bosToken;
     public final List<Integer> eosTokens;
-    //public final Optional<float[][]> ropeFreqs;
+    public final Optional<float[][]> ropeFreqs;
     public final Optional<BiMap<String, Integer>> classifcationLabels;
 
     private volatile DistributedContext dctx;
@@ -252,12 +253,12 @@ public class Config {
         this.kvLength = numberOfKeyValueHeads * headSize;
         this.isGQA = numberOfKeyValueHeads < numberOfHeads;
         this.activationFunction = activationFunction;
-       /*
+
         this.ropeFreqs = ropeFreqsTheta == null
                 ? Optional.empty()
                 : Optional.of(
                 VectorMath.precomputeFreqsCis(headSize, contextLength, ropeFreqsTheta, ropeScalingFactor == null ? 1.0 : ropeScalingFactor)
-        );*/
+        );
 
         this.classifcationLabels = classifcationLabels == null ? Optional.empty() : Optional.of(ImmutableBiMap.copyOf(classifcationLabels));
 
@@ -297,7 +298,9 @@ public class Config {
     }
 
     public int maybeMapToGroupHead(int head) {
-        if (!isGQA) return head;
+        if (!isGQA) {
+            return head;
+        }
         return Math.floorDiv(head, headGroupSize);
     }
 

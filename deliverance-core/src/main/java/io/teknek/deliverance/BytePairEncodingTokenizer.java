@@ -15,7 +15,7 @@ import java.util.stream.Collectors;
 
 public abstract class BytePairEncodingTokenizer implements Tokenizer {
 
-    private final ImmutableBiMap<Integer, Integer> alteredBytes;
+    protected final ImmutableBiMap<Integer, Integer> alteredBytes;
     protected final TokenizerModel tokenizerModel;
     protected final PromptSupport promptSupport;
 

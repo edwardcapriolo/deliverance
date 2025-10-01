@@ -42,8 +42,10 @@ public class ModelSupport {
             c.setWorkingDirectory(null);
             Tokenizer tokenizer = modelType.getTokenizerClass().getConstructor(Path.class).newInstance(model.toPath());
             WeightLoader wl = new DefaultWeightLoader(model);
+
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
                     WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class);
+
             return cons.newInstance(AbstractModel.InferenceType.FULL_GENERATION, c, wl, tokenizer, workingMemoryType, workingQuantizationType, Optional.empty());
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);

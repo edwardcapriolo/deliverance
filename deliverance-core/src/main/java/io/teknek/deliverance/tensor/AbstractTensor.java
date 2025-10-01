@@ -281,12 +281,10 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
         }
 
         return switch (dType) {
-            /*
             case Q4 -> new Q4ByteBufferTensor(this);
-            case I8 -> new Q8ByteBufferTensor(this);*/
+            case I8 -> new Q8ByteBufferTensor(this);
             case F32 -> new FloatBufferTensor(this);
-            /*
-            case BF16 -> new BFloat16BufferTensor(this);*/
+            case BF16 -> new BFloat16BufferTensor(this);
             default -> this;
         };
     }

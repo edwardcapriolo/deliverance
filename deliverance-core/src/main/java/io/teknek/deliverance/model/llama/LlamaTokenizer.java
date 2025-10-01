@@ -48,4 +48,27 @@ public class LlamaTokenizer extends BytePairEncodingTokenizer {
         return sentence;
     }
 
+    @Override
+    protected String postProcess(String sentence) {
+        return sentence.stripLeading();
+    }
+
+    @Override
+    protected String postProcessToken(String decoded) {
+        if (decoded == null) {
+            decoded = tokenizerModel.unkToken;
+        }
+        decoded = decoded.replaceAll("</?s>", "");
+        decoded = decoded.replaceAll(SPIECE_UNDERLINE, " ");
+
+        if (tokenizerModel.isLegacy() && !tokenizerModel.byteFallback) {
+            decoded = decoded.codePoints()
+                    .map(c -> alteredBytes.inverse().getOrDefault(c, c))
+                    .mapToObj(Character::toString)
+                    .collect(Collectors.joining());
+        }
+
+        return decoded;
+    }
+
 }

@@ -54,8 +54,8 @@ public class DirectPromptTest {
             assertEquals(expected, ctx.getPrompt());// it does not change the prompt to have tools
         }
 
-        //Response r = m.generate(UUID.randomUUID(), ctx, 0.0f, 256, (s1, f1) -> {});
-        //assertEquals("yo", r.responseText);
+        Response r = m.generate(UUID.randomUUID(), ctx, 0.0f, 256, (s1, f1) -> {});
+        assertEquals("yo", r.responseText);
         // Generates a response to the prompt and prints it
         // The api allows for streaming or non-streaming responses
         // The response is generated with a temperature of 0.7 and a max token length of 256
