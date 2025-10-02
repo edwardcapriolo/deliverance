@@ -1,5 +1,6 @@
 package io.teknek.deliverance.model.llama;
 
+import com.codahale.metrics.MetricRegistry;
 import com.google.common.base.Preconditions;
 import com.google.common.primitives.Ints;
 import io.teknek.deliverance.DType;
@@ -19,8 +20,8 @@ public class LlamaModel extends AbstractModel {
 
     private volatile AbstractTensor embedTokenWeights;
     public LlamaModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
-                      DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider configurableTensorProvider) {
-        super(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType, configurableTensorProvider);
+                      DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry) {
+        super(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType, configurableTensorProvider, metricRegistry);
     }
 
     @Override
@@ -85,9 +86,9 @@ public class LlamaModel extends AbstractModel {
             transformerBlocks[relativeLayer] = new TransformerBlock(
                     this,
                     relativeLayer,
-                    new RmsNorm(this, weights.load(base + "input_layernorm.weight")/*.quantize(qType)*/),
+                    new RmsNorm(this, weights.load(base + "input_layernorm.weight")/*.quantize(qType)*/, metricRegistry),
                     attention,
-                    new RmsNorm(this, weights.load(base + "post_attention_layernorm.weight")/*.quantize(qType)*/),
+                    new RmsNorm(this, weights.load(base + "post_attention_layernorm.weight")/*.quantize(qType)*/, metricRegistry),
                     mlp
             );
         });
@@ -101,7 +102,7 @@ public class LlamaModel extends AbstractModel {
     @Override
     protected SampleOutput loadOutputWeights() {
         DType qType = modelQType.orElse(this.modelDType);
-        final LayerNorm outputLayerNorm = new RmsNorm(this, weights.load("model.norm.weight").quantize(qType));
+        final LayerNorm outputLayerNorm = new RmsNorm(this, weights.load("model.norm.weight").quantize(qType), metricRegistry);
         // Some llama models don't have a classification head
         AbstractTensor classificationWeights = weights.isWeightPresent("lm_head.weight")
                 ? weights.load("lm_head.weight").quantize(workingDType)

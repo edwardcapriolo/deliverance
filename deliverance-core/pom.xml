@@ -17,8 +17,9 @@
     <slf4j-api.version>2.0.17</slf4j-api.version>
     <jafama.version>2.3.2</jafama.version>
     <jcttools.version>4.0.1</jcttools.version>
+    <mockito.version>5.20.0</mockito.version>
+    <metrics.version>4.2.37</metrics.version>
   </properties>
-
 
   <dependencies>
     <dependency>
@@ -32,27 +33,23 @@
       <version>${junit.version}</version>
       <scope>test</scope>
     </dependency>
-
     <dependency>
       <groupId>net.serenity-bdd</groupId>
       <artifactId>serenity-junit5</artifactId>
       <version>${serenity.base.version}</version>
       <scope>test</scope>
     </dependency>
-
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-simple</artifactId>
       <version>${slf-simple.version}</version>
       <scope>test</scope>
     </dependency>
-
     <dependency>
       <groupId>org.jctools</groupId>
       <artifactId>jctools-core</artifactId>
       <version>${jcttools.version}</version>
     </dependency>
-
     <dependency>
       <groupId>com.hubspot.jinjava</groupId>
       <artifactId>jinjava</artifactId>
@@ -64,20 +61,21 @@
         </exclusion>
       </exclusions>
     </dependency>
-
-
     <dependency>
       <groupId>net.jafama</groupId>
       <artifactId>jafama</artifactId>
       <version>${jafama.version}</version>
     </dependency>
-
+    <dependency>
+      <groupId>io.dropwizard.metrics</groupId>
+      <artifactId>metrics-core</artifactId>
+      <version>${metrics.version}</version>
+    </dependency>
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
       <version>${jackson.version}</version>
     </dependency>
-
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-core</artifactId>
@@ -88,6 +86,12 @@
       <groupId>com.google.guava</groupId>
       <artifactId>guava</artifactId>
       <version>${guava.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+      <version>${mockito.version}</version>
+      <scope>test</scope>
     </dependency>
   </dependencies>
 

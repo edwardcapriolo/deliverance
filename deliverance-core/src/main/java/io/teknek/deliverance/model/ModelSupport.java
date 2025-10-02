@@ -1,5 +1,6 @@
 package io.teknek.deliverance.model;
 
+import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.model.llama.LlamaModelType;
 import io.teknek.deliverance.safetensors.Config;
@@ -32,7 +33,8 @@ public class ModelSupport {
         return registry.get(modelType);
     }
 
-    public static AbstractModel loadModel(File model, DType workingMemoryType, DType workingQuantizationType){
+    public static AbstractModel loadModel(File model, DType workingMemoryType, DType workingQuantizationType,
+                                          ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry){
         File configFile = new File(model, "config.json");
         if (!configFile.exists()){
             throw new RuntimeException("expecting to find config " + configFile);
@@ -45,10 +47,10 @@ public class ModelSupport {
             WeightLoader wl = new DefaultWeightLoader(model);
 
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
-                    WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class, ConfigurableTensorProvider.class);
+                    WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class, ConfigurableTensorProvider.class, MetricRegistry.class);
 
             return cons.newInstance(AbstractModel.InferenceType.FULL_GENERATION, c, wl, tokenizer,
-                    workingMemoryType, workingQuantizationType, Optional.empty(), new ConfigurableTensorProvider());
+                    workingMemoryType, workingQuantizationType, Optional.empty(), configurableTensorProvider, metricRegistry);
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }

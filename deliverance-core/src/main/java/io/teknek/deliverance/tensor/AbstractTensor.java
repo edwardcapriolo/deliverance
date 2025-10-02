@@ -260,7 +260,9 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
     public abstract void clear();
 
     public void close() {
-        if (originCache != null) originCache.release(this);
+        if (originCache != null) {
+            originCache.release(this);
+        }
     }
 
     void setOwnerCache(TensorCache cache) {

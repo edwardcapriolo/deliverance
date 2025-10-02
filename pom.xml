@@ -21,7 +21,7 @@
 
     <modules>
         <module>deliverance-core</module>
-        <module>deliverance-native</module>
+<!--        <module>deliverance-native</module>-->
         <module>sketches</module>
     </modules>
     <build>

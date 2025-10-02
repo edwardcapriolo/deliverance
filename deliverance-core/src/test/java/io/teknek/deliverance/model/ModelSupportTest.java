@@ -1,9 +1,11 @@
 package io.teknek.deliverance.model;
 
+import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.fetch.ModelFetcher;
 import io.teknek.deliverance.model.llama.LlamaTokenizer;
 import io.teknek.deliverance.tensor.*;
+import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -20,12 +22,10 @@ public class ModelSupportTest {
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         File f = fetch.maybeDownload();
         KvBufferCache.KvBuffer kvBuffer;
-        try (AbstractModel z = ModelSupport.loadModel(f, DType.F32, DType.F32)) {
+        try (AbstractModel z = ModelSupport.loadModel(f, DType.F32, DType.F32, new ConfigurableTensorProvider(), new MetricRegistry())) {
             assertEquals(z.tokenizer.getClass(), LlamaTokenizer.class);
             kvBuffer = z.kvBufferCache.getEphemeralKvBuffer();
-
         }
-
         assertEquals(0, kvBuffer.getCurrentContextPosition());
         kvBuffer.incrementContextPosition();
         assertEquals(1, kvBuffer.getCurrentContextPosition());
@@ -38,7 +38,7 @@ public class ModelSupportTest {
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         File f = fetch.maybeDownload();
         KvBufferCache.KvBuffer kvBuffer;
-        try (AbstractModel z = ModelSupport.loadModel(f, DType.F32, DType.F32)) {
+        try (AbstractModel z = ModelSupport.loadModel(f, DType.F32, DType.F32, new ConfigurableTensorProvider(), new MetricRegistry())) {
             TensorShape ts = TensorShape.of(10,10);
             BFloat16BufferTensor bf = new BFloat16BufferTensor(ts);
             //AbstractTensor z1 = z.maybeQuantize(bf);

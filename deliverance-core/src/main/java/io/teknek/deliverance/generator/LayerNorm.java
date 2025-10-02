@@ -1,22 +1,28 @@
 package io.teknek.deliverance.generator;
 
-
-
+import com.codahale.metrics.Histogram;
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import net.jafama.FastMath;
-
+import com.codahale.metrics.MetricRegistry;
+/*
+* https://docs.pytorch.org/docs/stable/generated/torch.nn.LayerNorm.html
+* */
 public class LayerNorm {
 
     protected final AbstractModel model;
     private final AbstractTensor bias;
     protected final AbstractTensor weights;
+    protected final MetricRegistry metricReigstry;
+    public final Histogram totalTime;
 
-    public LayerNorm(AbstractModel m, AbstractTensor bias, AbstractTensor weights) {
+    public LayerNorm(AbstractModel m, AbstractTensor bias, AbstractTensor weights, MetricRegistry parent) {
         this.model = m;
         this.bias = bias;
         this.weights = weights;
+        this.metricReigstry = parent;
+        totalTime = metricReigstry.histogram("layer_norm");
     }
 
     public AbstractTensor forward(AbstractTensor input) {
@@ -27,10 +33,9 @@ public class LayerNorm {
     }
 
     public AbstractTensor forward(AbstractTensor input, int offset, int length) {
-
+        long start = System.currentTimeMillis();
         int batchSize = input.shape().first();
         AbstractTensor output = input.copyShape();
-
         for (int b = 0; b < batchSize; b++) {
             float sum = 0;
             float sumSq = 0;
@@ -48,7 +53,8 @@ public class LayerNorm {
                 output.set(v, b, i);
             }
         }
-
+        long end = System.currentTimeMillis();
+        totalTime.update(end-start);
         return output;
     }
 }

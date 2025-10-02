@@ -2,6 +2,7 @@ package io.teknek.deliverance.model;
 
 
 
+import com.codahale.metrics.MetricRegistry;
 import com.google.common.base.Preconditions;
 import com.google.common.primitives.Ints;
 
@@ -74,10 +75,11 @@ public abstract class AbstractModel implements Generator {
     protected TransformerBlock[] transformerBlocks;
     protected KvBufferCache kvBufferCache;
     protected final ConfigurableTensorProvider configurableTensorProvider;
-
+    protected final MetricRegistry metricRegistry;
 
     protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
-                            DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider provider) {
+                            DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider provider,
+                            MetricRegistry metricRegistry) {
         this.inferenceType = inferenceType;
         this.config = c;
         this.weights = w;
@@ -88,6 +90,7 @@ public abstract class AbstractModel implements Generator {
         this.modelQType = modelQType;
         this.kvBufferCache = new KvBufferCache(this);
         this.configurableTensorProvider = provider;
+        this.metricRegistry = metricRegistry;
 
         if (workingMemoryQType == null) {
             workingMemoryQType = configurableTensorProvider.get().preferredWorkingQuantizedType();
