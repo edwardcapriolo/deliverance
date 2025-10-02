@@ -36,17 +36,17 @@ public class LlamaModel extends AbstractModel {
         return (inputToken, position) -> {
             if (embedTokenWeights.dType() == DType.BF16) {
                 // Handle old style model with BF16 embeddings
-                AbstractTensor embedding = makeDenseTensor(1, c.embeddingLength);
+                AbstractTensor embedding = makeDenseTensor(1, config.embeddingLength);
                 AbstractTensor at = embedTokenWeights.slice(true, inputToken);
                 if (embedTokenWeights.dType() != embedding.dType()) {
-                    at = TensorOperationsProvider.get().quantize(at, embedding.dType(), 0, c.embeddingLength);
+                    at = TensorOperationsProvider.get().quantize(at, embedding.dType(), 0, config.embeddingLength);
                 }
-                embedding.copyFrom(at, 0, 0, c.embeddingLength);
+                embedding.copyFrom(at, 0, 0, config.embeddingLength);
                 return embedding;
             } else {
                 AbstractTensor at = embedTokenWeights.slice(true, inputToken);
                 AbstractTensor embedding = at.copyShape();
-                embedding.copyFrom(at, 0, 0, c.embeddingLength);
+                embedding.copyFrom(at, 0, 0, config.embeddingLength);
                 return embedding;
             }
         };
@@ -58,31 +58,28 @@ public class LlamaModel extends AbstractModel {
         if (qType != this.modelDType) {
             //logger.info("Quantizing model with {} - Please hold...", qType);
         }
-        System.out.println("model "+ modelQType);
-        System.out.println("model "+ modelDType);
-
-        TransformerBlock[] transformerBlocks = new TransformerBlock[c.dctx().numberOfLayers];
-        IntStream.range(c.dctx().layerStart, c.dctx().layerEnd).parallel().forEach(i -> {
-            int relativeLayer = i - c.dctx().layerStart; // FIXME: add a helper to the context
+        TransformerBlock[] transformerBlocks = new TransformerBlock[config.dctx().numberOfLayers];
+        IntStream.range(config.dctx().layerStart, config.dctx().layerEnd).parallel().forEach(i -> {
+            int relativeLayer = i - config.dctx().layerStart; // FIXME: add a helper to the context
             String base = "model.layers." + i + ".";
             String prefix = base + "self_attn.";
             CausalSelfAttention attention = new CausalSelfAttention(
                     this,
                     relativeLayer,
-                    weights.load(prefix + "q_proj.weight", c.dctx(), true, false)/*.quantize(qType)*/,
-                    weights.load(prefix + "k_proj.weight", c.dctx(), true, false)/*.quantize(qType)*/,
-                    weights.load(prefix + "v_proj.weight", c.dctx(), true, false)/*.quantize(qType)*/,
-                    weights.load(prefix + "o_proj.weight", c.dctx(), false, true)/*.quantize(qType)*/
+                    weights.load(prefix + "q_proj.weight", config.dctx(), true, false)/*.quantize(qType)*/,
+                    weights.load(prefix + "k_proj.weight", config.dctx(), true, false)/*.quantize(qType)*/,
+                    weights.load(prefix + "v_proj.weight", config.dctx(), true, false)/*.quantize(qType)*/,
+                    weights.load(prefix + "o_proj.weight", config.dctx(), false, true)/*.quantize(qType)*/
             );
 
             prefix = base + "mlp.";
 
             MLPBlock mlp = new MLPBlock(
                     this,
-                    c.activationFunction,
-                    weights.load(prefix + "gate_proj.weight", c.dctx(), true, false)/*.quantize(qType)*/, // w1
-                    weights.load(prefix + "down_proj.weight", c.dctx(), false, true)/*.quantize(qType)*/, // w2
-                    weights.load(prefix + "up_proj.weight", c.dctx(), true, false)/*.quantize(qType)*/
+                    config.activationFunction,
+                    weights.load(prefix + "gate_proj.weight", config.dctx(), true, false)/*.quantize(qType)*/, // w1
+                    weights.load(prefix + "down_proj.weight", config.dctx(), false, true)/*.quantize(qType)*/, // w2
+                    weights.load(prefix + "up_proj.weight", config.dctx(), true, false)/*.quantize(qType)*/
             ); // w3
 
             transformerBlocks[relativeLayer] = new TransformerBlock(
