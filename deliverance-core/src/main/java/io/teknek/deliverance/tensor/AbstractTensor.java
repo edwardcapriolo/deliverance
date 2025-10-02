@@ -272,14 +272,13 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
     }
 
     public AbstractTensor quantize(DType dType, boolean force) {
-
-        if (!force && (this.shape().first() == 1 || this.dType == dType || this.dType.size() < dType.size())) return this;
-
+        if (!force && (this.shape().first() == 1 || this.dType == dType || this.dType.size() < dType.size())) {
+            return this;
+        }
         if (shape.isSparse()) {
             logger.info("Quantizing sparse tensor is not supported");
             return this;
         }
-
         return switch (dType) {
             case Q4 -> new Q4ByteBufferTensor(this);
             case I8 -> new Q8ByteBufferTensor(this);
@@ -292,14 +291,12 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
     public TensorInfo save(FileChannel out) throws IOException {
         Preconditions.checkArgument(!shape.isSparse(), "Cannot save a sparse tensor");
         ByteBuffer bb = getMemorySegment().asByteBuffer().order(ByteOrder.LITTLE_ENDIAN);
-
         long startOffset = out.position();
         out.write(bb);
-
         long[] lshape = new long[shape.dims()];
-        for (int i = 0; i < shape.dims(); i++)
+        for (int i = 0; i < shape.dims(); i++) {
             lshape[i] = shape.dim(i);
-
+        }
         return new TensorInfo(dType, lshape, new long[] { startOffset, out.position() });
     }
 

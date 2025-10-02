@@ -19,7 +19,6 @@ import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.tensor.*;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import io.teknek.deliverance.tensor.operations.TensorOperationsProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
 import jdk.incubator.vector.FloatVector;
 import net.jafama.FastMath;
@@ -61,7 +60,7 @@ public abstract class AbstractModel implements Generator {
     }
 
     protected final InferenceType inferenceType;
-    protected final Config c;
+    protected final Config config;
     protected final WeightLoader weights;
     protected final Tokenizer tokenizer;
     protected final DType modelDType;
@@ -80,7 +79,7 @@ public abstract class AbstractModel implements Generator {
     protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
                             DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider provider) {
         this.inferenceType = inferenceType;
-        this.c = c;
+        this.config = c;
         this.weights = w;
         this.tokenizer = t;
 
@@ -162,20 +161,20 @@ public abstract class AbstractModel implements Generator {
     }
 
     public Config getConfig(){
-        return c;
+        return config;
     }
 
     public AbstractTensor makeTensor(int... shape) {
         TensorShape s = TensorShape.of(shape);
-        return c.tensorCache.get(workingDType, s);
+        return config.tensorCache.get(workingDType, s);
     }
 
     public AbstractTensor makeDenseTensor(int... shape) {
-        return c.tensorCache.get(workingDType, TensorShape.of(shape));
+        return config.tensorCache.get(workingDType, TensorShape.of(shape));
     }
 
     public AbstractTensor makeDenseTensor(TensorShape s) {
-        return c.tensorCache.get(workingDType, s);
+        return config.tensorCache.get(workingDType, s);
     }
 
     public DType getWorkingDType() {
@@ -193,16 +192,14 @@ public abstract class AbstractModel implements Generator {
     public Response generate(UUID sessionId, PromptContext promptContext, float temperature, int ntokens,
                       BiConsumer<String, Float> onTokenWithTimings) {
         long[] encoded = tokenizer.encode(promptContext.getPrompt());
-        if (encoded.length > 0 && encoded[0] == c.bosToken) {
+        if (encoded.length > 0 && encoded[0] == config.bosToken) {
             encoded = Arrays.copyOfRange(encoded, 1, encoded.length);
         }
-        Preconditions.checkArgument(encoded.length < c.contextLength && encoded.length < ntokens, "Prompt exceeds max tokens");
-
-
+        Preconditions.checkArgument(encoded.length < config.contextLength && encoded.length < ntokens, "Prompt exceeds max tokens");
         try (KvBufferCache.KvBuffer kvmem = kvBufferCache.getKvBuffer(sessionId)) { // k and v for context window
             int startPos = kvmem.getCurrentContextPosition(); // Number of tokens in the buffer
-            if (ntokens > c.contextLength) {
-                ntokens = c.contextLength;
+            if (ntokens > config.contextLength) {
+                ntokens = config.contextLength;
             }
             FinishReason reason = FinishReason.MAX_TOKENS;
             int promptLength;
@@ -211,21 +208,22 @@ public abstract class AbstractModel implements Generator {
             StringBuilder responseText = new StringBuilder();
             StringBuilder responseTextWithSpecialTokens = new StringBuilder();
 
-            try (AbstractTensor logits = makeDenseTensor(c.vocabularySize)) {
+            try (AbstractTensor logits = makeDenseTensor(config.vocabularySize)) {
                 int[] promptTokens;
-
                 if (addBosToken()) {
                     promptTokens = new int[(1 + encoded.length)];
-                    promptTokens[0] = c.bosToken;
-                    for (int i = 1; i <= encoded.length; i++)
+                    promptTokens[0] = config.bosToken;
+                    for (int i = 1; i <= encoded.length; i++) {
                         promptTokens[i] = Ints.checkedCast(encoded[i - 1]);
+                    }
                 } else {
                     promptTokens = Arrays.stream(encoded).mapToInt(Ints::checkedCast).toArray();
                 }
+                logger.warn("promptTokens: {}", promptTokens);
                 promptLength = encoded.length;
                 long start = System.currentTimeMillis();
-                long promptStart = start;
                 AbstractTensor last = batchForward(promptTokens, startPos, kvmem);
+                logger.warn("After batch forward size: {} shape: {}" , last.size(), last.shape());
                 promptBatchTime = System.currentTimeMillis() - start;
                 float batchMsPerToken = Math.round((((double) promptBatchTime) / (double) promptLength));
                 int next = sample(last.slice(last.shape().first() - 1), temperature, ThreadLocalRandom.current().nextFloat(), logits);
@@ -252,13 +250,13 @@ public abstract class AbstractModel implements Generator {
 
                     next = sample(output, temperature, ThreadLocalRandom.current().nextFloat(), logits);
 
-                    if (logger.isTraceEnabled()) logger.trace("Sampled token {} with temperature {}", next, temperature);
+                    if (logger.isTraceEnabled()) {
+                        logger.trace("Sampled token {} with temperature {}", next, temperature);
+                    }
                     output.close();
 
                     kvmem.incrementContextPosition();
-
-                    // Model may tell us it's done
-                    if (c.eosTokens.contains(next)) {
+                    if (config.eosTokens.contains(next)) {
                         reason = FinishReason.STOP_TOKEN;
                         break;
                     }
@@ -294,23 +292,23 @@ public abstract class AbstractModel implements Generator {
     public int sample(AbstractTensor output, float temperature, float uniformSample, AbstractTensor logits) {
         try (AbstractTensor embedding = sampleOutput.getOutputLayerNorm().forward(output)) {
             // This is a mix of argmax and sampling with softmax
-            VectorMath.pchunk(0, c.vocabularySize, (chunkStart, chunkSize) -> {
+            VectorMath.pchunk(0, config.vocabularySize, (chunkStart, chunkSize) -> {
                 configurableTensorProvider.get()
-                        .dotProductChunk(logits, embedding, sampleOutput.getOutputLogitsWeights(), 0, c.embeddingLength, chunkStart, chunkSize);
+                        .dotProductChunk(logits, embedding, sampleOutput.getOutputLogitsWeights(), 0, config.embeddingLength, chunkStart, chunkSize);
             });
 
-            if (c.logitMultiplier != null) {
-                configurableTensorProvider.get().scale(1.0f / c.logitMultiplier, logits, 0, c.vocabularySize);
+            if (config.logitMultiplier != null) {
+                configurableTensorProvider.get().scale(1.0f / config.logitMultiplier, logits, 0, config.vocabularySize);
             }
 
             int maxi = Integer.MIN_VALUE;
             double maxv = Double.NEGATIVE_INFINITY;
-            for (int i = 0; i < c.vocabularySize; i++) {
+            for (int i = 0; i < config.vocabularySize; i++) {
                 float v = logits.get(0, i);
-                if (c.finalLogitSoftCapping != null) {
-                    v /= c.finalLogitSoftCapping;
+                if (config.finalLogitSoftCapping != null) {
+                    v /= config.finalLogitSoftCapping;
                     v = (float) FastMath.tanh(v);
-                    v = v * c.finalLogitSoftCapping;
+                    v = v * config.finalLogitSoftCapping;
                     logits.set(v, 0, i);
                 }
                 if (v > maxv) {
@@ -324,23 +322,22 @@ public abstract class AbstractModel implements Generator {
             }
 
             float sum = 0;
-            for (int i = 0; i < c.vocabularySize; i++) {
+            for (int i = 0; i < config.vocabularySize; i++) {
                 float v = (float) FastMath.exp((logits.get(0, i) - maxv) / temperature);
                 sum += v;
                 logits.set(v, 0, i);
             }
 
             float acc = 0;
-            for (int i = 0; i < c.vocabularySize; i++) {
+            for (int i = 0; i < config.vocabularySize; i++) {
                 float v = logits.get(0, i) / sum;
                 acc += v;
                 if (acc >= uniformSample) return i;
             }
 
-            return c.vocabularySize - 1;
+            return config.vocabularySize - 1;
         }
     }
-
 
     public AbstractTensor batchForward(int[] token_ids, int startPos, KvBufferCache.KvBuffer kvbuf) {
         return batchForward(token_ids, startPos, kvbuf, Optional.empty());
@@ -351,7 +348,9 @@ public abstract class AbstractModel implements Generator {
         AbstractTensor embedding = null;
         for (int i = 0; i < token_ids.length; i += MAX_BATCH_SIZE) {
             int[] batch = Arrays.copyOfRange(token_ids, i, Math.min(token_ids.length, i + MAX_BATCH_SIZE));
+            logger.warn("batch forward i: {} batch: {}", i, batch);
             embedding = embedInput.batchInputsToEmbeddings(batch, startPos + i);
+            logger.warn("embedding {} {}", embedding.shape(), embedding.size());
             embedding = forward(embedding, startPos + i, kvbuf, tensorReducer);
             logger.debug("Batched forward pass for tokens {} to {}", i, i + batch.length);
         }
@@ -383,8 +382,8 @@ public abstract class AbstractModel implements Generator {
 
     public AbstractTensor forward(AbstractTensor embedding, int startPos, KvBufferCache.KvBuffer kvbuf,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
-        for (int i = c.dctx().layerStart; i < c.dctx().layerEnd; i++) {
-            int relativeLayer = i - c.dctx().layerStart;
+        for (int i = config.dctx().layerStart; i < config.dctx().layerEnd; i++) {
+            int relativeLayer = i - config.dctx().layerStart;
             AbstractTensor ref = embedding; // reference so we can free
             embedding = transformerBlocks[relativeLayer].forward(embedding, startPos, kvbuf, tensorReducer);
             ref.close();
@@ -395,7 +394,7 @@ public abstract class AbstractModel implements Generator {
 
     /** I do not follow how this is supposed to maybeQuantize since we always take the type from t? */
     public AbstractTensor maybeQuantize(AbstractTensor t) {
-        AbstractTensor t2 = c.tensorCache.get(t.dType(), t.shape());
+        AbstractTensor t2 = config.tensorCache.get(t.dType(), t.shape());
         t2.copyFrom(t, 0, 0, Ints.checkedCast(t.size()));
         return t2;
     }

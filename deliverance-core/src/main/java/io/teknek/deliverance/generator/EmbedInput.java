@@ -2,23 +2,29 @@ package io.teknek.deliverance.generator;
 
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.math.VectorMath;
+import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.TensorShape;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public interface EmbedInput {
+    Logger LOGGER = LoggerFactory.getLogger(EmbedInput.class);
     AbstractTensor inputTokenToEmbedding(int inputToken, int position);
 
     default AbstractTensor batchInputsToEmbeddings(int[] inputTokens, int startPos) {
         Preconditions.checkArgument(inputTokens.length > 0);
-        AbstractTensor t = inputTokenToEmbedding(inputTokens[0], startPos);
+        AbstractTensor zeroTokenEmbedding = inputTokenToEmbedding(inputTokens[0], startPos);
+
+        LOGGER.warn("tensor for 0th inputToken shape {} size {}", zeroTokenEmbedding.shape(), zeroTokenEmbedding.size());
         if (inputTokens.length == 1) {
-            return t;
+            return zeroTokenEmbedding;
         }
-        TensorShape tbs = TensorShape.of(inputTokens.length, t.shape().last());
-        AbstractTensor tb = TensorCache.instance.get(t.dType(), tbs);
-        tb.copyFrom(t, 0, 0, t.shape().last());
-        t.close();
+        TensorShape embeddingsFoEachInputToken = TensorShape.of(inputTokens.length, zeroTokenEmbedding.shape().last());
+        AbstractTensor tb = TensorCache.instance.get(zeroTokenEmbedding.dType(), embeddingsFoEachInputToken);
+        tb.copyFrom(zeroTokenEmbedding, 0, 0, zeroTokenEmbedding.shape().last());
+        zeroTokenEmbedding.close();
         VectorMath.pfor(1, inputTokens.length, i -> {
             AbstractTensor ti = inputTokenToEmbedding(inputTokens[i], startPos + i);
             tb.copyFrom(ti, 0, i * ti.shape().last(), ti.shape().last());

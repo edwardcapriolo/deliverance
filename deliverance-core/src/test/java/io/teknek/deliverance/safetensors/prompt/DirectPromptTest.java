@@ -53,9 +53,31 @@ public class DirectPromptTest {
                         """;
                 assertEquals(expected, ctx.getPrompt());// it does not change the prompt to have tools
 
-                //Response r = m.generate(UUID.randomUUID(), ctx, 0.0f, 256, (s1, f1) -> {});
-                //assertEquals("yo", r.responseText);
+                Response r = m.generate(UUID.randomUUID(), ctx, 0.0f, 256, (s1, f1) -> {});
+                assertEquals("yo", r.responseText);
             }
+            /*
+            {
+                PromptSupport ps = m.promptSupport().get();
+                long start = System.currentTimeMillis();
+                ctx = ps.builder().addSystemMessage("You are a math expert.")
+                        .addUserMessage("What is the resul of 1 + 1?").build();
+
+
+                Response r = m.generate(UUID.randomUUID(), ctx, 0.0f, 256, (s1, f1) -> {});
+                System.out.println("It took " + (System.currentTimeMillis()-start));
+            }
+
+            {
+                PromptSupport ps = m.promptSupport().get();
+                long start = System.currentTimeMillis();
+                ctx = ps.builder().addSystemMessage("You are a math expert.")
+                        .addUserMessage("What is the resul of 1 + 1?").build();
+
+
+                Response r = m.generate(UUID.randomUUID(), ctx, 0.0f, 256, (s1, f1) -> {});
+                System.out.println("It took " + (System.currentTimeMillis()-start));
+            }*/
         }
 
 
