@@ -67,10 +67,10 @@ public class LlamaModel extends AbstractModel {
             CausalSelfAttention attention = new CausalSelfAttention(
                     this,
                     relativeLayer,
-                    weights.load(prefix + "q_proj.weight", config.dctx(), true, false)/*.quantize(qType)*/,
-                    weights.load(prefix + "k_proj.weight", config.dctx(), true, false)/*.quantize(qType)*/,
-                    weights.load(prefix + "v_proj.weight", config.dctx(), true, false)/*.quantize(qType)*/,
-                    weights.load(prefix + "o_proj.weight", config.dctx(), false, true)/*.quantize(qType)*/
+                    weights.load(prefix + "q_proj.weight", config.dctx(), true, false).quantize(qType),
+                    weights.load(prefix + "k_proj.weight", config.dctx(), true, false).quantize(qType),
+                    weights.load(prefix + "v_proj.weight", config.dctx(), true, false).quantize(qType),
+                    weights.load(prefix + "o_proj.weight", config.dctx(), false, true).quantize(qType)
             );
 
             prefix = base + "mlp.";
@@ -78,17 +78,17 @@ public class LlamaModel extends AbstractModel {
             MLPBlock mlp = new MLPBlock(
                     this,
                     config.activationFunction,
-                    weights.load(prefix + "gate_proj.weight", config.dctx(), true, false)/*.quantize(qType)*/, // w1
-                    weights.load(prefix + "down_proj.weight", config.dctx(), false, true)/*.quantize(qType)*/, // w2
-                    weights.load(prefix + "up_proj.weight", config.dctx(), true, false)/*.quantize(qType)*/
+                    weights.load(prefix + "gate_proj.weight", config.dctx(), true, false).quantize(qType), // w1
+                    weights.load(prefix + "down_proj.weight", config.dctx(), false, true).quantize(qType), // w2
+                    weights.load(prefix + "up_proj.weight", config.dctx(), true, false).quantize(qType)
             ); // w3
 
             transformerBlocks[relativeLayer] = new TransformerBlock(
                     this,
                     relativeLayer,
-                    new RmsNorm(this, weights.load(base + "input_layernorm.weight")/*.quantize(qType)*/, metricRegistry),
+                    new RmsNorm(this, weights.load(base + "input_layernorm.weight").quantize(qType), metricRegistry),
                     attention,
-                    new RmsNorm(this, weights.load(base + "post_attention_layernorm.weight")/*.quantize(qType)*/, metricRegistry),
+                    new RmsNorm(this, weights.load(base + "post_attention_layernorm.weight").quantize(qType), metricRegistry),
                     mlp
             );
         });

@@ -233,50 +233,36 @@ public abstract class AbstractModel implements Generator {
                 float genMsPerToken = 0;
                 tokensGenerated = 0;
                 last.close();
-                try {
-                    String c = tokenizer.decode(next);
-                    if (tokenizer.getModel().isSpecialToken(next)) {
-                        responseTextWithSpecialTokens.append(c);
-                    } else {
-                        onTokenWithTimings.accept(c, batchMsPerToken);
-                        responseText.append(c);
-                        responseTextWithSpecialTokens.append(c);
-                    }
-                } catch (Exception e) {
-                    logger.error("Failed to decode token {}", next, e);
+                String decoded = tokenizer.decode(next);
+                if (tokenizer.getModel().isSpecialToken(next)) {
+                    responseTextWithSpecialTokens.append(decoded);
+                } else {
+                    onTokenWithTimings.accept(decoded, batchMsPerToken);
+                    responseText.append(decoded);
+                    responseTextWithSpecialTokens.append(decoded);
                 }
-
                 start = System.currentTimeMillis();
                 for (int i = startPos + promptTokens.length; i < ntokens; i++) {
                     AbstractTensor output = forward(next, i, kvmem);
                     tokensGenerated++;
-
                     next = sample(output, temperature, ThreadLocalRandom.current().nextFloat(), logits);
-
                     if (logger.isTraceEnabled()) {
                         logger.trace("Sampled token {} with temperature {}", next, temperature);
                     }
                     output.close();
-
                     kvmem.incrementContextPosition();
                     if (config.eosTokens.contains(next)) {
                         reason = FinishReason.STOP_TOKEN;
                         break;
                     }
-
-                    try {
-                        String c = tokenizer.decode(next);
-
-                        if (tokenizer.getModel().isSpecialToken(next)) {
-                            responseTextWithSpecialTokens.append(c);
-                        } else {
-                            genMsPerToken = (System.currentTimeMillis() - start) / (float) (tokensGenerated);
-                            onTokenWithTimings.accept(c, genMsPerToken);
-                            responseTextWithSpecialTokens.append(c);
-                            responseText.append(c);
-                        }
-                    } catch (Exception e) {
-                        logger.error("Failed to decode token {}", next, e);
+                    String c = tokenizer.decode(next);
+                    if (tokenizer.getModel().isSpecialToken(next)) {
+                        responseTextWithSpecialTokens.append(c);
+                    } else {
+                        genMsPerToken = (System.currentTimeMillis() - start) / (float) (tokensGenerated);
+                        onTokenWithTimings.accept(c, genMsPerToken);
+                        responseTextWithSpecialTokens.append(c);
+                        responseText.append(c);
                     }
                 }
 
@@ -391,11 +377,10 @@ public abstract class AbstractModel implements Generator {
             embedding = transformerBlocks[relativeLayer].forward(embedding, startPos, kvbuf, tensorReducer);
             ref.close();
         }
-
         return embedding;
     }
 
-    /** I do not follow how this is supposed to maybeQuantize since we always take the type from t? */
+    /** This is a hook method that does nothing here but can be overridden by subclasses */
     public AbstractTensor maybeQuantize(AbstractTensor t) {
         AbstractTensor t2 = config.tensorCache.get(t.dType(), t.shape());
         t2.copyFrom(t, 0, 0, Ints.checkedCast(t.size()));

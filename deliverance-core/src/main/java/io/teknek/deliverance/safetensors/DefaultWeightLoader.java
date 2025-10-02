@@ -54,12 +54,14 @@ public class DefaultWeightLoader implements WeightLoader {
         } else {
             throw new IllegalArgumentException("weights not found");
         }
-        this.majorityDType = findDType(allTensorInfoMap);
+
         try {
             loadWeights();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+        this.majorityDType = findDType(allTensorInfoMap);
+        System.out.println("Majority DType "+ this.majorityDType);
     }
 
     public void loadWeights() throws IOException {

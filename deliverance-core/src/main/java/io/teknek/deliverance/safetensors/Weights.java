@@ -36,7 +36,9 @@ public class Weights implements WeightLoader {
     public static DType findDType(Map<String, TensorInfo> tensorInfoMap) {
         EnumMap<DType, Integer> counts = new EnumMap<>(DType.class);
         for (Map.Entry<String, TensorInfo> e : tensorInfoMap.entrySet()) {
-            if (!e.getKey().endsWith(".qb")) counts.put(e.getValue().dType, counts.getOrDefault(e.getValue().dType, 0) + 1);
+            if (!e.getKey().endsWith(".qb")) {
+                counts.put(e.getValue().dType, counts.getOrDefault(e.getValue().dType, 0) + 1);
+            }
         }
 
         int max = 0;
