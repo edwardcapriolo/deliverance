@@ -14,6 +14,7 @@ public class MachineSpec {
         AVX_256(2),
         AVX_512(4),
         ARM_128(8),
+        AVX_128(16),
         NONE(0);
 
         public final int ctag;
@@ -29,13 +30,20 @@ public class MachineSpec {
         Type tmp = Type.NONE;
         try {
             int preferredBits = FloatVector.SPECIES_PREFERRED.vectorBitSize();
-            if (preferredBits == 512) tmp = Type.AVX_512;
-
-            if (preferredBits == 256) tmp = Type.AVX_256;
-
-            if (preferredBits == 128 && RuntimeSupport.isArm()) tmp = Type.ARM_128;
-
-            if (tmp == Type.NONE) logger.warn("Unknown vector type: {}", preferredBits);
+            if (preferredBits == 512) {
+                tmp = Type.AVX_512;
+            } else if (preferredBits == 256) {
+                tmp = Type.AVX_256;
+            } else if (preferredBits == 128) {
+                if (RuntimeSupport.isArm()) {
+                    tmp = Type.ARM_128;
+                } else {
+                    tmp = Type.AVX_128;
+                }
+            }
+            if (tmp == Type.NONE) {
+                logger.warn("Unknown vector type: {}", preferredBits);
+            }
 
         } catch (Throwable t) {
             logger.warn("Java SIMD Vector API *not* available. Add --add-modules=jdk.incubator.vector to your JVM options");

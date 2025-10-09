@@ -47,10 +47,6 @@ public abstract class BytePairEncodingTokenizer implements Tokenizer {
             return Collections.emptyList();
         }
 
-        /*
-        if (model.preTokenizer() == null && model.addedTokenPattern() == null) Collections.singletonList(sentence);
-        */
-
         List<String> sentencePieces = new ArrayList<>();
         if (tokenizerModel.getAddedTokenPattern() != null) {
             // Split the sentence into pieces using the added token pattern

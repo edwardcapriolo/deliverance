@@ -53,7 +53,6 @@ public final class PanamaTensorOperations implements TensorOperations {
     }
 
     public int parallelSplitSize() {
-        //return 2;
         return PhysicalCoreExecutor.instance.get().getCoreCount();
     }
 

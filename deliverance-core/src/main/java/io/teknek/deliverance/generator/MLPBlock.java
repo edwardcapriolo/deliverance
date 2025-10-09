@@ -38,25 +38,6 @@ public class MLPBlock implements FeedForward {
     public MLPBlock(
             AbstractModel model,
             ActivationFunction.Type activationFunction,
-            AbstractTensor fullyConnectedBias,
-            AbstractTensor fullyConnectedWeights,
-            AbstractTensor projectionBias,
-            AbstractTensor projectionWeights
-    ) {
-        this(
-                model,
-                activationFunction,
-                Optional.of(fullyConnectedBias),
-                fullyConnectedWeights,
-                Optional.of(projectionBias),
-                projectionWeights,
-                null
-        );
-    }
-
-    public MLPBlock(
-            AbstractModel model,
-            ActivationFunction.Type activationFunction,
             AbstractTensor fullyConnectedWeights,
             AbstractTensor projectionWeights,
             AbstractTensor upProjectionWeights

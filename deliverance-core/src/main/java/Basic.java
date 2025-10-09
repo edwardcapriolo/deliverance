@@ -10,7 +10,7 @@ public class Basic {
         return result;
     }
 
-    public static  int[] addTwoVectorArrays(int[] arr1, int[] arr2) {
+    public static int[] addTwoVectorArrays(int[] arr1, int[] arr2) {
         VectorSpecies<Integer> SPECIES = IntVector.SPECIES_PREFERRED;
         System.out.println(SPECIES);
         IntVector v1 = IntVector.fromArray(SPECIES, arr1, 0);

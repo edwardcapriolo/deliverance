@@ -7,11 +7,11 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.model.llama.LlamaTokenizer;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -65,6 +65,8 @@ public class LlamaTokenizerTest {
             String p = "[INST] Tell me a joke. \uD83D\uDC31 [/INST] Answer ";
             if (m.getTokenizer() instanceof LlamaTokenizer tokenizer) {
                 long[] actual = tokenizer.encode(p);
+                System.out.println(Arrays.toString(actual));
+                //                        [29961, 25580, 29962, 35, 29911, 514, 35, 1004, 35, 29874, 35, 2212, 446, 29889, 35, 243, 162, 147, 180, 35, 29961, 29914, 25580, 29962, 35, 22550, 35]
                 long[] expected = new long[]{518, 25580, 29962, 24948, 592, 263, 2958, 446, 29889, 29871, 243, 162, 147, 180, 518, 29914, 25580,
                         29962, 673, 29871};
 

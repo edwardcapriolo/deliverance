@@ -68,32 +68,6 @@ public class CausalSelfAttention {
     public CausalSelfAttention(
             AbstractModel m,
             int layerIndex,
-            AbstractTensor queryAttnBias,
-            AbstractTensor keyAttnBias,
-            AbstractTensor valueAttnBias,
-            AbstractTensor queryAttnWeights,
-            AbstractTensor keyAttnWeights,
-            AbstractTensor valueAttnWeights,
-            AbstractTensor outputProjectionBias,
-            AbstractTensor outputProjectionWeights
-    ) {
-        this(
-                m,
-                layerIndex,
-                Optional.of(queryAttnBias),
-                Optional.of(keyAttnBias),
-                Optional.of(valueAttnBias),
-                queryAttnWeights,
-                keyAttnWeights,
-                valueAttnWeights,
-                Optional.of(outputProjectionBias),
-                outputProjectionWeights
-        );
-    }
-
-    public CausalSelfAttention(
-            AbstractModel m,
-            int layerIndex,
             Optional<AbstractTensor> queryAttnBias,
             Optional<AbstractTensor> keyAttnBias,
             Optional<AbstractTensor> valueAttnBias,

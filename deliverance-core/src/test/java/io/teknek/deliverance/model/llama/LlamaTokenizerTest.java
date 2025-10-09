@@ -9,7 +9,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class LlamaTokenizerTest {
 
-    LlamaTokenizer tokenizer = new LlamaTokenizer(Path.of("src/test/resources/tinylama_model_dir"));
+    LlamaTokenizer tokenizer = new LlamaTokenizer(Path.of(LlamaTokenizerTest.class.getResource("/tinylama_model_dir").getPath()));
+
 
     @Test
     void decodeAsciiChar(){
