@@ -7,11 +7,11 @@ import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -55,40 +55,9 @@ public class DirectPromptTest {
                         """;
                 assertEquals(expected, ctx.getPrompt());// it does not change the prompt to have tools
 
-                Response r = m.generate(UUID.randomUUID(), ctx, 0.0f, 256, (s1, f1) -> {});
-                //assertEquals("yo", r.responseText);
+                Response r = m.generate(UUID.randomUUID(), ctx, 0.0f, 256, Optional.of(42), (s1, f1) -> {});
+                System.out.println(r.responseText);
             }
-            /*
-            {
-                PromptSupport ps = m.promptSupport().get();
-                long start = System.currentTimeMillis();
-                ctx = ps.builder().addSystemMessage("You are a math expert.")
-                        .addUserMessage("What is the resul of 1 + 1?").build();
-
-
-                Response r = m.generate(UUID.randomUUID(), ctx, 0.0f, 256, (s1, f1) -> {});
-                System.out.println("It took " + (System.currentTimeMillis()-start));
-            }
-
-            {
-                PromptSupport ps = m.promptSupport().get();
-                long start = System.currentTimeMillis();
-                ctx = ps.builder().addSystemMessage("You are a math expert.")
-                        .addUserMessage("What is the resul of 1 + 1?").build();
-
-
-                Response r = m.generate(UUID.randomUUID(), ctx, 0.0f, 256, (s1, f1) -> {});
-                System.out.println("It took " + (System.currentTimeMillis()-start));
-            }*/
         }
-
-
-
-        // Generates a response to the prompt and prints it
-        // The api allows for streaming or non-streaming responses
-        // The response is generated with a temperature of 0.7 and a max token length of 256
-
-        //Generator.Response r = m.generate(UUID.randomUUID(), ctx, 0.0f, 256, (s, f) -> {});
-        //System.out.println(r.responseText);
     }
 }

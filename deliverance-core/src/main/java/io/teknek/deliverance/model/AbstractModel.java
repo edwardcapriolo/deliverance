@@ -7,7 +7,6 @@ import com.google.common.base.Preconditions;
 import com.google.common.primitives.Ints;
 
 import java.util.*;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
@@ -192,8 +191,9 @@ public abstract class AbstractModel implements Generator {
         return true;
     }
 
-    public Response generate(UUID sessionId, PromptContext promptContext, float temperature, int ntokens,
+    public Response generate(UUID sessionId, PromptContext promptContext, float temperature, int ntokens, Optional<Integer> seed,
                       BiConsumer<String, Float> onTokenWithTimings) {
+        Random r = seed.isEmpty() ? new Random(): new Random(seed.get());
         long[] encoded = tokenizer.encode(promptContext.getPrompt());
         if (encoded.length > 0 && encoded[0] == config.bosToken) {
             encoded = Arrays.copyOfRange(encoded, 1, encoded.length);
@@ -229,7 +229,7 @@ public abstract class AbstractModel implements Generator {
                 logger.warn("After batch forward size: {} shape: {}" , last.size(), last.shape());
                 promptBatchTime = System.currentTimeMillis() - start;
                 float batchMsPerToken = Math.round((((double) promptBatchTime) / (double) promptLength));
-                int next = sample(last.slice(last.shape().first() - 1), temperature, ThreadLocalRandom.current().nextFloat(), logits);
+                int next = sample(last.slice(last.shape().first() - 1), temperature, r.nextFloat(), logits);
                 float genMsPerToken = 0;
                 tokensGenerated = 0;
                 last.close();
@@ -245,7 +245,7 @@ public abstract class AbstractModel implements Generator {
                 for (int i = startPos + promptTokens.length; i < ntokens; i++) {
                     AbstractTensor output = forward(next, i, kvmem);
                     tokensGenerated++;
-                    next = sample(output, temperature, ThreadLocalRandom.current().nextFloat(), logits);
+                    next = sample(output, temperature, r.nextFloat(), logits);
                     if (logger.isTraceEnabled()) {
                         logger.trace("Sampled token {} with temperature {}", next, temperature);
                     }

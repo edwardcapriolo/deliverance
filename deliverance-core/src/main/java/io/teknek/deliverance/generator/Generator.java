@@ -3,6 +3,7 @@ package io.teknek.deliverance.generator;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 
 import java.io.Closeable;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.BiConsumer;
 
@@ -19,7 +20,7 @@ public interface Generator extends Closeable {
      * @return the response
      */
     //TODO should things like temp and ntokens be in the prompt context what ofthe other zillions of pararms
-    Response generate(UUID session, PromptContext promptContext, float temperature, int ntokens,
+    Response generate(UUID session, PromptContext promptContext, float temperature, int ntokens, Optional<Integer> seed,
             BiConsumer<String, Float> onTokenWithTimings
     );
 }
