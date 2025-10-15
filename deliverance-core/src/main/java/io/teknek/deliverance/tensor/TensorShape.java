@@ -27,7 +27,7 @@ public class TensorShape {
 
     private final int[] tshape;
     private final long capacity;
-    //todo this sparse column stuff clustters the code and I think it should be removed and added back
+
     private final Optional<Pair<Integer, Integer>> sparseColumnRange;
     private final Optional<Pair<Integer, Integer>> sparseRowRange;
     private final boolean isSparse;
@@ -136,6 +136,7 @@ public class TensorShape {
         return sparseRowOffset;
     }
 
+    //used only in q4 tenso
     public TensorShape scaleLastDim(float scale) {
         int[] copy = Arrays.copyOf(tshape, tshape.length);
         copy[copy.length - 1] *= scale;
@@ -144,6 +145,7 @@ public class TensorShape {
                 : of(copy);
     }
 
+    //used by split tensor in abstract tensor
     public TensorShape setDimValue(int dim, int value) {
         Preconditions.checkArgument(dim < tshape.length);
         int[] copy = Arrays.copyOf(tshape, tshape.length);

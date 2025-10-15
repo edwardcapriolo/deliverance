@@ -123,12 +123,11 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
                 for (int i = shape.dims() - 2; i > d; i--) { // factor scaling of each dim shape
                     offset *= shape.dim(i);
                 }
-
                 totalOffset += dims[d] * offset;
             }
         }
 
-        AbstractTensor r = this.make(totalOffset, (int) slicedShape.size(), slicedShape, cacheInnerSlice);
+        AbstractTensor<?,?> r = this.make(totalOffset, (int) slicedShape.size(), slicedShape, cacheInnerSlice);
         if (dims.length == 1 && sliceCache != null) {
             sliceCache[dims[0]] = r;
         }
@@ -140,15 +139,15 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
      * the range of in last dimension.
      */
     public AbstractTensor<V, T> sparsify(int offset, int length) {
-        if (shape.isSparse()) return this;
-
-        if (length == shape.last()) return this;
-
+        if (shape.isSparse()) {
+            return this;
+        }
+        if (length == shape.last()) {
+            return this;
+        }
         AbstractTensor<V, T> sparseT = this.make(shape.sparsifyColumns(offset, length));
         int originalLength = shape.last();
-
         int[] cursor = new int[shape.dims()];
-
         try {
             do {
                 cursor[cursor.length - 1] = offset;
@@ -196,17 +195,18 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
                 break;
             } else {
                 cursor[i] = 0;
-                if (i == 0) return false;
+                if (i == 0) {
+                    return false;
+                }
             }
         }
-
         return true;
     }
-
+/*
     public final int getStride() {
         return stride;
     }
-
+*/
     public final int getOffset(int... dims) {
         return shape.getOffset(dims);
     }
@@ -311,7 +311,8 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
             System.out.println(String.format("%s = %.5f", id, tmp));
         }
     }
+
     public DType getDType(){
-        return this.dType;
+        return dType;
     }
 }

@@ -7,7 +7,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 public class ConfigurableTensorProvider {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(TensorOperationsProvider.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ConfigurableTensorProvider.class);
     private final AtomicReference<TensorOperations> operations = new AtomicReference<>();
 
     public ConfigurableTensorProvider(){

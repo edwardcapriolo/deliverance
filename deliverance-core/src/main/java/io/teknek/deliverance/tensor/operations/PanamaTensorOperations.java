@@ -256,7 +256,7 @@ public final class PanamaTensorOperations implements TensorOperations {
 
                 }
 
-                c.set(acc0.reduceLanes(VectorOperators.ADD), i, j + 0 + rOffset);
+                c.set(acc0.reduceLanes(VectorOperators.ADD), i, j + rOffset);
                 c.set(acc1.reduceLanes(VectorOperators.ADD), i, j + 1 + rOffset);
                 // c.set(acc2.reduceLanes(VectorOperators.ADD), i, j + 2);
                 // c.set(acc3.reduceLanes(VectorOperators.ADD), i, j + 3);

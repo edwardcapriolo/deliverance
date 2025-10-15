@@ -24,14 +24,13 @@ import org.slf4j.LoggerFactory;
  */
 public final class FloatBufferTensor extends AbstractTensor<FloatVector, Float> {
     private static final Logger logger = LoggerFactory.getLogger(FloatBufferTensor.class);
-    private final FloatBuffer b;
+    private final FloatBuffer underlyingByteBuffer;
     private final String name;
     private final MemorySegment segment;
 
     public FloatBufferTensor(AbstractTensor ft) {
         this(ft.shape);
         Preconditions.checkArgument(ft.dType != DType.I32, "This should never happen, likely a bug");
-
         int[] cursor = new int[ft.shape.dims()];
         do {
             set(ft.get(cursor), cursor);
@@ -45,11 +44,11 @@ public final class FloatBufferTensor extends AbstractTensor<FloatVector, Float> 
     public FloatBufferTensor(TensorShape shape) {
         super(DType.F32, shape, true);
         this.name = "tmp";
-        this.b = UnsafeDirectByteBuffer.allocateAlignedByteBuffer(
+        this.underlyingByteBuffer = UnsafeDirectByteBuffer.allocateAlignedByteBuffer(
                 Ints.checkedCast(shape.size() * dType().size()),
                 UnsafeDirectByteBuffer.CACHE_LINE_SIZE
         ).asFloatBuffer();
-        this.segment = MemorySegment.ofBuffer(b);
+        this.segment = MemorySegment.ofBuffer(underlyingByteBuffer);
     }
 
     public FloatBufferTensor(FloatBuffer b, TensorShape shape, boolean cacheSlices) {
@@ -60,16 +59,16 @@ public final class FloatBufferTensor extends AbstractTensor<FloatVector, Float> 
         super(DType.F32, shape, cacheSlices);
         this.name = name;
         if (b.isDirect()) {
-            this.b = b;
+            this.underlyingByteBuffer = b;
         } else {
-            this.b = UnsafeDirectByteBuffer.allocateAlignedByteBuffer(
+            this.underlyingByteBuffer = UnsafeDirectByteBuffer.allocateAlignedByteBuffer(
                     Ints.checkedCast(size() * dType().size()),
                     UnsafeDirectByteBuffer.CACHE_LINE_SIZE
             ).asFloatBuffer();
-            this.b.duplicate().put(b);
+            this.underlyingByteBuffer.duplicate().put(b);
         }
 
-        this.segment = MemorySegment.ofBuffer(this.b);
+        this.segment = MemorySegment.ofBuffer(this.underlyingByteBuffer);
     }
 
     @Override
@@ -79,22 +78,22 @@ public final class FloatBufferTensor extends AbstractTensor<FloatVector, Float> 
 
     @Override
     protected AbstractTensor make(int offset, int length, TensorShape shape, boolean cacheSlices) {
-        return new FloatBufferTensor(name, b.slice(offset, length), shape, cacheSlices);
+        return new FloatBufferTensor(name, underlyingByteBuffer.slice(offset, length), shape, cacheSlices);
     }
 
     @Override
     public float get(int... dims) {
         Preconditions.checkArgument(dims.length <= shape.dims(), "Too many dimensions specified");
         Preconditions.checkArgument(dims.length == shape.dims(), "Must specify all dimensions");
-        return b.get(getOffset(dims));
+        return underlyingByteBuffer.get(getOffset(dims));
     }
 
     @Override
     public void set(float v, int... dims) {
         Preconditions.checkArgument(dims.length <= shape.dims(), "Too many dimensions specified for tensor");
         Preconditions.checkArgument(dims.length == shape.dims(), "Must specify all dimensions");
-        Preconditions.checkArgument(!b.isReadOnly(), "Can't modify a read only buffer");
-        b.put(getOffset(dims), v);
+        Preconditions.checkArgument(!underlyingByteBuffer.isReadOnly(), "Can't modify a read only buffer");
+        underlyingByteBuffer.put(getOffset(dims), v);
     }
 
     @Override
@@ -133,8 +132,8 @@ public final class FloatBufferTensor extends AbstractTensor<FloatVector, Float> 
 
     @Override
     public String toString() {
-        float[] sample = new float[DebugSupport.isDebug() ? b.remaining() : Math.min(10, b.remaining())];
-        b.duplicate().get(sample);
+        float[] sample = new float[DebugSupport.isDebug() ? underlyingByteBuffer.remaining() : Math.min(10, underlyingByteBuffer.remaining())];
+        underlyingByteBuffer.duplicate().get(sample);
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < sample.length; i++) {
             sb.append(String.format("%8.4f", sample[i]));

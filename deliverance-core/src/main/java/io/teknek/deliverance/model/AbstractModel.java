@@ -155,7 +155,7 @@ public abstract class AbstractModel implements Generator {
 
     protected abstract EmbedInput loadInputWeights();
     protected abstract SampleOutput loadOutputWeights();
-    protected abstract  TransformerBlock[] loadTransformerBlockWeights();
+    protected abstract TransformerBlock[] loadTransformerBlockWeights();
 
     @Override
     public void close() {
