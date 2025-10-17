@@ -69,8 +69,6 @@ public abstract class AbstractModel implements Generator {
     protected final Optional<DType> modelQType;
     protected EmbedInput embedInput;
     protected SampleOutput sampleOutput;
-    //protected ClassifyOutput classifyOutput;
-    //protected Optional<PoolingLayer> poolingLayer;
     protected TransformerBlock[] transformerBlocks;
     protected KvBufferCache kvBufferCache;
     protected final ConfigurableTensorProvider configurableTensorProvider;
@@ -149,8 +147,7 @@ public abstract class AbstractModel implements Generator {
         this.embedInput = inferenceType.isInput ? loadInputWeights() : null;
         this.transformerBlocks = inferenceType.isFwdPass ? loadTransformerBlockWeights() : null;
         this.sampleOutput = inferenceType.isOutput ? loadOutputWeights() : null;
-        //this.classifyOutput = inferenceType.isClassify ? loadClassifierWeights() : null;
-        //this.poolingLayer = inferenceType.isPooling ? Optional.ofNullable(loadPoolingWeights()) : Optional.empty();
+
     }
 
     protected abstract EmbedInput loadInputWeights();

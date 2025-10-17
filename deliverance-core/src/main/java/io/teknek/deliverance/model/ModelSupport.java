@@ -41,15 +41,15 @@ public class ModelSupport {
         }
         ModelType modelType = SafeTensorSupport.detectModel(configFile);
         try {
-            Config c = om.readValue(configFile, modelType.getConfigClass());
-            c.setWorkingDirectory(null);
+            Config config = om.readValue(configFile, modelType.getConfigClass());
+            config.setWorkingDirectory(null);
             Tokenizer tokenizer = modelType.getTokenizerClass().getConstructor(Path.class).newInstance(model.toPath());
             WeightLoader wl = new DefaultWeightLoader(model);
 
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
                     WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class, ConfigurableTensorProvider.class, MetricRegistry.class);
 
-            return cons.newInstance(AbstractModel.InferenceType.FULL_GENERATION, c, wl, tokenizer,
+            return cons.newInstance(AbstractModel.InferenceType.FULL_GENERATION, config, wl, tokenizer,
                     workingMemoryType, workingQuantizationType, Optional.empty(), configurableTensorProvider, metricRegistry);
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);
