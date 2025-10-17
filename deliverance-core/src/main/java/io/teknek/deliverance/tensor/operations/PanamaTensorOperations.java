@@ -2,7 +2,7 @@ package io.teknek.deliverance.tensor.operations;
 
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.DType;
-import io.teknek.deliverance.math.PhysicalCoreExecutor;
+import io.teknek.deliverance.math.PhysicalCoreTuningExecutor;
 import io.teknek.deliverance.tensor.*;
 import jdk.incubator.vector.*;
 import org.slf4j.Logger;
@@ -53,7 +53,7 @@ public final class PanamaTensorOperations implements TensorOperations {
     }
 
     public int parallelSplitSize() {
-        return PhysicalCoreExecutor.instance.get().getCoreCount();
+        return PhysicalCoreTuningExecutor.instance.get().getCoreCount();
     }
 
     /**

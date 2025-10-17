@@ -16,7 +16,7 @@ public class VectorMath {
     private static final Logger logger = LoggerFactory.getLogger(VectorMath.class);
 
     public static void pfor(int start, int end, IntConsumer action) {
-        PhysicalCoreExecutor.instance.get().execute(() -> IntStream.range(start, end).parallel().forEach(action));
+        PhysicalCoreTuningExecutor.instance.get().execute(() -> IntStream.range(start, end).parallel().forEach(action));
     }
 
     public static void pchunk(int offset, int length, BiIntConsumer action, int splitSize) {
@@ -32,7 +32,7 @@ public class VectorMath {
             int fchunkSize = chunkSize;
             int fremainder = remainder;
 
-            PhysicalCoreExecutor.instance.get()
+            PhysicalCoreTuningExecutor.instance.get()
                     .execute(
                             () -> IntStream.range(0, fsplits)
                                     .parallel()
