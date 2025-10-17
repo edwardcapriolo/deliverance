@@ -3,6 +3,7 @@ package io.teknek.deliverance.safetensors.prompt;
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.fetch.ModelFetcher;
+import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.ModelSupport;
@@ -24,8 +25,8 @@ public class DirectPromptTest {
         String modelOwner = "tjake";
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         File f = fetch.maybeDownload();
-        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(), new MetricRegistry())) {
-
+        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(),
+                new MetricRegistry())) {
             String prompt = "What is the best season to plant avocados?";
             PromptContext ctx;
             {
@@ -55,8 +56,11 @@ public class DirectPromptTest {
                         """;
                 assertEquals(expected, ctx.getPrompt());// it does not change the prompt to have tools
 
-                Response r = m.generate(UUID.randomUUID(), ctx, 0.0f, 256, Optional.of(42), (s1, f1) -> {});
-                System.out.println(r.responseText);
+                Response r = m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(42),(s1, f1) -> {});
+                /*
+                assertEquals("""
+                        The best thing to do is to look for the plant that best suits your needs and preferences. Avocados are a popular fruit that are grown in many regions around the world. Some of the best regions for avocado production include California, Mexico, and Peru.
+                        """, r.responseText);*/
             }
         }
     }

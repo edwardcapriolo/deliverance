@@ -18,7 +18,6 @@ public class Message {
         this.toolCallId = null;
     }
 
-
     public Message(ToolCall toolCall) {
         this.content = null;
         this.role = PromptRole.TOOL_CALL;
@@ -33,27 +32,20 @@ public class Message {
         this.toolCallId = toolResult.getToolCallId();
     }
 
-
-
     public Object getContent() {
         return content;
     }
 
-    // Jinja template expects a map for each message
     public Map toMap() {
         Map map = new HashMap();
         map.put("role", role.name().toLowerCase());
         map.put("content", content == null ? "" : content);
-
-
         if (toolCalls != null) {
             map.put("tool_calls", List.of(toolCalls.toMap()));
         }
-
         if (toolCallId != null) {
             map.put("tool_call_id", toolCallId);
         }
-
         return map;
     }
 
@@ -66,7 +58,6 @@ public class Message {
         if (toolCalls == null) {
             return null;
         }
-
         return List.of(toolCalls);
     }
 }

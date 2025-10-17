@@ -14,13 +14,11 @@ public interface Generator extends Closeable {
      *
      * @param session the session id
      * @param promptContext the prompt context
-     * @param temperature the temperature [0.0, 1.0]
-     * @param ntokens the number of tokens to generate
      * @param onTokenWithTimings a callback for each token generated
      * @return the response
      */
     //TODO should things like temp and ntokens be in the prompt context what ofthe other zillions of pararms
-    Response generate(UUID session, PromptContext promptContext, float temperature, int ntokens, Optional<Integer> seed,
+    Response generate(UUID session, PromptContext promptContext, GeneratorParameters generatorParameters,
             BiConsumer<String, Float> onTokenWithTimings
     );
 }

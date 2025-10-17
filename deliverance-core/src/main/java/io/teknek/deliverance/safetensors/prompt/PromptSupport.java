@@ -17,7 +17,7 @@ import static io.teknek.deliverance.fetch.HttpSupport.logger;
 public class PromptSupport {
 
     private final TokenizerModel tokenizerModel;
-    private Jinjava jinjava;
+    private final Jinjava jinjava;
 
     public PromptSupport(TokenizerModel tokenizerModel){
         this.tokenizerModel = tokenizerModel;
@@ -47,6 +47,7 @@ public class PromptSupport {
 
     public static void raiseException(String message) {
         logger.debug("Prompt template error: " + message);
+        throw new RuntimeException(message);
     }
 
     public Builder builder(){
@@ -124,30 +125,23 @@ public class PromptSupport {
             if (messages.isEmpty()) {
                 throw new IllegalArgumentException("No messages to generate prompt");
             }
-
             if (m.getPromptTemplates().isEmpty()) {
                 throw new UnsupportedOperationException("Prompt templates are not available for this model");
             }
-
             String template = m.getPromptTemplates()
                     .map(t -> t.get(type.name().toLowerCase()))
                     .orElseThrow(() -> new UnsupportedOperationException("Prompt template not available for type: " + type));
-
-            if (optionalTools.isPresent() && !optionalTools.get().isEmpty() && !m.hasToolSupport()) logger.warn(
-                    "This model does not support tools, but tools are specified"
-            );
-
+            if (optionalTools.isPresent() && !optionalTools.get().isEmpty() && !m.hasToolSupport()) {
+                logger.warn(
+                        "This model does not support tools, but tools are specified"
+                );
+            }
             String preamble = "";
             if (stripPreamble) {
                 Map<String, Object> args = new HashMap<>();
-                args.putAll(Map.of("messages", Map.of(), "add_generation_prompt", false, "eos_token", m.getEosToken(), "bos_token", "")); // We
-                // add
-                // the
-                // BOS
-                // ourselves
-                //optionalTools.ifPresent(tools -> args.put("tools", tools));
-
-                RenderResult r = this.jinJava.renderForResult(template, args);
+                args.putAll(Map.of("messages", Map.of(), "add_generation_prompt", false, "eos_token",
+                        m.getEosToken(), "bos_token", ""));
+                RenderResult r = jinJava.renderForResult(template, args);
                 preamble = r.getOutput();
             }
 
@@ -163,14 +157,13 @@ public class PromptSupport {
                             "bos_token",
                             ""
                     )
-            ); // We add the BOS ourselves
-
+            );
             optionalTools.ifPresent(tools -> args.put("tools", tools));
-
-            RenderResult r = this.jinJava.renderForResult(template, args);
-
-            if (r.hasErrors()) logger.debug("Prompt template errors: " + r.getErrors());
-
+            RenderResult r = jinJava.renderForResult(template, args);
+            if (r.hasErrors()) {
+                logger.debug("Prompt template errors: " + r.getErrors());
+                throw new RuntimeException("Prompt template errors: " + r.getErrors());
+            }
             String output = r.getOutput();
             return new PromptContext(output.substring(preamble.length()), optionalTools);
         }

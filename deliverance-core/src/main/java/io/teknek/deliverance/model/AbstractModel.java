@@ -188,14 +188,17 @@ public abstract class AbstractModel implements Generator {
         return true;
     }
 
-    public Response generate(UUID sessionId, PromptContext promptContext, float temperature, int ntokens, Optional<Integer> seed,
+    public Response generate(UUID sessionId, PromptContext promptContext, GeneratorParameters generatorParameters,
                       BiConsumer<String, Float> onTokenWithTimings) {
-        Random r = seed.isEmpty() ? new Random(): new Random(seed.get());
+        Random r = generatorParameters.seed.isEmpty() ? new Random(): new Random(generatorParameters.seed.get());
         long[] encoded = tokenizer.encode(promptContext.getPrompt());
         if (encoded.length > 0 && encoded[0] == config.bosToken) {
             encoded = Arrays.copyOfRange(encoded, 1, encoded.length);
         }
-        Preconditions.checkArgument(encoded.length < config.contextLength && encoded.length < ntokens, "Prompt exceeds max tokens");
+        int ntokens = generatorParameters.ntokens.orElse(256);
+        float temperature = generatorParameters.temperature.orElse(0.0f);
+        Preconditions.checkArgument(encoded.length < config.contextLength
+                && encoded.length < ntokens, "Prompt exceeds max tokens");
         try (KvBufferCache.KvBuffer kvmem = kvBufferCache.getKvBuffer(sessionId)) { // k and v for context window
             int startPos = kvmem.getCurrentContextPosition(); // Number of tokens in the buffer
             if (ntokens > config.contextLength) {
