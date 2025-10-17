@@ -15,7 +15,6 @@ public class Normalizer {
 
     @JsonCreator
     public Normalizer(@JsonProperty("type") String type, @JsonProperty("normalizers") List<NormalizerItem> normalizerItems) {
-
         this.type = type;
         this.normalizerItems = normalizerItems == null ? Collections.emptyList() : ImmutableList.copyOf(normalizerItems);
     }

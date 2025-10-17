@@ -6,6 +6,7 @@ import com.google.common.collect.ImmutableBiMap;
 import com.google.common.io.Files;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.VectorMath;
+import io.teknek.deliverance.math.VectorMathUtils;
 import io.teknek.deliverance.model.DistributedContext;
 import io.teknek.deliverance.tensor.TensorCache;
 
@@ -257,7 +258,7 @@ public class Config {
         this.ropeFreqs = ropeFreqsTheta == null
                 ? Optional.empty()
                 : Optional.of(
-                VectorMath.precomputeFreqsCis(headSize, contextLength, ropeFreqsTheta, ropeScalingFactor == null ? 1.0 : ropeScalingFactor)
+                VectorMathUtils.precomputeFreqsCis(headSize, contextLength, ropeFreqsTheta, ropeScalingFactor == null ? 1.0 : ropeScalingFactor)
         );
 
         this.classifcationLabels = classifcationLabels == null ? Optional.empty() : Optional.of(ImmutableBiMap.copyOf(classifcationLabels));

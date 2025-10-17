@@ -2,6 +2,8 @@ package io.teknek.deliverance.math;
 
 
 import com.google.common.base.Suppliers;
+import net.jafama.FastMath;
+
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
