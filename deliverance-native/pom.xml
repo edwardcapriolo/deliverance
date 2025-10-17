@@ -30,17 +30,60 @@
   </properties>
 
   <dependencies>
+
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-simple</artifactId>
+      <version>${slf-simple.version}</version>
+      <scope>test</scope>
+    </dependency>
+
     <dependency>
       <groupId>io.teknek</groupId>
       <artifactId>deliverance-core</artifactId>
       <version>${project.version}</version>
       <scope>compile</scope>
     </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-api</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
     <pluginManagement>
       <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <configuration>
+            <release>24</release>
+            <jdkToolchain>
+              <version>24</version>
+            </jdkToolchain>
+            <compilerArgs>
+              <arg>--add-modules</arg>
+              <arg>jdk.incubator.vector</arg>
+            </compilerArgs>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <version>${surefire.version}</version>
+          <configuration>
+            <argLine>
+              --add-modules jdk.incubator.vector
+              -Djdk.attach.allowAttachSelf=true
+              --enable-native-access=ALL-UNNAMED
+              -Djava.library.path=${build.directory}/native-lib-only
+            </argLine>
+          </configuration>
+        </plugin>
+
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-antrun-plugin</artifactId>

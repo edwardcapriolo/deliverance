@@ -64,7 +64,7 @@ public class NativeSimdTensorOperations implements TensorOperations {
     }
 
     public int parallelSplitSize() {
-        return 128;
+        return 1;
     }
 
     @Override
@@ -79,7 +79,6 @@ public class NativeSimdTensorOperations implements TensorOperations {
         int bRowOffset,
         int rowChunkSize
     ) {
-
         int M = at.shape().dim(0);
         int N = rowChunkSize; // b.shape().dim(0);
         int K = columnLength; // a.shape().dim(1);
