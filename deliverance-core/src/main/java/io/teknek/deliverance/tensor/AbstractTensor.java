@@ -202,11 +202,11 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
         }
         return true;
     }
-/*
+
     public final int getStride() {
         return stride;
     }
-*/
+
     public final int getOffset(int... dims) {
         return shape.getOffset(dims);
     }

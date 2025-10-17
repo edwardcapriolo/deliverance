@@ -41,19 +41,16 @@
   <build>
     <pluginManagement>
       <plugins>
-
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-antrun-plugin</artifactId>
           <version>3.1.0</version>
         </plugin>
-
       </plugins>
     </pluginManagement>
   <plugins>
     <plugin>
       <artifactId>maven-jar-plugin</artifactId>
-      <!-- All other configuration information is in the parent pom -->
       <executions>
         <execution>
           <phase>package</phase>
@@ -63,9 +60,11 @@
           <configuration>
             <classifier>${jni.classifier}</classifier>
             <archive>
+              <!--
               <manifestEntries>
                 <Multi-Release>true</Multi-Release>
               </manifestEntries>
+              -->
             </archive>
           </configuration>
         </execution>
@@ -76,10 +75,12 @@
             <goal>jar</goal>
           </goals>
           <configuration>
+            <!--
             <excludes>
               <exclude>com/github/tjake/jlama/tensor/operations/util/MemorySegment.class</exclude>
               <exclude>com/github/tjake/jlama/tensor/operations/cnative/*.*</exclude>
             </excludes>
+            -->
           </configuration>
         </execution>
       </executions>
@@ -491,6 +492,7 @@
       </plugins>
     </build>
   </profile>
+  <!--
   <profile>
       <id>jdk21-native</id>
       <activation>
@@ -514,8 +516,8 @@
                                 <release>21</release>
                                 <source>21</source>
                                 <compilerArgs>
-                                    <arg>--add-modules=jdk.incubator.vector</arg>
-                                    <arg>--enable-preview</arg>
+                                    <arg>- -add-modules=jdk.incubator.vector</arg>
+                                    <arg>- -enable-preview</arg>
                                 </compilerArgs>
                                 <compileSourceRoots>
                                   <compileSourceRoot>${project.basedir}/src/main/java21</compileSourceRoot>
@@ -527,7 +529,8 @@
               </plugin>
           </plugins>
       </build>
-  </profile>
+  </profile> -->
+  <!--
   <profile>
     <id>multi-jdk-native</id>
     <activation>
@@ -540,7 +543,7 @@
         <plugin>
           <artifactId>maven-compiler-plugin</artifactId>
           <version>${compiler-plugin.version}</version>
-          <!-- Multi-JDK compilation for multi-release JAR -->
+
           <executions>
             <execution>
               <id>compile-jdk20</id>
@@ -551,8 +554,8 @@
               <configuration>
                 <release>20</release>
                 <compilerArgs>
-                  <arg>--add-modules=jdk.incubator.vector</arg>
-                  <arg>--enable-preview</arg>
+                  <arg>- -add-modules=jdk.incubator.vector</arg>
+                  <arg>- -enable-preview</arg>
                 </compilerArgs>
                 <jdkToolchain>
                   <version>20</version>
@@ -572,8 +575,8 @@
               <configuration>
                 <release>21</release>
                 <compilerArgs>
-                  <arg>--add-modules=jdk.incubator.vector</arg>
-                  <arg>--enable-preview</arg>
+                  <arg>- -add-modules=jdk.incubator.vector</arg>
+                  <arg>- -enable-preview</arg>
                 </compilerArgs>
                 <jdkToolchain>
                   <version>21</version>
@@ -593,8 +596,8 @@
               <configuration>
                 <release>22</release>
                 <compilerArgs>
-                  <arg>--add-modules=jdk.incubator.vector</arg>
-                  <arg>--enable-preview</arg>
+                  <arg>- -add-modules=jdk.incubator.vector</arg>
+                  <arg>- -enable-preview</arg>
                 </compilerArgs>
                 <jdkToolchain>
                   <version>22</version>
@@ -610,5 +613,6 @@
       </plugins>
     </build>
   </profile>
+  -->
 </profiles>
 </project>
