@@ -111,7 +111,7 @@ public class CausalSelfAttention {
     ) {
         Preconditions.checkArgument(input.dims() == 2 && input.shape().last() == c.embeddingLength);
         int batchSize = input.shape().first();
-
+        int splitSize = TensorOperationsProvider.get().parallelSplitSize();
         try (
                 AbstractTensor queryBatch = m.makeDenseTensor(batchSize, attentionLength);
                 AbstractTensor tmpKeyBatch = m.makeDenseTensor(batchSize, c.kvLength);
@@ -120,16 +120,17 @@ public class CausalSelfAttention {
         ) {
 
             if (c.isGQA) {
+
                 VectorMath.pchunk(dctx.attentionSegmentStart, dctx.attentionSegmentLength, (chunkStart, chunkLength) -> {
                     TensorOperationsProvider.get()
                             .dotProductChunk(queryBatch, input, queryAttnWeights, 0, c.embeddingLength, chunkStart, chunkLength);
-                });
+                }, splitSize);
                 VectorMath.pchunk(dctx.kvSegmentStart, dctx.kvSegmentLength, (chunkStart, chunkLength) -> {
                     TensorOperationsProvider.get()
                             .dotProductChunk(tmpKeyBatch, input, keyAttnWeights, 0, c.embeddingLength, chunkStart, chunkLength);
                     TensorOperationsProvider.get()
                             .dotProductChunk(tmpValBatch, input, valueAttnWeights, 0, c.embeddingLength, chunkStart, chunkLength);
-                });
+                }, splitSize);
             } else {
                 qkvResults[0] = queryBatch;
                 qkvResults[1] = tmpKeyBatch;
@@ -139,7 +140,7 @@ public class CausalSelfAttention {
                 VectorMath.pchunk(dctx.attentionSegmentStart, dctx.attentionSegmentLength, (chunkStart, chunkLength) -> {
                     TensorOperationsProvider.get()
                             .dotProductBatchChunk(qkvResults, input, qkvWeights, 0, c.embeddingLength, chunkStart, chunkLength);
-                });
+                }, splitSize);
             }
 
             queryAttnBias.ifPresent(
@@ -319,6 +320,7 @@ public class CausalSelfAttention {
 
             debug("after_attention", valueBatch, layerIndex);
 
+
             // matmul the projection and sum into input
             // input += c_proj_weight @ ybuf + c_proj_bias
             AbstractTensor result = m.makeDenseTensor(batchSize, c.embeddingLength);
@@ -334,7 +336,7 @@ public class CausalSelfAttention {
                                     chunkStart,
                                     chunkSize
                             );
-                });
+                }, splitSize);
                 tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(result)));
                 outputProjectionBias.ifPresent(bias -> TensorOperationsProvider.get().accumulate(result, bias, 0, c.embeddingLength));
             }

@@ -284,7 +284,7 @@ public abstract class AbstractModel implements Generator {
             VectorMath.pchunk(0, config.vocabularySize, (chunkStart, chunkSize) -> {
                 configurableTensorProvider.get()
                         .dotProductChunk(logits, embedding, sampleOutput.getOutputLogitsWeights(), 0, config.embeddingLength, chunkStart, chunkSize);
-            });
+            }, configurableTensorProvider.get().parallelSplitSize());
 
             if (config.logitMultiplier != null) {
                 configurableTensorProvider.get().scale(1.0f / config.logitMultiplier, logits, 0, config.vocabularySize);

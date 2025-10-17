@@ -7,7 +7,6 @@ import java.util.stream.IntStream;
 
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.operations.BiIntConsumer;
-import io.teknek.deliverance.tensor.operations.TensorOperationsProvider;
 import net.jafama.FastMath;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,10 +17,6 @@ public class VectorMath {
 
     public static void pfor(int start, int end, IntConsumer action) {
         PhysicalCoreExecutor.instance.get().execute(() -> IntStream.range(start, end).parallel().forEach(action));
-    }
-
-    public static void pchunk(int offset, int length, BiIntConsumer action) {
-        pchunk(offset, length, action, TensorOperationsProvider.get().parallelSplitSize());
     }
 
     public static void pchunk(int offset, int length, BiIntConsumer action, int splitSize) {

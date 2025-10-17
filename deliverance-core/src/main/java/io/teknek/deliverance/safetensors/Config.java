@@ -5,7 +5,7 @@ import com.google.common.collect.BiMap;
 import com.google.common.collect.ImmutableBiMap;
 import com.google.common.io.Files;
 import io.teknek.deliverance.math.ActivationFunction;
-import io.teknek.deliverance.math.VectorMath;
+
 import io.teknek.deliverance.math.VectorMathUtils;
 import io.teknek.deliverance.model.DistributedContext;
 import io.teknek.deliverance.tensor.TensorCache;
