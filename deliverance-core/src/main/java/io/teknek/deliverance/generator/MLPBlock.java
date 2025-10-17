@@ -1,8 +1,5 @@
 package io.teknek.deliverance.generator;
 
-
-
-
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.model.AbstractModel;

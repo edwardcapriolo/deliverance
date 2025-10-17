@@ -7,6 +7,7 @@
   <modelVersion>4.0.0</modelVersion>
   <artifactId>skeches</artifactId>
   <properties>
+
     <maven.compiler.source>24</maven.compiler.source>
     <maven.compiler.target>24</maven.compiler.target>
     <maven.compiler.release>24</maven.compiler.release>

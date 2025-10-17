@@ -10,7 +10,7 @@
         <junit.version>5.11.4</junit.version>
         <owasp.version>12.1.0</owasp.version>
         <serenity.base.version>4.2.13</serenity.base.version>
-
+        <osmaven.version>1.7.1</osmaven.version>
         <serenity.plugin.version>${serenity.base.version}</serenity.plugin.version>
         <maven.compiler.source>24</maven.compiler.source>
         <maven.compiler.target>24</maven.compiler.target>
@@ -21,10 +21,17 @@
 
     <modules>
         <module>deliverance-core</module>
-        <!--<module>deliverance-native</module>-->
+        <module>deliverance-native</module>
         <module>sketches</module>
     </modules>
     <build>
+        <extensions>
+            <extension>
+                <groupId>kr.motd.maven</groupId>
+                <artifactId>os-maven-plugin</artifactId>
+                <version>${osmaven.version}</version>
+            </extension>
+        </extensions>
         <plugins>
             <plugin>
                 <groupId>org.owasp</groupId>
