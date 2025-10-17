@@ -16,42 +16,31 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class NativeSimdTensorOperations implements TensorOperations {
-    private static final Logger logger = LoggerFactory.getLogger(NativeSimdTensorOperations.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(NativeSimdTensorOperations.class);
 
     static {
         if (!JarSupport.maybeLoadLibrary("deliverance")) System.loadLibrary("deliverance");
     }
 
-    public static final int HAS_F16C = NativeSimd.HAS_F16C();
-    public static final int HAS_AVX2 = NativeSimd.HAS_AVX2();
+    private final int flags;
+    private final TensorOperations delegate;
+    private final int parallelSplitSize;
 
-    private static final TensorOperations delegate;
-
-    static {
-        TensorOperations tmp;
-        try {
-            tmp = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE);
-        } catch (Throwable t) {
-            tmp = new NaiveTensorOperations();
-        }
-        delegate = tmp;
+    public NativeSimdTensorOperations(TensorOperations delegate) {
+      this(delegate, 128);
     }
 
-    final int flags;
-
-    public NativeSimdTensorOperations() {
+    public NativeSimdTensorOperations(TensorOperations delegate, int parallelSplitSize) {
+        this.delegate = delegate;
+        this.parallelSplitSize = parallelSplitSize;
         int f = 0;
-
-        if (RuntimeSupport.isLinux()) f |= HAS_F16C;
-
-        if (MachineSpec.VECTOR_TYPE == MachineSpec.Type.AVX_512) f |= HAS_AVX2;
-
+        if (RuntimeSupport.isLinux()) {
+            f |= NativeSimd.HAS_F16C();
+        }
+        if (MachineSpec.VECTOR_TYPE == MachineSpec.Type.AVX_512) {
+            f |= NativeSimd.HAS_AVX2();
+        }
         this.flags = f;
-        checkLib();
-    }
-
-    NativeSimdTensorOperations(int flags) {
-        this.flags = flags;
     }
 
     @Override
@@ -59,12 +48,8 @@ public class NativeSimdTensorOperations implements TensorOperations {
         return "Native SIMD Operations";
     }
 
-    private void checkLib() {
-        // Check if the native library is loaded
-    }
-
     public int parallelSplitSize() {
-        return 1;
+        return this.parallelSplitSize;
     }
 
     @Override

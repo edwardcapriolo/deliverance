@@ -13,10 +13,7 @@ import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.Q4ByteBufferTensor;
 import io.teknek.deliverance.tensor.Q8ByteBufferTensor;
-import io.teknek.deliverance.tensor.operations.MachineSpec;
-import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
-import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
-import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensor.operations.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,12 +34,10 @@ public class NativeGPUTensorOperations implements TensorOperations {
     private static final int MAX_SCRATCH_SIZE = 1 << 24;
 
     static {
-
-        /*
         if (RuntimeSupport.isWin()) {
             if (!JarSupport.maybeLoadLibrary("dxcompiler")) System.loadLibrary("dxcompiler");
             if (!JarSupport.maybeLoadLibrary("dxil")) System.loadLibrary("dxil");
-        }*/
+        }
 
         if (!JarSupport.maybeLoadLibrary("webgpu_dawn")) System.loadLibrary("webgpu_dawn");
         if (!JarSupport.maybeLoadLibrary("deliverancegpu")) System.loadLibrary("deliverancegpu");
@@ -67,7 +62,7 @@ public class NativeGPUTensorOperations implements TensorOperations {
     static {
         TensorOperations tmp;
         try {
-            tmp = new NativeSimdTensorOperations();
+            tmp = new NativeSimdTensorOperations( new ConfigurableTensorProvider().get());
         } catch (Throwable t) {
             logger.warn("Native SIMD operations not available. Consider adding 'com.github.tjake:jlama-native' to the classpath");
             try {

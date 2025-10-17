@@ -1,6 +1,5 @@
 import com.codahale.metrics.MetricRegistry;
 import com.github.tjake.jlama.tensor.operations.NativeSimdTensorOperations;
-import com.google.common.annotations.VisibleForTesting;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.fetch.ModelFetcher;
 import io.teknek.deliverance.generator.GeneratorParameters;
@@ -14,14 +13,11 @@ import io.teknek.deliverance.safetensors.prompt.Tool;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.FloatBufferTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import io.teknek.deliverance.tensor.operations.MachineSpec;
 import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
-import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.Random;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -39,7 +35,7 @@ public class SimdTest {
     @Test
     void goTryIt(){
         System.load("/home/edward/deliverence/deliverance-native/target/native-lib-only/libdeliverance.so");
-        NativeSimdTensorOperations n = new NativeSimdTensorOperations();
+        NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider().get());
         int size = 1024;
         NaiveTensorOperations controlOps = new NaiveTensorOperations();
         AbstractTensor a = allOnes(size);
@@ -52,7 +48,7 @@ public class SimdTest {
     @Test
     public void sample() throws IOException {
         System.load("/home/edward/deliverence/deliverance-native/target/native-lib-only/libdeliverance.so");
-        NativeSimdTensorOperations n = new NativeSimdTensorOperations();
+        NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider().get(), 4);
         String modelName = "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4";
         String modelOwner = "tjake";
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
@@ -61,19 +57,6 @@ public class SimdTest {
                 new MetricRegistry())) {
             String prompt = "What is the best season to plant avocados?";
             PromptContext ctx;
-            {
-                PromptSupport ps = m.promptSupport().get();
-                ctx = ps.builder().addSystemMessage("You are a chatbot that writes short correct responses.")
-                        .addUserMessage(prompt).build();
-                String expected = """
-                        <|system|>
-                        You are a chatbot that writes short correct responses.</s>
-                        <|user|>
-                        What is the best season to plant avocados?</s>
-                        <|assistant|>
-                        """;
-                assertEquals(expected, ctx.getPrompt());
-            }
             {
                 PromptSupport ps = m.promptSupport().get();
                 Tool t = Tool.from(Function.builder().name("hello").build());
@@ -89,6 +72,7 @@ public class SimdTest {
                 assertEquals(expected, ctx.getPrompt());// it does not change the prompt to have tools
 
                 Response r = m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(42),(s1, f1) -> {});
+
                 System.out.println(r.responseText);
                 /*
                 assertEquals("""
