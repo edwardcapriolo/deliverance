@@ -1,6 +1,5 @@
 package io.teknek.deliverance.math;
 
-
 import com.google.common.base.Preconditions;
 import java.util.function.IntConsumer;
 import java.util.stream.IntStream;

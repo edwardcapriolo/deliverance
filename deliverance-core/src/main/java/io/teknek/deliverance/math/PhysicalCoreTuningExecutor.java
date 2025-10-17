@@ -1,6 +1,5 @@
 package io.teknek.deliverance.math;
 
-
 import com.google.common.base.Suppliers;
 
 import java.util.concurrent.ForkJoinPool;
@@ -28,7 +27,7 @@ public class PhysicalCoreTuningExecutor {
             throw new IllegalArgumentException("cores must be > 0 ");
         }
         if (cores > Runtime.getRuntime().availableProcessors()) {
-            throw new IllegalArgumentException(" must be less then " + available);
+            throw new IllegalArgumentException("cores must be less than or equal to " + available);
         }
         this.pool = new ForkJoinPool(cores, ForkJoinPool.defaultForkJoinWorkerThreadFactory, null, true);
     }

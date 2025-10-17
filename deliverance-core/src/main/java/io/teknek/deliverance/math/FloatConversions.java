@@ -2,7 +2,7 @@ package io.teknek.deliverance.math;
 
 public class FloatConversions {
 
-    static short bFloat16NaN = 0x7f81;
+    public static final short bFloat16NaN = 0x7f81;
 
     /**
      * Convert this BFloat16 value to the nearest Float.
