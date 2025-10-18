@@ -15,8 +15,6 @@ import io.teknek.deliverance.tensor.FloatBufferTensor;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
-import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
-import io.teknek.deliverance.tensor.operations.TensorOperations;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -76,7 +74,7 @@ public class SimdTest {
                         """;
                 assertEquals(expected, ctx.getPrompt());// it does not change the prompt to have tools
 
-                Response r = m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(42),(s1, f1) -> {});
+                Response r = m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(42), (s1, f1) -> {});
 
                 System.out.println(r.responseText);
                 /*

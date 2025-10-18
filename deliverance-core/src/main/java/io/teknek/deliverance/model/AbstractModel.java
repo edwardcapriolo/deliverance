@@ -384,7 +384,7 @@ public abstract class AbstractModel implements Generator {
 
     /** This is a hook method that does nothing here but can be overridden by subclasses */
     public AbstractTensor maybeQuantize(AbstractTensor t) {
-        AbstractTensor t2 = tensorCache.get(t.dType(), t.shape());
+        AbstractTensor t2 = tensorCache.getDirty(t.dType(), t.shape());
         t2.copyFrom(t, 0, 0, Ints.checkedCast(t.size()));
         return t2;
     }

@@ -68,7 +68,7 @@ public class LlamaModel extends AbstractModel {
                 } else {
                     AbstractTensor at = embedTokenWeights.slice(true, inputToken);
                     //AbstractTensor embedding = at.copyShape();
-                    AbstractTensor embedding = this.parent.getTensorCache().get(at.dType(), at.shape());
+                    AbstractTensor embedding = parent.getTensorCache().getDirty(at.dType(), at.shape());
                     embedding.copyFrom(at, 0, 0, config.embeddingLength);
                     return embedding;
                 }
