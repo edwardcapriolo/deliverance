@@ -12,6 +12,8 @@ import org.jctools.queues.MpmcUnboundedXaddArrayQueue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static io.teknek.deliverance.DType.F32;
+
 /**
  * In LLMs a lot of buffers are used for inference.  Rather than allocating each one or using a fixed pool
  * this TensorCache allows a limited number of different shaped buffers to be reused across threads
@@ -41,22 +43,8 @@ public class TensorCache {
         this.availableByShape = Maps.newConcurrentMap();
         this.metricRegistry = metricRegistry;
     }
-
-    /**
-     *
-     * @return returns a tensor of the given type and shape, if the cache was full
-     * the ownerCache will be null.
-     */
-    public AbstractTensor get(DType dType, TensorShape shape) {
-        MpmcUnboundedXaddArrayQueue<AbstractTensor> availableQueue = availableByShape.computeIfAbsent(
-                new ShapeKey(dType, shape),
-                queueFactory
-        );
-        AbstractTensor t = availableQueue.poll();
-        if (t != null) {
-            return t;
-        }
-        t = switch (dType) {
+    private AbstractTensor internalGet(DType dType, TensorShape shape){
+        AbstractTensor t = switch (dType) {
             case F32 -> new FloatBufferTensor(shape);
             case F16 -> new Float16BufferTensor(shape);
             case BF16 -> new BFloat16BufferTensor(shape);
@@ -73,9 +61,41 @@ public class TensorCache {
         return t;
     }
 
-    /** calls tensor.clear on the given tensor, then presents it to be used by the cache */
+    /**
+     * @return a tensor of a specific shape but possibly reused so it is up to the user to clear it out
+     */
+    public AbstractTensor<?,?> getDirty(DType dType, TensorShape shape){
+        MpmcUnboundedXaddArrayQueue<AbstractTensor> availableQueue = availableByShape.computeIfAbsent(
+                new ShapeKey(dType, shape),
+                queueFactory
+        );
+        AbstractTensor<?,?> t = availableQueue.poll();
+        if (t != null) {
+            return t;
+        }
+        return internalGet(dType, shape);
+    }
+    /**
+     *
+     * @return returns a tensor of the given type and shape, if the cache was full
+     * the ownerCache will be null.
+     */
+    public AbstractTensor get(DType dType, TensorShape shape) {
+        MpmcUnboundedXaddArrayQueue<AbstractTensor> availableQueue = availableByShape.computeIfAbsent(
+                new ShapeKey(dType, shape),
+                queueFactory
+        );
+        AbstractTensor t = availableQueue.poll();
+        if (t != null) {
+            t.clear();
+            return t;
+        }
+        return internalGet(dType, shape);
+    }
+
+    /** give the tensor back to the cache from this point on it may be re-used. */
     void release(AbstractTensor b) {
-        b.clear();
+        //b.clear();
         MpmcUnboundedXaddArrayQueue<AbstractTensor> availableQueue = availableByShape.computeIfAbsent(
                 new ShapeKey(b.dType(), b.shape()),
                 queueFactory
