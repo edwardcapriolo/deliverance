@@ -38,6 +38,7 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
     private final int stride;
     private volatile TensorCache originCache = null;
 
+
     protected AbstractTensor(DType dType, TensorShape shape, boolean cacheSlices) {
         Preconditions.checkArgument(shape != null && shape.dims() > 0);
         this.uid = UUID.randomUUID().toString();
@@ -47,6 +48,7 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
         this.stride = shape.first() > 1 && dims() == 2 ? getOffset(shape.sparseRowOffset() + 1, shape.sparseColumnOffset()) : 0;
     }
 
+    /*
     public static AbstractTensor make(DType dType, TensorShape shape) {
         return switch (dType) {
             case F32 -> new FloatBufferTensor(shape);
@@ -54,7 +56,7 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
             case I8 -> new Q8ByteBufferTensor(shape);
             default -> throw new RuntimeException("Unsupported tensor type: " + dType);
         };
-    }
+    }*/
 
     public String getUid() {
         return uid;
@@ -70,10 +72,10 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
     /** Create a new tensor with the given shape of the same Tensor implementation, including offsets to underlying heap */
     protected abstract AbstractTensor make(int heapOffset, int heapLength, TensorShape shape, boolean cacheSlices);
 
-    /** Create a new tensor with the same shape and the same Tensor implementation */
+/*
     public AbstractTensor copyShape() {
-        return TensorCache.instance.get(dType, shape);
-    }
+        return allocatingCache.get(dType, shape);
+    }*/
 
     /** Number of dimensions */
     public final int dims() {

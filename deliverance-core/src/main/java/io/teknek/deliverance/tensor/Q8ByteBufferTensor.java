@@ -87,10 +87,8 @@ public class Q8ByteBufferTensor extends AbstractTensor<ByteVector, Byte> {
         Preconditions.checkArgument(this.size() % BLOCK_SIZE == 0, "Tensor must be a multiple of BLOCK_SIZE");
         this.blockF = new FloatBufferTensor(makeBlockShape(shape));
         this.name = "tmp";
-
         this.b = UnsafeDirectByteBuffer.allocateAlignedByteBuffer(Ints.checkedCast(size()), UnsafeDirectByteBuffer.CACHE_LINE_SIZE)
                 .order(ByteOrder.LITTLE_ENDIAN);
-
         this.segment = MemorySegment.ofBuffer(b);
     }
 

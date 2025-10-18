@@ -73,10 +73,11 @@ public abstract class AbstractModel implements Generator {
     protected KvBufferCache kvBufferCache;
     protected final ConfigurableTensorProvider configurableTensorProvider;
     protected final MetricRegistry metricRegistry;
+    protected final TensorCache tensorCache;
 
     protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
                             DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider provider,
-                            MetricRegistry metricRegistry) {
+                            MetricRegistry metricRegistry, TensorCache tensorCache) {
         this.inferenceType = inferenceType;
         this.config = c;
         this.weights = w;
@@ -88,6 +89,7 @@ public abstract class AbstractModel implements Generator {
         this.kvBufferCache = new KvBufferCache(this);
         this.configurableTensorProvider = provider;
         this.metricRegistry = metricRegistry;
+        this.tensorCache = tensorCache;
 
         if (workingMemoryQType == null) {
             workingMemoryQType = configurableTensorProvider.get().preferredWorkingQuantizedType();
@@ -165,15 +167,15 @@ public abstract class AbstractModel implements Generator {
 
     public AbstractTensor makeTensor(int... shape) {
         TensorShape s = TensorShape.of(shape);
-        return config.tensorCache.get(workingDType, s);
+        return tensorCache.get(workingDType, s);
     }
 
     public AbstractTensor makeDenseTensor(int... shape) {
-        return config.tensorCache.get(workingDType, TensorShape.of(shape));
+        return tensorCache.get(workingDType, TensorShape.of(shape));
     }
 
     public AbstractTensor makeDenseTensor(TensorShape s) {
-        return config.tensorCache.get(workingDType, s);
+        return tensorCache.get(workingDType, s);
     }
 
     public DType getWorkingDType() {
@@ -382,12 +384,16 @@ public abstract class AbstractModel implements Generator {
 
     /** This is a hook method that does nothing here but can be overridden by subclasses */
     public AbstractTensor maybeQuantize(AbstractTensor t) {
-        AbstractTensor t2 = config.tensorCache.get(t.dType(), t.shape());
+        AbstractTensor t2 = tensorCache.get(t.dType(), t.shape());
         t2.copyFrom(t, 0, 0, Ints.checkedCast(t.size()));
         return t2;
     }
 
     public Tokenizer getTokenizer(){
         return this.tokenizer;
+    }
+
+    public TensorCache getTensorCache(){
+        return tensorCache;
     }
 }

@@ -1,6 +1,8 @@
 package io.teknek.deliverance.tensor.operations;
 
 
+import com.codahale.metrics.MetricRegistry;
+import io.teknek.deliverance.tensor.TensorCache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -67,7 +69,9 @@ public class TensorOperationsProvider {
         if (pick == null) {
             pick = MachineSpec.VECTOR_TYPE == MachineSpec.Type.NONE
                     ? new NaiveTensorOperations()
-                    : new PanamaTensorOperations(MachineSpec.VECTOR_TYPE);
+                    : new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
+
+                    new TensorCache(new MetricRegistry()));
         }
 
         logger.info("Using {} ({})", pick.name(), "OffHeap");

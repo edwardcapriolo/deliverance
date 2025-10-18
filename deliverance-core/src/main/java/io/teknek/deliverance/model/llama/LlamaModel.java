@@ -9,6 +9,7 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.TensorOperationsProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
@@ -20,8 +21,9 @@ public class LlamaModel extends AbstractModel {
 
     private volatile AbstractTensor embedTokenWeights;
     public LlamaModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
-                      DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry) {
-        super(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType, configurableTensorProvider, metricRegistry);
+                      DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
+                      TensorCache tensorCache) {
+        super(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType, configurableTensorProvider, metricRegistry, tensorCache);
     }
 
     @Override
@@ -33,7 +35,7 @@ public class LlamaModel extends AbstractModel {
             embedTokenWeights = weights.load("model.embed_tokens.weight").quantize(workingDType);
             configurableTensorProvider.get().registerModelTensor(embedTokenWeights);
         }
-
+/*
         return (inputToken, position) -> {
             if (embedTokenWeights.dType() == DType.BF16) {
                 // Handle old style model with BF16 embeddings
@@ -49,6 +51,27 @@ public class LlamaModel extends AbstractModel {
                 AbstractTensor embedding = at.copyShape();
                 embedding.copyFrom(at, 0, 0, config.embeddingLength);
                 return embedding;
+            }
+        };*/
+        return new EmbedInput(this) {
+            @Override
+            public AbstractTensor inputTokenToEmbedding(int inputToken, int position) {
+                if (embedTokenWeights.dType() == DType.BF16) {
+                    // Handle old style model with BF16 embeddings
+                    AbstractTensor embedding = makeDenseTensor(1, config.embeddingLength);
+                    AbstractTensor at = embedTokenWeights.slice(true, inputToken);
+                    if (embedTokenWeights.dType() != embedding.dType()) {
+                        at = TensorOperationsProvider.get().quantize(at, embedding.dType(), 0, config.embeddingLength);
+                    }
+                    embedding.copyFrom(at, 0, 0, config.embeddingLength);
+                    return embedding;
+                } else {
+                    AbstractTensor at = embedTokenWeights.slice(true, inputToken);
+                    //AbstractTensor embedding = at.copyShape();
+                    AbstractTensor embedding = this.parent.getTensorCache().get(at.dType(), at.shape());
+                    embedding.copyFrom(at, 0, 0, config.embeddingLength);
+                    return embedding;
+                }
             }
         };
     }

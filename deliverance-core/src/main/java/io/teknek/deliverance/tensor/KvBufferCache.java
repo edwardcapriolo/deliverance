@@ -38,6 +38,7 @@ public class KvBufferCache implements Closeable {
     public KvBufferCache(AbstractModel model) {
         this.kvBufferCache = new ConcurrentHashMap<>();
         this.model = model;
+
     }
 
     public KvBuffer getKvBuffer(UUID session) {
@@ -118,7 +119,7 @@ public class KvBufferCache implements Closeable {
 
             if (model.getConfig().workingDirectory().isEmpty() || ephemeral) {
                 this.raf = null;
-                this.tensor = TensorCache.instance.get(model.getWorkingDType(), pageCtx.pageShape);
+                this.tensor = model.getTensorCache().get(model.getWorkingDType(), pageCtx.pageShape);
             } else {
                 try {
                     raf = new RandomAccessFile(
@@ -336,4 +337,6 @@ public class KvBufferCache implements Closeable {
             return tensors;
         }
     }
+
+
 }

@@ -1,7 +1,8 @@
 package io.teknek.deliverance.tensor;
 
+import com.codahale.metrics.MetricRegistry;
 import com.google.common.collect.Maps;
-import java.util.Objects;
+
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
@@ -17,47 +18,35 @@ import org.slf4j.LoggerFactory;
  */
 public class TensorCache {
 
-    public static final TensorCache instance = new TensorCache(100 * 1024 * 1024);
+    //public static final TensorCache instance = new TensorCache(100 * 1024 * 1024);
 
     private static final Logger logger = LoggerFactory.getLogger(TensorCache.class);
-
-    public static class ShapeKey {
-        final TensorShape shape;
-        final DType dType;
-
-        ShapeKey(DType dType, TensorShape shape) {
-            this.dType = dType;
-            this.shape = shape;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            ShapeKey shapeKey = (ShapeKey) o;
-            return Objects.equals(shape, shapeKey.shape) && dType == shapeKey.dType;
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(shape, dType);
-        }
-    }
 
     private final long bytesCapacity;
     private final AtomicLong currentBytes;
     private final ConcurrentMap<ShapeKey, MpmcUnboundedXaddArrayQueue<AbstractTensor>> availableByShape;
 
+    private final MetricRegistry metricRegistry;
     private final Function<ShapeKey, MpmcUnboundedXaddArrayQueue<AbstractTensor>> queueFactory = s -> new MpmcUnboundedXaddArrayQueue<>(
             128
     );
 
-    public TensorCache(long bytesCapacity) {
+    public TensorCache(MetricRegistry metricRegistry){
+        this(100 * 1024 * 1024, metricRegistry);
+    }
+
+    public TensorCache(long bytesCapacity, MetricRegistry metricRegistry) {
         this.bytesCapacity = bytesCapacity;
         this.currentBytes = new AtomicLong(0);
         this.availableByShape = Maps.newConcurrentMap();
+        this.metricRegistry = metricRegistry;
     }
 
+    /**
+     *
+     * @return returns a tensor of the given type and shape, if the cache was full
+     * the ownerCache will be null.
+     */
     public AbstractTensor get(DType dType, TensorShape shape) {
         MpmcUnboundedXaddArrayQueue<AbstractTensor> availableQueue = availableByShape.computeIfAbsent(
                 new ShapeKey(dType, shape),
@@ -84,12 +73,13 @@ public class TensorCache {
         return t;
     }
 
+    /** calls tensor.clear on the given tensor, then presents it to be used by the cache */
     void release(AbstractTensor b) {
         b.clear();
         MpmcUnboundedXaddArrayQueue<AbstractTensor> availableQueue = availableByShape.computeIfAbsent(
                 new ShapeKey(b.dType(), b.shape()),
                 queueFactory
         );
-        availableQueue.offer(b);
+        boolean added = availableQueue.offer(b);
     }
 }

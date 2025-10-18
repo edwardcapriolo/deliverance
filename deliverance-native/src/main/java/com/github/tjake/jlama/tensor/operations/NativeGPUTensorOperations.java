@@ -2,6 +2,7 @@
 package com.github.tjake.jlama.tensor.operations;
 
 
+import com.codahale.metrics.MetricRegistry;
 import com.github.tjake.jlama.tensor.operations.gpunative.NativeGPU;
 import com.github.tjake.jlama.tensor.operations.util.JarSupport;
 
@@ -13,6 +14,7 @@ import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.Q4ByteBufferTensor;
 import io.teknek.deliverance.tensor.Q8ByteBufferTensor;
+import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,12 +63,13 @@ public class NativeGPUTensorOperations implements TensorOperations {
 
     static {
         TensorOperations tmp;
+        TensorCache tc = new TensorCache(new MetricRegistry());
         try {
-            tmp = new NativeSimdTensorOperations( new ConfigurableTensorProvider().get());
+            tmp = new NativeSimdTensorOperations( new ConfigurableTensorProvider(tc).get());
         } catch (Throwable t) {
             logger.warn("Native SIMD operations not available. Consider adding 'com.github.tjake:jlama-native' to the classpath");
             try {
-                tmp = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE);
+                tmp = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, tc);
             } catch (Throwable t2) {
                 tmp = new NaiveTensorOperations();
             }

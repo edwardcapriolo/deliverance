@@ -44,7 +44,7 @@ public class Config {
     private volatile DistributedContext dctx;
     private volatile File workingDirectory;
 
-    public final TensorCache tensorCache;
+    //public final TensorCache tensorCache;
 
     public Config(
             int contextLength,
@@ -248,7 +248,6 @@ public class Config {
         this.vocabularySize = vocabularySize;
         this.bosToken = bosToken;
         this.eosTokens = eosTokens;
-        this.tensorCache = TensorCache.instance;
         this.headSize = headSize;
         this.headGroupSize = numberOfHeads / numberOfKeyValueHeads;
         this.kvLength = numberOfKeyValueHeads * headSize;

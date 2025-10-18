@@ -128,11 +128,13 @@ public interface TensorOperations {
     /**
      * Quantizes the tensor to the specified type (if supported)
      */
+    /*
     default AbstractTensor quantize(AbstractTensor t, DType qtype, int offset, int length) {
         AbstractTensor t2 = TensorCache.instance.get(t.dType(), t.shape());
         t2.copyFrom(t, offset, offset, length);
         return t2;
-    }
+    }*/
+    AbstractTensor quantize(AbstractTensor t, DType qtype, int offset, int length);
 
     /**
      * Collects the total sum of each position in the tensor.  (For testing purposes)

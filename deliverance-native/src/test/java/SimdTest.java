@@ -12,8 +12,11 @@ import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.safetensors.prompt.Tool;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.FloatBufferTensor;
+import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
+import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
+import io.teknek.deliverance.tensor.operations.TensorOperations;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -35,7 +38,8 @@ public class SimdTest {
     @Test
     void goTryIt(){
         System.load("/home/edward/deliverence/deliverance-native/target/native-lib-only/libdeliverance.so");
-        NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider().get());
+        TensorCache tc = new TensorCache(new MetricRegistry());
+        NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tc).get());
         int size = 1024;
         NaiveTensorOperations controlOps = new NaiveTensorOperations();
         AbstractTensor a = allOnes(size);
@@ -48,13 +52,14 @@ public class SimdTest {
     @Test
     public void sample() throws IOException {
         System.load("/home/edward/deliverence/deliverance-native/target/native-lib-only/libdeliverance.so");
-        NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider().get(), 4);
+        TensorCache tc = new TensorCache(new MetricRegistry());
+        NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tc).get());
         String modelName = "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4";
         String modelOwner = "tjake";
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         File f = fetch.maybeDownload();
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(n),
-                new MetricRegistry())) {
+                new MetricRegistry(), tc)) {
             String prompt = "What is the best season to plant avocados?";
             PromptContext ctx;
             {

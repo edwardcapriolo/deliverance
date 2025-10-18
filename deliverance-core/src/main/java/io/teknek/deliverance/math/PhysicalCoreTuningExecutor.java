@@ -16,7 +16,7 @@ public class PhysicalCoreTuningExecutor {
 
     public static AtomicReference<Integer> overrideCores = new AtomicReference<>(null);
     public static final Supplier<PhysicalCoreTuningExecutor> instance = Suppliers.memoize(
-            () -> overrideCores.get() == null? new PhysicalCoreTuningExecutor():
+            () -> overrideCores.get() == null ? new PhysicalCoreTuningExecutor() :
                     new PhysicalCoreTuningExecutor(overrideCores.get()));
 
     private final ForkJoinPool pool;

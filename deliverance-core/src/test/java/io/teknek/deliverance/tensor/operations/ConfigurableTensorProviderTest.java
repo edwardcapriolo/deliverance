@@ -1,8 +1,11 @@
 package io.teknek.deliverance.tensor.operations;
 
 
+import com.codahale.metrics.MetricRegistry;
+import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
 
+import io.teknek.deliverance.tensor.TensorCache;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -12,7 +15,7 @@ public class ConfigurableTensorProviderTest {
 
     @Test
     void defaultTest(){
-        ConfigurableTensorProvider p = new ConfigurableTensorProvider();
+        ConfigurableTensorProvider p = new ConfigurableTensorProvider(new TensorCache(new MetricRegistry()));
         assertNotNull(p.get());
     }
 
@@ -53,6 +56,11 @@ public class ConfigurableTensorProviderTest {
             @Override
             public void scale(float factor, AbstractTensor x, int offset, int length) {
 
+            }
+
+            @Override
+            public AbstractTensor quantize(AbstractTensor t, DType qtype, int offset, int length) {
+                return null;
             }
         });
         assertEquals("edsbestimpl", p.get().name());

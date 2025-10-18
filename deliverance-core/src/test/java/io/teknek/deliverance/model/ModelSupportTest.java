@@ -22,8 +22,11 @@ public class ModelSupportTest {
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         File f = fetch.maybeDownload();
         KvBufferCache.KvBuffer kvBuffer;
-        try (AbstractModel z = ModelSupport.loadModel(f, DType.F32, DType.F32, new ConfigurableTensorProvider(), new MetricRegistry())) {
-            assertEquals(z.tokenizer.getClass(), LlamaTokenizer.class);
+        MetricRegistry mr = new MetricRegistry();
+        TensorCache tc = new TensorCache(new MetricRegistry());
+        try (AbstractModel z = ModelSupport.loadModel(f, DType.F32, DType.F32,
+                new ConfigurableTensorProvider(tc), mr, new TensorCache(mr))) {
+            assertEquals(LlamaTokenizer.class, z.tokenizer.getClass());
             kvBuffer = z.kvBufferCache.getEphemeralKvBuffer();
         }
         assertEquals(0, kvBuffer.getCurrentContextPosition());
@@ -38,7 +41,9 @@ public class ModelSupportTest {
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         File f = fetch.maybeDownload();
         KvBufferCache.KvBuffer kvBuffer;
-        try (AbstractModel z = ModelSupport.loadModel(f, DType.F32, DType.F32, new ConfigurableTensorProvider(), new MetricRegistry())) {
+        TensorCache tc = new TensorCache(new MetricRegistry()) ;
+        try (AbstractModel z = ModelSupport.loadModel(f, DType.F32, DType.F32, new ConfigurableTensorProvider(tc),
+                new MetricRegistry(), new TensorCache(new MetricRegistry()))) {
             TensorShape ts = TensorShape.of(10,10);
             BFloat16BufferTensor bf = new BFloat16BufferTensor(ts);
             //AbstractTensor z1 = z.maybeQuantize(bf);
@@ -46,6 +51,4 @@ public class ModelSupportTest {
         }
 
     }
-
-
 }
