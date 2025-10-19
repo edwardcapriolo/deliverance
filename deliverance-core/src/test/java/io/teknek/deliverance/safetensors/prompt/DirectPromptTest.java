@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class DirectPromptTest {
 
@@ -25,7 +26,8 @@ public class DirectPromptTest {
         String modelOwner = "tjake";
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         File f = fetch.maybeDownload();
-        TensorCache tensorCache = new TensorCache(new MetricRegistry());
+        MetricRegistry mr = new MetricRegistry();
+        TensorCache tensorCache = new TensorCache(mr);
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(tensorCache),
                 new MetricRegistry(), tensorCache)) {
             String prompt = "What is the best season to plant avocados?";
@@ -58,6 +60,10 @@ public class DirectPromptTest {
                 assertEquals(expected, ctx.getPrompt());// it does not change the prompt to have tools
 
                 Response r = m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(42),(s1, f1) -> {});
+                //System.out.println(r);
+                assertTrue(mr.meter("tensorcache.dirtyget").getCount() > 100);
+                //mr.getMeters().entrySet().stream().forEach(x -> System.out.println(x.getKey() +" " +x.getValue().getCount()));
+
                 /*
                 assertEquals("""
                         The best thing to do is to look for the plant that best suits your needs and preferences. Avocados are a popular fruit that are grown in many regions around the world. Some of the best regions for avocado production include California, Mexico, and Peru.
