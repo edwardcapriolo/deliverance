@@ -1,5 +1,6 @@
 package io.teknek.deliverance.tensor;
 
+import com.codahale.metrics.Meter;
 import com.codahale.metrics.MetricRegistry;
 import com.google.common.collect.Maps;
 
@@ -12,15 +13,11 @@ import org.jctools.queues.MpmcUnboundedXaddArrayQueue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static io.teknek.deliverance.DType.F32;
-
 /**
  * In LLMs a lot of buffers are used for inference.  Rather than allocating each one or using a fixed pool
  * this TensorCache allows a limited number of different shaped buffers to be reused across threads
  */
 public class TensorCache {
-
-    //public static final TensorCache instance = new TensorCache(100 * 1024 * 1024);
 
     private static final Logger logger = LoggerFactory.getLogger(TensorCache.class);
 
@@ -33,6 +30,10 @@ public class TensorCache {
             128
     );
 
+    private final Meter dirtyGet;
+    private final Meter dirtyGetHit;
+    private final Meter cacheFull;
+
     public TensorCache(MetricRegistry metricRegistry){
         this(100 * 1024 * 1024, metricRegistry);
     }
@@ -42,6 +43,9 @@ public class TensorCache {
         this.currentBytes = new AtomicLong(0);
         this.availableByShape = Maps.newConcurrentMap();
         this.metricRegistry = metricRegistry;
+        dirtyGet = metricRegistry.meter("tensorcache.dirtyget");
+        dirtyGetHit = metricRegistry.meter("tensorcache.getdirty.hit");
+        cacheFull = metricRegistry.meter("tensorcache.full");
     }
 
     private AbstractTensor internalGet(DType dType, TensorShape shape){
@@ -56,7 +60,7 @@ public class TensorCache {
         if (currentBytes.addAndGet(t.size()) < bytesCapacity) {
             t.setOwnerCache(this);
         } else {
-            logger.debug("Full!");
+            cacheFull.mark();
             currentBytes.addAndGet(-t.size());
         }
         return t;
@@ -66,14 +70,14 @@ public class TensorCache {
      * @return a tensor of a specific shape but possibly reused so it is up to the user to clear it out
      */
     public AbstractTensor<?,?> getDirty(DType dType, TensorShape shape){
-        metricRegistry.meter("tensorcache.dirtyget").mark();
+        dirtyGet.mark();
         MpmcUnboundedXaddArrayQueue<AbstractTensor> availableQueue = availableByShape.computeIfAbsent(
                 new ShapeKey(dType, shape),
                 queueFactory
         );
         AbstractTensor<?,?> t = availableQueue.poll();
         if (t != null) {
-            metricRegistry.meter("tensorcache.getdirty.hit").mark();
+            dirtyGetHit.mark();
             return t;
         }
         return internalGet(dType, shape);

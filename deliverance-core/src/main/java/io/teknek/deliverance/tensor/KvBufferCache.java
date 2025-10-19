@@ -131,7 +131,9 @@ public class KvBufferCache implements Closeable {
                     );
                     long bytes = pageCtx.pageShape.size() * model.getWorkingDType().size();
                     logger.debug("Allocating page {} with {} bytes {}", pageId, bytes, raf.length());
-                    if (raf.length() != bytes) raf.setLength(bytes);
+                    if (raf.length() != bytes) {
+                        raf.setLength(bytes);
+                    }
 
                     AbstractTensor t;
                     if (model.getWorkingDType() == DType.F32) {
