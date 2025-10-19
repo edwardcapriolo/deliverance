@@ -28,7 +28,7 @@ public abstract class EmbedInput {
             return zeroTokenEmbedding;
         }
         TensorShape embeddingsFoEachInputToken = TensorShape.of(inputTokens.length, zeroTokenEmbedding.shape().last());
-        AbstractTensor tb = parent.getTensorCache().get(zeroTokenEmbedding.dType(), embeddingsFoEachInputToken);
+        AbstractTensor tb = parent.getTensorCache().getDirty(zeroTokenEmbedding.dType(), embeddingsFoEachInputToken);
         tb.copyFrom(zeroTokenEmbedding, 0, 0, zeroTokenEmbedding.shape().last());
         zeroTokenEmbedding.close();
         VectorMath.pfor(1, inputTokens.length, i -> {

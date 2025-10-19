@@ -60,9 +60,9 @@ public class DirectPromptTest {
                 assertEquals(expected, ctx.getPrompt());// it does not change the prompt to have tools
 
                 Response r = m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(42),(s1, f1) -> {});
-                //System.out.println(r);
+                System.out.println(r);
                 assertTrue(mr.meter("tensorcache.dirtyget").getCount() > 100);
-                //mr.getMeters().entrySet().stream().forEach(x -> System.out.println(x.getKey() +" " +x.getValue().getCount()));
+                mr.getMeters().entrySet().stream().forEach(x -> System.out.println(x.getKey() +" " +x.getValue().getCount()));
 
                 /*
                 assertEquals("""
