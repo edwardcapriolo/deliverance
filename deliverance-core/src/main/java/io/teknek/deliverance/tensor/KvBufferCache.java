@@ -107,15 +107,10 @@ public class KvBufferCache implements Closeable {
     class KvBufferPage implements AutoCloseable {
         private final AbstractTensor tensor;
 
-        private final KvPageContext pageCtx;
-        private final String pageId;
-
         private final AtomicBoolean closed = new AtomicBoolean(false);
         private final RandomAccessFile raf;
 
         KvBufferPage(KvPageContext pageCtx, String pageId, boolean ephemeral) {
-            this.pageCtx = pageCtx;
-            this.pageId = pageId;
 
             if (model.getConfig().workingDirectory().isEmpty() || ephemeral) {
                 this.raf = null;

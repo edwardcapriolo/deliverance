@@ -5,6 +5,8 @@ import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.DistributedContext;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.TensorCache;
+import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.operations.TensorOperationsProvider;
 
 import java.util.Collections;
@@ -75,8 +77,9 @@ public class MLPBlock implements FeedForward {
         int hiddenLength = model.getConfig().hiddenLength;
         int batchSize = lnemb.shape().first();
         try (
-                AbstractTensor buf = model.makeTensor(batchSize, hiddenLength);
-                AbstractTensor buf2 = model.makeTensor(batchSize, hiddenLength)
+                //TODO ensure its ok to use dirty here do we write the entire tensor
+                AbstractTensor buf = model.getTensorCache().getDirty(model.getWorkingDType(), TensorShape.of(batchSize, hiddenLength));
+                AbstractTensor buf2 = model.getTensorCache().getDirty(model.getWorkingDType(), TensorShape.of(batchSize, hiddenLength));
         ) {
 
             batchResults[0] = buf;

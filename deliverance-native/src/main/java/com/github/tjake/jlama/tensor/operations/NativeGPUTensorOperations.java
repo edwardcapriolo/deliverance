@@ -47,7 +47,6 @@ public class NativeGPUTensorOperations implements TensorOperations {
 
     private final ConcurrentMap<String, Long> tensorCache = new ConcurrentHashMap<>();
 
-    private long maxBindBytes;
     private long gemm_f32_id;
     private long gemm_bf16_id;
     private long gemm_q4_id;
@@ -186,15 +185,18 @@ public class NativeGPUTensorOperations implements TensorOperations {
             if (lb.get(0) == -1) {
                 throw new RuntimeException("Failed to initialize GPU");
             }
-            maxBindBytes = lb.get(0);
+
             logger.info("Native GPU Operations loaded with {} memory and {} groups", lb.get(0), lb.get(1));
             params_size = Ints.checkedCast(lb.get(2));
 
-            /*
-            gemm_f32_id = RuntimeSupport.isMac() ? registerShader("gemm_f32.wgsl") : registerShader("gemm_f32_v4.wgsl");
-            */
+
+            gemm_f32_id = RuntimeSupport.isMac() ? registerShader("gemm_f32.wgsl")
+                    : registerShader("gemm_f32_v4.wgsl");
+
             gemm_f32_id = registerShader("gemm_f32_v4.wgsl");
-            if (gemm_f32_id == -1) throw new RuntimeException("Error creating shader");
+            if (gemm_f32_id == -1) {
+                throw new RuntimeException("Error creating shader");
+            }
             gemm_bf16_id = registerShader("gemm_bf16_v4.wgsl");
             gemm_q4_id = registerShader("gemm_q4.wgsl");
             gemm_i8q4_id = registerShader("gemm_i8q4.wgsl");

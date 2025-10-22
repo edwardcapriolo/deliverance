@@ -1640,7 +1640,7 @@ public final class PanamaTensorOperations implements TensorOperations {
     public FloatBufferTensor quantizeBF16_F32(BFloat16BufferTensor ft, final int offset, int length) {
 
         // Up to caller to release
-        FloatBufferTensor qft = (FloatBufferTensor) tensorCache.get(DType.F32, ft.shape());
+        FloatBufferTensor qft = (FloatBufferTensor) tensorCache.getDirty(DType.F32, ft.shape());
         int batchSize = ft.shape().first();
         for (int b = 0; b < batchSize; b++) {
             for (int i = offset; i < offset + length; i += ShortVector.SPECIES_PREFERRED.length()) {
@@ -1756,7 +1756,7 @@ public final class PanamaTensorOperations implements TensorOperations {
     public Q8ByteBufferTensor quantizeQ8_arm(FloatBufferTensor ft, int offset, int length) {
 
         // Up to caller to release
-        Q8ByteBufferTensor qft = (Q8ByteBufferTensor) tensorCache.get(DType.I8, ft.shape());
+        Q8ByteBufferTensor qft = (Q8ByteBufferTensor) tensorCache.getDirty(DType.I8, ft.shape());
 
         int batchSize = ft.shape().first();
         for (int b = 0; b < batchSize; b++) {
@@ -1833,7 +1833,7 @@ public final class PanamaTensorOperations implements TensorOperations {
     public Q8ByteBufferTensor quantizeBF16_Q8_512(BFloat16BufferTensor ft, final int offset, int length) {
 
         // Up to caller to release
-        Q8ByteBufferTensor qft = (Q8ByteBufferTensor) tensorCache.get(DType.I8, ft.shape());
+        Q8ByteBufferTensor qft = (Q8ByteBufferTensor) tensorCache.getDirty(DType.I8, ft.shape());
         int batchSize = ft.shape().first();
         for (int b = 0; b < batchSize; b++) {
             for (int i = offset; i < offset + length; i += Q8ByteBufferTensor.BLOCK_SIZE) {
@@ -1879,7 +1879,7 @@ public final class PanamaTensorOperations implements TensorOperations {
     public Q8ByteBufferTensor quantizeBF16_Q8_256(BFloat16BufferTensor ft, int offset, int length) {
 
         // Up to caller to release
-        Q8ByteBufferTensor qft = (Q8ByteBufferTensor) tensorCache.get(DType.I8, ft.shape());
+        Q8ByteBufferTensor qft = (Q8ByteBufferTensor) tensorCache.getDirty(DType.I8, ft.shape());
 
         int batchSize = ft.shape().first();
         for (int b = 0; b < batchSize; b++) {
@@ -1941,7 +1941,7 @@ public final class PanamaTensorOperations implements TensorOperations {
     public Q8ByteBufferTensor quantizeBF16_Q8_arm(BFloat16BufferTensor ft, int offset, int length) {
 
         // Up to caller to release
-        Q8ByteBufferTensor qft = (Q8ByteBufferTensor) tensorCache.get(DType.I8, ft.shape());
+        Q8ByteBufferTensor qft = (Q8ByteBufferTensor) tensorCache.getDirty(DType.I8, ft.shape());
 
         int batchSize = ft.shape().first();
         for (int b = 0; b < batchSize; b++) {
@@ -2557,7 +2557,7 @@ public final class PanamaTensorOperations implements TensorOperations {
                 switch (y.dType()) {
                     case F32:
                         saxpyBF16F32(alpha, (BFloat16BufferTensor) x, (FloatBufferTensor) y, xoffset, yoffset, limit);
-                        break;
+                        break;    //private long maxBindBytes;
                     case BF16:
                         saxpyBF16(alpha, (BFloat16BufferTensor) x, (BFloat16BufferTensor) y, xoffset, yoffset, limit);
                         break;
