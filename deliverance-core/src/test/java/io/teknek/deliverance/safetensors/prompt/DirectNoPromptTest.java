@@ -7,6 +7,7 @@ import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.ModelSupport;
+import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import org.junit.jupiter.api.Assertions;
@@ -30,7 +31,7 @@ public class DirectNoPromptTest {
         File f = fetch.maybeDownload();
         TensorCache tc = new TensorCache(new MetricRegistry())  ;
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(tc),
-                new MetricRegistry(), new TensorCache(new MetricRegistry()))) {
+                new MetricRegistry(), new TensorCache(new MetricRegistry()), new KvBufferCacheSettings(true))) {
             String prompt = "What comes next in the sequence? 1, 2 ";
             PromptContext ctx = PromptContext.of(prompt);
             Response r = m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(43), (s, f1) -> {});

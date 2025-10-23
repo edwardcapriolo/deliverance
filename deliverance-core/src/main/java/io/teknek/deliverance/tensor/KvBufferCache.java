@@ -1,5 +1,6 @@
 package io.teknek.deliverance.tensor;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.fetch.Pair;
@@ -9,15 +10,13 @@ import io.teknek.deliverance.safetensors.Config;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.Closeable;
-import java.io.IOError;
-import java.io.IOException;
-import java.io.RandomAccessFile;
+import java.io.*;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.nio.ShortBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Paths;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.UUID;
@@ -28,34 +27,40 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * A cache for key-value buffers used in the model.
-\
  */
 public class KvBufferCache implements Closeable {
     private static final Logger logger = LoggerFactory.getLogger(KvBufferCache.class);
-    private final ConcurrentMap<UUID, KvBuffer> kvBufferCache;
+    private final ConcurrentMap<String, KvBuffer> kvBufferCache;
     private final AbstractModel model;
+    private final KvBufferCacheSettings kvBufferCacheSettings;
 
-    public KvBufferCache(AbstractModel model) {
+    public KvBufferCache(AbstractModel model, KvBufferCacheSettings kvBufferCacheSettings) {
         this.kvBufferCache = new ConcurrentHashMap<>();
         this.model = model;
-
+        this.kvBufferCacheSettings = kvBufferCacheSettings;
     }
 
-    public KvBuffer getKvBuffer(UUID session) {
-        return kvBufferCache.computeIfAbsent(session, s -> new KvBuffer(s, 1 << 23, false)); // 8MB per page
+    public KvBuffer getKvBuffer(String session) {
+        return kvBufferCache.computeIfAbsent(session, s -> new KvBuffer(s, 1 << 23)); // 8MB per page
     }
 
+    /*
     public KvBuffer getEphemeralKvBuffer() {
-        return new KvBuffer(UUID.randomUUID(), 1 << 20, true);
-    }
+        return new KvBuffer(UUID.randomUUID(), 1 << 20);
+    }*/
 
     @Override
     public void close() {
-        Iterator<Map.Entry<UUID, KvBuffer>> it = kvBufferCache.entrySet().iterator();
+        Iterator<Map.Entry<String, KvBuffer>> it = kvBufferCache.entrySet().iterator();
         while (it.hasNext()) {
             it.next().getValue().close();
             it.remove();
         }
+    }
+
+    @VisibleForTesting
+    public ConcurrentMap<String, KvBuffer> getCacheByKey(){
+        return kvBufferCache;
     }
 
     class KvPageContext {
@@ -63,11 +68,11 @@ public class KvBufferCache implements Closeable {
         public final int numberOfContextPages;
         private final int layersPerPage;
         private final int contextLengthPerPage;
-        private final UUID session;
+        private final String session;
 
         public final TensorShape pageShape;
 
-        public KvPageContext(UUID session, int numberOfLayerPages, int numberOfContextPages, int layersPerPage, int contextLengthPerPage) {
+        public KvPageContext(String session, int numberOfLayerPages, int numberOfContextPages, int layersPerPage, int contextLengthPerPage) {
             this.session = session;
             this.numberOfLayerPages = numberOfLayerPages;
             this.numberOfContextPages = numberOfContextPages;
@@ -94,7 +99,6 @@ public class KvBufferCache implements Closeable {
             } else {
                 s = TensorShape.of(rawShape);
             }
-
             this.pageShape = s;
         }
     }
@@ -110,16 +114,16 @@ public class KvBufferCache implements Closeable {
         private final AtomicBoolean closed = new AtomicBoolean(false);
         private final RandomAccessFile raf;
 
-        KvBufferPage(KvPageContext pageCtx, String pageId, boolean ephemeral) {
+        KvBufferPage(KvPageContext pageCtx, String pageId) {
 
-            if (model.getConfig().workingDirectory().isEmpty() || ephemeral) {
+            if (kvBufferCacheSettings.isEphemeral()) {
                 this.raf = null;
                 this.tensor = model.getTensorCache().get(model.getWorkingDType(), pageCtx.pageShape);
             } else {
                 try {
                     raf = new RandomAccessFile(
                             Paths.get(
-                                    model.getConfig().workingDirectory().get().toString(),
+                                    kvBufferCacheSettings.getWorkingDirectory().toString(),
                                     pageCtx.session.toString() + "-" + pageId + ".page"
                             ).toFile(),
                             "rw"
@@ -178,18 +182,18 @@ public class KvBufferCache implements Closeable {
     }
 
     public class KvBuffer implements AutoCloseable {
-        private UUID session;
+        private String session;
         private final AtomicInteger currentContextPosition = new AtomicInteger(0);
         private final KvBufferPage[][] pages;
 
         private final KvPageContext pageContext;
-        private final boolean ephemeral;
+        //private final boolean ephemeral;
 
-        KvBuffer(UUID session, int maxPageSizeInBytes, boolean ephemeral) {
+        KvBuffer(String session, int maxPageSizeInBytes) {
             this.session = session;
             this.pageContext = computePageSize(maxPageSizeInBytes);
             this.pages = new KvBufferPage[pageContext.numberOfLayerPages][pageContext.numberOfContextPages];
-            this.ephemeral = ephemeral;
+
         }
 
         public int getCurrentContextPosition() {
@@ -296,7 +300,7 @@ public class KvBufferCache implements Closeable {
 
             KvBufferPage page = pages[layerPageIndex][contextPageIndex];
             if (page == null || page.isClosed()) {
-                page = new KvBufferPage(pageContext, "L" + layerPageIndex + "C" + contextPageIndex, ephemeral);
+                page = new KvBufferPage(pageContext, "L" + layerPageIndex + "C" + contextPageIndex);
                 pages[layerPageIndex][contextPageIndex] = page;
             }
 
@@ -324,7 +328,7 @@ public class KvBufferCache implements Closeable {
                 KvBufferPage page = layerPages[i];
 
                 if (page == null || page.isClosed()) {
-                    page = new KvBufferPage(pageContext, "L" + layerPageIndex + "C" + contextPageIndex, ephemeral);
+                    page = new KvBufferPage(pageContext, "L" + layerPageIndex + "C" + contextPageIndex);
                     layerPages[i] = page;
                 }
 
@@ -332,6 +336,16 @@ public class KvBufferCache implements Closeable {
             }
 
             return tensors;
+        }
+
+        @Override
+        public String toString() {
+            return "KvBuffer{" +
+                    "session=" + session +
+                    ", currentContextPosition=" + currentContextPosition +
+                    ", pages=" + Arrays.toString(pages) +
+                    ", pageContext=" + pageContext +
+                    '}';
         }
     }
 

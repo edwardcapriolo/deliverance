@@ -42,7 +42,7 @@ public class Config {
     public final Optional<BiMap<String, Integer>> classifcationLabels;
 
     private volatile DistributedContext dctx;
-    private volatile File workingDirectory;
+    //private volatile File workingDirectory;
 
     //public final TensorCache tensorCache;
 
@@ -278,6 +278,7 @@ public class Config {
         this.dctx = dctx;
     }*/
 
+    /*
     public void setWorkingDirectory(File workingDirectory) {
         if (workingDirectory == null) {
             this.workingDirectory = Files.createTempDir();
@@ -291,7 +292,7 @@ public class Config {
     public Optional<File> workingDirectory() {
         return Optional.ofNullable(this.workingDirectory);
     }
-
+*/
 
     public DistributedContext dctx() {
         return dctx;

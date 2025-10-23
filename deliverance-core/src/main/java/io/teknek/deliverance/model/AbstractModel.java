@@ -77,7 +77,7 @@ public abstract class AbstractModel implements Generator {
 
     protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
                             DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider provider,
-                            MetricRegistry metricRegistry, TensorCache tensorCache) {
+                            MetricRegistry metricRegistry, TensorCache tensorCache, KvBufferCacheSettings kvBufferCacheSettings) {
         this.inferenceType = inferenceType;
         this.config = c;
         this.weights = w;
@@ -86,7 +86,7 @@ public abstract class AbstractModel implements Generator {
         this.modelDType = w.getModelDType();
         this.workingDType = workingMemoryDType;
         this.modelQType = modelQType;
-        this.kvBufferCache = new KvBufferCache(this);
+        this.kvBufferCache = new KvBufferCache(this, kvBufferCacheSettings);
         this.configurableTensorProvider = provider;
         this.metricRegistry = metricRegistry;
         this.tensorCache = tensorCache;
@@ -199,9 +199,10 @@ public abstract class AbstractModel implements Generator {
         }
         int ntokens = generatorParameters.ntokens.orElse(256);
         float temperature = generatorParameters.temperature.orElse(0.0f);
+        String cacheSalt = generatorParameters.cacheSalt.orElse("sha1here");
         Preconditions.checkArgument(encoded.length < config.contextLength
                 && encoded.length < ntokens, "Prompt exceeds max tokens");
-        try (KvBufferCache.KvBuffer kvmem = kvBufferCache.getKvBuffer(sessionId)) { // k and v for context window
+        try (KvBufferCache.KvBuffer kvmem = kvBufferCache.getKvBuffer(cacheSalt)) { // k and v for context window
             int startPos = kvmem.getCurrentContextPosition(); // Number of tokens in the buffer
             if (ntokens > config.contextLength) {
                 ntokens = config.contextLength;
