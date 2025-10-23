@@ -7,6 +7,7 @@ import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.DefaultWeightLoader;
 import io.teknek.deliverance.safetensors.SafeTensorSupport;
 import io.teknek.deliverance.safetensors.WeightLoader;
+import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
@@ -35,7 +36,9 @@ public class ModelSupport {
     }
 
     public static AbstractModel loadModel(File model, DType workingMemoryType, DType workingQuantizationType,
-                                          ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry, TensorCache tensorCache){
+                                          ConfigurableTensorProvider configurableTensorProvider,
+                                          MetricRegistry metricRegistry, TensorCache tensorCache,
+                                          KvBufferCacheSettings kvBufferCacheSettings){
         File configFile = new File(model, "config.json");
         if (!configFile.exists()){
             throw new RuntimeException("expecting to find config " + configFile);
@@ -43,15 +46,18 @@ public class ModelSupport {
         ModelType modelType = SafeTensorSupport.detectModel(configFile);
         try {
             Config config = om.readValue(configFile, modelType.getConfigClass());
-            config.setWorkingDirectory(null);
             Tokenizer tokenizer = modelType.getTokenizerClass().getConstructor(Path.class).newInstance(model.toPath());
             WeightLoader wl = new DefaultWeightLoader(model);
 
+
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
-                    WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class, ConfigurableTensorProvider.class, MetricRegistry.class, TensorCache.class);
+                    WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class,
+                    ConfigurableTensorProvider.class, MetricRegistry.class, TensorCache.class,
+                    KvBufferCacheSettings.class);
 
             return cons.newInstance(AbstractModel.InferenceType.FULL_GENERATION, config, wl, tokenizer,
-                    workingMemoryType, workingQuantizationType, Optional.empty(), configurableTensorProvider, metricRegistry, tensorCache);
+                    workingMemoryType, workingQuantizationType, Optional.empty(), configurableTensorProvider,
+                    metricRegistry, tensorCache, kvBufferCacheSettings);
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }

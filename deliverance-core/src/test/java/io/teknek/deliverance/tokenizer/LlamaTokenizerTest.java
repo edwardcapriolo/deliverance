@@ -6,6 +6,7 @@ import io.teknek.deliverance.fetch.ModelFetcher;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.model.llama.LlamaTokenizer;
+import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import org.junit.jupiter.api.Disabled;
@@ -27,7 +28,8 @@ public class LlamaTokenizerTest {
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         File f = fetch.maybeDownload();
         TensorCache tc = new TensorCache(new MetricRegistry());
-        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(tc), new MetricRegistry(), tc)) {
+        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(tc),
+                new MetricRegistry(), tc, new KvBufferCacheSettings(true))) {
             List<String> tokens = m.getTokenizer().tokenize("show me the money!");
             assertEquals(List.of("show me the money!"), tokens);
             long[] encode = m.getTokenizer().encode("show me!");
@@ -45,7 +47,8 @@ public class LlamaTokenizerTest {
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         File f = fetch.maybeDownload();
         TensorCache tc = new TensorCache(new MetricRegistry())  ;
-        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(tc), new MetricRegistry(), tc)) {
+        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(tc),
+                new MetricRegistry(), tc, new KvBufferCacheSettings(true))) {
             if (m.getTokenizer() instanceof LlamaTokenizer t){
                 System.out.println(t.getModel().merges.size());
 
@@ -65,7 +68,8 @@ public class LlamaTokenizerTest {
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         File f = fetch.maybeDownload();
                TensorCache tc = new TensorCache(new MetricRegistry())  ;
-        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(tc), new MetricRegistry(), tc)) {
+        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(tc),
+                new MetricRegistry(), tc, new KvBufferCacheSettings(true))) {
             String p = "[INST] Tell me a joke. \uD83D\uDC31 [/INST] Answer ";
             if (m.getTokenizer() instanceof LlamaTokenizer tokenizer) {
                 long[] actual = tokenizer.encode(p);

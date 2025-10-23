@@ -9,6 +9,7 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.TensorOperationsProvider;
@@ -21,9 +22,11 @@ public class LlamaModel extends AbstractModel {
 
     private volatile AbstractTensor embedTokenWeights;
     public LlamaModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
-                      DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
-                      TensorCache tensorCache) {
-        super(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType, configurableTensorProvider, metricRegistry, tensorCache);
+                      DType workingMemoryQType, Optional<DType> modelQType,
+                      ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
+                      TensorCache tensorCache, KvBufferCacheSettings kvBufferCacheSettings) {
+        super(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType, configurableTensorProvider,
+                metricRegistry, tensorCache, kvBufferCacheSettings);
     }
 
     @Override

@@ -12,6 +12,7 @@ import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.safetensors.prompt.Tool;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.FloatBufferTensor;
+import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
@@ -57,7 +58,7 @@ public class SimdTest {
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         File f = fetch.maybeDownload();
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(n),
-                new MetricRegistry(), tc)) {
+                new MetricRegistry(), tc, new KvBufferCacheSettings(true))) {
             String prompt = "What is the best season to plant avocados?";
             PromptContext ctx;
             {
