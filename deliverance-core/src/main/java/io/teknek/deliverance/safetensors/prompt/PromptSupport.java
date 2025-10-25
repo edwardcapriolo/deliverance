@@ -46,7 +46,7 @@ public class PromptSupport {
 
 
     public static void raiseException(String message) {
-        logger.debug("Prompt template error: " + message);
+        logger.error("Prompt template error: {}", message);
         throw new RuntimeException(message);
     }
 
@@ -161,7 +161,7 @@ public class PromptSupport {
             optionalTools.ifPresent(tools -> args.put("tools", tools));
             RenderResult r = jinJava.renderForResult(template, args);
             if (r.hasErrors()) {
-                logger.debug("Prompt template errors: " + r.getErrors());
+                logger.debug("Prompt template errors: {}" ,r.getErrors());
                 throw new RuntimeException("Prompt template errors: " + r.getErrors());
             }
             String output = r.getOutput();

@@ -1,8 +1,5 @@
 package io.teknek.deliverance.generator;
 
-
-
-
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
