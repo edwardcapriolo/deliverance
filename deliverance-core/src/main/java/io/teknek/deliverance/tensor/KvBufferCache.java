@@ -19,7 +19,6 @@ import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -43,11 +42,6 @@ public class KvBufferCache implements Closeable {
     public KvBuffer getKvBuffer(String session) {
         return kvBufferCache.computeIfAbsent(session, s -> new KvBuffer(s, 1 << 23)); // 8MB per page
     }
-
-    /*
-    public KvBuffer getEphemeralKvBuffer() {
-        return new KvBuffer(UUID.randomUUID(), 1 << 20);
-    }*/
 
     @Override
     public void close() {
@@ -118,7 +112,9 @@ public class KvBufferCache implements Closeable {
 
             if (kvBufferCacheSettings.isEphemeral()) {
                 this.raf = null;
-                this.tensor = model.getTensorCache().get(model.getWorkingDType(), pageCtx.pageShape);
+                TensorCache tc = kvBufferCacheSettings.getDedicatedCache() == null ?
+                        model.getTensorCache(): kvBufferCacheSettings.getDedicatedCache();
+                this.tensor = tc.get(model.getWorkingDType(), pageCtx.pageShape);
             } else {
                 try {
                     raf = new RandomAccessFile(
@@ -134,7 +130,7 @@ public class KvBufferCache implements Closeable {
                         raf.setLength(bytes);
                     }
 
-                    AbstractTensor t;
+                    AbstractTensor<?,?> t;
                     if (model.getWorkingDType() == DType.F32) {
                         FloatBuffer fb = raf.getChannel()
                                 .map(FileChannel.MapMode.READ_WRITE, 0, bytes)
@@ -187,7 +183,6 @@ public class KvBufferCache implements Closeable {
         private final KvBufferPage[][] pages;
 
         private final KvPageContext pageContext;
-        //private final boolean ephemeral;
 
         KvBuffer(String session, int maxPageSizeInBytes) {
             this.session = session;
