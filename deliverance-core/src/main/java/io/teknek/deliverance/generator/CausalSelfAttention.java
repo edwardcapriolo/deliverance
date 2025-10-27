@@ -7,6 +7,7 @@ import io.teknek.deliverance.model.DistributedContext;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
+import io.teknek.deliverance.tensor.VectorTensorMathUtils;
 import io.teknek.deliverance.tensor.operations.TensorOperationsProvider;
 import net.jafama.FastMath;
 import org.slf4j.Logger;
@@ -304,7 +305,7 @@ public class CausalSelfAttention {
                         }
 
                         // softmax the scores to get attention weights, from 0..pos inclusively
-                        VectorMath.softMax(attn, 0, finalPosition + 1);
+                        VectorTensorMathUtils.softMax(attn, 0, finalPosition + 1);
 
                         // apply adjusted attention weights to value vectors
                         // do this for each position since the pages are not contiguous

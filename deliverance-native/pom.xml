@@ -10,7 +10,7 @@
     <version>0.0.1-SNAPSHOT</version>
   </parent>
   <artifactId>deliverance-native</artifactId>
-  <name>Deliverance Native</name>
+  <name>deliverance-native</name>
 
   <properties>
     <exe.make>make</exe.make>

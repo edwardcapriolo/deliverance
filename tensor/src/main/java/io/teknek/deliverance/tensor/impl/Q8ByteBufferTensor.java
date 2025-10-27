@@ -1,7 +1,4 @@
-package io.teknek.deliverance.tensor;
-
-
-
+package io.teknek.deliverance.tensor.impl;
 
 import com.google.common.base.Preconditions;
 import com.google.common.primitives.Ints;
@@ -14,13 +11,16 @@ import java.util.List;
 import java.util.stream.IntStream;
 
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor.UnsafeDirectByteBuffer;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.VectorMask;
 import jdk.incubator.vector.VectorSpecies;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static io.teknek.deliverance.tensor.Q4ByteBufferTensor.makeBlockShape;
+import static io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor.makeBlockShape;
 
 public class Q8ByteBufferTensor extends AbstractTensor<ByteVector, Byte> {
     private static final Logger logger = LoggerFactory.getLogger(Q8ByteBufferTensor.class);;
@@ -33,12 +33,12 @@ public class Q8ByteBufferTensor extends AbstractTensor<ByteVector, Byte> {
     private final MemorySegment segment;
 
     public Q8ByteBufferTensor(AbstractTensor ft) {
-        this(ft.shape);
-        Preconditions.checkArgument(ft.dType != DType.I8, "This should never happen, likely a bug");
+        this(ft.shape());
+        Preconditions.checkArgument(ft.getDType() != DType.I8, "This should never happen, likely a bug");
         Preconditions.checkArgument(ft.size() % BLOCK_SIZE == 0, "I8 buffer must be a multiple of BLOCK_SIZE");
 
         List<int[]> startBlockCursors = new ArrayList<>();
-        int[] cursor = new int[ft.shape.dims()];
+        int[] cursor = new int[ft.shape().dims()];
         int c = 0;
         do {
             if (c++ % BLOCK_SIZE == 0) {
@@ -189,7 +189,7 @@ public class Q8ByteBufferTensor extends AbstractTensor<ByteVector, Byte> {
 
     @Override
     public void copyFrom(AbstractTensor src, int srcOffset, int destOffset, int length) {
-        Preconditions.checkArgument(this.dType == src.dType, "different types");
+        Preconditions.checkArgument(dType == src.getDType(), "different types");
         Preconditions.checkArgument(!b.isReadOnly(), "Read-only");
         segment.asSlice(getMemorySegmentOffset(destOffset), length)
                 .copyFrom(src.getMemorySegment().asSlice(src.getMemorySegmentOffset(srcOffset), length));

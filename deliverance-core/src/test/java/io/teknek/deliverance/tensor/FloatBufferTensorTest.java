@@ -1,5 +1,6 @@
 package io.teknek.deliverance.tensor;
 
+import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorSpecies;
 import org.junit.jupiter.api.Test;

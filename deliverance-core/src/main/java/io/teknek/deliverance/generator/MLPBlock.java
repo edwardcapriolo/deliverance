@@ -5,7 +5,6 @@ import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.DistributedContext;
 import io.teknek.deliverance.tensor.AbstractTensor;
-import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.operations.TensorOperationsProvider;
 

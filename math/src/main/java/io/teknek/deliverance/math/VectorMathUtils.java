@@ -16,6 +16,7 @@ public class VectorMathUtils {
         }
         return result;
     }
+
     public static float[][] precomputeFreqsCis(int dim, int end, double theta, double scaling_factor) {
         float[] freqs = new float[dim / 2];
         float step = 0.0f;

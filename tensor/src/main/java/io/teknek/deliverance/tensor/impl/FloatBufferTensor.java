@@ -1,4 +1,4 @@
-package io.teknek.deliverance.tensor;
+package io.teknek.deliverance.tensor.impl;
 import com.google.common.base.Preconditions;
 import com.google.common.primitives.Ints;
 import java.lang.foreign.MemorySegment;
@@ -6,6 +6,9 @@ import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor.UnsafeDirectByteBuffer;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorSpecies;
 import org.slf4j.Logger;
@@ -29,9 +32,9 @@ public final class FloatBufferTensor extends AbstractTensor<FloatVector, Float> 
     private final MemorySegment segment;
 
     public FloatBufferTensor(AbstractTensor ft) {
-        this(ft.shape);
-        Preconditions.checkArgument(ft.dType != DType.I32, "This should never happen, likely a bug");
-        int[] cursor = new int[ft.shape.dims()];
+        this(ft.shape());
+        Preconditions.checkArgument(ft.getDType() != DType.I32, "This should never happen, likely a bug");
+        int[] cursor = new int[ft.shape().dims()];
         do {
             set(ft.get(cursor), cursor);
         } while (ft.iterate(cursor));
@@ -103,7 +106,7 @@ public final class FloatBufferTensor extends AbstractTensor<FloatVector, Float> 
 
     @Override
     public void copyFrom(AbstractTensor src, int srcOffset, int destOffset, int length) {
-        Preconditions.checkArgument(this.dType == src.dType, "Different types");
+        Preconditions.checkArgument(this.dType == src.getDType(), "Different types");
         segment.asSlice(getMemorySegmentOffset(destOffset), (long) length * dType.size())
                 .copyFrom(src.getMemorySegment().asSlice(src.getMemorySegmentOffset(srcOffset), (long) length * dType.size()));
     }
@@ -132,7 +135,7 @@ public final class FloatBufferTensor extends AbstractTensor<FloatVector, Float> 
 
     @Override
     public String toString() {
-        float[] sample = new float[DebugSupport.isDebug() ? underlyingByteBuffer.remaining() : Math.min(10, underlyingByteBuffer.remaining())];
+        float[] sample = new float[true ? underlyingByteBuffer.remaining() : Math.min(10, underlyingByteBuffer.remaining())];
         underlyingByteBuffer.duplicate().get(sample);
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < sample.length; i++) {

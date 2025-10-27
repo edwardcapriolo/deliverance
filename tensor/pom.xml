@@ -5,7 +5,7 @@
     <version>0.0.1-SNAPSHOT</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
-  <artifactId>deliverance-core</artifactId>
+  <artifactId>tensor</artifactId>
   <properties>
     <maven.compiler.source>24</maven.compiler.source>
     <maven.compiler.target>24</maven.compiler.target>
@@ -21,22 +21,6 @@
   </properties>
 
   <dependencies>
-
-    <dependency>
-      <groupId>io.teknek</groupId>
-      <artifactId>tensor</artifactId>
-      <version>${project.version}</version>
-      <scope>compile</scope>
-    </dependency>
-
-    <dependency>
-      <groupId>io.teknek</groupId>
-      <artifactId>math</artifactId>
-      <version>${project.version}</version>
-      <scope>compile</scope>
-    </dependency>
-
-
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
@@ -108,12 +92,12 @@
       <version>${mockito.version}</version>
       <scope>test</scope>
     </dependency>
-    <dependency>
-      <groupId>io.teknek</groupId>
-      <artifactId>math</artifactId>
-      <version>0.0.1-SNAPSHOT</version>
-      <scope>compile</scope>
-    </dependency>
+      <dependency>
+          <groupId>io.teknek</groupId>
+          <artifactId>math</artifactId>
+          <version>0.0.1-SNAPSHOT</version>
+          <scope>compile</scope>
+      </dependency>
   </dependencies>
 
   <build>

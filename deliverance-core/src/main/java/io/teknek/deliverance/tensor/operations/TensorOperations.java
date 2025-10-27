@@ -3,12 +3,11 @@ package io.teknek.deliverance.tensor.operations;
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
-import io.teknek.deliverance.tensor.FloatBufferTensor;
-import io.teknek.deliverance.tensor.TensorCache;
+import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 
 public interface TensorOperations {
-    ThreadLocal<FloatBufferTensor> scratch = ThreadLocal.withInitial(() -> new FloatBufferTensor(TensorShape.one));
+    ThreadLocal<FloatBufferTensor> scratch = ThreadLocal.withInitial(() -> new FloatBufferTensor(TensorShape.ONE));
 
     String name();
 

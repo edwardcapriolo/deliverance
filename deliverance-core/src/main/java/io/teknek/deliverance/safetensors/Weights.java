@@ -13,6 +13,7 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.fetch.Pair;
 import io.teknek.deliverance.model.DistributedContext;
 import io.teknek.deliverance.tensor.*;
+import io.teknek.deliverance.tensor.impl.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -102,7 +103,7 @@ public class Weights implements WeightLoader {
 
             positionOffset = info.dataOffsets[0] + (dctx.getShardOffsetForLength(rows) * columnLength);
             positionLimit = positionOffset + (dctx.getShardLength(rows) * columnLength);
-            shape = TensorShape.sparseRow(info.shape, Pair.of(dctx.getShardOffsetForLength(rows), dctx.getShardLength(rows)));
+            shape = TensorShape.sparseRow(info.shape, SparseOffset.of(dctx.getShardOffsetForLength(rows), dctx.getShardLength(rows)));
         }
         return Pair.of(shape, Pair.of(positionOffset, positionLimit));
     }

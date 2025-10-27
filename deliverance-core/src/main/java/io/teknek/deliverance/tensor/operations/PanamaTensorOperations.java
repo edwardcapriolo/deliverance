@@ -2,8 +2,14 @@ package io.teknek.deliverance.tensor.operations;
 
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.DType;
+
+import io.teknek.deliverance.math.BiIntConsumer;
 import io.teknek.deliverance.math.PhysicalCoreTuningExecutor;
 import io.teknek.deliverance.tensor.*;
+import io.teknek.deliverance.tensor.impl.BFloat16BufferTensor;
+import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
+import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
+import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import jdk.incubator.vector.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

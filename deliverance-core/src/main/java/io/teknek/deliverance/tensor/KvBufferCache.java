@@ -3,10 +3,12 @@ package io.teknek.deliverance.tensor;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.DType;
-import io.teknek.deliverance.fetch.Pair;
+
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.DistributedContext;
 import io.teknek.deliverance.safetensors.Config;
+import io.teknek.deliverance.tensor.impl.BFloat16BufferTensor;
+import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -88,7 +90,7 @@ public class KvBufferCache implements Closeable {
 
             // Adjust the shape to be relative to the kv cache size (in case of GQA)
             if (c.kvLength != dctx.kvSegmentLength) {
-                Pair<Integer, Integer> kvOffset = Pair.of(dctx.kvSegmentStart, dctx.kvSegmentEnd);
+                SparseOffset<Integer> kvOffset = SparseOffset.of(dctx.kvSegmentStart, dctx.kvSegmentEnd);
                 s = TensorShape.sparseColumn(rawShape, kvOffset);
             } else {
                 s = TensorShape.of(rawShape);
@@ -109,7 +111,7 @@ public class KvBufferCache implements Closeable {
         private final RandomAccessFile raf;
 
         KvBufferPage(KvPageContext pageCtx, String pageId) {
-
+            //this looks more and more like two subclasses vs an if statement
             if (kvBufferCacheSettings.isEphemeral()) {
                 this.raf = null;
                 TensorCache tc = kvBufferCacheSettings.getDedicatedCache() == null ?
@@ -148,9 +150,7 @@ public class KvBufferCache implements Closeable {
                     } else {
                         throw new UnsupportedOperationException("Only F32/BF16 is supported for now");
                     }
-
                     this.tensor = t;
-
                 } catch (IOException e) {
                     throw new IOError(e);
                 }
@@ -178,7 +178,7 @@ public class KvBufferCache implements Closeable {
     }
 
     public class KvBuffer implements AutoCloseable {
-        private String session;
+        private final String session;
         private final AtomicInteger currentContextPosition = new AtomicInteger(0);
         private final KvBufferPage[][] pages;
 
@@ -188,7 +188,6 @@ public class KvBufferCache implements Closeable {
             this.session = session;
             this.pageContext = computePageSize(maxPageSizeInBytes);
             this.pages = new KvBufferPage[pageContext.numberOfLayerPages][pageContext.numberOfContextPages];
-
         }
 
         public int getCurrentContextPosition() {
