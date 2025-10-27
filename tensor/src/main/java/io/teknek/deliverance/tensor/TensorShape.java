@@ -1,14 +1,14 @@
 package io.teknek.deliverance.tensor;
 
 import com.google.common.base.Preconditions;
-import io.teknek.deliverance.fetch.Pair;
 
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.Optional;
 
 public class TensorShape {
-    public static TensorShape one = of(1, 1);
+    /** Tensors are always two dimentation a single tensor of a single element 1 thus becomes [[1]] */
+    public static TensorShape ONE = of(1, 1);
 
     public static TensorShape of(int... shape) {
         if (shape.length == 1) {
@@ -17,26 +17,26 @@ public class TensorShape {
         return new TensorShape(shape, Optional.empty(), Optional.empty());
     }
 
-    public static TensorShape sparseColumn(int[] shape, Pair<Integer, Integer> sparseOffset) {
+    public static TensorShape sparseColumn(int[] shape, SparseOffset<Integer> sparseOffset) {
         return new TensorShape(shape, Optional.empty(), Optional.of(sparseOffset));
     }
 
-    public static TensorShape sparseRow(int[] shape, Pair<Integer, Integer> sparseOffset) {
+    public static TensorShape sparseRow(int[] shape, SparseOffset<Integer> sparseOffset) {
         return new TensorShape(shape, Optional.of(sparseOffset), Optional.empty());
     }
 
     private final int[] tshape;
     private final long capacity;
 
-    private final Optional<Pair<Integer, Integer>> sparseColumnRange;
-    private final Optional<Pair<Integer, Integer>> sparseRowRange;
+    private final Optional<SparseOffset<Integer>> sparseColumnRange;
+    private final Optional<SparseOffset<Integer>> sparseRowRange;
     private final boolean isSparse;
     private final int sparseColumnOffset;
     private final int sparseColumnLength;
     private final int sparseRowOffset;
     private final int sparseRowLength;
 
-    private TensorShape(int[] shape, Optional<Pair<Integer, Integer>> sparseRowRange, Optional<Pair<Integer, Integer>> sparseColumnRange) {
+    private TensorShape(int[] shape, Optional<SparseOffset<Integer>> sparseRowRange, Optional<SparseOffset<Integer>> sparseColumnRange) {
         Preconditions.checkArgument(
                 shape.length > 1,
                 "Shape must have at least two dimensions, even if first is 1 (to represent a vector)"
@@ -47,11 +47,11 @@ public class TensorShape {
         this.sparseRowRange = sparseRowRange;
         this.isSparse = this.sparseColumnRange.isPresent() || this.sparseRowRange.isPresent();
 
-        this.sparseColumnOffset = this.sparseColumnRange.map(Pair::left).orElse(0);
-        this.sparseColumnLength = this.sparseColumnRange.map(Pair::right).orElse(shape[shape.length - 1]);
+        this.sparseColumnOffset = this.sparseColumnRange.map(SparseOffset::getStart).orElse(0);
+        this.sparseColumnLength = this.sparseColumnRange.map(SparseOffset::getEnd).orElse(shape[shape.length - 1]);
 
-        this.sparseRowOffset = this.sparseRowRange.map(Pair::left).orElse(0);
-        this.sparseRowLength = this.sparseRowRange.map(Pair::right).orElse(shape[shape.length - 2]);
+        this.sparseRowOffset = this.sparseRowRange.map(SparseOffset::getStart).orElse(0);
+        this.sparseRowLength = this.sparseRowRange.map(SparseOffset::getEnd).orElse(shape[shape.length - 2]);
 
         long c = 1;
         for (int i = 0; i < shape.length - 2; i++)
@@ -141,7 +141,7 @@ public class TensorShape {
         int[] copy = Arrays.copyOf(tshape, tshape.length);
         copy[copy.length - 1] *= scale;
         return sparseColumnRange.isPresent()
-                ? sparseColumn(copy, Pair.of((int) (sparseColumnOffset * scale), (int) (sparseColumnLength * scale)))
+                ? sparseColumn(copy, SparseOffset.of((int) (sparseColumnOffset * scale), (int) (sparseColumnLength * scale)))
                 : of(copy);
     }
 
@@ -151,7 +151,7 @@ public class TensorShape {
         int[] copy = Arrays.copyOf(tshape, tshape.length);
         copy[dim] = value;
         int newSparseLength = copy[copy.length - 1];
-        return sparseColumnRange.isPresent() ? sparseColumn(copy, Pair.of(sparseColumnOffset, newSparseLength)) : of(copy);
+        return sparseColumnRange.isPresent() ? sparseColumn(copy, SparseOffset.of(sparseColumnOffset, newSparseLength)) : of(copy);
     }
 
     public int first() {
@@ -168,7 +168,7 @@ public class TensorShape {
 
     public TensorShape sparsifyColumns(int offset, int length) {
         Preconditions.checkArgument(!isSparse, "Cannot sparsify a sparse tensor");
-        return new TensorShape(tshape, Optional.empty(), Optional.of(Pair.of(offset, length)));
+        return new TensorShape(tshape, Optional.empty(), Optional.of(SparseOffset.of(offset, length)));
     }
 
     public TensorShape slice(int numDims) {

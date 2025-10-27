@@ -2,11 +2,8 @@ package io.teknek.deliverance.tensor;
 
 import com.google.common.base.Preconditions;
 import com.google.common.primitives.Ints;
-import java.io.IOException;
+
 import java.lang.foreign.MemorySegment;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.channels.FileChannel;
 import java.util.Arrays;
 import java.util.UUID;
 
@@ -17,26 +14,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.teknek.deliverance.DType;
-import static io.teknek.deliverance.DType.*;
 
-/** A Tensor is a multi-dimensional array of data.
- * See {@link FloatBufferTensor} for primary impl.
- *
- * All implementations must be heap based. Meaning the data is stored in a
- * contiguous array in memory.  This is required for vector math operations.
- *
- * This class is abstract because there are multiple implementations
- * for different types of data.
- **/
 public abstract class AbstractTensor<V extends Vector<?>, T extends Number> implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(AbstractTensor.class);
 
-    private volatile String uid;
+    protected volatile String uid;
     protected final TensorShape shape;
     protected final DType dType;
     protected final AbstractTensor[] sliceCache;
-    private final int stride;
-    private volatile TensorCache originCache = null;
+    protected final int stride;
+    protected volatile TensorCacheIface originCache = null;
 
 
     protected AbstractTensor(DType dType, TensorShape shape, boolean cacheSlices) {
@@ -47,16 +34,6 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
         this.sliceCache = cacheSlices ? new AbstractTensor[shape.first()] : null;
         this.stride = shape.first() > 1 && dims() == 2 ? getOffset(shape.sparseRowOffset() + 1, shape.sparseColumnOffset()) : 0;
     }
-
-    /*
-    public static AbstractTensor make(DType dType, TensorShape shape) {
-        return switch (dType) {
-            case F32 -> new FloatBufferTensor(shape);
-            case BF16 -> new BFloat16BufferTensor(shape);
-            case I8 -> new Q8ByteBufferTensor(shape);
-            default -> throw new RuntimeException("Unsupported tensor type: " + dType);
-        };
-    }*/
 
     public String getUid() {
         return uid;
@@ -71,11 +48,6 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
 
     /** Create a new tensor with the given shape of the same Tensor implementation, including offsets to underlying heap */
     protected abstract AbstractTensor make(int heapOffset, int heapLength, TensorShape shape, boolean cacheSlices);
-
-/*
-    public AbstractTensor copyShape() {
-        return allocatingCache.get(dType, shape);
-    }*/
 
     /** Number of dimensions */
     public final int dims() {
@@ -261,16 +233,20 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
     /** Zero out the tensor */
     public abstract void clear();
 
+
     public void close() {
         if (originCache != null) {
             originCache.release(this);
         }
     }
 
-    void setOwnerCache(TensorCache cache) {
+    void setOwnerCache(TensorCacheIface cache) {
         this.originCache = cache;
     }
 
+
+
+    /*
     public AbstractTensor quantize(DType dType) {
         return quantize(dType, false);
     }
@@ -304,6 +280,8 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
         return new TensorInfo(dType, lshape, new long[] { startOffset, out.position() });
     }
 
+
+     */
     public void debug(String id) {
         if (true) {
             double tmp = 0.0;

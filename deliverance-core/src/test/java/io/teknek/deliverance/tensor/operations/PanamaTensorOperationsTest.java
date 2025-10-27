@@ -2,6 +2,9 @@ package io.teknek.deliverance.tensor.operations;
 
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.tensor.*;
+import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
+import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
+import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import org.junit.jupiter.api.Test;
 
 import java.util.Random;

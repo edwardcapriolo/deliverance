@@ -18,6 +18,7 @@ import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.tensor.*;
+import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
 import jdk.incubator.vector.FloatVector;

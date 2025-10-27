@@ -9,6 +9,7 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.AbstractTensorUtils;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
@@ -35,27 +36,11 @@ public class LlamaModel extends AbstractModel {
         // Don't quantize this, it's used for the embedding layer
         // but we ae calling quantize in the if?
         if (embedTokenWeights == null) {
-            embedTokenWeights = weights.load("model.embed_tokens.weight").quantize(workingDType);
+            //embedTokenWeights = weights.load("model.embed_tokens.weight").quantize(workingDType);
+            embedTokenWeights = AbstractTensorUtils.quantize(weights.load("model.embed_tokens.weight"), workingDType);
             configurableTensorProvider.get().registerModelTensor(embedTokenWeights);
         }
-/*
-        return (inputToken, position) -> {
-            if (embedTokenWeights.dType() == DType.BF16) {
-                // Handle old style model with BF16 embeddings
-                AbstractTensor embedding = makeDenseTensor(1, config.embeddingLength);
-                AbstractTensor at = embedTokenWeights.slice(true, inputToken);
-                if (embedTokenWeights.dType() != embedding.dType()) {
-                    at = TensorOperationsProvider.get().quantize(at, embedding.dType(), 0, config.embeddingLength);
-                }
-                embedding.copyFrom(at, 0, 0, config.embeddingLength);
-                return embedding;
-            } else {
-                AbstractTensor at = embedTokenWeights.slice(true, inputToken);
-                AbstractTensor embedding = at.copyShape();
-                embedding.copyFrom(at, 0, 0, config.embeddingLength);
-                return embedding;
-            }
-        };*/
+
         return new EmbedInput(this) {
             @Override
             public AbstractTensor inputTokenToEmbedding(int inputToken, int position) {
@@ -93,10 +78,10 @@ public class LlamaModel extends AbstractModel {
             CausalSelfAttention attention = new CausalSelfAttention(
                     this,
                     relativeLayer,
-                    weights.load(prefix + "q_proj.weight", config.dctx(), true, false).quantize(qType),
-                    weights.load(prefix + "k_proj.weight", config.dctx(), true, false).quantize(qType),
-                    weights.load(prefix + "v_proj.weight", config.dctx(), true, false).quantize(qType),
-                    weights.load(prefix + "o_proj.weight", config.dctx(), false, true).quantize(qType)
+                    AbstractTensorUtils.quantize(weights.load(prefix + "q_proj.weight", config.dctx(), true, false), qType),
+                    AbstractTensorUtils.quantize(weights.load(prefix + "k_proj.weight", config.dctx(), true, false), qType),
+                    AbstractTensorUtils.quantize(weights.load(prefix + "v_proj.weight", config.dctx(), true, false), qType),
+                    AbstractTensorUtils.quantize(weights.load(prefix + "o_proj.weight", config.dctx(), false, true), qType)
             );
 
             prefix = base + "mlp.";
@@ -104,34 +89,30 @@ public class LlamaModel extends AbstractModel {
             MLPBlock mlp = new MLPBlock(
                     this,
                     config.activationFunction,
-                    weights.load(prefix + "gate_proj.weight", config.dctx(), true, false).quantize(qType), // w1
-                    weights.load(prefix + "down_proj.weight", config.dctx(), false, true).quantize(qType), // w2
-                    weights.load(prefix + "up_proj.weight", config.dctx(), true, false).quantize(qType)
+                    AbstractTensorUtils.quantize(weights.load(prefix + "gate_proj.weight", config.dctx(), true, false), qType), // w1
+                            AbstractTensorUtils.quantize(weights.load(prefix + "down_proj.weight", config.dctx(), false, true), qType), // w2
+                                    AbstractTensorUtils.quantize(weights.load(prefix + "up_proj.weight", config.dctx(), true, false) , qType)
             ); // w3
 
             transformerBlocks[relativeLayer] = new TransformerBlock(
                     this,
                     relativeLayer,
-                    new RmsNorm(this, weights.load(base + "input_layernorm.weight").quantize(qType), metricRegistry),
+                    new RmsNorm(this, AbstractTensorUtils.quantize(weights.load(base + "input_layernorm.weight"), qType), metricRegistry),
                     attention,
-                    new RmsNorm(this, weights.load(base + "post_attention_layernorm.weight").quantize(qType), metricRegistry),
+                    new RmsNorm(this, AbstractTensorUtils.quantize(weights.load(base + "post_attention_layernorm.weight"), qType), metricRegistry),
                     mlp
             );
         });
-
         return transformerBlocks;
     }
-
-
-
 
     @Override
     protected SampleOutput loadOutputWeights() {
         DType qType = modelQType.orElse(this.modelDType);
-        final LayerNorm outputLayerNorm = new RmsNorm(this, weights.load("model.norm.weight").quantize(qType), metricRegistry);
+        final LayerNorm outputLayerNorm = new RmsNorm(this, AbstractTensorUtils.quantize(weights.load("model.norm.weight"), qType), metricRegistry);
         // Some llama models don't have a classification head
         AbstractTensor classificationWeights = weights.isWeightPresent("lm_head.weight")
-                ? weights.load("lm_head.weight").quantize(workingDType)
+                ? AbstractTensorUtils.quantize(weights.load("lm_head.weight"), workingDType)
                 : embedTokenWeights == null ? embedTokenWeights = weights.load("model.embed_tokens.weight")
                 : embedTokenWeights;
         configurableTensorProvider.get().registerModelTensor(classificationWeights);

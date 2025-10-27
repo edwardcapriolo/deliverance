@@ -2,6 +2,7 @@ package io.teknek.deliverance.tensor.operations;
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.AbstractTensorUtils;
 
 public class NaiveTensorOperations implements TensorOperations {
     @Override
@@ -105,6 +106,7 @@ public class NaiveTensorOperations implements TensorOperations {
 
     @Override
     public AbstractTensor quantize(AbstractTensor t, DType qtype, int offset, int length) {
-        return t.quantize(qtype, true);
+        return AbstractTensorUtils.quantize(t, qtype, true);
+        //return t.quantize(qtype, true);
     }
 }

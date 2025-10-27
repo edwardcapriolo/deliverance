@@ -1,4 +1,4 @@
-package io.teknek.deliverance.tensor.operations;
+package io.teknek.deliverance.math;
 
 
 @FunctionalInterface

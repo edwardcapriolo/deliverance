@@ -9,6 +9,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.tensor.impl.*;
 import org.jctools.queues.MpmcUnboundedXaddArrayQueue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,7 +18,7 @@ import org.slf4j.LoggerFactory;
  * In LLMs a lot of buffers are used for inference.  Rather than allocating each one or using a fixed pool
  * this TensorCache allows a limited number of different shaped buffers to be reused across threads
  */
-public class TensorCache {
+public class TensorCache implements TensorCacheIface{
 
     private static final Logger logger = LoggerFactory.getLogger(TensorCache.class);
 
@@ -104,7 +105,7 @@ public class TensorCache {
     }
 
     /** give the tensor back to the cache from this point on it may be re-used. */
-    void release(AbstractTensor b) {
+    public void release(AbstractTensor b) {
         MpmcUnboundedXaddArrayQueue<AbstractTensor> availableQueue = availableByShape.computeIfAbsent(
                 new ShapeKey(b.dType(), b.shape()),
                 queueFactory
