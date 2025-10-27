@@ -7,7 +7,6 @@ import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 
 public interface TensorOperations {
-    ThreadLocal<FloatBufferTensor> scratch = ThreadLocal.withInitial(() -> new FloatBufferTensor(TensorShape.ONE));
 
     String name();
 
@@ -28,7 +27,7 @@ public interface TensorOperations {
     }
 
     default float dotProduct(AbstractTensor a, AbstractTensor b, int aoffset, int boffset, int limit) {
-        FloatBufferTensor r = scratch.get();
+        FloatBufferTensor r =  new FloatBufferTensor(TensorShape.ONE);
         batchDotProduct(r, a, b, aoffset, boffset, limit);
         return r.get(0, 0);
     }
