@@ -12,7 +12,7 @@ import io.teknek.deliverance.tokenizer.TokenizerModel;
 
 import java.util.*;
 
-import static io.teknek.deliverance.fetch.HttpSupport.logger;
+import static io.teknek.deliverance.safetensors.fetch.HttpSupport.logger;
 
 public class PromptSupport {
 

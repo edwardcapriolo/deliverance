@@ -2,14 +2,13 @@ package io.teknek.deliverance.model;
 
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
-import io.teknek.deliverance.fetch.ModelFetcher;
+import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.llama.LlamaTokenizer;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.tensor.*;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;

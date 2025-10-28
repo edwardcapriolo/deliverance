@@ -1,6 +1,6 @@
 package io.teknek.deliverance.safetensors;
 
-import io.teknek.deliverance.fetch.ModelFetcher;
+import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;

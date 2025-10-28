@@ -10,8 +10,7 @@ import java.nio.ShortBuffer;
 import java.util.*;
 
 import io.teknek.deliverance.DType;
-import io.teknek.deliverance.fetch.Pair;
-import io.teknek.deliverance.model.DistributedContext;
+import io.teknek.deliverance.safetensors.fetch.Pair;
 import io.teknek.deliverance.tensor.*;
 import io.teknek.deliverance.tensor.impl.*;
 import org.slf4j.Logger;

@@ -24,6 +24,7 @@
     <modules>
         <module>math</module>
         <module>tensor</module>
+        <module>safetensors</module>
         <module>deliverance-core</module>
         <module>deliverance-native</module>
         <module>sketches</module>

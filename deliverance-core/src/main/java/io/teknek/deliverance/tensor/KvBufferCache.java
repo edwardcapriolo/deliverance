@@ -5,7 +5,7 @@ import com.google.common.base.Preconditions;
 import io.teknek.deliverance.DType;
 
 import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.model.DistributedContext;
+import io.teknek.deliverance.safetensors.DistributedContext;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.tensor.impl.BFloat16BufferTensor;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;

@@ -1,7 +1,6 @@
-package io.teknek.deliverance.model;
+package io.teknek.deliverance.safetensors;
 
 
-import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.tensor.AbstractTensor;
 
 import java.util.List;

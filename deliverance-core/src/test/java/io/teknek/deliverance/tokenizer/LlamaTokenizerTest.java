@@ -2,7 +2,7 @@ package io.teknek.deliverance.tokenizer;
 
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
-import io.teknek.deliverance.fetch.ModelFetcher;
+import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.model.llama.LlamaTokenizer;

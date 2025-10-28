@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.type.MapType;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.primitives.Ints;
 import io.teknek.deliverance.DType;
-import io.teknek.deliverance.model.DistributedContext;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorInfo;
 import org.slf4j.Logger;
@@ -27,14 +26,14 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
-import static io.teknek.deliverance.JsonUtils.om;
+
 import static io.teknek.deliverance.safetensors.Weights.findDType;
 
 public class DefaultWeightLoader implements WeightLoader {
 
     public static final Logger LOGGER = LoggerFactory.getLogger(DefaultWeightLoader.class);
 
-    private static final MapType metadataTypeReference = om.getTypeFactory().constructMapType(Map.class, String.class, String.class);
+    private static final MapType metadataTypeReference = JsonUtils.om.getTypeFactory().constructMapType(Map.class, String.class, String.class);
 
     private final SafeTensorIndexPojo index;
     private final ConcurrentHashMap<String, RandomAccessFile> fileMap = new ConcurrentHashMap<>();
@@ -61,7 +60,6 @@ public class DefaultWeightLoader implements WeightLoader {
             throw new UncheckedIOException(e);
         }
         this.majorityDType = findDType(allTensorInfoMap);
-        System.out.println("Majority DType "+ this.majorityDType);
     }
 
     public void loadWeights() throws IOException {
@@ -112,7 +110,7 @@ public class DefaultWeightLoader implements WeightLoader {
         buf.get(header);
 
         try {
-            JsonNode rootNode = om.readTree(header);
+            JsonNode rootNode = JsonUtils.om.readTree(header);
             Iterator<Map.Entry<String, JsonNode>> fields = rootNode.fields();
             Map<String, TensorInfo> tensorInfoMap = new HashMap<>();
             Map<String, String> metadata = Collections.emptyMap();
@@ -120,9 +118,9 @@ public class DefaultWeightLoader implements WeightLoader {
             while (fields.hasNext()) {
                 Map.Entry<String, JsonNode> field = fields.next();
                 if (field.getKey().equalsIgnoreCase("__metadata__")) {
-                    metadata = om.treeToValue(field.getValue(), metadataTypeReference);
+                    metadata = JsonUtils.om.treeToValue(field.getValue(), metadataTypeReference);
                 } else {
-                    TensorInfo tensorInfo = om.treeToValue(field.getValue(), TensorInfo.class);
+                    TensorInfo tensorInfo = JsonUtils.om.treeToValue(field.getValue(), TensorInfo.class);
                     tensorInfoMap.put(field.getKey(), tensorInfo);
                 }
             }

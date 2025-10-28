@@ -2,7 +2,7 @@ package io.teknek.deliverance.safetensors.prompt;
 
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
-import io.teknek.deliverance.fetch.ModelFetcher;
+import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.AbstractModel;

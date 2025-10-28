@@ -1,16 +1,14 @@
 package io.teknek.deliverance.safetensors;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.teknek.deliverance.JsonUtils;
-import io.teknek.deliverance.model.ModelSupport;
-import io.teknek.deliverance.model.ModelType;
+
 
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 
 public class SafeTensorSupport {
-
+/*
     public static ModelType detectModel(File configFile) {
         JsonNode rootNode;
         try {
@@ -23,5 +21,5 @@ public class SafeTensorSupport {
         }
         return ModelSupport.getModelType(rootNode.get("model_type").textValue().toUpperCase());
     }
-
+*/
 }

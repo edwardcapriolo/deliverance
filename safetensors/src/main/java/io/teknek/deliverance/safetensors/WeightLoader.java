@@ -1,7 +1,6 @@
 package io.teknek.deliverance.safetensors;
 
 import io.teknek.deliverance.DType;
-import io.teknek.deliverance.model.DistributedContext;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorInfo;
 

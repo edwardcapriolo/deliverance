@@ -5,7 +5,7 @@ import com.google.common.collect.ImmutableBiMap;
 import io.teknek.deliverance.math.ActivationFunction;
 
 import io.teknek.deliverance.math.VectorMathUtils;
-import io.teknek.deliverance.model.DistributedContext;
+
 
 import java.util.List;
 import java.util.Map;

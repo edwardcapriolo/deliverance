@@ -1,4 +1,4 @@
-package io.teknek.deliverance.fetch;
+package io.teknek.deliverance.safetensors.fetch;
 
 
 import com.google.common.io.CountingInputStream;

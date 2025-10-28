@@ -3,7 +3,7 @@ package io.teknek.deliverance.generator;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.model.DistributedContext;
+import io.teknek.deliverance.safetensors.DistributedContext;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.operations.TensorOperationsProvider;

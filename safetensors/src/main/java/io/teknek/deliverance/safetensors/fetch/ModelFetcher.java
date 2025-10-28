@@ -1,4 +1,4 @@
-package io.teknek.deliverance.fetch;
+package io.teknek.deliverance.safetensors.fetch;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

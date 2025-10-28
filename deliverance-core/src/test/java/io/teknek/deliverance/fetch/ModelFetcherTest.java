@@ -1,5 +1,6 @@
 package io.teknek.deliverance.fetch;
 
+import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
