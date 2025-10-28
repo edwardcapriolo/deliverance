@@ -283,6 +283,7 @@ public class DefaultWeightLoader implements WeightLoader {
             }
 
         }
+
         //this.index = null;
         this.allTensorInfoMap.clear();
         this.weightMap.clear();

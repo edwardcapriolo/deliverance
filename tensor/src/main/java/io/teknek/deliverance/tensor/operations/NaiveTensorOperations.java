@@ -12,7 +12,7 @@ public class NaiveTensorOperations implements TensorOperations {
 
     @Override
     public int parallelSplitSize() {
-        return Integer.MAX_VALUE; // use as many threads as possible
+        return 32; // was Integer.MAV_VALUE seems overkill
     }
 
     // a[0..n] += b[0..n]
@@ -107,6 +107,5 @@ public class NaiveTensorOperations implements TensorOperations {
     @Override
     public AbstractTensor quantize(AbstractTensor t, DType qtype, int offset, int length) {
         return AbstractTensorUtils.quantize(t, qtype, true);
-        //return t.quantize(qtype, true);
     }
 }

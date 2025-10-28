@@ -3,8 +3,8 @@ package io.teknek.deliverance.tensor.operations;
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
-import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 
 public interface TensorOperations {
 
@@ -19,8 +19,7 @@ public interface TensorOperations {
     /**
      * Register a tensor with the operations provider.  This is used to optimize operations on the tensor (e.g. GPU Load).
      */
-    default void registerModelTensor(AbstractTensor t) {
-    }
+    default void registerModelTensor(AbstractTensor t) { }
 
     default float dotProduct(AbstractTensor a, AbstractTensor b, int limit) {
         return dotProduct(a, b, 0, 0, limit);
@@ -32,28 +31,13 @@ public interface TensorOperations {
         return r.get(0, 0);
     }
 
-    default void batchDotProduct(
-            AbstractTensor result,
-            AbstractTensor a,
-            AbstractTensor b,
-            int aColumnOffset,
-            int bColumnOffset,
-            int columnLimit
-    ) {
+    default void batchDotProduct(AbstractTensor result, AbstractTensor a, AbstractTensor b,
+            int aColumnOffset, int bColumnOffset, int columnLimit) {
         batchDotProduct(result, a, b, aColumnOffset, bColumnOffset, columnLimit, 0, 0, b.shape().first());
     }
 
-    void batchDotProduct(
-            AbstractTensor result,
-            AbstractTensor a,
-            AbstractTensor b,
-            int aColumnOffset,
-            int bColumnOffset,
-            int columnLimit,
-            int rRowOffset,
-            int bRowOffset,
-            int rowChunkSize
-    );
+    void batchDotProduct(AbstractTensor result, AbstractTensor a, AbstractTensor b,
+            int aColumnOffset, int bColumnOffset, int columnLimit, int rRowOffset, int bRowOffset, int rowChunkSize);
 
     default void dotProductChunk(
             AbstractTensor result,

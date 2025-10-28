@@ -37,7 +37,7 @@ public class PanamaTensorOperationsTest {
         AbstractTensor a = allOnes(size);
         AbstractTensor b = allOnes(size);
         float control = controlOps.dotProduct(a, b, size);
-        assertEquals(control, 1024f);
+        assertEquals(1024f, control);
 
         PanamaTensorOperations p = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, new TensorCache(new MetricRegistry()));
         assertEquals(control, p.dotProduct(a, b,1024));
