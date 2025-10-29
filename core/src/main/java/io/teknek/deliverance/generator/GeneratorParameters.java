@@ -24,4 +24,8 @@ public class GeneratorParameters {
         cacheSalt = Optional.of(salt);
         return this;
     }
+    public GeneratorParameters withTemperature(float tmp){
+        this.temperature = Optional.of(tmp);
+        return this;
+    }
 }
