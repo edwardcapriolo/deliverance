@@ -1,6 +1,6 @@
-package io.teknek.deliverance.safetensors;
+package io.teknek.deliverance.safetensors.fetch;
 
-import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
+import io.teknek.deliverance.safetensors.DefaultWeightLoader;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
