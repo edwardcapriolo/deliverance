@@ -28,6 +28,7 @@
         <module>core</module>
         <module>native</module>
         <module>sketches</module>
+        <module>web</module>
     </modules>
     <build>
         <extensions>
@@ -99,6 +100,7 @@
                     <artifactId>maven-compiler-plugin</artifactId>
                     <version>3.14.0</version>
                 </plugin>
+
                 <plugin>
                     <groupId>net.serenity-bdd.maven.plugin</groupId>
                     <artifactId>serenity-maven.plugin</artifactId>
