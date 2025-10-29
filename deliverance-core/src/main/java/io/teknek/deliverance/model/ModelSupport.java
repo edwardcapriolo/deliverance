@@ -23,14 +23,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import static io.teknek.deliverance.JsonUtils.om;
 
 public class ModelSupport {
-
-
     private static final Map<String,ModelType> registry = new ConcurrentHashMap<String, ModelType>();
 
     static {
         registry.putIfAbsent("LLAMA", new LlamaModelType());
     }
-
 
     public static ModelType getModelType(String modelType) {
         return registry.get(modelType);
@@ -62,7 +59,6 @@ public class ModelSupport {
             Config config = om.readValue(configFile, modelType.getConfigClass());
             Tokenizer tokenizer = modelType.getTokenizerClass().getConstructor(Path.class).newInstance(model.toPath());
             WeightLoader wl = new DefaultWeightLoader(model);
-
 
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
                     WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class,

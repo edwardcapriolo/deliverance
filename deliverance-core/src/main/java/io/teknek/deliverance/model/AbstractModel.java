@@ -1,7 +1,5 @@
 package io.teknek.deliverance.model;
 
-
-
 import com.codahale.metrics.MetricRegistry;
 import com.google.common.base.Preconditions;
 import com.google.common.primitives.Ints;
@@ -143,14 +141,11 @@ public abstract class AbstractModel implements Generator {
         } else {
             this.workingQType = workingMemoryQType;
         }
-
         logger.info("Model type = {}, Working memory type = {}, Quantized memory type = {}", modelDType, workingDType,
                 workingQType);
-
         this.embedInput = inferenceType.isInput ? loadInputWeights() : null;
         this.transformerBlocks = inferenceType.isFwdPass ? loadTransformerBlockWeights() : null;
         this.sampleOutput = inferenceType.isOutput ? loadOutputWeights() : null;
-
     }
 
     protected abstract EmbedInput loadInputWeights();
