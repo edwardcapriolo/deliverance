@@ -2,8 +2,7 @@ package net.deliverance.http;
 
 import io.teknek.deliverance.generator.Generator;
 import io.teknek.deliverance.generator.Response;
-import io.teknek.deliverance.model.CreateChatCompletionRequest;
-import io.teknek.deliverance.model.CreateChatCompletionRequestStop;
+import io.teknek.deliverance.model.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mockito;
@@ -28,8 +27,8 @@ import static org.mockito.Mockito.when;
 @AutoConfigureMockMvc
 public class DeliveranceControllerTest {
 
-    @MockitoBean
-    Generator generator;
+    //@MockitoBean
+    //AbstractModel model;
 
     @Autowired
     MockMvc mockMvc;
@@ -38,10 +37,14 @@ public class DeliveranceControllerTest {
     public void whenUsingSpringBootTestArgs_thenCommandLineArgSet(@Autowired Environment env) throws Exception {
         Response r = new Response("yo", null,
                 null,0,0, 0, 0);
-        when(generator.generate(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any()))
-                .thenReturn(r);
+        //when(model.generate(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any()))
+        //        .thenReturn(r);
         CreateChatCompletionRequest request = new CreateChatCompletionRequest()
                 .stop(null);
+        request.addMessagesItem(new ChatCompletionRequestMessage(
+                new ChatCompletionRequestUserMessage().content(
+                        new ChatCompletionRequestUserMessageContent("Generate the first letter of the alphabet is"))));
+
         io.teknek.deliverance.JSON j = new io.teknek.deliverance.JSON();
         String s = j.getMapper().writeValueAsString(request);
         mockMvc.perform(MockMvcRequestBuilders.post("/chat/completions")

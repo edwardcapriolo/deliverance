@@ -4,6 +4,7 @@ import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 
 import io.teknek.deliverance.generator.Generator;
+import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
@@ -24,8 +25,8 @@ public class Config {
     }
 
     @Bean
-    public Generator generator(@Value("${deliverance.model.name}") String modelName,
-                               @Value("${deliverance.model.owner}") String modelOwner){
+    public AbstractModel generator(@Value("${deliverance.model.name}") String modelName,
+                                   @Value("${deliverance.model.owner}") String modelOwner){
         //String modelName = "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4";
         //String modelOwner = "tjake";
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
