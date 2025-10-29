@@ -5,7 +5,7 @@ import org.springframework.context.annotation.ComponentScan;
 
 import java.util.ArrayList;
 
-@SpringBootApplication
+@SpringBootApplication()
 @ComponentScan(basePackages = {"net.deliverance.http"})
 public class DeliveranceApplication {
 

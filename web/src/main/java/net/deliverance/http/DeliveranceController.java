@@ -22,6 +22,6 @@ public class DeliveranceController {
 
         List<ChatCompletionRequestMessage> messages = request.getMessages();
 
-        return null;
+        return "yo";
     }
 }
