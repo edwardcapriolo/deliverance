@@ -5,12 +5,12 @@
                              http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <parent>
-    <groupId>io.teknek</groupId>
+    <groupId>io.teknek.deliverance</groupId>
     <artifactId>deliverance-parent</artifactId>
     <version>0.0.1-SNAPSHOT</version>
   </parent>
-  <artifactId>deliverance-native</artifactId>
-  <name>deliverance-native</name>
+  <artifactId>native</artifactId>
+  <name>native</name>
 
   <properties>
     <exe.make>make</exe.make>

@@ -1,6 +1,6 @@
 <project>
   <parent>
-    <groupId>io.teknek</groupId>
+    <groupId>io.teknek.deliverance</groupId>
     <artifactId>deliverance-parent</artifactId>
     <version>0.0.1-SNAPSHOT</version>
   </parent>

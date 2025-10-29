@@ -1,11 +1,11 @@
 <project>
   <parent>
-    <groupId>io.teknek</groupId>
+    <groupId>io.teknek.deliverance</groupId>
     <artifactId>deliverance-parent</artifactId>
     <version>0.0.1-SNAPSHOT</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
-  <artifactId>deliverance-core</artifactId>
+  <artifactId>core</artifactId>
   <properties>
     <maven.compiler.source>24</maven.compiler.source>
     <maven.compiler.target>24</maven.compiler.target>

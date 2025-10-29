@@ -1,6 +1,6 @@
 <project>
     <modelVersion>4.0.0</modelVersion>
-    <groupId>io.teknek</groupId>
+    <groupId>io.teknek.deliverance</groupId>
     <artifactId>deliverance-parent</artifactId>
     <packaging>pom</packaging>
 
@@ -25,8 +25,8 @@
         <module>math</module>
         <module>tensor</module>
         <module>safetensors</module>
-        <module>deliverance-core</module>
-        <module>deliverance-native</module>
+        <module>core</module>
+        <module>native</module>
         <module>sketches</module>
     </modules>
     <build>

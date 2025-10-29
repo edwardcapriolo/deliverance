@@ -36,7 +36,7 @@ public class SimdTest {
 
     @Test
     void goTryIt(){
-        System.load("/home/edward/deliverence/deliverance-native/target/native-lib-only/libdeliverance.so");
+        System.load("/home/edward/deliverence/native/target/native-lib-only/libdeliverance.so");
         TensorCache tc = new TensorCache(new MetricRegistry());
         NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tc).get());
         int size = 1024;
@@ -50,7 +50,7 @@ public class SimdTest {
 
     @Test
     public void sample() throws IOException {
-        System.load("/home/edward/deliverence/deliverance-native/target/native-lib-only/libdeliverance.so");
+        System.load("/home/edward/deliverence/native/target/native-lib-only/libdeliverance.so");
         TensorCache tc = new TensorCache(new MetricRegistry());
         NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tc).get());
         String modelName = "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4";
