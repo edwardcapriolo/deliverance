@@ -75,15 +75,23 @@ try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new Config
 
 ### Performance
 
+#### CPU/GPU
 In case you have been hiding under a rock I will let you in on the secret that GPUs are magic. LLM are very
 compute bound. There are a few specific performance optimizations you should understand.
 
 - NaiveTensorOperations does matrix operations using loops and arrays
 - PanamaTensorOperations uses the "vector" aka project panama support now in java SIMD native to java
 - NativeSimdTensorOperations uses native code "C" through JNI. SIMD from C runs well on optimized x86_64 hardware
-- NativeGPUTensorOpeations uses native code "C" and "shaders" through JNI. Requires an actual GPU
+- NativeGPUTensorOperations uses native code "C" and "shaders" through JNI. Requires an actual GPU
 
 Not everything is fully optimized and some of the above mentioned Operations libraries delegate some methods to 
-each other. The class *ConfigurableTensorProvider* can be autopick or be given an explicit list.
+each other. The class *ConfigurableTensorProvider* with auto pick or you can use an explicit list.
 
-KvBufferCache can be sized in bytes. It can also be persisted to disk, bu it does not clean up itself so feature is off by default
+#### KVBuffer Cache
+KvBufferCache can be sized in bytes. It can also be persisted to disk, but it does not clean up itself so feature is off by default.
+
+#### Small/Quantized models
+If you are running on a device without GPU your best mileage comes from going with the quantized models. 
+Effectively this we are working with big arrays of floating point numbers, and quantizing( fancy rounding) 
+down to Q4 helps the SIMD (Single Instruction Multiple Data) improves performance significantly. It does't 
+make "blazing speed" and the small models just sometimes make nonsense, but it is nice for prototyping. 
