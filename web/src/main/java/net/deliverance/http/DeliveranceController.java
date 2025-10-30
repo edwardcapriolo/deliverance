@@ -71,6 +71,8 @@ public class DeliveranceController {
         GeneratorParameters params = new GeneratorParameters().withTemperature(0.0f);
 
         AtomicInteger index = new AtomicInteger(0);
+        builder.addSystemMessage("generate correct answers");
+        System.out.println("Promt is "+ builder.build());
         if (request.getStream() != null && request.getStream()) {
 
             SseEmitter emitter = new SseEmitter(-1L);
@@ -86,7 +88,8 @@ public class DeliveranceController {
                                                     )
                                             )
                             );
-                        } catch (IOException e) {
+                        } catch (IOException | RuntimeException e) {
+                            System.err.println(e);
                             emitter.completeWithError(e);
                         }
                         return null;
@@ -106,9 +109,8 @@ public class DeliveranceController {
 
                     emitter.complete();
 
-
-
-                } catch (IOException e) {
+                } catch (IOException | RuntimeException e) {
+                    System.err.println(e);
                     emitter.completeWithError(e);
                 }
 

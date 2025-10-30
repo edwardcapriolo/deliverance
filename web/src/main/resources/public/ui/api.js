@@ -8,7 +8,7 @@ function postRequest(input, session, signal) {
       'X-Deliverance-Session': session,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({"model": "ignore", "messages": [{"role": "user", "content": input}], "stream": false }),
+    body: JSON.stringify({"model": "ignore", "messages": [{"role": "user", "content": input}], "stream": true }),
     signal: signal
   });
 }

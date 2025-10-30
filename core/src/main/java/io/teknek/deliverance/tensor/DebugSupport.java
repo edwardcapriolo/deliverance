@@ -13,13 +13,13 @@ public class DebugSupport {
 
     public static void debug(String name, AbstractTensor t, int layer) {
         if (DEBUG) {
-            logger.debug("Layer: {} - {} - {}", layer, name, t);
+            logger.warn("Layer: {} - {} - {}", layer, name, t);
         }
     }
 
     public static void debug(String msg, Object t) {
         if (DEBUG) {
-            logger.debug("{} - {}", msg, t);
+            logger.warn("{} - {}", msg, t);
         }
     }
 }
