@@ -13,7 +13,7 @@ Deliverance compiles < 1 minute. Int a 33MB boot application.
 : something delivered
 especially : an `opinion` or `decision` (such as the verdict of a jury) expressed publicly.
 
-Could just go with j-inference open-jay-i that would be boring. We are `inferencing` we are
+Could just go with j-inference open-jay-i that would be boring. We aren't `inferencing`, we are
 `delivering`
 
 ### Lightning quick start 
