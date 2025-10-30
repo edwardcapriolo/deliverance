@@ -53,4 +53,37 @@ Open your browser to http://localhost:8080
   <img src="deliv.png"  alt="Deliver me">
 </p>
 
+### Using as a library
+Odds are you don't want to use the amazing UI depicted above. Deliverance is made in components and 
+very easy to use as a library as you might use transformers"
 
+```java
+ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
+File f = fetch.maybeDownload();
+MetricRegistry mr = new MetricRegistry();
+TensorCache tensorCache = new TensorCache(mr);
+try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(tensorCache),
+        new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true))) {
+    String prompt = "What is the best season to plant avocados?";
+    PromptContext ctx;
+    PromptSupport ps = m.promptSupport().get();
+    Response r = m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(42), (s1, f1) -> {
+    });
+    System.out.println(r);
+}
+```
+
+### Performance
+
+In case you have been hiding under a rock I will let you in on the secret that GPUs are magic. LLM are very
+compute bound. There are a few specific performance optimizations you should understand.
+
+- NaiveTensorOperations does matrix operations using loops and arrays
+- PanamaTensorOperations uses the "vector" aka project panama support now in java SIMD native to java
+- NativeSimdTensorOperations uses native code "C" through JNI. SIMD from C runs well on optimized x86_64 hardware
+- NativeGPUTensorOpeations uses native code "C" and "shaders" through JNI. Requires an actual GPU
+
+Not everything is fully optimized and some of the above mentioned Operations libraries delegate some methods to 
+each other. The class *ConfigurableTensorProvider* can be autopick or be given an explicit list.
+
+KvBufferCache can be sized in bytes. It can also be persisted to disk, bu it does not clean up itself so feature is off by default
