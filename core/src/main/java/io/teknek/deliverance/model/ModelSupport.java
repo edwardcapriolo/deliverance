@@ -16,19 +16,22 @@ import java.io.UncheckedIOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Path;
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 import static io.teknek.deliverance.JsonUtils.om;
 
 public class ModelSupport {
-    private static final Map<String,ModelType> registry = new ConcurrentHashMap<String, ModelType>();
+    private static final ConcurrentMap<String,ModelType> registry = new ConcurrentHashMap<String, ModelType>();
 
     static {
         registry.putIfAbsent("LLAMA", new LlamaModelType());
     }
 
+    public static void addModel(String modelName, ModelType t){
+        registry.putIfAbsent(modelName, t);
+    }
     public static ModelType getModelType(String modelType) {
         return registry.get(modelType);
     }
