@@ -50,7 +50,8 @@ public class PretokenizerItem {
             case "Split" -> splitRegex(sentence);
             case "Digits" -> splitDigits(sentence);
             case "ByteLevel" ->
-                    throw new IllegalArgumentException("suspicious renable");
+                    //qwen2 needs this not llama
+                    Collections.singletonList(sentence);
             default -> throw new IllegalArgumentException("Invalid pre-tokenizer type: " + type);
         };
     }

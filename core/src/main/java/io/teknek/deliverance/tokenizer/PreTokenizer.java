@@ -37,7 +37,9 @@ public class PreTokenizer {
             }
             return Collections.singletonList(sentence.replaceAll("[ \t]+", replacement));
         }
-        if (pretokenizers.isEmpty()) return Collections.singletonList(sentence);
+        if (pretokenizers.isEmpty()) {
+            return Collections.singletonList(sentence);
+        }
 
         Preconditions.checkArgument(type.equalsIgnoreCase("Sequence"), "Invalid pre-tokenizer type: " + type);
         List<String> pieces = List.of(sentence);

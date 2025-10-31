@@ -84,7 +84,7 @@ compute bound. There are a few specific performance optimizations you should und
 - NativeSimdTensorOperations uses native code "C" through JNI. SIMD from C runs well on optimized x86_64 hardware
 - NativeGPUTensorOperations uses native code "C" and "shaders" through JNI. Requires an actual GPU
 
-Not everything is fully optimized and some of the above mentioned Operations libraries delegate some methods to 
+Not everything is fully optimized and some of the above mentioned Operations classes delegate some methods to 
 each other. The class *ConfigurableTensorProvider* with auto pick or you can use an explicit list.
 
 #### KVBuffer Cache
@@ -92,6 +92,6 @@ KvBufferCache can be sized in bytes. It can also be persisted to disk, but it do
 
 #### Small/Quantized models
 If you are running on a device without GPU your best mileage comes from going with the quantized models. 
-Effectively this we are working with big arrays of floating point numbers, and quantizing( fancy rounding) 
+Effectively this we are working with big arrays of floating point numbers, and quantizing (fancy rounding) 
 down to Q4 helps the SIMD (Single Instruction Multiple Data) improves performance significantly. It does't 
 make "blazing speed" and the small models just sometimes make nonsense, but it is nice for prototyping. 
