@@ -35,12 +35,19 @@ public class NativeGPUTensorOperations implements TensorOperations {
 
     static {
         if (RuntimeSupport.isWin()) {
-            if (!JarSupport.maybeLoadLibrary("dxcompiler")) System.loadLibrary("dxcompiler");
-            if (!JarSupport.maybeLoadLibrary("dxil")) System.loadLibrary("dxil");
+            if (!JarSupport.maybeLoadLibrary("dxcompiler")) {
+                System.loadLibrary("dxcompiler");
+            }
+            if (!JarSupport.maybeLoadLibrary("dxil")) {
+                System.loadLibrary("dxil");
+            }
         }
-
-        if (!JarSupport.maybeLoadLibrary("webgpu_dawn")) System.loadLibrary("webgpu_dawn");
-        if (!JarSupport.maybeLoadLibrary("deliverancegpu")) System.loadLibrary("deliverancegpu");
+        if (!JarSupport.maybeLoadLibrary("webgpu_dawn")) {
+            System.loadLibrary("webgpu_dawn");
+        }
+        if (!JarSupport.maybeLoadLibrary("deliverancegpu")) {
+            System.loadLibrary("deliverancegpu");
+        }
     }
 
     private final ConcurrentMap<String, Long> tensorCache = new ConcurrentHashMap<>();

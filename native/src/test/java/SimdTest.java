@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class SimdTest {
 
@@ -36,7 +37,9 @@ public class SimdTest {
 
     @Test
     void goTryIt(){
-        System.load("/home/edward/deliverence/native/target/native-lib-only/libdeliverance.so");
+        File soFile = new File("target/native-lib-only/libdeliverance.so");
+        assertTrue(soFile.exists());
+        System.load(soFile.getAbsolutePath());
         TensorCache tc = new TensorCache(new MetricRegistry());
         NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tc).get());
         int size = 1024;
@@ -50,7 +53,9 @@ public class SimdTest {
 
     @Test
     public void sample() throws IOException {
-        System.load("/home/edward/deliverence/native/target/native-lib-only/libdeliverance.so");
+        File soFile = new File("target/native-lib-only/libdeliverance.so");
+        assertTrue(soFile.exists());
+        System.load(soFile.getAbsolutePath());
         TensorCache tc = new TensorCache(new MetricRegistry());
         NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tc).get());
         String modelName = "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4";
@@ -73,15 +78,9 @@ public class SimdTest {
                         What is the best season to plant avocados?</s>
                         <|assistant|>
                         """;
-                assertEquals(expected, ctx.getPrompt());// it does not change the prompt to have tools
-
-                Response r = m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(42), (s1, f1) -> {});
-
+                assertEquals(expected, ctx.getPrompt());
+                Response r = m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(43), (s1, f1) -> {});
                 System.out.println(r.responseText);
-                /*
-                assertEquals("""
-                        The best thing to do is to look for the plant that best suits your needs and preferences. Avocados are a popular fruit that are grown in many regions around the world. Some of the best regions for avocado production include California, Mexico, and Peru.
-                        """, r.responseText);*/
             }
         }
     }
