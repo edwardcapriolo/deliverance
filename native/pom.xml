@@ -39,8 +39,8 @@
     </dependency>
 
     <dependency>
-      <groupId>io.teknek</groupId>
-      <artifactId>deliverance-core</artifactId>
+      <groupId>io.teknek.deliverance</groupId>
+      <artifactId>core</artifactId>
       <version>${project.version}</version>
       <scope>compile</scope>
     </dependency>

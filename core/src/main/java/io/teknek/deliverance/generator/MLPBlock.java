@@ -7,7 +7,6 @@ import io.teknek.deliverance.safetensors.DistributedContext;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import io.teknek.deliverance.tensor.operations.TensorOperationsProvider;
 
 import java.util.Collections;
 import java.util.List;
@@ -71,9 +70,9 @@ public class MLPBlock implements FeedForward {
 
         configurableTensorProvider.get().registerModelTensor(fullyConnectedWeights);
         if (upProjectionWeights != null) {
-            TensorOperationsProvider.get().registerModelTensor(upProjectionWeights);
+            configurableTensorProvider.get().registerModelTensor(upProjectionWeights);
         }
-        TensorOperationsProvider.get().registerModelTensor(projectionWeights);
+        configurableTensorProvider.get().registerModelTensor(projectionWeights);
     }
 
     // For FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
@@ -92,16 +91,16 @@ public class MLPBlock implements FeedForward {
 
             VectorMath.pchunk(dctx.hiddenSegmentStart, dctx.hiddenSegmentLength, (chunkStart, chunkSize) -> {
                 if (upProjectionWeights != null) {
-                    TensorOperationsProvider.get()
+                    configurableTensorProvider.get()
                             .dotProductBatchChunk(batchResults, lnemb, batchWeights, 0, model.getConfig().embeddingLength, chunkStart, chunkSize);
                 } else {
-                    TensorOperationsProvider.get()
+                    configurableTensorProvider.get()
                             .dotProductChunk(buf, lnemb, fullyConnectedWeights, 0, model.getConfig().embeddingLength, chunkStart, chunkSize);
                 }
-            }, TensorOperationsProvider.get().parallelSplitSize());
+            }, configurableTensorProvider.get().parallelSplitSize());
 
             fullyConnectedBias.ifPresent(
-                    bias -> TensorOperationsProvider.get().accumulate(buf, bias, dctx.hiddenSegmentStart, dctx.hiddenSegmentLength)
+                    bias -> configurableTensorProvider.get().accumulate(buf, bias, dctx.hiddenSegmentStart, dctx.hiddenSegmentLength)
             );
 
             // Not using pfor because we can use all cores
@@ -114,14 +113,14 @@ public class MLPBlock implements FeedForward {
             });
 
             if (upProjectionWeights != null) {
-                TensorOperationsProvider.get().maccumulate(buf, buf2, 0, hiddenLength);
+                configurableTensorProvider.get().maccumulate(buf, buf2, 0, hiddenLength);
             }
 
             try (AbstractTensor bufq = model.maybeQuantize(buf)) {
                 // matmul the projection and sum into input
                 AbstractTensor result = model.makeTensor(batchSize, model.getConfig().embeddingLength);
                 VectorMath.pchunk(0, model.getConfig().embeddingLength, (chunkStart, chunkSize) -> {
-                    TensorOperationsProvider.get()
+                    configurableTensorProvider.get()
                             .dotProductChunk(
                                     result,
                                     bufq,
@@ -131,11 +130,11 @@ public class MLPBlock implements FeedForward {
                                     chunkStart,
                                     chunkSize
                             );
-                }, TensorOperationsProvider.get().parallelSplitSize());
+                }, configurableTensorProvider.get().parallelSplitSize());
 
                 tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(result)));
 
-                projectionBias.ifPresent(bias -> TensorOperationsProvider.get().accumulate(result, bias, 0, model.getConfig().embeddingLength));
+                projectionBias.ifPresent(bias -> configurableTensorProvider.get().accumulate(result, bias, 0, model.getConfig().embeddingLength));
                 return result;
             }
         }

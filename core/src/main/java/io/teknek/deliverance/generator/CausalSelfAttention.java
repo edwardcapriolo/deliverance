@@ -8,7 +8,8 @@ import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.VectorTensorMathUtils;
-import io.teknek.deliverance.tensor.operations.TensorOperationsProvider;
+import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+
 import net.jafama.FastMath;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,6 +44,7 @@ public class CausalSelfAttention {
 
     private final AbstractTensor[] qkvResults;
     private final AbstractTensor[] qkvWeights;
+    private final ConfigurableTensorProvider configurableTensorProvider;
 
     public CausalSelfAttention(
             AbstractModel m,
@@ -50,7 +52,8 @@ public class CausalSelfAttention {
             AbstractTensor queryAttnWeights,
             AbstractTensor keyAttnWeights,
             AbstractTensor valueAttnWeights,
-            AbstractTensor outputProjectionWeights
+            AbstractTensor outputProjectionWeights,
+            ConfigurableTensorProvider configurableTensorProvider
     ) {
         this(
                 m,
@@ -62,7 +65,8 @@ public class CausalSelfAttention {
                 keyAttnWeights,
                 valueAttnWeights,
                 Optional.empty(),
-                outputProjectionWeights
+                outputProjectionWeights,
+                configurableTensorProvider
         );
     }
 
@@ -76,7 +80,8 @@ public class CausalSelfAttention {
             AbstractTensor keyAttnWeights,
             AbstractTensor valueAttnWeights,
             Optional<AbstractTensor> outputProjectionBias,
-            AbstractTensor outputProjectionWeights
+            AbstractTensor outputProjectionWeights,
+            ConfigurableTensorProvider configurableTensorProvider
     ) {
         this.m = m;
         this.layerIndex = layerIndex;
@@ -97,11 +102,12 @@ public class CausalSelfAttention {
 
         this.qkvResults = new AbstractTensor[3];
         this.qkvWeights = new AbstractTensor[] { queryAttnWeights, keyAttnWeights, valueAttnWeights };
+        this.configurableTensorProvider = configurableTensorProvider;
 
-        TensorOperationsProvider.get().registerModelTensor(queryAttnWeights);
-        TensorOperationsProvider.get().registerModelTensor(keyAttnWeights);
-        TensorOperationsProvider.get().registerModelTensor(valueAttnWeights);
-        TensorOperationsProvider.get().registerModelTensor(outputProjectionWeights);
+        configurableTensorProvider.get().registerModelTensor(queryAttnWeights);
+        configurableTensorProvider.get().registerModelTensor(keyAttnWeights);
+        configurableTensorProvider.get().registerModelTensor(valueAttnWeights);
+        configurableTensorProvider.get().registerModelTensor(outputProjectionWeights);
     }
 
     public AbstractTensor forward(
@@ -112,7 +118,7 @@ public class CausalSelfAttention {
     ) {
         Preconditions.checkArgument(input.dims() == 2 && input.shape().last() == config.embeddingLength);
         int batchSize = input.shape().first();
-        int splitSize = TensorOperationsProvider.get().parallelSplitSize();
+        int splitSize = configurableTensorProvider.get().parallelSplitSize();
         try (
                 AbstractTensor queryBatch = m.makeDenseTensor(batchSize, attentionLength);
                 AbstractTensor tmpKeyBatch = m.makeDenseTensor(batchSize, config.kvLength);
@@ -123,13 +129,13 @@ public class CausalSelfAttention {
             if (config.isGQA) {
 
                 VectorMath.pchunk(dctx.attentionSegmentStart, dctx.attentionSegmentLength, (chunkStart, chunkLength) -> {
-                    TensorOperationsProvider.get()
+                    configurableTensorProvider.get()
                             .dotProductChunk(queryBatch, input, queryAttnWeights, 0, config.embeddingLength, chunkStart, chunkLength);
                 }, splitSize);
                 VectorMath.pchunk(dctx.kvSegmentStart, dctx.kvSegmentLength, (chunkStart, chunkLength) -> {
-                    TensorOperationsProvider.get()
+                    configurableTensorProvider.get()
                             .dotProductChunk(tmpKeyBatch, input, keyAttnWeights, 0, config.embeddingLength, chunkStart, chunkLength);
-                    TensorOperationsProvider.get()
+                    configurableTensorProvider.get()
                             .dotProductChunk(tmpValBatch, input, valueAttnWeights, 0, config.embeddingLength, chunkStart, chunkLength);
                 }, splitSize);
             } else {
@@ -139,19 +145,19 @@ public class CausalSelfAttention {
 
                 // compute the query vector
                 VectorMath.pchunk(dctx.attentionSegmentStart, dctx.attentionSegmentLength, (chunkStart, chunkLength) -> {
-                    TensorOperationsProvider.get()
+                    configurableTensorProvider.get()
                             .dotProductBatchChunk(qkvResults, input, qkvWeights, 0, config.embeddingLength, chunkStart, chunkLength);
                 }, splitSize);
             }
 
             queryAttnBias.ifPresent(
-                    bias -> TensorOperationsProvider.get().accumulate(queryBatch, bias, dctx.attentionSegmentStart, dctx.attentionSegmentLength)
+                    bias -> configurableTensorProvider.get().accumulate(queryBatch, bias, dctx.attentionSegmentStart, dctx.attentionSegmentLength)
             );
             keyAttnBias.ifPresent(
-                    bias -> TensorOperationsProvider.get().accumulate(tmpKeyBatch, bias, dctx.kvSegmentStart, dctx.kvSegmentLength)
+                    bias -> configurableTensorProvider.get().accumulate(tmpKeyBatch, bias, dctx.kvSegmentStart, dctx.kvSegmentLength)
             );
             valueAttnBias.ifPresent(
-                    bias -> TensorOperationsProvider.get().accumulate(tmpValBatch, bias, dctx.kvSegmentStart, dctx.kvSegmentLength)
+                    bias -> configurableTensorProvider.get().accumulate(tmpValBatch, bias, dctx.kvSegmentStart, dctx.kvSegmentLength)
             );
 
             debug("query", queryBatch, layerIndex);
@@ -174,8 +180,8 @@ public class CausalSelfAttention {
 
                 if (key.dType() != tmpKey.dType()) {
                     try (
-                            AbstractTensor tmpKey2 = TensorOperationsProvider.get().quantize(tmpKey, key.dType(), 0, config.kvLength);
-                            AbstractTensor tmpVal2 = TensorOperationsProvider.get().quantize(tmpVal, val.dType(), 0, config.kvLength)
+                            AbstractTensor tmpKey2 = configurableTensorProvider.get().quantize(tmpKey, key.dType(), 0, config.kvLength);
+                            AbstractTensor tmpVal2 = configurableTensorProvider.get().quantize(tmpVal, val.dType(), 0, config.kvLength)
                     ) {
                         key.copyFrom(
                                 tmpKey2,
@@ -288,11 +294,11 @@ public class CausalSelfAttention {
                             int len = kvp[i].shape().first();
                             int offset = i * len;
                             int size = i == kvp.length - 1 ? (finalPosition + 1) - offset : len;
-                            TensorOperationsProvider.get()
+                            configurableTensorProvider.get()
                                     .batchDotProduct(attn, query, kvp[i], yoffset, xoffset, config.headSize, offset, 0, size);
                         }
 
-                        TensorOperationsProvider.get().scale(attentionScale, attn, 0, finalPosition + 1);
+                        configurableTensorProvider.get().scale(attentionScale, attn, 0, finalPosition + 1);
 
                         if (config.attnLogitSoftCapping != null) {
                             for (int i = 0; i < finalPosition + 1; i++) {
@@ -313,7 +319,7 @@ public class CausalSelfAttention {
                             int len = vvp[i].shape().first(); // batch size
                             int offset = i * len;
                             int size = i == vvp.length - 1 ? (finalPosition + 1) - offset : len;
-                            TensorOperationsProvider.get().saxpy(attn, vvp[i], value, xoffset, yoffset, config.headSize, offset, 0, size);
+                            configurableTensorProvider.get().saxpy(attn, vvp[i], value, xoffset, yoffset, config.headSize, offset, 0, size);
                         }
                     }
                 });
@@ -327,7 +333,7 @@ public class CausalSelfAttention {
             AbstractTensor result = m.makeDenseTensor(batchSize, config.embeddingLength);
             try (AbstractTensor vq = m.maybeQuantize(valueBatch)) {
                 VectorMath.pchunk(0, config.embeddingLength, (chunkStart, chunkSize) -> {
-                    TensorOperationsProvider.get()
+                    configurableTensorProvider.get()
                             .dotProductChunk(
                                     result,
                                     vq,
@@ -339,7 +345,7 @@ public class CausalSelfAttention {
                             );
                 }, splitSize);
                 tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(result)));
-                outputProjectionBias.ifPresent(bias -> TensorOperationsProvider.get().accumulate(result, bias, 0, config.embeddingLength));
+                outputProjectionBias.ifPresent(bias -> configurableTensorProvider.get().accumulate(result, bias, 0, config.embeddingLength));
             }
 
             return result;

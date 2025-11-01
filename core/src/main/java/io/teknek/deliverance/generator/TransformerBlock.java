@@ -8,7 +8,6 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import io.teknek.deliverance.tensor.operations.TensorOperationsProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -23,7 +23,7 @@
   <dependencies>
 
     <dependency>
-      <groupId>io.teknek</groupId>
+      <groupId>io.teknek.deliverance</groupId>
       <artifactId>tensor</artifactId>
       <version>${project.version}</version>
     </dependency>
@@ -73,7 +73,7 @@
       <scope>test</scope>
     </dependency>
       <dependency>
-          <groupId>io.teknek</groupId>
+          <groupId>io.teknek.deliverance</groupId>
           <artifactId>math</artifactId>
           <version>${project.version}</version>
           <scope>compile</scope>

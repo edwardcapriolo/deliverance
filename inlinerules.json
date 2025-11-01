@@ -1,12 +1,13 @@
 [
     {
-        match: ["*.*"],
-        inline: [
-            "+com.github.tjake.jlama.tensor.operations.PanamaTensorOperations::dotProduct*",
-            "+com.github.tjake.jlama.tensor.operations.PanamaTensorOperations::quantize*",
-            "+com.github.tjake.jlama.tensor.operations.PanamaTensorOperations*::mpack*",
-            "+com.github.tjake.jlama.tensor.AbstractTensor::getOffset*",
-            "+com.github.tjake.jlama.tensor.*::getVector*"
+        "match": ["*.*"],
+        "inline": [
+            "+io.teknek.deliverance.tensor.operations.PanamaTensorOperations::dotProduct*",
+            "+io.teknek.deliverance.tensor.operations.PanamaTensorOperations::quantize*",
+            "+io.teknek.deliverance.tensor.operations.PanamaTensorOperations*::mpack*",
+            "+io.teknek.deliverance.tensor.AbstractTensor::getOffset*",
+            "+io.teknek.deliverance.tensor.*::getVector*",
+            "+io.teknek.deliverance.tensor.impl.*::getVector*"
         ]
     }
 ]
