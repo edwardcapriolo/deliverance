@@ -46,10 +46,9 @@ public class Config {
                 ctx = ps.builder().addSystemMessage("You are a chatbot that writes short correct responses.")
                         .addUserMessage("generate number 1 only once").build();
             }
-            System.out.println(m.generate(UUID.randomUUID(), ctx, new GeneratorParameters(), (x, t) -> {
+            System.out.println(m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withNtokens(30), (x, t) -> {
             }));
         }
-
         return m;
     }
 }
