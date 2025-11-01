@@ -1,17 +1,19 @@
 <project>
-    <licenses>
-        <license>
-            <name>Apache License, Version 2.0</name>
-            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
-            <distribution>repo</distribution>
-        </license>
-    </licenses>
     <modelVersion>4.0.0</modelVersion>
     <groupId>io.teknek.deliverance</groupId>
     <artifactId>deliverance-parent</artifactId>
     <packaging>pom</packaging>
 
+    <name>deliverance-parent</name>
+    <description>deliverance parent pom</description>
+    <url>http://github.com/edwardcapriolo/deliverance</url>
     <version>0.0.1-SNAPSHOT</version>
+
+    <parent>
+        <groupId>org.sonatype.oss</groupId>
+        <artifactId>oss-parent</artifactId>
+        <version>9</version>
+    </parent>
 
     <properties>
         <junit.version>5.11.4</junit.version>
@@ -24,8 +26,9 @@
         <maven.compiler.release>24</maven.compiler.release>
         <slf-simple.version>2.0.17</slf-simple.version>
         <slf4j-api.version>2.0.17</slf4j-api.version>
-
+        <maven.compliler.plugin.version>3.14.0</maven.compliler.plugin.version>
         <surefire.version>3.5.3</surefire.version>
+        <maven.gpg.plugin.version>3.2.8</maven.gpg.plugin.version>
     </properties>
 
     <modules>
@@ -46,6 +49,7 @@
             </extension>
         </extensions>
         <plugins>
+
             <plugin>
                 <groupId>org.owasp</groupId>
                 <artifactId>dependency-check-maven</artifactId>
@@ -104,10 +108,22 @@
             <plugins>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-compiler-plugin</artifactId>
-                    <version>3.14.0</version>
+                    <artifactId>maven-gpg-plugin</artifactId>
+                    <executions>
+                        <execution>
+                            <id>sign-artifacts</id>
+                            <phase>verify</phase>
+                            <goals>
+                                <goal>sign</goal>
+                            </goals>
+                        </execution>
+                    </executions>
                 </plugin>
-
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>${maven.compliler.plugin.version}</version>
+                </plugin>
                 <plugin>
                     <groupId>net.serenity-bdd.maven.plugin</groupId>
                     <artifactId>serenity-maven.plugin</artifactId>
@@ -126,4 +142,53 @@
             </plugins>
         </pluginManagement>
     </build>
+    <developers>
+        <developer>
+            <name>Edward Guy Capriolo</name>
+            <email>edlinuxguru@gmai.com</email>
+            <organization>teknek.io</organization>
+            <organizationUrl>https://github.com/edwardcapriolo</organizationUrl>
+        </developer>
+    </developers>
+    <scm>
+        <connection>scm:git:git://github.com/edwardcapriolo/deliverance.git</connection>
+        <developerConnection>scm:git:ssh://github.com:edwardcaprioloy/deliverance.git</developerConnection>
+        <url>http://github.com/edwardcapriolo/deliverance/tree/master</url>
+    </scm>
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+    <profiles>
+        <profile>
+            <id>release-sign-artifacts</id>
+            <activation>
+                <property>
+                    <name>performRelease</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>${maven.gpg.plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

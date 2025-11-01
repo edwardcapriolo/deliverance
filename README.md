@@ -110,5 +110,5 @@ make "blazing speed" and the small models just sometimes make nonsense, but it i
 
 After troubleshooting all the wrong things for hours I found not to use:
 ``` mvn:spring-boot run ```
-
+    
 The debug mode seems to remove lots of optimizations causing very slow runtime. *web/run.sh* should be a good stand in.
