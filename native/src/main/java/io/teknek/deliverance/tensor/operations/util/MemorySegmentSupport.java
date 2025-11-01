@@ -1,4 +1,4 @@
-package com.github.tjake.jlama.tensor.operations.util;
+package io.teknek.deliverance.tensor.operations.util;
 
 import java.lang.foreign.*;
 import java.util.function.Function;

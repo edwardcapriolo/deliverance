@@ -1,5 +1,5 @@
 
-package com.github.tjake.jlama.tensor.operations.util;
+package io.teknek.deliverance.tensor.operations.util;
 
 import java.io.BufferedOutputStream;
 import java.io.File;
@@ -22,23 +22,18 @@ public class JarSupport {
         String ext = RuntimeSupport.isMac() ? ".dylib" : RuntimeSupport.isWin() ? ".dll" : ".so";
         String name = "lib" + libname + ext;
         URL lib = JarSupport.class.getClassLoader().getResource("META-INF/native/lib/" + name);
-
         if (lib == null) {
             name = libname + ext;
             lib = JarSupport.class.getClassLoader().getResource("META-INF/native/lib/" + name);
         }
-
         if (lib != null) {
             try {
                 final File libpath = Files.createTempDirectory("deliverance").toFile();
                 libpath.deleteOnExit(); // just in case
-
                 File libfile = Paths.get(libpath.getAbsolutePath(), name).toFile();
                 libfile.deleteOnExit(); // just in case
-
                 final InputStream in = lib.openStream();
                 final OutputStream out = new BufferedOutputStream(new FileOutputStream(libfile));
-
                 int len;
                 byte[] buffer = new byte[8192];
                 while ((len = in.read(buffer)) > -1) {
@@ -53,8 +48,7 @@ public class JarSupport {
                 LOGGER.warn("Error loading {} library", libname);
             }
         }
-
-        LOGGER.warn("jlama-native shared library not found: {}{}", libname, ext);
+        LOGGER.warn("deliverance-native shared library not found: {}{}", libname, ext);
         return false;
     }
 }

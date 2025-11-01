@@ -1,18 +1,16 @@
 
-package com.github.tjake.jlama.tensor.operations;
+package io.teknek.deliverance.tensor.operations;
 
-import com.github.tjake.jlama.tensor.operations.cnative.NativeSimd;
-import com.github.tjake.jlama.tensor.operations.util.JarSupport;
-import com.github.tjake.jlama.tensor.operations.util.MemorySegmentSupport;
+import io.teknek.deliverance.tensor.operations.cnative.NativeSimd;
+import io.teknek.deliverance.tensor.operations.util.JarSupport;
+import io.teknek.deliverance.tensor.operations.util.MemorySegmentSupport;
 
 import java.lang.foreign.MemorySegment;
 
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
-import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
-import io.teknek.deliverance.tensor.operations.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

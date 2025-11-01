@@ -1,5 +1,5 @@
 import com.codahale.metrics.MetricRegistry;
-import com.github.tjake.jlama.tensor.operations.NativeSimdTensorOperations;
+import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.generator.GeneratorParameters;

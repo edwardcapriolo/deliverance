@@ -28,24 +28,28 @@ public class Config {
         return new MetricRegistry();
     }
 
-    @Bean
+
+    @Bean(destroyMethod = "close")
     public AbstractModel generator(@Value("${deliverance.model.name}") String modelName,
-                                   @Value("${deliverance.model.owner}") String modelOwner){
-        //String modelName = "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4";
-        //String modelOwner = "tjake";
+                                   @Value("${deliverance.model.owner}") String modelOwner,
+                                   @Value("${deliverance.startup.test:true}") boolean test){
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         File f = fetch.maybeDownload();
 
         TensorCache tensorCache = new TensorCache(metricRegistry());
         AbstractModel m =  ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(tensorCache),
                 metricRegistry(), tensorCache, new KvBufferCacheSettings(true));
-        PromptContext ctx;
-        {
-            PromptSupport ps = m.promptSupport().get();
-            ctx = ps.builder().addSystemMessage("You are a chatbot that writes short correct responses.")
-                    .addUserMessage("generate number 1 only once").build();
+        if(test) {
+            PromptContext ctx;
+            {
+                PromptSupport ps = m.promptSupport().get();
+                ctx = ps.builder().addSystemMessage("You are a chatbot that writes short correct responses.")
+                        .addUserMessage("generate number 1 only once").build();
+            }
+            System.out.println(m.generate(UUID.randomUUID(), ctx, new GeneratorParameters(), (x, t) -> {
+            }));
         }
-        System.out.println(m.generate(UUID.randomUUID(), ctx, new GeneratorParameters(), (x,t) -> {}));
+
         return m;
     }
 }

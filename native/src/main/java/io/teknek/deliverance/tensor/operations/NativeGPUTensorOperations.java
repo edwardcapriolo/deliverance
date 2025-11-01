@@ -1,10 +1,9 @@
 
-package com.github.tjake.jlama.tensor.operations;
-
+package io.teknek.deliverance.tensor.operations;
 
 import com.codahale.metrics.MetricRegistry;
-import com.github.tjake.jlama.tensor.operations.gpunative.NativeGPU;
-import com.github.tjake.jlama.tensor.operations.util.JarSupport;
+import io.teknek.deliverance.tensor.operations.gpunative.NativeGPU;
+import io.teknek.deliverance.tensor.operations.util.JarSupport;
 
 
 import com.google.common.io.Resources;
@@ -12,11 +11,9 @@ import com.google.common.primitives.Ints;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.tensor.AbstractTensor;
-import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import io.teknek.deliverance.tensor.TensorCache;
-import io.teknek.deliverance.tensor.operations.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -67,7 +64,7 @@ public class NativeGPUTensorOperations implements TensorOperations {
         try {
             tmp = new NativeSimdTensorOperations( new ConfigurableTensorProvider(tc).get());
         } catch (Throwable t) {
-            logger.warn("Native SIMD operations not available. Consider adding 'com.github.tjake:jlama-native' to the classpath");
+            logger.warn("Native SIMD operations not available. Consider adding 'io.teknek.deliverance:native' to the classpath");
             try {
                 tmp = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, tc);
             } catch (Throwable t2) {
