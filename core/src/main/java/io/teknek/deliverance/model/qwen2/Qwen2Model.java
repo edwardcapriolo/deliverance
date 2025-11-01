@@ -73,7 +73,8 @@ public class Qwen2Model extends LlamaModel {
                     quantize(weights.load(prefix + "k_proj.weight", config.dctx(), true, false), qType),
                     quantize(weights.load(prefix + "v_proj.weight", config.dctx(), true, false), qType),
                     Optional.empty(),
-                    quantize(weights.load(prefix + "o_proj.weight", config.dctx(), false, true), qType)
+                    quantize(weights.load(prefix + "o_proj.weight", config.dctx(), false, true), qType),
+                    configurableTensorProvider
             );
 
             prefix = base + "mlp.";

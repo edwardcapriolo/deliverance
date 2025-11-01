@@ -6,6 +6,7 @@ import io.teknek.deliverance.tensor.TensorCache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+    /*
 @Deprecated
 public class TensorOperationsProvider {
     static {
@@ -18,6 +19,7 @@ public class TensorOperationsProvider {
 
     private static final String lock = "lock";
     private static TensorOperationsProvider instance;
+
 
     public static TensorOperations get() {
         if (instance == null) {
@@ -78,3 +80,5 @@ public class TensorOperationsProvider {
         return pick;
     }
 }
+
+     */

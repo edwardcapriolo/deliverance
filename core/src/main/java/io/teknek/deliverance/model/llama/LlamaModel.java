@@ -9,11 +9,9 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.AbstractTensor;
-import io.teknek.deliverance.tensor.AbstractTensorUtils;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import io.teknek.deliverance.tensor.operations.TensorOperationsProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
 
 import java.util.Optional;
@@ -80,7 +78,8 @@ public class LlamaModel extends AbstractModel {
                     quantize(weights.load(prefix + "q_proj.weight", config.dctx(), true, false), qType),
                     quantize(weights.load(prefix + "k_proj.weight", config.dctx(), true, false), qType),
                     quantize(weights.load(prefix + "v_proj.weight", config.dctx(), true, false), qType),
-                    quantize(weights.load(prefix + "o_proj.weight", config.dctx(), false, true), qType)
+                    quantize(weights.load(prefix + "o_proj.weight", config.dctx(), false, true), qType),
+                    configurableTensorProvider
             );
 
             prefix = base + "mlp.";

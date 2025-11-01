@@ -23,21 +23,21 @@
   <dependencies>
 
     <dependency>
-      <groupId>io.teknek</groupId>
+      <groupId>io.teknek.deliverance</groupId>
       <artifactId>tensor</artifactId>
       <version>${project.version}</version>
       <scope>compile</scope>
     </dependency>
 
     <dependency>
-      <groupId>io.teknek</groupId>
+      <groupId>io.teknek.deliverance</groupId>
       <artifactId>math</artifactId>
       <version>${project.version}</version>
       <scope>compile</scope>
     </dependency>
 
     <dependency>
-      <groupId>io.teknek</groupId>
+      <groupId>io.teknek.deliverance</groupId>
       <artifactId>safetensors</artifactId>
       <version>${project.version}</version>
       <scope>compile</scope>
@@ -114,12 +114,6 @@
       <artifactId>mockito-core</artifactId>
       <version>${mockito.version}</version>
       <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>io.teknek</groupId>
-      <artifactId>math</artifactId>
-      <version>0.0.1-SNAPSHOT</version>
-      <scope>compile</scope>
     </dependency>
   </dependencies>
 
