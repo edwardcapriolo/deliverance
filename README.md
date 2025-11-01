@@ -55,7 +55,7 @@ Open your browser to http://localhost:8080
 
 ### Using as a library
 Odds are you don't want to use the amazing UI depicted above. Deliverance is made in components and 
-very easy to use as a library as you might use transformers"
+very easy to use as a library as you might use transformers/
 
 ```java
 ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
@@ -75,6 +75,7 @@ try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new Config
 
 ### Performance
 
+
 #### CPU/GPU
 In case you have been hiding under a rock I will let you in on the secret that GPUs are magic. LLM are very
 compute bound. There are a few specific performance optimizations you should understand.
@@ -84,14 +85,30 @@ compute bound. There are a few specific performance optimizations you should und
 - NativeSimdTensorOperations uses native code "C" through JNI. SIMD from C runs well on optimized x86_64 hardware
 - NativeGPUTensorOperations uses native code "C" and "shaders" through JNI. Requires an actual GPU
 
-Not everything is fully optimized and some of the above mentioned Operations classes delegate some methods to 
-each other. The class *ConfigurableTensorProvider* with auto pick or you can use an explicit list.
+Not everything is fully optimized and some of the Operations classes delegate some methods to 
+each other. The class *ConfigurableTensorProvider* will auto pick, but you can use an explicit list.
+
+#### DISK/Ram
+
+For larger models (even quanitized ones) the disk footprint is large 4GB - 100GB. Deliverance memory maps those files however
+fast disk and ample RAM are needed as the disk access is very heavy (load from disk , load from disk , multiply). If you
+do not have enough RAM disk cache and IOWait will be a big bottleneck
 
 #### KVBuffer Cache
 KvBufferCache can be sized in bytes. It can also be persisted to disk, but it does not clean up itself so feature is off by default.
+
+
 
 #### Small/Quantized models
 If you are running on a device without GPU your best mileage comes from going with the quantized models. 
 Effectively this we are working with big arrays of floating point numbers, and quantizing (fancy rounding) 
 down to Q4 helps the SIMD (Single Instruction Multiple Data) improves performance significantly. It does't 
 make "blazing speed" and the small models just sometimes make nonsense, but it is nice for prototyping. 
+
+
+#### Slowness with spring-boot run
+
+After troubleshooting all the wrong things for hours I found not to use:
+``` mvn:spring-boot run ```
+
+The debug mode seems to remove lots of optimizations causing very slow runtime. *web/run.sh* should be a good stand in.
