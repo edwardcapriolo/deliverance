@@ -7,6 +7,7 @@ import java.util.function.Consumer;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
+import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.TensorOperationsProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,6 +27,7 @@ public class TransformerBlock {
     final FeedForward ffBlock;
     final Optional<LayerNorm> postFFNorm; // After FF, before the residual connection
     final Optional<LayerNorm> preResponseNorm; // After the residual connection
+    final ConfigurableTensorProvider configurableTensorProvider;
 
     public TransformerBlock(
             AbstractModel model,
@@ -33,7 +35,8 @@ public class TransformerBlock {
             LayerNorm preAttentionNorm,
             CausalSelfAttention attention,
             LayerNorm postAttentionNorm,
-            FeedForward ffBlock
+            FeedForward ffBlock,
+            ConfigurableTensorProvider configurableTensorProvider
     ) {
         this(
                 model,
@@ -44,10 +47,12 @@ public class TransformerBlock {
                 Optional.of(postAttentionNorm),
                 ffBlock,
                 Optional.empty(),
-                Optional.empty()
+                Optional.empty(),
+                configurableTensorProvider
         );
     }
 
+    /*
     public TransformerBlock(
             AbstractModel model,
             int layerIndex,
@@ -68,7 +73,8 @@ public class TransformerBlock {
                 Optional.of(postFFNorm)
         );
     }
-
+*/
+    /*
     public TransformerBlock(
             AbstractModel model,
             int layerIndex,
@@ -90,7 +96,10 @@ public class TransformerBlock {
                 Optional.of(postFFNorm)
         );
     }
+    */
 
+
+    /*
     public TransformerBlock(
             AbstractModel model,
             int layerIndex,
@@ -113,7 +122,7 @@ public class TransformerBlock {
                 Optional.empty()
         );
     }
-
+*/
     public TransformerBlock(
             AbstractModel model,
             int layerIndex,
@@ -123,7 +132,8 @@ public class TransformerBlock {
             Optional<LayerNorm> preFFNorm,
             FeedForward ffBlock,
             Optional<LayerNorm> postFFNorm,
-            Optional<LayerNorm> preResponseNorm
+            Optional<LayerNorm> preResponseNorm,
+            ConfigurableTensorProvider configurableTensorProvider
     ) {
 
         this.model = model;
@@ -135,6 +145,7 @@ public class TransformerBlock {
         this.ffBlock = ffBlock;
         this.postFFNorm = postFFNorm;
         this.preResponseNorm = preResponseNorm;
+        this.configurableTensorProvider = configurableTensorProvider;
     }
 
     public AbstractTensor forward(AbstractTensor embedding, int position, KvBufferCache.KvBuffer kvBuffer) {
@@ -166,9 +177,9 @@ public class TransformerBlock {
 
         // residual connection
         if (model.getConfig().residualMultiplier != null) {
-            TensorOperationsProvider.get().scale(model.getConfig().residualMultiplier, lnattn, 0, model.getConfig().embeddingLength);
+            configurableTensorProvider.get().scale(model.getConfig().residualMultiplier, lnattn, 0, model.getConfig().embeddingLength);
         }
-        TensorOperationsProvider.get().accumulate(lnattn, embedding, 0, model.getConfig().embeddingLength);
+        configurableTensorProvider.get().accumulate(lnattn, embedding, 0, model.getConfig().embeddingLength);
 
         AbstractTensor lnpreFF = preFFNorm.map(ln -> ln.forward(lnattn)).orElse(lnattn);
 
@@ -184,9 +195,9 @@ public class TransformerBlock {
 
         // residual connection
         if (model.getConfig().residualMultiplier != null) {
-            TensorOperationsProvider.get().scale(model.getConfig().residualMultiplier, lnpostFF, 0, model.getConfig().embeddingLength);
+            configurableTensorProvider.get().scale(model.getConfig().residualMultiplier, lnpostFF, 0, model.getConfig().embeddingLength);
         }
-        TensorOperationsProvider.get().accumulate(lnpostFF, lnattn, 0, model.getConfig().embeddingLength);
+        configurableTensorProvider.get().accumulate(lnpostFF, lnattn, 0, model.getConfig().embeddingLength);
 
         debug("post_ff_res", lnpostFF, layerIndex);
 

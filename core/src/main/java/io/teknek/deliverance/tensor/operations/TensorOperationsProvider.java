@@ -43,12 +43,12 @@ public class TensorOperationsProvider {
             if (!forceSimd) {
                 try {
                     Class<? extends TensorOperations> nativeClazz = (Class<? extends TensorOperations>) Class.forName(
-                            "com.github.tjake.jlama.tensor.operations.NativeGPUTensorOperations"
+                            "io.teknek.deliverance.tensor.operations.NativeGPUTensorOperations"
                     );
                     pick = nativeClazz.getConstructor().newInstance();
                     // This will throw if no shared lib found
                 } catch (Throwable t) {
-                    logger.warn("Native GPU operations not available. Consider adding 'com.github.tjake:jlama-native' to the classpath");
+                    logger.warn("Native GPU operations not available. Consider adding 'io.teknek.deliverance:native' to the classpath");
                     logger.debug("Exception when loading native", t);
                 }
             }
@@ -56,11 +56,11 @@ public class TensorOperationsProvider {
             if (pick == null) {
                 try {
                     Class<? extends TensorOperations> nativeClazz = (Class<? extends TensorOperations>) Class.forName(
-                            "com.github.tjake.jlama.tensor.operations.NativeSimdTensorOperations"
+                            "io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations"
                     );
                     pick = nativeClazz.getConstructor().newInstance();
                 } catch (Throwable t2) {
-                    logger.warn("Native SIMD operations not available. Consider adding 'com.github.tjake:jlama-native' to the classpath");
+                    logger.warn("Native SIMD operations not available. Consider adding 'io.teknek.deliverance:native' to the classpath");
                     logger.debug("Exception when loading native", t2);
                 }
             }

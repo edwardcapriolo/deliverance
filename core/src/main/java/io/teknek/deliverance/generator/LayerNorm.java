@@ -35,7 +35,6 @@ public class LayerNorm {
     public AbstractTensor forward(AbstractTensor input, int offset, int length) {
         long start = System.currentTimeMillis();
         int batchSize = input.shape().first();
-        //AbstractTensor output = input.copyShape();
         AbstractTensor output = model.getTensorCache().getDirty(input.dType(), input.shape());
         for (int b = 0; b < batchSize; b++) {
             float sum = 0;

@@ -6,6 +6,7 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.safetensors.DistributedContext;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.TensorOperationsProvider;
 
 import java.util.Collections;
@@ -32,15 +33,18 @@ public class MLPBlock implements FeedForward {
 
     private final AbstractTensor[] batchResults;
     private final AbstractTensor[] batchWeights;
+    private final ConfigurableTensorProvider configurableTensorProvider;
 
     public MLPBlock(
             AbstractModel model,
             ActivationFunction.Type activationFunction,
             AbstractTensor fullyConnectedWeights,
             AbstractTensor projectionWeights,
-            AbstractTensor upProjectionWeights
+            AbstractTensor upProjectionWeights,
+            ConfigurableTensorProvider configurableTensorProvider
     ) {
-        this(model, activationFunction, Optional.empty(), fullyConnectedWeights, Optional.empty(), projectionWeights, upProjectionWeights);
+        this(model, activationFunction, Optional.empty(), fullyConnectedWeights,
+                Optional.empty(), projectionWeights, upProjectionWeights, configurableTensorProvider);
     }
 
     public MLPBlock(
@@ -50,7 +54,8 @@ public class MLPBlock implements FeedForward {
             AbstractTensor fullyConnectedWeights,
             Optional<AbstractTensor> projectionBias,
             AbstractTensor projectionWeights,
-            AbstractTensor upProjectionWeights
+            AbstractTensor upProjectionWeights,
+            ConfigurableTensorProvider configurableTensorProvider
     ) {
         this.model = model;
         this.dctx = model.getConfig().dctx();
@@ -62,8 +67,9 @@ public class MLPBlock implements FeedForward {
         this.upProjectionWeights = upProjectionWeights;
         this.batchResults = new AbstractTensor[2];
         this.batchWeights = new AbstractTensor[] { fullyConnectedWeights, upProjectionWeights };
+        this.configurableTensorProvider = configurableTensorProvider;
 
-        TensorOperationsProvider.get().registerModelTensor(fullyConnectedWeights);
+        configurableTensorProvider.get().registerModelTensor(fullyConnectedWeights);
         if (upProjectionWeights != null) {
             TensorOperationsProvider.get().registerModelTensor(upProjectionWeights);
         }

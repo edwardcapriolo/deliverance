@@ -82,7 +82,8 @@ public class Qwen2Model extends LlamaModel {
                     config.activationFunction,
                     quantize(weights.load(prefix + "gate_proj.weight", config.dctx(), true, false), qType), // w1
                     quantize(weights.load(prefix + "down_proj.weight", config.dctx(), false, true), qType), // w2
-                    quantize(weights.load(prefix + "up_proj.weight", config.dctx(), true, false), qType)
+                    quantize(weights.load(prefix + "up_proj.weight", config.dctx(), true, false), qType),
+                    configurableTensorProvider
             ); // w3
 
             transformerBlocks[relativeLayer] = new TransformerBlock(
@@ -91,7 +92,8 @@ public class Qwen2Model extends LlamaModel {
                     new RmsNorm(this, quantize(weights.load(base + "input_layernorm.weight"), qType), metricRegistry),
                     attention,
                     new RmsNorm(this, quantize(weights.load(base + "post_attention_layernorm.weight"), qType), metricRegistry),
-                    mlp
+                    mlp,
+                    configurableTensorProvider
             );
         });
 

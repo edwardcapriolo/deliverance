@@ -32,8 +32,8 @@ public class RmsNorm extends LayerNorm {
                 float v = input.get(b, j);
                 ss += v * v;
             }
-            ss /= this.model.getConfig().embeddingLength;
-            ss += this.model.getConfig().layerNormEps;
+            ss /= model.getConfig().embeddingLength;
+            ss += model.getConfig().layerNormEps;
             ss = (1.0 / FastMath.sqrt(ss));
             for (int j = offset; j < limit; j++) {
                 output.set((weightAdjustment + weights.get(0, j)) * ((float) ss * input.get(b, j)), b, j);
