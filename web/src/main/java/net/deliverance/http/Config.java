@@ -13,6 +13,7 @@ import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor.operations.NativeGPUTensorOperations;
 import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -35,18 +36,26 @@ public class Config {
     }
 
     @Bean
-    public ConfigurableTensorProvider provider(){
-        NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache()).get());
-        return new ConfigurableTensorProvider(n);
+    public ConfigurableTensorProvider provider(@Value("${deliverance.tensor.operations.type:simd}") String type){
+        if ("simd".equalsIgnoreCase(type)) {
+            NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache()).get());
+            return new ConfigurableTensorProvider(n);
+        } else if ("jvector".equalsIgnoreCase(type)){
+            return new ConfigurableTensorProvider(tensorCache());
+        } else if ("gpu".equalsIgnoreCase(type)){
+           NativeGPUTensorOperations g = new NativeGPUTensorOperations();
+           return new ConfigurableTensorProvider(g);
+        } else throw new IllegalArgumentException(type + " is not supported use (simd,jvector,gpu)");
     }
 
     @Bean(destroyMethod = "close")
     public AbstractModel generator(@Value("${deliverance.model.name}") String modelName,
                                    @Value("${deliverance.model.owner}") String modelOwner,
-                                   @Value("${deliverance.startup.test:true}") boolean test){
+                                       @Value("${deliverance.startup.test:true}") boolean test,
+                                   @Value("${deliverance.tensor.operations.type:simd}") String type){
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         File f = fetch.maybeDownload();
-        AbstractModel m =  ModelSupport.loadModel(f, DType.F32, DType.I8, provider(),
+        AbstractModel m =  ModelSupport.loadModel(f, DType.F32, DType.I8, provider(type),
                 metricRegistry(), tensorCache(), new KvBufferCacheSettings(true));
         if(test) {
             PromptContext ctx;
