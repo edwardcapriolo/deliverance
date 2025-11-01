@@ -1,4 +1,4 @@
-Deliverence 
+Deliverance
 Copyright 2025 Edward Guy Capriolo
 
-Some of the code inside this project is copied/derived/imspired by JLama https://github.com/tjake/Jlama Jan 2024 T Jake Luciani
+Some of the code inside this project is copied/derived/inspired by JLama https://github.com/tjake/Jlama Jan 2024 T Jake Luciani
