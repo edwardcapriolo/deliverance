@@ -18,7 +18,9 @@ public class NativeSimdTensorOperations implements TensorOperations {
     private static final Logger LOGGER = LoggerFactory.getLogger(NativeSimdTensorOperations.class);
 
     static {
-        if (!JarSupport.maybeLoadLibrary("deliverance")) System.loadLibrary("deliverance");
+        if (!JarSupport.maybeLoadLibrary("deliverance")) {
+            System.loadLibrary("deliverance");
+        }
     }
 
     private final int flags;
