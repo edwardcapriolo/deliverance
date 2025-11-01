@@ -1,7 +1,7 @@
 /*
- * Copyright 2024 T Jake Luciani
+ * Copyright 2024 Edward Guy Capriolo
  *
- * The Jlama Project licenses this file to you under the Apache License,
+ * The Deliverance Project licenses this file to you under the Apache License,
  * version 2.0 (the "License"); you may not use this file except in compliance
  * with the License. You may obtain a copy of the License at:
  *
@@ -22,12 +22,9 @@ import io.teknek.deliverance.generator.CausalSelfAttention;
 import io.teknek.deliverance.generator.MLPBlock;
 import io.teknek.deliverance.generator.RmsNorm;
 import io.teknek.deliverance.generator.TransformerBlock;
-import io.teknek.deliverance.model.ModelSupport;
-import io.teknek.deliverance.model.ModelType;
 import io.teknek.deliverance.model.llama.LlamaModel;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
-import io.teknek.deliverance.tensor.AbstractTensorUtils;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;

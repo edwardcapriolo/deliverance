@@ -69,7 +69,7 @@ public class NativeGPUTensorOperations implements TensorOperations {
         TensorOperations tmp;
         TensorCache tc = new TensorCache(new MetricRegistry());
         try {
-            tmp = new NativeSimdTensorOperations( new ConfigurableTensorProvider(tc).get());
+            tmp = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tc).get());
         } catch (Throwable t) {
             logger.warn("Native SIMD operations not available. Consider adding 'io.teknek.deliverance:native' to the classpath");
             try {
