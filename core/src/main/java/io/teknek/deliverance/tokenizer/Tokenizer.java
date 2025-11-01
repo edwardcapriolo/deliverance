@@ -13,7 +13,6 @@ public interface Tokenizer {
     String decode(long [] ids);
     TokenizerModel getModel();
 
-
     String preProcess(String sentence);
 
 

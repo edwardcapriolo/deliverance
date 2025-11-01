@@ -13,6 +13,7 @@ import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -28,6 +29,16 @@ public class Config {
         return new MetricRegistry();
     }
 
+    @Bean
+    public TensorCache tensorCache(){
+        return new TensorCache(metricRegistry());
+    }
+
+    @Bean
+    public ConfigurableTensorProvider provider(){
+        NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache()).get());
+        return new ConfigurableTensorProvider(n);
+    }
 
     @Bean(destroyMethod = "close")
     public AbstractModel generator(@Value("${deliverance.model.name}") String modelName,
@@ -35,10 +46,8 @@ public class Config {
                                    @Value("${deliverance.startup.test:true}") boolean test){
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         File f = fetch.maybeDownload();
-
-        TensorCache tensorCache = new TensorCache(metricRegistry());
-        AbstractModel m =  ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(tensorCache),
-                metricRegistry(), tensorCache, new KvBufferCacheSettings(true));
+        AbstractModel m =  ModelSupport.loadModel(f, DType.F32, DType.I8, provider(),
+                metricRegistry(), tensorCache(), new KvBufferCacheSettings(true));
         if(test) {
             PromptContext ctx;
             {
