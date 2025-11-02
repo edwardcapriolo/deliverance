@@ -26,6 +26,8 @@ dependency-reduced-pom.xml
 release-staging/
 venv/
 .sdkmanrc
+pom.xml.versionsBackup
+
 
 # For python setup.py, which pollutes the source dirs.
 python-api/dist
