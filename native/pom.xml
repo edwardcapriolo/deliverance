@@ -1,13 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
-                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0                              http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <parent>
     <groupId>io.teknek.deliverance</groupId>
     <artifactId>deliverance-parent</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>0.0.1</version>
   </parent>
   <artifactId>native</artifactId>
   <name>native</name>
@@ -161,7 +158,7 @@
                   <zipfileset src="${defaultJarFile}" />
                 </copy>
                 <copy todir="${nativeLibOnlyDir}" includeEmptyDirs="false">
-                  <zipfileset dir="${dawnWorkDir}/lib/" excludes="*.a"/>
+                  <zipfileset dir="${dawnWorkDir}/lib/" excludes="*.a" />
                 </copy>
                 <copy todir="${nativeJarWorkdir}" includeEmptyDirs="false">
                   <zipfileset dir="${nativeLibOnlyDir}" />
@@ -171,7 +168,7 @@
                   <zipfileset dir="${nativeIncludeDir}" />
                   <regexpmapper handledirsep="yes" from="^(?:[^/]+/)*([^/]+)\.h$" to="META-INF/native/include/\1.h" />
                 </copy>
-                <jar destfile="${nativeJarFile}" manifest="${nativeJarWorkdir}/META-INF/MANIFEST.MF" basedir="${nativeJarWorkdir}" index="true" excludes="META-INF/MANIFEST.MF,META-INF/INDEX.LIST"  />
+                <jar destfile="${nativeJarFile}" manifest="${nativeJarWorkdir}/META-INF/MANIFEST.MF" basedir="${nativeJarWorkdir}" index="true" excludes="META-INF/MANIFEST.MF,META-INF/INDEX.LIST" />
                 <attachartifact file="${nativeJarFile}" classifier="${jni.classifier}" type="jar" />
               </target>
             </configuration>
@@ -202,7 +199,7 @@
                   <env key="LDFLAGS" value="-shared" />
                   <env key="LDFLAGS2" value="-L${dawnWorkDir}/lib -lwebgpu_dawn -shared" />
                   <env key="LIB_NAME" value="${nativeLibName}" />
-                  <env KEY="LIB_EXT"  value="so" />
+                  <env KEY="LIB_EXT" value="so" />
                 </exec>
               </target>
             </configuration>
@@ -272,7 +269,7 @@
                   <env key="CFLAGS" value="-g -O3 -Wno-attributes -fPIC -fno-omit-frame-pointer -Wunused-variable -march=native -flax-vector-conversions -D__ARM_NEON__" />
                   <env key="LDFLAGS" value="-shared" />
                   <env key="LIB_NAME" value="${nativeLibName}" />
-                  <env KEY="LIB_EXT"  value="so" />
+                  <env KEY="LIB_EXT" value="so" />
                 </exec>
               </target>
             </configuration>
@@ -310,7 +307,7 @@
                     <zipfileset src="${defaultJarFile}" />
                   </copy>
                   <copy todir="${nativeLibOnlyDir}" includeEmptyDirs="false">
-                    <zipfileset dir="${dawnWorkDir}/lib/" excludes="*.a"/>
+                    <zipfileset dir="${dawnWorkDir}/lib/" excludes="*.a" />
                   </copy>
                   <copy todir="${nativeJarWorkdir}" includeEmptyDirs="false">
                     <zipfileset dir="${nativeLibOnlyDir}" />
@@ -353,12 +350,12 @@
                     <env key="LIB_DIR" value="${nativeLibOnlyDir}" />
                     <env key="OBJ_DIR" value="${nativeObjsOnlyDir}" />
                     <env key="JNI_PLATFORM" value="${jni.platform}" />
-                    <env key="CFLAGS" value="-O3 -mavx2 -march=native  -Wno-attributes -fPIC -ffreestanding -fno-stack-check -fno-stack-protector -mno-stack-arg-probe -fno-omit-frame-pointer -Wunused-variable" />
-                    <env key="CFLAGS2" value="-O3 -mavx2 -march=native  -Wno-attributes -fPIC -ffreestanding -fno-stack-check -fno-stack-protector -mno-stack-arg-probe -fno-omit-frame-pointer -Wunused-variable -I${dawnWorkDir}/include" />
+                    <env key="CFLAGS" value="-O3 -mavx2 -march=native -Wno-attributes -fPIC -ffreestanding -fno-stack-check -fno-stack-protector -mno-stack-arg-probe -fno-omit-frame-pointer -Wunused-variable" />
+                    <env key="CFLAGS2" value="-O3 -mavx2 -march=native -Wno-attributes -fPIC -ffreestanding -fno-stack-check -fno-stack-protector -mno-stack-arg-probe -fno-omit-frame-pointer -Wunused-variable -I${dawnWorkDir}/include" />
                     <env key="LDFLAGS" value="-shared" />
                     <env key="WEBGPU_DLL" value="${dawnWorkDir}/lib/webgpu_dawn.dll" />
                     <env key="LIB_NAME" value="${nativeLibName}" />
-                    <env KEY="LIB_EXT"  value="dll" />
+                    <env KEY="LIB_EXT" value="dll" />
                   </exec>
                 </target>
               </configuration>
@@ -400,7 +397,7 @@
                     <zipfileset src="${defaultJarFile}" />
                   </copy>
                   <copy todir="${nativeLibOnlyDir}" includeEmptyDirs="false">
-                    <zipfileset dir="${dawnWorkDir}/lib/" excludes="*.a"/>
+                    <zipfileset dir="${dawnWorkDir}/lib/" excludes="*.a" />
                   </copy>
                   <copy todir="${nativeJarWorkdir}" includeEmptyDirs="false">
                     <zipfileset dir="${nativeLibOnlyDir}" />
@@ -410,7 +407,7 @@
                     <zipfileset dir="${nativeIncludeDir}" />
                     <regexpmapper handledirsep="yes" from="^(?:[^/]+/)*([^/]+).h$" to="META-INF/native/include/\1.h" />
                   </copy>
-                  <jar destfile="${nativeJarFile}" manifest="${nativeJarWorkdir}/META-INF/MANIFEST.MF" basedir="${nativeJarWorkdir}" index="true" excludes="META-INF/MANIFEST.MF,META-INF/INDEX.LIST"  />
+                  <jar destfile="${nativeJarFile}" manifest="${nativeJarWorkdir}/META-INF/MANIFEST.MF" basedir="${nativeJarWorkdir}" index="true" excludes="META-INF/MANIFEST.MF,META-INF/INDEX.LIST" />
                   <attachartifact file="${nativeJarFile}" classifier="${jni.classifier}" type="jar" />
                 </target>
               </configuration>
@@ -483,7 +480,7 @@
                     <zipfileset src="${defaultJarFile}" />
                   </copy>
                   <copy todir="${nativeLibOnlyDir}" includeEmptyDirs="false">
-                    <zipfileset dir="${dawnWorkDir}/lib/" excludes="*.a"/>
+                    <zipfileset dir="${dawnWorkDir}/lib/" excludes="*.a" />
                   </copy>
                   <copy todir="${nativeJarWorkdir}" includeEmptyDirs="false">
                     <zipfileset dir="${nativeLibOnlyDir}" />
@@ -493,7 +490,7 @@
                     <zipfileset dir="${nativeIncludeDir}" />
                     <regexpmapper handledirsep="yes" from="^(?:[^/]+/)*([^/]+).h$" to="META-INF/native/include/\1.h" />
                   </copy>
-                  <jar destfile="${nativeJarFile}" manifest="${nativeJarWorkdir}/META-INF/MANIFEST.MF" basedir="${nativeJarWorkdir}" index="true" excludes="META-INF/MANIFEST.MF,META-INF/INDEX.LIST"  />
+                  <jar destfile="${nativeJarFile}" manifest="${nativeJarWorkdir}/META-INF/MANIFEST.MF" basedir="${nativeJarWorkdir}" index="true" excludes="META-INF/MANIFEST.MF,META-INF/INDEX.LIST" />
                   <attachartifact file="${nativeJarFile}" classifier="${jni.classifier}" type="jar" />
                 </target>
               </configuration>
