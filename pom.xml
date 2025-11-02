@@ -7,7 +7,7 @@
     <name>deliverance-parent</name>
     <description>deliverance parent pom</description>
     <url>http://github.com/edwardcapriolo/deliverance</url>
-    <version>0.0.1</version>
+    <version>0.0.2-SNAPSHOT</version>
 
     <parent>
         <groupId>org.sonatype.oss</groupId>
