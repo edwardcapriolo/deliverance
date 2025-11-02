@@ -175,9 +175,10 @@
         </developer>
     </developers>
     <scm>
-        <connection>scm:git:git://github.com/edwardcapriolo/deliverance.git</connection>
-        <developerConnection>scm:git:ssh://github.com:edwardcapriolo/deliverance.git</developerConnection>
         <url>http://github.com/edwardcapriolo/deliverance/tree/master</url>
+        <connection>https://github.com/edwardcapriolo/deliverance.git</connection>
+        <developerConnection>scm:git:git@github.com:edwardcapriolo/deliverance.git</developerConnection>
+    
     </scm>
     <licenses>
         <license>
