@@ -9,7 +9,10 @@ import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nonnull;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -23,6 +26,7 @@ import java.util.concurrent.ConcurrentMap;
 import static io.teknek.deliverance.JsonUtils.om;
 
 public class ModelSupport {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ModelSupport.class);
     private static final ConcurrentMap<String,ModelType> registry = new ConcurrentHashMap<String, ModelType>();
 
     static {
@@ -32,8 +36,14 @@ public class ModelSupport {
     public static void addModel(String modelName, ModelType t){
         registry.putIfAbsent(modelName, t);
     }
-    public static ModelType getModelType(String modelType) {
-        return registry.get(modelType);
+
+    public static @Nonnull ModelType getModelType(String modelType) {
+        LOGGER.info("Seeking a model of type {} from the registry", modelType);
+        ModelType found = registry.get(modelType);
+        if (found == null){
+            throw new IllegalArgumentException(modelType + " not found in registry");
+        }
+        return found;
     }
 
     public static ModelType detectModel(File configFile) {

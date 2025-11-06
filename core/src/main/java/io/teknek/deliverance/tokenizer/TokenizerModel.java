@@ -228,7 +228,9 @@ public class TokenizerModel {
         }
 
         // If no match was found, return this
-        if (index == 0) return new String[] { input.toString() };
+        if (index == 0) {
+            return new String[] {input.toString() };
+        }
 
         // Add remaining segment
         if (!matchLimited || matchCount < limit) matchList.add(input.subSequence(index, input.length()).toString());

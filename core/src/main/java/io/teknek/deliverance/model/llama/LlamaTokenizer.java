@@ -28,6 +28,7 @@ public class LlamaTokenizer extends BytePairEncodingTokenizer {
                 && id >= byteFallbackEncodingOffset
                 && id < 256 + byteFallbackEncodingOffset) {
             char c = (char) (id - byteFallbackEncodingOffset);
+
             return Optional.of(c);
         }
         return Optional.empty();
