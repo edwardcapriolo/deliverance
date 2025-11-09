@@ -310,8 +310,8 @@ public abstract class AbstractModel implements Generator {
                     VectorMath.pfor(0, config.embeddingLength, i -> {
                         // BERT seems to use tanh for pooling rather than gelu
 
-                        outputEmbedding[i] = ActivationFunction.eval(ActivationFunction.Type.TANH, pooled.get(0, i));
-                        //outputEmbedding[i] = config.activationFunction.eval( pooled.get(0, i));
+                        //outputEmbedding[i] = ActivationFunction.eval(ActivationFunction.Type.TANH, pooled.get(0, i));
+                        outputEmbedding[i] = ActivationFunction.eval(config.activationFunction, pooled.get(0, i));
                     });
                     return outputEmbedding;
                 }
