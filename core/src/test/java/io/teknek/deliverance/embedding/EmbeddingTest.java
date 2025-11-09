@@ -14,11 +14,13 @@ import org.junit.jupiter.api.Test;
 import java.io.File;
 import java.util.Arrays;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 public class EmbeddingTest {
 
     String text = "This is a test document about machine learning";
     @Test
-    void embeddingGo(){
+    void embeddingAvg(){
         ModelFetcher fetch = new ModelFetcher("sentence-transformers", "all-MiniLM-L6-v2");
         File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
@@ -26,16 +28,14 @@ public class EmbeddingTest {
         try (AbstractModel model = ModelSupport.loadEmbeddingModel(f, DType.F32, DType.F32, new ConfigurableTensorProvider(tensorCache),
                 new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true))) {
             long [] ids = model.getTokenizer().encode(text);
-            Assertions.assertEquals("[101, 2023, 2003, 1037, 3231, 6254, 2055, 3698, 4083, 102]", Arrays.toString(ids));
+            assertEquals("[101, 2023, 2003, 1037, 3231, 6254, 2055, 3698, 4083, 102]", Arrays.toString(ids));
             float[] embedding = model.embed(text, PoolingType.AVG);
-
-            System.out.println("First 10 values:");
-            for (int i = 0; i < 10; i++) {
-                System.out.println("  [" + i + "] = " + embedding[i]);
-            }
+            //  [0] = -9.4317534E-4
+            //  [1] = 0.0065326607
+            assertEquals(-9.4317534E-4, embedding[0], 0.0000001);
+            assertEquals(0.0065326607, embedding[1], 0.0000001);
         }
     }
-
 
     @Test
     void embeddingModel(){
@@ -45,15 +45,13 @@ public class EmbeddingTest {
         TensorCache tensorCache = new TensorCache(mr);
         try (AbstractModel model = ModelSupport.loadEmbeddingModel(f, DType.F32, DType.F32, new ConfigurableTensorProvider(tensorCache),
                 new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true))) {
-
             long [] ids = model.getTokenizer().encode(text);
-            Assertions.assertEquals("[101, 2023, 2003, 1037, 3231, 6254, 2055, 3698, 4083, 102]", Arrays.toString(ids));
+            assertEquals("[101, 2023, 2003, 1037, 3231, 6254, 2055, 3698, 4083, 102]", Arrays.toString(ids));
             float[] embedding = model.embed(text, PoolingType.MODEL);
-
-            System.out.println("First 10 values:");
-            for (int i = 0; i < 10; i++) {
-                System.out.println("  [" + i + "] = " + embedding[i]);
-            }
+            //  [0] = 0.081042126
+            //  [1] = -0.11262398
+            assertEquals(0.081042126, embedding[0], 0.0000001);
+            assertEquals(-0.11262398, embedding[1], 0.0000001);
         }
     }
 }
