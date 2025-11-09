@@ -155,7 +155,8 @@ public abstract class AbstractModel implements Generator {
         this.transformerBlocks = inferenceType.isFwdPass ? loadTransformerBlockWeights() : null;
         this.sampleOutput = inferenceType.isOutput ? loadOutputWeights() : null;
 
-        //this.poolingLayer = inferenceType.isPooling ? Optional.ofNullable(loadPoolingWeights()) : Optional.empty();
+        //embedding
+        this.poolingLayer = inferenceType.isPooling ? Optional.ofNullable(loadPoolingWeights()) : Optional.empty();
     }
 
     protected abstract EmbedInput loadInputWeights();
@@ -281,10 +282,7 @@ public abstract class AbstractModel implements Generator {
                 //post process response is still missing
                 return response;
             }
-
-
         }
-
     }
 
     public float[] embed(String input, PoolingType poolingType) {
@@ -295,6 +293,7 @@ public abstract class AbstractModel implements Generator {
         try (KvBufferCache.KvBuffer kvMem= kvBufferCache.getEphemeralKvBuffer()){
             int promptLength = encoded.length;
             float avgp = 1.0f / promptLength;
+
             try (AbstractTensor r = batchForward(encoded, 0, kvMem)){
                 if (poolingType == PoolingType.MODEL){
                     if (poolingLayer.isEmpty()){
@@ -337,12 +336,9 @@ public abstract class AbstractModel implements Generator {
                 return outputEmbedding;
             }
         }
-
-
-
     }
 
-        public int sample(AbstractTensor output, float temperature, float uniformSample, AbstractTensor logits) {
+    public int sample(AbstractTensor output, float temperature, float uniformSample, AbstractTensor logits) {
         try (AbstractTensor embedding = sampleOutput.getOutputLayerNorm().forward(output)) {
             // This is a mix of argmax and sampling with softmax
             VectorMath.pchunk(0, config.vocabularySize, (chunkStart, chunkSize) -> {

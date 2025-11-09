@@ -16,20 +16,39 @@ import java.util.Arrays;
 
 public class EmbeddingTest {
 
-
+    String text = "This is a test document about machine learning";
     @Test
     void embeddingGo(){
-        //"sentence-transformers/all-MiniLM-L6-v2"
         ModelFetcher fetch = new ModelFetcher("sentence-transformers", "all-MiniLM-L6-v2");
         File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
         TensorCache tensorCache = new TensorCache(mr);
         try (AbstractModel model = ModelSupport.loadEmbeddingModel(f, DType.F32, DType.F32, new ConfigurableTensorProvider(tensorCache),
                 new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true))) {
-            String text = "This is a test document about machine learning";
             long [] ids = model.getTokenizer().encode(text);
             Assertions.assertEquals("[101, 2023, 2003, 1037, 3231, 6254, 2055, 3698, 4083, 102]", Arrays.toString(ids));
             float[] embedding = model.embed(text, PoolingType.AVG);
+
+            System.out.println("First 10 values:");
+            for (int i = 0; i < 10; i++) {
+                System.out.println("  [" + i + "] = " + embedding[i]);
+            }
+        }
+    }
+
+
+    @Test
+    void embeddingModel(){
+        ModelFetcher fetch = new ModelFetcher("sentence-transformers", "all-MiniLM-L6-v2");
+        File f = fetch.maybeDownload();
+        MetricRegistry mr = new MetricRegistry();
+        TensorCache tensorCache = new TensorCache(mr);
+        try (AbstractModel model = ModelSupport.loadEmbeddingModel(f, DType.F32, DType.F32, new ConfigurableTensorProvider(tensorCache),
+                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true))) {
+
+            long [] ids = model.getTokenizer().encode(text);
+            Assertions.assertEquals("[101, 2023, 2003, 1037, 3231, 6254, 2055, 3698, 4083, 102]", Arrays.toString(ids));
+            float[] embedding = model.embed(text, PoolingType.MODEL);
 
             System.out.println("First 10 values:");
             for (int i = 0; i < 10; i++) {
