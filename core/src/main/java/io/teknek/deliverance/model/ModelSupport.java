@@ -3,6 +3,7 @@ package io.teknek.deliverance.model;
 import com.codahale.metrics.MetricRegistry;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.model.bert.BertModelType;
 import io.teknek.deliverance.model.llama.LlamaModelType;
 import io.teknek.deliverance.safetensors.*;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
@@ -30,6 +31,7 @@ public class ModelSupport {
     private static final ConcurrentMap<String,ModelType> registry = new ConcurrentHashMap<String, ModelType>();
 
     static {
+        registry.putIfAbsent("BERT", new BertModelType());
         registry.putIfAbsent("LLAMA", new LlamaModelType());
     }
 
@@ -38,7 +40,7 @@ public class ModelSupport {
     }
 
     public static @Nonnull ModelType getModelType(String modelType) {
-        LOGGER.info("Seeking a model of type {} from the registry", modelType);
+        LOGGER.info("Seeking a model of type {} from the registry. ", modelType);
         ModelType found = registry.get(modelType);
         if (found == null){
             throw new IllegalArgumentException(modelType + " not found in registry");
@@ -65,7 +67,7 @@ public class ModelSupport {
                                           KvBufferCacheSettings kvBufferCacheSettings){
         File configFile = new File(model, "config.json");
         if (!configFile.exists()){
-            throw new RuntimeException("expecting to find config " + configFile);
+            throw new RuntimeException("Expecting to find config file " + configFile);
         }
         ModelType modelType = detectModel(configFile);
         try {
@@ -86,4 +88,58 @@ public class ModelSupport {
         }
     }
 
+    public static AbstractModel  loadEmbeddingModel(File model, DType workingMemoryType, DType workingQuantizationType,
+                                                    ConfigurableTensorProvider configurableTensorProvider,
+                                                    MetricRegistry metricRegistry, TensorCache tensorCache,
+                                                    KvBufferCacheSettings kvBufferCacheSettings) {
+     return load(AbstractModel.InferenceType.FULL_EMBEDDING,model, workingMemoryType, workingQuantizationType, configurableTensorProvider, metricRegistry, tensorCache,kvBufferCacheSettings);
+
+    }
+    protected static AbstractModel load(AbstractModel.InferenceType infType, File model, DType workingMemoryType, DType workingQuantizationType,
+                                 ConfigurableTensorProvider configurableTensorProvider,
+                                 MetricRegistry metricRegistry, TensorCache tensorCache,
+                                 KvBufferCacheSettings kvBufferCacheSettings) {
+        File configFile = new File(model, "config.json");
+        if (!configFile.exists()){
+            throw new RuntimeException("Expecting to find config file " + configFile);
+        }
+        ModelType modelType = detectModel(configFile);
+
+        try {
+            Config config = om.readValue(configFile, modelType.getConfigClass());
+            Tokenizer tokenizer = modelType.getTokenizerClass().getConstructor(Path.class).newInstance(model.toPath());
+
+            WeightLoader wl = new DefaultWeightLoader(model);
+
+            Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
+                    WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class,
+                    ConfigurableTensorProvider.class, MetricRegistry.class, TensorCache.class,
+                    KvBufferCacheSettings.class);
+
+            return cons.newInstance(infType, config, wl, tokenizer,
+                    workingMemoryType, workingQuantizationType, Optional.empty(), configurableTensorProvider,
+                    metricRegistry, tensorCache, kvBufferCacheSettings);
+        } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+    }
+/*
+    public static AbstractModel loadEmbeddingModel(File model, DType workingMemoryType, DType workingQuantizationType) {
+        AbstractModel embed = loadModel(AbstractModel.InferenceType.FULL_EMBEDDING, ConfigurableTensorProvider provider
+                model, workingMemoryType, workingQuantizationType )
+        /*
+        return loadModel(
+                AbstractModel.InferenceType.FULL_EMBEDDING,
+                model,
+                null,
+                workingMemoryType,
+                workingQuantizationType,
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty()
+        );
+
+
+    }
+*/
 }

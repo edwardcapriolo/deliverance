@@ -21,6 +21,7 @@ import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -43,6 +44,11 @@ public class KvBufferCache implements Closeable {
 
     public KvBuffer getKvBuffer(String session) {
         return kvBufferCache.computeIfAbsent(session, s -> new KvBuffer(s, 1 << 23)); // 8MB per page
+    }
+
+    /**just orphans less memory :) */
+    public KvBuffer getEphemeralKvBuffer() {
+        return new KvBuffer(UUID.randomUUID().toString(), 1 << 20);
     }
 
     @Override

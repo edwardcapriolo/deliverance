@@ -110,12 +110,8 @@ public class CausalSelfAttention {
         configurableTensorProvider.get().registerModelTensor(outputProjectionWeights);
     }
 
-    public AbstractTensor forward(
-            AbstractTensor input,
-            int startPosition,
-            KvBufferCache.KvBuffer kvMem,
-            Optional<Consumer<List<AbstractTensor>>> tensorReducer
-    ) {
+    public AbstractTensor forward(AbstractTensor input, int startPosition, KvBufferCache.KvBuffer kvMem,
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
         Preconditions.checkArgument(input.dims() == 2 && input.shape().last() == config.embeddingLength);
         int batchSize = input.shape().first();
         int splitSize = configurableTensorProvider.get().parallelSplitSize();

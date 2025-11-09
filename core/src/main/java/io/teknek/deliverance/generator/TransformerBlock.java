@@ -28,51 +28,38 @@ public class TransformerBlock {
     final Optional<LayerNorm> preResponseNorm; // After the residual connection
     final ConfigurableTensorProvider configurableTensorProvider;
 
+    public TransformerBlock(AbstractModel model, int layerIndex, LayerNorm preAttentionNorm,
+            CausalSelfAttention attention, LayerNorm postAttentionNorm, FeedForward ffBlock,
+            ConfigurableTensorProvider configurableTensorProvider) {
+        this(model, layerIndex, Optional.of(preAttentionNorm), attention, Optional.empty(),
+                Optional.of(postAttentionNorm), ffBlock, Optional.empty(), Optional.empty(),
+                configurableTensorProvider);
+    }
+
+
     public TransformerBlock(
             AbstractModel model,
             int layerIndex,
-            LayerNorm preAttentionNorm,
             CausalSelfAttention attention,
             LayerNorm postAttentionNorm,
             FeedForward ffBlock,
+            LayerNorm postFFNorm,
             ConfigurableTensorProvider configurableTensorProvider
     ) {
         this(
                 model,
                 layerIndex,
-                Optional.of(preAttentionNorm),
+                Optional.empty(),
                 attention,
                 Optional.empty(),
                 Optional.of(postAttentionNorm),
                 ffBlock,
                 Optional.empty(),
-                Optional.empty(),
+                Optional.of(postFFNorm),
                 configurableTensorProvider
         );
     }
 
-    /*
-    public TransformerBlock(
-            AbstractModel model,
-            int layerIndex,
-            CausalSelfAttention attention,
-            LayerNorm postAttentionNorm,
-            FeedForward ffBlock,
-            LayerNorm postFFNorm
-    ) {
-        this(
-                model,
-                layerIndex,
-                Optional.empty(),
-                attention,
-                Optional.empty(),
-                Optional.of(postAttentionNorm),
-                ffBlock,
-                Optional.empty(),
-                Optional.of(postFFNorm)
-        );
-    }
-*/
     /*
     public TransformerBlock(
             AbstractModel model,

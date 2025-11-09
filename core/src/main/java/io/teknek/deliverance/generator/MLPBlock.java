@@ -1,5 +1,6 @@
 package io.teknek.deliverance.generator;
 
+import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.model.AbstractModel;
@@ -34,17 +35,34 @@ public class MLPBlock implements FeedForward {
     private final AbstractTensor[] batchWeights;
     private final ConfigurableTensorProvider configurableTensorProvider;
 
-    public MLPBlock(
-            AbstractModel model,
-            ActivationFunction.Type activationFunction,
-            AbstractTensor fullyConnectedWeights,
-            AbstractTensor projectionWeights,
-            AbstractTensor upProjectionWeights,
-            ConfigurableTensorProvider configurableTensorProvider
-    ) {
+    public MLPBlock(AbstractModel model, ActivationFunction.Type activationFunction, AbstractTensor fullyConnectedWeights,
+            AbstractTensor projectionWeights, AbstractTensor upProjectionWeights, ConfigurableTensorProvider configurableTensorProvider) {
         this(model, activationFunction, Optional.empty(), fullyConnectedWeights,
                 Optional.empty(), projectionWeights, upProjectionWeights, configurableTensorProvider);
     }
+
+    public MLPBlock(
+            AbstractModel model,
+            ActivationFunction.Type activationFunction,
+            AbstractTensor fullyConnectedBias,
+            AbstractTensor fullyConnectedWeights,
+            AbstractTensor projectionBias,
+            AbstractTensor projectionWeights,
+            ConfigurableTensorProvider configurableTensorProvider
+    ) {
+
+        this(
+                model,
+                activationFunction,
+                Optional.of(fullyConnectedBias),
+                fullyConnectedWeights,
+                Optional.of(projectionBias),
+                projectionWeights,
+                null,
+                configurableTensorProvider
+        );
+    }
+
 
     public MLPBlock(
             AbstractModel model,
