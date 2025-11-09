@@ -9,8 +9,12 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.embedding.PoolingLayer;
+import io.teknek.deliverance.embedding.PoolingType;
 import io.teknek.deliverance.generator.*;
+import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.VectorMath;
+import io.teknek.deliverance.math.VectorMathUtils;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
@@ -73,6 +77,10 @@ public abstract class AbstractModel implements Generator {
     protected final ConfigurableTensorProvider configurableTensorProvider;
     protected final MetricRegistry metricRegistry;
     protected final TensorCache tensorCache;
+
+    //embedding
+    protected Optional<PoolingLayer> poolingLayer;
+
 
     protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
                             DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider provider,
@@ -146,6 +154,8 @@ public abstract class AbstractModel implements Generator {
         this.embedInput = inferenceType.isInput ? loadInputWeights() : null;
         this.transformerBlocks = inferenceType.isFwdPass ? loadTransformerBlockWeights() : null;
         this.sampleOutput = inferenceType.isOutput ? loadOutputWeights() : null;
+
+        //this.poolingLayer = inferenceType.isPooling ? Optional.ofNullable(loadPoolingWeights()) : Optional.empty();
     }
 
     protected abstract EmbedInput loadInputWeights();
@@ -277,7 +287,62 @@ public abstract class AbstractModel implements Generator {
 
     }
 
-    public int sample(AbstractTensor output, float temperature, float uniformSample, AbstractTensor logits) {
+    public float[] embed(String input, PoolingType poolingType) {
+        int[] encoded = Arrays.stream(tokenizer.encode(input)).mapToInt(Ints::checkedCast).toArray();
+        Preconditions.checkArgument(encoded.length < config.contextLength);
+        float [] outputEmbedding = new float[config.embeddingLength];
+
+        try (KvBufferCache.KvBuffer kvMem= kvBufferCache.getEphemeralKvBuffer()){
+            int promptLength = encoded.length;
+            float avgp = 1.0f / promptLength;
+            try (AbstractTensor r = batchForward(encoded, 0, kvMem)){
+                if (poolingType == PoolingType.MODEL){
+                    if (poolingLayer.isEmpty()){
+                        throw new UnsupportedOperationException("no pooling layer for this model");
+                    }
+                    AbstractTensor output = r.slice(promptLength - 1);
+                    AbstractTensor pooled = makeDenseTensor(1, config.embeddingLength);
+                    configurableTensorProvider.get()
+                            .batchDotProduct(pooled, output, poolingLayer.get().getPoolingWeights(), 0, 0, config.embeddingLength);
+
+                    configurableTensorProvider.get()
+                            .batchDotProduct(pooled, output, poolingLayer.get().getPoolingWeights(), 0, 0, config.embeddingLength);
+
+                    VectorMath.pfor(0, config.embeddingLength, i -> {
+                        // BERT seems to use tanh for pooling rather than gelu
+
+                        outputEmbedding[i] = ActivationFunction.eval(ActivationFunction.Type.TANH, pooled.get(0, i));
+                        //outputEmbedding[i] = config.activationFunction.eval( pooled.get(0, i));
+                    });
+                    return outputEmbedding;
+                }
+                for (int i = 0; i < promptLength; i++) {
+                    AbstractTensor output = r.slice(i);
+                    // Pooling
+                    for (int ii = 0; ii < config.embeddingLength; ii++) {
+                        switch (poolingType) {
+                            case AVG:
+                                outputEmbedding[ii] += output.get(0, ii) * avgp;
+                                break;
+                            case MAX:
+                                outputEmbedding[ii] = Math.max(outputEmbedding[ii], output.get(0, ii));
+                                break;
+                            case SUM:
+                                outputEmbedding[ii] += output.get(0, ii);
+                                break;
+                        }
+                    }
+                }
+                VectorMathUtils.l2normalize(outputEmbedding);
+                return outputEmbedding;
+            }
+        }
+
+
+
+    }
+
+        public int sample(AbstractTensor output, float temperature, float uniformSample, AbstractTensor logits) {
         try (AbstractTensor embedding = sampleOutput.getOutputLayerNorm().forward(output)) {
             // This is a mix of argmax and sampling with softmax
             VectorMath.pchunk(0, config.vocabularySize, (chunkStart, chunkSize) -> {
@@ -392,5 +457,10 @@ public abstract class AbstractModel implements Generator {
 
     public TensorCache getTensorCache(){
         return tensorCache;
+    }
+
+
+    protected PoolingLayer loadPoolingWeights() {
+        return null;
     }
 }
