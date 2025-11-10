@@ -1,5 +1,6 @@
 package net.deliverance.http;
 
+import io.teknek.deliverance.embedding.PoolingType;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.*;
@@ -13,9 +14,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.math.BigDecimal;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -25,14 +25,42 @@ public class DeliveranceController {
     private static final Logger LOGGER = LoggerFactory.getLogger(DeliveranceController.class);
 
     private static final String DELIVERANCE_SESSION_HEADER = "X-Deliverance-Session";
-    @Autowired
-    private AbstractModel model;
 
+    @Autowired
+    private Map<MultiModelConfig,AbstractModel> models;
+
+    private Optional<Map.Entry<MultiModelConfig, AbstractModel>> findModel(String name){
+        return models.entrySet().stream()
+                .filter(x-> x.getKey().getModelName()
+                        .equalsIgnoreCase(name)).findFirst();
+    }
+
+    @RequestMapping(method = RequestMethod.POST, value="/embeddings", produces =  { "application/json" }, consumes = { "application/json" })
+    public CreateEmbeddingResponse createEmbedding(@RequestBody CreateEmbeddingRequest request){
+        Optional<Map.Entry<MultiModelConfig, AbstractModel>> z = findModel(request.getModel().getString());
+        if (z.isEmpty()){
+            throw new RuntimeException("model not found " + request.getModel());
+        }
+        float[] result = z.get().getValue().embed(request.getInput().getString(), PoolingType.AVG);
+        List<BigDecimal> resultAsB = new ArrayList<>();
+        for (float f: result){
+            resultAsB.add(new BigDecimal(f));
+        }
+        CreateEmbeddingResponse resp = new CreateEmbeddingResponse();
+        Embedding e = new Embedding().index(0).embedding(resultAsB);
+        resp.addDataItem(e);
+        return resp;
+    }
 
     @RequestMapping(method = RequestMethod.POST, value = "/chat/completions", produces = { "application/json",
             "text/event-stream" }, consumes = { "application/json" })
     Object createChatCompletion(@RequestHeader Map<String, String> headers,
                                 @RequestBody CreateChatCompletionRequest request) {
+        Optional<Map.Entry<MultiModelConfig, AbstractModel>> z = findModel(request.getModel());
+        if (z.isEmpty()){
+            throw new RuntimeException("model not found " + request.getModel());
+        }
+        AbstractModel model = z.get().getValue();
         List<ChatCompletionRequestMessage> messages = request.getMessages();
         UUID id = UUID.randomUUID();
         if (headers.containsKey(DELIVERANCE_SESSION_HEADER)) {

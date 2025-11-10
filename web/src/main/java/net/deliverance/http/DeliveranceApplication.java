@@ -10,7 +10,6 @@ import java.util.ArrayList;
 public class DeliveranceApplication {
 
     public static void main(String[] args) {
-
         SpringApplication.run(DeliveranceApplication.class, args);
     }
 }

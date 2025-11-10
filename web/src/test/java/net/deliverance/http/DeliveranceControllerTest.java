@@ -23,12 +23,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.mockito.Mockito.when;
 
 @ExtendWith(SpringExtension.class)
+//@SpringBootTest(args = "--add-modules jdk.incubator.vector", properties = {"deliverance.tensor.operations.type=jvector"})
 @SpringBootTest(args = "--add-modules jdk.incubator.vector")
 @AutoConfigureMockMvc
 public class DeliveranceControllerTest {
-
-    //@MockitoBean
-    //AbstractModel model;
 
     @Autowired
     MockMvc mockMvc;
@@ -37,9 +35,8 @@ public class DeliveranceControllerTest {
     public void whenUsingSpringBootTestArgs_thenCommandLineArgSet(@Autowired Environment env) throws Exception {
         Response r = new Response("yo", null,
                 null,0,0, 0, 0);
-        //when(model.generate(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.any()))
-        //        .thenReturn(r);
         CreateChatCompletionRequest request = new CreateChatCompletionRequest()
+                .model("TinyLlama-1.1B-Chat-v1.0-Jlama-Q4")
                 .stop(null);
         request.addMessagesItem(new ChatCompletionRequestMessage(
                 new ChatCompletionRequestUserMessage().content(

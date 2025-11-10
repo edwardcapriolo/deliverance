@@ -51,5 +51,5 @@ public class EmbeddingTest {
             assertEquals(0.043238960206508636, embedding[0], 0.0000001);
             assertEquals(-0.051459357142448425, embedding[1], 0.0000001);
         }
-    }
+    }   
 }

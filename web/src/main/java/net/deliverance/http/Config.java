@@ -15,6 +15,7 @@ import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NativeGPUTensorOperations;
 import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -25,6 +26,9 @@ import java.util.UUID;
 @Configuration
 public class Config {
 
+    static {
+        System.load("/home/edward/deliverence/native/target/native-lib-only/libdeliverance.so");
+    }
     @Bean
     public MetricRegistry metricRegistry(){
         return new MetricRegistry();
@@ -48,6 +52,7 @@ public class Config {
         } else throw new IllegalArgumentException(type + " is not supported use (simd,jvector,gpu)");
     }
 
+    /*
     @Bean(destroyMethod = "close")
     public AbstractModel generator(@Value("${deliverance.model.name}") String modelName,
                                    @Value("${deliverance.model.owner}") String modelOwner,
@@ -68,5 +73,5 @@ public class Config {
             }));
         }
         return m;
-    }
+    }*/
 }

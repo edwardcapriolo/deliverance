@@ -178,6 +178,7 @@
           <argLine>
             --add-modules jdk.incubator.vector
             -Djdk.attach.allowAttachSelf=true
+
           </argLine>
         </configuration>
       </plugin>

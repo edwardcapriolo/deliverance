@@ -19,7 +19,9 @@ public class NativeSimdTensorOperations implements TensorOperations {
 
     static {
         if (!JarSupport.maybeLoadLibrary("deliverance")) {
-            System.loadLibrary("deliverance");
+            try { System.loadLibrary("deliverance"); } catch( UnsatisfiedLinkError e) {
+                LOGGER.warn("Native did not load", e);
+            }
         }
     }
 
