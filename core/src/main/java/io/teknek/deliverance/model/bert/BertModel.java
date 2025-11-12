@@ -2,6 +2,7 @@
 package io.teknek.deliverance.model.bert;
 
 import com.codahale.metrics.MetricRegistry;
+import io.teknek.deliverance.CausualWhisperer;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.embedding.PoolingLayer;
 import io.teknek.deliverance.generator.*;
@@ -53,8 +54,16 @@ public class BertModel extends AbstractModel {
             @Override
             public AbstractTensor inputTokenToEmbedding(int inputToken, int position) {
                 AbstractTensor embedding = makeDenseTensor(config.embeddingLength);
+                if (position == 3){
+                    CausualWhisperer.LOGGER.info("BertModel.inputTokenToEmbedding {}", embedding.shape());
+                    CausualWhisperer.LOGGER.info("BertModel.inputTokenToEmbedding inputToken: {} position: {} ", inputToken, position);
+                }
                 for (int i = 0; i < config.embeddingLength; i++) {
                     float v = we.get(inputToken, i) + wte.get(0, i) + wpe.get(position, i);
+                    if (position==3 && i < 5 && CausualWhisperer.LOGGER.isInfoEnabled()){
+                        CausualWhisperer.LOGGER.info( "inputTokenToEmbedding[{}] = word_embed_weight {} + type_embed_weight {} + position_embed_weight {} = v {}",
+                        i, we.get(inputToken, i), wte.get(0, i), wpe.get(position, i), v);
+                    }
                     embedding.set(v, 0, i);
                 }
                 AbstractTensor lnemb = inputLayerNorm.forward(embedding);

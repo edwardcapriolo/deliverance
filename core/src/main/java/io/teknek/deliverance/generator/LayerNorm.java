@@ -2,6 +2,7 @@ package io.teknek.deliverance.generator;
 
 import com.codahale.metrics.Histogram;
 import com.google.common.base.Preconditions;
+import io.teknek.deliverance.CausualWhisperer;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import net.jafama.FastMath;
@@ -40,6 +41,9 @@ public class LayerNorm {
             float sum = 0;
             float sumSq = 0;
             int limit = offset + length;
+            if (b == 3) {
+                CausualWhisperer.LOGGER.info("LayerNorm.forward batch {} loop offset {} to limit {}", b, offset, limit);
+            }
             for (int i = offset; i < limit; i++) {
                 float v = input.get(b, i);
                 sum += v;
@@ -48,6 +52,10 @@ public class LayerNorm {
             float mean = sum / model.getConfig().embeddingLength;
             float variance = sumSq / model.getConfig().embeddingLength - mean * mean;
             float invStddev = 1.0f / (float) FastMath.sqrt(variance + model.getConfig().layerNormEps);
+            if (b == 3) {
+                CausualWhisperer.LOGGER.info("LayerNorm.forward sum {} sumSq {} mean {} variance {} invStdDev {} ",
+                        sum, sumSq, mean, variance, invStddev);
+            }
             for (int i = offset; i < limit; i++) {
                 float v = (input.get(b, i) - mean) * invStddev * weights.get(0, i) + bias.get(0, i);
                 output.set(v, b, i);
