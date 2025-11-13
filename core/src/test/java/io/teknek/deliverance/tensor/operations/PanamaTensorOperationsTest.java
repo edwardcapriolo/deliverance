@@ -13,10 +13,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class PanamaTensorOperationsTest {
 
-    static AbstractTensor allOnes(int size) {
+    public static AbstractTensor allOnes(int size) {
         AbstractTensor f = new FloatBufferTensor(1, size);
         for (int i = 0; i < size; i++) {
             f.set(1.0f, 0, i);
+        }
+        return f;
+    }
+
+    public static AbstractTensor allZeros(int size) {
+        AbstractTensor f = new FloatBufferTensor(1, size);
+        for (int i = 0; i < size; i++) {
+            f.set(0.0f, 0, i);
         }
         return f;
     }

@@ -11,7 +11,6 @@ public class LlamaTokenizerTest {
 
     LlamaTokenizer tokenizer = new LlamaTokenizer(Path.of(LlamaTokenizerTest.class.getResource("/tinylama_model_dir").getPath()));
 
-
     @Test
     void decodeAsciiChar(){
         assertEquals( 100L, tokenizer.encodeCharacterAsToken((byte) Character.valueOf('a').charValue()));

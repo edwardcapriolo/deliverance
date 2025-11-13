@@ -35,8 +35,8 @@ public class LayerNorm {
 
     public AbstractTensor forward(AbstractTensor input, int offset, int length) {
         long start = System.currentTimeMillis();
-        int batchSize = input.shape().first();
         AbstractTensor output = model.getTensorCache().getDirty(input.dType(), input.shape());
+        /*
         for (int b = 0; b < batchSize; b++) {
             float sum = 0;
             float sumSq = 0;
@@ -60,9 +60,40 @@ public class LayerNorm {
                 float v = (input.get(b, i) - mean) * invStddev * weights.get(0, i) + bias.get(0, i);
                 output.set(v, b, i);
             }
-        }
+        }*/
+        performLayerNorm(input, output, weights, bias, model.getConfig().layerNormEps, offset, length,
+                model.getConfig().embeddingLength);
         long end = System.currentTimeMillis();
-        totalTime.update(end-start);
+        totalTime.update(end - start);
         return output;
+    }
+
+    public static void performLayerNorm(AbstractTensor<?,?> input, AbstractTensor<?,?> output, AbstractTensor<?,?> weights,
+                                        AbstractTensor<?,?> bias, float eps, int offset, int length, int embeddingLength){
+        int batchSize = input.shape().first();
+        for (int b = 0; b < batchSize; b++) {
+            float sum = 0;
+            float sumSq = 0;
+            int limit = offset + length;
+            if (b > -1) {
+                CausualWhisperer.LOGGER.info("LayerNorm.forward batch {} loop offset {} to limit {}", b, offset, limit);
+            }
+            for (int i = offset; i < limit; i++) {
+                float v = input.get(b, i);
+                sum += v;
+                sumSq += v * v;
+            }
+            float mean = sum / embeddingLength;
+            float variance = sumSq / embeddingLength - mean * mean;
+            float invStddev = 1.0f / (float) FastMath.sqrt(variance + eps);
+            if (b > -1) {
+                CausualWhisperer.LOGGER.info("LayerNorm.forward sum {} sumSq {} mean {} variance {} invStdDev {} ",
+                        sum, sumSq, mean, variance, invStddev);
+            }
+            for (int i = offset; i < limit; i++) {
+                float v = (input.get(b, i) - mean) * invStddev * weights.get(0, i) + bias.get(0, i);
+                output.set(v, b, i);
+            }
+        }
     }
 }
