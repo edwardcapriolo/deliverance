@@ -36,31 +36,6 @@ public class LayerNorm {
     public AbstractTensor forward(AbstractTensor input, int offset, int length) {
         long start = System.currentTimeMillis();
         AbstractTensor output = model.getTensorCache().getDirty(input.dType(), input.shape());
-        /*
-        for (int b = 0; b < batchSize; b++) {
-            float sum = 0;
-            float sumSq = 0;
-            int limit = offset + length;
-            if (b == 3) {
-                CausualWhisperer.LOGGER.info("LayerNorm.forward batch {} loop offset {} to limit {}", b, offset, limit);
-            }
-            for (int i = offset; i < limit; i++) {
-                float v = input.get(b, i);
-                sum += v;
-                sumSq += v * v;
-            }
-            float mean = sum / model.getConfig().embeddingLength;
-            float variance = sumSq / model.getConfig().embeddingLength - mean * mean;
-            float invStddev = 1.0f / (float) FastMath.sqrt(variance + model.getConfig().layerNormEps);
-            if (b == 3) {
-                CausualWhisperer.LOGGER.info("LayerNorm.forward sum {} sumSq {} mean {} variance {} invStdDev {} ",
-                        sum, sumSq, mean, variance, invStddev);
-            }
-            for (int i = offset; i < limit; i++) {
-                float v = (input.get(b, i) - mean) * invStddev * weights.get(0, i) + bias.get(0, i);
-                output.set(v, b, i);
-            }
-        }*/
         performLayerNorm(input, output, weights, bias, model.getConfig().layerNormEps, offset, length,
                 model.getConfig().embeddingLength);
         long end = System.currentTimeMillis();
@@ -75,7 +50,7 @@ public class LayerNorm {
             float sum = 0;
             float sumSq = 0;
             int limit = offset + length;
-            if (b > -1) {
+            if (b == 3) {
                 CausualWhisperer.LOGGER.info("LayerNorm.forward batch {} loop offset {} to limit {}", b, offset, limit);
             }
             for (int i = offset; i < limit; i++) {
@@ -86,7 +61,7 @@ public class LayerNorm {
             float mean = sum / embeddingLength;
             float variance = sumSq / embeddingLength - mean * mean;
             float invStddev = 1.0f / (float) FastMath.sqrt(variance + eps);
-            if (b > -1) {
+            if (b == 3) {
                 CausualWhisperer.LOGGER.info("LayerNorm.forward sum {} sumSq {} mean {} variance {} invStdDev {} ",
                         sum, sumSq, mean, variance, invStddev);
             }
