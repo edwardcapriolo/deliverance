@@ -139,6 +139,7 @@
         <version>${surefire.version}</version>
         <configuration>
           <argLine>
+            --add-opens java.base/java.nio=ALL-UNNAMED
             --add-modules jdk.incubator.vector
             -Djdk.attach.allowAttachSelf=true
           </argLine>

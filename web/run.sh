@@ -4,4 +4,4 @@ PATH=$JAVA_HOME/bin:$PATH
 # -XX:+UnlockDiagnosticVMOptions -XX:CompilerDirectivesFile=../inlinerules.json -XX:+AlignVector -XX:+UseStringDeduplication \
 # -XX:+UseCompressedOops -XX:+UseCompressedClassPointers"
 #java --add-modules jdk.incubator.vector -Xmx6G -cp target/web-0.0.1-SNAPSHOT.jar com.deliverance.http.DeliveranceApplication
-java -XX:+UnlockDiagnosticVMOptions -XX:CompilerDirectivesFile=../inlinerules.json -XX:+AlignVector -XX:+UseStringDeduplication --add-modules jdk.incubator.vector -Xmx3G -jar target/web-*-SNAPSHOT.jar
+java -XX:+UnlockDiagnosticVMOptions -XX:CompilerDirectivesFile=../inlinerules.json -XX:+AlignVector -XX:+UseStringDeduplication --add-opens java.base/java.nio=ALL-UNNAMED --add-modules jdk.incubator.vector -Xmx3G -jar target/web-*-SNAPSHOT.jar

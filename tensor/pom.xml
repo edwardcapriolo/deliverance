@@ -19,6 +19,7 @@
     <jcttools.version>4.0.1</jcttools.version>
     <mockito.version>5.20.0</mockito.version>
     <metrics.version>4.2.37</metrics.version>
+
   </properties>
 
   <dependencies>
@@ -31,12 +32,6 @@
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter-api</artifactId>
       <version>${junit.version}</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>net.serenity-bdd</groupId>
-      <artifactId>serenity-junit5</artifactId>
-      <version>${serenity.base.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -123,15 +118,13 @@
         <version>${surefire.version}</version>
         <configuration>
           <argLine>
+            --add-opens java.base/java.nio=ALL-UNNAMED
             --add-modules jdk.incubator.vector
             -Djdk.attach.allowAttachSelf=true
           </argLine>
         </configuration>
       </plugin>
-      <plugin>
-       <groupId>net.serenity-bdd.maven.plugins</groupId>
-       <artifactId>serenity-maven-plugin</artifactId>
-      </plugin>
+
     </plugins>
   </build>
 </project>  
