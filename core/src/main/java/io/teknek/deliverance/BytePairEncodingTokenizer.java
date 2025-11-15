@@ -20,7 +20,7 @@ public abstract class BytePairEncodingTokenizer implements Tokenizer {
     protected final PromptSupport promptSupport;
 
     //this buffer here looks strange
-    protected final ByteBuffer decodeBuffer = ByteBuffer.allocate(4);
+    //protected final ByteBuffer decodeBuffer = ByteBuffer.allocate(4);
 
     public BytePairEncodingTokenizer(Path modelRoot){
         {
@@ -164,6 +164,7 @@ public abstract class BytePairEncodingTokenizer implements Tokenizer {
     @Override
     public String decode(long id) {
         return maybeDecodeTokenAsCharacter(id).map(c -> {
+            ByteBuffer decodeBuffer = ByteBuffer.allocate(4);
             // We have a continuation byte or are buffering them
             if (Character.isUnicodeIdentifierPart(c) || decodeBuffer.remaining() < 4) {
                 decodeBuffer.put((byte) c.charValue());
