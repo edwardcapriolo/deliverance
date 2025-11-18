@@ -173,7 +173,7 @@ public abstract class BytePairEncodingTokenizer implements Tokenizer {
                 if (decodeBuffer.remaining() == 0) {
                     String s = new String(decodeBuffer.array());
                     decodeBuffer.rewind();
-                    return s;
+                    return postProcessToken(s);
                 }
 
                 return "";

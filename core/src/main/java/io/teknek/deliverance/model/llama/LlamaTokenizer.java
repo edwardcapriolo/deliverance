@@ -50,6 +50,11 @@ public class LlamaTokenizer extends BytePairEncodingTokenizer {
     }
 
     @Override
+    public String tokenForResponse(String token) {
+        return token;
+    }
+
+    @Override
     protected String postProcess(String sentence) {
         return sentence.stripLeading();
     }
@@ -68,7 +73,6 @@ public class LlamaTokenizer extends BytePairEncodingTokenizer {
                     .mapToObj(Character::toString)
                     .collect(Collectors.joining());
         }
-
         return decoded;
     }
 

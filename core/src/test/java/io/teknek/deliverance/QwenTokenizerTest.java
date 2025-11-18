@@ -65,4 +65,11 @@ except:
         }
         Assertions.assertEquals("bla", converted);
     }
+
+    /**
+     * tokenizer("Hello world")["input_ids"]
+     *     [9707, 1879]
+     *
+     *     >>> tokenizer(" Hello world")["input_ids"]
+     */
 }

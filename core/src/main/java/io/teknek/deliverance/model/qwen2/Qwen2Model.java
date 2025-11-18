@@ -98,12 +98,4 @@ public class Qwen2Model extends LlamaModel {
         return transformerBlocks;
     }
 
-
-    /*
-    @Override
-    public ModelSupport.ModelType getModelType() {
-        return ModelSupport.getModelType("QWEN2");
-    }
-
-     */
 }

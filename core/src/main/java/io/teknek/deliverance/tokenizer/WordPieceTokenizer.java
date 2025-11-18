@@ -182,4 +182,9 @@ public class WordPieceTokenizer implements Tokenizer {
     public Optional<PromptSupport> promptSupport() {
         return model.getPromptTemplates().isPresent() ? Optional.of(promptSupport) : Optional.empty();
     }
+
+    @Override
+    public String tokenForResponse(String token) {
+        return token;
+    }
 }

@@ -200,7 +200,7 @@ public abstract class AbstractModel implements Generator {
 
     public Response generate(UUID sessionId, PromptContext promptContext, GeneratorParameters generatorParameters,
                       BiConsumer<String, Float> onTokenWithTimings) {
-        Random r = generatorParameters.seed.isEmpty() ? new Random(): new Random(generatorParameters.seed.get());
+        Random random = generatorParameters.seed.isEmpty() ? new Random(): new Random(generatorParameters.seed.get());
         long[] encoded = tokenizer.encode(promptContext.getPrompt());
         if (encoded.length > 0 && encoded[0] == config.bosToken) {
             encoded = Arrays.copyOfRange(encoded, 1, encoded.length);
@@ -240,23 +240,24 @@ public abstract class AbstractModel implements Generator {
                 logger.warn("After batch forward size: {} shape: {}" , last.size(), last.shape());
                 promptBatchTime = System.currentTimeMillis() - start;
                 float batchMsPerToken = Math.round((((double) promptBatchTime) / (double) promptLength));
-                int next = sample(last.slice(last.shape().first() - 1), temperature, r.nextFloat(), logits);
+                int next = sample(last.slice(last.shape().first() - 1), temperature, random.nextFloat(), logits);
                 float genMsPerToken = 0;
                 tokensGenerated = 0;
                 last.close();
                 String decoded = tokenizer.decode(next);
+                String cleaned = tokenizer.tokenForResponse(decoded);
                 if (tokenizer.getModel().isSpecialToken(next)) {
-                    responseTextWithSpecialTokens.append(decoded);
+                    responseTextWithSpecialTokens.append(cleaned);
                 } else {
-                    onTokenWithTimings.accept(decoded, batchMsPerToken);
-                    responseText.append(decoded);
-                    responseTextWithSpecialTokens.append(decoded);
+                    onTokenWithTimings.accept(cleaned, batchMsPerToken);
+                    responseText.append(cleaned);
+                    responseTextWithSpecialTokens.append(cleaned);
                 }
                 start = System.currentTimeMillis();
                 for (int i = startPos + promptTokens.length; i < ntokens; i++) {
                     AbstractTensor output = forward(next, i, kvmem);
                     tokensGenerated++;
-                    next = sample(output, temperature, r.nextFloat(), logits);
+                    next = sample(output, temperature, random.nextFloat(), logits);
                     if (logger.isTraceEnabled()) {
                         logger.trace("Sampled token {} with temperature {}", next, temperature);
                     }
@@ -266,22 +267,23 @@ public abstract class AbstractModel implements Generator {
                         reason = FinishReason.STOP_TOKEN;
                         break;
                     }
-                    String c = tokenizer.decode(next);
+                    String decoded1 = tokenizer.decode(next);
+                    CausualWhisperer.LOGGER.debug("decoded for response {}", decoded1);
+                    String cleaned2 = tokenizer.tokenForResponse(decoded1);
                     if (tokenizer.getModel().isSpecialToken(next)) {
-                        responseTextWithSpecialTokens.append(c);
+                        responseTextWithSpecialTokens.append(cleaned2);
                     } else {
                         genMsPerToken = (System.currentTimeMillis() - start) / (float) (tokensGenerated);
-                        onTokenWithTimings.accept(c, genMsPerToken);
-                        responseTextWithSpecialTokens.append(c);
-                        responseText.append(c);
+                        onTokenWithTimings.accept(cleaned2, genMsPerToken);
+                        responseTextWithSpecialTokens.append(cleaned2);
+                        responseText.append(cleaned2);
                     }
                 }
 
                 long end = System.currentTimeMillis();
-                Response response = new Response(responseText.toString(), responseTextWithSpecialTokens.toString(),
-                        reason, promptLength, tokensGenerated, promptBatchTime, end - start);
                 //post process response is still missing
-                return response;
+                return new Response(responseText.toString(), responseTextWithSpecialTokens.toString(),
+                        reason, promptLength, tokensGenerated, promptBatchTime, end - start);
             }
         }
     }
