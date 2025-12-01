@@ -2,12 +2,14 @@ package io.teknek.deliverance.grace;
 
 import io.teknek.dysfx.multiple.Tuple2;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-import java.util.OptionalInt;
+import java.math.BigInteger;
+import java.util.*;
 
-public abstract class PreTrainedTokenizer {
+public abstract class PreTrainedTokenizer extends PreTrainedTokenizerBase{
+    PreTrainedTokenizer(Map<String, String> modelSpecificSpecialTokens, Optional<BigInteger> maxLen, Optional<PaddingSide> paddingSide, Optional<TruncationSide> truncationSide, Optional<Boolean> cleanUpTokenizationSpaces, Optional<Boolean> splitSpecialTokens, Optional<Object> backend, Optional<List<Object>> filesLoaded) {
+        super(modelSpecificSpecialTokens, maxLen, paddingSide, truncationSide, cleanUpTokenizationSpaces, splitSpecialTokens, backend, filesLoaded);
+    }
+
     public static boolean isWhitespace(int c){
         //or char == "\t" or char == "\n" or char == "\r":
         if ( c == ' ' || c == '\n' || c == '\t' || c == '\r'){
@@ -57,18 +59,37 @@ public abstract class PreTrainedTokenizer {
 
     public abstract int getVocabSize();
 
-    /*
-    public decode(int [] tokenIds, boolean skipSpecialTokens,
+
+    public String decode(TokenIds tokenIds, boolean skipSpecialTokens,
                   boolean cleanUpTokenizationSpaces,
                   boolean spacesBetweenSpecialTokens,
                   boolean useSourceTokenizer){
         //# If given is a single id, prevents splitting the string in upcoming loop
         ///filtered_tokens = self.convert_ids_to_tokens(token_ids, skip_special_tokens=skip_special_tokens)
+        throw new UnsupportedOperationException();
     }
 
-    public abstract convertIdsToTokens(){
-
-    }*/
+    //str or list[str]
+    public Tokens convertIdsToTokens(TokenIds tokenIds, boolean skipSpecialTokens){
+        if( tokenIds.isScalar()){
+            return new Tokens("bla");
+        }
+        List<String> tokens = new ArrayList<>();
+        for (int i = 0 ;i<tokenIds.getInputList().length; i++){
+            int idx = tokenIds.getInputList()[i];
+            if (skipSpecialTokens && (allSpecialIds().contains(idx))){
+                continue;
+            }
+            /*
+             tokens.append(
+                self._added_tokens_decoder[index].content
+                if index in self._added_tokens_decoder
+                else self._convert_id_to_token(index)
+            )
+             */
+        }
+        return new Tokens(tokens.toArray(new String[0]));
+    }
 /*
 TextInput = str
 PreTokenizedInput = list[str]
