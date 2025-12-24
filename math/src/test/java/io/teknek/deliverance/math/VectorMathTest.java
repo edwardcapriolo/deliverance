@@ -1,8 +1,6 @@
 package io.teknek.deliverance.math;
 
 import org.junit.jupiter.api.Test;
-import org.mockito.Mock;
-import org.mockito.Mockito;
 
 import static org.mockito.Mockito.*;
 
