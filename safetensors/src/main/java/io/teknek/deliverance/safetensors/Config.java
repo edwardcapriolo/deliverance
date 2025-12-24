@@ -21,6 +21,12 @@ public class Config {
     public final ActivationFunction.Type activationFunction;
     public final int headGroupSize;
     public final int kvLength;
+    /**
+     * introduce grouped-query attention (GQA), a generalization of multi-query attention which uses an intermediate
+     * (more than one, less than number of query heads) number of key-value heads. We show that uptrained GQA achieves
+     * quality close to multi-head attention with comparable speed to MQA.
+     * <a href="https://arxiv.org/abs/2305.13245">GQA</a>
+     */
     public final boolean isGQA;
     public final int numberOfLayers;
     public final float layerNormEps;

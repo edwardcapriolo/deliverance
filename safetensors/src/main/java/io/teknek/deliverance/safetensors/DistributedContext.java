@@ -48,8 +48,7 @@ public class DistributedContext {
             int numModelShards,
             int layerShard,
             int numLayerShards,
-            Consumer<List<AbstractTensor>> tensorSync
-    ) {
+            Consumer<List<AbstractTensor>> tensorSync) {
         this.c = c;
         this.modelShard = modelShard;
         this.numModelShards = numModelShards;
@@ -99,21 +98,34 @@ public class DistributedContext {
         return length / numModelShards;
     }
 
+    @Override
     public String toString() {
-        return "DistributedContext{"
-                + ", embeddingSegmentStart="
-                + embeddingSegmentStart
-                + ", embeddingSegmentEnd="
-                + embeddingSegmentEnd
-                + ", headStart="
-                + headStart
-                + ", headEnd="
-                + headEnd
-                + ", layerStart="
-                + layerStart
-                + ", layerEnd="
-                + layerEnd
-                + '}';
+        return "DistributedContext{" +
+                "c=" + c +
+                ", modelShard=" + modelShard +
+                ", numModelShards=" + numModelShards +
+                ", layerShard=" + layerShard +
+                ", numLayerShards=" + numLayerShards +
+                ", embeddingSegmentStart=" + embeddingSegmentStart +
+                ", embeddingSegmentLength=" + embeddingSegmentLength +
+                ", embeddingSegmentEnd=" + embeddingSegmentEnd +
+                ", attentionSegmentStart=" + attentionSegmentStart +
+                ", attentionSegmentLength=" + attentionSegmentLength +
+                ", attentionSegmentEnd=" + attentionSegmentEnd +
+                ", hiddenSegmentStart=" + hiddenSegmentStart +
+                ", hiddenSegmentLength=" + hiddenSegmentLength +
+                ", hiddenSegmentEnd=" + hiddenSegmentEnd +
+                ", kvSegmentStart=" + kvSegmentStart +
+                ", kvSegmentLength=" + kvSegmentLength +
+                ", kvSegmentEnd=" + kvSegmentEnd +
+                ", headStart=" + headStart +
+                ", headEnd=" + headEnd +
+                ", groupHeadStart=" + groupHeadStart +
+                ", groupHeadEnd=" + groupHeadEnd +
+                ", numberOfLayers=" + numberOfLayers +
+                ", layerStart=" + layerStart +
+                ", layerEnd=" + layerEnd +
+                '}';
     }
 
     public static Builder builder(Config c) {
@@ -121,7 +133,7 @@ public class DistributedContext {
     }
 
     public static class Builder {
-        private Config c;
+        private final Config c;
         private int modelShard = 0;
         private int numModelShards = 1;
         private int layerShard = 0;

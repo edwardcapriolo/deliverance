@@ -39,15 +39,8 @@ public interface TensorOperations {
     void batchDotProduct(AbstractTensor result, AbstractTensor a, AbstractTensor b,
             int aColumnOffset, int bColumnOffset, int columnLimit, int rRowOffset, int bRowOffset, int rowChunkSize);
 
-    default void dotProductChunk(
-            AbstractTensor result,
-            AbstractTensor a,
-            AbstractTensor b,
-            int columnOffset,
-            int columnLimit,
-            int rowOffset,
-            int rowChunkSize
-    ) {
+    default void dotProductChunk(AbstractTensor result, AbstractTensor a, AbstractTensor b,
+            int columnOffset, int columnLimit, int rowOffset, int rowChunkSize) {
         batchDotProduct(result, a, b, columnOffset, columnOffset, columnLimit, 0, rowOffset, rowChunkSize);
     }
 

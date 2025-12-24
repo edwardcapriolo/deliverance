@@ -14,6 +14,13 @@ public class VectorMath {
         PhysicalCoreTuningExecutor.instance.get().execute(() -> IntStream.range(start, end).parallel().forEach(action));
     }
 
+    /**
+     *
+     * @param offset a starting offset
+     * @param length a length of items to split starting from the offset
+     * @param action an action to perform on each split
+     * @param splitSize split the list into this many parts
+     */
     public static void pchunk(int offset, int length, BiIntConsumer action, int splitSize) {
         int splits = Math.min(length, splitSize);
         int chunkSize = length / splits;
@@ -40,8 +47,5 @@ public class VectorMath {
                     );
         }
     }
-/*
 
-
- */
 }
