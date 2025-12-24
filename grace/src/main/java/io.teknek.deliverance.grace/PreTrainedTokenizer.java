@@ -6,7 +6,7 @@ import java.math.BigInteger;
 import java.util.*;
 
 public abstract class PreTrainedTokenizer extends PreTrainedTokenizerBase{
-    PreTrainedTokenizer(Map<String, String> modelSpecificSpecialTokens, Optional<BigInteger> maxLen, Optional<PaddingSide> paddingSide, Optional<TruncationSide> truncationSide, Optional<Boolean> cleanUpTokenizationSpaces, Optional<Boolean> splitSpecialTokens, Optional<Object> backend, Optional<List<Object>> filesLoaded) {
+    public PreTrainedTokenizer(Map<String, String> modelSpecificSpecialTokens, Optional<BigInteger> maxLen, Optional<PaddingSide> paddingSide, Optional<TruncationSide> truncationSide, Optional<Boolean> cleanUpTokenizationSpaces, Optional<Boolean> splitSpecialTokens, Optional<Object> backend, Optional<List<Object>> filesLoaded) {
         super(modelSpecificSpecialTokens, maxLen, paddingSide, truncationSide, cleanUpTokenizationSpaces, splitSpecialTokens, backend, filesLoaded);
     }
 

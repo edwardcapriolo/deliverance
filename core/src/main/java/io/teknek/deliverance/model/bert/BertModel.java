@@ -38,7 +38,7 @@ public class BertModel extends AbstractModel {
                 return weights.load(key);
             }
         }
-        throw new NoSuchElementException(Arrays.toString(prefixes) + " " + name + " not found in weights");
+        throw new NoSuchElementException(Arrays.toString(prefixes) + " " + name + " not found in weights "+weights.tensorInfoMap());
     }
 
     @Override
@@ -46,6 +46,7 @@ public class BertModel extends AbstractModel {
         AbstractTensor we = loadWeight("embeddings.word_embeddings.weight");
         AbstractTensor wte = loadWeight("embeddings.token_type_embeddings.weight");
         AbstractTensor wpe = loadWeight("embeddings.position_embeddings.weight");
+
 
         LayerNorm inputLayerNorm = new LayerNorm(this, loadWeight("embeddings.LayerNorm.bias"),
                 loadWeight("embeddings.LayerNorm.weight"), new MetricRegistry());

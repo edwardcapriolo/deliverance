@@ -3,7 +3,7 @@ package io.teknek.deliverance.grace;
 import java.math.BigInteger;
 import java.util.*;
 
-public class PreTrainedTokenizerBase {
+public abstract class PreTrainedTokenizerBase {
     public final List<String> SPECIAL_TOKEN_ATTRIBUTES = List.of( "bos_token",
             "eos_token",
             "unk_token",
@@ -54,4 +54,42 @@ public class PreTrainedTokenizerBase {
         keys.forEach(key -> newMap.put(key, null));
         return newMap;
     }
+
+    public abstract int vocabSize();
+
+    public abstract Map<String, Integer> getVocab();
+
+    public TokenIds convertTokensToIds(Tokens tokens){
+        throw new UnsupportedOperationException("not yet");
+        //return [self._convert_token_to_id_with_added_voc(token) for token in tokens]
+    }
+
+    /**
+     *
+     * @param ids
+     * @param skipSpecialTokens Whether or not to remove special tokens in the decoding.
+     */
+    public Tokens convertIdsToTokens(TokenIds ids, Optional<Boolean> skipSpecialTokens){
+        throw new UnsupportedOperationException("not yet");
+    }
+
+
+    public static PreTrainedTokenizer from_pretrained(Class<PreTrainedTokenizer> clazz){
+        return null;
+        //clazz.getConstructor()
+    }
+        /*  def _from_pretrained(
+        cls,
+        resolved_vocab_files,
+        pretrained_model_name_or_path,
+        init_configuration,
+        *init_inputs,
+        token=None,
+        cache_dir=None,
+        local_files_only=False,
+        _commit_hash=None,
+        _is_local=False,
+        trust_remote_code=False,
+        **kwargs,
+    ): */
 }

@@ -26,6 +26,11 @@
       <version>${dysfx.version}</version>
     </dependency>
     <dependency>
+      <groupId>io.teknek.deliverance</groupId>
+      <artifactId>safetensors</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
       <version>${slf4j-api.version}</version>
