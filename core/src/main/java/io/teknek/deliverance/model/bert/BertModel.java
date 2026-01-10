@@ -137,6 +137,11 @@ public class BertModel extends AbstractModel {
 
     @Override
     protected PoolingLayer loadPoolingWeights() {
+        // Return null if pooler weights are not present, allowing AVG pooling to be used instead
+        // This is needed for models like LEAF that don't have a pooler layer
+        if (!weights.isWeightPresent("pooler.dense.weight") && !weights.isWeightPresent("bert.pooler.dense.weight")) {
+            return null;
+        }
         final AbstractTensor poolerDenseWeight = loadWeight("pooler.dense.weight");
         final AbstractTensor poolerDenseBias = loadWeight("pooler.dense.bias");
         return new PoolingLayer() {
