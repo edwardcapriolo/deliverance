@@ -83,7 +83,7 @@ public class RagChatMojo  extends AbstractMojo {
     }
 
     private void embeddingLine(String inputLine){
-        this.embeddingQuery = inputLine.substring(inputLine.indexOf("embedding")+9 );
+        this.embeddingQuery = inputLine.substring(inputLine.indexOf("embedding") + 9 );
         System.out.println("Embedding query has been set to: " + this.embeddingQuery);
         Embedding queryEmbedding = embeddingModel.embed(this.embeddingQuery).content();
         EmbeddingSearchRequest searchRequest = EmbeddingSearchRequest.builder()
@@ -165,7 +165,7 @@ public class RagChatMojo  extends AbstractMojo {
                             .withStopWords(List.of("<|eot_id|>"))
                             .withTemperature(0.2f)
                             .withSeed(99998), (int next, String tok, String s1, float f1) -> {
-                        System.out.print( model.getTokenRenderer().tokenizerToRendered(s1));
+                        System.out.print(model.getTokenRenderer().tokenizerToRendered(s1));
                     });
                     System.out.println();
                     System.out.print(">> ");
@@ -224,9 +224,6 @@ public class RagChatMojo  extends AbstractMojo {
                 + "Question: %s";
 
         String prompt = String.format(promptTemplate, sb, query);
-
-
-
     }
 
 

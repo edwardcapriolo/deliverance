@@ -69,9 +69,8 @@ public class SimdTest {
             PromptContext ctx;
             {
                 PromptSupport ps = m.promptSupport().get();
-                Tool t = Tool.from(Function.builder().name("hello").build());
                 ctx = ps.builder().addSystemMessage("You are a chatbot that writes short correct responses.")
-                        .addUserMessage(prompt).build(t);
+                        .addUserMessage(prompt).build();
                 String expected = """
                         <|system|>
                         You are a chatbot that writes short correct responses.</s>
