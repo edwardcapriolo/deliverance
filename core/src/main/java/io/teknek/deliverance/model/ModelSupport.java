@@ -77,7 +77,8 @@ public class ModelSupport {
         if (fetcher.getName().startsWith("Llama-3.1-8B-Instruct")
                 || fetcher.getName().startsWith("Llama-3.2-3B-Instruct")){
             tr = new TokenizerRenderer();
-        } else if (fetcher.getName().startsWith("Qwen2.5-0.5B-Instruct")) {
+        } else if (fetcher.getName().startsWith("Qwen2.5-0.5B-Instruct")
+                || fetcher.getName().startsWith("Qwen2.5-3B-Instruct")) {
           tr = new Qwen2TokenizerRenderer();
         } else {
             tr = new NoOpTokenizerRenderer();
