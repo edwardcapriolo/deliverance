@@ -27,6 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 
+import static io.teknek.deliverance.safetensors.SafeTensorIndexPojo.MODEL_INDEX_JSON;
 import static io.teknek.deliverance.safetensors.Weights.findDType;
 
 public class DefaultWeightLoader implements WeightLoader {
@@ -46,8 +47,13 @@ public class DefaultWeightLoader implements WeightLoader {
     public DefaultWeightLoader(File baseDir){
         this.modelRoot = Paths.get(baseDir.toURI());
         Path singleFile = Paths.get(baseDir.getAbsolutePath(), SafeTensorIndexPojo.SINGLE_MODEL_NAME);
-        if (Files.exists(Paths.get(baseDir.getAbsolutePath(), SafeTensorIndexPojo.MODEL_INDEX_JSON))){
-            throw new IllegalArgumentException("Not implemented");
+        if (Files.exists(Paths.get(baseDir.getAbsolutePath(), MODEL_INDEX_JSON))){
+            String indexFile = String.format("%s/%s", modelRoot, MODEL_INDEX_JSON);
+            try {
+                index = JsonUtils.om.readValue(new File(indexFile), SafeTensorIndexPojo.class);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
         } else if (Files.exists(singleFile)){
             index = new SafeTensorIndexPojo(Collections.emptyMap(), Map.of("model-file", singleFile.toFile().getName()));
         } else {

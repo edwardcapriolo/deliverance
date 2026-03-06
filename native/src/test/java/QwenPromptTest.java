@@ -136,4 +136,40 @@ Use the coinflip tool any analyze the result<|eot_id|><|start_header_id|>assista
         }
     }
 
+
+
+
+    @Test
+    public void qwenToolTest() throws IOException {
+        File soFile = new File("target/native-lib-only/libdeliverance.so");
+        assertTrue(soFile.exists());
+        System.load(soFile.getAbsolutePath());
+
+        ModelFetcher fetch = new ModelFetcher("qwen", "Qwen2.5-3B-Instruct");
+        File f = fetch.maybeDownload();
+        MetricRegistry mr = new MetricRegistry();
+        TensorCache tensorCache = new TensorCache(mr);
+        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
+        Tool tool = Tool.from(Function.builder().name("flip_coin").description("This methods will flip a coin. The result will be H for heads or T for tails.").build());
+        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
+                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch)) {
+            String prompt = "Call a function to simulate a coin flip";
+            PromptSupport.Builder g = m.promptSupport().get().builder()
+                    //.addToolCall(new ToolCall("flip_coin", "flip_coin1", Map.of()))
+                    .addUserMessage(prompt);
+
+            PromptContext c = g.build(tool);
+            System.out.println(c.getPrompt());
+
+            var uuid = UUID.randomUUID();
+
+            /*Response k = m.generate(uuid, c, new GeneratorParameters().withTemperature(0.1f),
+                    (int next, String nextRaw, String nextCleaned, float timing) -> {
+                         System.out.println(" "+ nextCleaned +" ");
+                     });
+
+             System.out.println(k);
+             */
+        }
+    }
 }
