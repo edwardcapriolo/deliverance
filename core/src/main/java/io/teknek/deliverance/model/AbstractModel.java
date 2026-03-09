@@ -239,7 +239,7 @@ public abstract class AbstractModel implements Generator {
                 promptBatchTime = System.currentTimeMillis() - start;
                 float batchMsPerToken = Math.round((((double) promptBatchTime) / (double) promptLength));
                 GeneratorSampler sampler = new GeneratorSampler(this, last.slice(last.shape().first() - 1), temperature,
-                        random.nextFloat(), logits, sampleOutput.getOutputLayerNorm());
+                            random.nextFloat(), logits, sampleOutput.getOutputLayerNorm());
                 int next = sampler.sample();
                 float genMsPerToken = 0;
                 tokensGenerated = 0;

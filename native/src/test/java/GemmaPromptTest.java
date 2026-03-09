@@ -46,8 +46,9 @@ public class GemmaPromptTest {
                     "<start_of_turn>model\n",g.build().getPrompt());
             var uuid = UUID.randomUUID();
 
-            Response k = m.generate(uuid, g.build(), new GeneratorParameters().withTemperature(0.6f),
+            Response k = m.generate(uuid, g.build(), new GeneratorParameters().withTemperature(0.0f),
                     new DoNothingGenerateEvent());
+            System.out.println(k.responseText);
             assertTrue(k.responseText.contains("Albany"));
 
             System.out.println(Arrays.toString(mr.histogram("sample.fullsample").getSnapshot().getValues()));
