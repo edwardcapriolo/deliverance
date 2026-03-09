@@ -5,7 +5,6 @@ import com.google.common.base.Preconditions;
 import com.google.common.primitives.Ints;
 
 import java.util.*;
-import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 import io.teknek.deliverance.CausualWhisperer;
@@ -25,7 +24,6 @@ import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
 import jdk.incubator.vector.FloatVector;
-import net.jafama.FastMath;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -240,7 +238,9 @@ public abstract class AbstractModel implements Generator {
                 logger.debug("After batch forward size: {} shape: {}" , last.size(), last.shape());
                 promptBatchTime = System.currentTimeMillis() - start;
                 float batchMsPerToken = Math.round((((double) promptBatchTime) / (double) promptLength));
-                int next = sample(last.slice(last.shape().first() - 1), temperature, random.nextFloat(), logits);
+                GeneratorSampler sampler = new GeneratorSampler(this, last.slice(last.shape().first() - 1), temperature,
+                        random.nextFloat(), logits, sampleOutput.getOutputLayerNorm());
+                int next = sampler.sample();
                 float genMsPerToken = 0;
                 tokensGenerated = 0;
                 last.close();
@@ -257,7 +257,8 @@ public abstract class AbstractModel implements Generator {
                 for (int i = startPos + promptTokens.length; i < ntokens; i++) {
                     AbstractTensor output = forward(next, i, kvmem);
                     tokensGenerated++;
-                    next = sample(output, temperature, random.nextFloat(), logits);
+                    GeneratorSampler sampler1 = new GeneratorSampler(this, output, temperature,random.nextFloat(), logits, sampleOutput.getOutputLayerNorm());
+                    next = sampler1.sample();
                     output.close();
                     kvmem.incrementContextPosition();
                     if (config.eosTokens.contains(next)) {
@@ -362,55 +363,6 @@ public abstract class AbstractModel implements Generator {
         }
     }
 
-    public int sample(AbstractTensor output, float temperature, float uniformSample, AbstractTensor logits) {
-        try (AbstractTensor embedding = sampleOutput.getOutputLayerNorm().forward(output)) {
-            // This is a mix of argmax and sampling with softmax
-            VectorMath.pchunk(0, config.vocabularySize, (chunkStart, chunkSize) -> {
-                configurableTensorProvider.get()
-                        .dotProductChunk(logits, embedding, sampleOutput.getOutputLogitsWeights(), 0, config.embeddingLength, chunkStart, chunkSize);
-            }, configurableTensorProvider.get().parallelSplitSize());
-
-            if (config.logitMultiplier != null) {
-                configurableTensorProvider.get().scale(1.0f / config.logitMultiplier, logits, 0, config.vocabularySize);
-            }
-
-            int maxi = Integer.MIN_VALUE;
-            double maxv = Double.NEGATIVE_INFINITY;
-            for (int i = 0; i < config.vocabularySize; i++) {
-                float v = logits.get(0, i);
-                if (config.finalLogitSoftCapping != null) {
-                    v /= config.finalLogitSoftCapping;
-                    v = (float) FastMath.tanh(v);
-                    v = v * config.finalLogitSoftCapping;
-                    logits.set(v, 0, i);
-                }
-                if (v > maxv) {
-                    maxi = i;
-                    maxv = v;
-                }
-            }
-
-            if (temperature == 0.0) {
-                return maxi;
-            }
-
-            float sum = 0;
-            for (int i = 0; i < config.vocabularySize; i++) {
-                float v = (float) FastMath.exp((logits.get(0, i) - maxv) / temperature);
-                sum += v;
-                logits.set(v, 0, i);
-            }
-
-            float acc = 0;
-            for (int i = 0; i < config.vocabularySize; i++) {
-                float v = logits.get(0, i) / sum;
-                acc += v;
-                if (acc >= uniformSample) return i;
-            }
-
-            return config.vocabularySize - 1;
-        }
-    }
 
     public AbstractTensor batchForward(int[] token_ids, int startPos, KvBufferCache.KvBuffer kvbuf) {
         return batchForward(token_ids, startPos, kvbuf, Optional.empty());

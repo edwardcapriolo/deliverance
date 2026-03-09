@@ -29,15 +29,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class GemmaPromptTest {
 
     @Test
-    public void qwenTest() throws IOException {
+    public void gemmaTest() throws IOException {
         ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
         File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
         TensorCache tensorCache = new TensorCache(mr);
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
-        ModelSupport.addModel("QWEN2", new Qwen2ModelType());
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch)) {
+                mr, tensorCache, new KvBufferCacheSettings(true), fetch)) {
             String prompt = "What is the capital of New York, USA?";
             PromptSupport.Builder g = m.promptSupport().get().builder()
                     //.addSystemMessage("You provide short answers to questions.")
@@ -47,11 +46,24 @@ public class GemmaPromptTest {
                     "<start_of_turn>model\n",g.build().getPrompt());
             var uuid = UUID.randomUUID();
 
-            Response k = m.generate(uuid, g.build(), new GeneratorParameters().withTemperature(0.0f),
+            Response k = m.generate(uuid, g.build(), new GeneratorParameters().withTemperature(0.6f),
                     new DoNothingGenerateEvent());
             assertTrue(k.responseText.contains("Albany"));
 
+            System.out.println(Arrays.toString(mr.histogram("sample.fullsample").getSnapshot().getValues()));
+            System.out.println( mr.histogram("sample.fullsample").getSnapshot().getMean());
+            System.out.println( mr.histogram("sample.fullsample").getSnapshot().get99thPercentile());
+
+
+            System.out.println(Arrays.toString(mr.histogram("sample.forward1").getSnapshot().getValues()));
+            System.out.println( mr.histogram("sample.forward1").getSnapshot().getMean());
+            System.out.println( mr.histogram("sample.forward1").getSnapshot().get99thPercentile());
+
+            System.out.println(Arrays.toString(mr.histogram("sample.dotproduct2").getSnapshot().getValues()));
+            System.out.println( mr.histogram("sample.dotproduct2").getSnapshot().getMean());
+            System.out.println( mr.histogram("sample.dotproduct2").getSnapshot().get99thPercentile());
         }
+
     }
 
 }
