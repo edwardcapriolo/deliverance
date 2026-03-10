@@ -206,14 +206,14 @@ public abstract class AbstractModel implements Generator {
             encoded = Arrays.copyOfRange(encoded, 1, encoded.length);
         }
         int ntokens = generatorParameters.ntokens.orElse(256);
+        if (ntokens > config.contextLength) {
+            throw new GenerationException(String.format("ntokens %d exceed config length %d",  ntokens, config.contextLength));
+        }
         float temperature = generatorParameters.temperature.orElse(0.0f);
         Preconditions.checkArgument(encoded.length < config.contextLength
                 && encoded.length < ntokens, "Prompt exceeds max tokens");
         try (KvBufferCache.KvBuffer kvmem = kvBufferCache.getKvBuffer(sessionId.toString())) { // k and v for context window
             int startPos = kvmem.getCurrentContextPosition(); // Number of tokens in the buffer
-            if (ntokens > config.contextLength) {
-                ntokens = config.contextLength;
-            }
             FinishReason reason = FinishReason.MAX_TOKENS;
             int promptLength;
             long promptBatchTime;

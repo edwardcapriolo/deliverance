@@ -3,6 +3,7 @@ package io.teknek.deliverance.safetensors.prompt;
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.model.DoNothingGenerateEvent;
+import io.teknek.deliverance.model.GenerationException;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
@@ -11,14 +12,14 @@ import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class DirectPromptTest {
 
@@ -74,4 +75,27 @@ public class DirectPromptTest {
             }
         }
     }
+
+    @Test
+    public void rejectTooManyTokens() throws IOException {
+        String modelName = "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4";
+        String modelOwner = "tjake";
+        ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
+        File f = fetch.maybeDownload();
+        MetricRegistry mr = new MetricRegistry();
+        TensorCache tensorCache = new TensorCache(mr);
+        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(tensorCache),
+                mr, tensorCache, new KvBufferCacheSettings(true), fetch)) {
+            String prompt = "What is the best season to plant avocados?";
+            PromptContext ctx;
+            {
+                PromptSupport ps = m.promptSupport().get();
+                ctx = ps.builder().addSystemMessage("You are a chatbot that writes short correct responses.")
+                        .addUserMessage(prompt).build();
+            }
+            assertThrows(GenerationException.class, () -> m.generate(UUID.randomUUID(), ctx, new GeneratorParameters()
+                    .withSeed(42).withNtokens(5_000_000), new DoNothingGenerateEvent()));
+        }
+    }
+
 }
