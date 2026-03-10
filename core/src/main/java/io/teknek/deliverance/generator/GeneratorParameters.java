@@ -14,6 +14,7 @@ public class GeneratorParameters {
     //public Optional<String> cacheSalt = Optional.of("sha1obetter");
     public Optional<List<String>> stopWords = Optional.empty();
     public Optional<Boolean> includeStopStrInOutput = Optional.empty();
+    public Optional<List<String>> guidedChoice = Optional.empty();
 
     public GeneratorParameters withSeed(int seed){
         this.seed = Optional.of(seed);
@@ -21,6 +22,10 @@ public class GeneratorParameters {
     }
     public GeneratorParameters withNtokens(int tokens){
         ntokens = Optional.of(tokens);
+        return this;
+    }
+    public GeneratorParameters withGuidedChoice(List<String> choices){
+        guidedChoice = Optional.of(choices);
         return this;
     }
 

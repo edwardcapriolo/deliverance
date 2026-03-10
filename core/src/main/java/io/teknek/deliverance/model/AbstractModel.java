@@ -198,6 +198,20 @@ public abstract class AbstractModel implements Generator {
         return true;
     }
 
+    int [] constructPromptTokens(long[] encoded){
+        int[] promptTokens;
+        if (addBosToken()) {
+            promptTokens = new int[(1 + encoded.length)];
+            promptTokens[0] = config.bosToken;
+            for (int i = 1; i <= encoded.length; i++) {
+                promptTokens[i] = Ints.checkedCast(encoded[i - 1]);
+            }
+        } else {
+            promptTokens = Arrays.stream(encoded).mapToInt(Ints::checkedCast).toArray();
+        }
+        return promptTokens;
+    }
+
     public Response generate(UUID sessionId, PromptContext promptContext, GeneratorParameters generatorParameters,
                              GenerateEvent onTokenWithTimings) {
         Random random = generatorParameters.seed.map(Random::new).orElseGet(Random::new);
@@ -206,12 +220,13 @@ public abstract class AbstractModel implements Generator {
             encoded = Arrays.copyOfRange(encoded, 1, encoded.length);
         }
         int ntokens = generatorParameters.ntokens.orElse(256);
+        Preconditions.checkArgument(encoded.length < config.contextLength
+                && encoded.length < ntokens, "Prompt exceeds max tokens");
         if (ntokens > config.contextLength) {
             throw new GenerationException(String.format("ntokens %d exceed config length %d",  ntokens, config.contextLength));
         }
         float temperature = generatorParameters.temperature.orElse(0.0f);
-        Preconditions.checkArgument(encoded.length < config.contextLength
-                && encoded.length < ntokens, "Prompt exceeds max tokens");
+
         try (KvBufferCache.KvBuffer kvmem = kvBufferCache.getKvBuffer(sessionId.toString())) { // k and v for context window
             int startPos = kvmem.getCurrentContextPosition(); // Number of tokens in the buffer
             FinishReason reason = FinishReason.MAX_TOKENS;
@@ -222,16 +237,7 @@ public abstract class AbstractModel implements Generator {
             StringBuilder responseTextWithSpecialTokens = new StringBuilder();
 
             try (AbstractTensor logits = makeDenseTensor(config.vocabularySize)) {
-                int[] promptTokens;
-                if (addBosToken()) {
-                    promptTokens = new int[(1 + encoded.length)];
-                    promptTokens[0] = config.bosToken;
-                    for (int i = 1; i <= encoded.length; i++) {
-                        promptTokens[i] = Ints.checkedCast(encoded[i - 1]);
-                    }
-                } else {
-                    promptTokens = Arrays.stream(encoded).mapToInt(Ints::checkedCast).toArray();
-                }
+                int [] promptTokens = constructPromptTokens(encoded);
                 promptLength = encoded.length;
                 long start = System.currentTimeMillis();
                 AbstractTensor last = batchForward(promptTokens, startPos, kvmem);
