@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -61,5 +62,36 @@ public class GemmaPromptTest {
         }
 
     }
+
+    @Test
+    public void gemmaGuidedTest() throws IOException {
+        ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
+        File f = fetch.maybeDownload();
+        MetricRegistry mr = new MetricRegistry();
+        TensorCache tensorCache = new TensorCache(mr);
+        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
+        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
+                mr, tensorCache, new KvBufferCacheSettings(true), fetch)) {
+            String prompt = "Who is the better NFL football team?";
+            PromptSupport.Builder g = m.promptSupport().get().builder()
+                    .addUserMessage(prompt);
+            Assertions.assertEquals("<start_of_turn>user\n" +
+                    "Who is the better NFL football team?<end_of_turn>\n" +
+                    "<start_of_turn>model\n",g.build().getPrompt());
+            var uuid = UUID.randomUUID();
+
+            Response k = m.generate(uuid, g.build(), new GeneratorParameters()
+                            .withTemperature(0.0f)
+                            .withGuidedChoice(List.of("Giants", "Jets")),
+                    new DoNothingGenerateEvent());
+            System.out.println(k.responseText);
+            assertTrue(k.responseText.contains("Giants"));
+
+
+        }
+
+    }
+
+
 
 }

@@ -5,6 +5,7 @@ import io.teknek.deliverance.CausualWhisperer;
 import io.teknek.deliverance.generator.LayerNorm;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tokenizer.Tokenizer;
 import net.jafama.FastMath;
 
 public class GeneratorSampler {
@@ -27,6 +28,7 @@ public class GeneratorSampler {
         this.uniformSample = uniformSample;
         this.logits = logits;
         this.layerNorm = layerNorm;
+
 
         forward1 = abstractModel.metricRegistry.histogram("sample.foward1");
         dotprod2 = abstractModel.metricRegistry.histogram("sample.dotproduct2");

@@ -62,12 +62,19 @@ public class PromptSupport {
         private String customizedTemplate;
 
         private final List<Message> messages = new ArrayList<>(2);
+        private Optional<List<String>> choices = Optional.empty();
         private boolean stripPreamble = false;
 
         private Builder(TokenizerModel m, Jinjava jinJava) {
             this.tokenizerModel = m;
             this.jinJava = jinJava;
         }
+
+        /*
+        public Builder withChoices(List<String> choices){
+            this.choices = Optional.of(choices);
+            return this;
+        }*/
 
         public Builder useSpecifiedTemplate(String templateString){
             customizedTemplate = templateString;

@@ -6,6 +6,7 @@ import com.google.common.primitives.Ints;
 
 import java.util.*;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 import io.teknek.deliverance.CausualWhisperer;
 import io.teknek.deliverance.DType;
@@ -244,9 +245,16 @@ public abstract class AbstractModel implements Generator {
                 logger.debug("After batch forward size: {} shape: {}" , last.size(), last.shape());
                 promptBatchTime = System.currentTimeMillis() - start;
                 float batchMsPerToken = Math.round((((double) promptBatchTime) / (double) promptLength));
-                GeneratorSampler sampler = new GeneratorSampler(this, last.slice(last.shape().first() - 1), temperature,
+                int next = Integer.MIN_VALUE;
+                if (generatorParameters.guidedChoice.isPresent()) {
+                    GuidedChoiceSampler sampler = new GuidedChoiceSampler(this, last.slice(last.shape().first() - 1),
+                            logits, sampleOutput.getOutputLayerNorm(), tokenizer, generatorParameters.guidedChoice.get(), responseText);
+                    next = sampler.sample();
+                } else {
+                    GeneratorSampler sampler = new GeneratorSampler(this, last.slice(last.shape().first() - 1), temperature,
                             random.nextFloat(), logits, sampleOutput.getOutputLayerNorm());
-                int next = sampler.sample();
+                    next = sampler.sample();
+                }
                 float genMsPerToken = 0;
                 tokensGenerated = 0;
                 last.close();
@@ -259,12 +267,18 @@ public abstract class AbstractModel implements Generator {
                     responseText.append(cleaned);
                     responseTextWithSpecialTokens.append(cleaned);
                 }
+                //AT this point the response text could be a stop word or a guided choice consider stopping here
                 start = System.currentTimeMillis();
                 for (int i = startPos + promptTokens.length; i < ntokens; i++) {
                     AbstractTensor output = forward(next, i, kvmem);
                     tokensGenerated++;
-                    GeneratorSampler sampler1 = new GeneratorSampler(this, output, temperature,random.nextFloat(), logits, sampleOutput.getOutputLayerNorm());
-                    next = sampler1.sample();
+                    if (generatorParameters.guidedChoice.isPresent()) {
+                        GuidedChoiceSampler sampler1 = new GuidedChoiceSampler(this, output, logits, sampleOutput.getOutputLayerNorm(), tokenizer, generatorParameters.guidedChoice.get(), responseText);
+                        next = sampler1.sample();
+                    } else {
+                        GeneratorSampler sampler1 = new GeneratorSampler(this, output, temperature, random.nextFloat(), logits, sampleOutput.getOutputLayerNorm());
+                        next = sampler1.sample();
+                    }
                     output.close();
                     kvmem.incrementContextPosition();
                     if (config.eosTokens.contains(next)) {
@@ -282,6 +296,12 @@ public abstract class AbstractModel implements Generator {
                         responseText.append(cleaned1);
                     }
 
+                    if (generatorParameters.guidedChoice.isPresent()) {
+                        if (generatorParameters.guidedChoice.get().contains(responseText.toString())) {
+                            reason = FinishReason.STOP_TOKEN;
+                            break;
+                        }
+                    }
                     if (generatorParameters.stopWords.isPresent()){
                         List<String> stops = generatorParameters.stopWords.get();
                         for (String stop: stops){

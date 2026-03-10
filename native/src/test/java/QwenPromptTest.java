@@ -14,6 +14,7 @@ import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -53,7 +54,7 @@ public class QwenPromptTest {
         }
     }
 
-    @Test
+    @Disabled("disk space")
     public void toolTest() throws IOException {
         File soFile = new File("target/native-lib-only/libdeliverance.so");
         assertTrue(soFile.exists());
