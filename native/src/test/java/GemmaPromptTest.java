@@ -4,6 +4,7 @@ import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.DoNothingGenerateEvent;
+import io.teknek.deliverance.model.GenerateEvent;
 import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
@@ -86,11 +87,40 @@ public class GemmaPromptTest {
                     new DoNothingGenerateEvent());
             System.out.println(k.responseText);
             assertTrue(k.responseText.contains("Giants"));
-
-
         }
 
     }
+
+    @Test
+    public void gemmaGuidedTestNeg() throws IOException {
+        ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
+        File f = fetch.maybeDownload();
+        MetricRegistry mr = new MetricRegistry();
+        TensorCache tensorCache = new TensorCache(mr);
+        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
+        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
+                mr, tensorCache, new KvBufferCacheSettings(true), fetch)) {
+            String prompt = "Which NFL franchise does not play in New York?";
+            PromptSupport.Builder g = m.promptSupport().get().builder()
+                    .addUserMessage(prompt);
+            var uuid = UUID.randomUUID();
+
+            Response k = m.generate(uuid, g.build(), new GeneratorParameters()
+                            .withTemperature(0.0f)
+                            .withGuidedChoice(List.of("Giants", "Jets", "Seahawks")),
+                    new GenerateEvent() {
+                        @Override
+                        public void emit(int next, String nextRaw, String nextCleaned, float timing) {
+                            System.out.println(nextCleaned);
+                        }
+                    });
+            System.out.println(k.responseText);
+            assertTrue(k.responseText.contains("Seahawks"));
+        }
+
+    }
+
+
 
 
 
