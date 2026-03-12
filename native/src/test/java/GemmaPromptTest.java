@@ -36,7 +36,6 @@ public class GemmaPromptTest {
                 mr, tensorCache, new KvBufferCacheSettings(true), fetch)) {
             String prompt = "What is the capital of New York, USA?";
             PromptSupport.Builder g = m.promptSupport().get().builder()
-                    //.addSystemMessage("You provide short answers to questions.")
                     .addUserMessage(prompt);
             Assertions.assertEquals("<start_of_turn>user\n" +
                     "What is the capital of New York, USA?<end_of_turn>\n" +

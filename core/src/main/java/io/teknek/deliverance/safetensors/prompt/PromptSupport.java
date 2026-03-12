@@ -125,7 +125,6 @@ public class PromptSupport {
             return build(Optional.empty());
         }
 
-
         public PromptContext build(List<Tool> tools) {
             return build(Optional.of(tools));
         }
@@ -169,7 +168,7 @@ public class PromptSupport {
             optionalTools.ifPresent(tools -> args.put("tools", tools));
             RenderResult r = jinJava.renderForResult(template, args);
             if (r.hasErrors()) {
-                logger.debug("Prompt template errors: {}" ,r.getErrors());
+                logger.debug("Prompt template errors: {}", r.getErrors());
                 throw new RuntimeException("Prompt template errors: " + r.getErrors());
             }
             String output = r.getOutput();
