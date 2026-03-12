@@ -27,7 +27,10 @@ import java.util.UUID;
 public class Config {
 
     static {
-        System.load("/home/edward/deliverence/native/target/native-lib-only/libdeliverance.so");
+        File f = new File ("../native/target/native-lib-only/libdeliverance.so");
+        if (!f.exists()) {
+            System.load(f.getAbsolutePath());
+        }
     }
     @Bean
     public MetricRegistry metricRegistry(){
