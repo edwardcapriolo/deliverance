@@ -15,7 +15,6 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,8 +22,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class RandomNumberTest {
 
+    private void loadNative(){
+        File findLib = new File("target/native-lib-only/libdeliverance.so");
+        if (findLib.exists()) {
+            System.load(findLib.getAbsolutePath());
+        }
+    }
     @Test
-    public void sample() throws IOException {
+    public void sample() {
+        loadNative();
         String modelName = "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4";
         String modelOwner = "tjake";
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
@@ -32,7 +38,7 @@ public class RandomNumberTest {
         MetricRegistry mr = new MetricRegistry();
         TensorCache tensorCache = new TensorCache(mr);
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
-        ConfigurableTensorProvider withoutNative = new ConfigurableTensorProvider(tensorCache);
+
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
                 new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch)) {
             String prompt = "Pick a random number between 0 and 100";
@@ -46,9 +52,10 @@ public class RandomNumberTest {
         }
     }
 
+
     @Test
-    public void calc() throws IOException {
-        System.load("/home/edward/deliverence/native/target/native-lib-only/libdeliverance.so");
+    public void calc() {
+        loadNative();
         String modelName = "Llama-3.2-3B-Instruct-JQ4";
         String modelOwner = "tjake";
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
@@ -58,7 +65,7 @@ public class RandomNumberTest {
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
         var uuid = UUID.randomUUID();
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch)) {
+               mr, tensorCache, new KvBufferCacheSettings(true), fetch)) {
             String prompt = "Generate a java interface named Shape with a method name calculateArea.";
             PromptContext ctx = m.promptSupport().get().builder()
                     .addSystemMessage("You are an assistant that produces concise, production-grade software.")
