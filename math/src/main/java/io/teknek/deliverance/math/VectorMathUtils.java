@@ -36,6 +36,23 @@ public class VectorMathUtils {
         return r;
     }
 
+    /*
+    public static float cosineSimi(float[] a, float[] b) {
+        float dotProduct = 0;
+        for (int i = 0; i < a.length; i++) {
+            dotProduct += a[i] * b[i];
+        }
+        float magnitudeA = 0;
+        float magnitudeB = 0;
+        for (int i = 0; i < a.length; i++) {
+            magnitudeA += a[i] * a[i];
+            magnitudeB += b[i] * b[i];
+        }
+        float cosineSimilarity = dotProduct / (magnitudeA * magnitudeB);
+        return cosineSimilarity;
+    }
+    */
+
     public static float cosineSimilarity(float[] a, float[] b) {
         float dotProduct = 0.0f;
         float aMagnitude = 0.0f;
