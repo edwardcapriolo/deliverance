@@ -6,8 +6,8 @@ import java.nio.file.Path;
 
 public class BertTokenizer extends WordPieceTokenizer {
 
-        public BertTokenizer(Path modelRoot) {
-            super(modelRoot);
-        }
+    public BertTokenizer(Path modelRoot) {
+        super(modelRoot);
+    }
 
 }

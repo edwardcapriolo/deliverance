@@ -1,36 +1,23 @@
 package io.teknek.deliverance.safetensors.prompt;
 
-import com.codahale.metrics.MetricRegistry;
-import io.teknek.deliverance.DType;
+import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.DoNothingGenerateEvent;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.model.ModelSupport;
-import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorCache;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import java.io.File;
 import java.io.IOException;
 import java.util.UUID;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class DirectNoPromptTest {
 
     @Test
     public void noPromptContext() throws IOException {
-        String modelName = "microlama-lidor-finetuned";
-        String modelOwner = "lidoreliya13";
-        ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
-        File f = fetch.maybeDownload();
-        TensorCache tc = new TensorCache(new MetricRegistry())  ;
-        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(tc),
-                new MetricRegistry(), new TensorCache(new MetricRegistry()), new KvBufferCacheSettings(true), fetch)) {
+        ModelFetcher fetch = new ModelFetcher("lidoreliya13", "microlama-lidor-finetuned");
+        try (AbstractModel m = AutoModelForCausaLm.fromPretrained(fetch)) {
             String prompt = "What comes next in the sequence? 1, 2 ";
             PromptContext ctx = PromptContext.of(prompt);
             Response r = m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(43), new DoNothingGenerateEvent());

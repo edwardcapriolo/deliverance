@@ -31,6 +31,17 @@
       <version>${project.version}</version>
     </dependency>
     <dependency>
+      <groupId>io.teknek.deliverance</groupId>
+      <artifactId>core</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.teknek.deliverance</groupId>
+      <artifactId>native</artifactId>
+      <version>${project.version}</version>
+      <classifier>${os.detected.name}-x86_64</classifier>
+    </dependency>
+    <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
       <version>${slf4j-api.version}</version>
