@@ -15,7 +15,7 @@
     -->
     <build.plugins.plugin.version>3.5.3</build.plugins.plugin.version>
     <guava.version>32.0.1-jre</guava.version>
-    <jackson.version>2.14.0</jackson.version>
+
 
     <jafama.version>2.3.2</jafama.version>
     <jcttools.version>4.0.1</jcttools.version>
