@@ -4,7 +4,11 @@ import io.teknek.deliverance.embedding.PoolingType;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.*;
+import io.teknek.deliverance.model.Error;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
+import io.teknek.dysfx.Either;
+import io.teknek.dysfx.Left;
+import io.teknek.dysfx.Right;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,6 +65,29 @@ public class DeliveranceController {
             throw new RuntimeException("model not found " + request.getModel());
         }
         AbstractModel model = z.get().getValue();
+
+        if (request.getStream() == null || (request.getStream() != null && request.getStream() == false)){
+           Either<Error, PreparedRequest> bla = ChatCompletionService.mapRequest(headers, model, request);
+           if (bla.isLeft()){
+               Left<Error,?> l = (Left<Error,?>) bla;
+               Error r = (Error) l.productIterator().next();
+               return new ResponseEntity<>(new ErrorResponse().error(r), HttpStatus.BAD_REQUEST);
+           } else {
+               PreparedRequest p = (PreparedRequest) bla.productIterator().next();
+               Response resp = model.generate(UUID.randomUUID(), p.promptSupportBuilder().build(),
+                       p.generatorParameters(), (int next, String rok, String s, float aFloat) -> {
+                       });
+               CreateChatCompletionResponse response = new CreateChatCompletionResponse();
+               response.choices(List.of(
+                       new CreateChatCompletionResponseChoicesInner().finishReason(
+                               CreateChatCompletionResponseChoicesInner.FinishReasonEnum.STOP
+                       ).message(new ChatCompletionResponseMessage().content(resp.responseText))
+               ));
+               return new ResponseEntity<>(response, HttpStatus.OK);
+           }
+        }
+
+            //This is the older stuff lets clean it out
         List<ChatCompletionRequestMessage> messages = request.getMessages();
         UUID id = UUID.randomUUID();
         if (headers.containsKey(DELIVERANCE_SESSION_HEADER)) {
@@ -78,7 +105,6 @@ public class DeliveranceController {
         }
         GeneratorParameters params = new GeneratorParameters().withTemperature(0.1f);
         AtomicInteger index = new AtomicInteger(0);
-        builder.addSystemMessage("generate correct answers");
         LOGGER.info("submitted prompt {}", builder.build());
         if (request.getStream() != null && request.getStream()) {
             SseEmitter emitter = new SseEmitter(-1L);
@@ -107,7 +133,9 @@ public class DeliveranceController {
                 return result2;
             });
             return emitter;
-        } else {
+        }
+        /*
+        else {
             Response resp = model.generate(UUID.randomUUID(), builder.build(), params, (int next, String rok, String s, float aFloat) -> {});
             CreateChatCompletionResponse out = new CreateChatCompletionResponse().id(sessionId.toString())
                     .choices(
@@ -118,7 +146,8 @@ public class DeliveranceController {
                             )
                     );
             return new ResponseEntity<>(out, HttpStatus.OK);
-        }
+        }*/
+        throw new UnsupportedOperationException("Hit bottom");
     }
 
     private CreateChatCompletionStreamResponse sendComplete(UUID sessionId, AtomicInteger index){
@@ -157,7 +186,7 @@ public class DeliveranceController {
                         if (p.getActualInstance() instanceof ChatCompletionRequestMessageContentPartText) {
                             builder.addUserMessage(p.getChatCompletionRequestMessageContentPartText().getText());
                         } else {
-                            // We don't support other types of content... yet...
+                            // We don't su  pport other types of content... yet...
                             return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
                         }
                     }

@@ -4,8 +4,9 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * This class hopefully wont stay long, the prompt context doesnt hold all the possible request parameters at the moment
- * when we get closer to a full ChatCompletionRequest we can look at this
+ * The parameters of the request that are not part of the PromptSupport. For example a field like stopWords isnt
+ * something the PrompyTemplate and jinja support, this is something the code of the inference engine supports. Thus
+ * it belongs here
  */
 public class GeneratorParameters {
     public Optional<Float> temperature = Optional.of(0.0f);
