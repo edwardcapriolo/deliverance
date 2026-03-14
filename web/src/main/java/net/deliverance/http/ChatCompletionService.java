@@ -25,6 +25,7 @@ public class ChatCompletionService {
         if (request.getTemperature() != null){
             params.withTemperature(request.getTemperature().floatValue());
         }
+
         if (request.getMaxTokens() != null){
             params.withNtokens(request.getMaxTokens());
         }
@@ -34,11 +35,10 @@ public class ChatCompletionService {
         if(request.getStop() != null){
             CreateChatCompletionRequestStop stop = request.getStop();
             //deal with polymorphic crap
-
         }
-
-
-
+        if(request.getChatTemplate() != null){
+            builder.useChatTemplate(request.getChatTemplate());
+        }
         for (ChatCompletionRequestMessage m : request.getMessages()){
             if (m.getActualInstance() instanceof ChatCompletionRequestUserMessage) {
                 ChatCompletionRequestUserMessageContent content = m.getChatCompletionRequestUserMessage().getContent();
@@ -49,7 +49,6 @@ public class ChatCompletionService {
                         if (p.getActualInstance() instanceof ChatCompletionRequestMessageContentPartText) {
                             builder.addUserMessage(p.getChatCompletionRequestMessageContentPartText().getText());
                         } else {
-
                             return Either.Left(new Error().code(HttpStatus.BAD_REQUEST.value() + "")
                                     .message("User messages must be type text"+m.getActualInstance()));
                         }

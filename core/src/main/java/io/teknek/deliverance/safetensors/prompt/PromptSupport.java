@@ -76,7 +76,7 @@ public class PromptSupport {
             return this;
         }*/
 
-        public Builder useSpecifiedTemplate(String templateString){
+        public Builder useChatTemplate(String templateString){
             customizedTemplate = templateString;
             return this;
         }

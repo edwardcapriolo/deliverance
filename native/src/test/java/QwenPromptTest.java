@@ -1,5 +1,4 @@
 import com.codahale.metrics.MetricRegistry;
-import com.fasterxml.jackson.annotation.JsonCreator;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
@@ -75,7 +74,7 @@ public class QwenPromptTest {
                 new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch, new TokenizerRenderer())) {
             String prompt = "Call the function flip_coin print the result.";
             PromptSupport.Builder g = m.promptSupport().get().builder()
-                    .useSpecifiedTemplate(text)
+                    .useChatTemplate(text)
                     .addToolCall(new ToolCall("flip_coin", "flip_coin1", Map.of()))
                     .addUserMessage(prompt);
 

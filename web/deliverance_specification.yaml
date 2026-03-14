@@ -676,7 +676,10 @@ components:
           description: ID of the model to use. See the [model endpoint compatibility](/docs/models/model-endpoint-compatibility) table for details on which models work with the Chat API.
           example: "gpt-4-turbo"
           type: string
-
+        chat_template:
+          description: Change the chat template
+          type: string
+          nullable: true
         max_tokens:
           description: |
             The maximum number of [tokens](/tokenizer) that can be generated in the chat completion.

@@ -46,12 +46,11 @@
             <artifactId>core</artifactId>
             <version>${project.version}</version>
         </dependency>
-
-      <dependency>
-        <groupId>io.teknek.dysfx</groupId>
-        <artifactId>core</artifactId>
-        <version>0.0.3</version>
-      </dependency>
+        <dependency>
+            <groupId>io.teknek.dysfx</groupId>
+            <artifactId>core</artifactId>
+            <version>${dysfn.version}</version>
+        </dependency>
         <dependency>
             <groupId>io.teknek.deliverance</groupId>
             <artifactId>native</artifactId>
