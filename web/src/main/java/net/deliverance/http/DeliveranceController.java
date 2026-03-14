@@ -8,7 +8,7 @@ import io.teknek.deliverance.model.Error;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.dysfx.Either;
 import io.teknek.dysfx.Left;
-import io.teknek.dysfx.Right;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;

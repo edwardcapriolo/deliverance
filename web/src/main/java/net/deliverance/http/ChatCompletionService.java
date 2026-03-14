@@ -14,7 +14,6 @@ import java.util.Optional;
 public class ChatCompletionService {
     public static Either<Error,PreparedRequest> mapRequest(Map<String, String> headers, AbstractModel model,
                                       CreateChatCompletionRequest request){
-        System.err.println(request);
         Optional<PromptSupport> ps = model.promptSupport();
         if (ps.isEmpty()){
             return Either.Left(new Error().code(HttpStatus.BAD_REQUEST.value() + "")
