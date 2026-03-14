@@ -15,7 +15,9 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
 
 @ExtendWith(SpringExtension.class)
 //@SpringBootTest(args = "--add-modules jdk.incubator.vector", properties = {"deliverance.tensor.operations.type=jvector"})
@@ -28,8 +30,6 @@ public class DeliveranceControllerTest {
 
     @Test
     public void whenUsingSpringBootTestArgs_thenCommandLineArgSet(@Autowired Environment env) throws Exception {
-        Response r = new Response("yo", null,
-                null,0,0, 0, 0);
         CreateChatCompletionRequest request = new CreateChatCompletionRequest()
                 .model("TinyLlama-1.1B-Chat-v1.0-Jlama-Q4")
                 .stop(null);
@@ -39,7 +39,8 @@ public class DeliveranceControllerTest {
 
         io.teknek.deliverance.JSON j = new io.teknek.deliverance.JSON();
         String s = j.getMapper().writeValueAsString(request);
-        mockMvc.perform(MockMvcRequestBuilders.post("/chat/completions")
+            mockMvc.perform(MockMvcRequestBuilders.post("/chat/completions")
+                            .with(httpBasic("1","2"))
                 .contentType(MediaType.APPLICATION_JSON).content(s))
                 .andExpect(status().isOk());
     }
