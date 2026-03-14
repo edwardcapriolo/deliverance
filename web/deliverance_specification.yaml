@@ -63,150 +63,6 @@ components:
         - object
         - embedding
 
-
-    CreateEmbeddingRequest:
-      type: object
-      additionalProperties: false
-      properties:
-        input:
-          description: |
-            Input text to embed, encoded as a string or array of tokens. To embed multiple inputs in a single request, pass an array of strings or array of token arrays. The input must not exceed the max input tokens for the model (8192 tokens for `text-embedding-ada-002`), cannot be an empty string, and any array must be 2048 dimensions or less. [Example Python code](https://cookbook.openai.com/examples/how_to_count_tokens_with_tiktoken) for counting tokens.
-          example: "The quick brown fox jumped over the lazy dog"
-          oneOf:
-            - type: string
-              title: string
-              description: The string that will be turned into an embedding.
-              default: ""
-              example: "This is a test."
-            - type: array
-              title: array
-              description: The array of strings that will be turned into an embedding.
-              minItems: 1
-              maxItems: 2048
-              items:
-                type: string
-                default: ""
-                example: "['This is a test.']"
-            - type: array
-              title: array
-              description: The array of integers that will be turned into an embedding.
-              minItems: 1
-              maxItems: 2048
-              items:
-                type: integer
-              example: "[1212, 318, 257, 1332, 13]"
-            - type: array
-              title: array
-              description: The array of arrays containing integers that will be turned into an embedding.
-              minItems: 1
-              maxItems: 2048
-              items:
-                type: array
-                minItems: 1
-                items:
-                  type: integer
-              example: "[[1212, 318, 257, 1332, 13]]"
-          x-oaiExpandable: true
-        model:
-          description: *model_description
-          example: "text-embedding-3-small"
-          anyOf:
-            - type: string
-            - type: string
-              enum:
-                [
-                  "text-embedding-ada-002",
-                  "text-embedding-3-small",
-                  "text-embedding-3-large",
-                ]
-          x-oaiTypeLabel: string
-        encoding_format:
-          description: "The format to return the embeddings in. Can be either `float` or [`base64`](https://pypi.org/project/pybase64/)."
-          example: "float"
-          default: "float"
-          type: string
-          enum: [ "float", "base64" ]
-        dimensions:
-          description: |
-            The number of dimensions the resulting output embeddings should have. Only supported in `text-embedding-3` and later models.
-          type: integer
-          minimum: 1
-        user: *end_user_param_configuration
-      required:
-        - model  CreateEmbeddingRequest:
-      type: object
-      additionalProperties: false
-      properties:
-        input:
-          description: |
-            Input text to embed, encoded as a string or array of tokens. To embed multiple inputs in a single request, pass an array of strings or array of token arrays. The input must not exceed the max input tokens for the model (8192 tokens for `text-embedding-ada-002`), cannot be an empty string, and any array must be 2048 dimensions or less. [Example Python code](https://cookbook.openai.com/examples/how_to_count_tokens_with_tiktoken) for counting tokens.
-          example: "The quick brown fox jumped over the lazy dog"
-          oneOf:
-            - type: string
-              title: string
-              description: The string that will be turned into an embedding.
-              default: ""
-              example: "This is a test."
-            - type: array
-              title: array
-              description: The array of strings that will be turned into an embedding.
-              minItems: 1
-              maxItems: 2048
-              items:
-                type: string
-                default: ""
-                example: "['This is a test.']"
-            - type: array
-              title: array
-              description: The array of integers that will be turned into an embedding.
-              minItems: 1
-              maxItems: 2048
-              items:
-                type: integer
-              example: "[1212, 318, 257, 1332, 13]"
-            - type: array
-              title: array
-              description: The array of arrays containing integers that will be turned into an embedding.
-              minItems: 1
-              maxItems: 2048
-              items:
-                type: array
-                minItems: 1
-                items:
-                  type: integer
-              example: "[[1212, 318, 257, 1332, 13]]"
-          x-oaiExpandable: true
-        model:
-          description: *model_description
-          example: "text-embedding-3-small"
-          anyOf:
-            - type: string
-            - type: string
-              enum:
-                [
-                  "text-embedding-ada-002",
-                  "text-embedding-3-small",
-                  "text-embedding-3-large",
-                ]
-          x-oaiTypeLabel: string
-        encoding_format:
-          description: "The format to return the embeddings in. Can be either `float` or [`base64`](https://pypi.org/project/pybase64/)."
-          example: "float"
-          default: "float"
-          type: string
-          enum: ["float", "base64"]
-        dimensions:
-          description: |
-            The number of dimensions the resulting output embeddings should have. Only supported in `text-embedding-3` and later models.
-          type: integer
-          minimum: 1
-        user: *end_user_param_configuration
-      required:
-        - model
-        - input
-
-
-
     CreateEmbeddingResponse:
       type: object
       properties:
@@ -1118,6 +974,72 @@ components:
         - created
         - owned_by
 
+    CreateEmbeddingRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        input:
+          description: |
+            Input text to embed, encoded as a string or array of tokens. To embed multiple inputs in a single request, pass an array of strings or array of token arrays. The input must not exceed the max input tokens for the model (8192 tokens for `text-embedding-ada-002`), cannot be an empty string, and any array must be 2048 dimensions or less. [Example Python code](https://cookbook.openai.com/examples/how_to_count_tokens_with_tiktoken) for counting tokens.
+          example: "The quick brown fox jumped over the lazy dog"
+          oneOf:
+            - type: string
+              title: string
+              description: The string that will be turned into an embedding.
+              default: ""
+              example: "This is a test."
+            - type: array
+              title: array
+              description: The array of strings that will be turned into an embedding.
+              minItems: 1
+              maxItems: 2048
+              items:
+                type: string
+                default: ""
+                example: "['This is a test.']"
+            - type: array
+              title: array
+              description: The array of integers that will be turned into an embedding.
+              minItems: 1
+              maxItems: 2048
+              items:
+                type: integer
+              example: "[1212, 318, 257, 1332, 13]"
+            - type: array
+              title: array
+              description: The array of arrays containing integers that will be turned into an embedding.
+              minItems: 1
+              maxItems: 2048
+              items:
+                type: array
+                minItems: 1
+                items:
+                  type: integer
+              example: "[[1212, 318, 257, 1332, 13]]"
+          x-oaiExpandable: true
+        model:
+          example: "text-embedding-3-small"
+          anyOf:
+            - type: string
+            - type: string
+              enum:
+                [
+                  "text-embedding-ada-002",
+                  "text-embedding-3-small",
+                  "text-embedding-3-large",
+                ]
+          x-oaiTypeLabel: string
+        encoding_format:
+          description: "The format to return the embeddings in. Can be either `float` or [`base64`](https://pypi.org/project/pybase64/)."
+          example: "float"
+          default: "float"
+          type: string
+          enum: [ "float", "base64" ]
+        dimensions:
+          description: |
+            The number of dimensions the resulting output embeddings should have. Only supported in `text-embedding-3` and later models.
+          type: integer
+          minimum: 1
 
 
 security:
