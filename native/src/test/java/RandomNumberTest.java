@@ -5,6 +5,7 @@ import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.DoNothingGenerateEvent;
 import io.teknek.deliverance.model.ModelSupport;
+import io.teknek.deliverance.model.TokenizerRenderer;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
@@ -40,7 +41,7 @@ public class RandomNumberTest {
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
 
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch)) {
+                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch, new TokenizerRenderer())) {
             String prompt = "Pick a random number between 0 and 100";
             PromptContext ctx = PromptContext.of(prompt);
             var uuid = UUID.randomUUID();
@@ -65,7 +66,7 @@ public class RandomNumberTest {
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
         var uuid = UUID.randomUUID();
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-               mr, tensorCache, new KvBufferCacheSettings(true), fetch)) {
+               mr, tensorCache, new KvBufferCacheSettings(true), fetch, new TokenizerRenderer())) {
             String prompt = "Generate a java interface named Shape with a method name calculateArea.";
             PromptContext ctx = m.promptSupport().get().builder()
                     .addSystemMessage("You are an assistant that produces concise, production-grade software.")

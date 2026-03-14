@@ -2,10 +2,7 @@ import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
-import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.model.DoNothingGenerateEvent;
-import io.teknek.deliverance.model.GenerateEvent;
-import io.teknek.deliverance.model.ModelSupport;
+import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
@@ -35,7 +32,7 @@ public class GemmaPromptTest {
         TensorCache tensorCache = new TensorCache(mr);
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                mr, tensorCache, new KvBufferCacheSettings(true), fetch)) {
+                mr, tensorCache, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer())) {
             //String prompt = "Find any potential syntax errors in the code below\n";
             String prompt = """
                     You are a software engineer.
@@ -82,7 +79,7 @@ public class GemmaPromptTest {
         TensorCache tensorCache = new TensorCache(mr);
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                mr, tensorCache, new KvBufferCacheSettings(true), fetch)) {
+                mr, tensorCache, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer())) {
             String prompt = "What is the capital of New York, USA?";
             PromptSupport.Builder g = m.promptSupport().get().builder()
                     .addUserMessage(prompt);
@@ -119,7 +116,7 @@ public class GemmaPromptTest {
         TensorCache tensorCache = new TensorCache(mr);
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                mr, tensorCache, new KvBufferCacheSettings(true), fetch)) {
+                mr, tensorCache, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer())) {
             String prompt = "Who is the better NFL football team?";
             PromptSupport.Builder g = m.promptSupport().get().builder()
                     .addUserMessage(prompt);
@@ -146,7 +143,7 @@ public class GemmaPromptTest {
         TensorCache tensorCache = new TensorCache(mr);
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                mr, tensorCache, new KvBufferCacheSettings(true), fetch)) {
+                mr, tensorCache, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer())) {
             String prompt = "Which NFL franchise does not play in New York?";
             PromptSupport.Builder g = m.promptSupport().get().builder()
                     .addUserMessage(prompt);

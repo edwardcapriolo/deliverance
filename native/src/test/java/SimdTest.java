@@ -1,5 +1,6 @@
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.model.DoNothingGenerateEvent;
+import io.teknek.deliverance.model.TokenizerRenderer;
 import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
@@ -62,7 +63,7 @@ public class SimdTest {
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         File f = fetch.maybeDownload();
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(n),
-                new MetricRegistry(), tc, new KvBufferCacheSettings(true), fetch)) {
+                new MetricRegistry(), tc, new KvBufferCacheSettings(true), fetch, new TokenizerRenderer())) {
             String prompt = "What is the best season to plant avocados?";
             PromptContext ctx;
             {

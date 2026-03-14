@@ -7,6 +7,7 @@ import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.DoNothingGenerateEvent;
 import io.teknek.deliverance.model.ModelSupport;
+import io.teknek.deliverance.model.NoOpTokenizerRenderer;
 import io.teknek.deliverance.model.qwen2.Qwen2ModelType;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.Function;
@@ -35,7 +36,7 @@ public class QwenTest {
         TensorCache tensorCache = new TensorCache(mr);
         ModelSupport.addModel("QWEN2", new Qwen2ModelType());
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(tensorCache),
-                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch)) {
+                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer())) {
             String prompt = "What is the best season to plant avocados?";
             PromptContext ctx;
             {

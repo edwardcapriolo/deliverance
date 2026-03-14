@@ -71,8 +71,9 @@ public class ModelSupport {
                                           ConfigurableTensorProvider configurableTensorProvider,
                                           MetricRegistry metricRegistry, TensorCache tensorCache,
                                           KvBufferCacheSettings kvBufferCacheSettings,
-                                          ModelFetcher fetcher){
+                                          ModelFetcher fetcher, TokenRenderer tr){
         //not all llama models use same tokenizer. detecting from config.json might be an option
+        /*
         TokenRenderer tr;
         if (fetcher.getName().startsWith("Llama-3.1-8B-Instruct")
                 || fetcher.getName().startsWith("Llama-3.2-3B-Instruct")){
@@ -83,6 +84,7 @@ public class ModelSupport {
         } else {
             tr = new NoOpTokenizerRenderer();
         }
+        */
         File configFile = new File(model, "config.json");
         if (!configFile.exists()){
             throw new RuntimeException("Expecting to find config file " + configFile);

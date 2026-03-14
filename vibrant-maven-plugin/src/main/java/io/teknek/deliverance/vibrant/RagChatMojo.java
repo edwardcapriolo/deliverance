@@ -18,6 +18,7 @@ import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
@@ -111,15 +112,15 @@ public class RagChatMojo  extends AbstractMojo {
         }
 
         ModelFetcher fetch = new ModelFetcher(modelConfig.getOwner(), modelConfig.getModelName());
-        File f = fetch.maybeDownload();
-        MetricRegistry mr = new MetricRegistry();
-        TensorCache tensorCache = new TensorCache(mr);
         DType working = DType.valueOf(modelConfig.getWorkingMemType());
         DType quantized = DType.valueOf(modelConfig.getQuantizedMemType());
+        AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(fetch);
+        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(builder.getCache()).get());
+        builder.withWorkingQuantType(working);
+        builder.withWorkingQuantType(quantized);
+        builder.withTensorProvider(new ConfigurableTensorProvider(operation));
 
-        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
-        try (AbstractModel model = ModelSupport.loadModel(f, working, quantized, new ConfigurableTensorProvider(operation),
-                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch)) {
+        try (AbstractModel model = builder.build()) {
             System.out.println("Chat with deliverance! Type 'undeliver' to quit.");
             System.out.println("Type 'indexjava /path/to/source' to add a path to the vector store ");
             System.out.print(">> ");

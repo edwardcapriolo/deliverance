@@ -30,7 +30,7 @@ public class ModelSupportTest {
         TensorCache tc = new TensorCache(new MetricRegistry());
         try (AbstractModel abstractModel = ModelSupport.loadModel(f, DType.F32, DType.F32,
                 new ConfigurableTensorProvider(tc), mr, new TensorCache(mr),
-                new KvBufferCacheSettings(true), fetch)) {
+                new KvBufferCacheSettings(true), fetch, new TokenizerRenderer())) {
 
             String prompt = "What comes next in the sequence? 1, 2, 3 ";
             PromptContext ctx = PromptContext.of(prompt);
@@ -81,7 +81,7 @@ public class ModelSupportTest {
         TensorCache tc = new TensorCache(new MetricRegistry());
         TensorCache dedicatedKvCache = new TensorCache(new MetricRegistry());
         try (AbstractModel abstractModel = ModelSupport.loadModel(f, DType.F32, DType.F32, new ConfigurableTensorProvider(tc),
-                new MetricRegistry(), new TensorCache(new MetricRegistry()), new KvBufferCacheSettings(dedicatedKvCache), fetch)) {
+                new MetricRegistry(), new TensorCache(new MetricRegistry()), new KvBufferCacheSettings(dedicatedKvCache), fetch, new TokenizerRenderer())) {
             String prompt = "What comes next in the sequence? 1, 2, 3 ";
             PromptContext ctx = PromptContext.of(prompt);
 

@@ -1,16 +1,12 @@
 package io.teknek.deliverance.vibrant;
 
-import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.model.ModelSupport;
-import io.teknek.deliverance.model.TokenRenderer;
+import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
-import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
 import org.apache.maven.plugin.AbstractMojo;
@@ -21,7 +17,6 @@ import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 
 import java.io.BufferedReader;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.List;
@@ -38,15 +33,16 @@ public class ChatMojo extends AbstractMojo {
         }
 
         ModelFetcher fetch = new ModelFetcher(modelConfig.getOwner(), modelConfig.getModelName());
-        File f = fetch.maybeDownload();
-        MetricRegistry mr = new MetricRegistry();
-        TensorCache tensorCache = new TensorCache(mr);
         DType working = DType.valueOf(modelConfig.getWorkingMemType());
         DType quantized = DType.valueOf(modelConfig.getQuantizedMemType());
-
-        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
-        try (AbstractModel model = ModelSupport.loadModel(f, working, quantized, new ConfigurableTensorProvider(operation),
-                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch)) {
+        AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(fetch);
+        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(builder.getCache()).get());
+        builder.withWorkingQuantType(working);
+        builder.withWorkingQuantType(quantized);
+        builder.withTensorProvider(new ConfigurableTensorProvider(operation));
+        try (AbstractModel model = builder.build()) {
+        //try (AbstractModel model = ModelSupport.loadModel(f, working, quantized, new ConfigurableTensorProvider(operation),
+        //        new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch)) {
             System.out.println("Chat with deliverance! Type 'undeliver' to quit.");
             System.out.print(">> ");
             BufferedReader br = new BufferedReader(new InputStreamReader(System.in));

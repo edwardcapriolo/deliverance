@@ -83,6 +83,7 @@ public class DeliveranceController {
                                CreateChatCompletionResponseChoicesInner.FinishReasonEnum.STOP
                        ).message(new ChatCompletionResponseMessage().content(resp.responseText))
                ));
+
                return new ResponseEntity<>(response, HttpStatus.OK);
            }
         }

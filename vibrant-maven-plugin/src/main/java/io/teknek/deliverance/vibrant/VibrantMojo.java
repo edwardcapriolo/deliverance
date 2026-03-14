@@ -5,6 +5,7 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
@@ -124,15 +125,15 @@ public class VibrantMojo extends AbstractMojo {
         }
 
         ModelFetcher fetch = new ModelFetcher(modelConfig.getOwner(), modelConfig.getModelName());
-        File f = fetch.maybeDownload();
-        MetricRegistry mr = new MetricRegistry();
-        TensorCache tensorCache = new TensorCache(mr);
         DType working = DType.valueOf(modelConfig.getWorkingMemType());
         DType quantized = DType.valueOf(modelConfig.getQuantizedMemType());
-        debugConfig();
-        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
-        try (AbstractModel m = ModelSupport.loadModel(f, working, quantized, new ConfigurableTensorProvider(operation),
-                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch)) {
+        AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(fetch);
+        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(builder.getCache()).get());
+        builder.withWorkingQuantType(working);
+        builder.withWorkingQuantType(quantized);
+        builder.withTensorProvider(new ConfigurableTensorProvider(operation));
+
+        try (AbstractModel m = builder.build()) {
             for (VibeSpec spec : vibeSpecs) {
                 runSingleSpec(m, spec);
             }

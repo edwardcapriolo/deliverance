@@ -6,7 +6,9 @@ import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.DoNothingGenerateEvent;
 import io.teknek.deliverance.model.ModelSupport;
+import io.teknek.deliverance.model.TokenizerRenderer;
 import io.teknek.deliverance.model.qwen2.Qwen2ModelType;
+import io.teknek.deliverance.model.qwen2.Qwen2TokenizerRenderer;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.*;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
@@ -35,7 +37,7 @@ public class QwenPromptTest {
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
         ModelSupport.addModel("QWEN2", new Qwen2ModelType());
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch)) {
+                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch, new Qwen2TokenizerRenderer())) {
             String prompt = "What is the capital of New York, USA?";
             PromptSupport.Builder g = m.promptSupport().get().builder()
                     .addSystemMessage("You provide short answers to questions.")
@@ -70,7 +72,7 @@ public class QwenPromptTest {
                 .getResourceAsStream("/llama_tool_fix.jinja"), "UTF-8").useDelimiter("\\A").next();
         Tool tool = Tool.from(Function.builder().name("flip_coin").description("This methods will flip a coin. The result will be H for heads or T for tails.").build());
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch)) {
+                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch, new TokenizerRenderer())) {
             String prompt = "Call the function flip_coin print the result.";
             PromptSupport.Builder g = m.promptSupport().get().builder()
                     .useSpecifiedTemplate(text)
@@ -120,7 +122,7 @@ Use the coinflip tool any analyze the result<|eot_id|><|start_header_id|>assista
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
         ModelSupport.addModel("QWEN2", new Qwen2ModelType());
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch)) {
+                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch, new Qwen2TokenizerRenderer())) {
             /**
              *     >>> tokenizer("Hello world")["input_ids"]
              *     [9707, 1879]
@@ -146,31 +148,32 @@ Use the coinflip tool any analyze the result<|eot_id|><|start_header_id|>assista
         assertTrue(soFile.exists());
         System.load(soFile.getAbsolutePath());
 
-        ModelFetcher fetch = new ModelFetcher("qwen", "Qwen2.5-3B-Instruct");
+        ModelFetcher fetch = new ModelFetcher("tjake", "Qwen2.5-0.5B-Instruct-JQ4");
         File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
         TensorCache tensorCache = new TensorCache(mr);
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
         Tool tool = Tool.from(Function.builder().name("flip_coin").description("This methods will flip a coin. The result will be H for heads or T for tails.").build());
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch)) {
+                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch, new Qwen2TokenizerRenderer())) {
             String prompt = "Call a function to simulate a coin flip";
             PromptSupport.Builder g = m.promptSupport().get().builder()
-                    //.addToolCall(new ToolCall("flip_coin", "flip_coin1", Map.of()))
+                    .addToolCall(new ToolCall("flip_coin", "flip_coin1", Map.of()))
                     .addUserMessage(prompt);
 
             PromptContext c = g.build(tool);
             System.out.println(c.getPrompt());
 
+            /*
             var uuid = UUID.randomUUID();
 
-            /*Response k = m.generate(uuid, c, new GeneratorParameters().withTemperature(0.1f),
+            Response k = m.generate(uuid, c, new GeneratorParameters().withTemperature(0.1f),
                     (int next, String nextRaw, String nextCleaned, float timing) -> {
                          System.out.println(" "+ nextCleaned +" ");
                      });
 
              System.out.println(k);
-             */
+            */
         }
     }
 }
