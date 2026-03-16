@@ -7,7 +7,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 public class TensorShape {
-    /** Tensors are always two dimentation a single tensor of a single element 1 thus becomes [[1]] */
+    /** Tensors are always two dimentational a single tensor of a single element 1 thus becomes [[1]] */
     public static TensorShape ONE = of(1, 1);
 
     public static TensorShape of(int... shape) {
@@ -174,15 +174,20 @@ public class TensorShape {
     public TensorShape slice(int numDims) {
         Preconditions.checkArgument(numDims < tshape.length, "Too many dimensions specified for tensor");
         int newLength = tshape.length - numDims;
-        if (newLength == 1) return new TensorShape(new int[] { 1, tshape[tshape.length - 1] }, sparseRowRange, sparseColumnRange);
-
+        if (newLength == 1) {
+            return new TensorShape(new int[] { 1, tshape[tshape.length - 1] }, sparseRowRange, sparseColumnRange);
+        }
         return new TensorShape(Arrays.copyOfRange(tshape, numDims, tshape.length), sparseRowRange, sparseColumnRange);
     }
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
         TensorShape that = (TensorShape) o;
         return Arrays.equals(tshape, that.tshape) && Objects.equals(sparseColumnRange, that.sparseColumnRange);
     }

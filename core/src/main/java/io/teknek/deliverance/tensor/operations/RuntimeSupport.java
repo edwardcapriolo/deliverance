@@ -3,7 +3,7 @@ package io.teknek.deliverance.tensor.operations;
 /**
  * Helper class for runtime support
  */
-public class RuntimeSupport {
+public class    RuntimeSupport {
     static String OS = System.getProperty("os.name").toLowerCase();
     static String Arch = System.getProperty("os.arch").toLowerCase();
     static String ArchBits = System.getProperty("sun.arch.data.model");

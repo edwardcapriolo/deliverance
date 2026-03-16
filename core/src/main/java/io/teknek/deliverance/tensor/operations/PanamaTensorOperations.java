@@ -225,7 +225,7 @@ public final class PanamaTensorOperations implements TensorOperations {
                 FloatVector acc1 = FloatVector.zero(FloatVector.SPECIES_256);
 
                 for (; aoffset < alim && boffset < blim; aoffset += slen, boffset += slen) {
-                    FloatVector scale0 = FloatVector.broadcast(FloatVector.SPECIES_256, b.getFactorForIndex(j + 0, boffset));
+                    FloatVector scale0 = FloatVector.broadcast(FloatVector.SPECIES_256, b.getFactorForIndex(j, boffset));
                     FloatVector scale1 = FloatVector.broadcast(FloatVector.SPECIES_256, b.getFactorForIndex(j + 1, boffset));
 
                     // BLOCK_SIZE Floats
@@ -236,7 +236,7 @@ public final class PanamaTensorOperations implements TensorOperations {
 
                     {
                         // Make 8 bytes -> 16 4bit -> 16 bytes -> 16 32F
-                        var bf0 = b.getVector(ByteVector.SPECIES_128, j + 0, boffset);
+                        var bf0 = b.getVector(ByteVector.SPECIES_128, j, boffset);
                         var lo0 = bf0.and(Q4_BYTE_MASK_128).sub(Q4_BYTE_SUB_128);
                         var hi0 = bf0.lanewise(VectorOperators.LSHR, Q4_BYTE_SHIFT_128).sub(Q4_BYTE_SUB_128);
 
@@ -366,6 +366,7 @@ public final class PanamaTensorOperations implements TensorOperations {
                 int alim = aoffset + k;
                 int blim = boffset + k;
                 int slen = Q4ByteBufferTensor.BLOCK_SIZE;
+
 
                 FloatVector acc0 = FloatVector.zero(FloatVector.SPECIES_512);
                 FloatVector acc1 = FloatVector.zero(FloatVector.SPECIES_512);
@@ -1549,7 +1550,9 @@ public final class PanamaTensorOperations implements TensorOperations {
         }
 
         private void mnpack(int m0, int m, int n0, int n) {
-            if (m - m0 <= 0 || n - n0 <= 0) return;
+            if (m - m0 <= 0 || n - n0 <= 0) {
+                return;
+            }
 
             int r = pickKernel(m0, m, n0, n);
             int mc, nc, mp, np;
