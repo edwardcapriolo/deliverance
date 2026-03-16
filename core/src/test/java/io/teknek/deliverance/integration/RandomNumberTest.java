@@ -68,7 +68,8 @@ public class RandomNumberTest {
 
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
                mr, tensorCache, new KvBufferCacheSettings(true), fetch, new TokenizerRenderer())) {*/
-        try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).withWorkingQuantType(DType.I8).build()){
+        try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).withWorkingQuantType(DType.I8)
+                .withTokenTokenRenderer(new TokenizerRenderer()).build()){
             String prompt = "Generate a java interface named Shape with a method name calculateArea.";
             PromptContext ctx = m.promptSupport().get().builder()
                     .addSystemMessage("You are an assistant that produces concise, production-grade software.")
