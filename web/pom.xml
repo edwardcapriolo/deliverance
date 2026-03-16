@@ -19,7 +19,6 @@
         <jafama.version>2.3.2</jafama.version>
         <jcttools.version>4.0.1</jcttools.version>
 
-        <metrics.version>4.2.37</metrics.version>
         <spring-boot.version>3.5.5</spring-boot.version>
         <springdoc-starter.version>2.8.12</springdoc-starter.version>
         <jersey-version>3.0.4</jersey-version>
@@ -49,7 +48,7 @@
         <dependency>
             <groupId>io.teknek.dysfx</groupId>
             <artifactId>core</artifactId>
-            <version>${dysfn.version}</version>
+            <version>${dysfx.version}</version>
         </dependency>
         <dependency>
             <groupId>io.teknek.deliverance</groupId>

@@ -14,9 +14,8 @@
     <maven.compiler.release>24</maven.compiler.release>
     -->
     <build.plugins.plugin.version>3.5.3</build.plugins.plugin.version>
-    <dysfx.version>0.0.2</dysfx.version>
-    <mockito.version>5.20.0</mockito.version>
-    <metrics.version>4.2.37</metrics.version>
+
+
   </properties>
 
   <dependencies>
