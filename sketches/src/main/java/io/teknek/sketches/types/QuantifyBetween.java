@@ -1,4 +1,4 @@
-package io.teknek.sketches.model;
+package io.teknek.sketches.types;
 
 public class QuantifyBetween extends Term{
     Term term;

@@ -71,6 +71,41 @@ public class GemmaPromptTest {
 
     }
 
+    //    return np.full(
+    //        (1, (vocab_size + 31) // 32),
+    //        -1,
+    //        dtype=np.int32,
+    //    )
+    @Test
+    public void chat(){
+        ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
+        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider( new TensorCache(new MetricRegistry())).get());
+        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
+                .withTensorProvider(new ConfigurableTensorProvider(operation)).build()) {
+            String prompt = """
+What does this python code do?
+---------------------------
+def allocate_token_bitmask(vocab_size: int) -> np.ndarray:
+    return np.full(
+        (1, (vocab_size + 31) // 32),
+        -1,
+        dtype=np.int32,
+    )
+                    """;
+            PromptSupport.Builder g = model.promptSupport().get().builder()
+                    .addUserMessage(prompt);
+            var uuid = UUID.randomUUID();
+
+            Response k = model.generate(uuid, g.build(), new GeneratorParameters().withTemperature(0.0f),
+                    new GenerateEvent() {
+                        @Override
+                        public void emit(int next, String nextRaw, String nextCleaned, float timing) {
+                            System.out.println(nextCleaned);
+                        }
+                    });
+        }
+    }
+
     @Test
     public void gemmaTest() throws IOException {
         ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");

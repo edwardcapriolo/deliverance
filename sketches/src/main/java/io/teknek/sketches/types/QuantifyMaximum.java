@@ -1,4 +1,4 @@
-package io.teknek.sketches.model;
+package io.teknek.sketches.types;
 
 public class QuantifyMaximum extends Term{
     Term term;
