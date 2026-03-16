@@ -1,4 +1,4 @@
-package net.deliverance.http;
+package net.deliverance.http.auth;
 
 
 import org.springframework.beans.factory.annotation.Value;
@@ -25,7 +25,7 @@ public class SecurityConfig {
             return http.build();
         }
         http
-                .securityMatcher("/chat/**")
+                .securityMatcher("/chat/**", "/embeddings/**")
                 .authorizeHttpRequests(auth -> auth
                         .anyRequest().authenticated())
                 .httpBasic(basic -> basic

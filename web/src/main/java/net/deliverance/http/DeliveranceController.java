@@ -39,22 +39,7 @@ public class DeliveranceController {
                         .equalsIgnoreCase(name)).findFirst();
     }
 
-    @RequestMapping(method = RequestMethod.POST, value="/embeddings", produces =  { "application/json" }, consumes = { "application/json" })
-    public CreateEmbeddingResponse createEmbedding(@RequestBody CreateEmbeddingRequest request){
-        Optional<Map.Entry<MultiModelConfig, AbstractModel>> z = findModel(request.getModel().getString());
-        if (z.isEmpty()){
-            throw new RuntimeException("model not found " + request.getModel());
-        }
-        float[] result = z.get().getValue().embed(request.getInput().getString(), PoolingType.AVG);
-        List<BigDecimal> resultAsB = new ArrayList<>();
-        for (float f: result){
-            resultAsB.add(new BigDecimal(f));
-        }
-        CreateEmbeddingResponse resp = new CreateEmbeddingResponse();
-        Embedding e = new Embedding().index(0).embedding(resultAsB);
-        resp.addDataItem(e);
-        return resp;
-    }
+
 
     @RequestMapping(method = RequestMethod.POST, value = "/chat/completions", produces = { "application/json",
             "text/event-stream" }, consumes = { "application/json" })

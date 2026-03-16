@@ -6,7 +6,6 @@ import io.teknek.deliverance.model.Error;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.dysfx.Either;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 
 import java.util.Map;
 import java.util.Optional;
