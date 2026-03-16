@@ -21,7 +21,7 @@ public class SecurityConfig {
     }
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        if (user==null){
+        if (user == null){
             return http.build();
         }
         http
@@ -40,7 +40,6 @@ public class SecurityConfig {
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 );
-
         return http.build();
     }
 }

@@ -1,4 +1,4 @@
-package io.teknek.sketches.model;
+package io.teknek.sketches.types;
 
 import java.util.List;
 
