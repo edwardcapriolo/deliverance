@@ -7,11 +7,14 @@ import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 
 public class AutoModelForCausaLm {
-
+    private static final Logger LOGGER = LoggerFactory.getLogger(AutoModelForCausaLm.class);
     public static AbstractModel fromPretrained(ModelFetcher fetcher){
         Builder b = new Builder(fetcher);
         if (fetcher.getName().startsWith("Llama")){
@@ -36,7 +39,7 @@ public class AutoModelForCausaLm {
         private TokenRenderer tokenRenderer = new NoOpTokenizerRenderer();
 
         private KvBufferCacheSettings settings = new KvBufferCacheSettings(true);
-        private ConfigurableTensorProvider provider = new ConfigurableTensorProvider(cache);
+        private ConfigurableTensorProvider provider;
 
         public Builder(ModelFetcher fetch){
             this.fetch = fetch;
@@ -72,11 +75,16 @@ public class AutoModelForCausaLm {
         }
         public AbstractModel build(){
             File modelRoot = fetch.maybeDownload();
-
-            //ConfigurableTensorProvider jvmTensor = new ConfigurableTensorProvider(this.cache);
-            //NativeSimdTensorOperations simd = new NativeSimdTensorOperations(jvmTensor.get());
-            //ConfigurableTensorProvider top = new ConfigurableTensorProvider(simd);
-
+            if(provider == null){
+                ConfigurableTensorProvider base  = new ConfigurableTensorProvider(cache);
+                 try {
+                     NativeSimdTensorOperations operations = new NativeSimdTensorOperations(base.get());
+                     provider = new ConfigurableTensorProvider(operations);
+                 } catch (UnsatisfiedLinkError e){
+                     LOGGER.warn("unable to load native SIMD support", e);
+                     provider = base;
+                 }
+            }
             return ModelSupport.loadModel(modelRoot, workingMem, workingQuant, provider,
                     mr, cache, settings, fetch, tokenRenderer);
         }

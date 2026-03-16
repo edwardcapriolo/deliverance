@@ -1,3 +1,5 @@
+package io.teknek.deliverance.integration;
+
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.GeneratorParameters;
@@ -14,7 +16,6 @@ import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
@@ -41,7 +42,7 @@ public class QwenPromptTest {
             PromptSupport.Builder g = m.promptSupport().get().builder()
                     .addSystemMessage("You provide short answers to questions.")
                     .addUserMessage(prompt);
-            Assertions.assertEquals("<|im_start|>system\n" +
+            assertEquals("<|im_start|>system\n" +
                     "You provide short answers to questions.<|im_end|>\n" +
                     "<|im_start|>user\n" +
                     "What is the capital of New York, USA?<|im_end|>\n" +
