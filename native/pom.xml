@@ -40,7 +40,7 @@
 
     <dependency>
       <groupId>io.teknek.deliverance</groupId>
-      <artifactId>core</artifactId>
+      <artifactId>tensor</artifactId>
       <version>${project.version}</version>
       <scope>compile</scope>
     </dependency>

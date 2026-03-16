@@ -1,11 +1,10 @@
+package io.teknek.deliverance.integration;
+
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
-import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.model.DoNothingGenerateEvent;
-import io.teknek.deliverance.model.ModelSupport;
-import io.teknek.deliverance.model.TokenizerRenderer;
+import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
@@ -56,17 +55,20 @@ public class RandomNumberTest {
 
     @Test
     public void calc() {
-        loadNative();
         String modelName = "Llama-3.2-3B-Instruct-JQ4";
         String modelOwner = "tjake";
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
+        var uuid = UUID.randomUUID();
+        /*loadNative();
+
         File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
         TensorCache tensorCache = new TensorCache(mr);
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
-        var uuid = UUID.randomUUID();
+
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-               mr, tensorCache, new KvBufferCacheSettings(true), fetch, new TokenizerRenderer())) {
+               mr, tensorCache, new KvBufferCacheSettings(true), fetch, new TokenizerRenderer())) {*/
+        try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).withWorkingQuantType(DType.I8).build()){
             String prompt = "Generate a java interface named Shape with a method name calculateArea.";
             PromptContext ctx = m.promptSupport().get().builder()
                     .addSystemMessage("You are an assistant that produces concise, production-grade software.")

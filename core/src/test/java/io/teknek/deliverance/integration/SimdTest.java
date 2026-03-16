@@ -1,3 +1,5 @@
+package io.teknek.deliverance.integration;
+
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.model.DoNothingGenerateEvent;
 import io.teknek.deliverance.model.TokenizerRenderer;

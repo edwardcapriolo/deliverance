@@ -1,3 +1,5 @@
+package io.teknek.deliverance.integration;
+
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.GeneratorParameters;
