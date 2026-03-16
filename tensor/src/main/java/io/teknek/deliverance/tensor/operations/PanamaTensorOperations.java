@@ -48,9 +48,9 @@ public final class PanamaTensorOperations implements TensorOperations {
     );
 
     private final MachineSpec.Type vectorType;
-    private final TensorCache tensorCache;
+    private final TensorCacheIface tensorCache;
 
-    public PanamaTensorOperations(MachineSpec.Type vectorType, TensorCache tensorCache) {
+    public PanamaTensorOperations(MachineSpec.Type vectorType, TensorCacheIface tensorCache) {
         this.vectorType = vectorType;
         this.tensorCache = tensorCache;
     }

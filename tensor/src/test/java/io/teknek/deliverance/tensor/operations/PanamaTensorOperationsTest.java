@@ -1,11 +1,11 @@
 package io.teknek.deliverance.tensor.operations;
 
 import com.codahale.metrics.MetricRegistry;
-import io.teknek.deliverance.tensor.*;
+import io.teknek.deliverance.DType;import io.teknek.deliverance.tensor.*;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Test;import org.mockito.Mockito;
 
 import java.util.Random;
 
@@ -47,7 +47,7 @@ public class PanamaTensorOperationsTest {
         float control = controlOps.dotProduct(a, b, size);
         assertEquals(1024f, control);
 
-        PanamaTensorOperations p = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, new TensorCache(new MetricRegistry()));
+        PanamaTensorOperations p = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, Mockito.mock(TensorCacheIface.class));
         assertEquals(control, p.dotProduct(a, b,1024));
     }
 
@@ -66,7 +66,7 @@ public class PanamaTensorOperationsTest {
         float control = controlOps.dotProduct(q8, q4, size);
         assertEquals(expected, control);
 
-        PanamaTensorOperations p = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, new TensorCache(new MetricRegistry()));
+        PanamaTensorOperations p = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, Mockito.mock(TensorCacheIface.class));
         assertEquals(control, p.dotProduct(q8, q4, size), control * .01f);
     }
 }
