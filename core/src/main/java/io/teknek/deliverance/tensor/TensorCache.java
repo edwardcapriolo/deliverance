@@ -18,7 +18,7 @@ import org.slf4j.LoggerFactory;
  * In LLMs a lot of buffers are used for inference.  Rather than allocating each one or using a fixed pool
  * this TensorCache allows a limited number of different shaped buffers to be reused across threads
  */
-public class TensorCache implements TensorCacheIface{
+public class TensorCache implements TensorCacheIface {
 
     private static final Logger logger = LoggerFactory.getLogger(TensorCache.class);
 

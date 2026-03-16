@@ -28,6 +28,14 @@
 
     <dependency>
       <groupId>io.teknek.deliverance</groupId>
+      <artifactId>tensor</artifactId>
+      <version>${project.version}</version>
+      <classifier>tests</classifier>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>io.teknek.deliverance</groupId>
       <artifactId>math</artifactId>
       <version>${project.version}</version>
       <scope>compile</scope>

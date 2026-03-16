@@ -5,8 +5,10 @@ import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
 
-import io.teknek.deliverance.tensor.TensorCache;
-import org.junit.jupiter.api.Test;
+
+import io.teknek.deliverance.tensor.TensorCacheIface;
+import io.teknek.deliverance.tensor.TensorShape;
+import org.junit.jupiter.api.Test;import org.mockito.Mock;import org.mockito.Mockito;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -15,7 +17,7 @@ public class ConfigurableTensorProviderTest {
 
     @Test
     void defaultTest(){
-        ConfigurableTensorProvider p = new ConfigurableTensorProvider(new TensorCache(new MetricRegistry()));
+        ConfigurableTensorProvider p = new ConfigurableTensorProvider(Mockito.mock(TensorCacheIface.class));
         assertNotNull(p.get());
     }
 
