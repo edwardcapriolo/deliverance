@@ -5,9 +5,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.model.bert.BertModelType;
 import io.teknek.deliverance.model.gemma2.Gemma2ModelType;
+import io.teknek.deliverance.model.gemma3.Gemma3ModelType;
 import io.teknek.deliverance.model.llama.LlamaModelType;
 import io.teknek.deliverance.model.qwen2.Qwen2ModelType;
-import io.teknek.deliverance.model.qwen2.Qwen2TokenizerRenderer;
 import io.teknek.deliverance.safetensors.*;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
@@ -39,6 +39,7 @@ public class ModelSupport {
         registry.putIfAbsent("LLAMA", new LlamaModelType());
         registry.putIfAbsent("QWEN2", new Qwen2ModelType());
         registry.putIfAbsent("GEMMA2", new Gemma2ModelType());
+        registry.putIfAbsent("GEMMA3_TEXT", new Gemma3ModelType());
     }
 
     public static void addModel(String modelName, ModelType t){
