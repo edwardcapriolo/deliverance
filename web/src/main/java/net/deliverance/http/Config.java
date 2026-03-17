@@ -26,12 +26,6 @@ import java.util.UUID;
 @Configuration
 public class Config {
 
-    static {
-        File f = new File ("../native/target/native-lib-only/libdeliverance.so");
-        if (!f.exists()) {
-            System.load(f.getAbsolutePath());
-        }
-    }
     @Bean
     public MetricRegistry metricRegistry(){
         return new MetricRegistry();
@@ -55,26 +49,4 @@ public class Config {
         } else throw new IllegalArgumentException(type + " is not supported use (simd,jvector,gpu)");
     }
 
-    /*
-    @Bean(destroyMethod = "close")
-    public AbstractModel generator(@Value("${deliverance.model.name}") String modelName,
-                                   @Value("${deliverance.model.owner}") String modelOwner,
-                                       @Value("${deliverance.startup.test:true}") boolean test,
-                                   @Value("${deliverance.tensor.operations.type:simd}") String type){
-        ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
-        File f = fetch.maybeDownload();
-        AbstractModel m =  ModelSupport.loadModel(f, DType.F32, DType.I8, provider(type),
-                metricRegistry(), tensorCache(), new KvBufferCacheSettings(true));
-        if(test) {
-            PromptContext ctx;
-            {
-                PromptSupport ps = m.promptSupport().get();
-                ctx = ps.builder().addSystemMessage("You are a chatbot that writes short correct responses.")
-                        .addUserMessage("generate number 1 only once").build();
-            }
-            System.out.println(m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withNtokens(64), (x, t) -> {
-            }));
-        }
-        return m;
-    }*/
 }
