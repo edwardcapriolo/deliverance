@@ -1,15 +1,12 @@
 package io.teknek.deliverance.integration;
 
 import com.codahale.metrics.MetricRegistry;
-import io.teknek.deliverance.model.DoNothingGenerateEvent;
-import io.teknek.deliverance.model.TokenizerRenderer;
+import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
-import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.tensor.AbstractTensor;
@@ -29,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class SimdTest {
 
-    static AbstractTensor allOnes(int size) {
+    AbstractTensor allOnes(int size) {
         AbstractTensor f = new FloatBufferTensor(1, size);
         for (int i = 0; i < size; i++) {
             f.set(1.0f, 0, i);
@@ -39,9 +36,9 @@ public class SimdTest {
 
     @Test
     void goTryIt(){
-        File soFile = new File("target/native-lib-only/libdeliverance.so");
-        assertTrue(soFile.exists());
-        System.load(soFile.getAbsolutePath());
+        //File soFile = new File("target/native-lib-only/libdeliverance.so");
+        //assertTrue(soFile.exists());
+        //System.load(soFile.getAbsolutePath());
         TensorCache tc = new TensorCache(new MetricRegistry());
         NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tc).get());
         int size = 1024;
@@ -55,17 +52,18 @@ public class SimdTest {
 
     @Test
     public void sample() throws IOException {
-        File soFile = new File("target/native-lib-only/libdeliverance.so");
-        assertTrue(soFile.exists());
-        System.load(soFile.getAbsolutePath());
-        TensorCache tc = new TensorCache(new MetricRegistry());
-        NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tc).get());
+    //    File soFile = new File("target/native-lib-only/libdeliverance.so");
+    //    assertTrue(soFile.exists());
+    //    System.load(soFile.getAbsolutePath());
+        //TensorCache tc = new TensorCache(new MetricRegistry());
+        //NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tc).get());
         String modelName = "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4";
         String modelOwner = "tjake";
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
-        File f = fetch.maybeDownload();
-        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(n),
-                new MetricRegistry(), tc, new KvBufferCacheSettings(true), fetch, new TokenizerRenderer())) {
+        //File f = fetch.maybeDownload();
+        //try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(n),
+          //      new MetricRegistry(), tc, new KvBufferCacheSettings(true), fetch, new TokenizerRenderer())) {
+        try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).build()) {
             String prompt = "What is the best season to plant avocados?";
             PromptContext ctx;
             {

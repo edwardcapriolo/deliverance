@@ -4,10 +4,7 @@ import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
-import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.model.DoNothingGenerateEvent;
-import io.teknek.deliverance.model.ModelSupport;
-import io.teknek.deliverance.model.TokenizerRenderer;
+import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.model.qwen2.Qwen2ModelType;
 import io.teknek.deliverance.model.qwen2.Qwen2TokenizerRenderer;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
@@ -144,26 +141,17 @@ Use the coinflip tool any analyze the result<|eot_id|><|start_header_id|>assista
 
     @Test
     public void qwenToolTest() throws IOException {
-        File soFile = new File("target/native-lib-only/libdeliverance.so");
-        assertTrue(soFile.exists());
-        System.load(soFile.getAbsolutePath());
-
         ModelFetcher fetch = new ModelFetcher("tjake", "Qwen2.5-0.5B-Instruct-JQ4");
-        File f = fetch.maybeDownload();
-        MetricRegistry mr = new MetricRegistry();
-        TensorCache tensorCache = new TensorCache(mr);
-        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
-        Tool tool = Tool.from(Function.builder().name("flip_coin").description("This methods will flip a coin. The result will be H for heads or T for tails.").build());
-        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch, new Qwen2TokenizerRenderer())) {
+        Tool tool = Tool.from(Function.builder().name("flip_coin")
+                .description("This methods will flip a coin. The result will be H for heads or T for tails.").build());
+        try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch)
+                .withTokenTokenRenderer(new Qwen2TokenizerRenderer()).build()){
             String prompt = "Call a function to simulate a coin flip";
             PromptSupport.Builder g = m.promptSupport().get().builder()
                     .addToolCall(new ToolCall("flip_coin", "flip_coin1", Map.of()))
                     .addUserMessage(prompt);
-
             PromptContext c = g.build(tool);
             System.out.println(c.getPrompt());
-
             /*
             var uuid = UUID.randomUUID();
 
@@ -171,7 +159,6 @@ Use the coinflip tool any analyze the result<|eot_id|><|start_header_id|>assista
                     (int next, String nextRaw, String nextCleaned, float timing) -> {
                          System.out.println(" "+ nextCleaned +" ");
                      });
-
              System.out.println(k);
             */
         }

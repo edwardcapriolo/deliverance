@@ -154,6 +154,8 @@
             --add-opens java.base/java.nio=ALL-UNNAMED
             --add-modules jdk.incubator.vector
             -Djdk.attach.allowAttachSelf=true
+            --enable-native-access=ALL-UNNAMED
+            -Djava.library.path=${build.directory}/../native/target/native-lib-only
           </argLine>
         </configuration>
       </plugin>

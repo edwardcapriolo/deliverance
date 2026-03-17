@@ -153,6 +153,9 @@ public abstract class AbstractModel implements Generator {
         } else {
             this.workingQType = workingMemoryQType;
         }
+
+        logger.info("Tensor provider = {}, parallelSplitSize = {} ",
+                configurableTensorProvider.get().name(), configurableTensorProvider.get().parallelSplitSize());
         logger.info("Model type = {}, Working memory type = {}, Quantized memory type = {}", modelDType, workingDType,
                 workingQType);
         this.embedInput = inferenceType.isInput ? loadInputWeights() : null;

@@ -73,18 +73,7 @@ public class ModelSupport {
                                           KvBufferCacheSettings kvBufferCacheSettings,
                                           ModelFetcher fetcher, TokenRenderer tr){
         //not all llama models use same tokenizer. detecting from config.json might be an option
-        /*
-        TokenRenderer tr;
-        if (fetcher.getName().startsWith("Llama-3.1-8B-Instruct")
-                || fetcher.getName().startsWith("Llama-3.2-3B-Instruct")){
-            tr = new TokenizerRenderer();
-        } else if (fetcher.getName().startsWith("Qwen2.5-0.5B-Instruct")
-                || fetcher.getName().startsWith("Qwen2.5-3B-Instruct")) {
-          tr = new Qwen2TokenizerRenderer();
-        } else {
-            tr = new NoOpTokenizerRenderer();
-        }
-        */
+
         File configFile = new File(model, "config.json");
         if (!configFile.exists()){
             throw new RuntimeException("Expecting to find config file " + configFile);
@@ -112,7 +101,7 @@ public class ModelSupport {
                                                     ConfigurableTensorProvider configurableTensorProvider,
                                                     MetricRegistry metricRegistry, TensorCache tensorCache,
                                                     KvBufferCacheSettings kvBufferCacheSettings) {
-     return load(AbstractModel.InferenceType.FULL_EMBEDDING,model, workingMemoryType, workingQuantizationType, configurableTensorProvider, metricRegistry, tensorCache,kvBufferCacheSettings);
+     return load(AbstractModel.InferenceType.FULL_EMBEDDING, model, workingMemoryType, workingQuantizationType, configurableTensorProvider, metricRegistry, tensorCache,kvBufferCacheSettings);
 
     }
     protected static AbstractModel load(AbstractModel.InferenceType infType, File model, DType workingMemoryType, DType workingQuantizationType,
