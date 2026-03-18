@@ -1,7 +1,6 @@
 package net.deliverance.http.auth;
 
 
-import org.apache.commons.logging.LogFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -32,6 +31,7 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        LOGGER.warn("Entering filter chain");
         if (user == null && jwtAuthenticationFilterOptional.isEmpty()) {
             LOGGER.warn("No Authentication is configured server is open");
             http

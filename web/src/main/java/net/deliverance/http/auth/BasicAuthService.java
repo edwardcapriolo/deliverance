@@ -13,12 +13,12 @@ import org.springframework.stereotype.Service;
 
 @ConditionalOnProperty("deliverance.basic.auth.user")
 @Service
-public class CustomUserDetailsService implements UserDetailsService {
+public class BasicAuthService implements UserDetailsService {
 
     private final String user;
     private final String pass;
-    public CustomUserDetailsService(@Value("${deliverance.basic.auth.user}") String user,
-                                    @Value("${deliverance.basic.auth.pass}") String pass) {
+    public BasicAuthService(@Value("${deliverance.basic.auth.user}") String user,
+                            @Value("${deliverance.basic.auth.pass}") String pass) {
         this.user = user;
         this.pass = pass;
     }
@@ -27,6 +27,9 @@ public class CustomUserDetailsService implements UserDetailsService {
     @Override
     public UserDetails loadUserByUsername(String username)
             throws UsernameNotFoundException {
+        if (username == null){
+            throw new IllegalArgumentException("Username cannot be null");
+        }
         if (!username.equals(user)) {
             throw new UsernameNotFoundException("no such user username");
         }
