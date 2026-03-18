@@ -1,7 +1,3 @@
-#!/bin/bash -e
-
-
-cat << EOF > Dockerfile
 FROM ecapriolo/jdk-25:0.0.1 AS deliverance-base
 RUN apk add git
 RUN apk add maven
@@ -33,13 +29,3 @@ WORKDIR /deliverance
 USER deliverance
 #ENTRYPOINT ["java", "--add-modules", "jdk.incubator.vector", "--add-opens", "java.base/java.nio=ALL-UNNAMED", "-Xmx2G", "-jar", "web.jar"] 
 ENTRYPOINT ["/deliverance/entry_point.sh"] 
-EOF
-
-DOCKER_BUILDKIT=1 docker build \
---target deliverance-base \
--t deliverance-base .
-
-DOCKER_BUILDKIT=1 docker build \
---target deliverance \
--t deliverance .
-
