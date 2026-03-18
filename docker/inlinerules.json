@@ -1,0 +1,13 @@
+[
+    {
+        "match": ["*.*"],
+        "inline": [
+            "+io.teknek.deliverance.tensor.operations.PanamaTensorOperations::dotProduct*",
+            "+io.teknek.deliverance.tensor.operations.PanamaTensorOperations::quantize*",
+            "+io.teknek.deliverance.tensor.operations.PanamaTensorOperations*::mpack*",
+            "+io.teknek.deliverance.tensor.AbstractTensor::getOffset*",
+            "+io.teknek.deliverance.tensor.*::getVector*",
+            "+io.teknek.deliverance.tensor.impl.*::getVector*"
+        ]
+    }
+]
