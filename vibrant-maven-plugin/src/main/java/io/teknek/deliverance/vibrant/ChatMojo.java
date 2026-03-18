@@ -31,7 +31,6 @@ public class ChatMojo extends AbstractMojo {
         if (modelConfig == null) {
             modelConfig = new ModelConfig();
         }
-
         ModelFetcher fetch = new ModelFetcher(modelConfig.getOwner(), modelConfig.getModelName());
         DType working = DType.valueOf(modelConfig.getWorkingMemType());
         DType quantized = DType.valueOf(modelConfig.getQuantizedMemType());
@@ -40,9 +39,8 @@ public class ChatMojo extends AbstractMojo {
         builder.withWorkingQuantType(working);
         builder.withWorkingQuantType(quantized);
         builder.withTensorProvider(new ConfigurableTensorProvider(operation));
+
         try (AbstractModel model = builder.build()) {
-        //try (AbstractModel model = ModelSupport.loadModel(f, working, quantized, new ConfigurableTensorProvider(operation),
-        //        new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch)) {
             System.out.println("Chat with deliverance! Type 'undeliver' to quit.");
             System.out.print(">> ");
             BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
@@ -53,7 +51,7 @@ public class ChatMojo extends AbstractMojo {
                     b.addUserMessage(inputLine);
                     var uuid = UUID.randomUUID();
                     Response k = model.generate(uuid, b.build(), new GeneratorParameters()
-                            .withNtokens(512)
+
                             .withIncludeStopStrInOutput(false)
                             .withStopWords(List.of("<|eot_id|>"))
                             .withTemperature(0.2f)

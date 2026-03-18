@@ -21,7 +21,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @ExtendWith(SpringExtension.class)
 //@SpringBootTest(args = "--add-modules jdk.incubator.vector", properties = {"deliverance.tensor.operations.type=jvector"})
-@SpringBootTest(args = "--add-modules jdk.incubator.vector")
+@SpringBootTest(args = "--add-modules jdk.incubator.vector" )
 @AutoConfigureMockMvc
 public class DeliveranceControllerTest {
 

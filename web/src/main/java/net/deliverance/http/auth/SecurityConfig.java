@@ -1,6 +1,9 @@
 package net.deliverance.http.auth;
 
 
+import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,30 +20,41 @@ import java.util.Optional;
 @EnableWebSecurity
 public class SecurityConfig {
 
-    private String user;
-    Optional<JwtAuthenticationFilter> jwtAuthenticationFilterOptional;
+    private static final Logger LOGGER = LoggerFactory.getLogger(SecurityConfig.class);
+    private final String user;
+    private final Optional<JwtAuthenticationFilter> jwtAuthenticationFilterOptional;
 
     public SecurityConfig(@Value("${deliverance.basic.auth.user:#{null}}") String user,
-                          Optional<JwtAuthenticationFilter> jwtAuthenticationFilterOptional){
+                          Optional<JwtAuthenticationFilter> jwtAuthenticationFilterOptional) {
         this.user = user;
         this.jwtAuthenticationFilterOptional = jwtAuthenticationFilterOptional;
     }
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        if (user == null &&  jwtAuthenticationFilterOptional.isEmpty()) {
-            return http.build();
+        if (user == null && jwtAuthenticationFilterOptional.isEmpty()) {
+            LOGGER.warn("No Authentication is configured server is open");
+            http
+                    .csrf(AbstractHttpConfigurer::disable)
+                    .sessionManagement(session -> session
+                            .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                    .authorizeHttpRequests(requests -> requests
+                            .requestMatchers("/public/**", "/static/**", "/about").permitAll()
+                            .requestMatchers("/**").permitAll()
+                    );
+        } else {
+            http
+                    .securityMatcher("/chat/**", "/embeddings/**")
+                    .authorizeHttpRequests(auth -> auth
+                            .anyRequest().authenticated())
+                    .csrf(AbstractHttpConfigurer::disable)
+                    .sessionManagement(session -> session
+                            .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                    );
         }
-        http
-                .securityMatcher("/chat/**", "/embeddings/**")
-                .authorizeHttpRequests(auth -> auth
-                        .anyRequest().authenticated())
-                .csrf(AbstractHttpConfigurer::disable)
-                .sessionManagement(session -> session
-                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-                );
-        if (user != null){
-              http.httpBasic(basic -> basic
+        if (user != null) {
+            LOGGER.warn("Basic authentication enabled");
+            http.httpBasic(basic -> basic
                     .realmName("deliverance")
                     .authenticationEntryPoint((request, response, authException) -> {
                         response.setHeader("WWW-Authenticate", "Basic realm=\"deliverance\"");
@@ -50,6 +64,7 @@ public class SecurityConfig {
             );
         }
         jwtAuthenticationFilterOptional.ifPresent(jwtAuthenticationFilter -> {
+            LOGGER.warn("JWT auth is enabled");
             http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         });
         return http.build();

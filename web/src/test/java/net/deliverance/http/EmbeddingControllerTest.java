@@ -19,7 +19,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(SpringExtension.class)
-@SpringBootTest(args = "--add-modules jdk.incubator.vector")
+@SpringBootTest(args = "--enable-native-access=ALL-UNNAMED --add-modules jdk.incubator.vector", 
+        properties = {"deliverance.tensor.operations.type=jvector"})
 @AutoConfigureMockMvc
 public class EmbeddingControllerTest {
     @Autowired
