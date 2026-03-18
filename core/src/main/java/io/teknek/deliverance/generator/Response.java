@@ -10,7 +10,7 @@ public class Response {
     public final String responseTextWithSpecialTokens;
     public final FinishReason finishReason;
     public final int promptTokens;
-    public final int generatedTokens;
+    public final List<Integer> generatedTokens;
     public final long promptTimeMs;
     public final long generateTimeMs;
     public final List<ToolCall> toolCalls;
@@ -20,7 +20,7 @@ public class Response {
             String responseTextWithSpecialTokens,
             FinishReason finishReason,
             int promptTokens,
-            int generatedTokens,
+            List<Integer> generatedTokens,
             long promptTimeMs,
             long generateTimeMs
     ) {
@@ -39,7 +39,7 @@ public class Response {
             String responseTextWithSpecialTokens,
             FinishReason finishReason,
             int promptTokens,
-            int generatedTokens,
+            List<Integer> generatedTokens,
             long promptTimeMs,
             long generateTimeMs,
             List<ToolCall> toolCalls

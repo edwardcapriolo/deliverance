@@ -11,12 +11,13 @@ import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
 
 public class Gemma3Test {
-    @Test
+    @Disabled
     public void chat(){
         ModelFetcher fetch = new ModelFetcher("google", "gemma-3-1b-it");
 

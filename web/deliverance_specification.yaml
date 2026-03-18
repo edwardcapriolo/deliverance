@@ -673,12 +673,16 @@ components:
           items:
             $ref: "#/components/schemas/ChatCompletionRequestMessage"
         model:
-          description: ID of the model to use. See the [model endpoint compatibility](/docs/models/model-endpoint-compatibility) table for details on which models work with the Chat API.
+          description: The name of the model
           example: "gpt-4-turbo"
           type: string
         chat_template:
           description: Change the chat template
           type: string
+          nullable: true
+        ntokens:
+          description: a control of prompt size before the models limit
+          type: integer
           nullable: true
         max_tokens:
           description: |

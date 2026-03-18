@@ -223,7 +223,7 @@ public abstract class AbstractModel implements Generator {
         if (encoded.length > 0 && encoded[0] == config.bosToken) {
             encoded = Arrays.copyOfRange(encoded, 1, encoded.length);
         }
-        int ntokens = generatorParameters.ntokens.orElse(256);
+        int ntokens = generatorParameters.ntokens.orElse(config.contextLength);
         Preconditions.checkArgument(encoded.length < config.contextLength
                 && encoded.length < ntokens, "Prompt exceeds max tokens");
         if (ntokens > config.contextLength) {
@@ -236,9 +236,9 @@ public abstract class AbstractModel implements Generator {
             FinishReason reason = FinishReason.MAX_TOKENS;
             int promptLength;
             long promptBatchTime;
-            int tokensGenerated;
             StringBuilder responseText = new StringBuilder();
             StringBuilder responseTextWithSpecialTokens = new StringBuilder();
+            ArrayList<Integer> generatedTokens = new ArrayList<>();
 
             try (AbstractTensor logits = makeDenseTensor(config.vocabularySize)) {
                 int [] promptTokens = constructPromptTokens(encoded);
@@ -258,8 +258,9 @@ public abstract class AbstractModel implements Generator {
                             random.nextFloat(), logits, sampleOutput.getOutputLayerNorm());
                     next = sampler.sample();
                 }
+                generatedTokens.add(next);
                 float genMsPerToken = 0;
-                tokensGenerated = 0;
+
                 last.close();
                 String decoded = tokenizer.decode(next);
                 String cleaned = tokenRenderer.tokenizerToRendered(decoded);
@@ -274,7 +275,7 @@ public abstract class AbstractModel implements Generator {
                 start = System.currentTimeMillis();
                 for (int i = startPos + promptTokens.length; i < ntokens; i++) {
                     AbstractTensor output = forward(next, i, kvmem);
-                    tokensGenerated++;
+
                     if (generatorParameters.guidedChoice.isPresent()) {
                         GuidedChoiceSampler sampler1 = new GuidedChoiceSampler(this, output, logits, sampleOutput.getOutputLayerNorm(), tokenizer, generatorParameters.guidedChoice.get(), responseText);
                         next = sampler1.sample();
@@ -282,6 +283,7 @@ public abstract class AbstractModel implements Generator {
                         GeneratorSampler sampler1 = new GeneratorSampler(this, output, temperature, random.nextFloat(), logits, sampleOutput.getOutputLayerNorm());
                         next = sampler1.sample();
                     }
+                    generatedTokens.add(next);
                     output.close();
                     kvmem.incrementContextPosition();
                     if (config.eosTokens.contains(next)) {
@@ -293,12 +295,18 @@ public abstract class AbstractModel implements Generator {
                     if (tokenizer.getModel().isSpecialToken(next)) {
                         responseTextWithSpecialTokens.append(cleaned1);
                     } else {
-                        genMsPerToken = (System.currentTimeMillis() - start) / (float) (tokensGenerated);
+                        genMsPerToken = (System.currentTimeMillis() - start) / (float) generatedTokens.size();
                         onTokenWithTimings.emit(next, decoded1, cleaned1, genMsPerToken);
                         responseTextWithSpecialTokens.append(cleaned1);
                         responseText.append(cleaned1);
                     }
-
+                    if (generatorParameters.maxTokens.isPresent()){
+                        if (generatedTokens.size() >= generatorParameters.maxTokens.get()) {
+                            reason = FinishReason.MAX_TOKENS;
+                            return new Response(responseText.toString(), responseTextWithSpecialTokens.toString(),
+                                    reason, promptLength, generatedTokens, promptBatchTime, System.currentTimeMillis() - start);
+                        }
+                    }
                     if (generatorParameters.guidedChoice.isPresent()) {
                         if (generatorParameters.guidedChoice.get().contains(responseText.toString())) {
                             reason = FinishReason.STOP_TOKEN;
@@ -313,7 +321,7 @@ public abstract class AbstractModel implements Generator {
                                 if (generatorParameters.includeStopStrInOutput.isPresent() && generatorParameters.includeStopStrInOutput.get()){
                                     long end = System.currentTimeMillis();
                                     return new Response(responseText.toString(), responseTextWithSpecialTokens.toString(),
-                                        reason, promptLength, tokensGenerated, promptBatchTime, end - start);
+                                        reason, promptLength, generatedTokens, promptBatchTime, end - start);
                                 } else {
                                     long end = System.currentTimeMillis();
                                     int index = responseTextWithSpecialTokens.indexOf(stop);
@@ -321,7 +329,7 @@ public abstract class AbstractModel implements Generator {
                                     int x = responseText.indexOf(stop);
                                     responseText.delete(x, responseText.length());
                                     return new Response(responseText.toString(), responseTextWithSpecialTokens.toString(),
-                                            reason, promptLength, tokensGenerated, promptBatchTime, end - start);
+                                            reason, promptLength, generatedTokens, promptBatchTime, end - start);
                                 }
                             }
                         }
@@ -331,7 +339,7 @@ public abstract class AbstractModel implements Generator {
                 long end = System.currentTimeMillis();
                 //post process response is still missing
                 return new Response(responseText.toString(), responseTextWithSpecialTokens.toString(),
-                        reason, promptLength, tokensGenerated, promptBatchTime, end - start);
+                        reason, promptLength, generatedTokens, promptBatchTime, end - start);
             }
         }
     }

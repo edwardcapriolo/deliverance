@@ -7,6 +7,8 @@ import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.dysfx.Either;
 import org.springframework.http.HttpStatus;
 
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
 
@@ -24,18 +26,25 @@ public class ChatCompletionService {
             params.withTemperature(request.getTemperature().floatValue());
         }
 
-        if (request.getMaxTokens() != null){
-            params.withNtokens(request.getMaxTokens());
+        if (request.getNtokens() != null){
+            params.withNtokens(request.getNtokens());
         }
         if (request.getSeed() != null){
             params.withSeed(request.getSeed());
         }
         if(request.getStop() != null){
             CreateChatCompletionRequestStop stop = request.getStop();
-            //deal with polymorphic crap
+            if (stop.getActualInstance() instanceof String){
+                params.withStopWords(Collections.singletonList(stop.getString()));
+            } else {
+                params.withStopWords(stop.getListString());
+            }
         }
         if(request.getChatTemplate() != null){
             builder.useChatTemplate(request.getChatTemplate());
+        }
+        if(request.getMaxTokens() != null){
+            params.withMaxTokens(request.getMaxTokens());
         }
         for (ChatCompletionRequestMessage m : request.getMessages()){
             if (m.getActualInstance() instanceof ChatCompletionRequestUserMessage) {
