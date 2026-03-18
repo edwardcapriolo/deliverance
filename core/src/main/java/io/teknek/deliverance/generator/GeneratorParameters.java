@@ -16,6 +16,7 @@ public class GeneratorParameters {
     public Optional<List<String>> stopWords = Optional.empty();
     public Optional<Boolean> includeStopStrInOutput = Optional.empty();
     public Optional<List<String>> guidedChoice = Optional.empty();
+    public Optional<Integer> maxTokens = Optional.empty();
 
     public GeneratorParameters withSeed(int seed){
         this.seed = Optional.of(seed);
@@ -46,6 +47,11 @@ public class GeneratorParameters {
 
     public GeneratorParameters withIncludeStopStrInOutput(boolean include){
         this.includeStopStrInOutput= Optional.of(include);
+        return this;
+    }
+
+    public GeneratorParameters withMaxTokens(int maxTokens){
+        this.maxTokens = Optional.of(maxTokens);
         return this;
     }
 }
