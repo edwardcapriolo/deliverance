@@ -24,10 +24,15 @@ RUN --mount=type=cache,target=/root/.m2 cd /build/deliverance && mvn install -Dm
 #--add-opens java.base/java.nio=ALL-UNNAMED --add-modules jdk.incubator.vector -Xmx3G \
 #-jar target/web-*-SNAPSHOT.jar
 
-FROM base AS deliverance
+FROM ecapriolo/jdk-25:0.0.1 AS deliverance
 RUN mkdir /deliverance
 
-COPY --from=deliverance-base /build/deliverance/web/web-*.jar /deliverance
+RUN addgroup -S deliverance && adduser -S -G deliverance -H -D deliverance
+RUN mkdir /deliverance/logs && chown deliverance:deliverance /deliverance/logs
+COPY --from=deliverance-base /build/deliverance/web/target/web-0.0.4-SNAPSHOT.jar /deliverance/web.jar
+WORKDIR /deliverance
+USER deliverance
+ENTRYPOINT ["java", "--add-modules", "jdk.incubator.vector", "--add-opens", "java.base/java.nio=ALL-UNNAMED", "-Xmx2G", "-jar", "web.jar"] 
 
 EOF
 
