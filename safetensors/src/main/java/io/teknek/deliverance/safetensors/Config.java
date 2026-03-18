@@ -275,6 +275,14 @@ public class Config {
         return dctx;
     }
 
+    public void setDistributedContext(DistributedContext dctx) {
+        this.dctx = dctx;
+    }
+
+    public DistributedContext getDistributedContext() {
+        return this.dctx;
+    }
+
     public int maybeMapToGroupHead(int head) {
         if (!isGQA) {
             return head;

@@ -24,9 +24,11 @@ import java.io.UncheckedIOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Path;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.Function;
 
 import static io.teknek.deliverance.JsonUtils.om;
 
@@ -73,7 +75,6 @@ public class ModelSupport {
                                           MetricRegistry metricRegistry, TensorCache tensorCache,
                                           KvBufferCacheSettings kvBufferCacheSettings,
                                           ModelFetcher fetcher, TokenRenderer tr){
-        //not all llama models use same tokenizer. detecting from config.json might be an option
 
         File configFile = new File(model, "config.json");
         if (!configFile.exists()){
@@ -133,23 +134,49 @@ public class ModelSupport {
             throw new RuntimeException(e);
         }
     }
-/*
-    public static AbstractModel loadEmbeddingModel(File model, DType workingMemoryType, DType workingQuantizationType) {
-        AbstractModel embed = loadModel(AbstractModel.InferenceType.FULL_EMBEDDING, ConfigurableTensorProvider provider
-                model, workingMemoryType, workingQuantizationType )
-        /*
-        return loadModel(
-                AbstractModel.InferenceType.FULL_EMBEDDING,
-                model,
-                null,
-                workingMemoryType,
-                workingQuantizationType,
-                Optional.empty(),
-                Optional.empty(),
-                Optional.empty()
-        );
 
+    public static AbstractModel loadModel(
+            AbstractModel.InferenceType inferenceType,
+            //File model,
+            ModelFetcher modelFetcher,
+            //File workingDirectory,
+            DType workingMemoryType,
+            DType workingQuantizationType,
+            Optional<DType> modelQuantization,
+            Optional<Integer> threadCount,
+            Optional<Function<Config, DistributedContext>> distributedContextLoader,
+            Function<File, WeightLoader> weightLoaderSupplier) {
 
+        File baseDir = modelFetcher.maybeDownload();
+        File configFile = new File(baseDir, "config.json");
+        if (!configFile.exists()){
+            throw new RuntimeException("Expecting to find config file " + configFile);
+        }
+
+        try {
+            //threadCount.ifPresent(PhysicalCoreExecutor::overrideThreadCount);
+            ModelType modelType = detectModel(configFile);
+            Config c = om.readValue(configFile, modelType.getConfigClass());
+            distributedContextLoader.ifPresent(loader -> c.setDistributedContext(loader.apply(c)));
+            //c.setWorkingDirectory(workingDirectory);
+            Tokenizer t = modelType.getTokenizerClass().getConstructor(Path.class).newInstance(baseDir.toPath());
+            WeightLoader wl = weightLoaderSupplier.apply(baseDir);
+
+            return modelType.getModelClass()
+                    .getConstructor(
+                            AbstractModel.InferenceType.class,
+                            Config.class,
+                            WeightLoader.class,
+                            Tokenizer.class,
+                            DType.class,
+                            DType.class,
+                            Optional.class
+                    )
+                    .newInstance(inferenceType, c, wl, t, workingMemoryType, workingQuantizationType, modelQuantization);
+
+        } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
     }
-*/
+
 }
