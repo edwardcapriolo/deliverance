@@ -23,6 +23,7 @@ RUN mkdir /deliverance/logs && chown deliverance:deliverance /deliverance/logs
 COPY --from=deliverance-base /build/deliverance/web/target/web-0.0.4-SNAPSHOT.jar /deliverance/web.jar
 COPY entry_point.sh /deliverance/entry_point.sh
 COPY inlinerules.json /deliverance/inlinerules.json
+COPY simple.properties /deliverance/
 
 RUN chmod u+x /deliverance/entry_point.sh
 WORKDIR /deliverance

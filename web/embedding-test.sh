@@ -1,4 +1,4 @@
-curl http://localhost:8080/embeddings \
+curl http://localhost:8085/embeddings \
                 -H "Content-Type: application/json" \
                 -d '{
                   "input": "The food was delicious and the waiter...",
