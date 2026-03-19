@@ -2,6 +2,7 @@ package io.teknek.deliverance.tensor;
 
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -52,8 +53,33 @@ public class AbstractTensorTests {
             results.add(slided.get(0, i));
         }
         assertEquals(Arrays.asList(8.0f, 9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f), results);
-        System.out.println(TensorDisplayUtil.pretty2dDisplayAll(f));
-        System.out.println(TensorDisplayUtil.pretty2dDisplayAll(slided));
+    }
 
+    /**
+     * original
+     * [0][0]=  0.0000 [0][1]=  1.0000 [0][2]=  2.0000 [0][3]=  3.0000 
+     * [1][0]=  4.0000 [1][1]=  5.0000 [1][2]=  6.0000 [1][3]=  7.0000 
+     * [2][0]=  8.0000 [2][1]=  9.0000 [2][2]= 10.0000 [2][3]= 11.0000 
+     * original.slice(1);
+     * [0][0]=  4.0000 [0][1]=  5.0000 [0][2]=  6.0000 [0][3]=  7.0000 
+     * 
+     */
+    @Test
+    public void updateToSliceChangesOriginal(){
+        int rows = 3;
+        int columns = 4;
+        AbstractTensor original = new FloatBufferTensor(rows, columns);
+        for (int i = 0; i < rows * columns; i++) {
+            original.set(i, 0, i);
+        }
+
+        AbstractTensor sliced = original.slice(1);
+        System.out.println(TensorDisplayUtil.pretty2dDisplayAll(original));
+        System.out.println(TensorDisplayUtil.pretty2dDisplayAll(sliced));
+        sliced.set(10.0f, 0, 0);
+        System.out.println(TensorDisplayUtil.pretty2dDisplayAll(original));
+        System.out.println(TensorDisplayUtil.pretty2dDisplayAll(sliced));
+        assertEquals(10F, sliced.get(0, 0));
+        assertEquals(10F, original.get(1, 0));
     }
 }

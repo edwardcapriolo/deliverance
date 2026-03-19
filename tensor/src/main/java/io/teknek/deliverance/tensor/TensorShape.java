@@ -7,7 +7,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 public class TensorShape {
-    /** Tensors are always two dimentational a single tensor of a single element 1 thus becomes [[1]] */
+    /** Tensors are always at least 2D a single tensor of a single element 1 thus becomes [[1]] */
     public static TensorShape ONE = of(1, 1);
 
     public static TensorShape of(int... shape) {
@@ -96,6 +96,11 @@ public class TensorShape {
         return Optional.of(sparseColumnLength * (dimension1 - sparseRowOffset) + dimension2 - sparseColumnOffset);
     }
 
+    /**
+     * Note: This method will return positions outside the tensor
+     * @param pdims one or more dimenstions
+     * @return the position in the 1 Demensional view of the tensor
+     */
     public final int getOffset(int... pdims) {
         switch (pdims.length) {
             case 1:
@@ -159,10 +164,18 @@ public class TensorShape {
         return sparseColumnRange.isPresent() ? sparseColumn(copy, SparseOffset.of(sparseColumnOffset, newSparseLength)) : of(copy);
     }
 
+    /**
+     *
+     * @return the size of the first dimension of the tensor [2.4] -> 2
+     */
     public int first() {
         return tshape[0];
     }
 
+    /**
+     *
+     * @return the size of the last dimension of the tensor [2.4] -> 4
+     */
     public int last() {
         return tshape[tshape.length - 1];
     }

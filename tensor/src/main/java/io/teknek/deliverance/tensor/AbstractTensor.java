@@ -71,23 +71,26 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
     /** Set a value at the given coordinates */
     public abstract void set(float v, int... dims);
 
+    /**
+     * For 2D tensor (3,4) slice(1) will return the second row (4 elements).
+     * @param dims the dimension to slice on
+     * @return tensor backed by the original tensor with new shape
+     */
     public AbstractTensor slice(int... dims) {
         return slice(false, dims);
     }
 
-    /** Get a slice of the tensor along the given dimension */
+    /**
+     *
+     * @param cacheInnerSlice if true and this tensor has a slice cache return from sliceCache
+     * @param dims the dimension to slice on
+     * @return tensor backed by the original tensor with new shape
+     */
     public AbstractTensor slice(boolean cacheInnerSlice, int... dims) {
         Preconditions.checkArgument(dims.length < shape.dims(), "Too many dimensions specified for tensor");
-
-        try {
-            if (dims.length == 1 && sliceCache != null && sliceCache[dims[0]] != null) {
-                return sliceCache[dims[0]];
-            }
-        } catch (Throwable t) {
-            logger.warn("Dims = {}", Arrays.toString(dims), t);
-            throw t;
+        if (dims.length == 1 && sliceCache != null && sliceCache[dims[0]] != null) {
+            return sliceCache[dims[0]];
         }
-
         TensorShape slicedShape = shape.slice(dims.length);
         int totalOffset = 0;
         if (dims.length == 1 && this.shape.dims() == 2) {
