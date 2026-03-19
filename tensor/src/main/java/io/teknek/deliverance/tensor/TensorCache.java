@@ -93,8 +93,7 @@ public class TensorCache implements TensorCacheIface {
         metricRegistry.meter("tensorcache.get").mark();
         MpmcUnboundedXaddArrayQueue<AbstractTensor> availableQueue = availableByShape.computeIfAbsent(
                 new ShapeKey(dType, shape),
-                queueFactory
-        );
+                queueFactory);
         AbstractTensor t = availableQueue.poll();
         if (t != null) {
             metricRegistry.meter("tensorcache.get.hit").mark();
@@ -108,8 +107,7 @@ public class TensorCache implements TensorCacheIface {
     public void release(AbstractTensor b) {
         MpmcUnboundedXaddArrayQueue<AbstractTensor> availableQueue = availableByShape.computeIfAbsent(
                 new ShapeKey(b.dType(), b.shape()),
-                queueFactory
-        );
+                queueFactory);
         boolean added = availableQueue.offer(b);
     }
 }
