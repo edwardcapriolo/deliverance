@@ -120,6 +120,10 @@ public class TensorShape {
         }
     }
 
+
+    public int [] shapeArray(){
+        return Arrays.copyOf(tshape, tshape.length);
+    }
     public int sparseColumnLength() {
         return sparseColumnLength;
     }
@@ -143,6 +147,7 @@ public class TensorShape {
         return sparseColumnRange.isPresent()
                 ? sparseColumn(copy, SparseOffset.of((int) (sparseColumnOffset * scale), (int) (sparseColumnLength * scale)))
                 : of(copy);
+
     }
 
     //used by split tensor in abstract tensor

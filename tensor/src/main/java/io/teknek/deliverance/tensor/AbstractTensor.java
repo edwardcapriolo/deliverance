@@ -5,6 +5,7 @@ import com.google.common.primitives.Ints;
 
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
+import java.util.Optional;
 import java.util.UUID;
 
 import jdk.incubator.vector.Vector;
@@ -283,13 +284,11 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
 
      */
     public void debug(String id) {
-        if (true) {
-            double tmp = 0.0;
-            for (int i = 0; i < size(); i++) {
-                tmp += get(0, i);
-            }
-            System.out.println(String.format("%s = %.5f", id, tmp));
+        double tmp = 0.0;
+        for (int i = 0; i < size(); i++) {
+            tmp += get(0, i);
         }
+        System.out.println(String.format("%s = %.5f", id, tmp));
     }
 
     public DType getDType(){

@@ -202,6 +202,10 @@ public abstract class AbstractModel implements Generator {
         return true;
     }
 
+    /**
+     *
+     * @return an array with bos token appened at the beginning if the model calls for it
+     */
     int [] constructPromptTokens(long[] encoded){
         int[] promptTokens;
         if (addBosToken()) {

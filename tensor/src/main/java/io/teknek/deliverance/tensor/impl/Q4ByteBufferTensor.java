@@ -117,6 +117,7 @@ public final class Q4ByteBufferTensor extends AbstractTensor<ByteVector, Byte> {
     }
 
     static TensorShape makeBlockShape(TensorShape shape) {
+
         return shape.scaleLastDim(I_BLOCK_SIZE);
     }
 
