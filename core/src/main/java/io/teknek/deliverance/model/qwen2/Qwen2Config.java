@@ -38,7 +38,8 @@ public class Qwen2Config extends Config {
         @JsonProperty("bos_token_id") int bosToken,
         @JsonProperty("eos_token_id") int eosToken,
         @JsonProperty("hidden_act") ActivationFunction.Type activationFunction,
-        @JsonProperty("rope_theta") Double ropeTheta
+        @JsonProperty("rope_theta") Double ropeTheta,
+        @JsonProperty("architectures") List<String> architectures
     ) {
         super(
             contextLength,
@@ -61,7 +62,8 @@ public class Qwen2Config extends Config {
             null,
             null,
             null,
-            null
+            null,
+                architectures
         );
     }
 }
