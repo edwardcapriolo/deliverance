@@ -1,5 +1,7 @@
 package io.teknek.deliverance.generator;
 
+import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.Timer;
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.model.AbstractModel;
@@ -46,6 +48,8 @@ public class CausalSelfAttention {
     private final AbstractTensor[] qkvWeights;
     private final ConfigurableTensorProvider configurableTensorProvider;
 
+    private final MetricRegistry metricRegistry;
+
     public CausalSelfAttention(
             AbstractModel m,
             int layerIndex,
@@ -53,7 +57,8 @@ public class CausalSelfAttention {
             AbstractTensor keyAttnWeights,
             AbstractTensor valueAttnWeights,
             AbstractTensor outputProjectionWeights,
-            ConfigurableTensorProvider configurableTensorProvider
+            ConfigurableTensorProvider configurableTensorProvider,
+            MetricRegistry metricRegistry
     ) {
         this(
                 m,
@@ -66,7 +71,8 @@ public class CausalSelfAttention {
                 valueAttnWeights,
                 Optional.empty(),
                 outputProjectionWeights,
-                configurableTensorProvider
+                configurableTensorProvider,
+                metricRegistry
         );
     }
 
@@ -81,7 +87,8 @@ public class CausalSelfAttention {
             AbstractTensor valueAttnWeights,
             Optional<AbstractTensor> outputProjectionBias,
             AbstractTensor outputProjectionWeights,
-            ConfigurableTensorProvider configurableTensorProvider
+            ConfigurableTensorProvider configurableTensorProvider,
+            MetricRegistry metricRegistry
     ) {
         this.m = m;
         this.layerIndex = layerIndex;
@@ -108,7 +115,17 @@ public class CausalSelfAttention {
         configurableTensorProvider.get().registerModelTensor(keyAttnWeights);
         configurableTensorProvider.get().registerModelTensor(valueAttnWeights);
         configurableTensorProvider.get().registerModelTensor(outputProjectionWeights);
+
+        this.metricRegistry = metricRegistry;
     }
+
+                 /*
+                DistributedContext{c=io.teknek.deliverance.model.llama.LlamaConfig@5df417a7, modelShard=0,
+                numModelShards=1, layerShard=0, numLayerShards=1, embeddingSegmentStart=0, embeddingSegmentLength=2048,
+                embeddingSegmentEnd=2048, attentionSegmentStart=0, attentionSegmentLength=2048, attentionSegmentEnd=2048,
+                hiddenSegmentStart=0, hiddenSegmentLength=5632, hiddenSegmentEnd=5632, kvSegmentStart=0, kvSegmentLength=256,
+                kvSegmentEnd=256, headStart=0, headEnd=32, groupHeadStart=0, groupHeadEnd=4, numberOfLayers=22, layerStart=0, layerEnd=22}
+                 */
 
     public AbstractTensor forward(AbstractTensor input, int startPosition, KvBufferCache.KvBuffer kvMem,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
@@ -119,50 +136,53 @@ public class CausalSelfAttention {
                 AbstractTensor tmpKeyBatch = m.makeDenseTensor(batchSize, config.kvLength);
                 AbstractTensor tmpValBatch = m.makeDenseTensor(batchSize, config.kvLength);
                 AbstractTensor valueBatch = m.makeDenseTensor(batchSize, attentionLength)) {
-
             if (config.isGQA) {
-                /*
-                DistributedContext{c=io.teknek.deliverance.model.llama.LlamaConfig@5df417a7, modelShard=0,
-                numModelShards=1, layerShard=0, numLayerShards=1, embeddingSegmentStart=0, embeddingSegmentLength=2048,
-                embeddingSegmentEnd=2048, attentionSegmentStart=0, attentionSegmentLength=2048, attentionSegmentEnd=2048,
-                hiddenSegmentStart=0, hiddenSegmentLength=5632, hiddenSegmentEnd=5632, kvSegmentStart=0, kvSegmentLength=256,
-                kvSegmentEnd=256, headStart=0, headEnd=32, groupHeadStart=0, groupHeadEnd=4, numberOfLayers=22, layerStart=0, layerEnd=22}
-                 */
                 VectorMath.pchunk(dctx.attentionSegmentStart, dctx.attentionSegmentLength, (chunkStart, chunkLength) -> {
-                    configurableTensorProvider.get()
-                            .dotProductChunk(queryBatch, input, queryAttnWeights, 0, config.embeddingLength, chunkStart, chunkLength);
+                    Timer t = metricRegistry.timer("causualselfattention.forward_gqa_querybatch_1");
+                    try (Timer.Context context = t.time()) {
+                        configurableTensorProvider.get()
+                                .dotProductChunk(queryBatch, input, queryAttnWeights, 0, config.embeddingLength, chunkStart, chunkLength);
+                        context.stop();
+                    }
                 }, splitSize);
                 VectorMath.pchunk(dctx.kvSegmentStart, dctx.kvSegmentLength, (chunkStart, chunkLength) -> {
-                    configurableTensorProvider.get()
-                            .dotProductChunk(tmpKeyBatch, input, keyAttnWeights, 0, config.embeddingLength, chunkStart, chunkLength);
-                    configurableTensorProvider.get()
-                            .dotProductChunk(tmpValBatch, input, valueAttnWeights, 0, config.embeddingLength, chunkStart, chunkLength);
+                    Timer t = metricRegistry.timer("causualselfattention.forward_gqa_key_2");
+                    try (Timer.Context context = t.time()) {
+                        configurableTensorProvider.get()
+                                .dotProductChunk(tmpKeyBatch, input, keyAttnWeights, 0, config.embeddingLength, chunkStart, chunkLength);
+                        context.stop();
+                    }
+                    Timer r = metricRegistry.timer("causualselfattention.forward_gqa_val_3");
+                    try (Timer.Context context = r.time()) {
+                        configurableTensorProvider.get()
+                                .dotProductChunk(tmpValBatch, input, valueAttnWeights, 0, config.embeddingLength, chunkStart, chunkLength);
+                        context.stop();
+                    }
                 }, splitSize);
             } else {
                 qkvResults[0] = queryBatch;
                 qkvResults[1] = tmpKeyBatch;
                 qkvResults[2] = tmpValBatch;
-
-                // compute the query vector
                 VectorMath.pchunk(dctx.attentionSegmentStart, dctx.attentionSegmentLength, (chunkStart, chunkLength) -> {
+                    long start = System.nanoTime();
                     configurableTensorProvider.get()
                             .dotProductBatchChunk(qkvResults, input, qkvWeights, 0, config.embeddingLength, chunkStart, chunkLength);
+                    metricRegistry.histogram("causualselfattention.forward_qkv_1").update(System.nanoTime() - start);
                 }, splitSize);
             }
 
             queryAttnBias.ifPresent(
-                    bias -> configurableTensorProvider.get().accumulate(queryBatch, bias, dctx.attentionSegmentStart, dctx.attentionSegmentLength)
+                    bias -> configurableTensorProvider.get().accumulate(queryBatch, bias,
+                            dctx.attentionSegmentStart, dctx.attentionSegmentLength)
             );
             keyAttnBias.ifPresent(
-                    bias -> configurableTensorProvider.get().accumulate(tmpKeyBatch, bias, dctx.kvSegmentStart, dctx.kvSegmentLength)
+                    bias -> configurableTensorProvider.get().accumulate(tmpKeyBatch, bias,
+                            dctx.kvSegmentStart, dctx.kvSegmentLength)
             );
             valueAttnBias.ifPresent(
-                    bias -> configurableTensorProvider.get().accumulate(tmpValBatch, bias, dctx.kvSegmentStart, dctx.kvSegmentLength)
+                    bias -> configurableTensorProvider.get().accumulate(tmpValBatch, bias,
+                            dctx.kvSegmentStart, dctx.kvSegmentLength)
             );
-
-            debug("query", queryBatch, layerIndex);
-            debug("key", tmpKeyBatch, layerIndex);
-            debug("value", tmpValBatch, layerIndex);
 
             // This is our memory of the key and value vectors for each position
             for (int position = startPosition, bi = 0; position < startPosition + batchSize; position++, bi++) {
