@@ -14,6 +14,7 @@ import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
+import jdk.incubator.vector.FloatVector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,6 +24,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
+import java.nio.ByteOrder;
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Optional;
@@ -76,6 +78,8 @@ public class ModelSupport {
                                           KvBufferCacheSettings kvBufferCacheSettings,
                                           ModelFetcher fetcher, TokenRenderer tr){
 
+        LOGGER.info("Machine Vector Spec: {} Byte Order: {}", FloatVector.SPECIES_PREFERRED.vectorBitSize(), ByteOrder.nativeOrder().toString());
+
         File configFile = new File(model, "config.json");
         if (!configFile.exists()){
             throw new RuntimeException("Expecting to find config file " + configFile);
@@ -103,7 +107,8 @@ public class ModelSupport {
                                                     ConfigurableTensorProvider configurableTensorProvider,
                                                     MetricRegistry metricRegistry, TensorCache tensorCache,
                                                     KvBufferCacheSettings kvBufferCacheSettings) {
-     return load(AbstractModel.InferenceType.FULL_EMBEDDING, model, workingMemoryType, workingQuantizationType, configurableTensorProvider, metricRegistry, tensorCache,kvBufferCacheSettings);
+     return load(AbstractModel.InferenceType.FULL_EMBEDDING, model, workingMemoryType, workingQuantizationType,
+             configurableTensorProvider, metricRegistry, tensorCache,kvBufferCacheSettings);
 
     }
     protected static AbstractModel load(AbstractModel.InferenceType infType, File model, DType workingMemoryType, DType workingQuantizationType,
