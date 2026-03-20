@@ -47,6 +47,7 @@ public class MaxTokenTest {
             assertEquals(17, k.generatedTokens.size());
             assertEquals("Here's a short story about a Java developer who takes a significant role in the Rust", k.responseText);
 
+            reporter.close();
         }
     }
 }
