@@ -137,14 +137,11 @@ public class CausalSelfAttention {
                 AbstractTensor tmpValBatch = m.makeDenseTensor(batchSize, config.kvLength);
                 AbstractTensor valueBatch = m.makeDenseTensor(batchSize, attentionLength)) {
             if (config.isGQA) {
-                VectorMath.pchunk(dctx.attentionSegmentStart, dctx.attentionSegmentLength, (chunkStart, chunkLength) -> {
-                    Timer t = metricRegistry.timer("causualselfattention.forward_gqa_querybatch_1");
-                    try (Timer.Context context = t.time()) {
-                        configurableTensorProvider.get()
+                Timer tm = metricRegistry.timer("causualselfattention.forward_gqa_querybatch_1");
+                VectorMath.pchunkMetrics(dctx.attentionSegmentStart, dctx.attentionSegmentLength, (chunkStart, chunkLength) -> {
+                    configurableTensorProvider.get()
                                 .dotProductChunk(queryBatch, input, queryAttnWeights, 0, config.embeddingLength, chunkStart, chunkLength);
-                        context.stop();
-                    }
-                }, splitSize);
+                }, splitSize, tm);
                 VectorMath.pchunk(dctx.kvSegmentStart, dctx.kvSegmentLength, (chunkStart, chunkLength) -> {
                     Timer t = metricRegistry.timer("causualselfattention.forward_gqa_key_2");
                     try (Timer.Context context = t.time()) {
@@ -199,36 +196,18 @@ public class CausalSelfAttention {
                 AbstractTensor value = valueBatch.slice(bi);
 
                 if (key.dType() != tmpKey.dType()) {
-                    try (
-                            AbstractTensor tmpKey2 = configurableTensorProvider.get().quantize(tmpKey, key.dType(), 0, config.kvLength);
-                            AbstractTensor tmpVal2 = configurableTensorProvider.get().quantize(tmpVal, val.dType(), 0, config.kvLength)
-                    ) {
-                        key.copyFrom(
-                                tmpKey2,
-                                tmpKey2.getOffset(0, dctx.kvSegmentStart),
-                                key.getOffset(0, dctx.kvSegmentStart),
-                                dctx.kvSegmentLength
-                        );
-                        val.copyFrom(
-                                tmpVal2,
-                                tmpVal2.getOffset(0, dctx.kvSegmentStart),
-                                val.getOffset(0, dctx.kvSegmentStart),
-                                dctx.kvSegmentLength
-                        );
+                    try (AbstractTensor tmpKey2 = configurableTensorProvider.get().quantize(tmpKey, key.dType(), 0, config.kvLength);
+                         AbstractTensor tmpVal2 = configurableTensorProvider.get().quantize(tmpVal, val.dType(), 0, config.kvLength)) {
+                        key.copyFrom(tmpKey2, tmpKey2.getOffset(0, dctx.kvSegmentStart), key.getOffset(0, dctx.kvSegmentStart),
+                                dctx.kvSegmentLength);
+                        val.copyFrom(tmpVal2, tmpVal2.getOffset(0, dctx.kvSegmentStart), val.getOffset(0, dctx.kvSegmentStart),
+                                dctx.kvSegmentLength);
                     }
                 } else {
-                    key.copyFrom(
-                            tmpKey,
-                            tmpKey.getOffset(0, dctx.kvSegmentStart),
-                            key.getOffset(0, dctx.kvSegmentStart),
-                            dctx.kvSegmentLength
-                    );
-                    val.copyFrom(
-                            tmpVal,
-                            tmpVal.getOffset(0, dctx.kvSegmentStart),
-                            val.getOffset(0, dctx.kvSegmentStart),
-                            dctx.kvSegmentLength
-                    );
+                    key.copyFrom(tmpKey, tmpKey.getOffset(0, dctx.kvSegmentStart), key.getOffset(0, dctx.kvSegmentStart),
+                            dctx.kvSegmentLength);
+                    val.copyFrom(tmpVal, tmpVal.getOffset(0, dctx.kvSegmentStart), val.getOffset(0, dctx.kvSegmentStart),
+                            dctx.kvSegmentLength);
                 }
 
                 // apply RoPE if present (accounting for huggingface permutation)
