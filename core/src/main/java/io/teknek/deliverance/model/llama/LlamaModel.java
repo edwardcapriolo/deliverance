@@ -81,7 +81,8 @@ public class LlamaModel extends AbstractModel {
                     quantize(weights.load(prefix + "k_proj.weight", config.dctx(), true, false), qType),
                     quantize(weights.load(prefix + "v_proj.weight", config.dctx(), true, false), qType),
                     quantize(weights.load(prefix + "o_proj.weight", config.dctx(), false, true), qType),
-                    configurableTensorProvider
+                    configurableTensorProvider,
+                    metricRegistry
             );
 
             prefix = base + "mlp.";

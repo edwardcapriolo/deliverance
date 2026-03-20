@@ -105,7 +105,8 @@ public class BertModel extends AbstractModel {
                     valueWeight,
                     Optional.of(outputBias),
                     outputWeight,
-                    this.configurableTensorProvider
+                    this.configurableTensorProvider,
+                    metricRegistry
             );
 
             prefix = b;
