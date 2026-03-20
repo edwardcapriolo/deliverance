@@ -21,4 +21,6 @@ public interface Generator extends Closeable {
     Response generate(UUID session, PromptContext promptContext, GeneratorParameters generatorParameters,
             GenerateEvent onTokenWithTimings
     );
+
+
 }
