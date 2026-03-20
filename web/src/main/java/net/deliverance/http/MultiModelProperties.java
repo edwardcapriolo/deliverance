@@ -9,6 +9,7 @@ import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -74,7 +75,7 @@ class MultiModelConfiguration {
         } else if ("GENERATION".equalsIgnoreCase(config.getInferenceType())){
             //TODO switch to builder/auto here
             AbstractModel model = ModelSupport.loadModel(f, DType.F32, DType.I8, provider,
-                    metricRegistry, tensorCache, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer());
+                    metricRegistry, tensorCache, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer(), new DefaultToolCallParser());
             return model;
         } else {
             throw new IllegalArgumentException("Wrong type: " + config.getInferenceType());

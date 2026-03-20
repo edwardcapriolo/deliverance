@@ -38,11 +38,6 @@ public class Gemma3Tokenizer extends BytePairEncodingTokenizer {
     }
 
     @Override
-    public String tokenForResponse(String token) {
-        return "";
-    }
-
-    @Override
     protected String postProcess(String sentence) {
         return sentence.stripLeading();
     }
