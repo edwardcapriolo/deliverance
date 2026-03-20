@@ -37,6 +37,7 @@
         <mockito.version>5.20.0</mockito.version>
         <metrics.version>4.2.37</metrics.version>
 
+        <langchain4j.version>1.11.0</langchain4j.version>
     </properties>
 
     <modules>

@@ -14,6 +14,8 @@ import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
+import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
+import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import jdk.incubator.vector.FloatVector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -76,7 +78,7 @@ public class ModelSupport {
                                           ConfigurableTensorProvider configurableTensorProvider,
                                           MetricRegistry metricRegistry, TensorCache tensorCache,
                                           KvBufferCacheSettings kvBufferCacheSettings,
-                                          ModelFetcher fetcher, TokenRenderer tr){
+                                          ModelFetcher fetcher, TokenRenderer tr, ToolCallParser toolCallParser) {
 
         LOGGER.info("Machine Vector Spec: {} Byte Order: {}", FloatVector.SPECIES_PREFERRED.vectorBitSize(), ByteOrder.nativeOrder().toString());
 
@@ -93,11 +95,11 @@ public class ModelSupport {
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
                     WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class,
                     ConfigurableTensorProvider.class, MetricRegistry.class, TensorCache.class,
-                    KvBufferCacheSettings.class, TokenRenderer.class);
+                    KvBufferCacheSettings.class, TokenRenderer.class, ToolCallParser.class);
 
             return cons.newInstance(AbstractModel.InferenceType.FULL_GENERATION, config, wl, tokenizer,
                     workingMemoryType, workingQuantizationType, Optional.empty(), configurableTensorProvider,
-                    metricRegistry, tensorCache, kvBufferCacheSettings, tr);
+                    metricRegistry, tensorCache, kvBufferCacheSettings, tr, toolCallParser);
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }
@@ -130,11 +132,11 @@ public class ModelSupport {
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
                     WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class,
                     ConfigurableTensorProvider.class, MetricRegistry.class, TensorCache.class,
-                    KvBufferCacheSettings.class, TokenRenderer.class);
+                    KvBufferCacheSettings.class, TokenRenderer.class, ToolCallParser.class) ;
 
             return cons.newInstance(infType, config, wl, tokenizer,
                     workingMemoryType, workingQuantizationType, Optional.empty(), configurableTensorProvider,
-                    metricRegistry, tensorCache, kvBufferCacheSettings, new NoOpTokenizerRenderer());
+                    metricRegistry, tensorCache, kvBufferCacheSettings, new NoOpTokenizerRenderer(), new DefaultToolCallParser());
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }

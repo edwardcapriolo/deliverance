@@ -24,6 +24,7 @@ import io.teknek.deliverance.tensor.*;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
+import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import jdk.incubator.vector.FloatVector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -82,12 +83,13 @@ public abstract class AbstractModel implements Generator {
     protected Optional<PoolingLayer> poolingLayer;
 
     protected final TokenRenderer tokenRenderer;
+    protected final ToolCallParser toolCallParser;
 
 
     protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
                             DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider provider,
                             MetricRegistry metricRegistry, TensorCache tensorCache, KvBufferCacheSettings kvBufferCacheSettings,
-                            TokenRenderer tokenRenderer) {
+                            TokenRenderer tokenRenderer, ToolCallParser toolCallParser) {
         this.inferenceType = inferenceType;
         this.config = c;
         this.weights = w;
@@ -101,6 +103,7 @@ public abstract class AbstractModel implements Generator {
         this.metricRegistry = metricRegistry;
         this.tensorCache = tensorCache;
         this.tokenRenderer = tokenRenderer;
+        this.toolCallParser = toolCallParser;
 
         if (workingMemoryQType == null) {
             workingMemoryQType = configurableTensorProvider.get().preferredWorkingQuantizedType();

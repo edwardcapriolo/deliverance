@@ -11,6 +11,7 @@ import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
+import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -34,7 +35,7 @@ public class GemmaPromptTest {
         TensorCache tensorCache = new TensorCache(mr);
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                mr, tensorCache, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer())) {
+                mr, tensorCache, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer(), new DefaultToolCallParser())) {
             //String prompt = "Find any potential syntax errors in the code below\n";
             String prompt = """
                     You are a software engineer.
@@ -116,7 +117,7 @@ def allocate_token_bitmask(vocab_size: int) -> np.ndarray:
         TensorCache tensorCache = new TensorCache(mr);
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                mr, tensorCache, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer())) {
+                mr, tensorCache, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer(), new DefaultToolCallParser())) {
             String prompt = "What is the capital of New York, USA?";
             PromptSupport.Builder g = m.promptSupport().get().builder()
                     .addUserMessage(prompt);
@@ -153,7 +154,7 @@ def allocate_token_bitmask(vocab_size: int) -> np.ndarray:
         TensorCache tensorCache = new TensorCache(mr);
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                mr, tensorCache, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer())) {
+                mr, tensorCache, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer(), new DefaultToolCallParser())) {
             String prompt = "Who is the better NFL football team?";
             PromptSupport.Builder g = m.promptSupport().get().builder()
                     .addUserMessage(prompt);
@@ -180,7 +181,7 @@ def allocate_token_bitmask(vocab_size: int) -> np.ndarray:
         TensorCache tensorCache = new TensorCache(mr);
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                mr, tensorCache, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer())) {
+                mr, tensorCache, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer(), new DefaultToolCallParser())) {
             String prompt = "Which NFL franchise does not play in New York?";
             PromptSupport.Builder g = m.promptSupport().get().builder()
                     .addUserMessage(prompt);

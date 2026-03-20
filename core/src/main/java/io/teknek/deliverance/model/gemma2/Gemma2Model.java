@@ -15,6 +15,7 @@ import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
+import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,10 +39,10 @@ public class Gemma2Model extends LlamaModel {
             DType workingDType,
             DType workingQType,
             Optional<DType> modelQType, ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
-            TensorCache tensorCache, KvBufferCacheSettings kvBufferCacheSettings, TokenRenderer tokenRenderer
+            TensorCache tensorCache, KvBufferCacheSettings kvBufferCacheSettings, TokenRenderer tokenRenderer, ToolCallParser toolCallParser
     ) {
         super(inferenceType, config, weights, tokenizer, workingDType, workingQType, modelQType,
-                configurableTensorProvider, metricRegistry, tensorCache, kvBufferCacheSettings, tokenRenderer);
+                configurableTensorProvider, metricRegistry, tensorCache, kvBufferCacheSettings, tokenRenderer, toolCallParser);
         // https://github.com/huggingface/transformers/blob/1082361a1978d30db5c3932d1ee08914d74d9697/src/transformers/models/gemma/modeling_gemma.py#L898
         // This is the scaling factor for the embedding layer but google's implementation is a is rounded to 16 bits
         this.embeddingScalingFactor = FloatConversions.bFloat16ToFloat32(

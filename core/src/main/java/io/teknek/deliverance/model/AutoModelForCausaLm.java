@@ -8,6 +8,9 @@ import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
+import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
+import io.teknek.deliverance.toolcallparser.LlamaToolCallParser;
+import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,6 +22,7 @@ public class AutoModelForCausaLm {
         Builder b = new Builder(fetcher);
         if (fetcher.getName().startsWith("Llama")){
             b.withTokenTokenRenderer(new TokenizerRenderer());
+            b.withToolCallParser(new LlamaToolCallParser());
         }
         if (fetcher.getName().startsWith("Qwen")){
             b.withTokenTokenRenderer(new Qwen2TokenizerRenderer());
@@ -37,6 +41,7 @@ public class AutoModelForCausaLm {
         private DType workingMem = DType.F32;
         private DType workingQuant = DType.I8;
         private TokenRenderer tokenRenderer = new NoOpTokenizerRenderer();
+        private ToolCallParser toolCallParser = new DefaultToolCallParser();
 
         private KvBufferCacheSettings settings = new KvBufferCacheSettings(true);
         private ConfigurableTensorProvider provider;
@@ -73,6 +78,10 @@ public class AutoModelForCausaLm {
             this.tokenRenderer = tokenRenderer;
             return this;
         }
+        public Builder withToolCallParser(ToolCallParser toolCallParser){
+            this.toolCallParser = toolCallParser;
+            return this;
+        }
         public AbstractModel build(){
             File modelRoot = fetch.maybeDownload();
             if(provider == null){
@@ -86,7 +95,7 @@ public class AutoModelForCausaLm {
                  }
             }
             return ModelSupport.loadModel(modelRoot, workingMem, workingQuant, provider,
-                    mr, cache, settings, fetch, tokenRenderer);
+                    mr, cache, settings, fetch, tokenRenderer, toolCallParser);
         }
 
         public ModelFetcher getFetch() {

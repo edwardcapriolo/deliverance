@@ -62,7 +62,7 @@ public class PromptSupport {
         private String customizedTemplate;
 
         private final List<Message> messages = new ArrayList<>(2);
-        private Optional<List<String>> choices = Optional.empty();
+        //private Optional<List<String>> choices = Optional.empty();
         private boolean stripPreamble = false;
 
         private Builder(TokenizerModel m, Jinjava jinJava) {

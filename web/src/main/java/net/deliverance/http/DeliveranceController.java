@@ -63,6 +63,7 @@ public class DeliveranceController {
                        p.generatorParameters(), (int next, String rok, String s, float aFloat) -> {
                        });
                CreateChatCompletionResponse response = new CreateChatCompletionResponse();
+
                response.choices(List.of(
                        new CreateChatCompletionResponseChoicesInner().finishReason(
                                CreateChatCompletionResponseChoicesInner.FinishReasonEnum.STOP
