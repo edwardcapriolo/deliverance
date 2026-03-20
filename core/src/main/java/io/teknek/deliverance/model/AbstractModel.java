@@ -356,12 +356,12 @@ public abstract class AbstractModel implements Generator {
         int[] encoded = Arrays.stream(tokenizer.encode(input)).mapToInt(Ints::checkedCast).toArray();
         Preconditions.checkArgument(encoded.length < config.contextLength);
         float [] outputEmbedding = new float[config.embeddingLength];
-        CausualWhisperer.LOGGER.info("created float [] outputEmbedding of length {}", config.embeddingLength);
+        CausualWhisperer.LOGGER.debug("created float [] outputEmbedding of length {}", config.embeddingLength);
 
         try (KvBufferCache.KvBuffer kvMem = kvBufferCache.getEphemeralKvBuffer()){
             int promptLength = encoded.length;
             float avgp = 1.0f / promptLength;
-            CausualWhisperer.LOGGER.info("1.0f / promptLength {} = avgp {}", promptLength, avgp);
+            CausualWhisperer.LOGGER.debug("1.0f / promptLength {} = avgp {}", promptLength, avgp);
 
             try (AbstractTensor r = batchForward(encoded, 0, kvMem)){
                 if (poolingType == PoolingType.MODEL){
@@ -419,11 +419,8 @@ public abstract class AbstractModel implements Generator {
                 token_ids.length, MAX_BATCH_SIZE);
         for (int i = 0; i < token_ids.length; i += MAX_BATCH_SIZE) {
             int[] batch = Arrays.copyOfRange(token_ids, i, Math.min(token_ids.length, i + MAX_BATCH_SIZE));
-            //logger.warn("batch forward i: {} batch: {}", i, batch);
             embedding = embedInput.batchInputsToEmbeddings(batch, startPos + i);
-            //logger.warn("embedding {} {}", embedding.shape(), embedding.size());
             embedding = forward(embedding, startPos + i, kvbuf, tensorReducer);
-            //logger.debug("Batched forward pass for tokens {} to {}", i, i + batch.length);
         }
         return embedding;
     }
@@ -445,8 +442,6 @@ public abstract class AbstractModel implements Generator {
     public AbstractTensor forward(int token_id, int pos, KvBufferCache.KvBuffer kvbuf,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
         AbstractTensor embedding = embedInput.inputTokenToEmbedding(token_id, pos);
-        debug("EMBEDDING TOKEN", token_id);
-        debug("TOKEN POSITION", pos);
         return forward(embedding, pos, kvbuf, tensorReducer);
     }
 
