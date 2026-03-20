@@ -137,14 +137,11 @@ public class CausalSelfAttention {
                 AbstractTensor tmpValBatch = m.makeDenseTensor(batchSize, config.kvLength);
                 AbstractTensor valueBatch = m.makeDenseTensor(batchSize, attentionLength)) {
             if (config.isGQA) {
-                VectorMath.pchunk(dctx.attentionSegmentStart, dctx.attentionSegmentLength, (chunkStart, chunkLength) -> {
-                    Timer t = metricRegistry.timer("causualselfattention.forward_gqa_querybatch_1");
-                    try (Timer.Context context = t.time()) {
-                        configurableTensorProvider.get()
+                Timer tm = metricRegistry.timer("causualselfattention.forward_gqa_querybatch_1");
+                VectorMath.pchunkMetrics(dctx.attentionSegmentStart, dctx.attentionSegmentLength, (chunkStart, chunkLength) -> {
+                    configurableTensorProvider.get()
                                 .dotProductChunk(queryBatch, input, queryAttnWeights, 0, config.embeddingLength, chunkStart, chunkLength);
-                        context.stop();
-                    }
-                }, splitSize);
+                }, splitSize, tm);
                 VectorMath.pchunk(dctx.kvSegmentStart, dctx.kvSegmentLength, (chunkStart, chunkLength) -> {
                     Timer t = metricRegistry.timer("causualselfattention.forward_gqa_key_2");
                     try (Timer.Context context = t.time()) {
