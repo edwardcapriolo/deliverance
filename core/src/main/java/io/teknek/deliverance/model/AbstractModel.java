@@ -286,7 +286,9 @@ public abstract class AbstractModel implements Generator {
                         int index = responseContext.responseTextWithSpecialTokens.indexOf(stop);
                         responseContext.responseTextWithSpecialTokens.delete(index, responseContext.responseTextWithSpecialTokens.length());
                         int x = responseContext.responseText.indexOf(stop);
-                        responseContext.responseText.delete(x, responseContext.responseText.length());
+                        if (x != -1) {
+                            responseContext.responseText.delete(x, responseContext.responseText.length());
+                        }
                         return Optional.of(new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
                                 reason, promptLength, responseContext.generatedTokens, 0, 0));
                     }
