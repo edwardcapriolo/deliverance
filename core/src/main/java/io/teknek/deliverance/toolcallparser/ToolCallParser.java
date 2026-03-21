@@ -17,7 +17,7 @@ public interface ToolCallParser {
     /**
      *
      * @param response the response directly from the AbstractModel
-     * @return at least one message
+     * @return a list of all tool calls found in the response
      */
     List<ToolCall> extract(Response response);
 }

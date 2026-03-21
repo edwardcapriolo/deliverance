@@ -52,17 +52,9 @@ public class SimdTest {
 
     @Test
     public void sample() throws IOException {
-    //    File soFile = new File("target/native-lib-only/libdeliverance.so");
-    //    assertTrue(soFile.exists());
-    //    System.load(soFile.getAbsolutePath());
-        //TensorCache tc = new TensorCache(new MetricRegistry());
-        //NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tc).get());
         String modelName = "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4";
         String modelOwner = "tjake";
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
-        //File f = fetch.maybeDownload();
-        //try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(n),
-          //      new MetricRegistry(), tc, new KvBufferCacheSettings(true), fetch, new TokenizerRenderer())) {
         try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).build()) {
             String prompt = "What is the best season to plant avocados?";
             PromptContext ctx;

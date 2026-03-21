@@ -8,13 +8,12 @@ https://www.merriam-webster.com/dictionary/deliverance
 especially : liberation, `rescue`
 
 Have you ever spent 15 minutes building VLLM to end up with a disk full from its 20GB image and 60GB of docker layers?
-Deliverance compiles < 1 minute. Int a 33MB boot application.
+Deliverance compiles < 2 minutes. Into a < 50MB boot application. 
 
 : something delivered
 especially : an `opinion` or `decision` (such as the verdict of a jury) expressed publicly.
 
-Could just go with j-inference open-jay-i that would be boring. We aren't `inferencing`, we are
-`delivering`
+We aren't `inferencing`, we are `delivering`
 
 ### Lightning quick start 
 
@@ -65,12 +64,18 @@ very easy to use as a library as you might use transformers/
        PromptContext ctx;
        PromptSupport ps = m.promptSupport().get();
        Response r = m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(42), (s1, f1) -> { });
-       System.out.println(r);
-    }
-
+       System.out.printn(r.resultText); 
+   }
+   //>> "It is best to plant them in the fall because..."
 ```
+
+### Learning and Developer docs
+
+- [inference engine flow](core/inference_flow.md) Explains the transformations and flows http/prompt/jinja/ etc.
+- [tool call parser](core/tool_parser.md) Explains how the tool call parser is implemented in the stack
+
 ### Enabling SIMD support
-Deliverance will automatically attempt to leverage project panama to do lanewise operations. However
+Deliverance will automatically attempt to leverage project panama to do lanewise operations. However,
 we also provide native library do some operations in native c
 
 ```java
