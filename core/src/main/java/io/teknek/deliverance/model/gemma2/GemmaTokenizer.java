@@ -37,10 +37,6 @@ public class GemmaTokenizer extends BytePairEncodingTokenizer {
         return sentence;
     }
 
-    @Override
-    public String tokenForResponse(String token) {
-        return "";
-    }
 
     @Override
     protected String postProcess(String sentence) {

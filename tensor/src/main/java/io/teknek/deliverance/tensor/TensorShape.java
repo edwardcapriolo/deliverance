@@ -7,7 +7,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 public class TensorShape {
-    /** Tensors are always two dimentation a single tensor of a single element 1 thus becomes [[1]] */
+    /** Tensors are always at least 2D a single tensor of a single element 1 thus becomes [[1]] */
     public static TensorShape ONE = of(1, 1);
 
     public static TensorShape of(int... shape) {
@@ -96,6 +96,11 @@ public class TensorShape {
         return Optional.of(sparseColumnLength * (dimension1 - sparseRowOffset) + dimension2 - sparseColumnOffset);
     }
 
+    /**
+     * Note: This method will return positions outside the tensor
+     * @param pdims one or more dimenstions
+     * @return the position in the 1 Demensional view of the tensor
+     */
     public final int getOffset(int... pdims) {
         switch (pdims.length) {
             case 1:
@@ -120,6 +125,10 @@ public class TensorShape {
         }
     }
 
+
+    public int [] shapeArray(){
+        return Arrays.copyOf(tshape, tshape.length);
+    }
     public int sparseColumnLength() {
         return sparseColumnLength;
     }
@@ -143,6 +152,7 @@ public class TensorShape {
         return sparseColumnRange.isPresent()
                 ? sparseColumn(copy, SparseOffset.of((int) (sparseColumnOffset * scale), (int) (sparseColumnLength * scale)))
                 : of(copy);
+
     }
 
     //used by split tensor in abstract tensor
@@ -154,10 +164,18 @@ public class TensorShape {
         return sparseColumnRange.isPresent() ? sparseColumn(copy, SparseOffset.of(sparseColumnOffset, newSparseLength)) : of(copy);
     }
 
+    /**
+     *
+     * @return the size of the first dimension of the tensor [2.4] -> 2
+     */
     public int first() {
         return tshape[0];
     }
 
+    /**
+     *
+     * @return the size of the last dimension of the tensor [2.4] -> 4
+     */
     public int last() {
         return tshape[tshape.length - 1];
     }
@@ -174,15 +192,20 @@ public class TensorShape {
     public TensorShape slice(int numDims) {
         Preconditions.checkArgument(numDims < tshape.length, "Too many dimensions specified for tensor");
         int newLength = tshape.length - numDims;
-        if (newLength == 1) return new TensorShape(new int[] { 1, tshape[tshape.length - 1] }, sparseRowRange, sparseColumnRange);
-
+        if (newLength == 1) {
+            return new TensorShape(new int[] { 1, tshape[tshape.length - 1] }, sparseRowRange, sparseColumnRange);
+        }
         return new TensorShape(Arrays.copyOfRange(tshape, numDims, tshape.length), sparseRowRange, sparseColumnRange);
     }
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
         TensorShape that = (TensorShape) o;
         return Arrays.equals(tshape, that.tshape) && Objects.equals(sparseColumnRange, that.sparseColumnRange);
     }

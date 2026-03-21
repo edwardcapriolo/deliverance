@@ -4,8 +4,9 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * This class hopefully wont stay long, the prompt context doesnt hold all the possible request parameters at the moment
- * when we get closer to a full ChatCompletionRequest we can look at this
+ * The parameters of the request that are not part of the PromptSupport. For example a field like stopWords isnt
+ * something the PrompyTemplate and jinja support, this is something the code of the inference engine supports. Thus
+ * it belongs here
  */
 public class GeneratorParameters {
     public Optional<Float> temperature = Optional.of(0.0f);
@@ -14,6 +15,8 @@ public class GeneratorParameters {
     //public Optional<String> cacheSalt = Optional.of("sha1obetter");
     public Optional<List<String>> stopWords = Optional.empty();
     public Optional<Boolean> includeStopStrInOutput = Optional.empty();
+    public Optional<List<String>> guidedChoice = Optional.empty();
+    public Optional<Integer> maxTokens = Optional.empty();
 
     public GeneratorParameters withSeed(int seed){
         this.seed = Optional.of(seed);
@@ -21,6 +24,10 @@ public class GeneratorParameters {
     }
     public GeneratorParameters withNtokens(int tokens){
         ntokens = Optional.of(tokens);
+        return this;
+    }
+    public GeneratorParameters withGuidedChoice(List<String> choices){
+        guidedChoice = Optional.of(choices);
         return this;
     }
 
@@ -40,6 +47,11 @@ public class GeneratorParameters {
 
     public GeneratorParameters withIncludeStopStrInOutput(boolean include){
         this.includeStopStrInOutput= Optional.of(include);
+        return this;
+    }
+
+    public GeneratorParameters withMaxTokens(int maxTokens){
+        this.maxTokens = Optional.of(maxTokens);
         return this;
     }
 }

@@ -1,10 +1,16 @@
 package net.deliverance.http;
 
-import io.teknek.deliverance.embedding.PoolingType;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.*;
+import io.teknek.deliverance.model.Error;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
+import io.teknek.deliverance.safetensors.prompt.ToolCall;
+import io.teknek.dysfx.Either;
+import io.teknek.dysfx.Left;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,7 +20,6 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
-import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -35,22 +40,7 @@ public class DeliveranceController {
                         .equalsIgnoreCase(name)).findFirst();
     }
 
-    @RequestMapping(method = RequestMethod.POST, value="/embeddings", produces =  { "application/json" }, consumes = { "application/json" })
-    public CreateEmbeddingResponse createEmbedding(@RequestBody CreateEmbeddingRequest request){
-        Optional<Map.Entry<MultiModelConfig, AbstractModel>> z = findModel(request.getModel().getString());
-        if (z.isEmpty()){
-            throw new RuntimeException("model not found " + request.getModel());
-        }
-        float[] result = z.get().getValue().embed(request.getInput().getString(), PoolingType.AVG);
-        List<BigDecimal> resultAsB = new ArrayList<>();
-        for (float f: result){
-            resultAsB.add(new BigDecimal(f));
-        }
-        CreateEmbeddingResponse resp = new CreateEmbeddingResponse();
-        Embedding e = new Embedding().index(0).embedding(resultAsB);
-        resp.addDataItem(e);
-        return resp;
-    }
+
 
     @RequestMapping(method = RequestMethod.POST, value = "/chat/completions", produces = { "application/json",
             "text/event-stream" }, consumes = { "application/json" })
@@ -61,6 +51,47 @@ public class DeliveranceController {
             throw new RuntimeException("model not found " + request.getModel());
         }
         AbstractModel model = z.get().getValue();
+
+        if (request.getStream() == null || (request.getStream() != null && request.getStream() == false)) {
+            Either<Error, PreparedRequest> bla = ChatCompletionService.mapRequest(headers, model, request);
+            if (bla.isLeft()) {
+                Left<Error, ?> l = (Left<Error, ?>) bla;
+                Error r = (Error) l.productIterator().next();
+                return new ResponseEntity<>(new ErrorResponse().error(r), HttpStatus.BAD_REQUEST);
+            } else {
+                PreparedRequest p = (PreparedRequest) bla.productIterator().next();
+                Response resp = model.generate(UUID.randomUUID(), p.promptSupportBuilder().build(),
+                        p.generatorParameters(), (int next, String rok, String s, float aFloat) -> {
+                        });
+                CreateChatCompletionResponse response = new CreateChatCompletionResponse();
+                List<ToolCall> tcs = model.getToolCallParser().extract(resp);
+                CreateChatCompletionResponseChoicesInner z2 = new CreateChatCompletionResponseChoicesInner()
+                        .message(new ChatCompletionResponseMessage().content(resp.responseTextWithSpecialTokens))
+                        .index(0);
+                if (!tcs.isEmpty()) {
+                    z2.setFinishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.TOOL_CALLS);
+                } else {
+                    //TODO map the enums
+                    z2.setFinishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.LENGTH);
+                }
+                tcs.forEach(tc -> {
+                    ChatCompletionMessageToolCall t = new ChatCompletionMessageToolCall();
+                    t.id(tc.getId());
+                    t.function(new ChatCompletionMessageToolCallFunction().name(tc.getName()));
+                    try {
+                        String paramsAsString = JsonUtils.om.writeValueAsString(tc.getParameters());
+                        t.getFunction().arguments(paramsAsString);
+                    } catch (JsonProcessingException e) {
+                        throw new RuntimeException(e);
+                    }
+                    z2.getMessage().addToolCallsItem(t);
+                });
+                response.addChoicesItem(z2);
+                return new ResponseEntity<>(response, HttpStatus.OK);
+            }
+        }
+
+            //This is the older stuff lets clean it out
         List<ChatCompletionRequestMessage> messages = request.getMessages();
         UUID id = UUID.randomUUID();
         if (headers.containsKey(DELIVERANCE_SESSION_HEADER)) {
@@ -78,7 +109,6 @@ public class DeliveranceController {
         }
         GeneratorParameters params = new GeneratorParameters().withTemperature(0.1f);
         AtomicInteger index = new AtomicInteger(0);
-        builder.addSystemMessage("generate correct answers");
         LOGGER.info("submitted prompt {}", builder.build());
         if (request.getStream() != null && request.getStream()) {
             SseEmitter emitter = new SseEmitter(-1L);
@@ -107,7 +137,9 @@ public class DeliveranceController {
                 return result2;
             });
             return emitter;
-        } else {
+        }
+        /*
+        else {
             Response resp = model.generate(UUID.randomUUID(), builder.build(), params, (int next, String rok, String s, float aFloat) -> {});
             CreateChatCompletionResponse out = new CreateChatCompletionResponse().id(sessionId.toString())
                     .choices(
@@ -118,7 +150,8 @@ public class DeliveranceController {
                             )
                     );
             return new ResponseEntity<>(out, HttpStatus.OK);
-        }
+        }*/
+        throw new UnsupportedOperationException("Hit bottom");
     }
 
     private CreateChatCompletionStreamResponse sendComplete(UUID sessionId, AtomicInteger index){
@@ -157,7 +190,7 @@ public class DeliveranceController {
                         if (p.getActualInstance() instanceof ChatCompletionRequestMessageContentPartText) {
                             builder.addUserMessage(p.getChatCompletionRequestMessageContentPartText().getText());
                         } else {
-                            // We don't support other types of content... yet...
+                            // We don't su  pport other types of content... yet...
                             return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
                         }
                     }

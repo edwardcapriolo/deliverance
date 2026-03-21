@@ -7,7 +7,7 @@
     <name>deliverance-parent</name>
     <description>deliverance parent pom</description>
     <url>http://github.com/edwardcapriolo/deliverance</url>
-    <version>0.0.4-SNAPSHOT</version>
+    <version>0.0.5-SNAPSHOT</version>
 
     <parent>
         <groupId>org.sonatype.oss</groupId>
@@ -31,6 +31,13 @@
         <surefire.version>3.5.3</surefire.version>
         <maven.gpg.plugin.version>3.2.8</maven.gpg.plugin.version>
         <maven.javadoc.plugin.version>3.12.0</maven.javadoc.plugin.version>
+
+        <jackson.version>2.20.1</jackson.version>
+        <dysfx.version>0.0.3</dysfx.version>
+        <mockito.version>5.20.0</mockito.version>
+        <metrics.version>4.2.37</metrics.version>
+
+        <langchain4j.version>1.11.0</langchain4j.version>
     </properties>
 
     <modules>

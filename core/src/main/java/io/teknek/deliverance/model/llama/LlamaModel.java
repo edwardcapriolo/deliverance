@@ -14,6 +14,7 @@ import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
+import io.teknek.deliverance.toolcallparser.ToolCallParser;
 
 import java.util.Optional;
 import java.util.stream.IntStream;
@@ -26,14 +27,15 @@ public class LlamaModel extends AbstractModel {
     public LlamaModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
                       DType workingMemoryQType, Optional<DType> modelQType,
                       ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
-                      TensorCache tensorCache, KvBufferCacheSettings kvBufferCacheSettings, TokenRenderer tokenRenderer) {
+                      TensorCache tensorCache, KvBufferCacheSettings kvBufferCacheSettings, TokenRenderer tokenRenderer, ToolCallParser toolCallParser) {
         super(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType, configurableTensorProvider,
-                metricRegistry, tensorCache, kvBufferCacheSettings, tokenRenderer);
+                metricRegistry, tensorCache, kvBufferCacheSettings, tokenRenderer, toolCallParser);
     }
 
     @Override
     protected EmbedInput loadInputWeights() {
 
+        //TODO resolvethis
         // Don't quantize this, it's used for the embedding layer
         // but we ae calling quantize in the if?
         if (embedTokenWeights == null) {
@@ -44,7 +46,8 @@ public class LlamaModel extends AbstractModel {
 
         return new EmbedInput(this) {
             @Override
-            public AbstractTensor inputTokenToEmbedding(int inputToken, int position) {
+            //TODO The second argument position was  double check that this is propper
+            public AbstractTensor inputTokenToEmbedding(int inputToken, int unused) {
                 if (embedTokenWeights.dType() == DType.BF16) {
                     // Handle old style model with BF16 embeddings
                     AbstractTensor embedding = makeDenseTensor(1, config.embeddingLength);
@@ -56,7 +59,6 @@ public class LlamaModel extends AbstractModel {
                     return embedding;
                 } else {
                     AbstractTensor at = embedTokenWeights.slice(true, inputToken);
-                    //AbstractTensor embedding = at.copyShape();
                     AbstractTensor embedding = parent.getTensorCache().getDirty(at.dType(), at.shape());
                     embedding.copyFrom(at, 0, 0, config.embeddingLength);
                     return embedding;
@@ -80,7 +82,8 @@ public class LlamaModel extends AbstractModel {
                     quantize(weights.load(prefix + "k_proj.weight", config.dctx(), true, false), qType),
                     quantize(weights.load(prefix + "v_proj.weight", config.dctx(), true, false), qType),
                     quantize(weights.load(prefix + "o_proj.weight", config.dctx(), false, true), qType),
-                    configurableTensorProvider
+                    configurableTensorProvider,
+                    metricRegistry
             );
 
             prefix = base + "mlp.";

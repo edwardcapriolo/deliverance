@@ -109,12 +109,15 @@ public final class Q4ByteBufferTensor extends AbstractTensor<ByteVector, Byte> {
 
     static int[] makeBlockShape(int... shape) {
         int[] blockShape = new int[shape.length];
-        if (shape.length - 1 >= 0) System.arraycopy(shape, 0, blockShape, 0, shape.length - 1);
+        if (shape.length - 1 >= 0) {
+            System.arraycopy(shape, 0, blockShape, 0, shape.length - 1);
+        }
         blockShape[shape.length - 1] = (int) (shape[shape.length - 1] * I_BLOCK_SIZE);
         return blockShape;
     }
 
     static TensorShape makeBlockShape(TensorShape shape) {
+
         return shape.scaleLastDim(I_BLOCK_SIZE);
     }
 
@@ -123,8 +126,8 @@ public final class Q4ByteBufferTensor extends AbstractTensor<ByteVector, Byte> {
         Preconditions.checkArgument(this.size() % BLOCK_SIZE == 0, "Tensor must be a multiple of BLOCK_SIZE");
         this.blockF = new FloatBufferTensor(makeBlockShape(shape));
         this.name = "tmp";
-        this.b = UnsafeDirectByteBuffer.allocateAlignedByteBuffer(Ints.checkedCast(this.size() / 2), UnsafeDirectByteBuffer.CACHE_LINE_SIZE)
-                .order(ByteOrder.LITTLE_ENDIAN);
+        this.b = UnsafeDirectByteBuffer.allocateAlignedByteBuffer(Ints.checkedCast(this.size() / 2),
+                        UnsafeDirectByteBuffer.CACHE_LINE_SIZE).order(ByteOrder.LITTLE_ENDIAN);
 
         this.segment = MemorySegment.ofBuffer(b);
     }

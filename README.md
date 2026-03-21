@@ -58,19 +58,29 @@ Odds are you don't want to use the amazing UI depicted above. Deliverance is mad
 very easy to use as a library as you might use transformers/
 
 ```java
-ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
-File f = fetch.maybeDownload();
-MetricRegistry mr = new MetricRegistry();
-TensorCache tensorCache = new TensorCache(mr);
-try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(tensorCache),
-        new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true))) {
-    String prompt = "What is the best season to plant avocados?";
-    PromptContext ctx;
-    PromptSupport ps = m.promptSupport().get();
-    Response r = m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(42), (s1, f1) -> {
-    });
-    System.out.println(r);
-}
+   ModelFetcher fetch = new ModelFetcher("tjake", "Qwen2.5-0.5B-Instruct-JQ4");
+   AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(fetch);
+   try (AbstractModel model = builder.build()) {
+       String prompt = "What is the best season to plant avocados?";
+       PromptContext ctx;
+       PromptSupport ps = m.promptSupport().get();
+       Response r = m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(42), (s1, f1) -> { });
+       System.out.println(r);
+    }
+
+```
+### Enabling SIMD support
+Deliverance will automatically attempt to leverage project panama to do lanewise operations. However
+we also provide native library do some operations in native c
+
+```java
+   ModelFetcher fetch = new ModelFetcher("tjake", "Qwen2.5-0.5B-Instruct-JQ4");
+   AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(fetch);
+   NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(builder.getCache()).get());
+   builder.withTensorProvider(new ConfigurableTensorProvider(operation));
+   try (AbstractModel model = builder.build()) {
+       ...
+   }
 ```
 
 ### 🔍 Semantic Search & Embeddings

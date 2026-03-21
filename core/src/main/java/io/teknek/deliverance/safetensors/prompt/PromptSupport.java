@@ -55,17 +55,30 @@ public class PromptSupport {
     }
 
     public static class Builder {
-        private final TokenizerModel m;
+        private final TokenizerModel tokenizerModel;
         private final Jinjava jinJava;
         private PromptType type = PromptType.DEFAULT;
         private boolean addGenerationPrompt = true;
+        private String customizedTemplate;
 
         private final List<Message> messages = new ArrayList<>(2);
+        //private Optional<List<String>> choices = Optional.empty();
         private boolean stripPreamble = false;
 
         private Builder(TokenizerModel m, Jinjava jinJava) {
-            this.m = m;
+            this.tokenizerModel = m;
             this.jinJava = jinJava;
+        }
+
+        /*
+        public Builder withChoices(List<String> choices){
+            this.choices = Optional.of(choices);
+            return this;
+        }*/
+
+        public Builder useChatTemplate(String templateString){
+            customizedTemplate = templateString;
+            return this;
         }
 
         public Builder usePromptType(PromptType type) {
@@ -112,7 +125,6 @@ public class PromptSupport {
             return build(Optional.empty());
         }
 
-
         public PromptContext build(List<Tool> tools) {
             return build(Optional.of(tools));
         }
@@ -125,43 +137,38 @@ public class PromptSupport {
             if (messages.isEmpty()) {
                 throw new IllegalArgumentException("No messages to generate prompt");
             }
-            if (m.getPromptTemplates().isEmpty()) {
+            if (tokenizerModel.getPromptTemplates().isEmpty()) {
                 throw new UnsupportedOperationException("Prompt templates are not available for this model");
             }
-            String template = m.getPromptTemplates()
-                    .map(t -> t.get(type.name().toLowerCase()))
-                    .orElseThrow(() -> new UnsupportedOperationException("Prompt template not available for type: " + type));
-            if (optionalTools.isPresent() && !optionalTools.get().isEmpty() && !m.hasToolSupport()) {
-                logger.warn(
-                        "This model does not support tools, but tools are specified"
-                );
+            String template;
+            if(this.customizedTemplate != null){
+                template = customizedTemplate;
+            } else {
+                template = tokenizerModel.getPromptTemplates()
+                        .map(t -> t.get(type.name().toLowerCase()))
+                        .orElseThrow(() -> new UnsupportedOperationException("Prompt template not available for type: " + type));
+            }
+            if (optionalTools.isPresent() && !optionalTools.get().isEmpty() && !tokenizerModel.hasToolSupport()) {
+                throw new RuntimeException("This model does not support tools, but tools are specified");
             }
             String preamble = "";
             if (stripPreamble) {
                 Map<String, Object> args = new HashMap<>();
                 args.putAll(Map.of("messages", Map.of(), "add_generation_prompt", false, "eos_token",
-                        m.getEosToken(), "bos_token", ""));
+                        tokenizerModel.getEosToken(), "bos_token", ""));
                 RenderResult r = jinJava.renderForResult(template, args);
                 preamble = r.getOutput();
             }
 
             Map<String, Object> args = new HashMap<>();
             args.putAll(
-                    Map.of(
-                            "messages",
-                            messages.stream().map(Message::toMap).toList(),
-                            "add_generation_prompt",
-                            addGenerationPrompt,
-                            "eos_token",
-                            m.getEosToken(),
-                            "bos_token",
-                            ""
-                    )
+                    Map.of( "messages", messages.stream().map(Message::toMap).toList(), "add_generation_prompt",
+                            addGenerationPrompt, "eos_token", tokenizerModel.getEosToken(), "bos_token", "")
             );
             optionalTools.ifPresent(tools -> args.put("tools", tools));
             RenderResult r = jinJava.renderForResult(template, args);
             if (r.hasErrors()) {
-                logger.debug("Prompt template errors: {}" ,r.getErrors());
+                logger.debug("Prompt template errors: {}", r.getErrors());
                 throw new RuntimeException("Prompt template errors: " + r.getErrors());
             }
             String output = r.getOutput();

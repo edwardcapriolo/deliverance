@@ -17,9 +17,17 @@ import org.slf4j.LoggerFactory;
 public class NativeSimdTensorOperations implements TensorOperations {
     private static final Logger LOGGER = LoggerFactory.getLogger(NativeSimdTensorOperations.class);
 
+    private static volatile boolean isLoaded = false;
     static {
-        if (!JarSupport.maybeLoadLibrary("deliverance")) {
-            try { System.loadLibrary("deliverance"); } catch( UnsatisfiedLinkError e) {
+        boolean loadedFromJar = JarSupport.maybeLoadLibrary("deliverance");
+        if (loadedFromJar){
+            isLoaded = true;
+        }
+        if (!isLoaded) {
+            try {
+                System.loadLibrary("deliverance");
+                isLoaded = true;
+            } catch (UnsatisfiedLinkError e) {
                 LOGGER.warn("Native did not load", e);
             }
         }

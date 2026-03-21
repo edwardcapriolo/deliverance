@@ -2,24 +2,18 @@
   <parent>
     <groupId>io.teknek.deliverance</groupId>
     <artifactId>deliverance-parent</artifactId>
-    <version>0.0.4-SNAPSHOT</version>
+    <version>0.0.5-SNAPSHOT</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
   <artifactId>core</artifactId>
   <name>core</name>
   <properties>
-   <!--
-    <maven.compiler.source>24</maven.compiler.source>
-    <maven.compiler.target>24</maven.compiler.target>
-    <maven.compiler.release>24</maven.compiler.release>-->
     <build.plugins.plugin.version>3.5.3</build.plugins.plugin.version>
     <guava.version>32.0.1-jre</guava.version>
-    <jackson.version>2.14.0</jackson.version>
 
     <jafama.version>2.3.2</jafama.version>
     <jcttools.version>4.0.1</jcttools.version>
-    <mockito.version>5.20.0</mockito.version>
-    <metrics.version>4.2.37</metrics.version>
+
   </properties>
 
   <dependencies>
@@ -29,6 +23,14 @@
       <artifactId>tensor</artifactId>
       <version>${project.version}</version>
       <scope>compile</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>io.teknek.deliverance</groupId>
+      <artifactId>tensor</artifactId>
+      <version>${project.version}</version>
+      <classifier>tests</classifier>
+      <scope>test</scope>
     </dependency>
 
     <dependency>
@@ -43,6 +45,14 @@
       <artifactId>safetensors</artifactId>
       <version>${project.version}</version>
       <scope>compile</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>io.teknek.deliverance</groupId>
+      <artifactId>native</artifactId>
+      <version>${project.version}</version>
+      <classifier>${os.detected.name}-x86_64</classifier>
+      <optional>true</optional>
     </dependency>
 
     <dependency>
@@ -110,6 +120,13 @@
       <artifactId>guava</artifactId>
       <version>${guava.version}</version>
     </dependency>
+
+    <dependency>
+      <groupId>dev.langchain4j</groupId>
+      <artifactId>langchain4j-core</artifactId>
+      <version>${langchain4j.version}</version>
+      <scope>compile</scope>
+    </dependency>
     <dependency>
       <groupId>org.mockito</groupId>
       <artifactId>mockito-core</artifactId>
@@ -144,6 +161,8 @@
             --add-opens java.base/java.nio=ALL-UNNAMED
             --add-modules jdk.incubator.vector
             -Djdk.attach.allowAttachSelf=true
+            --enable-native-access=ALL-UNNAMED
+            -Djava.library.path=${build.directory}/../native/target/native-lib-only
           </argLine>
         </configuration>
       </plugin>

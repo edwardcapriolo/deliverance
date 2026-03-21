@@ -9,10 +9,6 @@ public class Qwen2Tokenizer extends LlamaTokenizer {
         super(modelRoot);
     }
 
-    @Override
-    public String tokenForResponse(String decoded) {
-        return decoded;
-    }
 
     /*
     @Override

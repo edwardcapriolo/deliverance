@@ -2,23 +2,22 @@ package io.teknek.deliverance.safetensors.prompt;
 
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
-import io.teknek.deliverance.model.DoNothingGenerateEvent;
+import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
-import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class DirectPromptTest {
 
@@ -31,7 +30,7 @@ public class DirectPromptTest {
         MetricRegistry mr = new MetricRegistry();
         TensorCache tensorCache = new TensorCache(mr);
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(tensorCache),
-                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch)) {
+                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch, new TokenizerRenderer(), new DefaultToolCallParser())) {
             String prompt = "What is the best season to plant avocados?";
             PromptContext ctx;
             {
@@ -49,9 +48,9 @@ public class DirectPromptTest {
             }
             {
                 PromptSupport ps = m.promptSupport().get();
-                Tool t = Tool.from(Function.builder().name("hello").build());
+               // Tool t = Tool.from(Function.builder().name("hello").build());
                 ctx = ps.builder().addSystemMessage("You are a chatbot that writes short correct responses.")
-                        .addUserMessage(prompt).build(t);
+                        .addUserMessage(prompt).build();
                 String expected = """
                         <|system|>
                         You are a chatbot that writes short correct responses.</s>
@@ -74,4 +73,27 @@ public class DirectPromptTest {
             }
         }
     }
+
+    @Test
+    public void rejectTooManyTokens() throws IOException {
+        String modelName = "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4";
+        String modelOwner = "tjake";
+        ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
+        File f = fetch.maybeDownload();
+        MetricRegistry mr = new MetricRegistry();
+        TensorCache tensorCache = new TensorCache(mr);
+        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(tensorCache),
+                mr, tensorCache, new KvBufferCacheSettings(true), fetch, new TokenizerRenderer(), new DefaultToolCallParser())) {
+            String prompt = "What is the best season to plant avocados?";
+            PromptContext ctx;
+            {
+                PromptSupport ps = m.promptSupport().get();
+                ctx = ps.builder().addSystemMessage("You are a chatbot that writes short correct responses.")
+                        .addUserMessage(prompt).build();
+            }
+            assertThrows(GenerationException.class, () -> m.generate(UUID.randomUUID(), ctx, new GeneratorParameters()
+                    .withSeed(42).withNtokens(5_000_000), new DoNothingGenerateEvent()));
+        }
+    }
+
 }

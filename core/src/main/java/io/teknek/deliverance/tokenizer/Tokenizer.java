@@ -22,8 +22,4 @@ public interface Tokenizer {
      */
     Optional<PromptSupport> promptSupport();
 
-
-    @Deprecated
-    String tokenForResponse(String token);
-
 }

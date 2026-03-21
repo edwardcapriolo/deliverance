@@ -15,6 +15,7 @@ import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
+import io.teknek.deliverance.toolcallparser.ToolCallParser;
 
 import java.util.Arrays;
 import java.util.NoSuchElementException;
@@ -26,10 +27,11 @@ public class BertModel extends AbstractModel {
 
     public BertModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer tokenizer, DType workingDType, DType workingQType,
                      Optional<DType> modelQType, ConfigurableTensorProvider configurableTensorProvider,
-                     MetricRegistry metricRegistry, TensorCache tensorCache, KvBufferCacheSettings kvBufferCacheSettings, TokenRenderer tokenRenderer) {
+                     MetricRegistry metricRegistry, TensorCache tensorCache, KvBufferCacheSettings kvBufferCacheSettings,
+                     TokenRenderer tokenRenderer, ToolCallParser toolCallParser) {
         //note: jLAMA uses FOrward_passs
         super(inferenceType, c, w, tokenizer, workingDType, workingQType, modelQType,
-                configurableTensorProvider, metricRegistry, tensorCache, kvBufferCacheSettings, tokenRenderer);
+                configurableTensorProvider, metricRegistry, tensorCache, kvBufferCacheSettings, tokenRenderer, toolCallParser);
     }
 
     protected AbstractTensor loadWeight(String name) {
@@ -105,7 +107,8 @@ public class BertModel extends AbstractModel {
                     valueWeight,
                     Optional.of(outputBias),
                     outputWeight,
-                    this.configurableTensorProvider
+                    this.configurableTensorProvider,
+                    metricRegistry
             );
 
             prefix = b;

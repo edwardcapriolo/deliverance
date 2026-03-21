@@ -5,8 +5,8 @@ import com.google.common.base.Preconditions;
 import com.google.common.primitives.Ints;
 
 import java.util.*;
-import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+
 
 import io.teknek.deliverance.CausualWhisperer;
 import io.teknek.deliverance.DType;
@@ -20,12 +20,13 @@ import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
+import io.teknek.deliverance.safetensors.prompt.ToolCall;
 import io.teknek.deliverance.tensor.*;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
+import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import jdk.incubator.vector.FloatVector;
-import net.jafama.FastMath;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -83,12 +84,13 @@ public abstract class AbstractModel implements Generator {
     protected Optional<PoolingLayer> poolingLayer;
 
     protected final TokenRenderer tokenRenderer;
+    protected final ToolCallParser toolCallParser;
 
 
     protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
                             DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider provider,
                             MetricRegistry metricRegistry, TensorCache tensorCache, KvBufferCacheSettings kvBufferCacheSettings,
-                            TokenRenderer tokenRenderer) {
+                            TokenRenderer tokenRenderer, ToolCallParser toolCallParser) {
         this.inferenceType = inferenceType;
         this.config = c;
         this.weights = w;
@@ -102,6 +104,7 @@ public abstract class AbstractModel implements Generator {
         this.metricRegistry = metricRegistry;
         this.tensorCache = tensorCache;
         this.tokenRenderer = tokenRenderer;
+        this.toolCallParser = toolCallParser;
 
         if (workingMemoryQType == null) {
             workingMemoryQType = configurableTensorProvider.get().preferredWorkingQuantizedType();
@@ -154,13 +157,14 @@ public abstract class AbstractModel implements Generator {
         } else {
             this.workingQType = workingMemoryQType;
         }
+
+        logger.info("Tensor provider = {}, parallelSplitSize = {} ",
+                configurableTensorProvider.get().name(), configurableTensorProvider.get().parallelSplitSize());
         logger.info("Model type = {}, Working memory type = {}, Quantized memory type = {}", modelDType, workingDType,
                 workingQType);
         this.embedInput = inferenceType.isInput ? loadInputWeights() : null;
         this.transformerBlocks = inferenceType.isFwdPass ? loadTransformerBlockWeights() : null;
         this.sampleOutput = inferenceType.isOutput ? loadOutputWeights() : null;
-
-        //embedding
         this.poolingLayer = inferenceType.isPooling ? Optional.ofNullable(loadPoolingWeights()) : Optional.empty();
     }
 
@@ -202,49 +206,202 @@ public abstract class AbstractModel implements Generator {
         return true;
     }
 
+    /**
+     *
+     * @return an array with bos token appened at the beginning if the model calls for it
+     */
+    int [] constructPromptTokens(long[] encoded){
+        int[] promptTokens;
+        if (addBosToken()) {
+            promptTokens = new int[(1 + encoded.length)];
+            promptTokens[0] = config.bosToken;
+            for (int i = 1; i <= encoded.length; i++) {
+                promptTokens[i] = Ints.checkedCast(encoded[i - 1]);
+            }
+        } else {
+            promptTokens = Arrays.stream(encoded).mapToInt(Ints::checkedCast).toArray();
+        }
+        return promptTokens;
+    }
+
+    public class ResponseContext {
+        public final StringBuilder responseText = new StringBuilder();
+        public final StringBuilder responseTextWithSpecialTokens = new StringBuilder();
+        public final List<Integer> generatedTokens = new ArrayList<>();
+
+        public void add(int token, GenerateEvent event){
+            generatedTokens.add(token);
+            String decoded = tokenizer.decode(token);
+            String cleaned = tokenRenderer.tokenizerToRendered(decoded);
+            if (tokenizer.getModel().isSpecialToken(token)) {
+                responseTextWithSpecialTokens.append(cleaned);
+            } else {
+                event.emit(token, decoded, cleaned, 0);
+                responseText.append(cleaned);
+                responseTextWithSpecialTokens.append(cleaned);
+            }
+        }
+    }
+
+    int createNextToken(GeneratorParameters generatorParameters, AbstractTensor logits, AbstractTensor last,
+                        ResponseContext responseContext, Random random, float temperature){
+        if (generatorParameters.guidedChoice.isPresent()) {
+            GuidedChoiceSampler sampler = new GuidedChoiceSampler(this, last.slice(last.shape().first() - 1),
+                    logits, sampleOutput.getOutputLayerNorm(), tokenizer, generatorParameters.guidedChoice.get(), responseContext.responseText);
+           return sampler.sample();
+        } else {
+            GeneratorSampler sampler = new GeneratorSampler(this, last.slice(last.shape().first() - 1), temperature,
+                    random.nextFloat(), logits, sampleOutput.getOutputLayerNorm());
+            return sampler.sample();
+        }
+    }
+
+    int createNextTokenLoop(GeneratorParameters generatorParameters, AbstractTensor output,
+                            AbstractTensor logits, ResponseContext responseContext, Random random, float temperature){
+        if (generatorParameters.guidedChoice.isPresent()) {
+            GuidedChoiceSampler sampler1 = new GuidedChoiceSampler(this, output, logits,
+                    sampleOutput.getOutputLayerNorm(), tokenizer, generatorParameters.guidedChoice.get(), responseContext.responseText);
+            return sampler1.sample();
+        } else {
+            GeneratorSampler sampler1 = new GeneratorSampler(this, output, temperature,
+                    random.nextFloat(), logits, sampleOutput.getOutputLayerNorm());
+            return sampler1.sample();
+        }
+    }
+
+    /**
+     * S
+     * @return Some if request should terminate None to continue
+     */
+    public Optional<Response> stopWords(GeneratorParameters generatorParameters, ResponseContext responseContext, int promptLength) {
+        if (generatorParameters.stopWords.isPresent()){
+            List<String> stops = generatorParameters.stopWords.get();
+            for (String stop: stops){
+                if (responseContext.responseTextWithSpecialTokens.indexOf(stop) != -1) {
+                    FinishReason reason = FinishReason.STOP_TOKEN;
+                    if (generatorParameters.includeStopStrInOutput.isPresent() && generatorParameters.includeStopStrInOutput.get()){
+                        return Optional.of(new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
+                                reason, promptLength, responseContext.generatedTokens, 0, 0));
+                    } else {
+                        int index = responseContext.responseTextWithSpecialTokens.indexOf(stop);
+                        responseContext.responseTextWithSpecialTokens.delete(index, responseContext.responseTextWithSpecialTokens.length());
+                        int x = responseContext.responseText.indexOf(stop);
+                        if (x != -1) {
+                            responseContext.responseText.delete(x, responseContext.responseText.length());
+                        }
+                        return Optional.of(new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
+                                reason, promptLength, responseContext.generatedTokens, 0, 0));
+                    }
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    @Override
     public Response generate(UUID sessionId, PromptContext promptContext, GeneratorParameters generatorParameters,
+                                     GenerateEvent eventFired) {
+        ResponseContext responseContext = new ResponseContext();
+        Random random = generatorParameters.seed.map(Random::new).orElseGet(Random::new);
+        long[] encoded = tokenizer.encode(promptContext.getPrompt());
+        if (encoded.length > 0 && encoded[0] == config.bosToken) {
+            logger.warn("encoded [] started with BOS token removing it");
+            encoded = Arrays.copyOfRange(encoded, 1, encoded.length);
+        }
+        int ntokens = generatorParameters.ntokens.orElse(config.contextLength);
+        Preconditions.checkArgument(encoded.length < config.contextLength
+                && encoded.length < ntokens, "Prompt exceeds max tokens");
+        if (ntokens > config.contextLength) {
+            throw new GenerationException(String.format("ntokens %d exceed config length %d",  ntokens, config.contextLength));
+        }
+        float temperature = generatorParameters.temperature.orElse(0.0f);
+        try (KvBufferCache.KvBuffer kvmem = kvBufferCache.getKvBuffer(sessionId.toString())) {
+            int startPos = kvmem.getCurrentContextPosition();
+            try (AbstractTensor logits = makeDenseTensor(config.vocabularySize)) {
+                int [] promptTokens = constructPromptTokens(encoded);
+                AbstractTensor last = batchForward(promptTokens, startPos, kvmem);
+                int next = createNextToken(generatorParameters, logits, last, responseContext, random, temperature);
+                last.close();
+                responseContext.add(next, eventFired);
+                //here we have added the first token, consider checking stop conditions here
+                for (int i = startPos + promptTokens.length; i < ntokens; i++) {
+                    AbstractTensor output = forward(next, i, kvmem);
+                    //reuse next to save memory
+                    next = createNextTokenLoop(generatorParameters, output, logits, responseContext, random, temperature);
+                    output.close();
+                    kvmem.incrementContextPosition();
+                    responseContext.add(next, eventFired);
+                    if (generatorParameters.maxTokens.isPresent()){
+                        if (responseContext.generatedTokens.size() >= generatorParameters.maxTokens.get()) {
+                            FinishReason reason = FinishReason.MAX_TOKENS;
+                            return new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
+                                    reason,  encoded.length, responseContext.generatedTokens, 0, 0);
+                        }
+                    }
+                    if (generatorParameters.guidedChoice.isPresent()) {
+                        if (generatorParameters.guidedChoice.get().contains(responseContext.responseText.toString())) {
+                            FinishReason reason = FinishReason.STOP_TOKEN;
+                            return new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
+                                    reason,  encoded.length, responseContext.generatedTokens, 0, 0);
+                        }
+                    }
+                    Optional<Response> shouldEnd = stopWords(generatorParameters, responseContext, encoded.length);
+                    if (shouldEnd.isPresent()) {
+                        return shouldEnd.get();
+                    }
+                }
+            }
+        }
+        return new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
+                FinishReason.MAX_TOKENS, encoded.length, responseContext.generatedTokens, 0, 0);
+    }
+
+    /*
+    public Response generate3(UUID sessionId, PromptContext promptContext, GeneratorParameters generatorParameters,
                              GenerateEvent onTokenWithTimings) {
         Random random = generatorParameters.seed.map(Random::new).orElseGet(Random::new);
         long[] encoded = tokenizer.encode(promptContext.getPrompt());
         if (encoded.length > 0 && encoded[0] == config.bosToken) {
             encoded = Arrays.copyOfRange(encoded, 1, encoded.length);
         }
-        int ntokens = generatorParameters.ntokens.orElse(256);
-        float temperature = generatorParameters.temperature.orElse(0.0f);
+        int ntokens = generatorParameters.ntokens.orElse(config.contextLength);
         Preconditions.checkArgument(encoded.length < config.contextLength
                 && encoded.length < ntokens, "Prompt exceeds max tokens");
+        if (ntokens > config.contextLength) {
+            throw new GenerationException(String.format("ntokens %d exceed config length %d",  ntokens, config.contextLength));
+        }
+        float temperature = generatorParameters.temperature.orElse(0.0f);
+
         try (KvBufferCache.KvBuffer kvmem = kvBufferCache.getKvBuffer(sessionId.toString())) { // k and v for context window
             int startPos = kvmem.getCurrentContextPosition(); // Number of tokens in the buffer
-            if (ntokens > config.contextLength) {
-                ntokens = config.contextLength;
-            }
             FinishReason reason = FinishReason.MAX_TOKENS;
             int promptLength;
             long promptBatchTime;
-            int tokensGenerated;
             StringBuilder responseText = new StringBuilder();
             StringBuilder responseTextWithSpecialTokens = new StringBuilder();
+            ArrayList<Integer> generatedTokens = new ArrayList<>();
 
             try (AbstractTensor logits = makeDenseTensor(config.vocabularySize)) {
-                int[] promptTokens;
-                if (addBosToken()) {
-                    promptTokens = new int[(1 + encoded.length)];
-                    promptTokens[0] = config.bosToken;
-                    for (int i = 1; i <= encoded.length; i++) {
-                        promptTokens[i] = Ints.checkedCast(encoded[i - 1]);
-                    }
-                } else {
-                    promptTokens = Arrays.stream(encoded).mapToInt(Ints::checkedCast).toArray();
-                }
+                int [] promptTokens = constructPromptTokens(encoded);
                 promptLength = encoded.length;
                 long start = System.currentTimeMillis();
                 AbstractTensor last = batchForward(promptTokens, startPos, kvmem);
                 logger.debug("After batch forward size: {} shape: {}" , last.size(), last.shape());
                 promptBatchTime = System.currentTimeMillis() - start;
                 float batchMsPerToken = Math.round((((double) promptBatchTime) / (double) promptLength));
-                int next = sample(last.slice(last.shape().first() - 1), temperature, random.nextFloat(), logits);
+                int next = Integer.MIN_VALUE;
+                if (generatorParameters.guidedChoice.isPresent()) {
+                    GuidedChoiceSampler sampler = new GuidedChoiceSampler(this, last.slice(last.shape().first() - 1),
+                            logits, sampleOutput.getOutputLayerNorm(), tokenizer, generatorParameters.guidedChoice.get(), responseText);
+                    next = sampler.sample();
+                } else {
+                    GeneratorSampler sampler = new GeneratorSampler(this, last.slice(last.shape().first() - 1), temperature,
+                            random.nextFloat(), logits, sampleOutput.getOutputLayerNorm());
+                    next = sampler.sample();
+                }
+                generatedTokens.add(next);
                 float genMsPerToken = 0;
-                tokensGenerated = 0;
+
                 last.close();
                 String decoded = tokenizer.decode(next);
                 String cleaned = tokenRenderer.tokenizerToRendered(decoded);
@@ -255,11 +412,19 @@ public abstract class AbstractModel implements Generator {
                     responseText.append(cleaned);
                     responseTextWithSpecialTokens.append(cleaned);
                 }
+                //AT this point the response text could be a stop word or a guided choice consider stopping here
                 start = System.currentTimeMillis();
                 for (int i = startPos + promptTokens.length; i < ntokens; i++) {
                     AbstractTensor output = forward(next, i, kvmem);
-                    tokensGenerated++;
-                    next = sample(output, temperature, random.nextFloat(), logits);
+
+                    if (generatorParameters.guidedChoice.isPresent()) {
+                        GuidedChoiceSampler sampler1 = new GuidedChoiceSampler(this, output, logits, sampleOutput.getOutputLayerNorm(), tokenizer, generatorParameters.guidedChoice.get(), responseText);
+                        next = sampler1.sample();
+                    } else {
+                        GeneratorSampler sampler1 = new GeneratorSampler(this, output, temperature, random.nextFloat(), logits, sampleOutput.getOutputLayerNorm());
+                        next = sampler1.sample();
+                    }
+                    generatedTokens.add(next);
                     output.close();
                     kvmem.incrementContextPosition();
                     if (config.eosTokens.contains(next)) {
@@ -271,12 +436,24 @@ public abstract class AbstractModel implements Generator {
                     if (tokenizer.getModel().isSpecialToken(next)) {
                         responseTextWithSpecialTokens.append(cleaned1);
                     } else {
-                        genMsPerToken = (System.currentTimeMillis() - start) / (float) (tokensGenerated);
+                        genMsPerToken = (System.currentTimeMillis() - start) / (float) generatedTokens.size();
                         onTokenWithTimings.emit(next, decoded1, cleaned1, genMsPerToken);
                         responseTextWithSpecialTokens.append(cleaned1);
                         responseText.append(cleaned1);
                     }
-
+                    if (generatorParameters.maxTokens.isPresent()){
+                        if (generatedTokens.size() >= generatorParameters.maxTokens.get()) {
+                            reason = FinishReason.MAX_TOKENS;
+                            return new Response(responseText.toString(), responseTextWithSpecialTokens.toString(),
+                                    reason, promptLength, generatedTokens, promptBatchTime, System.currentTimeMillis() - start);
+                        }
+                    }
+                    if (generatorParameters.guidedChoice.isPresent()) {
+                        if (generatorParameters.guidedChoice.get().contains(responseText.toString())) {
+                            reason = FinishReason.STOP_TOKEN;
+                            break;
+                        }
+                    }
                     if (generatorParameters.stopWords.isPresent()){
                         List<String> stops = generatorParameters.stopWords.get();
                         for (String stop: stops){
@@ -285,7 +462,7 @@ public abstract class AbstractModel implements Generator {
                                 if (generatorParameters.includeStopStrInOutput.isPresent() && generatorParameters.includeStopStrInOutput.get()){
                                     long end = System.currentTimeMillis();
                                     return new Response(responseText.toString(), responseTextWithSpecialTokens.toString(),
-                                        reason, promptLength, tokensGenerated, promptBatchTime, end - start);
+                                        reason, promptLength, generatedTokens, promptBatchTime, end - start);
                                 } else {
                                     long end = System.currentTimeMillis();
                                     int index = responseTextWithSpecialTokens.indexOf(stop);
@@ -293,7 +470,7 @@ public abstract class AbstractModel implements Generator {
                                     int x = responseText.indexOf(stop);
                                     responseText.delete(x, responseText.length());
                                     return new Response(responseText.toString(), responseTextWithSpecialTokens.toString(),
-                                            reason, promptLength, tokensGenerated, promptBatchTime, end - start);
+                                            reason, promptLength, generatedTokens, promptBatchTime, end - start);
                                 }
                             }
                         }
@@ -303,22 +480,22 @@ public abstract class AbstractModel implements Generator {
                 long end = System.currentTimeMillis();
                 //post process response is still missing
                 return new Response(responseText.toString(), responseTextWithSpecialTokens.toString(),
-                        reason, promptLength, tokensGenerated, promptBatchTime, end - start);
+                        reason, promptLength, generatedTokens, promptBatchTime, end - start);
             }
         }
-    }
+    } */
 
     public float[] embed(String input, PoolingType poolingType) {
         CausualWhisperer.LOGGER.debug("embedding on {} using pooling type {}", input, poolingType);
         int[] encoded = Arrays.stream(tokenizer.encode(input)).mapToInt(Ints::checkedCast).toArray();
         Preconditions.checkArgument(encoded.length < config.contextLength);
         float [] outputEmbedding = new float[config.embeddingLength];
-        CausualWhisperer.LOGGER.info("created float [] outputEmbedding of length {}", config.embeddingLength);
+        CausualWhisperer.LOGGER.debug("created float [] outputEmbedding of length {}", config.embeddingLength);
 
         try (KvBufferCache.KvBuffer kvMem = kvBufferCache.getEphemeralKvBuffer()){
             int promptLength = encoded.length;
             float avgp = 1.0f / promptLength;
-            CausualWhisperer.LOGGER.info("1.0f / promptLength {} = avgp {}", promptLength, avgp);
+            CausualWhisperer.LOGGER.debug("1.0f / promptLength {} = avgp {}", promptLength, avgp);
 
             try (AbstractTensor r = batchForward(encoded, 0, kvMem)){
                 if (poolingType == PoolingType.MODEL){
@@ -364,55 +541,6 @@ public abstract class AbstractModel implements Generator {
         }
     }
 
-    public int sample(AbstractTensor output, float temperature, float uniformSample, AbstractTensor logits) {
-        try (AbstractTensor embedding = sampleOutput.getOutputLayerNorm().forward(output)) {
-            // This is a mix of argmax and sampling with softmax
-            VectorMath.pchunk(0, config.vocabularySize, (chunkStart, chunkSize) -> {
-                configurableTensorProvider.get()
-                        .dotProductChunk(logits, embedding, sampleOutput.getOutputLogitsWeights(), 0, config.embeddingLength, chunkStart, chunkSize);
-            }, configurableTensorProvider.get().parallelSplitSize());
-
-            if (config.logitMultiplier != null) {
-                configurableTensorProvider.get().scale(1.0f / config.logitMultiplier, logits, 0, config.vocabularySize);
-            }
-
-            int maxi = Integer.MIN_VALUE;
-            double maxv = Double.NEGATIVE_INFINITY;
-            for (int i = 0; i < config.vocabularySize; i++) {
-                float v = logits.get(0, i);
-                if (config.finalLogitSoftCapping != null) {
-                    v /= config.finalLogitSoftCapping;
-                    v = (float) FastMath.tanh(v);
-                    v = v * config.finalLogitSoftCapping;
-                    logits.set(v, 0, i);
-                }
-                if (v > maxv) {
-                    maxi = i;
-                    maxv = v;
-                }
-            }
-
-            if (temperature == 0.0) {
-                return maxi;
-            }
-
-            float sum = 0;
-            for (int i = 0; i < config.vocabularySize; i++) {
-                float v = (float) FastMath.exp((logits.get(0, i) - maxv) / temperature);
-                sum += v;
-                logits.set(v, 0, i);
-            }
-
-            float acc = 0;
-            for (int i = 0; i < config.vocabularySize; i++) {
-                float v = logits.get(0, i) / sum;
-                acc += v;
-                if (acc >= uniformSample) return i;
-            }
-
-            return config.vocabularySize - 1;
-        }
-    }
 
     public AbstractTensor batchForward(int[] token_ids, int startPos, KvBufferCache.KvBuffer kvbuf) {
         return batchForward(token_ids, startPos, kvbuf, Optional.empty());
@@ -421,15 +549,12 @@ public abstract class AbstractModel implements Generator {
     public AbstractTensor batchForward(int[] token_ids, int startPos, KvBufferCache.KvBuffer kvbuf,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
         AbstractTensor embedding = null;
-        CausualWhisperer.LOGGER.info("batchForward from 0 to token_ids.length {} max_batch_size {} per iteration",
+        CausualWhisperer.LOGGER.debug("batchForward from 0 to token_ids.length {} max_batch_size {} per iteration",
                 token_ids.length, MAX_BATCH_SIZE);
         for (int i = 0; i < token_ids.length; i += MAX_BATCH_SIZE) {
             int[] batch = Arrays.copyOfRange(token_ids, i, Math.min(token_ids.length, i + MAX_BATCH_SIZE));
-            //logger.warn("batch forward i: {} batch: {}", i, batch);
             embedding = embedInput.batchInputsToEmbeddings(batch, startPos + i);
-            //logger.warn("embedding {} {}", embedding.shape(), embedding.size());
             embedding = forward(embedding, startPos + i, kvbuf, tensorReducer);
-            //logger.debug("Batched forward pass for tokens {} to {}", i, i + batch.length);
         }
         return embedding;
     }
@@ -451,8 +576,6 @@ public abstract class AbstractModel implements Generator {
     public AbstractTensor forward(int token_id, int pos, KvBufferCache.KvBuffer kvbuf,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
         AbstractTensor embedding = embedInput.inputTokenToEmbedding(token_id, pos);
-        debug("EMBEDDING TOKEN", token_id);
-        debug("TOKEN POSITION", pos);
         return forward(embedding, pos, kvbuf, tensorReducer);
     }
 
@@ -490,5 +613,9 @@ public abstract class AbstractModel implements Generator {
 
     public TokenRenderer getTokenRenderer(){
         return this.tokenRenderer;
+    }
+
+    public ToolCallParser getToolCallParser() {
+        return toolCallParser;
     }
 }

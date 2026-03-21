@@ -30,6 +30,7 @@ import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
+import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,10 +47,11 @@ public class Qwen2Model extends LlamaModel {
             InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
             DType workingMemoryQType, Optional<DType> modelQType,
             ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
-            TensorCache tensorCache, KvBufferCacheSettings kvBufferCacheSettings, TokenRenderer tokenRenderer
+            TensorCache tensorCache, KvBufferCacheSettings kvBufferCacheSettings, TokenRenderer tokenRenderer,
+            ToolCallParser toolCallParser
     ) {
         super(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType, configurableTensorProvider, metricRegistry,
-                tensorCache, kvBufferCacheSettings, tokenRenderer);
+                tensorCache, kvBufferCacheSettings, tokenRenderer, toolCallParser);
 
     }
 
@@ -72,7 +74,8 @@ public class Qwen2Model extends LlamaModel {
                     quantize(weights.load(prefix + "v_proj.weight", config.dctx(), true, false), qType),
                     Optional.empty(),
                     quantize(weights.load(prefix + "o_proj.weight", config.dctx(), false, true), qType),
-                    configurableTensorProvider
+                    configurableTensorProvider,
+                    metricRegistry
             );
 
             prefix = base + "mlp.";

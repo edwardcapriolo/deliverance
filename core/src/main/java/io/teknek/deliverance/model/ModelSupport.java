@@ -5,15 +5,18 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.model.bert.BertModelType;
 import io.teknek.deliverance.model.gemma2.Gemma2ModelType;
+import io.teknek.deliverance.model.gemma3.Gemma3ModelType;
 import io.teknek.deliverance.model.llama.LlamaModelType;
 import io.teknek.deliverance.model.qwen2.Qwen2ModelType;
-import io.teknek.deliverance.model.qwen2.Qwen2TokenizerRenderer;
 import io.teknek.deliverance.safetensors.*;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
+import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
+import io.teknek.deliverance.toolcallparser.ToolCallParser;
+import jdk.incubator.vector.FloatVector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,10 +26,13 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
+import java.nio.ByteOrder;
 import java.nio.file.Path;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.Function;
 
 import static io.teknek.deliverance.JsonUtils.om;
 
@@ -39,6 +45,7 @@ public class ModelSupport {
         registry.putIfAbsent("LLAMA", new LlamaModelType());
         registry.putIfAbsent("QWEN2", new Qwen2ModelType());
         registry.putIfAbsent("GEMMA2", new Gemma2ModelType());
+        registry.putIfAbsent("GEMMA3_TEXT", new Gemma3ModelType());
     }
 
     public static void addModel(String modelName, ModelType t){
@@ -71,17 +78,10 @@ public class ModelSupport {
                                           ConfigurableTensorProvider configurableTensorProvider,
                                           MetricRegistry metricRegistry, TensorCache tensorCache,
                                           KvBufferCacheSettings kvBufferCacheSettings,
-                                          ModelFetcher fetcher){
-        //not all llama models use same tokenizer. detecting from config.json might be an option
-        TokenRenderer tr;
-        if (fetcher.getName().startsWith("Llama-3.1-8B-Instruct")
-                || fetcher.getName().startsWith("Llama-3.2-3B-Instruct")){
-            tr = new TokenizerRenderer();
-        } else if (fetcher.getName().startsWith("Qwen2.5-0.5B-Instruct")) {
-          tr = new Qwen2TokenizerRenderer();
-        } else {
-            tr = new NoOpTokenizerRenderer();
-        }
+                                          ModelFetcher fetcher, TokenRenderer tr, ToolCallParser toolCallParser) {
+
+        LOGGER.info("Machine Vector Spec: {} Byte Order: {}", FloatVector.SPECIES_PREFERRED.vectorBitSize(), ByteOrder.nativeOrder().toString());
+
         File configFile = new File(model, "config.json");
         if (!configFile.exists()){
             throw new RuntimeException("Expecting to find config file " + configFile);
@@ -95,11 +95,11 @@ public class ModelSupport {
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
                     WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class,
                     ConfigurableTensorProvider.class, MetricRegistry.class, TensorCache.class,
-                    KvBufferCacheSettings.class, TokenRenderer.class);
+                    KvBufferCacheSettings.class, TokenRenderer.class, ToolCallParser.class);
 
             return cons.newInstance(AbstractModel.InferenceType.FULL_GENERATION, config, wl, tokenizer,
                     workingMemoryType, workingQuantizationType, Optional.empty(), configurableTensorProvider,
-                    metricRegistry, tensorCache, kvBufferCacheSettings, tr);
+                    metricRegistry, tensorCache, kvBufferCacheSettings, tr, toolCallParser);
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }
@@ -109,7 +109,8 @@ public class ModelSupport {
                                                     ConfigurableTensorProvider configurableTensorProvider,
                                                     MetricRegistry metricRegistry, TensorCache tensorCache,
                                                     KvBufferCacheSettings kvBufferCacheSettings) {
-     return load(AbstractModel.InferenceType.FULL_EMBEDDING,model, workingMemoryType, workingQuantizationType, configurableTensorProvider, metricRegistry, tensorCache,kvBufferCacheSettings);
+     return load(AbstractModel.InferenceType.FULL_EMBEDDING, model, workingMemoryType, workingQuantizationType,
+             configurableTensorProvider, metricRegistry, tensorCache,kvBufferCacheSettings);
 
     }
     protected static AbstractModel load(AbstractModel.InferenceType infType, File model, DType workingMemoryType, DType workingQuantizationType,
@@ -131,32 +132,58 @@ public class ModelSupport {
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
                     WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class,
                     ConfigurableTensorProvider.class, MetricRegistry.class, TensorCache.class,
-                    KvBufferCacheSettings.class, TokenRenderer.class);
+                    KvBufferCacheSettings.class, TokenRenderer.class, ToolCallParser.class) ;
 
             return cons.newInstance(infType, config, wl, tokenizer,
                     workingMemoryType, workingQuantizationType, Optional.empty(), configurableTensorProvider,
-                    metricRegistry, tensorCache, kvBufferCacheSettings, new NoOpTokenizerRenderer());
+                    metricRegistry, tensorCache, kvBufferCacheSettings, new NoOpTokenizerRenderer(), new DefaultToolCallParser());
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }
     }
-/*
-    public static AbstractModel loadEmbeddingModel(File model, DType workingMemoryType, DType workingQuantizationType) {
-        AbstractModel embed = loadModel(AbstractModel.InferenceType.FULL_EMBEDDING, ConfigurableTensorProvider provider
-                model, workingMemoryType, workingQuantizationType )
-        /*
-        return loadModel(
-                AbstractModel.InferenceType.FULL_EMBEDDING,
-                model,
-                null,
-                workingMemoryType,
-                workingQuantizationType,
-                Optional.empty(),
-                Optional.empty(),
-                Optional.empty()
-        );
 
+    public static AbstractModel loadModel(
+            AbstractModel.InferenceType inferenceType,
+            //File model,
+            ModelFetcher modelFetcher,
+            //File workingDirectory,
+            DType workingMemoryType,
+            DType workingQuantizationType,
+            Optional<DType> modelQuantization,
+            Optional<Integer> threadCount,
+            Optional<Function<Config, DistributedContext>> distributedContextLoader,
+            Function<File, WeightLoader> weightLoaderSupplier) {
 
+        File baseDir = modelFetcher.maybeDownload();
+        File configFile = new File(baseDir, "config.json");
+        if (!configFile.exists()){
+            throw new RuntimeException("Expecting to find config file " + configFile);
+        }
+
+        try {
+            //threadCount.ifPresent(PhysicalCoreExecutor::overrideThreadCount);
+            ModelType modelType = detectModel(configFile);
+            Config c = om.readValue(configFile, modelType.getConfigClass());
+            distributedContextLoader.ifPresent(loader -> c.setDistributedContext(loader.apply(c)));
+            //c.setWorkingDirectory(workingDirectory);
+            Tokenizer t = modelType.getTokenizerClass().getConstructor(Path.class).newInstance(baseDir.toPath());
+            WeightLoader wl = weightLoaderSupplier.apply(baseDir);
+
+            return modelType.getModelClass()
+                    .getConstructor(
+                            AbstractModel.InferenceType.class,
+                            Config.class,
+                            WeightLoader.class,
+                            Tokenizer.class,
+                            DType.class,
+                            DType.class,
+                            Optional.class
+                    )
+                    .newInstance(inferenceType, c, wl, t, workingMemoryType, workingQuantizationType, modelQuantization);
+
+        } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
     }
-*/
+
 }

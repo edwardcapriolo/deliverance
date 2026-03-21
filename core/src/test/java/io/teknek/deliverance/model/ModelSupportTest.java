@@ -9,6 +9,7 @@ import io.teknek.deliverance.model.llama.LlamaTokenizer;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.tensor.*;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -30,7 +31,7 @@ public class ModelSupportTest {
         TensorCache tc = new TensorCache(new MetricRegistry());
         try (AbstractModel abstractModel = ModelSupport.loadModel(f, DType.F32, DType.F32,
                 new ConfigurableTensorProvider(tc), mr, new TensorCache(mr),
-                new KvBufferCacheSettings(true), fetch)) {
+                new KvBufferCacheSettings(true), fetch, new TokenizerRenderer(), new DefaultToolCallParser())) {
 
             String prompt = "What comes next in the sequence? 1, 2, 3 ";
             PromptContext ctx = PromptContext.of(prompt);
@@ -81,7 +82,7 @@ public class ModelSupportTest {
         TensorCache tc = new TensorCache(new MetricRegistry());
         TensorCache dedicatedKvCache = new TensorCache(new MetricRegistry());
         try (AbstractModel abstractModel = ModelSupport.loadModel(f, DType.F32, DType.F32, new ConfigurableTensorProvider(tc),
-                new MetricRegistry(), new TensorCache(new MetricRegistry()), new KvBufferCacheSettings(dedicatedKvCache), fetch)) {
+                new MetricRegistry(), new TensorCache(new MetricRegistry()), new KvBufferCacheSettings(dedicatedKvCache), fetch, new TokenizerRenderer(), new DefaultToolCallParser())) {
             String prompt = "What comes next in the sequence? 1, 2, 3 ";
             PromptContext ctx = PromptContext.of(prompt);
 

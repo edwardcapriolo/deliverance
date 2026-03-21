@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+
 public class Config {
     public final int contextLength;
     public final int embeddingLength;
@@ -41,6 +42,7 @@ public class Config {
     public final List<Integer> eosTokens;
     public final Optional<float[][]> ropeFreqs;
     public final Optional<BiMap<String, Integer>> classifcationLabels;
+    public final List<String> architectures;
 
     private volatile DistributedContext dctx;
 
@@ -83,6 +85,7 @@ public class Config {
                 null,
                 null,
                 null,
+                null,
                 null
         );
     }
@@ -118,6 +121,7 @@ public class Config {
                 ropeScalingFactor,
                 null,
                 embeddingLength / numberOfHeads,
+                null,
                 null,
                 null,
                 null,
@@ -167,7 +171,8 @@ public class Config {
                 residualMultiplier,
                 attentionMultiplier,
                 embeddingMultiplier,
-                logitMultiplier
+                logitMultiplier,
+                null
         );
     }
 
@@ -208,6 +213,7 @@ public class Config {
                 null,
                 null,
                 null,
+                null,
                 null
         );
     }
@@ -233,7 +239,8 @@ public class Config {
             Float residualMultiplier,
             Float attentionMultiplier,
             Float embeddingMultiplier,
-            Float logitMultiplier
+            Float logitMultiplier,
+            List<String> architectures
     ) {
         this.contextLength = contextLength;
         this.attentionLength = numberOfHeads * headSize;
@@ -267,12 +274,21 @@ public class Config {
         this.embeddingMultiplier = embeddingMultiplier;
         this.logitMultiplier = logitMultiplier;
 
+        this.architectures = architectures;
         // Set default values
         this.dctx = DistributedContext.builder(this).build();
     }
 
     public DistributedContext dctx() {
         return dctx;
+    }
+
+    public void setDistributedContext(DistributedContext dctx) {
+        this.dctx = dctx;
+    }
+
+    public DistributedContext getDistributedContext() {
+        return this.dctx;
     }
 
     public int maybeMapToGroupHead(int head) {
@@ -284,5 +300,9 @@ public class Config {
 
     public boolean isClassifier() {
         return classifcationLabels.isPresent();
+    }
+
+    public List<String> getArchitectures() {
+        return architectures;
     }
 }

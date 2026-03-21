@@ -29,9 +29,9 @@ public class JarSupport {
         if (lib != null) {
             try {
                 final File libpath = Files.createTempDirectory("deliverance").toFile();
-                libpath.deleteOnExit(); // just in case
+                //libpath.deleteOnExit(); // just in case
                 File libfile = Paths.get(libpath.getAbsolutePath(), name).toFile();
-                libfile.deleteOnExit(); // just in case
+                //libfile.deleteOnExit(); // just in case
                 final InputStream in = lib.openStream();
                 final OutputStream out = new BufferedOutputStream(new FileOutputStream(libfile));
                 int len;

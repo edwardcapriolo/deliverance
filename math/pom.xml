@@ -2,7 +2,7 @@
   <parent>
     <groupId>io.teknek.deliverance</groupId>
     <artifactId>deliverance-parent</artifactId>
-    <version>0.0.4-SNAPSHOT</version>
+    <version>0.0.5-SNAPSHOT</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
   <artifactId>math</artifactId>
@@ -19,8 +19,7 @@
 
     <jafama.version>2.3.2</jafama.version>
     <jcttools.version>4.0.1</jcttools.version>
-    <mockito.version>5.20.0</mockito.version>
-    <metrics.version>4.2.37</metrics.version>
+
   </properties>
 
   <dependencies>

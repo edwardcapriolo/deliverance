@@ -19,15 +19,15 @@ public class NativeSimd {
     static final boolean TRACE_DOWNCALLS = Boolean.getBoolean("jextract.trace.downcalls");
 
     static void traceDowncall(String name, Object... args) {
-         String traceArgs = Arrays.stream(args)
-                       .map(Object::toString)
-                       .collect(Collectors.joining(", "));
-         System.out.printf("%s(%s)\n", name, traceArgs);
+        String traceArgs = Arrays.stream(args)
+                .map(Object::toString)
+                .collect(Collectors.joining(", "));
+        System.out.printf("%s(%s)\n", name, traceArgs);
     }
 
     static MemorySegment findOrThrow(String symbol) {
         return SYMBOL_LOOKUP.find(symbol)
-            .orElseThrow(() -> new UnsatisfiedLinkError("unresolved symbol: " + symbol));
+                .orElseThrow(() -> new UnsatisfiedLinkError("unresolved symbol: " + symbol));
     }
 
     static MethodHandle upcallHandle(Class<?> fi, String name, FunctionDescriptor fdesc) {
@@ -113,24 +113,24 @@ public class NativeSimd {
 
     private static class gemm_q8_q4 {
         public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT
         );
 
         public static final MemorySegment ADDR = NativeSimd.findOrThrow("gemm_q8_q4");
@@ -181,31 +181,31 @@ public class NativeSimd {
             }
             mh$.invokeExact(flags, af, a, aoffset, bf, b, boffset, r, roffset, m, n0, n, k, lda, ldaf, ldb, ldbf, ldc);
         } catch (Throwable ex$) {
-           throw new AssertionError("should not reach here", ex$);
+            throw new AssertionError("should not reach here", ex$);
         }
     }
 
     private static class gemm_q8_q4_batch {
         public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT
         );
 
         public static final MemorySegment ADDR = NativeSimd.findOrThrow("gemm_q8_q4_batch");
@@ -256,26 +256,26 @@ public class NativeSimd {
             }
             mh$.invokeExact(flags, batch_num, af, a, aoffset, bf, b, boffset, r, roffset, m, n0, n, k, lda, ldaf, ldb, ldbf, ldc);
         } catch (Throwable ex$) {
-           throw new AssertionError("should not reach here", ex$);
+            throw new AssertionError("should not reach here", ex$);
         }
     }
 
     private static class gemm_f32 {
         public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT
         );
 
         public static final MemorySegment ADDR = NativeSimd.findOrThrow("gemm_f32");
@@ -326,27 +326,27 @@ public class NativeSimd {
             }
             mh$.invokeExact(flags, a, aoffset, b, boffset, r, roffset, m, n0, n, k, lda, ldb, ldc);
         } catch (Throwable ex$) {
-           throw new AssertionError("should not reach here", ex$);
+            throw new AssertionError("should not reach here", ex$);
         }
     }
 
     private static class gemm_f32_batch {
         public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT
         );
 
         public static final MemorySegment ADDR = NativeSimd.findOrThrow("gemm_f32_batch");
@@ -397,28 +397,28 @@ public class NativeSimd {
             }
             mh$.invokeExact(flags, batch_num, a, aoffset, b, boffset, r, roffset, m, n0, n, k, lda, ldb, ldc);
         } catch (Throwable ex$) {
-           throw new AssertionError("should not reach here", ex$);
+            throw new AssertionError("should not reach here", ex$);
         }
     }
 
     private static class gemm_f32_q4 {
         public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT
         );
 
         public static final MemorySegment ADDR = NativeSimd.findOrThrow("gemm_f32_q4");
@@ -469,29 +469,29 @@ public class NativeSimd {
             }
             mh$.invokeExact(flags, a, aoffset, bf, b, boffset, r, roffset, m, n0, n, k, lda, ldb, ldbf, ldc);
         } catch (Throwable ex$) {
-           throw new AssertionError("should not reach here", ex$);
+            throw new AssertionError("should not reach here", ex$);
         }
     }
 
     private static class gemm_f32_q4_batch {
         public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT
         );
 
         public static final MemorySegment ADDR = NativeSimd.findOrThrow("gemm_f32_q4_batch");
@@ -542,27 +542,27 @@ public class NativeSimd {
             }
             mh$.invokeExact(flags, batch_num, a, aoffset, bf, b, boffset, r, roffset, m, n0, n, k, lda, ldb, ldbf, ldc);
         } catch (Throwable ex$) {
-           throw new AssertionError("should not reach here", ex$);
+            throw new AssertionError("should not reach here", ex$);
         }
     }
 
     private static class gemm_bf16 {
         public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT
         );
 
         public static final MemorySegment ADDR = NativeSimd.findOrThrow("gemm_bf16");
@@ -613,28 +613,28 @@ public class NativeSimd {
             }
             mh$.invokeExact(flags, a, aoffset, b, boffset, cr, r, roffset, m, n0, n, k, lda, ldb, ldc);
         } catch (Throwable ex$) {
-           throw new AssertionError("should not reach here", ex$);
+            throw new AssertionError("should not reach here", ex$);
         }
     }
 
     private static class gemm_bf16_batch {
         public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT
         );
 
         public static final MemorySegment ADDR = NativeSimd.findOrThrow("gemm_bf16_batch");
@@ -685,27 +685,27 @@ public class NativeSimd {
             }
             mh$.invokeExact(flags, batch_num, a, aoffset, b, boffset, cr, r, roffset, m, n0, n, k, lda, ldb, ldc);
         } catch (Throwable ex$) {
-           throw new AssertionError("should not reach here", ex$);
+            throw new AssertionError("should not reach here", ex$);
         }
     }
 
     private static class gemm_f32_bf16 {
         public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT
         );
 
         public static final MemorySegment ADDR = NativeSimd.findOrThrow("gemm_f32_bf16");
@@ -756,28 +756,28 @@ public class NativeSimd {
             }
             mh$.invokeExact(flags, a, aoffset, b, boffset, cr, r, roffset, m, n0, n, k, lda, ldb, ldc);
         } catch (Throwable ex$) {
-           throw new AssertionError("should not reach here", ex$);
+            throw new AssertionError("should not reach here", ex$);
         }
     }
 
     private static class gemm_f32_bf16_batch {
         public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_POINTER,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT,
-            NativeSimd.C_INT
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT
         );
 
         public static final MemorySegment ADDR = NativeSimd.findOrThrow("gemm_f32_bf16_batch");
@@ -828,8 +828,7 @@ public class NativeSimd {
             }
             mh$.invokeExact(flags, batch_num, a, aoffset, b, boffset, cr, r, roffset, m, n0, n, k, lda, ldb, ldc);
         } catch (Throwable ex$) {
-           throw new AssertionError("should not reach here", ex$);
+            throw new AssertionError("should not reach here", ex$);
         }
     }
 }
-

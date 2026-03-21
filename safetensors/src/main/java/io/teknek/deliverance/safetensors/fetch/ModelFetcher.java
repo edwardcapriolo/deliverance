@@ -15,20 +15,32 @@ import java.util.List;
 import java.util.Optional;
 
 public class ModelFetcher {
-    private static final String HF_TOKEN = "HF_TOKEN";
-    private static final String HF_PROP = "huggingface.auth.token";
+    public static final String HF_TOKEN = "HF_TOKEN";
+    public static final String HF_PROP = "huggingface.auth.token";
     private static final String FINISHED_MARKER = ".finished";
 
     private final Path baseDir;
     private final String owner;
     private final String name;
+    private String token;
 
-
+    /**
+     * Attempts to locate a token though ENV then java properties
+     * @param owner
+     * @param name
+     */
     public ModelFetcher(String owner, String name){
         this.owner = owner;
         this.name = name;
+
         String home = System.getProperty("user.home");
         baseDir = Path.of(home, ".deliverance");
+        token = System.getenv(HF_TOKEN);
+
+        String tokenProp = System.getProperty(HF_PROP);
+        if (tokenProp != null) {
+            token = tokenProp;
+        }
         if (!Files.exists(baseDir)){
             try {
                 Files.createDirectory(baseDir);
@@ -36,6 +48,11 @@ public class ModelFetcher {
                 throw new UncheckedIOException(e);
             }
         }
+    }
+
+    public ModelFetcher(String owner, String name, String token){
+        this(owner, name);
+        this.token = token;
     }
 
     public String getOwner() {
@@ -47,12 +64,13 @@ public class ModelFetcher {
     }
 
     public File maybeDownload(){
-        Path modelDir = Paths.get(baseDir.toString(), owner + "_" + name );
+        Path modelDir = Paths.get(baseDir.toString(), owner + "_" + name);
         if (Files.exists(modelDir)){
             return modelDir.toFile();
         } else {
             try {
-                return maybeDownloadModel(baseDir.toString(), Optional.of(this.owner), this.name, true, Optional.empty(), Optional.empty());
+                return maybeDownloadModel(baseDir.toString(), Optional.of(this.owner), this.name,
+                        true, Optional.empty(), token != null ? Optional.of(token): Optional.empty());
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }

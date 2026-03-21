@@ -2,7 +2,7 @@
   <parent>
     <groupId>io.teknek.deliverance</groupId>
     <artifactId>deliverance-parent</artifactId>
-    <version>0.0.4-SNAPSHOT</version>
+    <version>0.0.5-SNAPSHOT</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
   <artifactId>grace</artifactId>
@@ -14,9 +14,8 @@
     <maven.compiler.release>24</maven.compiler.release>
     -->
     <build.plugins.plugin.version>3.5.3</build.plugins.plugin.version>
-    <dysfx.version>0.0.2</dysfx.version>
-    <mockito.version>5.20.0</mockito.version>
-    <metrics.version>4.2.37</metrics.version>
+
+
   </properties>
 
   <dependencies>
@@ -29,6 +28,17 @@
       <groupId>io.teknek.deliverance</groupId>
       <artifactId>safetensors</artifactId>
       <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.teknek.deliverance</groupId>
+      <artifactId>core</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.teknek.deliverance</groupId>
+      <artifactId>native</artifactId>
+      <version>${project.version}</version>
+      <classifier>${os.detected.name}-x86_64</classifier>
     </dependency>
     <dependency>
       <groupId>org.slf4j</groupId>

@@ -2,7 +2,7 @@
   <parent>
     <groupId>io.teknek.deliverance</groupId>
     <artifactId>deliverance-parent</artifactId>
-    <version>0.0.4-SNAPSHOT</version>
+    <version>0.0.5-SNAPSHOT</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
   <artifactId>skeches</artifactId>
@@ -14,7 +14,6 @@
     <maven.compiler.release>24</maven.compiler.release>
     <build.plugins.plugin.version>3.5.3</build.plugins.plugin.version>
     <guava.version>32.0.1-jre</guava.version>
-    <jackson.version>2.15.2</jackson.version>
     <slf-simple.version>2.0.17</slf-simple.version>
     <slf4j-api.version>2.0.17</slf4j-api.version>
   </properties>
@@ -26,11 +25,17 @@
       <artifactId>slf4j-api</artifactId>
       <version>${slf4j-api.version}</version>
     </dependency>
+
     <dependency>
-      <groupId>org.junit.jupiter</groupId>
-      <artifactId>junit-jupiter-api</artifactId>
-      <version>${junit.version}</version>
-      <scope>test</scope>
+      <groupId>io.teknek.deliverance</groupId>
+      <artifactId>core</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>io.teknek.deliverance</groupId>
+      <artifactId>grace</artifactId>
+      <version>${project.version}</version>
     </dependency>
 
     <dependency>
@@ -71,11 +76,14 @@
         <version>${surefire.version}</version>
         <configuration>
           <argLine>
+            -XX:-UseCompactObjectHeaders
+            --add-opens java.base/java.nio=ALL-UNNAMED
             --add-modules jdk.incubator.vector
             -Djdk.attach.allowAttachSelf=true
           </argLine>
         </configuration>
       </plugin>
+
       <plugin>
        <groupId>net.serenity-bdd.maven.plugins</groupId>
        <artifactId>serenity-maven-plugin</artifactId>
