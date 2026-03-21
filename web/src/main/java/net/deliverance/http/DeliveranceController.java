@@ -1,11 +1,13 @@
 package net.deliverance.http;
 
-import io.teknek.deliverance.embedding.PoolingType;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.model.Error;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
+import io.teknek.deliverance.safetensors.prompt.ToolCall;
 import io.teknek.dysfx.Either;
 import io.teknek.dysfx.Left;
 
@@ -18,7 +20,6 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
-import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -51,27 +52,43 @@ public class DeliveranceController {
         }
         AbstractModel model = z.get().getValue();
 
-        if (request.getStream() == null || (request.getStream() != null && request.getStream() == false)){
-           Either<Error, PreparedRequest> bla = ChatCompletionService.mapRequest(headers, model, request);
-           if (bla.isLeft()){
-               Left<Error,?> l = (Left<Error,?>) bla;
-               Error r = (Error) l.productIterator().next();
-               return new ResponseEntity<>(new ErrorResponse().error(r), HttpStatus.BAD_REQUEST);
-           } else {
-               PreparedRequest p = (PreparedRequest) bla.productIterator().next();
-               Response resp = model.generate(UUID.randomUUID(), p.promptSupportBuilder().build(),
-                       p.generatorParameters(), (int next, String rok, String s, float aFloat) -> {
-                       });
-               CreateChatCompletionResponse response = new CreateChatCompletionResponse();
-
-               response.choices(List.of(
-                       new CreateChatCompletionResponseChoicesInner().finishReason(
-                               CreateChatCompletionResponseChoicesInner.FinishReasonEnum.STOP
-                       ).message(new ChatCompletionResponseMessage().content(resp.responseText))
-               ));
-
-               return new ResponseEntity<>(response, HttpStatus.OK);
-           }
+        if (request.getStream() == null || (request.getStream() != null && request.getStream() == false)) {
+            Either<Error, PreparedRequest> bla = ChatCompletionService.mapRequest(headers, model, request);
+            if (bla.isLeft()) {
+                Left<Error, ?> l = (Left<Error, ?>) bla;
+                Error r = (Error) l.productIterator().next();
+                return new ResponseEntity<>(new ErrorResponse().error(r), HttpStatus.BAD_REQUEST);
+            } else {
+                PreparedRequest p = (PreparedRequest) bla.productIterator().next();
+                Response resp = model.generate(UUID.randomUUID(), p.promptSupportBuilder().build(),
+                        p.generatorParameters(), (int next, String rok, String s, float aFloat) -> {
+                        });
+                CreateChatCompletionResponse response = new CreateChatCompletionResponse();
+                List<ToolCall> tcs = model.getToolCallParser().extract(resp);
+                CreateChatCompletionResponseChoicesInner z2 = new CreateChatCompletionResponseChoicesInner()
+                        .message(new ChatCompletionResponseMessage().content(resp.responseTextWithSpecialTokens))
+                        .index(0);
+                if (!tcs.isEmpty()) {
+                    z2.setFinishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.TOOL_CALLS);
+                } else {
+                    //TODO map the enums
+                    z2.setFinishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.LENGTH);
+                }
+                tcs.forEach(tc -> {
+                    ChatCompletionMessageToolCall t = new ChatCompletionMessageToolCall();
+                    t.id(tc.getId());
+                    t.function(new ChatCompletionMessageToolCallFunction().name(tc.getName()));
+                    try {
+                        String paramsAsString = JsonUtils.om.writeValueAsString(tc.getParameters());
+                        t.getFunction().arguments(paramsAsString);
+                    } catch (JsonProcessingException e) {
+                        throw new RuntimeException(e);
+                    }
+                    z2.getMessage().addToolCallsItem(t);
+                });
+                response.addChoicesItem(z2);
+                return new ResponseEntity<>(response, HttpStatus.OK);
+            }
         }
 
             //This is the older stuff lets clean it out

@@ -1,6 +1,9 @@
 package io.teknek.deliverance.toolcallparser;
 
 import io.teknek.deliverance.generator.Response;
+import io.teknek.deliverance.safetensors.prompt.ToolCall;
+
+import java.util.List;
 
 /**
  * This is a messy little interface. We have a text stream of token from a model,
@@ -16,5 +19,5 @@ public interface ToolCallParser {
      * @param response the response directly from the AbstractModel
      * @return at least one message
      */
-    MessageAndToolCall extract(Response response);
+    List<ToolCall> extract(Response response);
 }

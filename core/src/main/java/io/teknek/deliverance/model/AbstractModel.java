@@ -612,4 +612,8 @@ public abstract class AbstractModel implements Generator {
     public TokenRenderer getTokenRenderer(){
         return this.tokenRenderer;
     }
+
+    public ToolCallParser getToolCallParser() {
+        return toolCallParser;
+    }
 }
