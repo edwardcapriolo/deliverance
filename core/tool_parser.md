@@ -26,7 +26,7 @@ try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new Config
 ```
 ### PromptContext Jinja
 Remember each model has a different Jinja template and will insert tools differently. You will see below that the 
-LLama template grows quite significantly when a tool is listed. Note: this means a larger prompt.
+LLama template grows significantly when a tool is listed. Note: this means a larger prompt. 
 
 ```jija
 template:<|start_header_id|>system<|end_header_id|>
@@ -50,7 +50,7 @@ I would like to decide who goes first by a coin flip<|eot_id|><|start_header_id|
 
 ### Model detects need for tool
 
-The model uses it's intelligence to determine if it should use a tool.  For LLAMA some json is simply included in the response like so:
+The model uses it's intelligence to determine if it should use a tool.  For LLAMA json is simply included in the response like so:
 
 ```
 The JSON for the function call with its proper arguments is:
@@ -59,7 +59,7 @@ The JSON for the function call with its proper arguments is:
 
 In this case, the function "flip_coin" is called with no arguments. The result of the coin flip will determine who goes first. If the result is "H", then the first player goes first, and if the result is "T", then the second player goes first.
 ```
-Qwen wraps the json in XML <tool> to make it easier to pick out :)
+Qwen wraps the json in XML <tool> to make it easier to pick out, because XML rocks.
 
 ### ToolCallParser.java
 
@@ -85,7 +85,7 @@ public interface ToolCallParser {
 ### HTTP response
 
 Remember the "Agent" is the consumer of the response. They agent is looking for a finish_reason = "tool_calls". 
-This tells the agent "inference engine is finished generating", and "agent call this tool".
+This tells the "Agent": that "inference engine is finished generating", and "agent, call the tool".
 
 ```json
 {
@@ -112,15 +112,18 @@ This tells the agent "inference engine is finished generating", and "agent call 
 }
 
 ```
-The code that handles this is found in the controller.  
+The controller that handles the chat request and response handles this work  
 ```java
+// each model has a ToolCallParser that was assigned at construction time. 
 List<ToolCall> tcs = model.getToolCallParser().extract(resp);
+
 CreateChatCompletionResponseChoicesInner z2 = new CreateChatCompletionResponseChoicesInner()
         .message(new ChatCompletionResponseMessage().content(resp.responseTextWithSpecialTokens))
         .index(0);
 if (!tcs.isEmpty()) {
   z2.setFinishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.TOOL_CALLS);
 } 
+//else standard logic 
 tcs.forEach(tc -> {
     ChatCompletionMessageToolCall t = new ChatCompletionMessageToolCall();
     t.id(tc.getId());
