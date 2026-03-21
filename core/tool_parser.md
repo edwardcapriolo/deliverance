@@ -1,11 +1,11 @@
 ## Tool Parsers
 
 Inference engines can be told about Tools (previously called functions). They do not call the tools directly during inferencing, instead
-the reply wit special instructions for the users "agent" to use the tool to complete a task.
+the reply with special instructions for the user's "agent" to use the tool to complete a task.
 
 ### Notice: Tool support 
 Not all models support tools. Even if a model supports tools, if it is smaller(weaker) it might struggle 
-to find the right tool to call or call it correctly
+to find the right tool to call or call it correctly.
 
 ### Before you start
 You may want to read [inference flow](inference_flow.md) so you understand the processing steps
