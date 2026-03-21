@@ -141,8 +141,8 @@ response.addChoicesItem(z2);
 
 ### Quirky stuff
 
-- The model argument of the tool are Map<String,Object>, but in the JSON it is a flat string.
-- The FINISH_REASON is "tools_call". However the model can continue generating a lot of text, and hit stop_words or max_tokens
+- The model argument of the tool are Map<String,Object>, but in the JSON it is a flat string. This means \" escapes for json etc.
+- The FINISH_REASON is "tools_call". However the model can continue generating a lot of text, and hit stop_words or max_tokens be mindful of this.
 - The code is responsible for creating ids for each tool call ""id": "call_123"
 
 
