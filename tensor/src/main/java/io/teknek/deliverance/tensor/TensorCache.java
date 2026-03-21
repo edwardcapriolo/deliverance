@@ -2,6 +2,7 @@ package io.teknek.deliverance.tensor;
 
 import com.codahale.metrics.Meter;
 import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.Timer;
 import com.google.common.collect.Maps;
 
 import java.util.concurrent.ConcurrentMap;
@@ -97,7 +98,8 @@ public class TensorCache implements TensorCacheIface {
         AbstractTensor t = availableQueue.poll();
         if (t != null) {
             metricRegistry.meter("tensorcache.get.hit").mark();
-            t.clear();
+            Timer timer =metricRegistry.timer("tensorcache.zero-out-time");
+            timer.time(t::clear);
             return t;
         }
         return internalGet(dType, shape);

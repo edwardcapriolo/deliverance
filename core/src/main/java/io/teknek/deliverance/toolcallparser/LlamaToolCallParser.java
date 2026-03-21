@@ -8,6 +8,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
@@ -17,11 +19,10 @@ public class LlamaToolCallParser implements ToolCallParser {
     private static final Logger LOG = LoggerFactory.getLogger(LlamaToolCallParser.class);
     String eot = "<|eot_id|>";
 
-    public MessageAndToolCall extract(Response response){
+    public List<ToolCall> extract(Response response){
         int id = 101;
-
-        MessageAndToolCall cr = new MessageAndToolCall();
         String [] parts = response.responseTextWithSpecialTokens.split(Pattern.quote(eot));
+        List<ToolCall> result = new ArrayList<>();
         for(String part : parts){
             if (part.startsWith("assistant<|end_header_id|>")){
                 Optional<String> x = extractJsonSubstring(part);
@@ -29,18 +30,15 @@ public class LlamaToolCallParser implements ToolCallParser {
                     try {
                         ToolCall toolCall = JsonUtils.om.readValue(x.get(), ToolCall.class);
                         toolCall.setId((id++) + "");
-                        cr.messages.add(new MessageDatum("assistant", null, toolCall));
+                        result.add(toolCall);
                     } catch (JsonProcessingException e) {
                         LOG.warn("Attempting to parse tool call:", e );
-                        cr.messages.add(new MessageDatum("assistant", part, null));
                     }
                 }
-            } else {
-                cr.messages.add(new MessageDatum("assistant", part, null));
             }
         }
 
-        return cr;
+        return result;
     }
 
     public static Optional<String> extractJsonSubstring(String mixedContent) {

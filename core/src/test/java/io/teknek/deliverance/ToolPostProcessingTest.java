@@ -8,6 +8,7 @@ import io.teknek.deliverance.toolcallparser.LlamaToolCallParser;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -29,9 +30,9 @@ public class ToolPostProcessingTest {
         Response r = new Response("", flipCoinNoParamLlamaResponse, FinishReason.TOOL_CALL,0, null,
                 0, 0);
         LlamaToolCallParser c = new LlamaToolCallParser();
-        MessageAndToolCall resp = c.extract(r);
-        assertEquals(4, resp.messages.size());
-        ToolCall expectedTool = resp.messages.get(1).toolCall;
+        List<ToolCall> resp = c.extract(r);
+        assertEquals(1, resp.size());
+        ToolCall expectedTool = resp.get(0);
         assertEquals( "101", expectedTool.getId());
         assertEquals( "flip_coin", expectedTool.getName());
         assertEquals( new HashMap<String,Object>(), expectedTool.getParameters());
