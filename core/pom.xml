@@ -51,7 +51,7 @@
       <groupId>io.teknek.deliverance</groupId>
       <artifactId>native</artifactId>
       <version>${project.version}</version>
-      <classifier>${os.detected.name}-x86_64</classifier>
+      <classifier>${os.detected.name}-${os.detected.arch}</classifier>
       <optional>true</optional>
     </dependency>
 
