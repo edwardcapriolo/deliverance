@@ -60,21 +60,16 @@ public class PromptSupport {
         private PromptType type = PromptType.DEFAULT;
         private boolean addGenerationPrompt = true;
         private String customizedTemplate;
+        private final List<Tool> tools = new ArrayList<>();
 
         private final List<Message> messages = new ArrayList<>(2);
-        //private Optional<List<String>> choices = Optional.empty();
+
         private boolean stripPreamble = false;
 
         private Builder(TokenizerModel m, Jinjava jinJava) {
             this.tokenizerModel = m;
             this.jinJava = jinJava;
         }
-
-        /*
-        public Builder withChoices(List<String> choices){
-            this.choices = Optional.of(choices);
-            return this;
-        }*/
 
         public Builder useChatTemplate(String templateString){
             customizedTemplate = templateString;
@@ -121,16 +116,27 @@ public class PromptSupport {
             return this;
         }
 
+        /* Adds a single tool call to the list */
+        public Builder addToolItem(Tool tool){
+            tools.add(tool);
+            return this;
+        }
+
         public PromptContext build() {
-            return build(Optional.empty());
+            if (tools.isEmpty()) {
+                return build(Optional.empty());
+            } else {
+                return build(Optional.of(tools));
+            }
         }
 
-        public PromptContext build(List<Tool> tools) {
+        /**
+         *
+         * @param tools adds the list of tools to the existing list inside the builder
+         */
+        public PromptContext build(List<Tool> additionalTools) {
+            tools.addAll(additionalTools);
             return build(Optional.of(tools));
-        }
-
-        public PromptContext build(Tool... tools) {
-            return build(Optional.of(List.of(tools)));
         }
 
         private PromptContext build(Optional<List<Tool>> optionalTools) {
@@ -141,7 +147,7 @@ public class PromptSupport {
                 throw new UnsupportedOperationException("Prompt templates are not available for this model");
             }
             String template;
-            if(this.customizedTemplate != null){
+            if (customizedTemplate != null){
                 template = customizedTemplate;
             } else {
                 template = tokenizerModel.getPromptTemplates()
@@ -165,14 +171,18 @@ public class PromptSupport {
                     Map.of( "messages", messages.stream().map(Message::toMap).toList(), "add_generation_prompt",
                             addGenerationPrompt, "eos_token", tokenizerModel.getEosToken(), "bos_token", "")
             );
-            optionalTools.ifPresent(tools -> args.put("tools", tools));
-            RenderResult r = jinJava.renderForResult(template, args);
-            if (r.hasErrors()) {
-                logger.debug("Prompt template errors: {}", r.getErrors());
-                throw new RuntimeException("Prompt template errors: " + r.getErrors());
+            //optionalTools.ifPresent(tools -> args.put("tools", tools));
+            optionalTools.ifPresent(this.tools::addAll);
+            if (!tools.isEmpty()){
+                args.put("tools", tools);
             }
-            String output = r.getOutput();
-            return new PromptContext(output.substring(preamble.length()), optionalTools);
+            RenderResult renderResult = jinJava.renderForResult(template, args);
+            if (renderResult.hasErrors()) {
+                logger.debug("Prompt template errors: {}", renderResult.getErrors());
+                throw new RuntimeException("Prompt template errors: " + renderResult.getErrors());
+            }
+            String output = renderResult.getOutput();
+            return new PromptContext(output.substring(preamble.length()));
         }
     }
 

@@ -3,14 +3,13 @@ package net.deliverance.http;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.model.Error;
+import io.teknek.deliverance.safetensors.prompt.Function;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
+import io.teknek.deliverance.safetensors.prompt.Tool;
 import io.teknek.dysfx.Either;
 import org.springframework.http.HttpStatus;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 public class ChatCompletionService {
     public static Either<Error,PreparedRequest> mapRequest(Map<String, String> headers, AbstractModel model,
@@ -26,6 +25,21 @@ public class ChatCompletionService {
             params.withTemperature(request.getTemperature().floatValue());
         }
 
+        try {
+            //There are many possible data errors in here
+            if (request.getTools() != null) {
+                for (ChatCompletionTool chatCompletionTool : request.getTools()) {
+                    Tool t = convert(chatCompletionTool);
+                    builder.addToolItem(t);
+                }
+            }
+        } catch (RuntimeException e) {
+
+            return Either.Left(new Error().code(HttpStatus.BAD_REQUEST.value() + "")
+                    .message("An error happened mapping tools" + e.getMessage()));
+
+
+        }
         if (request.getNtokens() != null){
             params.withNtokens(request.getNtokens());
         }
@@ -40,6 +54,7 @@ public class ChatCompletionService {
                 params.withStopWords(stop.getListString());
             }
         }
+
         if(request.getChatTemplate() != null){
             builder.useChatTemplate(request.getChatTemplate());
         }
@@ -57,10 +72,11 @@ public class ChatCompletionService {
                             builder.addUserMessage(p.getChatCompletionRequestMessageContentPartText().getText());
                         } else {
                             return Either.Left(new Error().code(HttpStatus.BAD_REQUEST.value() + "")
-                                    .message("User messages must be type text"+m.getActualInstance()));
+                                    .message("User messages must be type text " + m.getActualInstance()));
                         }
                     }
                 }
+
             } else if (m.getActualInstance() instanceof ChatCompletionRequestSystemMessage) {
                 builder.addSystemMessage(m.getChatCompletionRequestSystemMessage().getContent());
             } else if (m.getActualInstance() instanceof ChatCompletionRequestAssistantMessage) {
@@ -74,4 +90,36 @@ public class ChatCompletionService {
 
         return Either.Right(new PreparedRequest(builder, params));
     }
+
+    /**
+     * This is a frustrating method as we are really mapping two identical types through a 1-1 code transforrmation.
+     *
+     * @param tool the input tool in the api format
+     * @return the same inforamtion in the internal (deliverance prompt) format
+     */
+    public static Tool convert(ChatCompletionTool tool){
+        FunctionObject f = tool.getFunction();
+        Function.Builder builder = Function.builder();
+        builder.name(f.getName());
+        builder.description(f.getDescription());
+
+        List<String> required = (List<String>) f.getParameters().get("required");
+        if (required == null) {
+            required = new ArrayList<>();
+        }
+        Map<String, Object > properties = (Map<String,Object>) f.getParameters().get("properties");
+        if (properties == null) {
+            return Tool.from(builder.build());
+        }
+        for (Map.Entry<String, Object> entry : properties.entrySet()) {
+            String name = entry.getKey();
+            Map<String,Object> value  = (Map<String,Object>) entry.getValue(); //{ "type": "string", "description": "State abbreviation" },
+            String type = (String) value.get("type");
+            String description = (String) value.get("description");
+            builder.addParameter(name, type, description, required.contains(name));
+
+        }
+        return  Tool.from(builder.build());
+    }
+
 }

@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Disabled;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -58,7 +59,7 @@ public class QwenTest {
                 PromptSupport ps = m.promptSupport().get();
                 Tool t = Tool.from(Function.builder().name("hello").build());
                 ctx = ps.builder().addSystemMessage("You are a chatbot that writes short correct responses.")
-                        .addUserMessage(prompt).build(t);
+                        .addUserMessage(prompt).build(List.of(t));
                 String expected = """
                         <|system|>
                         You are a chatbot that writes short correct responses.</s>
