@@ -69,7 +69,10 @@ public class        QwenPromptTest {
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
         String text = new Scanner(ModelSupport.class
                 .getResourceAsStream("/llama_tool_fix.jinja"), "UTF-8").useDelimiter("\\A").next();
-        Tool tool = Tool.from(Function.builder().name("flip_coin").description("This methods will flip a coin. The result will be H for heads or T for tails.").build());
+        Tool tool = Tool.from(Function.builder()
+
+                .name("flip_coin")
+                .description("This methods will flip a coin. The result will be H for heads or T for tails.").build());
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
                 new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch, new TokenizerRenderer(), new DefaultToolCallParser())) {
             String prompt = "Call the function flip_coin print the result.";
@@ -78,7 +81,7 @@ public class        QwenPromptTest {
                     .addToolCall(new ToolCall("flip_coin", "flip_coin1", Map.of()))
                     .addUserMessage(prompt);
 
-            PromptContext c = g.build(tool);
+            PromptContext c = g.build(List.of(tool));
             System.out.println(c.getPrompt());
             /*
             Assertions.assertEquals("""
@@ -153,7 +156,7 @@ Use the coinflip tool any analyze the result<|eot_id|><|start_header_id|>assista
             PromptSupport.Builder g = m.promptSupport().get().builder()
                     .addToolCall(new ToolCall("flip_coin", "flip_coin1", Map.of()))
                     .addUserMessage(prompt);
-            PromptContext c = g.build(tool);
+            PromptContext c = g.build(List.of(tool));
             System.out.println(c.getPrompt());
             /*
             var uuid = UUID.randomUUID();
