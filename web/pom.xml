@@ -203,7 +203,7 @@
                         --add-opens java.base/java.nio=ALL-UNNAMED
                         --add-modules jdk.incubator.vector
                         -Djdk.attach.allowAttachSelf=true
-
+                        -Djava.library.path=${build.directory}/../../native/target/native-lib-only
                     </argLine>
                 </configuration>
             </plugin>
