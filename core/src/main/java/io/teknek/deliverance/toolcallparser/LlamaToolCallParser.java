@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
 
@@ -20,25 +21,27 @@ public class LlamaToolCallParser implements ToolCallParser {
     String eot = "<|eot_id|>";
 
     public List<ToolCall> extract(Response response){
-        int id = 101;
+        AtomicInteger id = new AtomicInteger(101);
         String [] parts = response.responseTextWithSpecialTokens.split(Pattern.quote(eot));
         List<ToolCall> result = new ArrayList<>();
         for(String part : parts){
-            if (part.startsWith("assistant<|end_header_id|>")){
+            //if (part.startsWith("assistant<|end_header_id|>")){
                 Optional<String> x = extractJsonSubstring(part);
                 if (x.isPresent()) {
                     try {
                         ToolCall toolCall = JsonUtils.om.readValue(x.get(), ToolCall.class);
-                        toolCall.setId((id++) + "");
+                        //toolCall.setId((id++) + "");
                         result.add(toolCall);
                     } catch (JsonProcessingException e) {
                         LOG.warn("Attempting to parse tool call:", e );
                     }
                 }
-            }
+            //}
         }
+        List<ToolCall> distinct = result.stream().distinct().toList();
+        distinct.forEach(x -> x.setId((id.getAndIncrement()) + ""));
 
-        return result;
+        return distinct;
     }
 
     public static Optional<String> extractJsonSubstring(String mixedContent) {

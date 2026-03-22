@@ -1,9 +1,8 @@
-package io.teknek.deliverance;
+package io.teknek.deliverance.toolcallparser;
 
 import io.teknek.deliverance.generator.FinishReason;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.safetensors.prompt.ToolCall;
-import io.teknek.deliverance.toolcallparser.LlamaToolCallParser;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
