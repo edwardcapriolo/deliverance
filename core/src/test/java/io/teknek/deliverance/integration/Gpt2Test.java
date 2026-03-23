@@ -20,7 +20,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class Gpt2Test {
-    @Disbled
+    @Disabled
     public void chat(){
         ModelFetcher fetch = new ModelFetcher("openai-community", "gpt2-large");
 
