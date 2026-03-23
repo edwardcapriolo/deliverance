@@ -17,7 +17,7 @@ We aren't `inferencing`, we are `delivering`
 
 ### Lightning quick start 
 
-#### Embedded inference engine usage
+#### Embedded inference engine usage (ml-ops)
 
 Deliverance is capable of running as an API inside your application. Large Language Models are very resource 
 intensive, but smaller quantized models fit the embedded cases. It only takes a few lines of code to get started:
@@ -47,8 +47,46 @@ Response response = model.generate(UUID.randomUUID(), g.build(), new GeneratorPa
         }
     });
 ```
+#### Coding assistant (chat-bot, vibrant-maven-plugin, rag-chat)
 
-#### HTTP enabled inference engine
+You can use deliverance to do spec-driven-development including the vibrant-maven-plugin in your projects POM file!  
+
+```xml
+<plugin>
+    <groupId>io.teknek.deliverance</groupId>
+    <artifactId>vibrant-maven-plugin</artifactId>
+    <!--<version>0.0.4</version> -->
+    <configuration>
+        <vibeSpecs>
+            <vibeSpec>
+                <id>shape</id>
+                <enabled>true</enabled>
+                <overwrite>true</overwrite>
+                <systemMessages>
+                    <systemMessage>You are an assistant that produces concise, production-grade software.</systemMessage>
+                    <systemMessage>Output java code.</systemMessage>
+                    <systemMessage>Generate java code into the package 'io.teknek.shape' .</systemMessage>
+                </systemMessages>
+                <userMessages>
+                    <userMessage>Generate a java interface named Shape with a method named area that returns a double.</userMessage>
+                    <userMessage>Generate a java class named Circle that implements the Shape interface.</userMessage>
+                </userMessages>
+                <generateTo>generated-source</generateTo>
+            </vibeSpec>
+        </vibeSpecs>
+    </configuration>
+</plugin>
+
+```
+Then you trigger a run of the plugin to generate code based on your spec!
+
+```sh 
+export MAVEN_OPTS="--add-opens java.base/java.nio=ALL-UNNAMED --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -Djava.library.path=/home/edward/deliverence/native/target/native-lib-only"
+mvn io.teknek.deliverance:vibrant-maven-plugin:0.0.4-SNAPSHOT:generate
+
+```
+
+#### HTTP enabled inference engine (inference as a service)
 
 The http interface allows chat/completion and embedding requests to be answered remotely. The API
 is familiar to the popular services that you may have heard of. (Not every feature from every service is 
