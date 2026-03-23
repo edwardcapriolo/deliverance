@@ -172,10 +172,33 @@ The starrup logging will confirm what is chosen
 [main] INFO io.teknek.deliverance.model.AbstractModel - Tensor provider = Panama Vector Operations, parallelSplitSize = 4 
 [main] INFO io.teknek.deliverance.model.AbstractModel - Model type = Q4, Working memory type = F32, Quantized memory type = I8
 ```
-### Vector Spec and lane size
+#### Vector Spec and lane size
 
 The above Vector spec is what the JVM has detected the capabilities of the system are. A wider lane like 526 
 allow Project Panama and to stuff more data in a single lane and achieve more hardware parallelism.
+
+### Building
+
+The core build requires Java JDK 25 and maven (it technically is possible to build on Java 21 with preview features but very painful).
+
+```sh
+$export JAVA_HOME=/usr/lib/jvm/java-25-temurin-jdk/
+$git clone git@github.com:edwardcapriolo/deliverence.git
+$cd deliverence
+$mvn install -Dmaven.test.skip=true
+```
+The native SIMD operations can be build on linux, MAC, and probably windows(I dont have a windows build system right now).
+
+These are the requirements for an alpine build with lib-musl
+```
+doas apk add curl
+doas apk add openjdk25
+doas apk add gpg
+doas apk add bash
+doas apk add clang20-libclang-20.1.8-r0
+doas apk add llvm clang lld
+```
+You could also disable the native module during the build phase. As it is marked "optional" in the downstream components.
 
 
 ### 🔍 Semantic Search & Embeddings
