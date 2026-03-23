@@ -1,4 +1,4 @@
-#### deliverance
+## deliverance
 
 The name `Deliverance` 
 
@@ -17,14 +17,50 @@ We aren't `inferencing`, we are `delivering`
 
 ### Lightning quick start 
 
+#### Embedded inference engine usage
+
+Deliverance is capable of running as an API inside your application. Large Language Models are very resource 
+intensive, but smaller quantized models fit the embedded cases. It only takes a few lines of code to get started:
+The class AutoModelForCasualLm will fetch and load a given model.
+
+```java
+ModelFetcher fetch = new ModelFetcher("tjake", "Mistral-7B-Instruct-v0.3-JQ4");
+try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch).build()) {
+    PromptSupport.Builder g = model.promptSupport().get().builder()
+            .addUserMessage("Who is Edward Capriolo");
+    Response response = model.generate(UUID.randomUUID(), g.build(), new GeneratorParameters()
+                    .withTemperature(0.0f).withNtokens(500).withMaxTokens(150), new DoNothingGenerateEvent()));
+    System.out.println(response.responseText);
+ }
+// >> Edward Capriolo is a character in the game Among Us. He is a Crewmate and is one of the default characters....
+```
+There is also a simple callback interface. This allows you to print data as the model creates it 
+giving you more of a "chat" feel.
+
+```java
+Response response = model.generate(UUID.randomUUID(), g.build(), new GeneratorParameters()
+  .withTemperature(0.0f).withNtokens(500).withMaxTokens(150),
+    new GenerateEvent() {
+        @Override
+        public void emit(int next, String nextRaw, String nextCleaned, float timing) {
+            System.out.println(nextCleaned);
+        }
+    });
+```
+
+#### HTTP enabled inference engine
+
+The http interface allows chat/completion and embedding requests to be answered remotely. The API
+is familiar to the popular services that you may have heard of. (Not every feature from every service is 
+implemented, but we have a good base).
 ```shell
- export JAVA_HOME=/usr/lib/jvm/java-24-temurin-jdk
+
+edward@fedora:~/deliverence/web$ export JAVA_HOME=/usr/lib/jvm/java-25-temurin-jdk
  # dont skip the tets all the time they are fun, but just this time
  mvn package -Dmaven.test.skip=true
  cd web
 edward@fedora:~/deliverence/web$ sh run.sh 
 WARNING: Using incubator modules: jdk./run.incubator.vector
-Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
 
   .   ____          _            __ _ _
  /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
@@ -36,57 +72,60 @@ Standard Commons Logging discovery in action with spring-jcl: please remove comm
  :: Spring Boot ::                (v3.5.5)
 
 2025-10-30T14:37:10.247-04:00  INFO 218011 --- [           main] n.d.http.DeliveranceApplication          : Starting DeliveranceApplication using Java 24.0.2 with PID 218011 (/home/edward/deliverence/web/target/web-0.0.1-SNAPSHOT.jar started by edward in /home/edward/deliverence/web)
-2025-10-30T14:37:13.932-04:00  WARN 218011 --- [           main] i.t.deliverance.model.AbstractModel      : embedding TensorShape{tshape=[57, 2048], capacity=116736, sparseRange=Optional.empty} 116736
-2025-10-30T14:37:32.561-04:00  WARN 218011 --- [           main] i.t.deliverance.model.AbstractModel      : After batch forward size: 116736 shape: TensorShape{tshape=[57, 2048], capacity=116736, sparseRange=Optional.empty}
-Response{responseText='10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000', responseTextWithSpecialTokens='10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000', finishReason=MAX_TOKENS, promptTokens=56, generatedTokens=199, promptTimeMs=19012, generateTimeMs=77902}
 2025-10-30T14:38:52.134-04:00  INFO 218011 --- [           main] o.s.b.a.w.s.WelcomePageHandlerMapping    : Adding welcome page: class path resource [public/index.html]
 2025-10-30T14:38:53.002-04:00  INFO 218011 --- [           main] n.d.http.DeliveranceApplication          : Started DeliveranceApplication in 103.909 seconds (process running for 105.417)
 
 ```
-We run n query on startup to warm the cache sorry :) otherwise it would start faster. Also first time has to 
-download a model!
-
 Open your browser to http://localhost:8080
 
 <p align="center">
   <img src="deliv.png"  alt="Deliver me">
 </p>
 
-### Using as a library
-Odds are you don't want to use the amazing UI depicted above. Deliverance is made in components and 
-very easy to use as a library as you might use transformers/
-
-```java
-   ModelFetcher fetch = new ModelFetcher("tjake", "Qwen2.5-0.5B-Instruct-JQ4");
-   AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(fetch);
-   try (AbstractModel model = builder.build()) {
-       String prompt = "What is the best season to plant avocados?";
-       PromptContext ctx;
-       PromptSupport ps = m.promptSupport().get();
-       Response r = m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(42), (s1, f1) -> { });
-       System.out.printn(r.resultText); 
-   }
-   //>> "It is best to plant them in the fall because..."
-```
 
 ### Learning and Developer docs
 
 - [inference engine flow](core/inference_flow.md) Explains the transformations and flows http/prompt/jinja/ etc.
 - [tool call parser](core/tool_parser.md) Explains how the tool call parser is implemented in the stack
 
-### Enabling SIMD support
-Deliverance will automatically attempt to leverage project panama to do lanewise operations. However,
-we also provide native library do some operations in native c
+## Project Panama (Foreign Memory, Vector operations)
+
+Deliverance supports multiple tensor engines. They are not as general purpose as a DataFrame API
+but offer methods for computing data. 
 
 ```java
-   ModelFetcher fetch = new ModelFetcher("tjake", "Qwen2.5-0.5B-Instruct-JQ4");
-   AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(fetch);
-   NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(builder.getCache()).get());
-   builder.withTensorProvider(new ConfigurableTensorProvider(operation));
-   try (AbstractModel model = builder.build()) {
-       ...
-   }
+public void batchDotProduct(AbstractTensor result, AbstractTensor a, AbstractTensor b, ...) 
+public void maccumulate(AbstractTensor aBatch, AbstractTensor bBatch, int offset, int limit) 
 ```
+There are multiple provided implementations:
+- NaiveTensorOperations: Uses Foreign Memory API, processing as standard arrays
+- PanamaTensorOperations: Uses Foreign Memory API, Project Panama to process datasets using lanewise hardware acceleration
+- NativeSimdTensorOperation: Uses Foreign Memory API, Native code written in c for SIMD
+
+The class `AutoModelForCausaLm` will attempt to load an appropriate implementation, starting with the NativeSimd support. 
+
+```java
+ModelFetcher fetch = new ModelFetcher("deliverance-private-repo", "Mistral-7B-Instruct-v0.3-JQ4");
+try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch).build()) 
+```
+
+If you wish to use only the PanamaSupport (because you want to keep it 100% pure java, or unable to build/leveage native code)
+```java
+try (AbstractModel model = builder.withTensorProvider(new ConfigurableTensorProvider(builder.getCache())).build() ) {
+```
+
+The starrup logging will confirm what is chosen
+```
+[main] INFO io.teknek.deliverance.model.ModelSupport - Machine Vector Spec: 256 Byte Order: LITTLE_ENDIAN
+[main] INFO io.teknek.deliverance.model.ModelSupport - Seeking a model of type MISTRAL from the registry. 
+[main] INFO io.teknek.deliverance.model.AbstractModel - Tensor provider = Panama Vector Operations, parallelSplitSize = 4 
+[main] INFO io.teknek.deliverance.model.AbstractModel - Model type = Q4, Working memory type = F32, Quantized memory type = I8
+```
+### Vector Spec and lane size
+
+The above Vector spec is what the JVM has detected the capabilities of the system are. A wider lane like 526 
+allow Project Panama and to stuff more data in a single lane and achieve more hardware parallelism.
+
 
 ### 🔍 Semantic Search & Embeddings
 
