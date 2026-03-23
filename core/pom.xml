@@ -10,10 +10,9 @@
   <properties>
     <build.plugins.plugin.version>3.5.3</build.plugins.plugin.version>
     <guava.version>32.0.1-jre</guava.version>
-
     <jafama.version>2.3.2</jafama.version>
     <jcttools.version>4.0.1</jcttools.version>
-
+    <jemojie.version>1.7.6</jemojie.version>
   </properties>
 
   <dependencies>
@@ -113,6 +112,13 @@
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-core</artifactId>
       <version>${jackson.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>net.fellbaum</groupId>
+      <artifactId>jemoji</artifactId>
+      <version>${jemojie.version}</version>
+      <scope>compile</scope>
     </dependency>
 
     <dependency>
