@@ -127,10 +127,17 @@ Open your browser to http://localhost:8080
 - [tool call parser](core/tool_parser.md) Explains how the tool call parser is implemented in the stack
 - [Vibrant-maven-plugin](https://www.youtube.com/watch?v=Glp_hAieOq8) Watch a video on Vibrant-maven-plugin generate code from XML based spec inside pom
 
-### For users
+### Inference Types supported
 
+- generation   "Tell me about space" -> "Space is bla bla"
+- embedding    "tell me about space" -> [1.0, 1.3, 2.3]
 
-
+### Models supported
+Geneation
+- gemma2
+- llama 
+- mistral
+- qwen2
 
 ### Project Panama (Foreign Memory, Vector operations)
 
