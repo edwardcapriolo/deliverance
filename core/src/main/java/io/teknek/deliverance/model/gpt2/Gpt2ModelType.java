@@ -8,8 +8,7 @@ import io.teknek.deliverance.tokenizer.Tokenizer;
 public class Gpt2ModelType implements ModelType {
     @Override
     public Class<? extends AbstractModel> getModelClass() {
-        //return GPT2Model.class;
-        return null;
+        return Gpt2Model.class;
     }
 
     @Override

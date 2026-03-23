@@ -138,6 +138,7 @@ Geneation
 - llama 
 - mistral
 - qwen2
+- gpt2
 
 ### Project Panama (Foreign Memory, Vector operations)
 
