@@ -1,5 +1,10 @@
 ## deliverance
 
+Deliverance is a Java inference engine, capable of generating text, tokenizing input, computing embeddings, and more. 
+ 
+
+### Where did you get the name?
+
 The name `Deliverance` 
 
 https://www.merriam-webster.com/dictionary/deliverance
