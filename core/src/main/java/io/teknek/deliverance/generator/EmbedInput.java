@@ -23,7 +23,7 @@ public abstract class EmbedInput {
         Preconditions.checkArgument(inputTokens.length > 0);
         AbstractTensor zeroTokenEmbedding = inputTokenToEmbedding(inputTokens[0], startPos);
 
-        LOGGER.warn("tensor for 0th inputToken shape {} size {}", zeroTokenEmbedding.shape(), zeroTokenEmbedding.size());
+        LOGGER.debug("tensor for 0th inputToken shape {} size {}", zeroTokenEmbedding.shape(), zeroTokenEmbedding.size());
         if (inputTokens.length == 1) {
             return zeroTokenEmbedding;
         }

@@ -6,6 +6,7 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.model.bert.BertModelType;
 import io.teknek.deliverance.model.gemma2.Gemma2ModelType;
 import io.teknek.deliverance.model.gemma3.Gemma3ModelType;
+import io.teknek.deliverance.model.gpt2.Gpt2ModelType;
 import io.teknek.deliverance.model.llama.LlamaModelType;
 import io.teknek.deliverance.model.mistral.MistralModelType;
 import io.teknek.deliverance.model.qwen2.Qwen2ModelType;
@@ -48,6 +49,7 @@ public class ModelSupport {
         registry.putIfAbsent("GEMMA2", new Gemma2ModelType());
         registry.putIfAbsent("GEMMA3_TEXT", new Gemma3ModelType());
         registry.putIfAbsent("MISTRAL", new MistralModelType());
+        registry.putIfAbsent("GPT2", new Gpt2ModelType());
     }
 
     public static void addModel(String modelName, ModelType t){
