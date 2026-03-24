@@ -16,7 +16,7 @@
     </parent>
 
     <properties>
-        <junit.version>5.11.4</junit.version>
+        <!--<junit.version>5.11.4</junit.version>-->
         <mockito.version>5.20.0</mockito.version>
         <owasp.version>12.1.0</owasp.version>
         <!-- <serenity.base.version>4.2.13</serenity.base.version>-->
@@ -226,6 +226,17 @@
         <developerConnection>scm:git:git@github.com:edwardcapriolo/deliverance.git</developerConnection>
     </scm>
 
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.junit</groupId>
+                <artifactId>junit-bom</artifactId>
+                <version>6.0.3</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
     <licenses>
         <license>
             <name>Apache License, Version 2.0</name>
@@ -243,9 +254,7 @@
                 </property>
             </activation>
             <build>
-
                 <plugins>
-
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-gpg-plugin</artifactId>
