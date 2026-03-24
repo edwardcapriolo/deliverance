@@ -22,6 +22,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class GemmaPromptIT {
@@ -36,7 +37,6 @@ public class GemmaPromptIT {
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
                 mr, tensorCache, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer(), new DefaultToolCallParser())) {
-            //String prompt = "Find any potential syntax errors in the code below\n";
             String prompt = """
                     You are a software engineer.
                     
@@ -49,13 +49,6 @@ public class GemmaPromptIT {
                     Implement the method:
                     public static float cosineSimilarity(float[] a, float[] b)
                     """;
-            String claz = """
-                      -------------------------
-                      public static float cosineSimilarity(float[] a, float[] b) {
-                        return "";
-                      }
-                    """;
-
             PromptSupport.Builder g = m.promptSupport().get().builder()
                     .addUserMessage(prompt);
 
@@ -80,130 +73,100 @@ public class GemmaPromptIT {
     //        dtype=np.int32,
     //    )
     @Test
-    public void chat(){
-        ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
-        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider( new TensorCache(new MetricRegistry())).get());
-        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
-                .withTensorProvider(new ConfigurableTensorProvider(operation)).build()) {
-            String prompt = """
-What does this python code do?
----------------------------
-def allocate_token_bitmask(vocab_size: int) -> np.ndarray:
-    return np.full(
-        (1, (vocab_size + 31) // 32),
-        -1,
-        dtype=np.int32,
-    )
-                    """;
-            PromptSupport.Builder g = model.promptSupport().get().builder()
-                    .addUserMessage(prompt);
-            var uuid = UUID.randomUUID();
+    public void chat() {
 
-            Response k = model.generate(uuid, g.build(), new GeneratorParameters().withTemperature(0.0f),
-                    new GenerateEvent() {
-                        @Override
-                        public void emit(int next, String nextRaw, String nextCleaned, float timing) {
-                            System.out.println(nextCleaned);
-                        }
-                    });
-        }
+        AbstractModel model = Gemma2Suite.getOrCreate();
+        String prompt = """
+                What does this python code do?
+                ---------------------------
+                def allocate_token_bitmask(vocab_size: int) -> np.ndarray:
+                    return np.full(
+                        (1, (vocab_size + 31) // 32),
+                        -1,
+                        dtype=np.int32,
+                    )
+                """;
+        PromptSupport.Builder g = model.promptSupport().get().builder().addUserMessage(prompt);
+        var uuid = UUID.randomUUID();
+
+        Response k = model.generate(uuid, g.build(), new GeneratorParameters().withMaxTokens(100).withTemperature(0.0f),
+               new DoNothingGenerateEvent());
+        String expected = """
+Let's break down this Python code snippet.
+
+**Understanding the Code**
+
+This code defines a function called `allocate_token_bitmask` that generates a bitmask for a vocabulary.  Here's a step-by-step explanation:
+
+1. **Function Definition:**
+   - `def allocate_token_bitmask(vocab_size: int) -> np.ndarray:`
+     - This line defines a function named `allocate_token_bitmask`. """.trim();
+        assertEquals(expected, k.responseText.trim());
+
     }
 
     @Test
     public void gemmaTest() throws IOException {
-        ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
-        File f = fetch.maybeDownload();
-        MetricRegistry mr = new MetricRegistry();
-        TensorCache tensorCache = new TensorCache(mr);
-        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
-        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                mr, tensorCache, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer(), new DefaultToolCallParser())) {
-            String prompt = "What is the capital of New York, USA?";
-            PromptSupport.Builder g = m.promptSupport().get().builder()
-                    .addUserMessage(prompt);
-            Assertions.assertEquals("<start_of_turn>user\n" +
-                    "What is the capital of New York, USA?<end_of_turn>\n" +
-                    "<start_of_turn>model\n",g.build().getPrompt());
-            var uuid = UUID.randomUUID();
+        AbstractModel m = Gemma2Suite.getOrCreate();
+        MetricRegistry mr = Gemma2Suite.getBuilder().getMr();
+        String prompt = "What is the capital of New York, USA?";
+        PromptSupport.Builder g = m.promptSupport().get().builder()
+                .addUserMessage(prompt);
+        assertEquals("<start_of_turn>user\n" +
+                "What is the capital of New York, USA?<end_of_turn>\n" +
+                "<start_of_turn>model\n", g.build().getPrompt());
+        var uuid = UUID.randomUUID();
 
-            Response k = m.generate(uuid, g.build(), new GeneratorParameters().withTemperature(0.0f),
-                    new DoNothingGenerateEvent());
-            System.out.println(k.responseText);
-            assertTrue(k.responseText.contains("Albany"));
+        Response k = m.generate(uuid, g.build(), new GeneratorParameters().withTemperature(0.0f),
+                new DoNothingGenerateEvent());
+        System.out.println(k.responseText);
+        assertTrue(k.responseText.contains("Albany"));
 
-            System.out.println(Arrays.toString(mr.histogram("sample.fullsample").getSnapshot().getValues()));
-            System.out.println( mr.histogram("sample.fullsample").getSnapshot().getMean());
-            System.out.println( mr.histogram("sample.fullsample").getSnapshot().get99thPercentile());
+        System.out.println(Arrays.toString(mr.histogram("sample.fullsample").getSnapshot().getValues()));
+        System.out.println(mr.histogram("sample.fullsample").getSnapshot().getMean());
+        System.out.println(mr.histogram("sample.fullsample").getSnapshot().get99thPercentile());
 
-            System.out.println(Arrays.toString(mr.histogram("sample.forward1").getSnapshot().getValues()));
-            System.out.println( mr.histogram("sample.forward1").getSnapshot().getMean());
-            System.out.println( mr.histogram("sample.forward1").getSnapshot().get99thPercentile());
+        System.out.println(Arrays.toString(mr.histogram("sample.forward1").getSnapshot().getValues()));
+        System.out.println(mr.histogram("sample.forward1").getSnapshot().getMean());
+        System.out.println(mr.histogram("sample.forward1").getSnapshot().get99thPercentile());
 
-            System.out.println(Arrays.toString(mr.histogram("sample.dotproduct2").getSnapshot().getValues()));
-            System.out.println( mr.histogram("sample.dotproduct2").getSnapshot().getMean());
-            System.out.println( mr.histogram("sample.dotproduct2").getSnapshot().get99thPercentile());
-        }
+        System.out.println(Arrays.toString(mr.histogram("sample.dotproduct2").getSnapshot().getValues()));
+        System.out.println(mr.histogram("sample.dotproduct2").getSnapshot().getMean());
+        System.out.println(mr.histogram("sample.dotproduct2").getSnapshot().get99thPercentile());
 
     }
 
     @Test
-    public void gemmaGuidedTest() throws IOException {
-        ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
-        File f = fetch.maybeDownload();
-        MetricRegistry mr = new MetricRegistry();
-        TensorCache tensorCache = new TensorCache(mr);
-        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
-        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                mr, tensorCache, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer(), new DefaultToolCallParser())) {
-            String prompt = "Who is the better NFL football team?";
-            PromptSupport.Builder g = m.promptSupport().get().builder()
-                    .addUserMessage(prompt);
-            Assertions.assertEquals("<start_of_turn>user\n" +
-                    "Who is the better NFL football team?<end_of_turn>\n" +
-                    "<start_of_turn>model\n",g.build().getPrompt());
-            var uuid = UUID.randomUUID();
-
-            Response k = m.generate(uuid, g.build(), new GeneratorParameters()
-                            .withTemperature(0.0f)
-                            .withGuidedChoice(List.of("Giants", "Jets")),
-                    new DoNothingGenerateEvent());
-            System.out.println(k.responseText);
-            assertTrue(k.responseText.contains("Giants"));
-        }
-
+    public void gemmaGuidedTest() {
+        AbstractModel m = Gemma2Suite.getOrCreate();
+        String prompt = "Who is the better NFL football team?";
+        PromptSupport.Builder g = m.promptSupport().get().builder()
+                .addUserMessage(prompt);
+        assertEquals("<start_of_turn>user\n" +
+                "Who is the better NFL football team?<end_of_turn>\n" +
+                "<start_of_turn>model\n", g.build().getPrompt());
+        var uuid = UUID.randomUUID();
+        Response k = m.generate(uuid, g.build(), new GeneratorParameters()
+                        .withTemperature(0.0f)
+                        .withGuidedChoice(List.of("Giants", "Jets")),
+                new DoNothingGenerateEvent());
+        System.out.println(k.responseText);
+        assertTrue(k.responseText.contains("Giants"));
     }
 
     @Test
     public void gemmaGuidedTestNeg() throws IOException {
-        ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
-        File f = fetch.maybeDownload();
-        MetricRegistry mr = new MetricRegistry();
-        TensorCache tensorCache = new TensorCache(mr);
-        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
-        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                mr, tensorCache, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer(), new DefaultToolCallParser())) {
-            String prompt = "Which NFL franchise does not play in New York?";
-            PromptSupport.Builder g = m.promptSupport().get().builder()
-                    .addUserMessage(prompt);
-            var uuid = UUID.randomUUID();
+        AbstractModel m = Gemma2Suite.getOrCreate();
+        String prompt = "Which NFL franchise does not play in New York?";
+        PromptSupport.Builder g = m.promptSupport().get().builder()
+                .addUserMessage(prompt);
+        var uuid = UUID.randomUUID();
 
-            Response k = m.generate(uuid, g.build(), new GeneratorParameters()
-                            .withTemperature(0.0f)
-                            .withGuidedChoice(List.of("Giants", "Jets", "Seahawks")),
-                    new GenerateEvent() {
-                        @Override
-                        public void emit(int next, String nextRaw, String nextCleaned, float timing) {
-                            System.out.println(nextCleaned);
-                        }
-                    });
-            System.out.println(k.responseText);
-            assertTrue(k.responseText.contains("Seahawks"));
-        }
-
+        Response k = m.generate(uuid, g.build(), new GeneratorParameters()
+                        .withTemperature(0.0f)
+                        .withGuidedChoice(List.of("Giants", "Jets", "Seahawks")),
+               new DoNothingGenerateEvent());
+        assertTrue(k.responseText.contains("Seahawks"));
     }
-
-
-
-
 
 }
