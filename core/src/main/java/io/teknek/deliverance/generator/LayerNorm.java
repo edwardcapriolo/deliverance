@@ -51,7 +51,7 @@ public class LayerNorm {
             float sumSq = 0;
             int limit = offset + length;
             if (b == 3) {
-                CausualWhisperer.LOGGER.info("LayerNorm.forward batch {} loop offset {} to limit {}", b, offset, limit);
+                CausualWhisperer.LOGGER.debug("LayerNorm.forward batch {} loop offset {} to limit {}", b, offset, limit);
             }
             for (int i = offset; i < limit; i++) {
                 float v = input.get(b, i);
@@ -62,7 +62,7 @@ public class LayerNorm {
             float variance = sumSq / embeddingLength - mean * mean;
             float invStddev = 1.0f / (float) FastMath.sqrt(variance + eps);
             if (b == 3) {
-                CausualWhisperer.LOGGER.info("LayerNorm.forward sum {} sumSq {} mean {} variance {} invStdDev {} ",
+                CausualWhisperer.LOGGER.debug("LayerNorm.forward sum {} sumSq {} mean {} variance {} invStdDev {} ",
                         sum, sumSq, mean, variance, invStddev);
             }
             for (int i = offset; i < limit; i++) {
