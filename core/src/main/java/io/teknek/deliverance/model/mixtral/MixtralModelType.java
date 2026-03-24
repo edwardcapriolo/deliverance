@@ -1,4 +1,5 @@
-package io.teknek.deliverance.model.mistral;
+package io.teknek.deliverance.model.mixtral;
+
 
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.ModelType;
@@ -6,15 +7,15 @@ import io.teknek.deliverance.model.llama.LlamaTokenizer;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.tokenizer.Tokenizer;
 
-public class MistralModelType implements ModelType {
+public class MixtralModelType implements ModelType {
     @Override
     public Class<? extends AbstractModel> getModelClass() {
-        return MistralModel.class;
+        return MixtralModel.class;
     }
 
     @Override
     public Class<? extends Config> getConfigClass() {
-        return MistralConfig.class;
+        return MixtralConfig.class;
     }
 
     @Override
