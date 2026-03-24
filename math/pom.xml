@@ -39,12 +39,14 @@
       <version>${junit.version}</version>
       <scope>test</scope>
     </dependency>
+    <!--
     <dependency>
       <groupId>net.serenity-bdd</groupId>
       <artifactId>serenity-junit5</artifactId>
       <version>${serenity.base.version}</version>
       <scope>test</scope>
     </dependency>
+    -->
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-simple</artifactId>
@@ -96,10 +98,12 @@
           </argLine>
         </configuration>
       </plugin>
+      <!--
       <plugin>
        <groupId>net.serenity-bdd.maven.plugins</groupId>
        <artifactId>serenity-maven-plugin</artifactId>
       </plugin>
+      -->
     </plugins>
   </build>
 </project>  

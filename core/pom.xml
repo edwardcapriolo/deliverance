@@ -65,12 +65,13 @@
       <version>${junit.version}</version>
       <scope>test</scope>
     </dependency>
+    <!--
     <dependency>
       <groupId>net.serenity-bdd</groupId>
       <artifactId>serenity-junit5</artifactId>
       <version>${serenity.base.version}</version>
       <scope>test</scope>
-    </dependency>
+    </dependency> -->
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-simple</artifactId>

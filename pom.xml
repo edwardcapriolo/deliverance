@@ -19,9 +19,9 @@
         <junit.version>5.11.4</junit.version>
         <mockito.version>5.20.0</mockito.version>
         <owasp.version>12.1.0</owasp.version>
-        <serenity.base.version>4.2.13</serenity.base.version>
+        <!-- <serenity.base.version>4.2.13</serenity.base.version>-->
         <osmaven.version>1.7.1</osmaven.version>
-        <serenity.plugin.version>${serenity.base.version}</serenity.plugin.version>
+        <!-- <serenity.plugin.version>${serenity.base.version}</serenity.plugin.version>-->
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
         <maven.compiler.release>25</maven.compiler.release>
@@ -193,6 +193,7 @@
                     <artifactId>maven-compiler-plugin</artifactId>
                     <version>${maven.compliler.plugin.version}</version>
                 </plugin>
+                <!--
                 <plugin>
                     <groupId>net.serenity-bdd.maven.plugin</groupId>
                     <artifactId>serenity-maven.plugin</artifactId>
@@ -207,7 +208,7 @@
                             </goals>
                         </execution>
                     </executions>
-                </plugin>
+                </plugin> -->
             </plugins>
         </pluginManagement>
     </build>
