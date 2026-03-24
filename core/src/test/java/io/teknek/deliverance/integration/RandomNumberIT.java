@@ -21,17 +21,11 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-public class RandomNumberTest {
+public class RandomNumberIT {
 
-    private void loadNative(){
-        File findLib = new File("target/native-lib-only/libdeliverance.so");
-        if (findLib.exists()) {
-            System.load(findLib.getAbsolutePath());
-        }
-    }
+
     @Test
     public void sample() {
-        loadNative();
         String modelName = "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4";
         String modelOwner = "tjake";
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);

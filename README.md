@@ -207,6 +207,22 @@ doas apk add llvm clang lld
 ```
 You could also disable the native module during the build phase. As it is marked "optional" in the downstream components.
 
+#### Testing
+
+In general, we look to keep testing light and fast and favor unit style tests on specific functionality whenever possible.
+In particular LLMs are large files and at times we bring down the files for a full end-to-end type test. These options
+can be used to customize the tests as they run.
+
+```
+-DskipTests
+-DskipUnitTests
+-DskipIntegrationTests
+```
+
+To skip the long running tests named *IT:
+```
+mvn test -DskipIntegrationTests
+```
 
 ### 🔍 Semantic Search & Embeddings
 
