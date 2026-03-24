@@ -3,6 +3,7 @@ package io.teknek.deliverance.model.mixtral;
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.*;
+import io.teknek.deliverance.model.llama.*;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.MixtureOfExpertsBlock;
 import io.teknek.deliverance.model.TokenRenderer;
@@ -20,7 +21,7 @@ import java.util.stream.IntStream;
 
 import static io.teknek.deliverance.tensor.AbstractTensorUtils.quantize;
 
-public class MixtralModel extends AbstractModel {
+public class MixtralModel extends LlamaModel {
 
     public MixtralModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
                         DType workingMemoryQType, Optional<DType> modelQType,
@@ -31,6 +32,7 @@ public class MixtralModel extends AbstractModel {
                 metricRegistry, tensorCache, kvBufferCacheSettings, tokenRenderer, toolCallParser);
     }
 
+/*
     @Override
     protected EmbedInput loadInputWeights() {
         throw new UnsupportedOperationException("not needed");
@@ -39,7 +41,7 @@ public class MixtralModel extends AbstractModel {
     @Override
     protected SampleOutput loadOutputWeights() {
         throw new UnsupportedOperationException("not needed");
-    }
+    } */
 
     @Override
     protected TransformerBlock[] loadTransformerBlockWeights() {
