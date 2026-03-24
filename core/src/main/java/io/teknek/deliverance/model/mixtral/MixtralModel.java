@@ -72,8 +72,8 @@ public class MixtralModel extends LlamaModel {
 
             for (int e = 0; e < mixtralConfig.numberOfExperts; e++) {
                 String expertPrefix = prefix + "experts." + e + ".";
-                quantize(expertGateWeights[e] = weights.load(expertPrefix + "w1.weight", config.dctx(), true, false), qType);
-                quantize(expertDownWeights[e] = weights.load(expertPrefix + "w2.weight"), qType);
+                expertGateWeights[e] = quantize(weights.load(expertPrefix + "w1.weight", config.dctx(), true, false), qType);
+                expertDownWeights[e] = quantize(weights.load(expertPrefix + "w2.weight"), qType);
                 expertUpWeights[e] = quantize(weights.load(expertPrefix + "w3.weight", config.dctx(), true, false), qType);
             }
 
