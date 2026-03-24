@@ -62,7 +62,6 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-api</artifactId>
-            <version>${junit.version}</version>
             <scope>test</scope>
         </dependency>
         <!--
@@ -177,6 +176,7 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <configuration>
+                    <forkCount>1</forkCount>
                     <argLine>
                         -XX:-UseCompactObjectHeaders
                         --add-opens java.base/java.nio=ALL-UNNAMED
