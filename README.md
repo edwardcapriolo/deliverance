@@ -142,6 +142,7 @@ Geneation
 - gemma2
 - llama 
 - mistral
+- mixtral
 - qwen2
 - gpt2
 
