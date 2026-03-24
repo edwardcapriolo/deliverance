@@ -340,3 +340,7 @@ After troubleshooting all the wrong things for hours I found not to use:
 ``` mvn:spring-boot run ```
     
 The debug mode seems to remove lots of optimizations causing very slow runtime. *web/run.sh* should be a good stand in.
+
+## Links
+
+[![Hypercommit](https://img.shields.io/badge/Hypercommit-DB2475)](https://hypercommit.com/deliverance)
