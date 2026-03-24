@@ -36,9 +36,6 @@ public class SimdTest {
 
     @Test
     void goTryIt(){
-        //File soFile = new File("target/native-lib-only/libdeliverance.so");
-        //assertTrue(soFile.exists());
-        //System.load(soFile.getAbsolutePath());
         TensorCache tc = new TensorCache(new MetricRegistry());
         NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tc).get());
         int size = 1024;
