@@ -107,5 +107,6 @@ public class NaiveTensorOperations implements TensorOperations {
     @Override
     public AbstractTensor quantize(AbstractTensor t, DType qtype, int offset, int length) {
         return AbstractTensorUtils.quantize(t, qtype, true);
+        //return null;
     }
 }

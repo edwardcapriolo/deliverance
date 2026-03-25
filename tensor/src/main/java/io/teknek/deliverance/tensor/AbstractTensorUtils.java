@@ -34,19 +34,21 @@ public class AbstractTensorUtils {
         };
     }*/
 
+    //Come up with a design that is more clear with the return value is it the input or a new tensor
+    @Deprecated(forRemoval = true)
     public static AbstractTensor quantize(AbstractTensor input, DType targetType, boolean force){
         if (!force && (input.shape().first() == 1 || input.dType == targetType || input.dType.size() < targetType.size())) {
             return input;
         }
         if (input.shape.isSparse()) {
-            LOGGER.info("Quantizing sparse tensor is not supported");
+            LOGGER.warn("Quantizing sparse tensor is not supported");
             return input;
         }
         return switch (targetType) {
             case Q4 -> new Q4ByteBufferTensor(input);
             case I8 -> new Q8ByteBufferTensor(input);
             case F32 -> new FloatBufferTensor(input);
-            case BF16 -> new BFloat16BufferTensor();
+            case BF16 -> new BFloat16BufferTensor(input);
             default -> input;
         };
     }

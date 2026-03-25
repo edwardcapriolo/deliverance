@@ -2,7 +2,6 @@ package io.teknek.deliverance.tensor;
 
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
