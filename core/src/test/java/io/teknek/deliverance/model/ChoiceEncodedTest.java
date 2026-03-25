@@ -1,5 +1,6 @@
 package io.teknek.deliverance.model;
 
+import io.teknek.deliverance.integration.Gemma2Suite;
 import io.teknek.deliverance.model.gemma2.GemmaTokenizer;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import org.junit.jupiter.api.Test;
@@ -13,29 +14,25 @@ public class ChoiceEncodedTest {
 
     @Test
     void buildEncoded(){
-        ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
-        try (AbstractModel m = AutoModelForCausaLm.fromPretrained(fetch)){
-            ChoiceEncoded ci = new ChoiceEncoded(Arrays.asList("Giants", "Jets"), m.tokenizer);
-            assertEquals( GemmaTokenizer.class, m.tokenizer.getClass());
-            GemmaTokenizer gemmaT = (GemmaTokenizer) m.tokenizer;
-            //Important: just because a model has the complete token in the vocabulary it might not be an optioa after
-            //forward pass
-            assertEquals(2, ci.getEncoded().size());
-            assertEquals(List.of(218954L), ci.getEncoded().get("Giants"));
-            assertEquals("Giants", m.tokenizer.decode(218954));
-        }
+        AbstractModel m = Gemma2Suite.getOrCreate();
+        ChoiceEncoded ci = new ChoiceEncoded(Arrays.asList("Giants", "Jets"), m.tokenizer);
+        assertEquals( GemmaTokenizer.class, m.tokenizer.getClass());
+        GemmaTokenizer gemmaT = (GemmaTokenizer) m.tokenizer;
+        //Important: just because a model has the complete token in the vocabulary it might not be an optioa after
+        //forward pass
+        assertEquals(2, ci.getEncoded().size());
+        assertEquals(List.of(218954L), ci.getEncoded().get("Giants"));
+        assertEquals("Giants", m.tokenizer.decode(218954));
     }
 
     @Test
     void longerName(){
-        ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
-        try (AbstractModel m = AutoModelForCausaLm.fromPretrained(fetch)){
-            ChoiceEncoded ci = new ChoiceEncoded(List.of("New York football Giants"), m.tokenizer);
-            assertEquals( GemmaTokenizer.class, m.tokenizer.getClass());
-            GemmaTokenizer gemmaT = (GemmaTokenizer) m.tokenizer;
-            assertEquals(1, ci.getEncoded().size());
-            assertEquals(Arrays.asList(2441L, 249L, 46671L, 249L, 43563L, 249L, 218954L),
-                    ci.getEncoded().get("New York football Giants"));
-        }
+        AbstractModel m = Gemma2Suite.getOrCreate();
+        ChoiceEncoded ci = new ChoiceEncoded(List.of("New York football Giants"), m.tokenizer);
+        assertEquals(GemmaTokenizer.class, m.tokenizer.getClass());
+        GemmaTokenizer gemmaT = (GemmaTokenizer) m.tokenizer;
+        assertEquals(1, ci.getEncoded().size());
+        assertEquals(Arrays.asList(2441L, 249L, 46671L, 249L, 43563L, 249L, 218954L),
+                ci.getEncoded().get("New York football Giants"));
     }
 }

@@ -1,19 +1,11 @@
 package io.teknek.deliverance.safetensors.prompt;
 
-import com.codahale.metrics.MetricRegistry;
-import io.teknek.deliverance.DType;
+import io.teknek.deliverance.integration.TinyLlamaSuite;
 import io.teknek.deliverance.model.*;
-import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
-import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorCache;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import java.io.File;
 import java.io.IOException;
 import java.util.UUID;
 
@@ -23,77 +15,55 @@ public class DirectPromptTest {
 
     @Test
     public void sample() throws IOException {
-        String modelName = "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4";
-        String modelOwner = "tjake";
-        ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
-        File f = fetch.maybeDownload();
-        MetricRegistry mr = new MetricRegistry();
-        TensorCache tensorCache = new TensorCache(mr);
-        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(tensorCache),
-                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch, new TokenizerRenderer(), new DefaultToolCallParser())) {
-            String prompt = "What is the best season to plant avocados?";
-            PromptContext ctx;
-            {
-                PromptSupport ps = m.promptSupport().get();
-                ctx = ps.builder().addSystemMessage("You are a chatbot that writes short correct responses.")
-                        .addUserMessage(prompt).build();
-                String expected = """
-                        <|system|>
-                        You are a chatbot that writes short correct responses.</s>
-                        <|user|>
-                        What is the best season to plant avocados?</s>
-                        <|assistant|>
-                        """;
-                assertEquals(expected, ctx.getPrompt());
-            }
-            {
-                PromptSupport ps = m.promptSupport().get();
-               // Tool t = Tool.from(Function.builder().name("hello").build());
-                ctx = ps.builder().addSystemMessage("You are a chatbot that writes short correct responses.")
-                        .addUserMessage(prompt).build();
-                String expected = """
-                        <|system|>
-                        You are a chatbot that writes short correct responses.</s>
-                        <|user|>
-                        What is the best season to plant avocados?</s>
-                        <|assistant|>
-                        """;
-                assertEquals(expected, ctx.getPrompt());// it does not change the prompt to have tools
-
-                Response r = m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(42),
-                        new DoNothingGenerateEvent());
-                System.out.println(r);
-                assertTrue(mr.meter("tensorcache.dirtyget").getCount() > 100);
-                mr.getMeters().entrySet().stream().forEach(x -> System.out.println(x.getKey() +" " +x.getValue().getCount()));
-
-                /*
-                assertEquals("""
-                        The best thing to do is to look for the plant that best suits your needs and preferences. Avocados are a popular fruit that are grown in many regions around the world. Some of the best regions for avocado production include California, Mexico, and Peru.
-                        """, r.responseText);*/
-            }
+        AbstractModel m = TinyLlamaSuite.getOrCreate();
+        String prompt = "What is the best season to plant avocados?";
+        PromptContext ctx;
+        {
+            PromptSupport ps = m.promptSupport().get();
+            ctx = ps.builder().addSystemMessage("You are a chatbot that writes short correct responses.")
+                    .addUserMessage(prompt).build();
+            String expected = """
+                    <|system|>
+                    You are a chatbot that writes short correct responses.</s>
+                    <|user|>
+                    What is the best season to plant avocados?</s>
+                    <|assistant|>
+                    """;
+            assertEquals(expected, ctx.getPrompt());
         }
+        {
+            PromptSupport ps = m.promptSupport().get();
+            ctx = ps.builder().addSystemMessage("You are a chatbot that writes short correct responses.")
+                    .addUserMessage(prompt).build();
+            String expected = """
+                    <|system|>
+                    You are a chatbot that writes short correct responses.</s>
+                    <|user|>
+                    What is the best season to plant avocados?</s>
+                    <|assistant|>
+                    """;
+            assertEquals(expected, ctx.getPrompt());
+
+            m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(42).withMaxTokens(50),
+                    new DoNothingGenerateEvent());
+            assertTrue(TinyLlamaSuite.getBuilder().getMr().meter("tensorcache.dirtyget").getCount() > 100);
+        }
+
     }
 
     @Test
     public void rejectTooManyTokens() throws IOException {
-        String modelName = "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4";
-        String modelOwner = "tjake";
-        ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
-        File f = fetch.maybeDownload();
-        MetricRegistry mr = new MetricRegistry();
-        TensorCache tensorCache = new TensorCache(mr);
-        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(tensorCache),
-                mr, tensorCache, new KvBufferCacheSettings(true), fetch, new TokenizerRenderer(), new DefaultToolCallParser())) {
-            String prompt = "What is the best season to plant avocados?";
-            PromptContext ctx;
-            {
-                PromptSupport ps = m.promptSupport().get();
-                ctx = ps.builder().addSystemMessage("You are a chatbot that writes short correct responses.")
-                        .addUserMessage(prompt).build();
-            }
-            assertThrows(GenerationException.class, () -> m.generate(UUID.randomUUID(), ctx, new GeneratorParameters()
-                    .withSeed(42).withNtokens(5_000_000), new DoNothingGenerateEvent()));
+
+        AbstractModel m = TinyLlamaSuite.getOrCreate();
+        String prompt = "What is the best season to plant avocados?";
+        PromptContext ctx;
+        {
+            PromptSupport ps = m.promptSupport().get();
+            ctx = ps.builder().addSystemMessage("You are a chatbot that writes short correct responses.")
+                    .addUserMessage(prompt).build();
         }
+        assertThrows(GenerationException.class, () -> m.generate(UUID.randomUUID(), ctx, new GeneratorParameters()
+                .withSeed(42).withNtokens(5_000_000), new DoNothingGenerateEvent()));
     }
 
 }
