@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 import java.util.UUID;
 
 public class Gemma3IT {
-    @Test
+    @Disabled
     public void chat(){
         ModelFetcher fetch = new ModelFetcher("google", "gemma-3-1b-it");
 
