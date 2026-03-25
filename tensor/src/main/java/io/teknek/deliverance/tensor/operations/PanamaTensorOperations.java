@@ -1613,9 +1613,12 @@ public final class PanamaTensorOperations implements TensorOperations {
     public BFloat16BufferTensor quantizeBF16(FloatBufferTensor ft, final int offset, int length) {
 
         // Need this till we have a proper quantization
-        https: // github.com/pytorch/pytorch/blob/7c1fbc7fe9cb8ddd5c913b4b3a9e94d00cb055ee/aten/src/ATen/cpu/vec/vec256/vec256_bfloat16.h#L47
-        if (true) return new BFloat16BufferTensor(ft);
-
+        //https: // github.com/pytorch/pytorch/blob/7c1fbc7fe9cb8ddd5c913b4b3a9e94d00cb055ee/aten/src/ATen/cpu/vec/vec256/vec256_bfloat16.h#L47
+        if (true) {
+            return new BFloat16BufferTensor(ft);
+        }
+        throw new UnsupportedOperationException("Unreachable");
+        /*
         // Up to caller to release
         BFloat16BufferTensor qft = (BFloat16BufferTensor) tensorCache.getDirty(DType.BF16, ft.shape());
         int batchSize = ft.shape().first();
@@ -1644,6 +1647,8 @@ public final class PanamaTensorOperations implements TensorOperations {
         }
 
         return qft;
+
+         */
     }
 
     public FloatBufferTensor quantizeBF16_F32(BFloat16BufferTensor ft, final int offset, int length) {
@@ -1700,11 +1705,9 @@ public final class PanamaTensorOperations implements TensorOperations {
 
                 qft.intoTensor(bvq0, b, i);
                 qft.intoTensor(bvq1, b, i + 16);
-                try {
-                    qft.getBlockF().set(d, b, (int) (i * Q8ByteBufferTensor.I_BLOCK_SIZE));
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
+
+                qft.getBlockF().set(d, b, (int) (i * Q8ByteBufferTensor.I_BLOCK_SIZE));
+
             }
         }
 
