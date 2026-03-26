@@ -33,7 +33,7 @@
         <maven.javadoc.plugin.version>3.12.0</maven.javadoc.plugin.version>
 
         <jackson.version>2.20.1</jackson.version>
-        <dysfx.version>0.0.3</dysfx.version>
+        <dysfx.version>0.0.5</dysfx.version>
         <mockito.version>5.20.0</mockito.version>
         <metrics.version>4.2.37</metrics.version>
 

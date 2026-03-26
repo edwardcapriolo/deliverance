@@ -11,6 +11,7 @@ import io.teknek.deliverance.safetensors.prompt.ToolCall;
 import io.teknek.dysfx.Either;
 import io.teknek.dysfx.Left;
 
+import io.teknek.dysfx.Right;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,7 +41,11 @@ public class ChatCompletionController {
                         .equalsIgnoreCase(name)).findFirst();
     }
 
+    private PreGenerateSlot slot;
 
+    public ChatCompletionController(Optional<PreGenerateSlot> slot){
+        this.slot = slot.orElse((x,y) -> Either.Right(y));
+    }
 
     @RequestMapping(method = RequestMethod.POST, value = "/chat/completions", produces = { "application/json",
             "text/event-stream" }, consumes = { "application/json" })
@@ -59,9 +64,18 @@ public class ChatCompletionController {
                 Error r = (Error) l.productIterator().next();
                 return new ResponseEntity<>(new ErrorResponse().error(r), HttpStatus.BAD_REQUEST);
             } else {
-                PreparedRequest p = (PreparedRequest) bla.productIterator().next();
-                Response resp = model.generate(UUID.randomUUID(), p.promptSupportBuilder().build(),
-                        p.generatorParameters(), (int next, String rok, String s, float aFloat) -> {
+                PreparedRequest ready = (PreparedRequest) bla.productIterator().next();
+                Either<Error, PreparedRequest> afterSlot = slot.handle(request, ready);
+                switch (afterSlot) {
+                    case Left<Error, PreparedRequest> e -> {
+                        return new ResponseEntity<>(new ErrorResponse().error(e.get()), HttpStatus.BAD_REQUEST);
+                    }
+                    case Right<Error, PreparedRequest> r -> {
+                        ready = r.get();
+                    }
+                }
+                Response resp = model.generate(UUID.randomUUID(), ready.promptSupportBuilder().build(),
+                        ready.generatorParameters(), (int next, String rok, String s, float aFloat) -> {
                         });
                 CreateChatCompletionResponse response = new CreateChatCompletionResponse();
                 List<ToolCall> tcs = model.getToolCallParser().extract(resp);
@@ -91,7 +105,8 @@ public class ChatCompletionController {
             }
         }
 
-            //This is the older stuff lets clean it out
+        //This is the older stuff lets clean it out
+        //its here to support streaming which needs to be considered separately
         List<ChatCompletionRequestMessage> messages = request.getMessages();
         UUID id = UUID.randomUUID();
         if (headers.containsKey(DELIVERANCE_SESSION_HEADER)) {
