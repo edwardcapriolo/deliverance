@@ -244,6 +244,11 @@ To skip the long running tests named *IT:
 mvn test -DskipIntegrationTests
 ```
 
+Build the tests but do not execute them
+```
+mvn install -Dmaven.test.skip.exec=true
+```
+
 ### 🔍 Semantic Search & Embeddings
 
 Deliverance supports embedding models for semantic search, information retrieval, and code understanding. The [LEAF model](https://huggingface.co/MongoDB/mdbr-leaf-ir) is a compact, efficient embedding model optimized for information retrieval tasks - perfect for semantic code search, RAG applications, and understanding codebases semantically.
