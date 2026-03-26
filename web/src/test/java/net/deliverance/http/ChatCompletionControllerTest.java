@@ -2,14 +2,10 @@ package net.deliverance.http;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import io.teknek.deliverance.JSON;
-import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.model.Error;
-import io.teknek.deliverance.safetensors.prompt.Function;
 import io.teknek.deliverance.safetensors.prompt.Tool;
 import io.teknek.dysfx.Either;
-import io.teknek.dysfx.Right;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mockito;
@@ -35,7 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 //@SpringBootTest(args = "--add-modules jdk.incubator.vector", properties = {"deliverance.tensor.operations.type=jvector"})
 @SpringBootTest(args = "--add-modules jdk.incubator.vector" )
 @AutoConfigureMockMvc
-public class DeliveranceControllerTest {
+public class ChatCompletionControllerTest {
 
     @Autowired
     MockMvc mockMvc;

@@ -7,7 +7,6 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
-import java.util.Optional;
 
 @RestController
 public class ModelController {
@@ -18,7 +17,7 @@ public class ModelController {
     public ModelController(Map<MultiModelConfig, AbstractModel> models){
         this.models = models;
     }
-    
+
     @RequestMapping(method = RequestMethod.GET, value="/models", produces =  { "application/json" },
             consumes = { "application/json" })
     public ListModelsResponse listModels(){

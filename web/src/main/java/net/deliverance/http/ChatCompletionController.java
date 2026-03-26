@@ -26,8 +26,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 
 @RestController
-public class DeliveranceController {
-    private static final Logger LOGGER = LoggerFactory.getLogger(DeliveranceController.class);
+public class ChatCompletionController {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ChatCompletionController.class);
 
     private static final String DELIVERANCE_SESSION_HEADER = "X-Deliverance-Session";
 
