@@ -21,6 +21,11 @@ especially : an `opinion` or `decision` (such as the verdict of a jury) expresse
 We aren't `inferencing`, we are `delivering`
 
 ### Lightning quick start 
+#### Inference Types supported
+
+- generation   "Tell me about space" -> "Space is bla bla"
+- embedding    "tell me about space" -> [1.0, 1.3, 2.3]
+- classification "You are a whack coder" -> {"nice":.10f, "mean":.90f}
 
 #### Embedded inference engine usage (ml-ops)
 Deliverance is capable of running as an API inside your application.
@@ -149,11 +154,6 @@ Open your browser to http://localhost:8080
 - [inference engine flow](core/inference_flow.md) Explains the transformations and flows http/prompt/jinja/ etc.
 - [tool call parser](core/tool_parser.md) Explains how the tool call parser is implemented in the stack
 - [Vibrant-maven-plugin](https://www.youtube.com/watch?v=Glp_hAieOq8) Watch a video on Vibrant-maven-plugin generate code from XML based spec inside pom
-
-### Inference Types supported
-
-- generation   "Tell me about space" -> "Space is bla bla"
-- embedding    "tell me about space" -> [1.0, 1.3, 2.3]
 
 ### Models supported
 Geneation
