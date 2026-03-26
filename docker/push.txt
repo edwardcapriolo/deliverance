@@ -1,0 +1,3 @@
+docker tag deliverance:latest ecapriolo/deliverance:0.0.5
+docker push ecapriolo/deliverance:0.0.5
+

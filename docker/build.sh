@@ -34,7 +34,7 @@ RUN apk add bash
 
 RUN addgroup -S deliverance && adduser -S -G deliverance -H -D deliverance
 RUN mkdir /deliverance/logs && chown deliverance:deliverance /deliverance/logs
-COPY --from=deliverance-sha /build/deliverance/web/target/web-0.0.4-SNAPSHOT.jar /deliverance/web.jar
+COPY --from=deliverance-sha /build/deliverance/web/target/web-0.0.6-SNAPSHOT.jar /deliverance/web.jar
 COPY entry_point.sh /deliverance/entry_point.sh
 COPY inlinerules.json /deliverance/inlinerules.json
 COPY simple.properties /deliverance/
@@ -46,7 +46,7 @@ ENTRYPOINT ["/deliverance/entry_point.sh"]
 EOF
 
 #SHA=$(curl -s 'https://api.github.com/repos/<you>/<your-repo>/commits' | jq -r '.[0].sha')
-SHA=610e5fd74af857c2082527d6f05b38f8771d6be1
+SHA=v0.0.5
 
 DOCKER_BUILDKIT=1 docker build \
 --target deliverance-base \
