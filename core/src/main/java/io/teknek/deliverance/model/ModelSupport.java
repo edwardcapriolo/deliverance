@@ -85,9 +85,7 @@ public class ModelSupport {
                                           MetricRegistry metricRegistry, TensorCache tensorCache,
                                           KvBufferCacheSettings kvBufferCacheSettings,
                                           ModelFetcher fetcher, TokenRenderer tr, ToolCallParser toolCallParser) {
-
         LOGGER.info("Machine Vector Spec: {} Byte Order: {}", FloatVector.SPECIES_PREFERRED.vectorBitSize(), ByteOrder.nativeOrder().toString());
-
         File configFile = new File(model, "config.json");
         if (!configFile.exists()){
             throw new RuntimeException("Expecting to find config file " + configFile);
@@ -110,6 +108,38 @@ public class ModelSupport {
             throw new RuntimeException(e);
         }
     }
+
+    //Note complete copy of above only different enuum
+    public static AbstractModel loadClassificationModel(File model, DType workingMemoryType, DType workingQuantizationType,
+                                          ConfigurableTensorProvider configurableTensorProvider,
+                                          MetricRegistry metricRegistry, TensorCache tensorCache,
+                                          KvBufferCacheSettings kvBufferCacheSettings,
+                                          ModelFetcher fetcher, TokenRenderer tr, ToolCallParser toolCallParser) {
+        LOGGER.info("Machine Vector Spec: {} Byte Order: {}", FloatVector.SPECIES_PREFERRED.vectorBitSize(), ByteOrder.nativeOrder().toString());
+        File configFile = new File(model, "config.json");
+        if (!configFile.exists()){
+            throw new RuntimeException("Expecting to find config file " + configFile);
+        }
+        ModelType modelType = detectModel(configFile);
+        try {
+            Config config = om.readValue(configFile, modelType.getConfigClass());
+            Tokenizer tokenizer = modelType.getTokenizerClass().getConstructor(Path.class).newInstance(model.toPath());
+            WeightLoader wl = new DefaultWeightLoader(model);
+
+            Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
+                    WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class,
+                    ConfigurableTensorProvider.class, MetricRegistry.class, TensorCache.class,
+                    KvBufferCacheSettings.class, TokenRenderer.class, ToolCallParser.class);
+
+            return cons.newInstance(AbstractModel.InferenceType.FULL_CLASSIFICATION, config, wl, tokenizer,
+                    workingMemoryType, workingQuantizationType, Optional.empty(), configurableTensorProvider,
+                    metricRegistry, tensorCache, kvBufferCacheSettings, tr, toolCallParser);
+        } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+
 
     public static AbstractModel  loadEmbeddingModel(File model, DType workingMemoryType, DType workingQuantizationType,
                                                     ConfigurableTensorProvider configurableTensorProvider,
@@ -150,9 +180,7 @@ public class ModelSupport {
 
     public static AbstractModel loadModel(
             AbstractModel.InferenceType inferenceType,
-            //File model,
             ModelFetcher modelFetcher,
-            //File workingDirectory,
             DType workingMemoryType,
             DType workingQuantizationType,
             Optional<DType> modelQuantization,
@@ -192,4 +220,19 @@ public class ModelSupport {
         }
     }
 
+
+    /*
+    public static AbstractModel loadClassifierModel(ModelFetcher fetcher, DType workingMemoryType, DType workingQuantizationType) {
+        //This callback seems so unnessary
+        Function<File, WeightLoader> weightLoaderFunction = DefaultWeightLoader::new;
+        return loadModel(AbstractModel.InferenceType.FULL_CLASSIFICATION,
+                fetcher,
+                workingMemoryType,
+                workingQuantizationType,
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty(),
+                weightLoaderFunction
+                );
+    }*/
 }

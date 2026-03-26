@@ -4,6 +4,7 @@ package io.teknek.deliverance.model.bert;
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.CausualWhisperer;
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.classifier.ClassifyOutput;
 import io.teknek.deliverance.embedding.PoolingLayer;
 import io.teknek.deliverance.generator.*;
 import io.teknek.deliverance.model.AbstractModel;
@@ -34,6 +35,15 @@ public class BertModel extends AbstractModel {
                 configurableTensorProvider, metricRegistry, tensorCache, kvBufferCacheSettings, tokenRenderer, toolCallParser);
     }
 
+    /*
+    public BertModel(InferenceType inferenceType, Config config, WeightLoader w, Tokenizer tokenizer, DType workingDType,
+                     DType workingQType, Optional<DType> quantType){
+        super(inferenceType, config, w, tokenizer, workingDType, workingDType, quantType,
+                new ConfigurableTensorProvider( new TensorCache(new MetricRegistry())), new MetricRegistry(),
+                new TensorCache(new MetricRegistry()),new KvBufferCacheSettings(new TensorCache(new MetricRegistry())), null, null) ;
+    }*/
+
+
     protected AbstractTensor loadWeight(String name) {
         for (String prefix : prefixes) {
             String key = prefix + name;
@@ -59,13 +69,13 @@ public class BertModel extends AbstractModel {
             public AbstractTensor inputTokenToEmbedding(int inputToken, int position) {
                 AbstractTensor embedding = makeDenseTensor(config.embeddingLength);
                 if (position == 3){
-                    CausualWhisperer.LOGGER.info("BertModel.inputTokenToEmbedding {}", embedding.shape());
-                    CausualWhisperer.LOGGER.info("BertModel.inputTokenToEmbedding inputToken: {} position: {} ", inputToken, position);
+                    CausualWhisperer.LOGGER.debug("BertModel.inputTokenToEmbedding {}", embedding.shape());
+                    CausualWhisperer.LOGGER.debug("BertModel.inputTokenToEmbedding inputToken: {} position: {} ", inputToken, position);
                 }
                 for (int i = 0; i < config.embeddingLength; i++) {
                     float v = we.get(inputToken, i) + wte.get(0, i) + wpe.get(position, i);
-                    if (position==3 && i < 5 && CausualWhisperer.LOGGER.isInfoEnabled()){
-                        CausualWhisperer.LOGGER.info( "inputTokenToEmbedding[{}] = word_embed_weight {} + type_embed_weight {} + position_embed_weight {} = v {}",
+                    if (position==3 && i < 5 && CausualWhisperer.LOGGER.isDebugEnabled()){
+                        CausualWhisperer.LOGGER.debug( "inputTokenToEmbedding[{}] = word_embed_weight {} + type_embed_weight {} + position_embed_weight {} = v {}",
                         i, we.get(inputToken, i), wte.get(0, i), wpe.get(position, i), v);
                     }
                     embedding.set(v, 0, i);
@@ -137,6 +147,28 @@ public class BertModel extends AbstractModel {
     @Override
     protected SampleOutput loadOutputWeights() {
         throw new UnsupportedOperationException();
+    }
+
+    @Override
+    protected ClassifyOutput loadClassifierWeights() {
+        if (config.isClassifier()) {
+            final AbstractTensor classifierWeight = loadWeight("classifier.weight");
+            final AbstractTensor classifierBias = loadWeight("classifier.bias");
+
+            return new ClassifyOutput() {
+                @Override
+                public AbstractTensor getClassificationWeights() {
+                    return classifierWeight;
+                }
+
+                @Override
+                public Optional<AbstractTensor> getClassificationBias() {
+                    return Optional.of(classifierBias);
+                }
+            };
+        } else {
+            throw new UnsupportedOperationException("Classification not supported by this model");
+        }
     }
 
     @Override

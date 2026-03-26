@@ -4,12 +4,15 @@ import com.codahale.metrics.MetricRegistry;
 import com.google.common.base.Preconditions;
 import com.google.common.primitives.Ints;
 
+import java.nio.FloatBuffer;
 import java.util.*;
 import java.util.function.Consumer;
 
 
 import io.teknek.deliverance.CausualWhisperer;
+import io.teknek.deliverance.Classifier;
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.classifier.ClassifyOutput;
 import io.teknek.deliverance.embedding.PoolingLayer;
 import io.teknek.deliverance.embedding.PoolingType;
 import io.teknek.deliverance.generator.*;
@@ -22,6 +25,7 @@ import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.safetensors.prompt.ToolCall;
 import io.teknek.deliverance.tensor.*;
+import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
@@ -33,7 +37,7 @@ import org.slf4j.LoggerFactory;
 import static io.teknek.deliverance.tensor.DebugSupport.debug;
 
 
-public abstract class AbstractModel implements Generator {
+public abstract class AbstractModel implements Generator, Classifier {
     private static final Logger logger = LoggerFactory.getLogger(AbstractModel.class);
 
     private static final Integer MAX_BATCH_SIZE = Integer.getInteger("jlama.max_batch_size", 256);
@@ -86,6 +90,7 @@ public abstract class AbstractModel implements Generator {
     protected final TokenRenderer tokenRenderer;
     protected final ToolCallParser toolCallParser;
 
+    protected ClassifyOutput classifyOutput;
 
     protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
                             DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider provider,
@@ -165,6 +170,7 @@ public abstract class AbstractModel implements Generator {
         this.embedInput = inferenceType.isInput ? loadInputWeights() : null;
         this.transformerBlocks = inferenceType.isFwdPass ? loadTransformerBlockWeights() : null;
         this.sampleOutput = inferenceType.isOutput ? loadOutputWeights() : null;
+        this.classifyOutput = inferenceType.isClassify ? loadClassifierWeights() : null;
         this.poolingLayer = inferenceType.isPooling ? Optional.ofNullable(loadPoolingWeights()) : Optional.empty();
     }
 
@@ -485,6 +491,35 @@ public abstract class AbstractModel implements Generator {
         }
     } */
 
+
+
+    @Override
+    public SortedMap<String, Float> classify(String input, PoolingType poolingType) {
+        if (!config.isClassifier()) {
+            throw new UnsupportedOperationException("Classification not supported by this model");
+        }
+        if (this.classifyOutput == null){
+            throw new UnsupportedOperationException("classifyOutput was not setup");
+        }
+        float[] embedding = embed(input, poolingType);
+        FloatBufferTensor b = new FloatBufferTensor(FloatBuffer.wrap(embedding), TensorShape.of(embedding.length), false);
+        int classes = classifyOutput.getClassificationWeights().shape().first();
+        AbstractTensor scores = makeDenseTensor(classes);
+        configurableTensorProvider.get().batchDotProduct(scores, b, classifyOutput.getClassificationWeights(),
+                0, 0, config.embeddingLength);
+        classifyOutput.getClassificationBias().ifPresent(bias ->
+                configurableTensorProvider.get().accumulate(scores, bias, 0, classes));
+        VectorTensorMathUtils.softMax(scores, 0, classes);
+        SortedMap<String, Float> result = new TreeMap<>();
+        for (int i = 0; i < classes; i++) {
+            String label = config.classifcationLabels.get().inverse().get(i);
+            Float score = scores.get(0, i);
+            result.put(label, score);
+        }
+        return result;
+    }
+
+
     public float[] embed(String input, PoolingType poolingType) {
         CausualWhisperer.LOGGER.debug("embedding on {} using pooling type {}", input, poolingType);
         int[] encoded = Arrays.stream(tokenizer.encode(input)).mapToInt(Ints::checkedCast).toArray();
@@ -606,6 +641,10 @@ public abstract class AbstractModel implements Generator {
         return tensorCache;
     }
 
+
+    protected  ClassifyOutput loadClassifierWeights(){
+        throw new IllegalArgumentException("loadClassifierWeights not yet implemented");
+    }
 
     protected PoolingLayer loadPoolingWeights() {
         return null;
