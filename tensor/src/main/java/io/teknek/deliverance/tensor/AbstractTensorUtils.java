@@ -53,6 +53,14 @@ public class AbstractTensorUtils {
         };
     }
 
+
+    /**
+     *
+     * @param input a tensor to consider for input
+     * @param dType the target type
+     * @return A new tensor which has been quantized to the requested type, or the original tensor if the value can not
+     * be quantized
+     */
     public static AbstractTensor quantize(AbstractTensor input, DType dType) {
         return quantize(input, dType, false);
     }
