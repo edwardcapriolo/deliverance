@@ -32,7 +32,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CreateChatCompletionResponse"
-
+  /models:
+    get:
+      operationId: listModels
+      tags:
+        - Models
+      summary: Lists the currently available models, and provides basic information about each one such as the owner and availability.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListModelsResponse"
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -958,9 +970,23 @@ components:
         - model
         - object
 
+    ListModelsResponse:
+      type: object
+      properties:
+        object:
+          type: string
+          enum: [list]
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Model"
+      required:
+        - object
+        - data
+
     Model:
       title: Model
-      description: Describes an OpenAI model offering that can be used with the API.
+      description: Describes an model offering that can be used with the API.
       properties:
         id:
           type: string
