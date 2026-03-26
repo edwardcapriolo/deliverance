@@ -44,7 +44,7 @@ public class SecurityConfig {
                     );
         } else {
             http
-                    .securityMatcher("/chat/**", "/embeddings/**")
+                    .securityMatcher("/chat/**", "/embeddings/**", "/models/**")
                     .authorizeHttpRequests(auth -> auth
                             .anyRequest().authenticated())
                     .csrf(AbstractHttpConfigurer::disable)

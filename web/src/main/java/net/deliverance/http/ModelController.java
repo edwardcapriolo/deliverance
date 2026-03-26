@@ -1,0 +1,36 @@
+package net.deliverance.http;
+
+import io.teknek.deliverance.model.*;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
+import java.util.Optional;
+
+@RestController
+public class ModelController {
+
+    @Autowired
+    private Map<MultiModelConfig, AbstractModel> models;
+
+    public ModelController(Map<MultiModelConfig, AbstractModel> models){
+        this.models = models;
+    }
+    
+    @RequestMapping(method = RequestMethod.GET, value="/models", produces =  { "application/json" },
+            consumes = { "application/json" })
+    public ListModelsResponse listModels(){
+        ListModelsResponse response = new ListModelsResponse();
+        response._object(ListModelsResponse.ObjectEnum.LIST);
+        for (Map.Entry<MultiModelConfig, AbstractModel> model : models.entrySet()){
+            response.addDataItem(new Model()
+                    .ownedBy(model.getKey().getModelOwner())
+                    .created(0)
+                    ._object(Model.ObjectEnum.MODEL)
+                    .id(model.getKey().getModelName()));
+        }
+        return response;
+    }
+}
