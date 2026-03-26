@@ -117,8 +117,7 @@ mvn io.teknek.deliverance:vibrant-maven-plugin:0.0.4-SNAPSHOT:generate
 #### HTTP enabled inference engine (inference as a service)
 
 The http interface allows chat/completion and embedding requests to be answered remotely. The API
-is familiar to the popular services that you may have heard of. (Not every feature from every service is 
-implemented, but we have a good base).
+is familiar to the popular services that you may have heard of. Note: The support here may be partial (no model delete endpoint, chatrequest missing presense_penalty etc) .
 ```shell
 
 edward@fedora:~/deliverence/web$ export JAVA_HOME=/usr/lib/jvm/java-25-temurin-jdk
@@ -142,7 +141,10 @@ WARNING: Using incubator modules: jdk./run.incubator.vector
 2025-10-30T14:38:53.002-04:00  INFO 218011 --- [           main] n.d.http.DeliveranceApplication          : Started DeliveranceApplication in 103.909 seconds (process running for 105.417)
 
 ```
+The is a small example HTML application that communicates to the HTTP server. It is not a primary focus of the development at this time and is not part of the test automation. 
+
 Open your browser to http://localhost:8080
+
 
 <p align="center">
   <img src="deliv.png"  alt="Deliver me">
