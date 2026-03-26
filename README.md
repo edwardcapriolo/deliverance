@@ -59,7 +59,7 @@ Response response = model.generate(UUID.randomUUID(), g.build(), new GeneratorPa
 Text classification is also supported. Below is a bert based classifier that classifies text
 as either jailbreak or benign.
 
-```json
+```java
 try (AbstractModel model = AutoModelForSequenceClassification
    .newBuilder(new ModelFetcher("lordofthejars", "jailbreak-classifier")).build()) {
 
