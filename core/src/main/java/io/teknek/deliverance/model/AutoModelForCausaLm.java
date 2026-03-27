@@ -18,8 +18,7 @@ import java.io.File;
 
 public class AutoModelForCausaLm {
     private static final Logger LOGGER = LoggerFactory.getLogger(AutoModelForCausaLm.class);
-    public static AbstractModel fromPretrained(ModelFetcher fetcher){
-        Builder b = new Builder(fetcher);
+    public static void applyTuning(ModelFetcher fetcher, Builder b){
         if (fetcher.getName().startsWith("Llama")){
             b.withTokenTokenRenderer(new TokenizerRenderer());
             b.withToolCallParser(new LlamaToolCallParser());
@@ -27,12 +26,20 @@ public class AutoModelForCausaLm {
         if (fetcher.getName().startsWith("Qwen")){
             b.withTokenTokenRenderer(new Qwen2TokenizerRenderer());
         }
+    }
+    public static AbstractModel fromPretrained(ModelFetcher fetcher){
+        Builder b = new Builder(fetcher);
+        applyTuning(fetcher, b);
         return b.build();
     }
 
     public static Builder newBuilder(ModelFetcher fetcher){
-        return new Builder(fetcher);
+        //There is an argument to be made we shouldnt tune both sides
+        Builder b = new Builder(fetcher);
+        applyTuning(fetcher, b);
+        return b;
     }
+
 
     public static class Builder {
         private final ModelFetcher fetch;
