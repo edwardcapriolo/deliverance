@@ -116,6 +116,28 @@ mvn io.teknek.deliverance:vibrant-maven-plugin:0.0.4-SNAPSHOT:generate
 
 #### HTTP enabled inference engine (inference as a service)
 
+##### Running from Docker
+
+There are a variety of scripts to build and run deliverance using [dockerscripts](docker)
+
+Each release images are pushed to [dockerhub](https://hub.docker.com/repository/docker/ecapriolo/deliverance/tags/0.0.5/sha256-5114ef84ef91534773c8e6052fafa5641dcf75e14699d1e3d0f8ac78cc90af17) 
+
+During inferencing deliverance will automatically download models from huggingface and store them ~{HOME}/.deliverance directory. Because the models are large it is wise to ensure you can share them on your local system and inside the docker. The resipe below uses a bind mount to provide read only access
+to the datadirectory. To stage the data initially replace ~/.deliverance:/home/deliverance/.deliverance:ro with ~/.deliverance:/home/deliverance/.deliverance:rw 
+
+```sh
+docker run -p 8085:8080 \
+-it -v ~/.deliverance:/home/deliverance/.deliverance:ro \
+-e DELIVERANCE_OPTS=" -Dspring.config.location=file:/deliverance/simple.properties " ecapriolo/deliverance:0.0.5
+```
+
+After it starts up you can use the embedding-test.sh to issue a simple request:
+
+```
+edward@fedora:~/deliverence/docker$ sh embedding-test.sh 
+  {"data":[{"index":0,"embedding":       [0.0246389396488666534423828125,0.0449106693267822265625, ... }
+```
+##### Running from source code
 The http interface allows chat/completion and embedding requests to be answered remotely. The API
 is familiar to the popular services that you may have heard of. Note: The support here may be partial (no model delete endpoint, chatrequest missing presense_penalty etc) .
 ```shell
