@@ -554,8 +554,9 @@ public abstract class AbstractModel implements Generator, Classifier {
                     AbstractTensor pooled = makeDenseTensor(1, config.embeddingLength);
                     configurableTensorProvider.get()
                             .batchDotProduct(pooled, output, poolingLayer.get().getPoolingWeights(), 0, 0, config.embeddingLength);
-                    configurableTensorProvider.get()
-                            .batchDotProduct(pooled, output, poolingLayer.get().getPoolingWeights(), 0, 0, config.embeddingLength);
+                    poolingLayer.get()
+                            .getPoolingBias()
+                            .ifPresent(bias -> { configurableTensorProvider.get().accumulate(pooled, bias, 0, config.embeddingLength); });
                     VectorMath.pfor(0, config.embeddingLength, i -> {
                         // BERT seems to use tanh for pooling rather than gelu
                         //outputEmbedding[i] = ActivationFunction.eval(ActivationFunction.Type.TANH, pooled.get(0, i));
@@ -567,6 +568,7 @@ public abstract class AbstractModel implements Generator, Classifier {
                     AbstractTensor output = r.slice(i);
                     // Pooling
                     for (int ii = 0; ii < config.embeddingLength; ii++) {
+
                         switch (poolingType) {
                             case AVG:
                                 outputEmbedding[ii] += output.get(0, ii) * avgp;

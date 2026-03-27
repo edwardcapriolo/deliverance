@@ -32,8 +32,8 @@ public class ClassificationTest {
             }
             for (int i =0 ; i < iter; i++) {
                 Map<String, Float> result2 = model.classify(jailBreak2, PoolingType.MODEL);
-                assertEquals(0.12408245f, result2.get("benign"), .03);
-                assertEquals(0.87591755, result2.get("jailbreak"), .03);
+                assertEquals(0.15645453333854675f, result2.get("benign"), .03);
+                assertEquals(0.8435454964637756, result2.get("jailbreak"), .03);
             }
         }
     }
