@@ -1,6 +1,7 @@
 package io.teknek.deliverance.model;
 
 import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.Timer;
 import com.google.common.base.Preconditions;
 import com.google.common.primitives.Ints;
 
@@ -505,11 +506,14 @@ public abstract class AbstractModel implements Generator, Classifier {
         FloatBufferTensor b = new FloatBufferTensor(FloatBuffer.wrap(embedding), TensorShape.of(embedding.length), false);
         int classes = classifyOutput.getClassificationWeights().shape().first();
         AbstractTensor scores = makeDenseTensor(classes);
-        configurableTensorProvider.get().batchDotProduct(scores, b, classifyOutput.getClassificationWeights(),
-                0, 0, config.embeddingLength);
+        metricRegistry.timer("classify.1_dotproduct_scores").time(() ->
+            configurableTensorProvider.get().batchDotProduct(scores, b, classifyOutput.getClassificationWeights(),
+                0, 0, config.embeddingLength));
+        metricRegistry.timer("classify.2_accumulate_scores_bias").time(() ->
         classifyOutput.getClassificationBias().ifPresent(bias ->
-                configurableTensorProvider.get().accumulate(scores, bias, 0, classes));
-        VectorTensorMathUtils.softMax(scores, 0, classes);
+                configurableTensorProvider.get().accumulate(scores, bias, 0, classes)) );
+        metricRegistry.timer("classify.3_softmax_scores").time(() ->
+        VectorTensorMathUtils.softMax(scores, 0, classes));
         SortedMap<String, Float> result = new TreeMap<>();
         for (int i = 0; i < classes; i++) {
             String label = config.classifcationLabels.get().inverse().get(i);
@@ -519,8 +523,16 @@ public abstract class AbstractModel implements Generator, Classifier {
         return result;
     }
 
-
     public float[] embed(String input, PoolingType poolingType) {
+        //TODO better recipe then this? timed callable
+        Timer.Context c = metricRegistry.timer("abstractmodel.embed").time();
+        try {
+            return timedEmbedding(input, poolingType);
+        } finally {
+            c.stop();
+        }
+    }
+    protected float[] timedEmbedding(String input, PoolingType poolingType) {
         CausualWhisperer.LOGGER.debug("embedding on {} using pooling type {}", input, poolingType);
         int[] encoded = Arrays.stream(tokenizer.encode(input)).mapToInt(Ints::checkedCast).toArray();
         Preconditions.checkArgument(encoded.length < config.contextLength);
@@ -532,7 +544,8 @@ public abstract class AbstractModel implements Generator, Classifier {
             float avgp = 1.0f / promptLength;
             CausualWhisperer.LOGGER.debug("1.0f / promptLength {} = avgp {}", promptLength, avgp);
 
-            try (AbstractTensor r = batchForward(encoded, 0, kvMem)){
+            try (AbstractTensor r = metricRegistry.timer("abstractmodel.embed_1_batchforward").timeSupplier(()
+                    -> batchForward(encoded, 0, kvMem))){
                 if (poolingType == PoolingType.MODEL){
                     if (poolingLayer.isEmpty()){
                         throw new UnsupportedOperationException("no pooling layer for this model");
@@ -541,13 +554,10 @@ public abstract class AbstractModel implements Generator, Classifier {
                     AbstractTensor pooled = makeDenseTensor(1, config.embeddingLength);
                     configurableTensorProvider.get()
                             .batchDotProduct(pooled, output, poolingLayer.get().getPoolingWeights(), 0, 0, config.embeddingLength);
-
                     configurableTensorProvider.get()
                             .batchDotProduct(pooled, output, poolingLayer.get().getPoolingWeights(), 0, 0, config.embeddingLength);
-
                     VectorMath.pfor(0, config.embeddingLength, i -> {
                         // BERT seems to use tanh for pooling rather than gelu
-
                         //outputEmbedding[i] = ActivationFunction.eval(ActivationFunction.Type.TANH, pooled.get(0, i));
                         outputEmbedding[i] = ActivationFunction.eval(config.activationFunction, pooled.get(0, i));
                     });
@@ -656,5 +666,9 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public ToolCallParser getToolCallParser() {
         return toolCallParser;
+    }
+
+    public MetricRegistry getMetricRegistry(){
+        return metricRegistry;
     }
 }

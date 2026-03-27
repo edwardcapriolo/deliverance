@@ -191,26 +191,4 @@ public class BertModel extends AbstractModel {
         };
     }
 
-    /*
-    @Override
-    protected ClassifyOutput loadClassifierWeights() {
-        if (config.isClassifier()) {
-            final AbstractTensor classifierWeight = loadWeight("classifier.weight");
-            final AbstractTensor classifierBias = loadWeight("classifier.bias");
-
-            return new ClassifyOutput() {
-                @Override
-                public AbstractTensor getClassificationWeights() {
-                    return classifierWeight;
-                }
-
-                @Override
-                public Optional<AbstractTensor> getClassificationBias() {
-                    return Optional.of(classifierBias);
-                }
-            };
-        } else {
-            throw new UnsupportedOperationException("Classification not supported by this model");
-        }
-    }*/
 }
