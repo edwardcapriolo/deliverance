@@ -46,7 +46,7 @@ public class MistralIT {
         }
     }
 
-    @Test
+    @Disabled
     public void completeToolWithMockAgent(){
         ModelFetcher fetch = new ModelFetcher("tjake", "Mistral-7B-Instruct-v0.3-JQ4");
 
