@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.teknek.deliverance.grace.models.TokenizerConfig;
 import io.teknek.deliverance.model.qwen2.Qwen2Tokenizer;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 
@@ -36,8 +37,6 @@ public class AutoTokenizer {
         String version = null;
         try {
             Map<String, Integer> map = om.readValue( new File(path, "vocab.json"), new TypeReference<Map<String, Integer>>() {});
-
-
             JsonNode document = om.readTree(new File(path,"tokenizer.json"));
             JsonNode versionNode = document.get("version");
             if (!versionNode.isNull()){
@@ -62,9 +61,20 @@ public class AutoTokenizer {
                     }
                 }
             }
+
+
+            JsonNode configDotJson = om.readTree(new File(path,"config.json"));
+            //We have models for this inside of deliverance
+            JsonNode tokenizerConfigDotJson = om.readTree(new File(path,"tokenizer_config.json"));
+            JsonNode chatTemplate = tokenizerConfigDotJson.get("chat_template");
+            TokenizerConfig tokenizerConfig = new TokenizerConfig();
+            if (chatTemplate != null){
+                tokenizerConfig.chatTemplate = chatTemplate.asText();
+            }
+
             Quen2Tokenizer q = new Quen2Tokenizer(new HashMap<>(), Optional.empty(),Optional.empty(),Optional.empty(),
                     Optional.empty(),Optional.empty(),Optional.empty(),Optional.empty(),
-                    map, addedTokenMap
+                    map, addedTokenMap, tokenizerConfig
                     );
             return q;
 

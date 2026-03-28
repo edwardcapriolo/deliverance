@@ -30,6 +30,11 @@ public class BertTokenizer extends PreTrainedTokenizer {
     }
 
     @Override
+    public Optional<String> chatTemplate() {
+        return Optional.empty();
+    }
+
+    @Override
     public int vocabSize() {
         throw new UnsupportedOperationException();
     }

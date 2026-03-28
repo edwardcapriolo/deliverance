@@ -94,7 +94,7 @@ public class TokenizerModelFetcher extends ModelFetcher {
         for (String currFile : allFiles) {
             String f = currFile.toLowerCase();
             //this is only what is needed for qwen2 not authoritative
-            if (f.contains("tokenizer") || f.contains("merges") || f.contains("vocab") ) {
+            if (f.contains("tokenizer") || f.contains("merges") || f.contains("vocab") || f.equals("config.json") ) {
 
                 /*
                 tokenizer_config.json: 7.30kB [00:00, 16.3MB/s]

@@ -1,16 +1,12 @@
 import io.teknek.deliverance.grace.AutoTokenizer;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.SortedSet;
 import java.util.TreeSet;
-import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /*
 from transformers import AutoTokenizer
@@ -43,6 +39,11 @@ public class FirstTest {
                 l.add(expected[i]);
             }
             assertEquals(l.toString(), autoTokenizer.allSpecialIds().toString());
+        }
+        {
+            //tokenizer.chat_template
+            //'{%- if tools %}\n    {{- \
+            assertTrue(autoTokenizer.chatTemplate().get().startsWith("{%- if tools %}"));
         }
 
     }
