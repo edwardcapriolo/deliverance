@@ -1,7 +1,9 @@
 import io.teknek.deliverance.grace.AutoTokenizer;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.SortedSet;
 import java.util.TreeSet;
 
@@ -46,5 +48,15 @@ public class FirstTest {
             assertTrue(autoTokenizer.chatTemplate().get().startsWith("{%- if tools %}"));
         }
 
+        {
+            //>>> tokenizer.all_special_tokens
+            //['<|im_end|>', '<|endoftext|>', '<|im_start|>', '<|object_ref_start|>', '<|object_ref_end|>', '<|box_start|>', '<|box_end|>',
+            // '<|quad_start|>', '<|quad_end|>', '<|vision_start|>', '<|vision_end|>', '<|vision_pad|>', '<|image_pad|>', '<|video_pad|>']
+            TreeSet<String> expected = new TreeSet<>(List.of("<|im_end|>",  "<|endoftext|>", "<|im_start|>", "<|object_ref_start|>",
+                    "<|object_ref_end|>", "<|box_start|>", "<|box_end|>", "<|quad_start|>", "<|quad_end|>", "<|vision_start|>",
+                    "<|vision_end|>", "<|vision_pad|>", "<|image_pad|>", "<|video_pad|>"));
+            Assertions.assertEquals(new TreeSet<>(autoTokenizer.allSpecialTokens()), expected);
+
+        }
     }
 }

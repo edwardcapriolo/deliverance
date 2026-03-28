@@ -49,6 +49,10 @@ public class Quen2Tokenizer extends PreTrainedTokenizer {
     }
 
     @Override
+    public List<String> allSpecialTokens(){
+        return addedTokenMap.entrySet().stream().filter( (pred) -> pred.getValue().special).map((entry)-> entry.getValue().content).toList();
+    }
+    @Override
     public Optional<String> chatTemplate() {
         return Optional.ofNullable(tokenizerConfig.chatTemplate);
     }
