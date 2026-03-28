@@ -4,6 +4,10 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -33,7 +37,12 @@ public class FirstTest {
         {
             //>>> tokenizer.all_special_ids
             //    [151645, 151643, 151644, 151646, 151647, 151648, 151649, 151650, 151651, 151652, 151653, 151654, 151655, 151656]
-            
+            int [] expected = {  151645, 151643, 151644, 151646, 151647, 151648, 151649, 151650, 151651, 151652, 151653, 151654, 151655, 151656};
+            SortedSet<Integer> l = new TreeSet<>();
+            for (int i=0;i<expected.length;i++){
+                l.add(expected[i]);
+            }
+            assertEquals(l.toString(), autoTokenizer.allSpecialIds().toString());
         }
 
     }

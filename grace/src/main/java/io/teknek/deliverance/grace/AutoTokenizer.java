@@ -63,7 +63,9 @@ public class AutoTokenizer {
                 }
             }
             Quen2Tokenizer q = new Quen2Tokenizer(new HashMap<>(), Optional.empty(),Optional.empty(),Optional.empty(),
-                    Optional.empty(),Optional.empty(),Optional.empty(),Optional.empty(), map);
+                    Optional.empty(),Optional.empty(),Optional.empty(),Optional.empty(),
+                    map, addedTokenMap
+                    );
             return q;
 
         } catch (JsonProcessingException e) {
