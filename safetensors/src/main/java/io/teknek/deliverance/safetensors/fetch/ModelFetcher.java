@@ -19,11 +19,14 @@ public class ModelFetcher {
     public static final String HF_PROP = "huggingface.auth.token";
     private static final String FINISHED_MARKER = ".finished";
 
-    private final Path baseDir;
-    private final String owner;
-    private final String name;
-    private String token;
+    protected Path baseDir;
+    protected String owner;
+    protected String name;
+    protected String token;
 
+    protected ModelFetcher(){
+        //This isnt a great design but hacking at the extensibility here
+    }
     /**
      * Attempts to locate a token though ENV then java properties
      * @param owner
@@ -151,7 +154,7 @@ public class ModelFetcher {
         return localModelDir.toFile();
     }
 
-    private static List<String> parseFileList(String modelInfo) throws IOException {
+    protected static List<String> parseFileList(String modelInfo) throws IOException {
         List<String> fileList = new ArrayList<>();
 
         ObjectMapper objectMapper = new ObjectMapper();

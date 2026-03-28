@@ -110,7 +110,7 @@ Use the coinflip tool any analyze the result<|eot_id|><|start_header_id|>assista
         }
     }
 
-    @Disabled
+    @Test
     public void qwenTokenize() throws IOException {
         ModelFetcher fetch = new ModelFetcher("tjake", "Qwen2.5-0.5B-Instruct-JQ4");
         File f = fetch.maybeDownload();
@@ -134,6 +134,18 @@ Use the coinflip tool any analyze the result<|eot_id|><|start_header_id|>assista
             //PromptSupport.Builder z = m.promptSupport().get().builder().addUserMessage("Hello world");
             //long[] k = m.getTokenizer().encode(z.build().getPrompt());
             //assertEquals("", Arrays.toString(k));
+
+            //String s = "This is a test 😊\nI was born in";
+            //long [] x = m.getTokenizer().encode(s);
+            //System.out.println(Arrays.toString(x));
+            //String [] decode = new String[x.length];
+            //for (int i = 0; i < x.length; i++) {
+            //    decode[i] = m.getTokenizer().decode(x[i]);
+            //}
+            //List<long[]> tokeized = m.getTokenizer().tokenize(s).stream().map(y -> m.getTokenizer().encode(y)).toList();
+            //System.out.println(tokeized);
+
+            //System.out.println(Arrays.toString(decode));
         }
     }
 
