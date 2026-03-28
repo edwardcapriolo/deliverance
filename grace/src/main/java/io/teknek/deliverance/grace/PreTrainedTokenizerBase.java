@@ -49,6 +49,9 @@ public abstract class PreTrainedTokenizerBase {
     public List<Integer> allSpecialIds(){
         throw new UnsupportedOperationException();
     }
+
+    public abstract Optional<String> chatTemplate();
+
     public  static <T> Map<T, ?> fromKeys(List<T> keys){
         Map<T, ?> newMap = new HashMap<>(keys.size());
         keys.forEach(key -> newMap.put(key, null));
