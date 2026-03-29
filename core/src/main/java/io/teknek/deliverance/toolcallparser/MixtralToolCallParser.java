@@ -1,10 +1,12 @@
 package io.teknek.deliverance.toolcallparser;
 
 import io.teknek.deliverance.generator.Response;
+import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.safetensors.prompt.ToolCall;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 
 public class MixtralToolCallParser implements ToolCallParser {
     //This is the promptTemplate not the result
@@ -19,5 +21,10 @@ public class MixtralToolCallParser implements ToolCallParser {
         String inside = response.responseTextWithSpecialTokens.substring(x + HEADER.length(),
                 response.responseTextWithSpecialTokens.indexOf(TRAILER));
         return null;
+    }
+
+    @Override
+    public Optional<Response> shouldEndTurn(AbstractModel.ResponseContext response, int length) {
+        return Optional.empty();
     }
 }

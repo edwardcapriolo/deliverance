@@ -248,6 +248,18 @@ public abstract class AbstractModel implements Generator, Classifier {
                 responseTextWithSpecialTokens.append(cleaned);
             }
         }
+
+        public StringBuilder getResponseTextWithSpecialTokens() {
+            return this.responseTextWithSpecialTokens;
+        }
+
+        public StringBuilder getResponseText() {
+            return responseText;
+        }
+
+        public List<Integer> getGeneratedTokens() {
+            return generatedTokens;
+        }
     }
 
     int createNextToken(GeneratorParameters generatorParameters, AbstractTensor logits, AbstractTensor last,
@@ -317,7 +329,7 @@ public abstract class AbstractModel implements Generator, Classifier {
         }
         int ntokens = generatorParameters.ntokens.orElse(config.contextLength);
         Preconditions.checkArgument(encoded.length < config.contextLength
-                && encoded.length < ntokens, "Prompt exceeds max tokens");
+                && encoded.length < ntokens, "Prompt exceeds ntokens");
         if (ntokens > config.contextLength) {
             throw new GenerationException(String.format("ntokens %d exceed config length %d",  ntokens, config.contextLength));
         }
@@ -354,16 +366,18 @@ public abstract class AbstractModel implements Generator, Classifier {
                     }
                     Optional<Response> shouldEnd = stopWords(generatorParameters, responseContext, encoded.length);
                     if (shouldEnd.isPresent()) {
-                        Response r = shouldEnd.get();
-                        return r.copyWithToolCalls(getToolCallParser().extract(r));
+                        return shouldEnd.get();
+                    }
+                    Optional<Response> shouldEndTools = getToolCallParser().shouldEndTurn(responseContext, encoded.length);
+                    if (shouldEndTools.isPresent()) {
+                        return shouldEndTools.get();
                     }
                 }
             }
         }
 
-        Response resp = new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
+        return  new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
                 FinishReason.MAX_TOKENS, encoded.length, responseContext.generatedTokens, 0, 0);
-        return resp.copyWithToolCalls(getToolCallParser().extract(resp));
     }
 
     /*
