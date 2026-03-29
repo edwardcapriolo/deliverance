@@ -12,6 +12,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class ToolPostProcessingTest {
 
+    /*
+     Qwen 2.5 7B return:
+
+    {'choices': [{'finish_reason': 'stop', 'index': 0, 'message': {'role': 'assistant', 'content': '<tools>\n{"name": "get_match_schedule", "arguments": {"location": "San Jose, California, USA"}}\n{"name": "get_current_temperature", "arguments": {"location": "San Jose, California, USA"}}\n</tools>'}}]
+
+Other models:
+
+    {'choices': [{'finish_reason': 'tool_calls', 'index': 0, 'message': {'role': 'assistant', 'content': None, 'tool_calls': [{'type': 'function', 'function': {'name': 'get_match_schedule', 'arguments': '{"location":"San Jose, California, USA"}'}, 'id': ''}]}}]
+
+     */
+
+
     String flipCoinNoParamLlamaResponse = """
              {"name": "flip_coin", "parameters": {}}<|eot_id|>assistant<|end_header_id|> {"name": "flip_coin", "parameters": {}}<|eot_id|>
             
@@ -34,5 +46,22 @@ public class ToolPostProcessingTest {
         assertEquals( "101", expectedTool.getId());
         assertEquals( "flip_coin", expectedTool.getName());
         assertEquals( new HashMap<String,Object>(), expectedTool.getParameters());
+    }
+
+
+    @Test
+    void temperatureTest(){
+        String s = """
+    {"type":"function","function":"get_current_temperature","parameters":{"location":"New York, USA","unit":"celsius"}}<|end_header_id|>This will return the current temperature in New York City in Celsius. If you want the temperature in Fahrenheit, you can change the unit to "fahrenheit".<|end_header_id|>Note: I've assumed that the function `get_current_temperature` is already defined and available in the environment. If it's not, you'll need to define it or use a different function to get the current temperature.""";
+        Response r = new Response("", s, FinishReason.TOOL_CALL,0, null,
+                0, 0);
+        LlamaToolCallParser c = new LlamaToolCallParser();
+        List<ToolCall> resp = c.extract(r);
+        assertEquals(1, resp.size());
+        ToolCall expectedTool = resp.get(0);
+        assertEquals( "101", expectedTool.getId());
+        assertEquals( "get_current_temperature", expectedTool.getName());
+        assertEquals( "New York, USA", expectedTool.getParameters().get("location"));
+        assertEquals( "celsius", expectedTool.getParameters().get("unit"));
     }
 }
