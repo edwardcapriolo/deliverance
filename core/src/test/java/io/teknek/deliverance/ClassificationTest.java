@@ -16,8 +16,7 @@ public class ClassificationTest {
 
     @Test
     public void classifyAuto() {
-        try (AbstractModel model = AutoModelForSequenceClassification
-                .newBuilder(new ModelFetcher("lordofthejars", "jailbreak-classifier")).build();
+        try (AbstractModel model = AutoModelForSequenceClassification.newBuilder(new ModelFetcher("lordofthejars", "jailbreak-classifier")).build();
              ConsoleReporter consoleReporter = ConsoleReporter.forRegistry(model.getMetricRegistry())
                      .convertDurationsTo(TimeUnit.MILLISECONDS).build()) {
             //case 1

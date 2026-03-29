@@ -58,5 +58,11 @@ public class FirstTest {
             Assertions.assertEquals(new TreeSet<>(autoTokenizer.allSpecialTokens()), expected);
 
         }
+
+        {
+            //>>> tokenizer.special_tokens_map
+            //{'eos_token': '<|im_end|>', 'pad_token': '<|endoftext|>'}
+
+        }
     }
 }

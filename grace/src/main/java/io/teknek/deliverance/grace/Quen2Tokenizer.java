@@ -13,6 +13,7 @@ public class Quen2Tokenizer extends PreTrainedTokenizer {
     private Map<String,Integer> vocab;
     private SortedMap<Integer, AddedToken> addedTokenMap;
     private TokenizerConfig tokenizerConfig;
+
     public Quen2Tokenizer(Map<String, String> modelSpecificSpecialTokens,
                           Optional<BigInteger> maxLen,
                           Optional<PaddingSide> paddingSide,
@@ -45,12 +46,14 @@ public class Quen2Tokenizer extends PreTrainedTokenizer {
     }
 
     public List<Integer> allSpecialIds(){
-        return addedTokenMap.entrySet().stream().filter( (pred) -> pred.getValue().special).map((entry)-> entry.getKey()).toList();
+        return addedTokenMap.entrySet().stream().filter( (pred) ->
+                pred.getValue().special).map(Map.Entry::getKey).toList();
     }
 
     @Override
     public List<String> allSpecialTokens(){
-        return addedTokenMap.entrySet().stream().filter( (pred) -> pred.getValue().special).map((entry)-> entry.getValue().content).toList();
+        return addedTokenMap.entrySet().stream().filter( (pred) ->
+                pred.getValue().special).map((entry)-> entry.getValue().content).toList();
     }
     @Override
     public Optional<String> chatTemplate() {
