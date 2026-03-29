@@ -354,13 +354,16 @@ public abstract class AbstractModel implements Generator, Classifier {
                     }
                     Optional<Response> shouldEnd = stopWords(generatorParameters, responseContext, encoded.length);
                     if (shouldEnd.isPresent()) {
-                        return shouldEnd.get();
+                        Response r = shouldEnd.get();
+                        return r.copyWithToolCalls(getToolCallParser().extract(r));
                     }
                 }
             }
         }
-        return new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
+
+        Response resp = new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
                 FinishReason.MAX_TOKENS, encoded.length, responseContext.generatedTokens, 0, 0);
+        return resp.copyWithToolCalls(getToolCallParser().extract(resp));
     }
 
     /*
