@@ -12,6 +12,7 @@ import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.*;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.toolcallparser.LlamaToolCallParser;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -50,7 +51,7 @@ public class MistralIT {
     public void completeToolWithMockAgent(){
         ModelFetcher fetch = new ModelFetcher("tjake", "Mistral-7B-Instruct-v0.3-JQ4");
 
-        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch).build()) {
+        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch).withToolCallParser(new LlamaToolCallParser()).build()) {
             String prompt = "What is the temperature in NYC right now?";
             PromptSupport.Builder builder = model.promptSupport().get().builder()
                     .addUserMessage(prompt);

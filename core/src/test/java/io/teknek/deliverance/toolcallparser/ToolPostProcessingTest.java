@@ -2,11 +2,17 @@ package io.teknek.deliverance.toolcallparser;
 
 import io.teknek.deliverance.generator.FinishReason;
 import io.teknek.deliverance.generator.Response;
+import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.safetensors.prompt.ToolCall;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
+import org.mockito.Mockito;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -63,5 +69,31 @@ Other models:
         assertEquals( "get_current_temperature", expectedTool.getName());
         assertEquals( "New York, USA", expectedTool.getParameters().get("location"));
         assertEquals( "celsius", expectedTool.getParameters().get("unit"));
+    }
+
+    @Test
+    void shouldEndFlowTest(){
+        String missingEot = """
+                {"type":"function","function":"get_current_temperature","parameters":{"location":"New York, USA","unit":"celsius"}}<|end_header_id|>This will return the current temperature in New York City in Celsius. If you want the temperature in Fahrenheit, you can change the unit to "fahrenheit".<|end_header_id|>Note: I've assumed that the function `get_current_temperature` is already defined and available in the environment. If it's not, you would need to define it or import it from a library.', responseTextWithSpecialTokens='{"type":"function","function":"get_current_temperature","parameters":{"location":"New York, USA","unit":"celsius"}}<|end_header_id|>This will return the current temperature in New York City in Celsius. If you want the temperature in Fahrenheit, you can change the unit to "fahrenheit".<|end_header_id|>Note: I've assumed that the function `get_current_temperature` is already defined and available in the environment. If it's not, you would need to define it or import it from a library.
+                """;
+        {
+            LlamaToolCallParser c = new LlamaToolCallParser();
+            AbstractModel.ResponseContext context = Mockito.mock(AbstractModel.ResponseContext.class);
+            Mockito.when(context.getResponseTextWithSpecialTokens()).thenReturn(new StringBuilder(missingEot));
+            Assertions.assertEquals(Optional.empty(), c.shouldEndTurn(context, 0));
+        }
+        {
+
+            String withEot = """
+                    {"type":"function","function":"get_current_temperature","parameters":{"location":"New York, USA","unit":"celsius"}}<|end_header_id|>This will return the current temperature in New York City in Celsius. If you want the temperature in Fahrenheit, you can change the unit to "fahrenheit".<|end_header_id|>Note: I've assumed that the function `get_current_temperature` is already defined and available in the environment. If it's not, you would need to define it or import it from a library.', responseTextWithSpecialTokens='{"type":"function","function":"get_current_temperature","parameters":{"location":"New York, USA","unit":"celsius"}}<|end_header_id|>This will return the current temperature in New York City in Celsius. If you want the temperature in Fahrenheit, you can change the unit to "fahrenheit".<|end_header_id|>Note: I've assumed that the function `get_current_temperature` is already defined and available in the environment. If it's not, you would need to define it or import it from a library.<|eot_id|>""";
+            LlamaToolCallParser c = new LlamaToolCallParser();
+            AbstractModel.ResponseContext context = Mockito.mock(AbstractModel.ResponseContext.class);
+            Mockito.when(context.getResponseText()).thenReturn(new StringBuilder("bla"));
+            Mockito.when(context.getResponseTextWithSpecialTokens()).thenReturn(new StringBuilder(withEot));
+            Mockito.when(context.getGeneratedTokens()).thenReturn(Collections.singletonList(1));
+            Response x = c.shouldEndTurn(context, 0).get();
+            Assertions.assertEquals(FinishReason.TOOL_CALL, x.finishReason);
+            Assertions.assertEquals(1, x.toolCalls.size());
+        }
     }
 }

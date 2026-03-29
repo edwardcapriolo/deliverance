@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.generator.*;
 
+import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.safetensors.prompt.ToolCall;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,6 +59,17 @@ public class LlamaToolCallParser implements ToolCallParser {
         List<ToolCall> distinct = result.stream().distinct().toList();
         distinct.forEach(x -> x.setId((id.getAndIncrement()) + ""));
         return distinct;
+    }
+
+    @Override
+    public Optional<Response> shouldEndTurn(AbstractModel.ResponseContext response, int length) {
+        if(response.getResponseTextWithSpecialTokens().indexOf(eot) > -1){
+            Response resp = new Response(response.getResponseText().toString(), response.getResponseTextWithSpecialTokens().toString(),
+                    FinishReason.TOOL_CALL,
+                    length, response.getGeneratedTokens(), 0, 0);
+            return Optional.of(resp.copyWithToolCalls(extract(resp)));
+        }
+        return Optional.empty();
     }
 
     public static Optional<String> extractJsonSubstring(String mixedContent) {
