@@ -43,6 +43,11 @@ public class GuidedChoiceSampler {
 
     }
 
+    /**
+     * By looking at the current response and sampling we attempt to find the next token that fits one of the choices
+     * the user has requested
+     * @return the next token that matches some of the guided input, if no match vocabularySize - 1 is returned
+     */
     public int sample() {
         long start = System.nanoTime();
         try (AbstractTensor embedding = layerNorm.forward(output)) {
@@ -77,7 +82,9 @@ public class GuidedChoiceSampler {
                     String decodedToken = tokenizer.decode(i);
                     String entire = current + decodedToken;
                     if (!decodedToken.isEmpty() && currentChoices.stream().anyMatch(ch -> ch.startsWith(entire))) {
-                        LOG.debug("candidate found token {} {} {} ", i , decodedToken, entire);
+                        if (LOG.isDebugEnabled()) {
+                            LOG.debug("candidate found token {} {} {} ", i, decodedToken, entire);
+                        }
                         if (entire.length() > bestMatch.length()) {
                             maxi = i;
                             maxv = v;

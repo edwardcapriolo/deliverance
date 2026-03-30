@@ -81,13 +81,18 @@ public class KvBufferCache implements Closeable {
             this.layersPerPage = layersPerPage;
             this.contextLengthPerPage = contextLengthPerPage;
 
-            if (numberOfLayerPages < 1) throw new IllegalArgumentException("totalPageCount must be >= 1");
-
-            if (numberOfContextPages < 1) throw new IllegalArgumentException("numberOfContextPages must be >= 1");
-
-            if (layersPerPage < 1) throw new IllegalArgumentException("layersPerPage must be >= 1");
-
-            if (contextLengthPerPage < 1) throw new IllegalArgumentException("contextLengthPerPage must be >= 1");
+            if (numberOfLayerPages < 1) {
+                throw new IllegalArgumentException("totalPageCount must be >= 1");
+            }
+            if (numberOfContextPages < 1) {
+                throw new IllegalArgumentException("numberOfContextPages must be >= 1");
+            }
+            if (layersPerPage < 1) {
+                throw new IllegalArgumentException("layersPerPage must be >= 1");
+            }
+            if (contextLengthPerPage < 1) {
+                throw new IllegalArgumentException("contextLengthPerPage must be >= 1");
+            }
 
             TensorShape s;
             Config c = model.getConfig();

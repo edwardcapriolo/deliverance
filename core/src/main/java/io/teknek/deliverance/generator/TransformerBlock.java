@@ -146,23 +146,12 @@ public class TransformerBlock {
             KvBufferCache.KvBuffer kvBuffer,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer
     ) {
-
-        debug("input_emb", embedding, layerIndex);
-
         AbstractTensor lnemb = preAttentionNorm.map(ln -> ln.forward(embedding)).orElse(embedding);
-
-        debug("ln_emb", lnemb, layerIndex);
-
         AbstractTensor postAttention;
         try (AbstractTensor qlnemb = model.maybeQuantize(lnemb)) {
             postAttention = attention.forward(qlnemb, position, kvBuffer, tensorReducer);
         }
-
-        debug("post_attn", postAttention, layerIndex);
         AbstractTensor lnattn = maybeApplyNorm(postAttention, postAttentionNorm);
-
-        debug("post_attn_norm", lnattn, layerIndex);
-
         // residual connection
         if (model.getConfig().residualMultiplier != null) {
             configurableTensorProvider.get().scale(model.getConfig().residualMultiplier, lnattn, 0, model.getConfig().embeddingLength);
@@ -170,9 +159,6 @@ public class TransformerBlock {
         configurableTensorProvider.get().accumulate(lnattn, embedding, 0, model.getConfig().embeddingLength);
 
         AbstractTensor lnpreFF = preFFNorm.map(ln -> ln.forward(lnattn)).orElse(lnattn);
-
-        debug("pre_ff_norm", lnpreFF, layerIndex);
-
         AbstractTensor postFF;
         try (AbstractTensor qlnemb2 = model.maybeQuantize(lnpreFF)) {
             postFF = ffBlock.forward(qlnemb2, tensorReducer);
@@ -187,8 +173,6 @@ public class TransformerBlock {
         }
         configurableTensorProvider.get().accumulate(lnpostFF, lnattn, 0, model.getConfig().embeddingLength);
 
-        debug("post_ff_res", lnpostFF, layerIndex);
-
         // Release any tmp buffers (embedding is released by caller)
         if (lnemb != embedding) lnemb.close();
         if (lnattn != postAttention) lnattn.close();
@@ -199,6 +183,12 @@ public class TransformerBlock {
         return maybeApplyNorm(lnpostFF, preResponseNorm);
     }
 
+    /**
+     *
+     * @param tensor
+     * @param norm
+     * @return if norm is supplied call norm.forward on tensor and return new result otherwise return tensor,
+     */
     private AbstractTensor maybeApplyNorm(AbstractTensor tensor, Optional<LayerNorm> norm) {
         return norm.map(ln -> {
             AbstractTensor o = ln.forward(tensor);

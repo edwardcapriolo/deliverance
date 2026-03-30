@@ -205,6 +205,10 @@ public abstract class AbstractModel implements Generator, Classifier {
         return workingDType;
     }
 
+    /**
+     *
+     * @return Some if the tokenizer inside this model has a chat_template/prompt template Empty if not.
+     */
     public Optional<PromptSupport> promptSupport() {
         return tokenizer.promptSupport();
     }
@@ -613,6 +617,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     public AbstractTensor batchForward(int[] token_ids, int startPos, KvBufferCache.KvBuffer kvbuf,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
         AbstractTensor embedding = null;
+
         CausualWhisperer.LOGGER.debug("batchForward from 0 to token_ids.length {} max_batch_size {} per iteration",
                 token_ids.length, MAX_BATCH_SIZE);
         for (int i = 0; i < token_ids.length; i += MAX_BATCH_SIZE) {
