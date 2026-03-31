@@ -122,8 +122,8 @@ There are a variety of scripts to build and run deliverance using [dockerscripts
 
 Each release images are pushed to [dockerhub](https://hub.docker.com/repository/docker/ecapriolo/deliverance/tags/0.0.5/sha256-5114ef84ef91534773c8e6052fafa5641dcf75e14699d1e3d0f8ac78cc90af17) 
 
-During inferencing deliverance will automatically download models from huggingface and store them ~{HOME}/.deliverance directory. Because the models are large it is wise to ensure you can share them on your local system and inside the docker. The resipe below uses a bind mount to provide read only access
-to the datadirectory. To stage the data initially replace ~/.deliverance:/home/deliverance/.deliverance:ro with ~/.deliverance:/home/deliverance/.deliverance:rw 
+During inferencing deliverance will automatically download models from huggingface and store them ~{HOME}/.deliverance directory. Because the models are large it is wise to ensure you can share them on your local system and inside the docker. The recipe below uses a bind mount to provide read only access
+to the data directory. To stage the data initially replace ~/.deliverance:/home/deliverance/.deliverance:ro with ~/.deliverance:/home/deliverance/.deliverance:rw 
 
 ```sh
 docker run -p 8085:8080 \
