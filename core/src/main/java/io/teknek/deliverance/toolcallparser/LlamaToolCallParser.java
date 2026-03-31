@@ -65,7 +65,7 @@ public class LlamaToolCallParser implements ToolCallParser {
     public Optional<Response> shouldEndTurn(AbstractModel.ResponseContext response, int length) {
         if(response.getResponseTextWithSpecialTokens().indexOf(eot) > -1){
             Response resp = new Response(response.getResponseText().toString(), response.getResponseTextWithSpecialTokens().toString(),
-                    FinishReason.TOOL_CALL,
+                    FinishReason.TOOL_CALLS,
                     length, response.getGeneratedTokens(), 0, 0);
             return Optional.of(resp.copyWithToolCalls(extract(resp)));
         }

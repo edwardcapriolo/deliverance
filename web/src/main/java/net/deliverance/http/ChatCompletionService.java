@@ -24,7 +24,6 @@ public class ChatCompletionService {
         if (request.getTemperature() != null){
             params.withTemperature(request.getTemperature().floatValue());
         }
-
         try {
             //There are many possible data errors in here
             if (request.getTools() != null) {
@@ -34,11 +33,8 @@ public class ChatCompletionService {
                 }
             }
         } catch (RuntimeException e) {
-
             return Either.Left(new Error().code(HttpStatus.BAD_REQUEST.value() + "")
                     .message("An error happened mapping tools" + e.getMessage()));
-
-
         }
         if (request.getNtokens() != null){
             params.withNtokens(request.getNtokens());
@@ -54,7 +50,6 @@ public class ChatCompletionService {
                 params.withStopWords(stop.getListString());
             }
         }
-
         if(request.getChatTemplate() != null){
             builder.useChatTemplate(request.getChatTemplate());
         }

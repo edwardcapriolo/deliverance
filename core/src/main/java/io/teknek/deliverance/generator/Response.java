@@ -58,7 +58,7 @@ public class Response {
         return new Response(
                 responseText,
                 responseTextWithSpecialTokens,
-                FinishReason.TOOL_CALL,
+                FinishReason.TOOL_CALLS,
                 promptTokens,
                 generatedTokens,
                 promptTimeMs,

@@ -714,14 +714,14 @@ components:
 
         stop:
           description: |
-            Up to 4 sequences where the API will stop generating further tokens.
+            sequences where the API will stop generating further tokens.
           default: null
           oneOf:
             - type: string
               nullable: true
             - type: array
               minItems: 1
-              maxItems: 4
+              maxItems: 40
               items:
                 type: string
         stream:

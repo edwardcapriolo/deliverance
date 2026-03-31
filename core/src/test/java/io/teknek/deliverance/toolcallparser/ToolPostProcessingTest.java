@@ -6,7 +6,6 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.safetensors.prompt.ToolCall;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mock;
 import org.mockito.Mockito;
 
 import java.util.Collections;
@@ -43,7 +42,7 @@ Other models:
 
     @Test
     void flipCoinResponse(){
-        Response r = new Response("", flipCoinNoParamLlamaResponse, FinishReason.TOOL_CALL,0, null,
+        Response r = new Response("", flipCoinNoParamLlamaResponse, FinishReason.TOOL_CALLS,0, null,
                 0, 0);
         LlamaToolCallParser c = new LlamaToolCallParser();
         List<ToolCall> resp = c.extract(r);
@@ -59,7 +58,7 @@ Other models:
     void temperatureTest(){
         String s = """
     {"type":"function","function":"get_current_temperature","parameters":{"location":"New York, USA","unit":"celsius"}}<|end_header_id|>This will return the current temperature in New York City in Celsius. If you want the temperature in Fahrenheit, you can change the unit to "fahrenheit".<|end_header_id|>Note: I've assumed that the function `get_current_temperature` is already defined and available in the environment. If it's not, you'll need to define it or use a different function to get the current temperature.""";
-        Response r = new Response("", s, FinishReason.TOOL_CALL,0, null,
+        Response r = new Response("", s, FinishReason.TOOL_CALLS,0, null,
                 0, 0);
         LlamaToolCallParser c = new LlamaToolCallParser();
         List<ToolCall> resp = c.extract(r);
@@ -92,7 +91,7 @@ Other models:
             Mockito.when(context.getResponseTextWithSpecialTokens()).thenReturn(new StringBuilder(withEot));
             Mockito.when(context.getGeneratedTokens()).thenReturn(Collections.singletonList(1));
             Response x = c.shouldEndTurn(context, 0).get();
-            Assertions.assertEquals(FinishReason.TOOL_CALL, x.finishReason);
+            Assertions.assertEquals(FinishReason.TOOL_CALLS, x.finishReason);
             Assertions.assertEquals(1, x.toolCalls.size());
         }
     }

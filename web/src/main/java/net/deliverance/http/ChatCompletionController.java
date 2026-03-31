@@ -12,6 +12,7 @@ import io.teknek.dysfx.Either;
 import io.teknek.dysfx.Left;
 
 import io.teknek.dysfx.Right;
+import io.teknek.dysfx.exception.UnreachableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -75,18 +76,23 @@ public class ChatCompletionController {
                     }
                 }
                 Response resp = model.generate(UUID.randomUUID(), ready.promptSupportBuilder().build(),
-                        ready.generatorParameters(), (int next, String rok, String s, float aFloat) -> {
-                        });
+                        ready.generatorParameters(), new DoNothingGenerateEvent());
                 CreateChatCompletionResponse response = new CreateChatCompletionResponse();
                 List<ToolCall> tcs = model.getToolCallParser().extract(resp);
-                CreateChatCompletionResponseChoicesInner z2 = new CreateChatCompletionResponseChoicesInner()
+                CreateChatCompletionResponseChoicesInner choice = new CreateChatCompletionResponseChoicesInner()
                         .message(new ChatCompletionResponseMessage().content(resp.responseTextWithSpecialTokens))
                         .index(0);
                 if (!tcs.isEmpty()) {
-                    z2.setFinishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.TOOL_CALLS);
+                    //We shouldn't need this but it seems like the behaivor is hadto model
+                    choice.setFinishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.TOOL_CALLS);
                 } else {
-                    //TODO map the enums
-                    z2.setFinishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.LENGTH);
+                    switch (resp.finishReason){
+                        case MAX_TOKENS -> choice.setFinishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.LENGTH);
+                        case TOOL_CALLS -> choice.setFinishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.TOOL_CALLS);
+                        case STOP_TOKEN -> choice.setFinishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.STOP);
+                        case CONTENT_FILTER, FUNCTION_CALL -> throw new UnreachableException("not implemented");
+                        case null -> throw new UnreachableException("unexpected null return");
+                    }
                 }
                 tcs.forEach(tc -> {
                     ChatCompletionMessageToolCall t = new ChatCompletionMessageToolCall();
@@ -98,9 +104,9 @@ public class ChatCompletionController {
                     } catch (JsonProcessingException e) {
                         throw new RuntimeException(e);
                     }
-                    z2.getMessage().addToolCallsItem(t);
+                    choice.getMessage().addToolCallsItem(t);
                 });
-                response.addChoicesItem(z2);
+                response.addChoicesItem(choice);
                 return new ResponseEntity<>(response, HttpStatus.OK);
             }
         }

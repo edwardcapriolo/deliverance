@@ -2,7 +2,6 @@ package io.teknek.deliverance.integration;
 
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.generator.FinishReason;
-import io.teknek.deliverance.generator.Generator;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.AbstractModel;
@@ -19,8 +18,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
 
-import static io.teknek.deliverance.safetensors.fetch.HttpSupport.getResponse;
-import static io.teknek.deliverance.safetensors.fetch.HttpSupport.logger;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class MistralIT {
@@ -80,7 +77,7 @@ public class MistralIT {
             };
             Response response = model.generate(uuid, builder.build(), p, e);
             System.out.println(response.responseText);
-            Assertions.assertEquals(FinishReason.TOOL_CALL, response.finishReason);
+            Assertions.assertEquals(FinishReason.TOOL_CALLS, response.finishReason);
             Assertions.assertEquals(1, response.toolCalls.size());
 
             ToolCall f = response.toolCalls.get(0);

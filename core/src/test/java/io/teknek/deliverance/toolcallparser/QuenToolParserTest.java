@@ -3,11 +3,9 @@ package io.teknek.deliverance.toolcallparser;
 import io.teknek.deliverance.generator.FinishReason;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.safetensors.prompt.ToolCall;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -21,7 +19,7 @@ public class QuenToolParserTest {
 
     @Test
     public void testParseQWen() throws IOException, InterruptedException {
-        Response r = new Response("", multipleTools, FinishReason.TOOL_CALL,0, null,
+        Response r = new Response("", multipleTools, FinishReason.TOOL_CALLS,0, null,
                 0, 0);
         QwenToolCallParser  c = new QwenToolCallParser ();
         List<ToolCall> resp = c.extract(r);
