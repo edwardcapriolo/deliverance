@@ -35,7 +35,7 @@ Large Language Models are very resource intensive, but smaller quantized models 
 The class AutoModelForCasualLm will fetch and load a given model.
 
 ```java
-ModelFetcher fetch = new ModelFetcher("tjake", "Mistral-7B-Instruct-v0.3-JQ4");
+ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
 try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch).build()) {
     PromptSupport.Builder g = model.promptSupport().get().builder()
             .addUserMessage("Who is Edward Capriolo");
@@ -122,8 +122,8 @@ There are a variety of scripts to build and run deliverance using [dockerscripts
 
 Each release images are pushed to [dockerhub](https://hub.docker.com/repository/docker/ecapriolo/deliverance/tags/0.0.5/sha256-5114ef84ef91534773c8e6052fafa5641dcf75e14699d1e3d0f8ac78cc90af17) 
 
-During inferencing deliverance will automatically download models from huggingface and store them ~{HOME}/.deliverance directory. Because the models are large it is wise to ensure you can share them on your local system and inside the docker. The resipe below uses a bind mount to provide read only access
-to the datadirectory. To stage the data initially replace ~/.deliverance:/home/deliverance/.deliverance:ro with ~/.deliverance:/home/deliverance/.deliverance:rw 
+During inferencing deliverance will automatically download models from huggingface and store them ~{HOME}/.deliverance directory. Because the models are large it is wise to ensure you can share them on your local system and inside the docker. The recipe below uses a bind mount to provide read only access
+to the data directory. To stage the data initially replace ~/.deliverance:/home/deliverance/.deliverance:ro with ~/.deliverance:/home/deliverance/.deliverance:rw 
 
 ```sh
 docker run -p 8085:8080 \
@@ -387,3 +387,7 @@ After troubleshooting all the wrong things for hours I found not to use:
 ``` mvn:spring-boot run ```
     
 The debug mode seems to remove lots of optimizations causing very slow runtime. *web/run.sh* should be a good stand in.
+
+### ⭐ Give us a Star!
+
+Fork the repo and give us a star, contributed some pull requests, and start `Delivering` Java AI  
