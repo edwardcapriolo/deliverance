@@ -10,6 +10,7 @@ import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
 import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
 import io.teknek.deliverance.toolcallparser.LlamaToolCallParser;
+import io.teknek.deliverance.toolcallparser.QwenToolCallParser;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,6 +26,7 @@ public class AutoModelForCausaLm {
         }
         if (fetcher.getName().startsWith("Qwen")){
             b.withTokenTokenRenderer(new Qwen2TokenizerRenderer());
+            b.withToolCallParser(new QwenToolCallParser());
         }
     }
     public static AbstractModel fromPretrained(ModelFetcher fetcher){
