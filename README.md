@@ -35,7 +35,7 @@ Large Language Models are very resource intensive, but smaller quantized models 
 The class AutoModelForCasualLm will fetch and load a given model.
 
 ```java
-ModelFetcher fetch = new ModelFetcher("tjake", "Mistral-7B-Instruct-v0.3-JQ4");
+ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
 try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch).build()) {
     PromptSupport.Builder g = model.promptSupport().get().builder()
             .addUserMessage("Who is Edward Capriolo");
