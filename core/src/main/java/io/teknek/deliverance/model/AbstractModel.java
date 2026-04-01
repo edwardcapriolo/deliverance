@@ -529,7 +529,8 @@ public abstract class AbstractModel implements Generator, Classifier {
         float[] embedding = embed(input, poolingType);
         FloatBufferTensor b = new FloatBufferTensor(FloatBuffer.wrap(embedding), TensorShape.of(embedding.length), false);
         int classes = classifyOutput.getClassificationWeights().shape().first();
-        AbstractTensor scores = makeDenseTensor(classes);
+        //AbstractTensor scores = makeDenseTensor(classes);
+        AbstractTensor scores = tensorCache.getDirty(workingDType, TensorShape.of(classes));
         metricRegistry.timer("classify.1_dotproduct_scores").time(() ->
             configurableTensorProvider.get().batchDotProduct(scores, b, classifyOutput.getClassificationWeights(),
                 0, 0, config.embeddingLength));
@@ -575,7 +576,8 @@ public abstract class AbstractModel implements Generator, Classifier {
                         throw new UnsupportedOperationException("no pooling layer for this model");
                     }
                     AbstractTensor output = r.slice(promptLength - 1);
-                    AbstractTensor pooled = makeDenseTensor(1, config.embeddingLength);
+                    //AbstractTensor pooled = makeDenseTensor(1, config.embeddingLength);
+                    AbstractTensor pooled = tensorCache.getDirty(workingDType, TensorShape.of(1, config.embeddingLength));
                     configurableTensorProvider.get()
                             .batchDotProduct(pooled, output, poolingLayer.get().getPoolingWeights(), 0, 0, config.embeddingLength);
                     poolingLayer.get()

@@ -13,6 +13,8 @@ import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.util.Arrays;
+import java.util.concurrent.ForkJoinPool;
+
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -44,14 +46,43 @@ public class EmbeddingTest {
         File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
         TensorCache tensorCache = new TensorCache(mr);
-        try (        WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+             //WrappedForkJoinPool pool = new WrappedForkJoinPool(new ForkJoinPool(16, ForkJoinPool.defaultForkJoinWorkerThreadFactory, null, true));
                      AbstractModel model = ModelSupport.loadEmbeddingModel(f, DType.F32, DType.F32, new ConfigurableTensorProvider(tensorCache, pool),
                 new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true))) {
-            long [] ids = model.getTokenizer().encode(text);
-            assertEquals("[101, 2023, 2003, 1037, 3231, 6254, 2055, 3698, 4083, 102]", Arrays.toString(ids));
-            float[] embedding = model.embed(text, PoolingType.MODEL);
-            assertEquals(0.043238960206508636, embedding[0], 0.0000001);
-            assertEquals(-0.051459357142448425, embedding[1], 0.0000001);
+            //long start = System.currentTimeMillis();
+            //for (int i=0;i<1000; i++) {
+                long[] ids = model.getTokenizer().encode(text);
+                assertEquals("[101, 2023, 2003, 1037, 3231, 6254, 2055, 3698, 4083, 102]", Arrays.toString(ids));
+                float[] embedding = model.embed(text, PoolingType.MODEL);
+                assertEquals(0.043238960206508636, embedding[0], 0.0000001);
+                assertEquals(-0.051459357142448425, embedding[1], 0.0000001);
+            //}
+            //long end = System.currentTimeMillis();
+            //System.out.println((end-start) / 1000);
         }
-    }   
+    }
+/*
+    public static void main (String [] args){
+        String text = "This is a test document about machine learning";
+        ModelFetcher fetch = new ModelFetcher("sentence-transformers", "all-MiniLM-L6-v2");
+        File f = fetch.maybeDownload();
+        MetricRegistry mr = new MetricRegistry();
+        TensorCache tensorCache = new TensorCache(mr);
+        try (//WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+             WrappedForkJoinPool pool = new WrappedForkJoinPool(new ForkJoinPool(16, ForkJoinPool.defaultForkJoinWorkerThreadFactory, null, true));
+             AbstractModel model = ModelSupport.loadEmbeddingModel(f, DType.F32, DType.F32, new ConfigurableTensorProvider(tensorCache, pool),
+                     new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true))) {
+            long start = System.currentTimeMillis();
+            for (int i=0;i<1000; i++) {
+                long[] ids = model.getTokenizer().encode(text);
+                assertEquals("[101, 2023, 2003, 1037, 3231, 6254, 2055, 3698, 4083, 102]", Arrays.toString(ids));
+                float[] embedding = model.embed(text, PoolingType.MODEL);
+                assertEquals(0.043238960206508636, embedding[0], 0.0000001);
+                assertEquals(-0.051459357142448425, embedding[1], 0.0000001);
+            }
+            long end = System.currentTimeMillis();
+            System.out.println((end-start) / 1000);
+        }
+    }*/
 }
