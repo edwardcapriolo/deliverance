@@ -46,8 +46,8 @@ public class EmbeddingTest {
         File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
         TensorCache tensorCache = new TensorCache(mr);
+
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
-             //WrappedForkJoinPool pool = new WrappedForkJoinPool(new ForkJoinPool(16, ForkJoinPool.defaultForkJoinWorkerThreadFactory, null, true));
                      AbstractModel model = ModelSupport.loadEmbeddingModel(f, DType.F32, DType.F32, new ConfigurableTensorProvider(tensorCache, pool),
                 new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true))) {
             //long start = System.currentTimeMillis();
