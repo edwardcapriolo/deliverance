@@ -2,6 +2,7 @@ package io.teknek.deliverance.model.mistral;
 
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.TokenRenderer;
 import io.teknek.deliverance.model.llama.LlamaModel;
 import io.teknek.deliverance.safetensors.Config;
@@ -20,8 +21,8 @@ public class MistralModel extends LlamaModel {
                       DType workingMemoryQType, Optional<DType> modelQType,
                       ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
                       TensorCache tensorCache, KvBufferCacheSettings kvBufferCacheSettings, TokenRenderer tokenRenderer,
-                        ToolCallParser toolCallParser) {
+                        ToolCallParser toolCallParser, WrappedForkJoinPool pool) {
         super(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType, configurableTensorProvider,
-                metricRegistry, tensorCache, kvBufferCacheSettings, tokenRenderer, toolCallParser);
+                metricRegistry, tensorCache, kvBufferCacheSettings, tokenRenderer, toolCallParser, pool);
     }
 }

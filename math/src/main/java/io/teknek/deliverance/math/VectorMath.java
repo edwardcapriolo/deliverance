@@ -12,8 +12,8 @@ public class VectorMath {
 
     private static final Logger logger = LoggerFactory.getLogger(VectorMath.class);
 
-    public static void pfor(int start, int end, IntConsumer action) {
-        PhysicalCoreTuningExecutor.instance.get().execute(() -> IntStream.range(start, end).parallel().forEach(action));
+    public static void pfor(int start, int end, IntConsumer action, WrappedForkJoinPool pool) {
+        pool.executeBlocking(() -> IntStream.range(start, end).parallel().forEach(action));
     }
 
     /**
@@ -23,7 +23,7 @@ public class VectorMath {
      * @param action an action to perform on each split
      * @param splitSize split the list into this many parts
      */
-    public static void pchunk(int offset, int length, BiIntConsumer action, int splitSize) {
+    public static void pchunk(int offset, int length, BiIntConsumer action, int splitSize, WrappedForkJoinPool pool) {
         int splits = Math.min(length, splitSize);
         int chunkSize = length / splits;
 
@@ -36,8 +36,7 @@ public class VectorMath {
             int fchunkSize = chunkSize;
             int fremainder = remainder;
 
-            PhysicalCoreTuningExecutor.instance.get()
-                    .execute(
+            pool.executeBlocking(
                             () -> IntStream.range(0, fsplits)
                                     .parallel()
                                     .forEach(
@@ -59,7 +58,7 @@ public class VectorMath {
      * @param splitSize split the list into this many parts
      */
     public static void pchunkMetrics(int offset, int length, BiIntConsumer action, int splitSize,
-                                     Timer timer) {
+                                     Timer timer, WrappedForkJoinPool pool) {
         int splits = Math.min(length, splitSize);
         int chunkSize = length / splits;
 
@@ -72,11 +71,10 @@ public class VectorMath {
             int fchunkSize = chunkSize;
             int fremainder = remainder;
 
-            PhysicalCoreTuningExecutor.instance.get().execute(
+            pool.executeBlocking(
                     () -> IntStream.range(0, fsplits)
                             .parallel()
                             .forEach(i -> {
-
                                         try (Timer.Context c = timer.time()) {
                                             action.accept(offset + (i * fchunkSize), fremainder > 0 && i == fsplits - 1 ? fchunkSize + fremainder : fchunkSize);
                                             c.stop();

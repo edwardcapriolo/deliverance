@@ -3,6 +3,7 @@ package io.teknek.deliverance.tensor.operations;
 
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.tensor.AbstractTensor;
 
 
@@ -17,8 +18,10 @@ public class ConfigurableTensorProviderTest {
 
     @Test
     void defaultTest(){
-        ConfigurableTensorProvider p = new ConfigurableTensorProvider(Mockito.mock(TensorCacheIface.class));
-        assertNotNull(p.get());
+        try(WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());) {
+            ConfigurableTensorProvider p = new ConfigurableTensorProvider(Mockito.mock(TensorCacheIface.class), pool);
+            assertNotNull(p.get());
+        }
     }
 
     @Test

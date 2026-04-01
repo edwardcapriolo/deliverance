@@ -4,6 +4,7 @@ import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
@@ -32,18 +33,21 @@ public class RandomNumberIT {
         File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
         TensorCache tensorCache = new TensorCache(mr);
-        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
+            NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache, pool).get());
 
-        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch, new TokenizerRenderer(), new DefaultToolCallParser())) {
-            String prompt = "Pick a random number between 0 and 100";
-            PromptContext ctx = PromptContext.of(prompt);
-            var uuid = UUID.randomUUID();
+            try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
+                    new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch,
+                    new TokenizerRenderer(), new DefaultToolCallParser(), pool)) {
+                String prompt = "Pick a random number between 0 and 100";
+                PromptContext ctx = PromptContext.of(prompt);
+                var uuid = UUID.randomUUID();
 
-            Response k = m.generate(uuid, ctx, new GeneratorParameters().withTemperature(0.0f).withSeed(99999),
-                    new DoNothingGenerateEvent());
-            System.out.println(k);
-            assertEquals("0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", k.responseText);
+                Response k = m.generate(uuid, ctx, new GeneratorParameters().withTemperature(0.0f).withSeed(99999),
+                        new DoNothingGenerateEvent());
+                System.out.println(k);
+                assertEquals("0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", k.responseText);
+            }
         }
     }
 
@@ -54,15 +58,7 @@ public class RandomNumberIT {
         String modelOwner = "tjake";
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         var uuid = UUID.randomUUID();
-        /*loadNative();
 
-        File f = fetch.maybeDownload();
-        MetricRegistry mr = new MetricRegistry();
-        TensorCache tensorCache = new TensorCache(mr);
-        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
-
-        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-               mr, tensorCache, new KvBufferCacheSettings(true), fetch, new TokenizerRenderer())) {*/
         try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).withWorkingQuantType(DType.I8)
                 .withTokenTokenRenderer(new TokenizerRenderer()).build()){
             String prompt = "Generate a java interface named Shape with a method name calculateArea.";

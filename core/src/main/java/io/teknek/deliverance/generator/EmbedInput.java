@@ -35,7 +35,7 @@ public abstract class EmbedInput {
             AbstractTensor ti = inputTokenToEmbedding(inputTokens[i], startPos + i);
             tb.copyFrom(ti, 0, i * ti.shape().last(), ti.shape().last());
             ti.close();
-        });
+        }, parent.getPool());
         return tb;
     }
 }

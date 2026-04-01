@@ -10,6 +10,12 @@ public interface TensorOperations {
 
     String name();
 
+    /**
+     * This is the number of splits methods like pchunk will attempt to cut the input into. for GPU the value
+     * is always 1, generally it is the size of the fork join pool backing the tensor operations but theoretically
+     * it could be a different value
+     * @return The number of splits to cut the dataset into for batch processing
+     */
     int parallelSplitSize();
 
     default DType preferredWorkingQuantizedType() {

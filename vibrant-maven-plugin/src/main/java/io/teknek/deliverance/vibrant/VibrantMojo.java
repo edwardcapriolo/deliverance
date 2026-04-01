@@ -4,6 +4,7 @@ import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.ModelSupport;
@@ -128,7 +129,9 @@ public class VibrantMojo extends AbstractMojo {
         DType working = DType.valueOf(modelConfig.getWorkingMemType());
         DType quantized = DType.valueOf(modelConfig.getQuantizedMemType());
         AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(fetch);
-        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(builder.getCache()).get());
+        WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(
+                new ConfigurableTensorProvider(builder.getCache(), pool).get());
         builder.withWorkingQuantType(working);
         builder.withWorkingQuantType(quantized);
         builder.withTensorProvider(new ConfigurableTensorProvider(operation));

@@ -4,6 +4,7 @@ import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.model.qwen2.Qwen2ModelType;
 import io.teknek.deliverance.model.qwen2.Qwen2TokenizerRenderer;
@@ -32,11 +33,14 @@ public class  QwenPromptTest {
         File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
         TensorCache tensorCache = new TensorCache(mr);
-        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
-        ModelSupport.addModel("QWEN2", new Qwen2ModelType());
-        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
+
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())){
+            NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache, pool).get());
+            ModelSupport.addModel("QWEN2", new Qwen2ModelType());
+        try (
+             AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
                 new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch,
-                new Qwen2TokenizerRenderer(), new DefaultToolCallParser())) {
+                new Qwen2TokenizerRenderer(), new DefaultToolCallParser(), pool)) {
             String prompt = "What is the capital of New York, USA?";
             PromptSupport.Builder g = m.promptSupport().get().builder()
                     .addSystemMessage("You provide short answers to questions.")
@@ -45,13 +49,13 @@ public class  QwenPromptTest {
                     "You provide short answers to questions.<|im_end|>\n" +
                     "<|im_start|>user\n" +
                     "What is the capital of New York, USA?<|im_end|>\n" +
-                    "<|im_start|>assistant\n",g.build().getPrompt());
+                    "<|im_start|>assistant\n", g.build().getPrompt());
             var uuid = UUID.randomUUID();
 
             Response k = m.generate(uuid, g.build(), new GeneratorParameters().withTemperature(0.0f),
                     new DoNothingGenerateEvent());
             assertTrue(k.responseText.contains("New York City"));
-
+        }
         }
     }
 
@@ -61,23 +65,25 @@ public class  QwenPromptTest {
         File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
         TensorCache tensorCache = new TensorCache(mr);
-        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
-        String text = new Scanner(ModelSupport.class
-                .getResourceAsStream("/llama_tool_fix.jinja"), "UTF-8").useDelimiter("\\A").next();
-        Tool tool = Tool.from(Function.builder()
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
+            NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache, pool).get());
+            String text = new Scanner(ModelSupport.class
+                    .getResourceAsStream("/llama_tool_fix.jinja"), "UTF-8").useDelimiter("\\A").next();
+            Tool tool = Tool.from(Function.builder()
 
-                .name("flip_coin")
-                .description("This methods will flip a coin. The result will be H for heads or T for tails.").build());
-        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch, new TokenizerRenderer(), new DefaultToolCallParser())) {
-            String prompt = "Call the function flip_coin print the result.";
-            PromptSupport.Builder g = m.promptSupport().get().builder()
-                    .useChatTemplate(text)
-                    .addToolCall(new ToolCall("flip_coin", "flip_coin1", Map.of()))
-                    .addUserMessage(prompt);
+                    .name("flip_coin")
+                    .description("This methods will flip a coin. The result will be H for heads or T for tails.").build());
+            try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
+                    new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch,
+                    new TokenizerRenderer(), new DefaultToolCallParser(), pool)) {
+                String prompt = "Call the function flip_coin print the result.";
+                PromptSupport.Builder g = m.promptSupport().get().builder()
+                        .useChatTemplate(text)
+                        .addToolCall(new ToolCall("flip_coin", "flip_coin1", Map.of()))
+                        .addUserMessage(prompt);
 
-            PromptContext c = g.build(List.of(tool));
-            System.out.println(c.getPrompt());
+                PromptContext c = g.build(List.of(tool));
+                System.out.println(c.getPrompt());
             /*
             Assertions.assertEquals("""
 template:<|start_header_id|>system<|end_header_id|>
@@ -97,16 +103,17 @@ Respond in the format {"name": function name, "parameters": dictionary of argume
 <|eot_id|><|start_header_id|>user<|end_header_id|>
 
 Use the coinflip tool any analyze the result<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n""", g.build(tool).getPrompt());*/
-           // var uuid = UUID.randomUUID();
+                // var uuid = UUID.randomUUID();
 
-           // Response k = m.generate(uuid, c, new GeneratorParameters().withTemperature(0.1f),
-           //         (int next, String nextRaw, String nextCleaned, float timing) -> {
-           //             System.out.println(" "+ nextCleaned +" ");
-           //         });
+                // Response k = m.generate(uuid, c, new GeneratorParameters().withTemperature(0.1f),
+                //         (int next, String nextRaw, String nextCleaned, float timing) -> {
+                //             System.out.println(" "+ nextCleaned +" ");
+                //         });
 
-           // System.out.println(k);
-           // assertTrue(k.responseText.contains("flip_coin"));
-            // comes out like this {responseText=' {"name": "flip_coin", "parameters": {}}
+                // System.out.println(k);
+                // assertTrue(k.responseText.contains("flip_coin"));
+                // comes out like this {responseText=' {"name": "flip_coin", "parameters": {}}
+            }
         }
     }
 
@@ -116,36 +123,38 @@ Use the coinflip tool any analyze the result<|eot_id|><|start_header_id|>assista
         File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
         TensorCache tensorCache = new TensorCache(mr);
-        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache).get());
-        ModelSupport.addModel("QWEN2", new Qwen2ModelType());
-        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch,
-                new Qwen2TokenizerRenderer(), new DefaultToolCallParser())) {
-            /**
-             *     >>> tokenizer("Hello world")["input_ids"]
-             *     [9707, 1879]
-             *
-             *     >>> tokenizer(" Hello world")["input_ids"]
-             *     [21927, 1879]
-             */
-            //List<String> x = m.getTokenizer().tokenize("Hello world");
-            //Assertions.assertEquals("", x);
-            //long[] k = m.getTokenizer().encode(" Hello world");
-            //PromptSupport.Builder z = m.promptSupport().get().builder().addUserMessage("Hello world");
-            //long[] k = m.getTokenizer().encode(z.build().getPrompt());
-            //assertEquals("", Arrays.toString(k));
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
+            NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache, pool).get());
+            ModelSupport.addModel("QWEN2", new Qwen2ModelType());
+            try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
+                    new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch,
+                    new Qwen2TokenizerRenderer(), new DefaultToolCallParser(), pool)) {
+                /**
+                 *     >>> tokenizer("Hello world")["input_ids"]
+                 *     [9707, 1879]
+                 *
+                 *     >>> tokenizer(" Hello world")["input_ids"]
+                 *     [21927, 1879]
+                 */
+                //List<String> x = m.getTokenizer().tokenize("Hello world");
+                //Assertions.assertEquals("", x);
+                //long[] k = m.getTokenizer().encode(" Hello world");
+                //PromptSupport.Builder z = m.promptSupport().get().builder().addUserMessage("Hello world");
+                //long[] k = m.getTokenizer().encode(z.build().getPrompt());
+                //assertEquals("", Arrays.toString(k));
 
-            //String s = "This is a test 😊\nI was born in";
-            //long [] x = m.getTokenizer().encode(s);
-            //System.out.println(Arrays.toString(x));
-            //String [] decode = new String[x.length];
-            //for (int i = 0; i < x.length; i++) {
-            //    decode[i] = m.getTokenizer().decode(x[i]);
-            //}
-            //List<long[]> tokeized = m.getTokenizer().tokenize(s).stream().map(y -> m.getTokenizer().encode(y)).toList();
-            //System.out.println(tokeized);
+                //String s = "This is a test 😊\nI was born in";
+                //long [] x = m.getTokenizer().encode(s);
+                //System.out.println(Arrays.toString(x));
+                //String [] decode = new String[x.length];
+                //for (int i = 0; i < x.length; i++) {
+                //    decode[i] = m.getTokenizer().decode(x[i]);
+                //}
+                //List<long[]> tokeized = m.getTokenizer().tokenize(s).stream().map(y -> m.getTokenizer().encode(y)).toList();
+                //System.out.println(tokeized);
 
-            //System.out.println(Arrays.toString(decode));
+                //System.out.println(Arrays.toString(decode));
+            }
         }
     }
 

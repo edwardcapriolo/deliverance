@@ -4,7 +4,8 @@ import com.google.common.base.Preconditions;
 import io.teknek.deliverance.DType;
 
 import io.teknek.deliverance.math.BiIntConsumer;
-import io.teknek.deliverance.math.PhysicalCoreTuningExecutor;
+
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.tensor.*;
 import io.teknek.deliverance.tensor.impl.BFloat16BufferTensor;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
@@ -49,10 +50,12 @@ public final class PanamaTensorOperations implements TensorOperations {
 
     private final MachineSpec.Type vectorType;
     private final TensorCacheIface tensorCache;
+    private final WrappedForkJoinPool pool;
 
-    public PanamaTensorOperations(MachineSpec.Type vectorType, TensorCacheIface tensorCache) {
+    public PanamaTensorOperations(MachineSpec.Type vectorType, TensorCacheIface tensorCache, WrappedForkJoinPool pool) {
         this.vectorType = vectorType;
         this.tensorCache = tensorCache;
+        this.pool = pool;
     }
 
     @Override
@@ -61,7 +64,7 @@ public final class PanamaTensorOperations implements TensorOperations {
     }
 
     public int parallelSplitSize() {
-        return PhysicalCoreTuningExecutor.instance.get().getCoreCount();
+        return pool.getCoreCount();
     }
 
     /**

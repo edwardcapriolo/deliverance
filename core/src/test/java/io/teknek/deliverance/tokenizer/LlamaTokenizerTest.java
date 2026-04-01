@@ -3,6 +3,7 @@ package io.teknek.deliverance.tokenizer;
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.integration.TinyLlamaSuite;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.NoOpTokenizerRenderer;
 import io.teknek.deliverance.model.TokenRenderer;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
@@ -32,9 +33,10 @@ public class LlamaTokenizerTest {
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         File f = fetch.maybeDownload();
         TensorCache tc = new TensorCache(new MetricRegistry());
-        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(tc),
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+             AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(tc, pool),
                 new MetricRegistry(), tc, new KvBufferCacheSettings(true), fetch,
-                new NoOpTokenizerRenderer(), new DefaultToolCallParser())) {
+                new NoOpTokenizerRenderer(), new DefaultToolCallParser(), pool)) {
             List<String> tokens = m.getTokenizer().tokenize("show me the money!");
             assertEquals(List.of("show me the money!"), tokens);
             long[] encode = m.getTokenizer().encode("show me!");

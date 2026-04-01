@@ -7,6 +7,7 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.classifier.ClassifyOutput;
 import io.teknek.deliverance.embedding.PoolingLayer;
 import io.teknek.deliverance.generator.*;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.TokenRenderer;
 import io.teknek.deliverance.safetensors.Config;
@@ -29,20 +30,11 @@ public class BertModel extends AbstractModel {
     public BertModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer tokenizer, DType workingDType, DType workingQType,
                      Optional<DType> modelQType, ConfigurableTensorProvider configurableTensorProvider,
                      MetricRegistry metricRegistry, TensorCache tensorCache, KvBufferCacheSettings kvBufferCacheSettings,
-                     TokenRenderer tokenRenderer, ToolCallParser toolCallParser) {
+                     TokenRenderer tokenRenderer, ToolCallParser toolCallParser, WrappedForkJoinPool pool) {
         //note: jLAMA uses FOrward_passs
         super(inferenceType, c, w, tokenizer, workingDType, workingQType, modelQType,
-                configurableTensorProvider, metricRegistry, tensorCache, kvBufferCacheSettings, tokenRenderer, toolCallParser);
+                configurableTensorProvider, metricRegistry, tensorCache, kvBufferCacheSettings, tokenRenderer, toolCallParser, pool);
     }
-
-    /*
-    public BertModel(InferenceType inferenceType, Config config, WeightLoader w, Tokenizer tokenizer, DType workingDType,
-                     DType workingQType, Optional<DType> quantType){
-        super(inferenceType, config, w, tokenizer, workingDType, workingDType, quantType,
-                new ConfigurableTensorProvider( new TensorCache(new MetricRegistry())), new MetricRegistry(),
-                new TensorCache(new MetricRegistry()),new KvBufferCacheSettings(new TensorCache(new MetricRegistry())), null, null) ;
-    }*/
-
 
     protected AbstractTensor loadWeight(String name) {
         for (String prefix : prefixes) {
@@ -51,7 +43,7 @@ public class BertModel extends AbstractModel {
                 return weights.load(key);
             }
         }
-        throw new NoSuchElementException(Arrays.toString(prefixes) + " " + name + " not found in weights "+weights.tensorInfoMap());
+        throw new NoSuchElementException(Arrays.toString(prefixes) + " " + name + " not found in weights " + weights.tensorInfoMap());
     }
 
     @Override

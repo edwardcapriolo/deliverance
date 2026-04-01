@@ -2,6 +2,7 @@
 package io.teknek.deliverance.tensor.operations;
 
 import com.codahale.metrics.MetricRegistry;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.tensor.operations.gpunative.NativeGPU;
 import io.teknek.deliverance.tensor.operations.util.JarSupport;
 
@@ -64,16 +65,18 @@ public class NativeGPUTensorOperations implements TensorOperations {
     private final AtomicBoolean limitReached = new AtomicBoolean(false);
 
     private static final TensorOperations delegate;
+    private static final WrappedForkJoinPool pool;
 
     static {
+        pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
         TensorOperations tmp;
         TensorCache tc = new TensorCache(new MetricRegistry());
         try {
-            tmp = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tc).get());
+            tmp = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tc, pool).get());
         } catch (Throwable t) {
             logger.warn("Native SIMD operations not available. Consider adding 'io.teknek.deliverance:native' to the classpath");
             try {
-                tmp = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, tc);
+                tmp = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, tc, pool);
             } catch (Throwable t2) {
                 tmp = new NaiveTensorOperations();
             }
@@ -329,7 +332,7 @@ public class NativeGPUTensorOperations implements TensorOperations {
                 // We know we have split size of 1 so we can just re-process this using the delegate's split size
                 VectorMath.pchunk(0, rowChunkSize, (chunkStart, chunkSize) -> {
                     delegate.batchDotProduct(result, at, bt, aColumnOffset, bColumnOffset, columnLength, 0, chunkStart, chunkSize);
-                }, delegate.parallelSplitSize());
+                }, delegate.parallelSplitSize(), pool);
             }
         }
     }
@@ -352,7 +355,7 @@ public class NativeGPUTensorOperations implements TensorOperations {
         } else {
             VectorMath.pchunk(bRowOffset, rowChunkSize, (chunkStart, chunkSize) -> {
                 delegate.dotProductBatchChunk(r, a, b, columnOffset, columnLength, chunkStart, chunkSize);
-            }, delegate.parallelSplitSize());
+            }, delegate.parallelSplitSize(), pool);
         }
     }
 

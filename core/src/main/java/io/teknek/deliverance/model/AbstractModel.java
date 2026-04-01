@@ -20,6 +20,7 @@ import io.teknek.deliverance.generator.*;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.math.VectorMathUtils;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
@@ -92,11 +93,12 @@ public abstract class AbstractModel implements Generator, Classifier {
     protected final ToolCallParser toolCallParser;
 
     protected ClassifyOutput classifyOutput;
+    protected WrappedForkJoinPool pool;
 
     protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
                             DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider provider,
                             MetricRegistry metricRegistry, TensorCache tensorCache, KvBufferCacheSettings kvBufferCacheSettings,
-                            TokenRenderer tokenRenderer, ToolCallParser toolCallParser) {
+                            TokenRenderer tokenRenderer, ToolCallParser toolCallParser, WrappedForkJoinPool pool) {
         this.inferenceType = inferenceType;
         this.config = c;
         this.weights = w;
@@ -173,6 +175,7 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.sampleOutput = inferenceType.isOutput ? loadOutputWeights() : null;
         this.classifyOutput = inferenceType.isClassify ? loadClassifierWeights() : null;
         this.poolingLayer = inferenceType.isPooling ? Optional.ofNullable(loadPoolingWeights()) : Optional.empty();
+        this.pool = pool;
     }
 
     protected abstract EmbedInput loadInputWeights();
@@ -582,7 +585,7 @@ public abstract class AbstractModel implements Generator, Classifier {
                         // BERT seems to use tanh for pooling rather than gelu
                         //outputEmbedding[i] = ActivationFunction.eval(ActivationFunction.Type.TANH, pooled.get(0, i));
                         outputEmbedding[i] = ActivationFunction.eval(config.activationFunction, pooled.get(0, i));
-                    });
+                    }, pool);
                     return outputEmbedding;
                 }
                 for (int i = 0; i < promptLength; i++) {
@@ -695,4 +698,9 @@ public abstract class AbstractModel implements Generator, Classifier {
     public MetricRegistry getMetricRegistry(){
         return metricRegistry;
     }
+
+    public WrappedForkJoinPool getPool() {
+        return pool;
+    }
+
 }

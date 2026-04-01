@@ -115,7 +115,7 @@ public class MLPBlock implements FeedForward {
                     configurableTensorProvider.get()
                             .dotProductChunk(buf, lnemb, fullyConnectedWeights, 0, model.getConfig().embeddingLength, chunkStart, chunkSize);
                 }
-            }, configurableTensorProvider.get().parallelSplitSize());
+            }, configurableTensorProvider.get().parallelSplitSize(), model.getPool());
 
             fullyConnectedBias.ifPresent(
                     bias -> configurableTensorProvider.get().accumulate(buf, bias, dctx.hiddenSegmentStart, dctx.hiddenSegmentLength)
@@ -148,7 +148,7 @@ public class MLPBlock implements FeedForward {
                                     chunkStart,
                                     chunkSize
                             );
-                }, configurableTensorProvider.get().parallelSplitSize());
+                }, configurableTensorProvider.get().parallelSplitSize(), model.getPool());
 
                 tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(result)));
 

@@ -141,7 +141,7 @@ public class CausalSelfAttention {
                 VectorMath.pchunkMetrics(dctx.attentionSegmentStart, dctx.attentionSegmentLength, (chunkStart, chunkLength) -> {
                     configurableTensorProvider.get()
                                 .dotProductChunk(queryBatch, input, queryAttnWeights, 0, config.embeddingLength, chunkStart, chunkLength);
-                }, splitSize, tm);
+                }, splitSize, tm, m.getPool());
                 VectorMath.pchunk(dctx.kvSegmentStart, dctx.kvSegmentLength, (chunkStart, chunkLength) -> {
                     Timer t = metricRegistry.timer("causualselfattention.forward_gqa_key_2");
                     try (Timer.Context context = t.time()) {
@@ -155,7 +155,7 @@ public class CausalSelfAttention {
                                 .dotProductChunk(tmpValBatch, input, valueAttnWeights, 0, config.embeddingLength, chunkStart, chunkLength);
                         context.stop();
                     }
-                }, splitSize);
+                }, splitSize, m.getPool());
             } else {
                 qkvResults[0] = queryBatch;
                 qkvResults[1] = tmpKeyBatch;
@@ -165,7 +165,7 @@ public class CausalSelfAttention {
                     configurableTensorProvider.get()
                             .dotProductBatchChunk(qkvResults, input, qkvWeights, 0, config.embeddingLength, chunkStart, chunkLength);
                     metricRegistry.histogram("causualselfattention.forward_qkv_1").update(System.nanoTime() - start);
-                }, splitSize);
+                }, splitSize, m.getPool());
             }
 
             queryAttnBias.ifPresent(
@@ -321,11 +321,8 @@ public class CausalSelfAttention {
                             configurableTensorProvider.get().saxpy(attn, vvp[i], value, xoffset, yoffset, config.headSize, offset, 0, size);
                         }
                     }
-                });
+                }, m.getPool());
             }
-
-            debug("after_attention", valueBatch, layerIndex);
-
 
             // matmul the projection and sum into input
             // input += c_proj_weight @ ybuf + c_proj_bias
@@ -342,7 +339,7 @@ public class CausalSelfAttention {
                                     chunkStart,
                                     chunkSize
                             );
-                }, splitSize);
+                }, splitSize, m.getPool());
                 tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(result)));
                 outputProjectionBias.ifPresent(bias -> configurableTensorProvider.get().accumulate(result, bias, 0, config.embeddingLength));
             }

@@ -58,7 +58,7 @@ public class GuidedChoiceSampler {
                 abstractModel.configurableTensorProvider.get()
                         .dotProductChunk(logits, embedding, abstractModel.sampleOutput.getOutputLogitsWeights(), 0,
                                 abstractModel.config.embeddingLength, chunkStart, chunkSize);
-            }, abstractModel.configurableTensorProvider.get().parallelSplitSize());
+            }, abstractModel.configurableTensorProvider.get().parallelSplitSize(), abstractModel.getPool());
             long afterDotProductChunk = System.nanoTime();
             dotprod2.update(Math.abs(afterDotProductChunk - afterForward));
 

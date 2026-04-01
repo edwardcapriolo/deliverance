@@ -2,6 +2,7 @@ package io.teknek.deliverance.model;
 
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.qwen2.Qwen2TokenizerRenderer;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
@@ -29,6 +30,7 @@ public class AutoModelForCausaLm {
             b.withToolCallParser(new QwenToolCallParser());
         }
     }
+
     public static AbstractModel fromPretrained(ModelFetcher fetcher){
         Builder b = new Builder(fetcher);
         applyTuning(fetcher, b);
@@ -54,6 +56,7 @@ public class AutoModelForCausaLm {
 
         private KvBufferCacheSettings settings = new KvBufferCacheSettings(true);
         private ConfigurableTensorProvider provider;
+        private WrappedForkJoinPool pool;
 
         public Builder(ModelFetcher fetch){
             this.fetch = fetch;
@@ -91,10 +94,18 @@ public class AutoModelForCausaLm {
             this.toolCallParser = toolCallParser;
             return this;
         }
+        public Builder withWrappedForkJoinPool(WrappedForkJoinPool pool){
+            this.pool = pool;
+            return this;
+        }
+
         public AbstractModel build(){
             File modelRoot = fetch.maybeDownload();
+            if (pool == null){
+                pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+            }
             if(provider == null){
-                ConfigurableTensorProvider base  = new ConfigurableTensorProvider(cache);
+                ConfigurableTensorProvider base  = new ConfigurableTensorProvider(cache, pool);
                  try {
                      NativeSimdTensorOperations operations = new NativeSimdTensorOperations(base.get());
                      provider = new ConfigurableTensorProvider(operations);
@@ -104,7 +115,7 @@ public class AutoModelForCausaLm {
                  }
             }
             return ModelSupport.loadModel(modelRoot, workingMem, workingQuant, provider,
-                    mr, cache, settings, fetch, tokenRenderer, toolCallParser);
+                    mr, cache, settings, fetch, tokenRenderer, toolCallParser, pool);
         }
 
         public ModelFetcher getFetch() {
@@ -137,6 +148,10 @@ public class AutoModelForCausaLm {
 
         public ConfigurableTensorProvider getProvider() {
             return provider;
+        }
+
+        public WrappedForkJoinPool getPool() {
+            return this.pool;
         }
     }
 }

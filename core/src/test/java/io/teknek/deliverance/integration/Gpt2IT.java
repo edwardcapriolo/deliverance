@@ -3,6 +3,7 @@ package io.teknek.deliverance.integration;
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.DoNothingGenerateEvent;
@@ -22,8 +23,9 @@ public class Gpt2IT {
     @Test
     public void chat(){
         ModelFetcher fetch = new ModelFetcher("openai-community", "gpt2-large");
-        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
-                .withTensorProvider(new ConfigurableTensorProvider(new TensorCache(new MetricRegistry()))).build()) {
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+             AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
+                .withTensorProvider(new ConfigurableTensorProvider(new TensorCache(new MetricRegistry()), pool)).build()) {
             String prompt = "Who is Micheal Jordan?";
             //This model does not have prompt support
             var uuid = UUID.randomUUID();

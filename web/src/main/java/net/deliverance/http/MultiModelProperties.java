@@ -2,6 +2,7 @@ package net.deliverance.http;
 
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.model.NoOpTokenizerRenderer;
@@ -44,14 +45,17 @@ class MultiModelConfiguration {
     private final MetricRegistry metricRegistry;
     private final TensorCache tensorCache;
     private final ConfigurableTensorProvider provider;
+    private final WrappedForkJoinPool pool;
 
     public MultiModelConfiguration(MultiModelProperties multiModelProperties, MetricRegistry metricRegistry,
                                    TensorCache tensorCache,
-                                   ConfigurableTensorProvider provider){
+                                   ConfigurableTensorProvider provider,
+                                   WrappedForkJoinPool pool){
         this.multiModelProperties = multiModelProperties;
         this.metricRegistry = metricRegistry;
         this.tensorCache = tensorCache;
         this.provider = provider;
+        this.pool = pool;
     }
 
 
@@ -75,7 +79,8 @@ class MultiModelConfiguration {
         } else if ("GENERATION".equalsIgnoreCase(config.getInferenceType())){
             //TODO switch to builder/auto here
             AbstractModel model = ModelSupport.loadModel(f, DType.F32, DType.I8, provider,
-                    metricRegistry, tensorCache, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer(), new DefaultToolCallParser());
+                    metricRegistry, tensorCache, new KvBufferCacheSettings(true), fetch,
+                    new NoOpTokenizerRenderer(), new DefaultToolCallParser(), pool);
             return model;
         } else {
             throw new IllegalArgumentException("Wrong type: " + config.getInferenceType());

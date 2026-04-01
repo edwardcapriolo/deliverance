@@ -3,6 +3,7 @@ package io.teknek.deliverance.model.mixtral;
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.*;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.llama.*;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.MixtureOfExpertsBlock;
@@ -27,22 +28,11 @@ public class MixtralModel extends LlamaModel {
                         DType workingMemoryQType, Optional<DType> modelQType,
                         ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
                         TensorCache tensorCache, KvBufferCacheSettings kvBufferCacheSettings, TokenRenderer tokenRenderer,
-                        ToolCallParser toolCallParser) {
+                        ToolCallParser toolCallParser, WrappedForkJoinPool pool) {
         super(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType, configurableTensorProvider,
-                metricRegistry, tensorCache, kvBufferCacheSettings, tokenRenderer, toolCallParser);
+                metricRegistry, tensorCache, kvBufferCacheSettings, tokenRenderer, toolCallParser, pool);
     }
-
-/*
-    @Override
-    protected EmbedInput loadInputWeights() {
-        throw new UnsupportedOperationException("not needed");
-    }
-
-    @Override
-    protected SampleOutput loadOutputWeights() {
-        throw new UnsupportedOperationException("not needed");
-    } */
-
+    
     @Override
     protected TransformerBlock[] loadTransformerBlockWeights() {
         MixtralConfig mixtralConfig = (MixtralConfig) config;
