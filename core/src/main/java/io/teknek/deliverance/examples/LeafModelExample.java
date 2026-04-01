@@ -19,6 +19,7 @@ import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.embedding.PoolingType;
 import io.teknek.deliverance.math.VectorMathUtils;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
@@ -114,13 +115,9 @@ public class LeafModelExample {
             System.out.println("Loading model...");
             MetricRegistry mr = new MetricRegistry();
             TensorCache tensorCache = new TensorCache(mr);
-            ConfigurableTensorProvider provider = new ConfigurableTensorProvider(tensorCache);
+            ConfigurableTensorProvider provider = new ConfigurableTensorProvider(tensorCache, new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores()));
             AbstractModel model = ModelSupport.loadEmbeddingModel(localModelPath, DType.F32, DType.F32, provider,
                     mr, tensorCache, new KvBufferCacheSettings(true));
-            if (model == null) {
-                System.err.println("ModelSupport.loadEmbeddingModel returned null - cannot proceed.");
-                System.exit(4);
-            }
             System.out.println("Model loaded successfully!");
             int embeddingLength = model.getConfig().embeddingLength;
             System.out.println("Embedding dimensions reported by model: " + embeddingLength);

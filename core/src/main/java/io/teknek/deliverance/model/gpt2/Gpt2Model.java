@@ -3,6 +3,7 @@ package io.teknek.deliverance.model.gpt2;
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.*;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.TokenRenderer;
 import io.teknek.deliverance.safetensors.Config;
@@ -19,12 +20,12 @@ import java.util.Optional;
 public class Gpt2Model extends AbstractModel{
 
     public Gpt2Model(AbstractModel.InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
-                        DType workingMemoryQType, Optional<DType> modelQType,
-                        ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
-                        TensorCache tensorCache, KvBufferCacheSettings kvBufferCacheSettings, TokenRenderer tokenRenderer,
-                        ToolCallParser toolCallParser) {
+                     DType workingMemoryQType, Optional<DType> modelQType,
+                     ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
+                     TensorCache tensorCache, KvBufferCacheSettings kvBufferCacheSettings, TokenRenderer tokenRenderer,
+                     ToolCallParser toolCallParser, WrappedForkJoinPool pool) {
         super(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType, configurableTensorProvider,
-                metricRegistry, tensorCache, kvBufferCacheSettings, tokenRenderer, toolCallParser);
+                metricRegistry, tensorCache, kvBufferCacheSettings, tokenRenderer, toolCallParser, pool);
     }
 
     @Override

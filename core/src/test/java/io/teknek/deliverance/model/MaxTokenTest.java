@@ -5,6 +5,7 @@ import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.tensor.TensorCache;
@@ -30,10 +31,11 @@ public class MaxTokenTest {
                 .build();
 
         reporter.start(10, TimeUnit.SECONDS);
-        try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).withWorkingQuantType(DType.I8)
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+             AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).withWorkingQuantType(DType.I8)
                 .withTokenTokenRenderer(new TokenizerRenderer())
                 .withMetricRegistry(registry)
-                .withTensorProvider(new ConfigurableTensorProvider(new TensorCache(registry))).build()) {
+                .withTensorProvider(new ConfigurableTensorProvider(new TensorCache(registry), pool)).build()) {
             String prompt = "Construct a short story about a Java developer who takes on all of python and rust community";
             PromptContext ctx = m.promptSupport().get().builder()
                     .addUserMessage(prompt)

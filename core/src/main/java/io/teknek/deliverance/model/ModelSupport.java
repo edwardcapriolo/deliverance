@@ -3,6 +3,7 @@ package io.teknek.deliverance.model;
 import com.codahale.metrics.MetricRegistry;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.bert.BertModelType;
 import io.teknek.deliverance.model.gemma2.Gemma2ModelType;
 import io.teknek.deliverance.model.gemma3.Gemma3ModelType;
@@ -84,7 +85,8 @@ public class ModelSupport {
                                           ConfigurableTensorProvider configurableTensorProvider,
                                           MetricRegistry metricRegistry, TensorCache tensorCache,
                                           KvBufferCacheSettings kvBufferCacheSettings,
-                                          ModelFetcher fetcher, TokenRenderer tr, ToolCallParser toolCallParser) {
+                                          ModelFetcher fetcher, TokenRenderer tr, ToolCallParser toolCallParser,
+                                          WrappedForkJoinPool pool) {
         LOGGER.info("Machine Vector Spec: {} Byte Order: {}", FloatVector.SPECIES_PREFERRED.vectorBitSize(), ByteOrder.nativeOrder().toString());
         File configFile = new File(model, "config.json");
         if (!configFile.exists()){
@@ -99,11 +101,11 @@ public class ModelSupport {
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
                     WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class,
                     ConfigurableTensorProvider.class, MetricRegistry.class, TensorCache.class,
-                    KvBufferCacheSettings.class, TokenRenderer.class, ToolCallParser.class);
+                    KvBufferCacheSettings.class, TokenRenderer.class, ToolCallParser.class, WrappedForkJoinPool.class);
 
             return cons.newInstance(AbstractModel.InferenceType.FULL_GENERATION, config, wl, tokenizer,
                     workingMemoryType, workingQuantizationType, Optional.empty(), configurableTensorProvider,
-                    metricRegistry, tensorCache, kvBufferCacheSettings, tr, toolCallParser);
+                    metricRegistry, tensorCache, kvBufferCacheSettings, tr, toolCallParser, pool);
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }
@@ -114,7 +116,8 @@ public class ModelSupport {
                                           ConfigurableTensorProvider configurableTensorProvider,
                                           MetricRegistry metricRegistry, TensorCache tensorCache,
                                           KvBufferCacheSettings kvBufferCacheSettings,
-                                          ModelFetcher fetcher, TokenRenderer tr, ToolCallParser toolCallParser) {
+                                          ModelFetcher fetcher, TokenRenderer tr, ToolCallParser toolCallParser,
+                                          WrappedForkJoinPool pool) {
         LOGGER.info("Machine Vector Spec: {} Byte Order: {}", FloatVector.SPECIES_PREFERRED.vectorBitSize(), ByteOrder.nativeOrder().toString());
         File configFile = new File(model, "config.json");
         if (!configFile.exists()){
@@ -129,11 +132,11 @@ public class ModelSupport {
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
                     WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class,
                     ConfigurableTensorProvider.class, MetricRegistry.class, TensorCache.class,
-                    KvBufferCacheSettings.class, TokenRenderer.class, ToolCallParser.class);
+                    KvBufferCacheSettings.class, TokenRenderer.class, ToolCallParser.class, WrappedForkJoinPool.class);
 
             return cons.newInstance(AbstractModel.InferenceType.FULL_CLASSIFICATION, config, wl, tokenizer,
                     workingMemoryType, workingQuantizationType, Optional.empty(), configurableTensorProvider,
-                    metricRegistry, tensorCache, kvBufferCacheSettings, tr, toolCallParser);
+                    metricRegistry, tensorCache, kvBufferCacheSettings, tr, toolCallParser, pool);
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }
@@ -168,11 +171,12 @@ public class ModelSupport {
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
                     WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class,
                     ConfigurableTensorProvider.class, MetricRegistry.class, TensorCache.class,
-                    KvBufferCacheSettings.class, TokenRenderer.class, ToolCallParser.class) ;
+                    KvBufferCacheSettings.class, TokenRenderer.class, ToolCallParser.class, WrappedForkJoinPool.class) ;
 
             return cons.newInstance(infType, config, wl, tokenizer,
                     workingMemoryType, workingQuantizationType, Optional.empty(), configurableTensorProvider,
-                    metricRegistry, tensorCache, kvBufferCacheSettings, new NoOpTokenizerRenderer(), new DefaultToolCallParser());
+                    metricRegistry, tensorCache, kvBufferCacheSettings, new NoOpTokenizerRenderer(), new DefaultToolCallParser(),
+                    new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores()));
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }

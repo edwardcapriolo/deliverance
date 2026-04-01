@@ -2,6 +2,7 @@ package net.deliverance.http;
 
 import com.codahale.metrics.MetricRegistry;
 
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NativeGPUTensorOperations;
@@ -24,12 +25,19 @@ public class Config {
     }
 
     @Bean
+    public WrappedForkJoinPool pool(){
+        WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+        return pool;
+    }
+
+    @Bean
     public ConfigurableTensorProvider provider(@Value("${deliverance.tensor.operations.type:simd}") String type){
+
         if ("simd".equalsIgnoreCase(type)) {
-            NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache()).get());
+            NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache(), pool()).get());
             return new ConfigurableTensorProvider(n);
         } else if ("jvector".equalsIgnoreCase(type)){
-            return new ConfigurableTensorProvider(tensorCache());
+            return new ConfigurableTensorProvider(tensorCache(), pool());
         } else if ("gpu".equalsIgnoreCase(type)){
            NativeGPUTensorOperations g = new NativeGPUTensorOperations();
            return new ConfigurableTensorProvider(g);

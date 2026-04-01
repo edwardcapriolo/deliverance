@@ -1,6 +1,7 @@
 package io.teknek.deliverance.integration;
 
 import com.codahale.metrics.MetricRegistry;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
 import io.teknek.deliverance.DType;
@@ -38,14 +39,16 @@ public class SimdTest {
     @Test
     void goTryIt(){
         TensorCache tc = new TensorCache(new MetricRegistry());
-        NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tc).get());
-        int size = 1024;
-        NaiveTensorOperations controlOps = new NaiveTensorOperations();
-        AbstractTensor a = allOnes(size);
-        AbstractTensor b = allOnes(size);
-        float control = controlOps.dotProduct(a, b, size);
-        assertEquals(control, 1024f);
-        assertEquals(control, n.dotProduct(a,b,size));
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
+            NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tc, pool).get());
+            int size = 1024;
+            NaiveTensorOperations controlOps = new NaiveTensorOperations();
+            AbstractTensor a = allOnes(size);
+            AbstractTensor b = allOnes(size);
+            float control = controlOps.dotProduct(a, b, size);
+            assertEquals(control, 1024f);
+            assertEquals(control, n.dotProduct(a, b, size));
+        }
     }
 
     @Disabled

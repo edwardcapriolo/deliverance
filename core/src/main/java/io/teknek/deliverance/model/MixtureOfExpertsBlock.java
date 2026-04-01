@@ -76,7 +76,7 @@ public class MixtureOfExpertsBlock implements FeedForward {
                             model.configurableTensorProvider.get().dotProduct(lnembSlice,
                                     moeGateWeight.slice(true, i), 0, 0, model.config.embeddingLength),
                             0, i);
-                });
+                }, model.getPool());
 
                 softMax(expertResults, 0, numberOfExperts);
                 topk(expertResults);
@@ -98,13 +98,13 @@ public class MixtureOfExpertsBlock implements FeedForward {
                                         model.config.embeddingLength,
                                         chunkStart,
                                         chunkSize);
-                    }, model.configurableTensorProvider.get().parallelSplitSize());
+                    }, model.configurableTensorProvider.get().parallelSplitSize(), model.getPool());
 
                     VectorMath.pfor(dctx.hiddenSegmentStart, dctx.hiddenSegmentEnd, iv -> {
                         float w1 = buf.get(0, iv);
                         float w1a = ActivationFunction.eval(activationFunction, w1);
                         buf.set(w1a, 0, iv);
-                    });
+                    }, model.getPool());
 
                     model.configurableTensorProvider.get().maccumulate(buf, buf2, dctx.hiddenSegmentStart, dctx.hiddenSegmentLength);
 
@@ -115,7 +115,7 @@ public class MixtureOfExpertsBlock implements FeedForward {
                         VectorMath.pchunk(0, model.config.embeddingLength, (chunkStart, chunkSize) -> {
                             model.configurableTensorProvider.get()
                                     .dotProductChunk(moeResult, bufq, projectionWeight, 0, hiddenLength, chunkStart, chunkSize);
-                        }, model.configurableTensorProvider.get().parallelSplitSize());
+                        }, model.configurableTensorProvider.get().parallelSplitSize(), model.getPool());
                     }
 
                     if (i == 0) {

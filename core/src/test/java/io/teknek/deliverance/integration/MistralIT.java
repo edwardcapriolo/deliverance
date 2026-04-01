@@ -4,6 +4,7 @@ import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.generator.FinishReason;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.GenerateEvent;
@@ -25,8 +26,9 @@ public class MistralIT {
     public void chat(){
         ModelFetcher fetch = new ModelFetcher("tjake", "Mistral-7B-Instruct-v0.3-JQ4");
 
-        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
-                .withTensorProvider(new ConfigurableTensorProvider(new TensorCache(new MetricRegistry()))).build()) {
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+             AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
+                .withTensorProvider(new ConfigurableTensorProvider(new TensorCache(new MetricRegistry()), pool)).build()) {
             String prompt = "Who is Edward Capriolo";
             PromptSupport.Builder g = model.promptSupport().get().builder()
                     .addUserMessage(prompt);
