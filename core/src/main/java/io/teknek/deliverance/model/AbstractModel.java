@@ -277,7 +277,7 @@ public abstract class AbstractModel implements Generator, Classifier {
            return sampler.sample();
         } else {
             GeneratorSampler sampler = new GeneratorSampler(this, last.slice(last.shape().first() - 1), temperature,
-                    random.nextFloat(), logits, sampleOutput.getOutputLayerNorm());
+                    random.nextFloat(), logits, sampleOutput.getOutputLayerNorm(), false, 0);
             return sampler.sample();
         }
     }
@@ -290,7 +290,7 @@ public abstract class AbstractModel implements Generator, Classifier {
             return sampler1.sample();
         } else {
             GeneratorSampler sampler1 = new GeneratorSampler(this, output, temperature,
-                    random.nextFloat(), logits, sampleOutput.getOutputLayerNorm());
+                    random.nextFloat(), logits, sampleOutput.getOutputLayerNorm(), false, 0);
             return sampler1.sample();
         }
     }

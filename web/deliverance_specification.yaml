@@ -678,6 +678,17 @@ components:
     CreateChatCompletionRequest:
       type: object
       properties:
+        logprobs:
+          description: Whether to return log probabilities of the output tokens or not. If true, returns the log probabilities of each output token returned in the `content` of `message`.
+          type: boolean
+          default: false
+          nullable: true
+        top_logprobs:
+          description: An integer between 0 and 20 specifying the number of most likely tokens to return at each token position, each with an associated log probability. `logprobs` must be set to `true` if this parameter is used.
+          type: integer
+          minimum: 0
+          maximum: 20
+          nullable: true
         messages:
           description: A list of messages comprising the conversation so far. [Example Python code](https://cookbook.openai.com/examples/how_to_format_inputs_to_chatgpt_models).
           type: array
@@ -788,6 +799,41 @@ components:
         - model
         - messages
 
+    ChatCompletionTokenLogprob:
+      type: object
+      properties:
+        token: &chat_completion_response_logprobs_token
+          description: The token.
+          type: string
+        logprob: &chat_completion_response_logprobs_token_logprob
+          description: The log probability of this token, if it is within the top 20 most likely tokens. Otherwise, the value `-9999.0` is used to signify that the token is very unlikely.
+          type: number
+        bytes: &chat_completion_response_logprobs_bytes
+          description: A list of integers representing the UTF-8 bytes representation of the token. Useful in instances where characters are represented by multiple tokens and their byte representations must be combined to generate the correct text representation. Can be `null` if there is no bytes representation for the token.
+          type: array
+          items:
+            type: integer
+          nullable: true
+        top_logprobs:
+          description: List of the most likely tokens and their log probability, at this token position. In rare cases, there may be fewer than the number of requested `top_logprobs` returned.
+          type: array
+          items:
+            type: object
+            properties:
+              token: *chat_completion_response_logprobs_token
+              logprob: *chat_completion_response_logprobs_token_logprob
+              bytes: *chat_completion_response_logprobs_bytes
+            required:
+              - token
+              - logprob
+              - bytes
+      required:
+        - token
+        - logprob
+        - bytes
+        - top_logprobs
+
+
     CreateChatCompletionResponse:
       type: object
       description: Represents a chat completion response returned by model, based on the provided input.
@@ -826,7 +872,19 @@ components:
                 description: The index of the choice in the list of choices.
               message:
                 $ref: "#/components/schemas/ChatCompletionResponseMessage"
-
+              logprobs: &chat_completion_response_logprobs
+                description: Log probability information for the choice.
+                type: object
+                nullable: true
+                properties:
+                  content:
+                    description: A list of message content tokens with log probability information.
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ChatCompletionTokenLogprob"
+                    nullable: true
+                required:
+                  - content
         created:
           type: integer
           description: The Unix timestamp (in seconds) of when the chat completion was created.

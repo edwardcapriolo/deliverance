@@ -17,6 +17,8 @@ public class GeneratorParameters {
     public Optional<Boolean> includeStopStrInOutput = Optional.empty();
     public Optional<List<String>> guidedChoice = Optional.empty();
     public Optional<Integer> maxTokens = Optional.empty();
+    public Optional<Boolean> logProbs = Optional.empty();
+    public Optional<Integer> topLogProbs = Optional.empty();
 
     public GeneratorParameters withSeed(int seed){
         this.seed = Optional.of(seed);
@@ -52,6 +54,16 @@ public class GeneratorParameters {
 
     public GeneratorParameters withMaxTokens(int maxTokens){
         this.maxTokens = Optional.of(maxTokens);
+        return this;
+    }
+
+    public GeneratorParameters withLogProbs(boolean logProbs){
+        this.logProbs = Optional.of(logProbs);
+        return this;
+    }
+
+    public GeneratorParameters withTopLogProbs(int topLogProbs){
+        this.topLogProbs = Optional.of(topLogProbs);
         return this;
     }
 }

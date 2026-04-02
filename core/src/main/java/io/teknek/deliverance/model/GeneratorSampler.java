@@ -21,7 +21,7 @@ public class GeneratorSampler {
     private final LayerNorm layerNorm;
 
     public GeneratorSampler(AbstractModel abstractModel, AbstractTensor output, float temperature, float uniformSample,
-                            AbstractTensor logits, LayerNorm layerNorm) {
+                            AbstractTensor logits, LayerNorm layerNorm, boolean logProbs, int topLogProbs) {
         this.abstractModel = abstractModel;
         this.output = output;
         this.temperature = temperature;
@@ -81,6 +81,7 @@ public class GeneratorSampler {
                 logits.set(v, 0, i);
             }
             float acc = 0;
+
             for (int i = 0; i < abstractModel.config.vocabularySize; i++) {
                 float v = logits.get(0, i) / sum;
                 acc += v;
