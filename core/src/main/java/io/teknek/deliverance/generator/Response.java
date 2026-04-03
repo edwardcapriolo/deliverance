@@ -1,16 +1,18 @@
 package io.teknek.deliverance.generator;
 
+import io.teknek.deliverance.model.SamplerReturn;
 import io.teknek.deliverance.safetensors.prompt.ToolCall;
 
 import java.util.Collections;
 import java.util.List;
 
-public class Response {
+public class  Response {
     public final String responseText;
     public final String responseTextWithSpecialTokens;
     public final FinishReason finishReason;
     public final int promptTokens;
     public final List<Integer> generatedTokens;
+    public final List<SamplerReturn> samplerReturns;
     public final long promptTimeMs;
     public final long generateTimeMs;
     public final List<ToolCall> toolCalls;
@@ -22,7 +24,8 @@ public class Response {
             int promptTokens,
             List<Integer> generatedTokens,
             long promptTimeMs,
-            long generateTimeMs
+            long generateTimeMs,
+            List<SamplerReturn> samplerReturns
     ) {
         this.responseText = responseText;
         this.responseTextWithSpecialTokens = responseTextWithSpecialTokens;
@@ -32,6 +35,7 @@ public class Response {
         this.promptTimeMs = promptTimeMs;
         this.generateTimeMs = generateTimeMs;
         this.toolCalls = Collections.emptyList();
+        this.samplerReturns = samplerReturns;
     }
 
     private Response(
@@ -42,7 +46,8 @@ public class Response {
             List<Integer> generatedTokens,
             long promptTimeMs,
             long generateTimeMs,
-            List<ToolCall> toolCalls
+            List<ToolCall> toolCalls,
+            List<SamplerReturn> samplerReturns
     ) {
         this.responseText = responseText;
         this.responseTextWithSpecialTokens = responseTextWithSpecialTokens;
@@ -52,6 +57,7 @@ public class Response {
         this.promptTimeMs = promptTimeMs;
         this.generateTimeMs = generateTimeMs;
         this.toolCalls = toolCalls;
+        this.samplerReturns = samplerReturns;
     }
 
     public Response copyWithToolCalls(List<ToolCall> toolCalls) {
@@ -63,29 +69,23 @@ public class Response {
                 generatedTokens,
                 promptTimeMs,
                 generateTimeMs,
-                toolCalls
+                toolCalls,
+                samplerReturns
         );
     }
 
     @Override
     public String toString() {
-        return "Response{"
-                + "responseText='"
-                + responseText
-                + '\''
-                + ", responseTextWithSpecialTokens='"
-                + responseTextWithSpecialTokens
-                + '\''
-                + ", finishReason="
-                + finishReason
-                + ", promptTokens="
-                + promptTokens
-                + ", generatedTokens="
-                + generatedTokens
-                + ", promptTimeMs="
-                + promptTimeMs
-                + ", generateTimeMs="
-                + generateTimeMs
-                + '}';
+        return "Response{" +
+                "responseText='" + responseText + '\'' +
+                ", responseTextWithSpecialTokens='" + responseTextWithSpecialTokens + '\'' +
+                ", finishReason=" + finishReason +
+                ", promptTokens=" + promptTokens +
+                ", generatedTokens=" + generatedTokens +
+                ", samplerReturns=" + samplerReturns +
+                ", promptTimeMs=" + promptTimeMs +
+                ", generateTimeMs=" + generateTimeMs +
+                ", toolCalls=" + toolCalls +
+                '}';
     }
 }

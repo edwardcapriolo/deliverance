@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 
 import java.io.IOException;
 
@@ -14,7 +15,8 @@ public class JsonUtils {
             .configure(DeserializationFeature.FAIL_ON_TRAILING_TOKENS, false)
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
             .configure(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES, false)
-            .enable(MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS);
+            .enable(MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS)
+            .registerModule(new Jdk8Module());
 
     public static class JlamaPrettyPrinter extends DefaultPrettyPrinter {
 

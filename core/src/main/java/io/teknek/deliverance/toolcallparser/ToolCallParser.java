@@ -1,7 +1,7 @@
 package io.teknek.deliverance.toolcallparser;
 
 import io.teknek.deliverance.generator.Response;
-import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.ResponseContext;
 import io.teknek.deliverance.safetensors.prompt.ToolCall;
 
 import java.util.List;
@@ -34,5 +34,5 @@ public interface ToolCallParser {
      *
      * @return Some if the content of the response dictate the turn should end,
      */
-    Optional<Response> shouldEndTurn(AbstractModel.ResponseContext response, int length);
+    Optional<Response> shouldEndTurn(ResponseContext response, int length);
 }

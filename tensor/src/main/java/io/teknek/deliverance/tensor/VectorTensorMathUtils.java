@@ -38,7 +38,6 @@ public class VectorTensorMathUtils {
             x.set((float) (x.get(0, i) / magnitude), 0, i);
     }
 
-
     public static void logSumExpTensor(AbstractTensor result, AbstractTensor input) {
         float logsumexp = (float) logSumExp(input);
         for (int i = 0; i < input.size(); i++) {
@@ -53,7 +52,6 @@ public class VectorTensorMathUtils {
         for (int i = 0; i < x.size(); i++) {
             sum += (float) FastMath.exp(x.get(0, i));
         }
-        float logsumexp = (float) FastMath.log(sum);
-        return logsumexp;
+        return (float) FastMath.log(sum);
     }
 }

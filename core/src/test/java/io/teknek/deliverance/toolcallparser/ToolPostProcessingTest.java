@@ -2,7 +2,8 @@ package io.teknek.deliverance.toolcallparser;
 
 import io.teknek.deliverance.generator.FinishReason;
 import io.teknek.deliverance.generator.Response;
-import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.ResponseContext;
+import io.teknek.deliverance.model.SamplerReturn;
 import io.teknek.deliverance.safetensors.prompt.ToolCall;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -43,7 +44,7 @@ Other models:
     @Test
     void flipCoinResponse(){
         Response r = new Response("", flipCoinNoParamLlamaResponse, FinishReason.TOOL_CALLS,0, null,
-                0, 0);
+                0, 0, List.of(new SamplerReturn(1)));
         LlamaToolCallParser c = new LlamaToolCallParser();
         List<ToolCall> resp = c.extract(r);
         assertEquals(1, resp.size());
@@ -59,7 +60,7 @@ Other models:
         String s = """
     {"type":"function","function":"get_current_temperature","parameters":{"location":"New York, USA","unit":"celsius"}}<|end_header_id|>This will return the current temperature in New York City in Celsius. If you want the temperature in Fahrenheit, you can change the unit to "fahrenheit".<|end_header_id|>Note: I've assumed that the function `get_current_temperature` is already defined and available in the environment. If it's not, you'll need to define it or use a different function to get the current temperature.""";
         Response r = new Response("", s, FinishReason.TOOL_CALLS,0, null,
-                0, 0);
+                0, 0, List.of(new SamplerReturn(1)));
         LlamaToolCallParser c = new LlamaToolCallParser();
         List<ToolCall> resp = c.extract(r);
         assertEquals(1, resp.size());
@@ -77,7 +78,7 @@ Other models:
                 """;
         {
             LlamaToolCallParser c = new LlamaToolCallParser();
-            AbstractModel.ResponseContext context = Mockito.mock(AbstractModel.ResponseContext.class);
+            ResponseContext context = Mockito.mock(ResponseContext.class);
             Mockito.when(context.getResponseTextWithSpecialTokens()).thenReturn(new StringBuilder(missingEot));
             Assertions.assertEquals(Optional.empty(), c.shouldEndTurn(context, 0));
         }
@@ -86,7 +87,7 @@ Other models:
             String withEot = """
                     {"type":"function","function":"get_current_temperature","parameters":{"location":"New York, USA","unit":"celsius"}}<|end_header_id|>This will return the current temperature in New York City in Celsius. If you want the temperature in Fahrenheit, you can change the unit to "fahrenheit".<|end_header_id|>Note: I've assumed that the function `get_current_temperature` is already defined and available in the environment. If it's not, you would need to define it or import it from a library.', responseTextWithSpecialTokens='{"type":"function","function":"get_current_temperature","parameters":{"location":"New York, USA","unit":"celsius"}}<|end_header_id|>This will return the current temperature in New York City in Celsius. If you want the temperature in Fahrenheit, you can change the unit to "fahrenheit".<|end_header_id|>Note: I've assumed that the function `get_current_temperature` is already defined and available in the environment. If it's not, you would need to define it or import it from a library.<|eot_id|>""";
             LlamaToolCallParser c = new LlamaToolCallParser();
-            AbstractModel.ResponseContext context = Mockito.mock(AbstractModel.ResponseContext.class);
+            ResponseContext context = Mockito.mock(ResponseContext.class);
             Mockito.when(context.getResponseText()).thenReturn(new StringBuilder("bla"));
             Mockito.when(context.getResponseTextWithSpecialTokens()).thenReturn(new StringBuilder(withEot));
             Mockito.when(context.getGeneratedTokens()).thenReturn(Collections.singletonList(1));

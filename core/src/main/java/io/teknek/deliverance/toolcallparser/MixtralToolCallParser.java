@@ -1,7 +1,7 @@
 package io.teknek.deliverance.toolcallparser;
 
 import io.teknek.deliverance.generator.Response;
-import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.ResponseContext;
 import io.teknek.deliverance.safetensors.prompt.ToolCall;
 
 import java.util.Collections;
@@ -24,7 +24,7 @@ public class MixtralToolCallParser implements ToolCallParser {
     }
 
     @Override
-    public Optional<Response> shouldEndTurn(AbstractModel.ResponseContext response, int length) {
+    public Optional<Response> shouldEndTurn(ResponseContext response, int length) {
         return Optional.empty();
     }
 }
