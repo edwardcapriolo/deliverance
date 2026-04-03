@@ -25,7 +25,6 @@ import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
-import io.teknek.deliverance.safetensors.prompt.ToolCall;
 import io.teknek.deliverance.tensor.*;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
@@ -238,59 +237,31 @@ public abstract class AbstractModel implements Generator, Classifier {
         return promptTokens;
     }
 
-    public class ResponseContext {
-        public final StringBuilder responseText = new StringBuilder();
-        public final StringBuilder responseTextWithSpecialTokens = new StringBuilder();
-        public final List<Integer> generatedTokens = new ArrayList<>();
-
-        public void add(int token, GenerateEvent event){
-            generatedTokens.add(token);
-            String decoded = tokenizer.decode(token);
-            String cleaned = tokenRenderer.tokenizerToRendered(decoded);
-            if (tokenizer.getModel().isSpecialToken(token)) {
-                responseTextWithSpecialTokens.append(cleaned);
-            } else {
-                event.emit(token, decoded, cleaned, 0);
-                responseText.append(cleaned);
-                responseTextWithSpecialTokens.append(cleaned);
-            }
-        }
-
-        public StringBuilder getResponseTextWithSpecialTokens() {
-            return this.responseTextWithSpecialTokens;
-        }
-
-        public StringBuilder getResponseText() {
-            return responseText;
-        }
-
-        public List<Integer> getGeneratedTokens() {
-            return generatedTokens;
-        }
-    }
-
-    int createNextToken(GeneratorParameters generatorParameters, AbstractTensor logits, AbstractTensor last,
+    SamplerReturn createNextToken(GeneratorParameters generatorParameters, AbstractTensor logits, AbstractTensor last,
                         ResponseContext responseContext, Random random, float temperature){
         if (generatorParameters.guidedChoice.isPresent()) {
             GuidedChoiceSampler sampler = new GuidedChoiceSampler(this, last.slice(last.shape().first() - 1),
                     logits, sampleOutput.getOutputLayerNorm(), tokenizer, generatorParameters.guidedChoice.get(), responseContext.responseText);
-           return sampler.sample();
+           return new SamplerReturn(sampler.sample());
         } else {
             GeneratorSampler sampler = new GeneratorSampler(this, last.slice(last.shape().first() - 1), temperature,
-                    random.nextFloat(), logits, sampleOutput.getOutputLayerNorm(), false, 0);
+                    random.nextFloat(), logits, sampleOutput.getOutputLayerNorm(),
+                    generatorParameters.logProbs.orElse(false), generatorParameters.topLogProbs.orElse(0));
             return sampler.sample();
         }
     }
 
-    int createNextTokenLoop(GeneratorParameters generatorParameters, AbstractTensor output,
+    SamplerReturn createNextTokenLoop(GeneratorParameters generatorParameters, AbstractTensor output,
                             AbstractTensor logits, ResponseContext responseContext, Random random, float temperature){
         if (generatorParameters.guidedChoice.isPresent()) {
             GuidedChoiceSampler sampler1 = new GuidedChoiceSampler(this, output, logits,
                     sampleOutput.getOutputLayerNorm(), tokenizer, generatorParameters.guidedChoice.get(), responseContext.responseText);
-            return sampler1.sample();
+            //TODO should guided choice have logits how expesnive is two code paths going forward
+            return new SamplerReturn(sampler1.sample());
         } else {
             GeneratorSampler sampler1 = new GeneratorSampler(this, output, temperature,
-                    random.nextFloat(), logits, sampleOutput.getOutputLayerNorm(), false, 0);
+                    random.nextFloat(), logits, sampleOutput.getOutputLayerNorm(),
+                    generatorParameters.logProbs.orElse(false), generatorParameters.topLogProbs.orElse(0));
             return sampler1.sample();
         }
     }
@@ -307,7 +278,8 @@ public abstract class AbstractModel implements Generator, Classifier {
                     FinishReason reason = FinishReason.STOP_TOKEN;
                     if (generatorParameters.includeStopStrInOutput.isPresent() && generatorParameters.includeStopStrInOutput.get()){
                         return Optional.of(new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
-                                reason, promptLength, responseContext.generatedTokens, 0, 0));
+                                reason, promptLength, responseContext.generatedTokens, 0, 0,
+                                responseContext.samplerReturnList));
                     } else {
                         int index = responseContext.responseTextWithSpecialTokens.indexOf(stop);
                         responseContext.responseTextWithSpecialTokens.delete(index, responseContext.responseTextWithSpecialTokens.length());
@@ -316,7 +288,8 @@ public abstract class AbstractModel implements Generator, Classifier {
                             responseContext.responseText.delete(x, responseContext.responseText.length());
                         }
                         return Optional.of(new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
-                                reason, promptLength, responseContext.generatedTokens, 0, 0));
+                                reason, promptLength, responseContext.generatedTokens, 0, 0,
+                                responseContext.samplerReturnList));
                     }
                 }
             }
@@ -327,7 +300,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     @Override
     public Response generate(UUID sessionId, PromptContext promptContext, GeneratorParameters generatorParameters,
                                      GenerateEvent eventFired) {
-        ResponseContext responseContext = new ResponseContext();
+        ResponseContext responseContext = new ResponseContext(this);
         Random random = generatorParameters.seed.map(Random::new).orElseGet(Random::new);
         long[] encoded = tokenizer.encode(promptContext.getPrompt());
         if (encoded.length > 0 && encoded[0] == config.bosToken) {
@@ -346,30 +319,32 @@ public abstract class AbstractModel implements Generator, Classifier {
             try (AbstractTensor logits = makeDenseTensor(config.vocabularySize)) {
                 int [] promptTokens = constructPromptTokens(encoded);
                 AbstractTensor last = batchForward(promptTokens, startPos, kvmem);
-                int next = createNextToken(generatorParameters, logits, last, responseContext, random, temperature);
+                SamplerReturn nextSamplerRet = createNextToken(generatorParameters, logits, last, responseContext, random, temperature);
+                int next = nextSamplerRet.token;
                 last.close();
-                responseContext.add(next, eventFired);
+                responseContext.add(nextSamplerRet, eventFired);
                 //here we have added the first token, consider checking stop conditions here
                 for (int i = startPos + promptTokens.length; i < ntokens; i++) {
                     AbstractTensor output = forward(next, i, kvmem);
                     //reuse next to save memory
-                    next = createNextTokenLoop(generatorParameters, output, logits, responseContext, random, temperature);
+                    SamplerReturn nextSample = createNextTokenLoop(generatorParameters, output, logits, responseContext, random, temperature);
+                    next = nextSample.token;
                     output.close();
                     kvmem.incrementContextPosition();
-                    responseContext.add(next, eventFired);
+                    responseContext.add(nextSample, eventFired);
 
                     if (generatorParameters.maxTokens.isPresent()){
                         if (responseContext.generatedTokens.size() >= generatorParameters.maxTokens.get()) {
                             FinishReason reason = FinishReason.MAX_TOKENS;
                             return new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
-                                    reason,  encoded.length, responseContext.generatedTokens, 0, 0);
+                                    reason,  encoded.length, responseContext.generatedTokens, 0, 0, responseContext.samplerReturnList);
                         }
                     }
                     if (generatorParameters.guidedChoice.isPresent()) {
                         if (generatorParameters.guidedChoice.get().contains(responseContext.responseText.toString())) {
                             FinishReason reason = FinishReason.STOP_TOKEN;
                             return new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
-                                    reason,  encoded.length, responseContext.generatedTokens, 0, 0);
+                                    reason,  encoded.length, responseContext.generatedTokens, 0, 0, responseContext.samplerReturnList);
                         }
                     }
                     Optional<Response> shouldEnd = stopWords(generatorParameters, responseContext, encoded.length);
@@ -379,7 +354,7 @@ public abstract class AbstractModel implements Generator, Classifier {
                     if (config.eosTokens.contains(next)){
                         FinishReason reason = FinishReason.STOP_TOKEN;
                         return new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
-                                reason,  encoded.length, responseContext.generatedTokens, 0, 0);
+                                reason,  encoded.length, responseContext.generatedTokens, 0, 0, responseContext.samplerReturnList);
                     }
                     Optional<Response> shouldEndTools = getToolCallParser().shouldEndTurn(responseContext, encoded.length);
                     if (shouldEndTools.isPresent()) {
@@ -391,7 +366,8 @@ public abstract class AbstractModel implements Generator, Classifier {
         }
 
         return  new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
-                FinishReason.MAX_TOKENS, encoded.length, responseContext.generatedTokens, 0, 0);
+                FinishReason.MAX_TOKENS, encoded.length, responseContext.generatedTokens, 0, 0,
+                responseContext.samplerReturnList);
     }
 
     /*

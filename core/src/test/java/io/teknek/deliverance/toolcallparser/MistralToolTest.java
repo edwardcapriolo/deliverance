@@ -2,6 +2,7 @@ package io.teknek.deliverance.toolcallparser;
 
 import io.teknek.deliverance.generator.FinishReason;
 import io.teknek.deliverance.generator.Response;
+import io.teknek.deliverance.model.SamplerReturn;
 import io.teknek.deliverance.safetensors.prompt.ToolCall;
 import org.junit.jupiter.api.Disabled;
 
@@ -17,7 +18,7 @@ public class MistralToolTest {
     @Disabled
     void flipCoinResponse(){
         Response r = new Response("", s, FinishReason.TOOL_CALLS,0, null,
-                0, 0);
+                0, 0, List.of(new SamplerReturn(1)));
         LlamaToolCallParser c = new LlamaToolCallParser();
         List<ToolCall> resp = c.extract(r);
         assertEquals(1, resp.size());

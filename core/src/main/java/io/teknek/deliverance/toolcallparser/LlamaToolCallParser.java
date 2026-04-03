@@ -5,7 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.generator.*;
 
-import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.ResponseContext;
 import io.teknek.deliverance.safetensors.prompt.ToolCall;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,11 +62,11 @@ public class LlamaToolCallParser implements ToolCallParser {
     }
 
     @Override
-    public Optional<Response> shouldEndTurn(AbstractModel.ResponseContext response, int length) {
+    public Optional<Response> shouldEndTurn(ResponseContext response, int length) {
         if(response.getResponseTextWithSpecialTokens().indexOf(eot) > -1){
             Response resp = new Response(response.getResponseText().toString(), response.getResponseTextWithSpecialTokens().toString(),
                     FinishReason.TOOL_CALLS,
-                    length, response.getGeneratedTokens(), 0, 0);
+                    length, response.getGeneratedTokens(), 0, 0, response.samplerReturnList);
             return Optional.of(resp.copyWithToolCalls(extract(resp)));
         }
         return Optional.empty();

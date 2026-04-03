@@ -2,6 +2,7 @@ package io.teknek.deliverance.toolcallparser;
 
 import io.teknek.deliverance.generator.FinishReason;
 import io.teknek.deliverance.generator.Response;
+import io.teknek.deliverance.model.SamplerReturn;
 import io.teknek.deliverance.safetensors.prompt.ToolCall;
 import org.junit.jupiter.api.Test;
 
@@ -20,7 +21,7 @@ public class QuenToolParserTest {
     @Test
     public void testParseQWen() throws IOException, InterruptedException {
         Response r = new Response("", multipleTools, FinishReason.TOOL_CALLS,0, null,
-                0, 0);
+                0, 0, List.of(new SamplerReturn(0)));
         QwenToolCallParser  c = new QwenToolCallParser ();
         List<ToolCall> resp = c.extract(r);
         assertEquals(2, resp.size());

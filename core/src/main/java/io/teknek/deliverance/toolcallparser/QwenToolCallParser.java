@@ -3,7 +3,7 @@ package io.teknek.deliverance.toolcallparser;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.generator.Response;
-import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.ResponseContext;
 import io.teknek.deliverance.safetensors.prompt.ToolCall;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,7 +66,7 @@ public class QwenToolCallParser implements ToolCallParser {
     }
 
     @Override
-    public Optional<Response> shouldEndTurn(AbstractModel.ResponseContext response, int length) {
+    public Optional<Response> shouldEndTurn(ResponseContext response, int length) {
         return Optional.empty();
     }
 
