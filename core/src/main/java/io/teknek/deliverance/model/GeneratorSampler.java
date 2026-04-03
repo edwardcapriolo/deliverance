@@ -8,6 +8,8 @@ import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tokenizer.Tokenizer;
 import net.jafama.FastMath;
 
+import java.util.LinkedHashMap;
+
 public class GeneratorSampler {
     private final AbstractModel abstractModel;
     private final Histogram forward1;
@@ -21,7 +23,7 @@ public class GeneratorSampler {
     private final LayerNorm layerNorm;
 
     public GeneratorSampler(AbstractModel abstractModel, AbstractTensor output, float temperature, float uniformSample,
-                            AbstractTensor logits, LayerNorm layerNorm) {
+                            AbstractTensor logits, LayerNorm layerNorm, boolean logProbs, int topLogProbs) {
         this.abstractModel = abstractModel;
         this.output = output;
         this.temperature = temperature;
@@ -81,6 +83,7 @@ public class GeneratorSampler {
                 logits.set(v, 0, i);
             }
             float acc = 0;
+            LinkedHashMap<Integer,Float> topLogProbls = new LinkedHashMap<>();
             for (int i = 0; i < abstractModel.config.vocabularySize; i++) {
                 float v = logits.get(0, i) / sum;
                 acc += v;
