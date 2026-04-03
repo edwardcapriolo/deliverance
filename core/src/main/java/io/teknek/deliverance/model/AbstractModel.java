@@ -357,6 +357,7 @@ public abstract class AbstractModel implements Generator, Classifier {
                     output.close();
                     kvmem.incrementContextPosition();
                     responseContext.add(next, eventFired);
+
                     if (generatorParameters.maxTokens.isPresent()){
                         if (responseContext.generatedTokens.size() >= generatorParameters.maxTokens.get()) {
                             FinishReason reason = FinishReason.MAX_TOKENS;
@@ -375,10 +376,16 @@ public abstract class AbstractModel implements Generator, Classifier {
                     if (shouldEnd.isPresent()) {
                         return shouldEnd.get();
                     }
+                    if (config.eosTokens.contains(next)){
+                        FinishReason reason = FinishReason.STOP_TOKEN;
+                        return new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
+                                reason,  encoded.length, responseContext.generatedTokens, 0, 0);
+                    }
                     Optional<Response> shouldEndTools = getToolCallParser().shouldEndTurn(responseContext, encoded.length);
                     if (shouldEndTools.isPresent()) {
                         return shouldEndTools.get();
                     }
+
                 }
             }
         }

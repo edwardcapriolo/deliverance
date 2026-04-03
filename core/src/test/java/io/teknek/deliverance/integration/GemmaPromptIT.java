@@ -171,4 +171,22 @@ This code defines a function called `allocate_token_bitmask` that generates a bi
         assertTrue(k.responseText.contains("Seahawks"));
     }
 
+    @Test
+    public void logProbs() {
+        AbstractModel m = Gemma2Suite.getOrCreate();
+        String prompt = "Pick a random number between 1 and 9. Pick only one number.";
+        PromptSupport.Builder g = m.promptSupport().get().builder()
+                .addUserMessage(prompt);
+        var uuid = UUID.randomUUID();
+        Response k = m.generate(uuid, g.build(), new GeneratorParameters()
+                        .withTemperature(0.0f).withMaxTokens(300)
+                , new GenerateEvent() {
+                    @Override
+                    public void emit(int next, String nextRaw, String nextCleaned, float timing) {
+                        System.out.println(nextCleaned);
+                    }
+                });
+        System.out.println(k);
+    }
+
 }
