@@ -19,6 +19,8 @@ public class GeneratorParameters {
     public Optional<Integer> maxTokens = Optional.empty();
     public Optional<Boolean> logProbs = Optional.empty();
     public Optional<Integer> topLogProbs = Optional.empty();
+    public Optional<Float> xtcThreshold = Optional.empty();
+    public Optional<Float> xtcProbability = Optional.empty();
 
     public GeneratorParameters withSeed(int seed){
         this.seed = Optional.of(seed);
@@ -64,6 +66,16 @@ public class GeneratorParameters {
 
     public GeneratorParameters withTopLogProbs(int topLogProbs){
         this.topLogProbs = Optional.of(topLogProbs);
+        return this;
+    }
+
+    public GeneratorParameters withXtcThreshold(float threshold){
+        this.xtcThreshold =  Optional.of(threshold);
+        return this;
+    }
+
+    public GeneratorParameters withXtcProbability(float prob){
+        this.xtcProbability = Optional.of(prob);
         return this;
     }
 }

@@ -29,11 +29,13 @@
       <artifactId>safetensors</artifactId>
       <version>${project.version}</version>
     </dependency>
+    <!--
     <dependency>
       <groupId>io.teknek.deliverance</groupId>
       <artifactId>core</artifactId>
       <version>${project.version}</version>
     </dependency>
+    -->
     <dependency>
       <groupId>io.teknek.deliverance</groupId>
       <artifactId>safetensors</artifactId>

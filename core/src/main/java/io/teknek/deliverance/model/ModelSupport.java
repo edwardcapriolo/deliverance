@@ -3,6 +3,8 @@ package io.teknek.deliverance.model;
 import com.codahale.metrics.MetricRegistry;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.grace.AutoTokenizer;
+import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.bert.BertModelType;
 import io.teknek.deliverance.model.gemma2.Gemma2ModelType;
@@ -103,12 +105,22 @@ public class ModelSupport {
                     ConfigurableTensorProvider.class, MetricRegistry.class, TensorCache.class,
                     KvBufferCacheSettings.class, TokenRenderer.class, ToolCallParser.class, WrappedForkJoinPool.class);
 
-            return cons.newInstance(AbstractModel.InferenceType.FULL_GENERATION, config, wl, tokenizer,
+            AbstractModel am = cons.newInstance(AbstractModel.InferenceType.FULL_GENERATION, config, wl, tokenizer,
                     workingMemoryType, workingQuantizationType, Optional.empty(), configurableTensorProvider,
                     metricRegistry, tensorCache, kvBufferCacheSettings, tr, toolCallParser, pool);
+
+            try {
+                PreTrainedTokenizer t = AutoTokenizer.fromPretrained(new AutoTokenizer.OwnerNameOrPath(
+                        new AutoTokenizer.OwnerName(fetcher.getOwner(), fetcher.getName())));
+                am.setPreTrainedTokenizer(t);
+            } catch (Exception e){
+                LOGGER.warn("Could not load grace support", e);
+            }
+            return am;
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }
+
     }
 
     //Note complete copy of above only different enuum
