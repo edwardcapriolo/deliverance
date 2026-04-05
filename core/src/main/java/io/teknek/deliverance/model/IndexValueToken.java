@@ -17,6 +17,10 @@ public class IndexValueToken implements Comparable<IndexValueToken> {
         this.token = token;
     }
 
+    public float getProbability(){
+        return (float) Math.exp(logProb);
+    }
+
     /** To support top log_probs sort on value*/
     @Override
     public int compareTo(IndexValueToken o) {

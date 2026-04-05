@@ -17,6 +17,7 @@ import io.teknek.deliverance.classifier.ClassifyOutput;
 import io.teknek.deliverance.embedding.PoolingLayer;
 import io.teknek.deliverance.embedding.PoolingType;
 import io.teknek.deliverance.generator.*;
+import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.math.VectorMathUtils;
@@ -93,6 +94,7 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     protected ClassifyOutput classifyOutput;
     protected WrappedForkJoinPool pool;
+    protected PreTrainedTokenizer preTrainedTokenizer;
 
     protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
                             DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider provider,
@@ -177,6 +179,17 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.pool = pool;
     }
 
+
+    public PreTrainedTokenizer getPreTrainedTokenizer() {
+        return preTrainedTokenizer;
+    }
+
+    //Everything else is constucto driven but im tied of adding things to that constructor
+
+    public void setPreTrainedTokenizer(PreTrainedTokenizer preTrainedTokenizer) {
+        this.preTrainedTokenizer = preTrainedTokenizer;
+    }
+
     protected abstract EmbedInput loadInputWeights();
     protected abstract SampleOutput loadOutputWeights();
     protected abstract TransformerBlock[] loadTransformerBlockWeights();
@@ -246,7 +259,9 @@ public abstract class AbstractModel implements Generator, Classifier {
         } else {
             GeneratorSampler sampler = new GeneratorSampler(this, last.slice(last.shape().first() - 1), temperature,
                     random.nextFloat(), logits, sampleOutput.getOutputLayerNorm(),
-                    generatorParameters.logProbs.orElse(false), generatorParameters.topLogProbs.orElse(0));
+                    generatorParameters.logProbs.orElse(false), generatorParameters.topLogProbs.orElse(0), random,
+                    generatorParameters.xtcThreshold.orElse(0f),
+                    generatorParameters.xtcProbability.orElse(0f));
             return sampler.sample();
         }
     }
@@ -261,7 +276,11 @@ public abstract class AbstractModel implements Generator, Classifier {
         } else {
             GeneratorSampler sampler1 = new GeneratorSampler(this, output, temperature,
                     random.nextFloat(), logits, sampleOutput.getOutputLayerNorm(),
-                    generatorParameters.logProbs.orElse(false), generatorParameters.topLogProbs.orElse(0));
+                    generatorParameters.logProbs.orElse(false),
+                    generatorParameters.topLogProbs.orElse(0),
+                    random,
+                    generatorParameters.xtcThreshold.orElse(0f),
+                    generatorParameters.xtcProbability.orElse(0f));
             return sampler1.sample();
         }
     }

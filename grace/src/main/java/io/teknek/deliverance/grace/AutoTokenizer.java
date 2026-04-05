@@ -5,7 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.teknek.deliverance.grace.models.TokenizerConfig;
-import io.teknek.deliverance.model.qwen2.Qwen2Tokenizer;
+
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 
 import java.io.File;
@@ -36,7 +36,14 @@ public class AutoTokenizer {
 
         String version = null;
         try {
-            Map<String, Integer> map = om.readValue( new File(path, "vocab.json"), new TypeReference<Map<String, Integer>>() {});
+            File vocab = new File(path, "vocab.json");
+            Map<String, Integer> map;
+            if (vocab.exists()) {
+                map = om.readValue(new File(path, "vocab.json"), new TypeReference<Map<String, Integer>>() {
+                });
+            } else {
+                map = new HashMap<>();
+            }
             JsonNode document = om.readTree(new File(path,"tokenizer.json"));
             JsonNode versionNode = document.get("version");
             if (!versionNode.isNull()){
@@ -67,19 +74,30 @@ public class AutoTokenizer {
             //We have models for this inside of deliverance
             JsonNode tokenizerConfigDotJson = om.readTree(new File(path,"tokenizer_config.json"));
             JsonNode chatTemplate = tokenizerConfigDotJson.get("chat_template");
+
             TokenizerConfig tokenizerConfig = new TokenizerConfig();
             if (chatTemplate != null){
                 tokenizerConfig.chatTemplate = chatTemplate.asText();
             }
 
-            Quen2Tokenizer q = new Quen2Tokenizer(new HashMap<>(), Optional.empty(),Optional.empty(),Optional.empty(),
-                    Optional.empty(),Optional.empty(),Optional.empty(),Optional.empty(),
-                    map, addedTokenMap, tokenizerConfig
-                    );
-            return q;
+            //  "tokenizer_class": "Qwen2Tokenizer",
+            String tclass = tokenizerConfigDotJson.get("tokenizer_class").asText();
 
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException(e);
+
+            if (tclass.equals("Qwen2Tokenizer")) {
+                Quen2Tokenizer q = new Quen2Tokenizer(new HashMap<>(), Optional.empty(), Optional.empty(), Optional.empty(),
+                        Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
+                        map, addedTokenMap, tokenizerConfig
+                );
+                return q;
+            } else if (tclass.equals("GemmaTokenizer")) {
+                GemmaTokenizer q = new GemmaTokenizer(new HashMap<>(), Optional.empty(), Optional.empty(), Optional.empty(),
+                        Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
+                        map, addedTokenMap, tokenizerConfig
+                );
+                return q;
+            }
+            throw new io.teknek.dysfx.exception.UnreachableException("Could not find implementation");
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -94,6 +112,10 @@ public class AutoTokenizer {
         }*/
         //return null;
 
+    }
+
+    public static PreTrainedTokenizer fromPretrained(OwnerNameOrPath ownerNameOrPath) {
+        return fromPretrained(ownerNameOrPath, Optional.empty(), Optional.empty(), Collections.emptyMap());
     }
 
     public static class OwnerName{
@@ -119,5 +141,6 @@ public class AutoTokenizer {
             this.modelPath = modelPath;
             this.ownerName = null;
         }
+
     }
 }

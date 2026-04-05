@@ -43,7 +43,12 @@
             <groupId>io.teknek.deliverance</groupId>
             <artifactId>safetensors</artifactId>
             <version>${project.version}</version>
-            <scope>compile</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>io.teknek.deliverance</groupId>
+            <artifactId>grace</artifactId>
+            <version>${project.version}</version>
         </dependency>
 
         <dependency>

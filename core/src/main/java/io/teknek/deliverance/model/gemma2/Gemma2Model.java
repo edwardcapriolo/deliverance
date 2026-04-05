@@ -5,6 +5,7 @@ package io.teknek.deliverance.model.gemma2;
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.*;
+import io.teknek.deliverance.grace.AutoTokenizer;
 import io.teknek.deliverance.math.FloatConversions;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.TokenRenderer;
