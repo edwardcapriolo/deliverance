@@ -67,12 +67,6 @@ public class GeneratorSampler {
     }
 
     public SamplerReturn sample() {
-        //abel='xtc_threshold', info='If 2 or more tokens have probability above this threshold, consider removing all but the last one.')
-        //label='xtc_probability', info='Probability that the removal will actually happen. 0 disables the sampler. 1 makes it always happen.')
-
-        //float xtcThreshold = 0.1f;
-        //float xtcProbability = 0.5f;
-
         long start = System.nanoTime();
         try (AbstractTensor embedding = layerNorm.forward(output)) {
             long afterForward = System.nanoTime();
@@ -127,32 +121,6 @@ public class GeneratorSampler {
                 ExcludeTopChoicePicker p = new ExcludeTopChoicePicker(this.abstractModel, logits, xtcThreshold, xtcProbability, random);
                 chosen = p.process();
             }
-            /*
-            if (xtcThreshold != 0.0) {
-                SortedSet<IndexValueToken> aboveThreashld = new TreeSet<>();
-                AbstractTensor logSum = abstractModel.getTensorCache().getDirty(logits.dType(), logits.shape());
-                VectorTensorMathUtils.logSumExpTensor(logSum, logits);
-                for (int i =0; i< logSum.size(); i++) {
-                    float v = logSum.get(0, i);
-                    logSum.set((float) Math.exp(v), 0, i);
-                    if (v > xtcThreshold){
-                        IndexValueToken token = new IndexValueToken(i, v, abstractModel.getTokenizer().decode(i));
-                        aboveThreashld.add(token);
-                        if (aboveThreashld.size() > 1) {
-                            aboveThreashld.removeLast();
-                        }
-                    }
-                }
-                //TODO something better
-                Random r = new Random((long) uniformSample * Long.MAX_VALUE);
-                if (r.nextFloat() > xtcProbability){
-
-                }
-                //loop and makeprobabilites
-                // keep only the lowest over the threashold
-            } */
-
-
             if (temperature == 0.0) {
                 if (chosen.isPresent() && chosen.get().index != maxi) {
                     if (LOGGER.isDebugEnabled()) {
@@ -191,63 +159,3 @@ public class GeneratorSampler {
         }
     }
 }
-
-/*
- This was the original snip from inside AbstractModel
-    public int sample(AbstractTensor output, float temperature, float uniformSample, AbstractTensor logits) {
-        long start = System.nanoTime();
-        try (AbstractTensor embedding = sampleOutput.getOutputLayerNorm().forward(output)) {
-            long afterForward = System.nanoTime();
-            metricRegistry.histogram("sample.foward1").update(Math.abs(afterForward - start));
-            // This is a mix of argmax and sampling with softmax
-            VectorMath.pchunk(0, config.vocabularySize, (chunkStart, chunkSize) -> {
-                configurableTensorProvider.get()
-                        .dotProductChunk(logits, embedding, sampleOutput.getOutputLogitsWeights(), 0,
-                                config.embeddingLength, chunkStart, chunkSize);
-            }, configurableTensorProvider.get().parallelSplitSize());
-            long afterDotProductChunk = System.nanoTime();
-            metricRegistry.histogram("sample.dotproduct2").update(Math.abs(afterDotProductChunk - afterForward));
-
-            if (config.logitMultiplier != null) {
-                CausualWhisperer.LOGGER.debug("scaling logits logitMultiplier: {}", config.logitMultiplier);
-                configurableTensorProvider.get().scale(1.0f / config.logitMultiplier, logits, 0, config.vocabularySize);
-            }
-            int maxi = Integer.MIN_VALUE;
-            double maxv = Double.NEGATIVE_INFINITY;
-            for (int i = 0; i < config.vocabularySize; i++) {
-                float v = logits.get(0, i);
-                if (config.finalLogitSoftCapping != null) {
-                    v /= config.finalLogitSoftCapping;
-                    v = (float) FastMath.tanh(v);
-                    v = v * config.finalLogitSoftCapping;
-                    logits.set(v, 0, i);
-                }
-                if (v > maxv) {
-                    maxi = i;
-                    maxv = v;
-                }
-            }
-            if (temperature == 0.0) {
-                CausualWhisperer.LOGGER.debug("temperature at 0 returning maxi {}", maxi);
-                return maxi;
-            }
-            float sum = 0;
-            for (int i = 0; i < config.vocabularySize; i++) {
-                float v = (float) FastMath.exp((logits.get(0, i) - maxv) / temperature);
-                sum += v;
-                logits.set(v, 0, i);
-            }
-            float acc = 0;
-            for (int i = 0; i < config.vocabularySize; i++) {
-                float v = logits.get(0, i) / sum;
-                acc += v;
-                if (acc >= uniformSample) {
-                    CausualWhisperer.LOGGER.debug("accumulator {} >= uniformSample {} returning {}", acc, uniformSample, i);
-                    return i;
-                }
-            }
-            CausualWhisperer.LOGGER.debug("Reached end returning {}", config.vocabularySize - 1);
-            return config.vocabularySize - 1;
-        }
-    }
-     */
