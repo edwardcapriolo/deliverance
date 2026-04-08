@@ -57,6 +57,7 @@ public class AutoModelForCausaLm {
         private KvBufferCacheSettings settings = new KvBufferCacheSettings(true);
         private ConfigurableTensorProvider provider;
         private WrappedForkJoinPool pool;
+        private String oobCheck = "2";
 
         public Builder(ModelFetcher fetch){
             this.fetch = fetch;
@@ -98,13 +99,19 @@ public class AutoModelForCausaLm {
             this.pool = pool;
             return this;
         }
+        /** This is a JVM wide property! **/
+        public Builder withSystemPropertyForVectorOobCheck(String value){
+            this.oobCheck = value;
+            return this;
+        }
 
         public AbstractModel build(){
+            System.setProperty("jdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK", this.oobCheck);
             File modelRoot = fetch.maybeDownload();
             if (pool == null){
                 pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
             }
-            if(provider == null){
+            if (provider == null){
                 ConfigurableTensorProvider base  = new ConfigurableTensorProvider(cache, pool);
                  try {
                      NativeSimdTensorOperations operations = new NativeSimdTensorOperations(base.get());
