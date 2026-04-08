@@ -37,6 +37,7 @@ public class AutoModelForSequenceClassification {
         private KvBufferCacheSettings settings = new KvBufferCacheSettings(true);
         private ConfigurableTensorProvider provider;
         private WrappedForkJoinPool pool;
+        private String oobCheck = "2";
 
         public Builder(ModelFetcher fetch) {
             this.fetch = fetch;
@@ -87,7 +88,13 @@ public class AutoModelForSequenceClassification {
             return this;
         }
 
+        public Builder withSystemPropertyForVectorOobCheck(String value){
+            this.oobCheck = value;
+            return this;
+        }
+
         public AbstractModel build() {
+            System.setProperty("jdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK", this.oobCheck);
             File modelRoot = fetch.maybeDownload();
             if (pool == null){
                 pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
