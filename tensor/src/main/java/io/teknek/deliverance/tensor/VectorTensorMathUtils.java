@@ -3,6 +3,8 @@ package io.teknek.deliverance.tensor;
 import com.google.common.base.Preconditions;
 import net.jafama.FastMath;
 
+import java.util.*;
+
 public class VectorTensorMathUtils {
     public static void softMax(AbstractTensor x, int offset, int length) {
         Preconditions.checkArgument(x.shape().first() == 1);
@@ -53,5 +55,36 @@ public class VectorTensorMathUtils {
             sum += (float) FastMath.exp(x.get(0, i));
         }
         return (float) FastMath.log(sum);
+    }
+
+    public static int percentile(SortedMap<Float, List<Integer>> valueBuckets, float perc, long size) {
+        int element = (int) (size * perc) - 1;
+        Iterator<Map.Entry<Float, List<Integer>>> iter = valueBuckets.entrySet().iterator();
+        int ct = 0;
+        while (iter.hasNext()) {
+            Map.Entry<Float, List<Integer>> entry = iter.next();
+            ct += entry.getValue().size();
+            //This condition returns a slightly higher percentile then requested as we are not doing
+            //and exact count inside the bucket
+            if (ct >= element) {
+                return entry.getValue().get(0); //could be a random one here
+            }
+        }
+        return -1;
+    }
+
+    public static SortedMap<Float, List<Integer>> valueBuckets(AbstractTensor x) {
+        SortedMap<Float, List<Integer>> buckets = new TreeMap<>();
+        for (int i = 0; i < x.size(); i++) {
+            float v = x.get(0, i);
+            if (buckets.containsKey(v)) {
+                buckets.get(v).add(i);
+            } else {
+                ArrayList<Integer> al = new ArrayList<>();
+                al.add(i);
+                buckets.put(v, al);
+            }
+        }
+        return buckets;
     }
 }
