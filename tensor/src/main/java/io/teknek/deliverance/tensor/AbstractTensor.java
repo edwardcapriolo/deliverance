@@ -291,7 +291,7 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
         for (int i = 0; i < size(); i++) {
             tmp += get(0, i);
         }
-        System.out.println(String.format("%s = %.5f", id, tmp));
+        System.out.printf("%s = %.5f%n", id, tmp);
     }
 
     public DType getDType(){

@@ -35,6 +35,8 @@ public class GeneratorSampler {
     private final float xtcThreshold;
     private final float xtcProbability;
 
+
+    @Deprecated
     /**
      *
      * @param abstractModel

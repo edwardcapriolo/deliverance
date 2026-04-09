@@ -27,7 +27,6 @@ public class ExcludeTopChoicePicker {
     private final AbstractModel abstractModel;
     private final Random random;
 
-
     public ExcludeTopChoicePicker(AbstractModel abstractModel, AbstractTensor logits, float xtcThreshold,
                                   float xtcProbabilty, Random random) {
         this.logits = logits;

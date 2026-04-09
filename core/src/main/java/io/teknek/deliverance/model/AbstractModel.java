@@ -257,12 +257,9 @@ public abstract class AbstractModel implements Generator, Classifier {
                     logits, sampleOutput.getOutputLayerNorm(), tokenizer, generatorParameters.guidedChoice.get(), responseContext.responseText);
            return new SamplerReturn(sampler.sample());
         } else {
-            GeneratorSampler sampler = new GeneratorSampler(this, last.slice(last.shape().first() - 1), temperature,
-                    random.nextFloat(), logits, sampleOutput.getOutputLayerNorm(),
-                    generatorParameters.logProbs.orElse(false), generatorParameters.topLogProbs.orElse(0), random,
-                    generatorParameters.xtcThreshold.orElse(0f),
-                    generatorParameters.xtcProbability.orElse(0f));
-            return sampler.sample();
+            DeliveranceLegacySampler legacy = new DeliveranceLegacySampler(this, generatorParameters,
+                    last.slice(last.shape().first() -1), logits, sampleOutput.getOutputLayerNorm(), random, random.nextFloat());
+            return legacy.sample();
         }
     }
 
@@ -274,14 +271,9 @@ public abstract class AbstractModel implements Generator, Classifier {
             //TODO should guided choice have logits how expesnive is two code paths going forward
             return new SamplerReturn(sampler1.sample());
         } else {
-            GeneratorSampler sampler1 = new GeneratorSampler(this, output, temperature,
-                    random.nextFloat(), logits, sampleOutput.getOutputLayerNorm(),
-                    generatorParameters.logProbs.orElse(false),
-                    generatorParameters.topLogProbs.orElse(0),
-                    random,
-                    generatorParameters.xtcThreshold.orElse(0f),
-                    generatorParameters.xtcProbability.orElse(0f));
-            return sampler1.sample();
+            DeliveranceLegacySampler legacy = new DeliveranceLegacySampler(this, generatorParameters, output, logits,
+                    sampleOutput.getOutputLayerNorm(), random, random.nextFloat());
+            return legacy.sample();
         }
     }
 
