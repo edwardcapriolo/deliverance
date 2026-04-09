@@ -1,6 +1,8 @@
 package io.teknek.deliverance.model;
 
 import com.codahale.metrics.Histogram;
+import com.codahale.metrics.Reservoir;
+import com.codahale.metrics.UniformReservoir;
 import io.teknek.deliverance.generator.LayerNorm;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.tensor.AbstractTensor;
@@ -131,6 +133,20 @@ public class GeneratorSampler {
                     return logProbs ? new SamplerReturn(maxi, topNLogProbs) : new SamplerReturn(maxi);
                 }
             }
+
+            /*
+            //Applying Temperature (
+            //): The logits are divided by the temperature parameter before the softmax function is applied.
+            for (int i = 0; i < abstractModel.config.vocabularySize; i++) {
+                float v = logits.get(0, i) / temperature;
+                logits.set(v, 0, i);
+            }
+            VectorTensorMathUtils.softMax(logits, 0, (int) logits.size());
+            SortedMap<Float, List<Integer>> buck = VectorTensorMathUtils.valueBuckets(logits);
+
+            int percentile = VectorTensorMathUtils.percentile(buck, .99f, logits.size());
+            return logProbs ? new SamplerReturn(percentile, topNLogProbs) : new SamplerReturn(percentile);
+            */
 
             float sum = 0;
             for (int i = 0; i < abstractModel.config.vocabularySize; i++) {

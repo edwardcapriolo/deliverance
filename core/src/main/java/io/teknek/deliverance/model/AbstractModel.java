@@ -179,16 +179,16 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.pool = pool;
     }
 
-
+    //Everything else is constuctor driven but im tired of adding things to that constructor
     public PreTrainedTokenizer getPreTrainedTokenizer() {
         return preTrainedTokenizer;
     }
 
-    //Everything else is constucto driven but im tied of adding things to that constructor
-
     public void setPreTrainedTokenizer(PreTrainedTokenizer preTrainedTokenizer) {
         this.preTrainedTokenizer = preTrainedTokenizer;
     }
+
+
 
     protected abstract EmbedInput loadInputWeights();
     protected abstract SampleOutput loadOutputWeights();

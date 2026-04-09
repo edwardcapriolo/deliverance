@@ -250,4 +250,28 @@ This code defines a function called `allocate_token_bitmask` that generates a bi
 
     }
 
+    @Test
+    public void topK() throws JsonProcessingException {
+        AbstractModel m = Gemma2Suite.getOrCreate();
+        String prompt = "Pick a random number between 1 and 9. Reply with only the pick.";
+        PromptSupport.Builder g = m.promptSupport().get().builder()
+                .addUserMessage(prompt);
+        var uuid = UUID.randomUUID();
+
+        Response response = m.generate(uuid, g.build(), new GeneratorParameters()
+                        .withTemperature(0.99f)
+                        .withMaxTokens(300)
+                        //.withLogProbs(true)
+                        //.withTopLogProbs(10)
+                , new GenerateEvent() {
+                    @Override
+                    public void emit(int next, String nextRaw, String nextCleaned, float timing) {
+                        System.out.println(nextCleaned);
+                    }
+                });
+        assertEquals("I picked the number **5**! \uD83C\uDFB2 \n" +
+                "<end_of_turn>".trim(), response.responseText.trim());
+
+    }
+
 }
