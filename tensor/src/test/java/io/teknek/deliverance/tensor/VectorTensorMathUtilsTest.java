@@ -1,7 +1,11 @@
 package io.teknek.deliverance.tensor;
 
+import io.teknek.deliverance.math.VectorMathUtils;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import org.junit.jupiter.api.Test;
+
+import java.util.function.IntUnaryOperator;
+import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -62,5 +66,10 @@ public class VectorTensorMathUtilsTest {
         assertEquals( "[2, 4]", x.get(3.0f).toString());
         assertEquals("{-3.0=[3], 0.0=[5, 6, 7, 8, 9], 1.0=[0], 2.0=[1], 3.0=[2, 4]}", x.toString());
         assertEquals(1, VectorTensorMathUtils.percentile(x, .90f, original.size()));
+    }
+
+    @Test
+    public void split(){
+
     }
 }

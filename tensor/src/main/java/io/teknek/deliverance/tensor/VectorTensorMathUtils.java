@@ -58,7 +58,7 @@ public class VectorTensorMathUtils {
     }
 
     public static int percentile(SortedMap<Float, List<Integer>> valueBuckets, float perc, long size) {
-        int element = (int) (size * perc) - 1;
+        int element = (int) ((size * perc) - 1);
         Iterator<Map.Entry<Float, List<Integer>>> iter = valueBuckets.entrySet().iterator();
         int ct = 0;
         while (iter.hasNext()) {
@@ -67,6 +67,8 @@ public class VectorTensorMathUtils {
             //This condition returns a slightly higher percentile then requested as we are not doing
             //and exact count inside the bucket
             if (ct >= element) {
+                System.out.println("arrived at element "+ ct);
+                //System.out.println(entry.getValue());
                 return entry.getValue().get(0); //could be a random one here
             }
         }

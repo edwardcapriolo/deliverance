@@ -16,7 +16,7 @@ import org.slf4j.LoggerFactory;
 
 import io.teknek.deliverance.DType;
 
-public abstract class AbstractTensor<V extends Vector<?>, T extends Number> implements AutoCloseable {
+public abstract class AbstractTensor<V extends Vector<?>, T extends Number> implements AutoCloseable, ReadableTensor {
     private static final Logger logger = LoggerFactory.getLogger(AbstractTensor.class);
 
     protected volatile String uid;
