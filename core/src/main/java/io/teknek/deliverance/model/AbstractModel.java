@@ -257,7 +257,7 @@ public abstract class AbstractModel implements Generator, Classifier {
                     logits, sampleOutput.getOutputLayerNorm(), tokenizer, generatorParameters.guidedChoice.get(), responseContext.responseText);
            return new SamplerReturn(sampler.sample());
         } else {
-            DeliveranceLegacySampler legacy = new DeliveranceLegacySampler(this, generatorParameters,
+            DeliveranceSampler legacy = new DeliveranceSampler(this, generatorParameters,
                     last.slice(last.shape().first() -1), logits, sampleOutput.getOutputLayerNorm(), random, random.nextFloat());
             return legacy.sample();
         }
@@ -271,7 +271,7 @@ public abstract class AbstractModel implements Generator, Classifier {
             //TODO should guided choice have logits how expesnive is two code paths going forward
             return new SamplerReturn(sampler1.sample());
         } else {
-            DeliveranceLegacySampler legacy = new DeliveranceLegacySampler(this, generatorParameters, output, logits,
+            DeliveranceSampler legacy = new DeliveranceSampler(this, generatorParameters, output, logits,
                     sampleOutput.getOutputLayerNorm(), random, random.nextFloat());
             return legacy.sample();
         }

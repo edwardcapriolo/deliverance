@@ -40,7 +40,7 @@ public class MaxTokenTest {
             PromptContext ctx = m.promptSupport().get().builder()
                     .addUserMessage(prompt)
                     .build();
-            Response k = m.generate(uuid, ctx, new GeneratorParameters()
+                Response k = m.generate(uuid, ctx, new GeneratorParameters()
                     .withNtokens(2048)
                     .withMaxTokens(17)
                     .withIncludeStopStrInOutput(false)

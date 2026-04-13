@@ -259,8 +259,10 @@ This code defines a function called `allocate_token_bitmask` that generates a bi
         var uuid = UUID.randomUUID();
 
         Response response = m.generate(uuid, g.build(), new GeneratorParameters()
-                        .withTemperature(0.99f)
-                        .withMaxTokens(300)
+                        .withTemperature(0.3f)
+                        .withMaxTokens(20)
+                        .withLogProbs(false)
+                        .withTopK(0.9999f)
                         //.withLogProbs(true)
                         //.withTopLogProbs(10)
                 , new GenerateEvent() {
@@ -269,6 +271,35 @@ This code defines a function called `allocate_token_bitmask` that generates a bi
                         System.out.println(nextCleaned);
                     }
                 });
+        System.out.println(response.responseText);
+        //assertEquals("I picked the number **5**! \uD83C\uDFB2 \n" +
+        //        "<end_of_turn>".trim(), response.responseText.trim());
+
+    }
+
+    @Test
+    public void temperatureAndXtc() throws JsonProcessingException {
+        AbstractModel m = Gemma2Suite.getOrCreate();
+        String prompt = "Pick a random number between 1 and 9. ";
+        PromptSupport.Builder g = m.promptSupport().get().builder()
+                .addUserMessage(prompt);
+        var uuid = UUID.randomUUID();
+
+        Response response = m.generate(uuid, g.build(), new GeneratorParameters()
+                        .withTemperature(0.3f)
+                        .withMaxTokens(20)
+                        .withLogProbs(true)
+                        .withTopLogProbs(10)
+                        .withXtcThreshold(0.1f)
+                        .withXtcProbability(0.5f)
+
+                , new GenerateEvent() {
+                    @Override
+                    public void emit(int next, String nextRaw, String nextCleaned, float timing) {
+                        System.out.println(nextCleaned);
+                    }
+                });
+        System.out.println(response.responseText);
         //assertEquals("I picked the number **5**! \uD83C\uDFB2 \n" +
         //        "<end_of_turn>".trim(), response.responseText.trim());
 

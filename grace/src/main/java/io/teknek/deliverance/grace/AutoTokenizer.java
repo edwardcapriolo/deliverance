@@ -32,8 +32,6 @@ public class AutoTokenizer {
         }
         ObjectMapper om = new ObjectMapper();
 
-
-
         String version = null;
         try {
             File vocab = new File(path, "vocab.json");
@@ -49,26 +47,8 @@ public class AutoTokenizer {
             if (!versionNode.isNull()){
                 version = versionNode.asText();
             }
-            JsonNode addedTokens = document.get("added_tokens");
-            SortedMap<Integer, AddedToken> addedTokenMap = new TreeMap<>();
-            if (!addedTokens.isNull()){
-                if (addedTokens.isArray()){
-                    for (JsonNode addedToken : addedTokens){
 
-                        int id = addedToken.get("id").asInt();
-                        String content = addedToken.get("content").asText();
-                        boolean singleWord = addedToken.get("single_word").asBoolean();
-                        boolean lstrip = addedToken.get("lstrip").asBoolean();
-                        boolean rstrip = addedToken.get("rstrip").asBoolean();
-                        boolean special = addedToken.get("special").asBoolean();
-                        JsonNode normalized =addedTokens.get("normalized");
-                        AddedToken a = new AddedToken(content, singleWord, lstrip, rstrip, special,
-                                normalized == null || normalized.isNull()? null: normalized.asBoolean());
-                        addedTokenMap.put(id, a);
-                    }
-                }
-            }
-
+            SortedMap<Integer, AddedToken> addedTokenMap = computeSortedTokenMap(document.get("added_tokens"));
 
             JsonNode configDotJson = om.readTree(new File(path,"config.json"));
             //We have models for this inside of deliverance
@@ -82,25 +62,37 @@ public class AutoTokenizer {
 
             //  "tokenizer_class": "Qwen2Tokenizer",
             String tclass = tokenizerConfigDotJson.get("tokenizer_class").asText();
-
-
             if (tclass.equals("Qwen2Tokenizer")) {
-                Quen2Tokenizer q = new Quen2Tokenizer(new HashMap<>(), Optional.empty(), Optional.empty(), Optional.empty(),
+                return new Quen2Tokenizer(new HashMap<>(), Optional.empty(), Optional.empty(), Optional.empty(),
                         Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
                         map, addedTokenMap, tokenizerConfig
                 );
-                return q;
             } else if (tclass.equals("GemmaTokenizer")) {
-                GemmaTokenizer q = new GemmaTokenizer(new HashMap<>(), Optional.empty(), Optional.empty(), Optional.empty(),
+                return new GemmaTokenizer(new HashMap<>(), Optional.empty(), Optional.empty(), Optional.empty(),
                         Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
                         map, addedTokenMap, tokenizerConfig
                 );
-                return q;
+            } else if (tclass.equals("LlamaTokenizer")){
+                return new GemmaTokenizer(new HashMap<>(), Optional.empty(), Optional.empty(), Optional.empty(),
+                        Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
+                        map, addedTokenMap, tokenizerConfig
+                );
+            } else if (tclass.equals("BertTokenizer")){
+                return new GemmaTokenizer(new HashMap<>(), Optional.empty(), Optional.empty(), Optional.empty(),
+                        Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
+                        map, addedTokenMap, tokenizerConfig
+                );
             }
+
+
             throw new io.teknek.dysfx.exception.UnreachableException("Could not find implementation");
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+
+
+
+
         /*
         Class<PreTrainedTokenizerBase> clazz =  null;
         if (tokenizerType.isPresent()){
@@ -117,6 +109,29 @@ public class AutoTokenizer {
     public static PreTrainedTokenizer fromPretrained(OwnerNameOrPath ownerNameOrPath) {
         return fromPretrained(ownerNameOrPath, Optional.empty(), Optional.empty(), Collections.emptyMap());
     }
+
+    public static SortedMap<Integer, AddedToken> computeSortedTokenMap(JsonNode addedTokens) {
+        SortedMap<Integer, AddedToken> addedTokenMap = new TreeMap<>();
+        if (!addedTokens.isNull()) {
+            if (addedTokens.isArray()) {
+                for (JsonNode addedToken : addedTokens) {
+                    int id = addedToken.get("id").asInt();
+                    String content = addedToken.get("content").asText();
+                    boolean singleWord = addedToken.get("single_word").asBoolean();
+                    boolean lstrip = addedToken.get("lstrip").asBoolean();
+                    boolean rstrip = addedToken.get("rstrip").asBoolean();
+                    boolean special = addedToken.get("special").asBoolean();
+                    JsonNode normalized = addedTokens.get("normalized");
+                    AddedToken a = new AddedToken(content, singleWord, lstrip, rstrip, special,
+                            normalized == null || normalized.isNull() ? null : normalized.asBoolean());
+                    addedTokenMap.put(id, a);
+                }
+            }
+
+        }
+        return addedTokenMap;
+    }
+
 
     public static class OwnerName{
         String owner;

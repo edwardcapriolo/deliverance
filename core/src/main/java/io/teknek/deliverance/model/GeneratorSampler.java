@@ -119,6 +119,7 @@ public class GeneratorSampler {
                 for (IndexValueToken token : topNLogProbs) {
                     token.logProb = logSum.get(0, token.index);
                 }
+                logSum.close();
             }
             Optional<IndexValueToken> chosen = Optional.empty();
             if (xtcThreshold != 0){

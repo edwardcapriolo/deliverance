@@ -71,6 +71,11 @@
             <version>${project.version}</version>
             <scope>compile</scope>
         </dependency>
+        <dependency>
+            <groupId>io.teknek.dysfx</groupId>
+            <artifactId>core</artifactId>
+            <version>${dysfx.version}</version>
+        </dependency>
     </dependencies>
 
     <build>
