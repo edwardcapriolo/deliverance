@@ -1,19 +1,20 @@
 ## Generator Sampling
 The Generative part of generative AI uses what we all know of as "Math Magic" to generate text/images/sound. 
-Let's go through some of the basics. 
+Let's go through some of the basics: 
 
 ## Temperature 0.0
-The default for temperature is 0.0f. The mile high view is that the model's (gemma2, llama) has
-given it's "best answer". The highest scoring token for each work.
+The default for temperature is 0.0f. The model's (gemma2, llama) has
+given it's "best answer". The highest scoring "logit" or token.
+
 ```java
 String prompt = "Pick a random number between 1 and 9. Reply with only the pick. ";
 PromptSupport.Builder g = m.promptSupport().get().builder()
         .addUserMessage(prompt);
 Response response = m.generate(UUID.randomUUID(), g.build(), new GeneratorParameters());
 ```
-Now, looking at the prompt, you or I may understand it to mean. It seems self-explanatory, however a lower
-powered model 1B params, may struggle with the question. When the struggle "random things come out" and tuning every
-parameter may not help. 
+Looking at the prompt, you or I may understand it means. It seems self-explanatory, however a lower
+powered model 1B params may struggle with the question. When the models struggle "random things" come out and tuning every
+parameter likely wont help. The model might answer like "I'm going to pick a number becaue I like picking my poison. Poisons are listed on the perioic table next to the milk in your grocers freezer."
 
 ## Assuming "understanding"
 
@@ -25,7 +26,7 @@ of choices based on how it was trained.
 | 343         | 5       | -0.9205227 | 
 | 235         | 3       | -1.1000000 |
 
-For logprob smaller negative numbers are better. We will show you have to convert to easier to understand values later.
+For logprob smaller negative numbers are better. We will show you how to convert to easier to understand values later.
 For reference the entire list looks like this:
 
 ```json
@@ -43,10 +44,10 @@ For reference the entire list looks like this:
 
 ## Understanding ?
 
-You may have noticed a few things about the example, the different numbers 1-9 have significantly different values
-and " " as well as "random" have snuck into the top list. The space could be the models instinct to pad the value, 
-and the "random" could be an attempt to start trying to "answer" the question with "prose" though we told it to only 
-give us a choice. 
+You may have noticed a few things in the JSON "toplogprobs" output: The different numbers 1-9 have significantly different values.
+Logits for " " and "random" have snuck into the top list. The space could be the models instinct to pad the value, 
+and the "random" could be an attempt to start trying to "answer" the question with "prose", even though we told it to only 
+give us a single pick. 
 
 ## temperature change
 
@@ -57,8 +58,8 @@ model some room to get "chatty".
    Response response = m.generate(uuid, g.build(), new GeneratorParameters().withTemperature(0.3f)
 ```
 
-Notice the probability column, that is calculated from the logprob. You can see here the distribution is a little wider.
-It wants to know start a sentence with "My" (0.010102594). That is a roughly 10% chance.
+Notice the probability column, that is calculated from the logprob. You can see here the distribution is wider then the first example.
+The model wants to start the sentence with "My" (0.010102594). That is a roughly 10% chance.
 
 ```json
 {"index":590,"value":15.83738,"token":" I","logProb":-5.8863173,"probability":0.0027771855},
@@ -70,7 +71,7 @@ It wants to know start a sentence with "My" (0.010102594). That is a roughly 10%
 {"index":2926,"value":17.128735,"token":"My","logProb":-4.594963,"probability":0.010102594}
 ```
 
-Step 1 for temperature is a function applied to every logit.
+The temperature transformation function applied to every logit.
 ```java
   try (AbstractTensor scaledLogits = model.getTensorCache().getDirty(logits.dType(), logits.shape())) {
         for (int i = 0; i < model.config.vocabularySize; i++) {
@@ -79,12 +80,12 @@ Step 1 for temperature is a function applied to every logit.
         }
    ...
 ```
-BTW. If you are doing the math in your head the common model has approximately 200,000-400,000 logits. All these
+The average model has approximately 200,000-400,000 logits. All these
 methods have a lot of bits to shift.
 
 If we divide all the logits by the same number we are going to either cause "clumping" ".99" or "stratification" "0.2". 
-Nothing stops us at 1, we could divide by 1.2! Either way reshaping does not do anything if we are only picking 
-the largest one. This is where the sampling phase comes in.
+Nothing stops us at 1, we could divide by 1.2! Either way, reshaping does not do anything if we are only picking 
+the largest one. This is where the sampling is important.
 
 ## Nucleus sampling default (top_p 0.1  10%)
 
@@ -100,7 +101,7 @@ For our problem there are only 9 good answers 1-9. If the model picks the "20th"
 If we asked the question, "Pick a city in the United States". There are thousands of good answers
 and the 20th would likely be fine.
 
-For top_p we sort the probabilities for each logit
+For top_p we sort the probabilities highest first for each logit 
 
 | 5  | 3  | ... |   shoe |
 |:---|:--:|----:|-------:|
