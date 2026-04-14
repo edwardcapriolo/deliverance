@@ -52,13 +52,13 @@ give us a single pick.
 
 Lets change the prompt to get some more diverse output. Notice I removed the "Reply with only the pick". This gives the 
 model some room to get "chatty".
-```json
+```java
    String prompt = "Pick a random number between 1 and 9.";
    Response response = m.generate(uuid, g.build(), new GeneratorParameters().withTemperature(0.3f)
 ```
 
-Notice the probability column, that is calculated from the logprob. You can see here the distribution is wider then the first example.
-The model wants to start the sentence with "My" (0.010102594). That is a roughly 10% chance.
+Notice the probability column which is calculated from the logprob. You can see here the distribution is wider then the first example.
+The model wants to start the sentence with "My" (0.010102594). That is a roughly 1% chance.
 
 ```json
 {"index":590,"value":15.83738,"token":" I","logProb":-5.8863173,"probability":0.0027771855},
@@ -79,8 +79,8 @@ The temperature transformation function is applied to every logit.
         }
    ...
 ```
-The average model has approximately 200,000-400,000 logits. All these
-methods have a lot of bits to shift.
+The average model has approximately 200,000-400,000 logits. All the methods have a lot of compute work to do
+to for each step.
 
 If we divide all the logits by the same number we are going to either cause "clumping" ".99" or "stratification" "0.2". 
 Nothing stops us at 1, we could divide by 1.2! Either way, reshaping does not do anything if we are only picking 
@@ -113,7 +113,7 @@ Top-p defaults to 10%. We cut-off the top 10% and rescale
 | .66 | .33 |
 
 The inference engine draws a psuedo-random number like 0.09, 9%. That would fall-in the 5 bucket as 0.05 < .63. 
-Another draw might generate 0.88 or 88%. That lands in the second bucket.
+Another draw might generate 0.88 or 88%. That lands in the second bucket. That is the magic of top_p we keep gathing choices until we get above a propbability, then we pick a random high probability choice.
 
 
 
