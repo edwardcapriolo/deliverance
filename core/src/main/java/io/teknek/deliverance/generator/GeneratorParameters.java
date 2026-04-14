@@ -22,6 +22,7 @@ public class GeneratorParameters {
     public Optional<Float> xtcThreshold = Optional.empty();
     public Optional<Float> xtcProbability = Optional.empty();
     public Optional<Float> topK = Optional.empty();
+    public Optional<Float> topP = Optional.empty();
 
     public GeneratorParameters withSeed(int seed){
         this.seed = Optional.of(seed);
@@ -81,6 +82,10 @@ public class GeneratorParameters {
     }
     public GeneratorParameters withTopK(float topK){
         this.topK = Optional.of(topK);
+        return this;
+    }
+    public GeneratorParameters withTopP(float topP){
+        this.topP = Optional.of(topP);
         return this;
     }
 }

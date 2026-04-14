@@ -82,10 +82,16 @@ public class AutoTokenizer {
                         Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
                         map, addedTokenMap, tokenizerConfig
                 );
+            } else if (tclass.equals("PreTrainedTokenizerFast")){
+                //Llama thing
+                return new GemmaTokenizer(new HashMap<>(), Optional.empty(), Optional.empty(), Optional.empty(),
+                        Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
+                        map, addedTokenMap, tokenizerConfig
+                );
             }
 
 
-            throw new io.teknek.dysfx.exception.UnreachableException("Could not find implementation");
+            throw new io.teknek.dysfx.exception.UnreachableException("Could not find implementation " + tclass);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
