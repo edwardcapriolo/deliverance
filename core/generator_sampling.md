@@ -13,21 +13,20 @@ PromptSupport.Builder g = m.promptSupport().get().builder()
 Response response = m.generate(UUID.randomUUID(), g.build(), new GeneratorParameters());
 ```
 Looking at the prompt, you or I may understand it means. It seems self-explanatory, however a lower
-powered model 1B params may struggle with the question. When the models struggle "random things" come out and tuning every
-parameter likely wont help. The model might answer like "I'm going to pick a number becaue I like picking my poison. Poisons are listed on the perioic table next to the milk in your grocers freezer."
+powered model (1B params) may struggle with the question. When the models struggle "random things" come out tuning usually doesn't help. The model might answer, "I'm going to pick a number becaue I like picking my poison. Poisons are listed on the perioic table next to the milk in your grocers freezer."
 
 ## Assuming "understanding"
 
 Let's assume the model is powerful enough that it does "understand". Internally it is going to come up with a bunch 
-of choices based on how it was trained.  
+of choices based on how it was trained (and the input prompt).  
 
 | logit/token | decoded | logprob    |
 |-------------|---------|------------|
 | 343         | 5       | -0.9205227 | 
 | 235         | 3       | -1.1000000 |
 
-For logprob smaller negative numbers are better. We will show you how to convert to easier to understand values later.
-For reference the entire list looks like this:
+For logprob negative numbers closer to 0 are better. We will show you how to convert to easier to understand values later.
+For reference the top 10 logprobs look list looks like this:
 
 ```json
         [{"index":9295,"value":12.151476,"token":"random","logProb":-9.054129},
