@@ -89,4 +89,26 @@ public class VectorTensorMathUtils {
         }
         return buckets;
     }
+
+    public static void normalize(AbstractTensor t){
+        double sum = 0.0;
+        for (int i = 0; i < t.shape().last(); i++) {
+            sum += t.get(0, i);
+        }
+        for (int i = 0; i < t.shape().last(); i++) {
+            t.set((float) (t.get(0, i) / sum), 0, i);
+        }
+    }
+    /*
+        public static double[] normalize(double[] input) {
+        double sum = 0;
+        for (double p : input) sum += p;
+
+        double[] normalized = new double[input.length];
+        for (int i = 0; i < input.length; i++) {
+            normalized[i] = input[i] / sum;
+        }
+        return normalized;
+    }
+     */
 }

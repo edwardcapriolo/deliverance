@@ -156,6 +156,9 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
         float temperature = this.parameters.temperature.orElse(0f);
         float xtcProbability = this.parameters.xtcProbability.orElse(0f);
         float xtcThreshold = this.parameters.xtcThreshold.orElse(0f);
+        if (parameters.xtcThreshold.isEmpty() && parameters.topK.isEmpty()) {
+            parameters.topP = Optional.of(0.10f);
+        }
 
         try (AbstractTensor embedding = layerNorm.forward(output)) {
             VectorMath.pchunk(0, model.config.vocabularySize, (chunkStart, chunkSize) -> {
@@ -216,7 +219,7 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
             }
             if (parameters.topK.isPresent()) {
                 float topK = parameters.topK.get();
-                LOGGER.info("max maxv {} maxi {} decoded {}", maxi, maxv, model.tokenizer.decode(maxi));
+                LOGGER.debug("max maxv {} maxi {} decoded {}", maxi, maxv, model.tokenizer.decode(maxi));
                 try (AbstractTensor scaledLogits = model.getTensorCache().getDirty(logits.dType(), logits.shape())) {
                     for (int i = 0; i < model.config.vocabularySize; i++) {
                         float v = logits.get(0, i) / temperature;
@@ -287,6 +290,67 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
                         return logProbs ? new SamplerReturn(maxi, topXLogProbs) : new SamplerReturn(maxi);
                     }
                 }
+            } else if (parameters.topP.isPresent()){
+                float topP = parameters.topP.get();
+                if (topP < 0 || topP > 1 ) {
+                    throw new IllegalArgumentException("topP must be between 0 and 1");
+                }
+                try (AbstractTensor scaledLogits = model.getTensorCache().getDirty(logits.dType(), logits.shape())) {
+                    for (int i = 0; i < model.config.vocabularySize; i++) {
+                        float v = logits.get(0, i) / temperature;
+                        scaledLogits.set(v, 0, i);
+                    }
+                    tensorMrSoftMax(scaledLogits, 0, scaledLogits.size());
+                    SortedMap<Float, List<Integer>> buck = VectorTensorMathUtils.valueBuckets(scaledLogits);
+                    SortedMap<Float, List<Integer>> bucketsHighFirst = buck.reversed();
+                    Iterator<Map.Entry<Float, List<Integer>>> jj = bucketsHighFirst.entrySet().iterator();
+                    double sum = 0.0;
+                    int count = 0;
+                    List<Integer> underCutoffLogits = new ArrayList<>();
+                    List<Float> underCutoffProb = new ArrayList<>();
+                    while (jj.hasNext() && sum < topP){
+                        Map.Entry<Float, List<Integer>> zz = jj.next();
+                        //System.out.println(zz);
+                        //System.out.println(model.tokenizer.decode(zz.getValue().get(0)));
+                        for (int i = 0; i < zz.getValue().size(); i++) {
+                            underCutoffLogits.add(zz.getValue().get(i));
+                            underCutoffProb.add(zz.getKey());
+                            sum = sum + zz.getKey();
+                            count++;
+                            if (sum >= topP){
+                                break;
+                            }
+                        }
+                    }
+
+                    try (AbstractTensor inProb = model.getTensorCache().getDirty(logits.dType(), TensorShape.of(count));
+                         AbstractTensor inLogits = model.getTensorCache().getDirty(logits.dType(), TensorShape.of(count))) {
+                        List<String> inToks = new ArrayList<>();
+                        for (int i = 0; i<count;i++){
+                            inLogits.set(underCutoffLogits.get(i), 0 , i);
+                            inProb.set(underCutoffProb.get(i), 0, i);
+                            inToks.add(model.tokenizer.decode((long) underCutoffLogits.get(i)));
+                        }
+                        //System.out.println(TensorDisplayUtil.pretty2dDisplayAll(inProb));
+                        //System.out.println(TensorDisplayUtil.pretty2dDisplayAll(inLogits));
+                        //System.out.println(inToks);
+                        VectorTensorMathUtils.normalize(inProb);
+                        //System.out.println(TensorDisplayUtil.pretty2dDisplayAll(inProb));
+                        float pick = random.nextFloat();
+                        //System.out.println("random pick "+ pick);
+                        int chosenScan = 0;
+                        //Linear Scan (O(N)): For small lists, a simple loop that subtracts weights from a random value until reaching zero is also effective.
+                        for (int i = 0; i < inProb.size(); i++) {
+                            pick = pick - inProb.get(0, i);
+                            if (pick <= 0){
+                                chosenScan = (int) inLogits.get(0, i);
+                                break;
+                            }
+                        }
+                        return new SamplerReturn(chosenScan);
+                    }
+                }
+
             } else {
                 throw new UnreachableException("There should be no way to get here");
             }
