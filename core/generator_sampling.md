@@ -70,7 +70,7 @@ The model wants to start the sentence with "My" (0.010102594). That is a roughly
 {"index":2926,"value":17.128735,"token":"My","logProb":-4.594963,"probability":0.010102594}
 ```
 
-The temperature transformation function applied to every logit.
+The temperature transformation function is applied to every logit.
 ```java
   try (AbstractTensor scaledLogits = model.getTensorCache().getDirty(logits.dType(), logits.shape())) {
         for (int i = 0; i < model.config.vocabularySize; i++) {
