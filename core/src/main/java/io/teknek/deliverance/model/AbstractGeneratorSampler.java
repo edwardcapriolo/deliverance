@@ -304,32 +304,15 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
                     SortedMap<Float, List<Integer>> buck = VectorTensorMathUtils.valueBuckets(scaledLogits);
                     SortedMap<Float, List<Integer>> bucketsHighFirst = buck.reversed();
                     Iterator<Map.Entry<Float, List<Integer>>> jj = bucketsHighFirst.entrySet().iterator();
-                    double sum = 0.0;
-                    int count = 0;
-                    List<Integer> underCutoffLogits = new ArrayList<>();
-                    List<Float> underCutoffProb = new ArrayList<>();
-                    while (jj.hasNext() && sum < topP){
-                        Map.Entry<Float, List<Integer>> zz = jj.next();
-                        //System.out.println(zz);
-                        //System.out.println(model.tokenizer.decode(zz.getValue().get(0)));
-                        for (int i = 0; i < zz.getValue().size(); i++) {
-                            underCutoffLogits.add(zz.getValue().get(i));
-                            underCutoffProb.add(zz.getKey());
-                            sum = sum + zz.getKey();
-                            count++;
-                            if (sum >= topP){
-                                break;
-                            }
-                        }
-                    }
+                    TopPSummary topPSummary = new TopPSummary(jj, topP);
 
-                    try (AbstractTensor inProb = model.getTensorCache().getDirty(logits.dType(), TensorShape.of(count));
-                         AbstractTensor inLogits = model.getTensorCache().getDirty(logits.dType(), TensorShape.of(count))) {
+                    try (AbstractTensor inProb = model.getTensorCache().getDirty(logits.dType(), TensorShape.of(topPSummary.count));
+                         AbstractTensor inLogits = model.getTensorCache().getDirty(logits.dType(), TensorShape.of(topPSummary.count))) {
                         List<String> inToks = new ArrayList<>();
-                        for (int i = 0; i<count;i++){
-                            inLogits.set(underCutoffLogits.get(i), 0 , i);
-                            inProb.set(underCutoffProb.get(i), 0, i);
-                            inToks.add(model.tokenizer.decode((long) underCutoffLogits.get(i)));
+                        for (int i = 0; i < topPSummary.count; i++) {
+                            inLogits.set(topPSummary.underCutoffLogits.get(i), 0, i);
+                            inProb.set(topPSummary.underCutoffProb.get(i), 0, i);
+                            inToks.add(model.tokenizer.decode((long) topPSummary.underCutoffLogits.get(i)));
                         }
                         //System.out.println(TensorDisplayUtil.pretty2dDisplayAll(inProb));
                         //System.out.println(TensorDisplayUtil.pretty2dDisplayAll(inLogits));
@@ -356,6 +339,27 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
             }
         }
 
+    }
+
+    class TopPSummary{
+        double sum = 0.0;
+        int count = 0;
+        List<Integer> underCutoffLogits = new ArrayList<>();
+        List<Float> underCutoffProb = new ArrayList<>();
+        public TopPSummary ( Iterator<Map.Entry<Float, List<Integer>>> jj, float topP) {
+            while (jj.hasNext() && sum < topP) {
+                Map.Entry<Float, List<Integer>> zz = jj.next();
+                for (int i = 0; i < zz.getValue().size(); i++) {
+                    underCutoffLogits.add(zz.getValue().get(i));
+                    underCutoffProb.add(zz.getKey());
+                    sum = sum + zz.getKey();
+                    count++;
+                    if (sum >= topP) {
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     public void computeLogProbs(AbstractTensor scaledLogits, PriorityQueue<IndexValueToken> logPobs){
