@@ -12,16 +12,16 @@ import org.springframework.http.HttpStatus;
 import java.util.*;
 
 public class ChatCompletionService {
-    public static Either<Error,PreparedRequest> mapRequest(Map<String, String> headers, AbstractModel model,
-                                      CreateChatCompletionRequest request){
+    public static Either<Error, PreparedRequest> mapRequest(Map<String, String> headers, AbstractModel model,
+                                                            CreateChatCompletionRequest request) {
         Optional<PromptSupport> ps = model.promptSupport();
-        if (ps.isEmpty()){
+        if (ps.isEmpty()) {
             return Either.Left(new Error().code(HttpStatus.BAD_REQUEST.value() + "")
                     .message("This model does mot have prompt support"));
         }
         PromptSupport.Builder builder = ps.get().builder();
         GeneratorParameters params = new GeneratorParameters();
-        if (request.getTemperature() != null){
+        if (request.getTemperature() != null) {
             params.withTemperature(request.getTemperature().floatValue());
         }
         try {
@@ -36,27 +36,39 @@ public class ChatCompletionService {
             return Either.Left(new Error().code(HttpStatus.BAD_REQUEST.value() + "")
                     .message("An error happened mapping tools" + e.getMessage()));
         }
-        if (request.getNtokens() != null){
+        if (request.getTopP()!= null){
+            params.withTopP(request.getTopP().floatValue());
+        }
+        if (request.getTopK()!=null){
+            params.withTopK(request.getTopK().floatValue());
+        }
+        if (request.getXtcThreshold()!=null){
+            params.withXtcThreshold(request.getXtcThreshold().floatValue());
+        }
+        if (request.getXtcProbability()!= null){
+            params.withXtcProbability(request.getXtcProbability().floatValue());
+        }
+        if (request.getNtokens() != null) {
             params.withNtokens(request.getNtokens());
         }
-        if (request.getSeed() != null){
+        if (request.getSeed() != null) {
             params.withSeed(request.getSeed());
         }
-        if(request.getStop() != null){
+        if (request.getStop() != null) {
             CreateChatCompletionRequestStop stop = request.getStop();
-            if (stop.getActualInstance() instanceof String){
+            if (stop.getActualInstance() instanceof String) {
                 params.withStopWords(Collections.singletonList(stop.getString()));
             } else {
                 params.withStopWords(stop.getListString());
             }
         }
-        if(request.getChatTemplate() != null){
+        if (request.getChatTemplate() != null) {
             builder.useChatTemplate(request.getChatTemplate());
         }
-        if(request.getMaxTokens() != null){
+        if (request.getMaxTokens() != null) {
             params.withMaxTokens(request.getMaxTokens());
         }
-        for (ChatCompletionRequestMessage m : request.getMessages()){
+        for (ChatCompletionRequestMessage m : request.getMessages()) {
             if (m.getActualInstance() instanceof ChatCompletionRequestUserMessage) {
                 ChatCompletionRequestUserMessageContent content = m.getChatCompletionRequestUserMessage().getContent();
                 if (content.getActualInstance() instanceof String) {
@@ -92,7 +104,7 @@ public class ChatCompletionService {
      * @param tool the input tool in the api format
      * @return the same inforamtion in the internal (deliverance prompt) format
      */
-    public static Tool convert(ChatCompletionTool tool){
+    public static Tool convert(ChatCompletionTool tool) {
         FunctionObject f = tool.getFunction();
         Function.Builder builder = Function.builder();
         builder.name(f.getName());
@@ -102,19 +114,19 @@ public class ChatCompletionService {
         if (required == null) {
             required = new ArrayList<>();
         }
-        Map<String, Object > properties = (Map<String,Object>) f.getParameters().get("properties");
+        Map<String, Object> properties = (Map<String, Object>) f.getParameters().get("properties");
         if (properties == null) {
             return Tool.from(builder.build());
         }
         for (Map.Entry<String, Object> entry : properties.entrySet()) {
             String name = entry.getKey();
-            Map<String,Object> value  = (Map<String,Object>) entry.getValue(); //{ "type": "string", "description": "State abbreviation" },
+            Map<String, Object> value = (Map<String, Object>) entry.getValue(); //{ "type": "string", "description": "State abbreviation" },
             String type = (String) value.get("type");
             String description = (String) value.get("description");
             builder.addParameter(name, type, description, required.contains(name));
 
         }
-        return  Tool.from(builder.build());
+        return Tool.from(builder.build());
     }
 
 }

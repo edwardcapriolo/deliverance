@@ -678,6 +678,29 @@ components:
     CreateChatCompletionRequest:
       type: object
       properties:
+        top_k:
+          description: pick token at this percentile, very high values like .9999 are suggested. top_p or xtc is a better option only applicable for non 0 temperature.
+          type: number
+          minimum: 0
+          maximum: 1
+          default: null
+          nullable: true
+        top_p:
+          description: nucleus sampling, sort by probability, pick top_p highest choose random token from sample, only apply to temperature 0
+          type: number
+          minimum: 0
+          maximum: 1
+          nullable: true
+        xtc_threshold:
+          type: number
+          minimum: 0
+          maximum: 1
+          nullable: true
+        xtc_probability:
+          type: number
+          minimum: 0
+          maximum: 1
+          nullable: true
         logprobs:
           description: Whether to return log probabilities of the output tokens or not. If true, returns the log probabilities of each output token returned in the `content` of `message`.
           type: boolean
@@ -719,9 +742,7 @@ components:
           type: integer
           nullable: true
           description: |
-            This feature is in Beta.
-            If specified, our system will make a best effort to sample deterministically, such that repeated requests with the same `seed` and parameters should return the same result.
-            Determinism is not guaranteed, and you should refer to the `system_fingerprint` response parameter to monitor changes in the backend.
+            a seed user to start of the random number generator for each request
 
         stop:
           description: |
