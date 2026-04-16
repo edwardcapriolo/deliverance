@@ -291,7 +291,7 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorCache;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import java.io.File;
 
@@ -303,9 +303,9 @@ public void semanticCodeSearch() {
     ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
     File localModelPath = fetch.maybeDownload();
     MetricRegistry mr = new MetricRegistry();
-    TensorCache tensorCache = new TensorCache(mr);
+    TensorCache arrayQueueTensorAllocator = new TensorCache(mr);
     AbstractModel embeddingModel = ModelSupport.loadEmbeddingModel(localModelPath, DType.F32, DType.F32,
-            new ConfigurableTensorProvider(tensorCache), mr, tensorCache, new KvBufferCacheSettings(true));
+            new ConfigurableTensorProvider(arrayQueueTensorAllocator), mr, arrayQueueTensorAllocator, new KvBufferCacheSettings(true));
 
     // Embed code snippets or documentation
     String query = "database connection initialization";

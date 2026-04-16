@@ -1,13 +1,10 @@
 package io.teknek.deliverance.tensor.operations;
 
-import com.codahale.metrics.MetricRegistry;
-import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.tensor.*;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -51,7 +48,7 @@ public class PanamaTensorOperationsTest {
         float control = controlOps.dotProduct(a, b, size);
         assertEquals(1024f, control);
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
-            PanamaTensorOperations p = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, Mockito.mock(TensorCacheIface.class), pool);
+            PanamaTensorOperations p = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, Mockito.mock(TensorAllocator.class), pool);
             assertEquals(control, p.dotProduct(a, b, 1024));
         }
     }
@@ -71,7 +68,7 @@ public class PanamaTensorOperationsTest {
         float control = controlOps.dotProduct(q8, q4, size);
         assertEquals(expected, control);
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
-            PanamaTensorOperations p = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, Mockito.mock(TensorCacheIface.class), pool);
+            PanamaTensorOperations p = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, Mockito.mock(TensorAllocator.class), pool);
             assertEquals(control, p.dotProduct(q8, q4, size), control * .01f);
         }
     }

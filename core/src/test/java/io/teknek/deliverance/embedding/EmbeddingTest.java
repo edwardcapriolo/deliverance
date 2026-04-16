@@ -7,13 +7,12 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorCache;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.util.Arrays;
-import java.util.concurrent.ForkJoinPool;
 
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -26,10 +25,10 @@ public class EmbeddingTest {
         ModelFetcher fetch = new ModelFetcher("sentence-transformers", "all-MiniLM-L6-v2");
         File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
-        TensorCache tensorCache = new TensorCache(mr);
+        ArrayQueueTensorAllocator arrayQueueTensorAllocator = new ArrayQueueTensorAllocator(mr);
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
-             AbstractModel model = ModelSupport.loadEmbeddingModel(f, DType.F32, DType.F32, new ConfigurableTensorProvider(tensorCache, pool),
-                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true))) {
+             AbstractModel model = ModelSupport.loadEmbeddingModel(f, DType.F32, DType.F32, new ConfigurableTensorProvider(arrayQueueTensorAllocator, pool),
+                new MetricRegistry(), arrayQueueTensorAllocator, new KvBufferCacheSettings(true))) {
             long [] ids = model.getTokenizer().encode(text);
             assertEquals("[101, 2023, 2003, 1037, 3231, 6254, 2055, 3698, 4083, 102]", Arrays.toString(ids));
             float[] embedding = model.embed(text, PoolingType.AVG);
@@ -45,11 +44,11 @@ public class EmbeddingTest {
         ModelFetcher fetch = new ModelFetcher("sentence-transformers", "all-MiniLM-L6-v2");
         File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
-        TensorCache tensorCache = new TensorCache(mr);
+        ArrayQueueTensorAllocator arrayQueueTensorAllocator = new ArrayQueueTensorAllocator(mr);
 
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
-                     AbstractModel model = ModelSupport.loadEmbeddingModel(f, DType.F32, DType.F32, new ConfigurableTensorProvider(tensorCache, pool),
-                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true))) {
+                     AbstractModel model = ModelSupport.loadEmbeddingModel(f, DType.F32, DType.F32, new ConfigurableTensorProvider(arrayQueueTensorAllocator, pool),
+                new MetricRegistry(), arrayQueueTensorAllocator, new KvBufferCacheSettings(true))) {
             //long start = System.currentTimeMillis();
             //for (int i=0;i<1000; i++) {
                 long[] ids = model.getTokenizer().encode(text);

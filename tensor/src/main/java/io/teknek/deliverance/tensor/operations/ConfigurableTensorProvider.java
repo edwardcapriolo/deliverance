@@ -1,7 +1,7 @@
 package io.teknek.deliverance.tensor.operations;
 
 import io.teknek.deliverance.math.WrappedForkJoinPool;
-import io.teknek.deliverance.tensor.TensorCacheIface;
+import io.teknek.deliverance.tensor.TensorAllocator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,7 +12,7 @@ public class ConfigurableTensorProvider {
     private static final Logger LOGGER = LoggerFactory.getLogger(ConfigurableTensorProvider.class);
     private final AtomicReference<TensorOperations> operations = new AtomicReference<>();
 
-    public ConfigurableTensorProvider(TensorCacheIface tensorCache, WrappedForkJoinPool pool){
+    public ConfigurableTensorProvider(TensorAllocator tensorCache, WrappedForkJoinPool pool){
         if (MachineSpec.VECTOR_TYPE == MachineSpec.Type.NONE){
             LOGGER.warn("Unable to determine vector type using NaiveTensorOperations");
             operations.set(new NaiveTensorOperations());

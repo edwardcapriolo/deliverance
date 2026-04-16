@@ -3,7 +3,7 @@ package io.teknek.deliverance.geneator;
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.generator.LayerNorm;
 import io.teknek.deliverance.tensor.AbstractTensor;
-import io.teknek.deliverance.tensor.TensorCache;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.operations.PanamaTensorOperationsTest;
 import org.junit.jupiter.api.Assertions;
@@ -67,7 +67,7 @@ public class LayerNormTest {
                 inputTensor.set(goldInput[i][j], i, j);
             }
         }
-        TensorCache tc = new TensorCache(new MetricRegistry());
+        ArrayQueueTensorAllocator tc = new ArrayQueueTensorAllocator(new MetricRegistry());
         AbstractTensor<?,?> output = tc.get(inputTensor.getDType(), inputTensor.shape());
 
         AbstractTensor<?,?> weights = PanamaTensorOperationsTest.allOnes(7);

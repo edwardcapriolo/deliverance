@@ -125,8 +125,8 @@ public class KvBufferCache implements Closeable {
             //this looks more and more like two subclasses vs an if statement
             if (kvBufferCacheSettings.isEphemeral()) {
                 this.raf = null;
-                TensorCache tc = kvBufferCacheSettings.getDedicatedCache() == null ?
-                        model.getTensorCache(): kvBufferCacheSettings.getDedicatedCache();
+                TensorAllocator tc = kvBufferCacheSettings.getDedicatedCache() == null ?
+                        model.getTensorAllocator(): kvBufferCacheSettings.getDedicatedCache();
                 this.tensor = tc.get(model.getWorkingDType(), pageCtx.pageShape);
             } else {
                 try {

@@ -35,7 +35,7 @@ public class LayerNorm {
 
     public AbstractTensor forward(AbstractTensor input, int offset, int length) {
         long start = System.currentTimeMillis();
-        AbstractTensor output = model.getTensorCache().getDirty(input.dType(), input.shape());
+        AbstractTensor output = model.getTensorAllocator().getDirty(input.dType(), input.shape());
         performLayerNorm(input, output, weights, bias, model.getConfig().layerNormEps, offset, length,
                 model.getConfig().embeddingLength);
         long end = System.currentTimeMillis();

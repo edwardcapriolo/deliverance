@@ -4,15 +4,15 @@ import javax.annotation.Nullable;
 import java.io.File;
 
 public class KvBufferCacheSettings {
-    private final Boolean useTensorCache;
+    private final Boolean useTensorAllocator;
     private final File workingDirectory;
-    private final TensorCache dedicatedCache;
+    private final TensorAllocator dedicatedCache;
 
     /**
      * Use the tensor cache shared with model
      */
     public KvBufferCacheSettings(boolean ephemeral) {
-        this.useTensorCache = ephemeral;
+        this.useTensorAllocator = ephemeral;
         this.dedicatedCache = null;
         this.workingDirectory = null;
     }
@@ -20,20 +20,20 @@ public class KvBufferCacheSettings {
     /**
      * Use a dedicated tensor cache
      */
-    public KvBufferCacheSettings(TensorCache cache){
-        this.useTensorCache = true;
+    public KvBufferCacheSettings(TensorAllocator cache){
+        this.useTensorAllocator = true;
         this.dedicatedCache = cache;
         this.workingDirectory = null;
     }
 
     public KvBufferCacheSettings(File workingDirectory) {
         this.workingDirectory = workingDirectory;
-        this.useTensorCache = false;
+        this.useTensorAllocator = false;
         this.dedicatedCache = null;
     }
 
     public boolean isEphemeral() {
-        return Boolean.TRUE.equals(useTensorCache);
+        return Boolean.TRUE.equals(useTensorAllocator);
     }
 
     @Nullable
@@ -42,7 +42,7 @@ public class KvBufferCacheSettings {
     }
 
     @Nullable
-    public TensorCache getDedicatedCache(){
+    public TensorAllocator getDedicatedCache(){
         return this.dedicatedCache;
     }
 }

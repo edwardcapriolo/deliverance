@@ -10,7 +10,7 @@ import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.GenerateEvent;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.*;
-import io.teknek.deliverance.tensor.TensorCache;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.toolcallparser.LlamaToolCallParser;
 import org.junit.jupiter.api.Assertions;
@@ -28,7 +28,7 @@ public class MistralIT {
 
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
              AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
-                .withTensorProvider(new ConfigurableTensorProvider(new TensorCache(new MetricRegistry()), pool)).build()) {
+                .withTensorProvider(new ConfigurableTensorProvider(new ArrayQueueTensorAllocator(new MetricRegistry()), pool)).build()) {
             String prompt = "Who is Edward Capriolo";
             PromptSupport.Builder g = model.promptSupport().get().builder()
                     .addUserMessage(prompt);
