@@ -3,7 +3,8 @@ package net.deliverance.http;
 import com.codahale.metrics.MetricRegistry;
 
 import io.teknek.deliverance.math.WrappedForkJoinPool;
-import io.teknek.deliverance.tensor.TensorCache;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
+import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NativeGPUTensorOperations;
 import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
@@ -20,8 +21,8 @@ public class Config {
     }
 
     @Bean
-    public TensorCache tensorCache(){
-        return new TensorCache(metricRegistry());
+    public TensorAllocator tensorCache(){
+        return new ArrayQueueTensorAllocator(metricRegistry());
     }
 
     @Bean

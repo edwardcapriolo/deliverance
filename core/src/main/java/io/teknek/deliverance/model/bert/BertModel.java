@@ -13,8 +13,8 @@ import io.teknek.deliverance.model.TokenRenderer;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
@@ -29,11 +29,11 @@ public class BertModel extends AbstractModel {
 
     public BertModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer tokenizer, DType workingDType, DType workingQType,
                      Optional<DType> modelQType, ConfigurableTensorProvider configurableTensorProvider,
-                     MetricRegistry metricRegistry, TensorCache tensorCache, KvBufferCacheSettings kvBufferCacheSettings,
+                     MetricRegistry metricRegistry, ArrayQueueTensorAllocator arrayQueueTensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
                      TokenRenderer tokenRenderer, ToolCallParser toolCallParser, WrappedForkJoinPool pool) {
         //note: jLAMA uses FOrward_passs
         super(inferenceType, c, w, tokenizer, workingDType, workingQType, modelQType,
-                configurableTensorProvider, metricRegistry, tensorCache, kvBufferCacheSettings, tokenRenderer, toolCallParser, pool);
+                configurableTensorProvider, metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, tokenRenderer, toolCallParser, pool);
     }
 
     protected AbstractTensor loadWeight(String name) {

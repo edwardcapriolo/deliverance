@@ -1,8 +1,6 @@
 package io.teknek.deliverance.model;
 
 import com.codahale.metrics.Histogram;
-import com.codahale.metrics.Reservoir;
-import com.codahale.metrics.UniformReservoir;
 import io.teknek.deliverance.generator.LayerNorm;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.tensor.AbstractTensor;
@@ -114,7 +112,7 @@ public class GeneratorSampler {
                 }
             }
             if (logProbs) {
-                AbstractTensor logSum = abstractModel.getTensorCache().getDirty(logits.dType(), logits.shape());
+                AbstractTensor logSum = abstractModel.getTensorAllocator().getDirty(logits.dType(), logits.shape());
                 VectorTensorMathUtils.logSumExpTensor(logSum, logits);
                 for (IndexValueToken token : topNLogProbs) {
                     token.logProb = logSum.get(0, token.index);

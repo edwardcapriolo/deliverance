@@ -8,7 +8,7 @@ import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.model.NoOpTokenizerRenderer;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorCache;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -43,17 +43,17 @@ class MultiModelConfiguration {
 
     private final MultiModelProperties multiModelProperties;
     private final MetricRegistry metricRegistry;
-    private final TensorCache tensorCache;
+    private final ArrayQueueTensorAllocator arrayQueueTensorAllocator;
     private final ConfigurableTensorProvider provider;
     private final WrappedForkJoinPool pool;
 
     public MultiModelConfiguration(MultiModelProperties multiModelProperties, MetricRegistry metricRegistry,
-                                   TensorCache tensorCache,
+                                   ArrayQueueTensorAllocator arrayQueueTensorAllocator,
                                    ConfigurableTensorProvider provider,
                                    WrappedForkJoinPool pool){
         this.multiModelProperties = multiModelProperties;
         this.metricRegistry = metricRegistry;
-        this.tensorCache = tensorCache;
+        this.arrayQueueTensorAllocator = arrayQueueTensorAllocator;
         this.provider = provider;
         this.pool = pool;
     }
@@ -74,12 +74,12 @@ class MultiModelConfiguration {
         File f = fetch.maybeDownload();
         if ("EMBEDDING".equalsIgnoreCase(config.getInferenceType())){
             AbstractModel model = ModelSupport.loadEmbeddingModel(f, DType.F32, DType.I8, provider,
-                    metricRegistry, tensorCache, new KvBufferCacheSettings(true));
+                    metricRegistry, arrayQueueTensorAllocator, new KvBufferCacheSettings(true));
             return model;
         } else if ("GENERATION".equalsIgnoreCase(config.getInferenceType())){
             //TODO switch to builder/auto here
             AbstractModel model = ModelSupport.loadModel(f, DType.F32, DType.I8, provider,
-                    metricRegistry, tensorCache, new KvBufferCacheSettings(true), fetch,
+                    metricRegistry, arrayQueueTensorAllocator, new KvBufferCacheSettings(true), fetch,
                     new NoOpTokenizerRenderer(), new DefaultToolCallParser(), pool);
             return model;
         } else {

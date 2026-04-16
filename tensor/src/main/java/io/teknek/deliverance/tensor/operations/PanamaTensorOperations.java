@@ -49,10 +49,10 @@ public final class PanamaTensorOperations implements TensorOperations {
     );
 
     private final MachineSpec.Type vectorType;
-    private final TensorCacheIface tensorCache;
+    private final TensorAllocator tensorCache;
     private final WrappedForkJoinPool pool;
 
-    public PanamaTensorOperations(MachineSpec.Type vectorType, TensorCacheIface tensorCache, WrappedForkJoinPool pool) {
+    public PanamaTensorOperations(MachineSpec.Type vectorType, TensorAllocator tensorCache, WrappedForkJoinPool pool) {
         this.vectorType = vectorType;
         this.tensorCache = tensorCache;
         this.pool = pool;

@@ -16,8 +16,9 @@ import io.teknek.deliverance.model.mixtral.MixtralModelType;
 import io.teknek.deliverance.model.qwen2.Qwen2ModelType;
 import io.teknek.deliverance.safetensors.*;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorCache;
+import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
 import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
@@ -34,7 +35,6 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.nio.ByteOrder;
 import java.nio.file.Path;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -85,7 +85,7 @@ public class ModelSupport {
 
     public static AbstractModel loadModel(File model, DType workingMemoryType, DType workingQuantizationType,
                                           ConfigurableTensorProvider configurableTensorProvider,
-                                          MetricRegistry metricRegistry, TensorCache tensorCache,
+                                          MetricRegistry metricRegistry,    TensorAllocator arrayQueueTensorAllocator,
                                           KvBufferCacheSettings kvBufferCacheSettings,
                                           ModelFetcher fetcher, TokenRenderer tr, ToolCallParser toolCallParser,
                                           WrappedForkJoinPool pool) {
@@ -102,12 +102,12 @@ public class ModelSupport {
 
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
                     WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class,
-                    ConfigurableTensorProvider.class, MetricRegistry.class, TensorCache.class,
+                    ConfigurableTensorProvider.class, MetricRegistry.class, ArrayQueueTensorAllocator.class,
                     KvBufferCacheSettings.class, TokenRenderer.class, ToolCallParser.class, WrappedForkJoinPool.class);
 
             AbstractModel am = cons.newInstance(AbstractModel.InferenceType.FULL_GENERATION, config, wl, tokenizer,
                     workingMemoryType, workingQuantizationType, Optional.empty(), configurableTensorProvider,
-                    metricRegistry, tensorCache, kvBufferCacheSettings, tr, toolCallParser, pool);
+                    metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, tr, toolCallParser, pool);
 
             try {
                 PreTrainedTokenizer t = AutoTokenizer.fromPretrained(new AutoTokenizer.OwnerNameOrPath(
@@ -126,7 +126,7 @@ public class ModelSupport {
     //Note complete copy of above only different enuum
     public static AbstractModel loadClassificationModel(File model, DType workingMemoryType, DType workingQuantizationType,
                                           ConfigurableTensorProvider configurableTensorProvider,
-                                          MetricRegistry metricRegistry, TensorCache tensorCache,
+                                          MetricRegistry metricRegistry, TensorAllocator arrayQueueTensorAllocator,
                                           KvBufferCacheSettings kvBufferCacheSettings,
                                           ModelFetcher fetcher, TokenRenderer tr, ToolCallParser toolCallParser,
                                           WrappedForkJoinPool pool) {
@@ -143,12 +143,12 @@ public class ModelSupport {
 
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
                     WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class,
-                    ConfigurableTensorProvider.class, MetricRegistry.class, TensorCache.class,
+                    ConfigurableTensorProvider.class, MetricRegistry.class, ArrayQueueTensorAllocator.class,
                     KvBufferCacheSettings.class, TokenRenderer.class, ToolCallParser.class, WrappedForkJoinPool.class);
 
             return cons.newInstance(AbstractModel.InferenceType.FULL_CLASSIFICATION, config, wl, tokenizer,
                     workingMemoryType, workingQuantizationType, Optional.empty(), configurableTensorProvider,
-                    metricRegistry, tensorCache, kvBufferCacheSettings, tr, toolCallParser, pool);
+                    metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, tr, toolCallParser, pool);
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }
@@ -158,15 +158,15 @@ public class ModelSupport {
 
     public static AbstractModel  loadEmbeddingModel(File model, DType workingMemoryType, DType workingQuantizationType,
                                                     ConfigurableTensorProvider configurableTensorProvider,
-                                                    MetricRegistry metricRegistry, TensorCache tensorCache,
+                                                    MetricRegistry metricRegistry, ArrayQueueTensorAllocator arrayQueueTensorAllocator,
                                                     KvBufferCacheSettings kvBufferCacheSettings) {
      return load(AbstractModel.InferenceType.FULL_EMBEDDING, model, workingMemoryType, workingQuantizationType,
-             configurableTensorProvider, metricRegistry, tensorCache,kvBufferCacheSettings);
+             configurableTensorProvider, metricRegistry, arrayQueueTensorAllocator,kvBufferCacheSettings);
 
     }
     protected static AbstractModel load(AbstractModel.InferenceType infType, File model, DType workingMemoryType, DType workingQuantizationType,
                                  ConfigurableTensorProvider configurableTensorProvider,
-                                 MetricRegistry metricRegistry, TensorCache tensorCache,
+                                 MetricRegistry metricRegistry, ArrayQueueTensorAllocator arrayQueueTensorAllocator,
                                  KvBufferCacheSettings kvBufferCacheSettings) {
         File configFile = new File(model, "config.json");
         if (!configFile.exists()){
@@ -182,12 +182,12 @@ public class ModelSupport {
 
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
                     WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class,
-                    ConfigurableTensorProvider.class, MetricRegistry.class, TensorCache.class,
+                    ConfigurableTensorProvider.class, MetricRegistry.class, ArrayQueueTensorAllocator.class,
                     KvBufferCacheSettings.class, TokenRenderer.class, ToolCallParser.class, WrappedForkJoinPool.class) ;
 
             return cons.newInstance(infType, config, wl, tokenizer,
                     workingMemoryType, workingQuantizationType, Optional.empty(), configurableTensorProvider,
-                    metricRegistry, tensorCache, kvBufferCacheSettings, new NoOpTokenizerRenderer(), new DefaultToolCallParser(),
+                    metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, new NoOpTokenizerRenderer(), new DefaultToolCallParser(),
                     new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores()));
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);

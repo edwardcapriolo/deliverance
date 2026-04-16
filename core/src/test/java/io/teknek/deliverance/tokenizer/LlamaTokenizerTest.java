@@ -5,16 +5,14 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.integration.TinyLlamaSuite;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.NoOpTokenizerRenderer;
-import io.teknek.deliverance.model.TokenRenderer;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.model.llama.LlamaTokenizer;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorCache;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -32,7 +30,7 @@ public class LlamaTokenizerTest {
         String modelOwner = "tjake";
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         File f = fetch.maybeDownload();
-        TensorCache tc = new TensorCache(new MetricRegistry());
+        ArrayQueueTensorAllocator tc = new ArrayQueueTensorAllocator(new MetricRegistry());
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
              AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(tc, pool),
                 new MetricRegistry(), tc, new KvBufferCacheSettings(true), fetch,

@@ -5,7 +5,6 @@ import com.google.common.primitives.Ints;
 
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
-import java.util.Optional;
 import java.util.UUID;
 
 import jdk.incubator.vector.Vector;
@@ -24,7 +23,7 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
     protected final DType dType;
     protected final AbstractTensor[] sliceCache;
     protected final int stride;
-    protected volatile TensorCacheIface originCache = null;
+    protected volatile TensorAllocator originCache = null;
 
 
     protected AbstractTensor(DType dType, TensorShape shape, boolean cacheSlices) {
@@ -237,14 +236,16 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
     /** Zero out the tensor */
     public abstract void clear();
 
-
+    /**
+     * If the tensor was allocated from a TensorAllocator release it so it may be reused again
+     */
     public void close() {
         if (originCache != null) {
             originCache.release(this);
         }
     }
 
-    void setOwnerCache(TensorCacheIface cache) {
+    void setOwnerCache(TensorAllocator cache) {
         this.originCache = cache;
     }
 

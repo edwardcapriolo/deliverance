@@ -37,7 +37,7 @@ public class ChatMojo extends AbstractMojo {
         DType quantized = DType.valueOf(modelConfig.getQuantizedMemType());
         AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(fetch);
         WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
-        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(builder.getCache(), pool).get());
+        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(builder.getAllocator(), pool).get());
         builder.withWorkingQuantType(working);
         builder.withWorkingQuantType(quantized);
         builder.withTensorProvider(new ConfigurableTensorProvider(operation));

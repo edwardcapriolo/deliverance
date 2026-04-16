@@ -2,7 +2,6 @@ package io.teknek.deliverance.integration;
 
 import com.codahale.metrics.MetricRegistry;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.generator.GeneratorParameters;
@@ -11,12 +10,11 @@ import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
 import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
@@ -37,11 +35,11 @@ public class GemmaPromptIT {
         ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
         File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
-        TensorCache tensorCache = new TensorCache(mr);
+        ArrayQueueTensorAllocator arrayQueueTensorAllocator = new ArrayQueueTensorAllocator(mr);
         WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
-        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache, pool).get());
+        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(arrayQueueTensorAllocator, pool).get());
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                mr, tensorCache, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer(), new DefaultToolCallParser(), pool)) {
+                mr, arrayQueueTensorAllocator, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer(), new DefaultToolCallParser(), pool)) {
             String prompt = """
                     You are a software engineer.
                     

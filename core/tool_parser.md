@@ -17,7 +17,7 @@ tool to flip a coin.
 ```
 Tool tool = Tool.from(Function.builder().name("flip_coin").description("This methods will flip a coin. The result will be H for he
 try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),                  
-        new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch, new TokenizerRenderer())) {                    
+        new MetricRegistry(), arrayQueueTensorAllocator, new KvBufferCacheSettings(true), fetch, new TokenizerRenderer())) {                    
     String prompt = "I would like to decide who goes first by a coin flip";                                                       
     PromptSupport.Builder g = m.promptSupport().get().builder()                                                                   
             .useChatTemplate(text)                                                                                                
