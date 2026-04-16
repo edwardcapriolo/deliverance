@@ -1,6 +1,5 @@
 package io.teknek.deliverance.generator;
 
-import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.model.AbstractModel;
@@ -100,8 +99,8 @@ public class MLPBlock implements FeedForward {
         int batchSize = lnemb.shape().first();
         try (
                 //TODO ensure its ok to use dirty here do we write the entire tensor
-                AbstractTensor buf = model.getTensorCache().getDirty(model.getWorkingDType(), TensorShape.of(batchSize, hiddenLength));
-                AbstractTensor buf2 = model.getTensorCache().getDirty(model.getWorkingDType(), TensorShape.of(batchSize, hiddenLength));
+                AbstractTensor buf = model.getTensorAllocator().getDirty(model.getWorkingDType(), TensorShape.of(batchSize, hiddenLength));
+                AbstractTensor buf2 = model.getTensorAllocator().getDirty(model.getWorkingDType(), TensorShape.of(batchSize, hiddenLength));
         ) {
 
             batchResults[0] = buf;

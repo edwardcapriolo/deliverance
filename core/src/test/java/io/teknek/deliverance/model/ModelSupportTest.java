@@ -29,11 +29,11 @@ public class ModelSupportTest {
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
-        TensorCache tc = new TensorCache(new MetricRegistry());
+        ArrayQueueTensorAllocator tc = new ArrayQueueTensorAllocator(new MetricRegistry());
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
 
              AbstractModel abstractModel = ModelSupport.loadModel(f, DType.F32, DType.F32,
-                     new ConfigurableTensorProvider(tc, pool), mr, new TensorCache(mr),
+                     new ConfigurableTensorProvider(tc, pool), mr, new ArrayQueueTensorAllocator(mr),
                      new KvBufferCacheSettings(true), fetch, new TokenizerRenderer(), new DefaultToolCallParser(), pool)) {
 
             String prompt = "What comes next in the sequence? 1, 2, 3 ";
@@ -82,11 +82,11 @@ public class ModelSupportTest {
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         File f = fetch.maybeDownload();
 
-        TensorCache tc = new TensorCache(new MetricRegistry());
-        TensorCache dedicatedKvCache = new TensorCache(new MetricRegistry());
+        ArrayQueueTensorAllocator tc = new ArrayQueueTensorAllocator(new MetricRegistry());
+        ArrayQueueTensorAllocator dedicatedKvCache = new ArrayQueueTensorAllocator(new MetricRegistry());
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
              AbstractModel abstractModel = ModelSupport.loadModel(f, DType.F32, DType.F32, new ConfigurableTensorProvider(tc, pool),
-                     new MetricRegistry(), new TensorCache(new MetricRegistry()),
+                     new MetricRegistry(), new ArrayQueueTensorAllocator(new MetricRegistry()),
                      new KvBufferCacheSettings(dedicatedKvCache), fetch, new TokenizerRenderer(), new DefaultToolCallParser(), pool)) {
             String prompt = "What comes next in the sequence? 1, 2, 3 ";
             PromptContext ctx = PromptContext.of(prompt);

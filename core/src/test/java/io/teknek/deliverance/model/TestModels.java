@@ -6,8 +6,8 @@ import io.teknek.deliverance.embedding.PoolingType;
 import io.teknek.deliverance.math.VectorMathUtils;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -27,11 +27,11 @@ public class TestModels {
         File localModelPath = fetch.maybeDownload();
 
         MetricRegistry mr = new MetricRegistry();
-        TensorCache tensorCache = new TensorCache(mr);
+        ArrayQueueTensorAllocator arrayQueueTensorAllocator = new ArrayQueueTensorAllocator(mr);
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
-            ConfigurableTensorProvider provider = new ConfigurableTensorProvider(tensorCache, pool);
+            ConfigurableTensorProvider provider = new ConfigurableTensorProvider(arrayQueueTensorAllocator, pool);
             AbstractModel model = ModelSupport.loadEmbeddingModel(localModelPath, DType.F32, DType.F32, provider,
-                    mr, tensorCache, new KvBufferCacheSettings(true));
+                    mr, arrayQueueTensorAllocator, new KvBufferCacheSettings(true));
             Assertions.assertEquals(384, model.getConfig().embeddingLength, "LEAF model should have 384 embedding dimensions");
 
             String query1 = "What is artificial intelligence?";

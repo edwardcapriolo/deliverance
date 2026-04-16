@@ -1,17 +1,13 @@
 package io.teknek.deliverance.vibrant;
 
-import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
-import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
-import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
 import org.apache.maven.plugin.AbstractMojo;
@@ -131,7 +127,7 @@ public class VibrantMojo extends AbstractMojo {
         AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(fetch);
         WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(
-                new ConfigurableTensorProvider(builder.getCache(), pool).get());
+                new ConfigurableTensorProvider(builder.getAllocator(), pool).get());
         builder.withWorkingQuantType(working);
         builder.withWorkingQuantType(quantized);
         builder.withTensorProvider(new ConfigurableTensorProvider(operation));

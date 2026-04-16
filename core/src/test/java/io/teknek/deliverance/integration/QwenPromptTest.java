@@ -10,8 +10,8 @@ import io.teknek.deliverance.model.qwen2.Qwen2ModelType;
 import io.teknek.deliverance.model.qwen2.Qwen2TokenizerRenderer;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.*;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
 import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
@@ -32,14 +32,14 @@ public class  QwenPromptTest {
         ModelFetcher fetch = new ModelFetcher("tjake", "Qwen2.5-0.5B-Instruct-JQ4");
         File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
-        TensorCache tensorCache = new TensorCache(mr);
+        ArrayQueueTensorAllocator arrayQueueTensorAllocator = new ArrayQueueTensorAllocator(mr);
 
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())){
-            NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache, pool).get());
+            NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(arrayQueueTensorAllocator, pool).get());
             ModelSupport.addModel("QWEN2", new Qwen2ModelType());
         try (
              AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch,
+                new MetricRegistry(), arrayQueueTensorAllocator, new KvBufferCacheSettings(true), fetch,
                 new Qwen2TokenizerRenderer(), new DefaultToolCallParser(), pool)) {
             String prompt = "What is the capital of New York, USA?";
             PromptSupport.Builder g = m.promptSupport().get().builder()
@@ -64,9 +64,9 @@ public class  QwenPromptTest {
         ModelFetcher fetch = new ModelFetcher("tjake", "Llama-3.1-8B-Instruct-JQ4");
         File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
-        TensorCache tensorCache = new TensorCache(mr);
+        ArrayQueueTensorAllocator arrayQueueTensorAllocator = new ArrayQueueTensorAllocator(mr);
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
-            NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache, pool).get());
+            NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(arrayQueueTensorAllocator, pool).get());
             String text = new Scanner(ModelSupport.class
                     .getResourceAsStream("/llama_tool_fix.jinja"), "UTF-8").useDelimiter("\\A").next();
             Tool tool = Tool.from(Function.builder()
@@ -74,7 +74,7 @@ public class  QwenPromptTest {
                     .name("flip_coin")
                     .description("This methods will flip a coin. The result will be H for heads or T for tails.").build());
             try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                    new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch,
+                    new MetricRegistry(), arrayQueueTensorAllocator, new KvBufferCacheSettings(true), fetch,
                     new TokenizerRenderer(), new DefaultToolCallParser(), pool)) {
                 String prompt = "Call the function flip_coin print the result.";
                 PromptSupport.Builder g = m.promptSupport().get().builder()
@@ -122,12 +122,12 @@ Use the coinflip tool any analyze the result<|eot_id|><|start_header_id|>assista
         ModelFetcher fetch = new ModelFetcher("tjake", "Qwen2.5-0.5B-Instruct-JQ4");
         File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
-        TensorCache tensorCache = new TensorCache(mr);
+        ArrayQueueTensorAllocator arrayQueueTensorAllocator = new ArrayQueueTensorAllocator(mr);
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
-            NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache, pool).get());
+            NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(arrayQueueTensorAllocator, pool).get());
             ModelSupport.addModel("QWEN2", new Qwen2ModelType());
             try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                    new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch,
+                    new MetricRegistry(), arrayQueueTensorAllocator, new KvBufferCacheSettings(true), fetch,
                     new Qwen2TokenizerRenderer(), new DefaultToolCallParser(), pool)) {
                 /**
                  *     >>> tokenizer("Hello world")["input_ids"]

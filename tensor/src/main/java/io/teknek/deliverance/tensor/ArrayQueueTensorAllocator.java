@@ -16,12 +16,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * In LLMs a lot of buffers are used for inference.  Rather than allocating each one or using a fixed pool
- * this TensorCache allows a limited number of different shaped buffers to be reused across threads
+ * Internally uses unbounded arrays per shape well tracking the total bytes concurrently.
  */
-public class TensorCache implements TensorCacheIface {
+public class ArrayQueueTensorAllocator implements TensorAllocator {
 
-    private static final Logger logger = LoggerFactory.getLogger(TensorCache.class);
+    private static final Logger logger = LoggerFactory.getLogger(ArrayQueueTensorAllocator.class);
 
     private final long bytesCapacity;
     private final AtomicLong currentBytes;
@@ -36,11 +35,11 @@ public class TensorCache implements TensorCacheIface {
     private final Meter dirtyGetHit;
     private final Meter cacheFull;
 
-    public TensorCache(MetricRegistry metricRegistry){
+    public ArrayQueueTensorAllocator(MetricRegistry metricRegistry){
         this(100 * 1024 * 1024, metricRegistry);
     }
 
-    public TensorCache(long bytesCapacity, MetricRegistry metricRegistry) {
+    public ArrayQueueTensorAllocator(long bytesCapacity, MetricRegistry metricRegistry) {
         this.bytesCapacity = bytesCapacity;
         this.currentBytes = new AtomicLong(0);
         this.availableByShape = Maps.newConcurrentMap();
@@ -50,6 +49,12 @@ public class TensorCache implements TensorCacheIface {
         cacheFull = metricRegistry.meter("tensorcache.full");
     }
 
+    /**
+     * Allocate a tensor of the desired shape. If the available queue is not full the shape will be added 
+     * @param dType
+     * @param shape
+     * @return
+     */
     private AbstractTensor internalGet(DType dType, TensorShape shape){
         AbstractTensor t = switch (dType) {
             case F32 -> new FloatBufferTensor(shape);
@@ -68,9 +73,7 @@ public class TensorCache implements TensorCacheIface {
         return t;
     }
 
-    /**
-     * @return a tensor of a specific shape but possibly reused so it is up to the user to clear it out
-     */
+
     public AbstractTensor<?,?> getDirty(DType dType, TensorShape shape){
         dirtyGet.mark();
         MpmcUnboundedXaddArrayQueue<AbstractTensor> availableQueue = availableByShape.computeIfAbsent(
@@ -85,11 +88,7 @@ public class TensorCache implements TensorCacheIface {
         return internalGet(dType, shape);
     }
 
-    /**
-     *
-     * @return returns a tensor of the given type and shape, if the cache was full
-     * the ownerCache will be null.
-     */
+
     public AbstractTensor get(DType dType, TensorShape shape) {
         metricRegistry.meter("tensorcache.get").mark();
         MpmcUnboundedXaddArrayQueue<AbstractTensor> availableQueue = availableByShape.computeIfAbsent(
@@ -98,18 +97,18 @@ public class TensorCache implements TensorCacheIface {
         AbstractTensor t = availableQueue.poll();
         if (t != null) {
             metricRegistry.meter("tensorcache.get.hit").mark();
-            Timer timer =metricRegistry.timer("tensorcache.zero-out-time");
+            Timer timer = metricRegistry.timer("tensorcache.zero-out-time");
             timer.time(t::clear);
             return t;
         }
         return internalGet(dType, shape);
     }
 
-    /** give the tensor back to the cache from this point on it may be re-used. */
+
     public void release(AbstractTensor b) {
         MpmcUnboundedXaddArrayQueue<AbstractTensor> availableQueue = availableByShape.computeIfAbsent(
                 new ShapeKey(b.dType(), b.shape()),
                 queueFactory);
-        boolean added = availableQueue.offer(b);
+        boolean ignored = availableQueue.offer(b);
     }
 }

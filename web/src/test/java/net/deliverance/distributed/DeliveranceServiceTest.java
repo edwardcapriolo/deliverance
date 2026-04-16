@@ -5,9 +5,8 @@ import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
-import io.teknek.deliverance.tensor.TensorCache;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -18,7 +17,7 @@ public class DeliveranceServiceTest {
     public void seeSplits(){
         try ( WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
             AbstractModel m = AutoModelForCausaLm.newBuilder(new ModelFetcher("tjake", "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4"))
-                    .withTensorProvider(new ConfigurableTensorProvider(new TensorCache(new MetricRegistry()), pool)).build();
+                    .withTensorProvider(new ConfigurableTensorProvider(new ArrayQueueTensorAllocator(new MetricRegistry()), pool)).build();
             DeliveranceService d = new DeliveranceService(m, 10, true, true);
             assertEquals(4, d.getHeadsPerLayerShard());
             assertEquals(2, d.getLayersPerShard());

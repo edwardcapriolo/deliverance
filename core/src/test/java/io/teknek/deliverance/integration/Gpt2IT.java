@@ -7,12 +7,10 @@ import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.DoNothingGenerateEvent;
-import io.teknek.deliverance.model.GenerateEvent;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.*;
-import io.teknek.deliverance.tensor.TensorCache;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
@@ -25,7 +23,7 @@ public class Gpt2IT {
         ModelFetcher fetch = new ModelFetcher("openai-community", "gpt2-large");
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
              AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
-                .withTensorProvider(new ConfigurableTensorProvider(new TensorCache(new MetricRegistry()), pool)).build()) {
+                .withTensorProvider(new ConfigurableTensorProvider(new ArrayQueueTensorAllocator(new MetricRegistry()), pool)).build()) {
             String prompt = "Who is Micheal Jordan?";
             //This model does not have prompt support
             var uuid = UUID.randomUUID();

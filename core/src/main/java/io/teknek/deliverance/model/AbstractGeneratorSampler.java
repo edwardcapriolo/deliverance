@@ -16,7 +16,6 @@ import net.jafama.FastMath;
 
 import java.util.*;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static io.teknek.deliverance.CausualWhisperer.LOGGER;
 
@@ -94,7 +93,7 @@ class DeliveranceLegacySampler extends AbstractGeneratorSampler {
                 }
             }
             if (logProbs) {
-                AbstractTensor logSum = model.getTensorCache().getDirty(logits.dType(), logits.shape());
+                AbstractTensor logSum = model.getTensorAllocator().getDirty(logits.dType(), logits.shape());
                 VectorTensorMathUtils.logSumExpTensor(logSum, logits);
                 for (IndexValueToken token : topNLogProbs) {
                     token.logProb = logSum.get(0, token.index);
@@ -220,7 +219,7 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
             if (parameters.topK.isPresent()) {
                 float topK = parameters.topK.get();
                 LOGGER.debug("max maxv {} maxi {} decoded {}", maxi, maxv, model.tokenizer.decode(maxi));
-                try (AbstractTensor scaledLogits = model.getTensorCache().getDirty(logits.dType(), logits.shape())) {
+                try (AbstractTensor scaledLogits = model.getTensorAllocator().getDirty(logits.dType(), logits.shape())) {
                     for (int i = 0; i < model.config.vocabularySize; i++) {
                         float v = logits.get(0, i) / temperature;
                         scaledLogits.set(v, 0, i);
@@ -231,8 +230,8 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
                     SortedMap<Float, List<Integer>> bucketsHighFirst = buck.reversed();
 
                     //consider forcing dtype 32
-                    try (AbstractTensor inProb = model.getTensorCache().getDirty(logits.dType(), TensorShape.of(rePick));
-                    AbstractTensor inLogits = model.getTensorCache().getDirty(logits.dType(), TensorShape.of(rePick))) {
+                    try (AbstractTensor inProb = model.getTensorAllocator().getDirty(logits.dType(), TensorShape.of(rePick));
+                         AbstractTensor inLogits = model.getTensorAllocator().getDirty(logits.dType(), TensorShape.of(rePick))) {
                         List<String> inToks = new ArrayList<>();
                         int topPick = 0;
                         Iterator<Map.Entry<Float, List<Integer>>> jj = bucketsHighFirst.entrySet().iterator();
@@ -263,7 +262,7 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
             } else if (xtcThreshold != 0){
                 //topk is similar to xtc not allowing a stack
                 PriorityQueue<IndexValueToken> topXLogProbs = new PriorityQueue<>();
-                try (AbstractTensor scaledLogits = model.getTensorCache().getDirty(logits.dType(), logits.shape())) {
+                try (AbstractTensor scaledLogits = model.getTensorAllocator().getDirty(logits.dType(), logits.shape())) {
                     for (int i = 0; i < model.config.vocabularySize; i++) {
                         float v = logits.get(0, i) / temperature;
                         scaledLogits.set(v, 0, i);
@@ -295,7 +294,7 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
                 if (topP < 0 || topP > 1 ) {
                     throw new IllegalArgumentException("topP must be between 0 and 1");
                 }
-                try (AbstractTensor scaledLogits = model.getTensorCache().getDirty(logits.dType(), logits.shape())) {
+                try (AbstractTensor scaledLogits = model.getTensorAllocator().getDirty(logits.dType(), logits.shape())) {
                     for (int i = 0; i < model.config.vocabularySize; i++) {
                         float v = logits.get(0, i) / temperature;
                         scaledLogits.set(v, 0, i);
@@ -306,8 +305,8 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
                     Iterator<Map.Entry<Float, List<Integer>>> jj = bucketsHighFirst.entrySet().iterator();
                     TopPSummary topPSummary = new TopPSummary(jj, topP);
 
-                    try (AbstractTensor inProb = model.getTensorCache().getDirty(logits.dType(), TensorShape.of(topPSummary.count));
-                         AbstractTensor inLogits = model.getTensorCache().getDirty(logits.dType(), TensorShape.of(topPSummary.count))) {
+                    try (AbstractTensor inProb = model.getTensorAllocator().getDirty(logits.dType(), TensorShape.of(topPSummary.count));
+                         AbstractTensor inLogits = model.getTensorAllocator().getDirty(logits.dType(), TensorShape.of(topPSummary.count))) {
                         List<String> inToks = new ArrayList<>();
                         for (int i = 0; i < topPSummary.count; i++) {
                             inLogits.set(topPSummary.underCutoffLogits.get(i), 0, i);
@@ -363,7 +362,7 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
     }
 
     public void computeLogProbs(AbstractTensor scaledLogits, PriorityQueue<IndexValueToken> logPobs){
-        try (AbstractTensor logSum = model.getTensorCache().getDirty(scaledLogits.dType(), scaledLogits.shape())) {
+        try (AbstractTensor logSum = model.getTensorAllocator().getDirty(scaledLogits.dType(), scaledLogits.shape())) {
             VectorTensorMathUtils.logSumExpTensor(logSum, scaledLogits);
             for (IndexValueToken token : logPobs) {
                 token.logProb = logSum.get(0, token.index);

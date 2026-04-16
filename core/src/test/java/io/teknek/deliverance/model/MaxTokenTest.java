@@ -8,7 +8,7 @@ import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
-import io.teknek.deliverance.tensor.TensorCache;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import org.junit.jupiter.api.Test;
 
@@ -35,7 +35,7 @@ public class MaxTokenTest {
              AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).withWorkingQuantType(DType.I8)
                 .withTokenTokenRenderer(new TokenizerRenderer())
                 .withMetricRegistry(registry)
-                .withTensorProvider(new ConfigurableTensorProvider(new TensorCache(registry), pool)).build()) {
+                .withTensorProvider(new ConfigurableTensorProvider(new ArrayQueueTensorAllocator(registry), pool)).build()) {
             String prompt = "Construct a short story about a Java developer who takes on all of python and rust community";
             PromptContext ctx = m.promptSupport().get().builder()
                     .addUserMessage(prompt)

@@ -3,6 +3,7 @@ package io.teknek.deliverance.tensor.operations;
 
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.operations.gpunative.NativeGPU;
 import io.teknek.deliverance.tensor.operations.util.JarSupport;
 
@@ -14,7 +15,6 @@ import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
-import io.teknek.deliverance.tensor.TensorCache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -70,7 +70,7 @@ public class NativeGPUTensorOperations implements TensorOperations {
     static {
         pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
         TensorOperations tmp;
-        TensorCache tc = new TensorCache(new MetricRegistry());
+        ArrayQueueTensorAllocator tc = new ArrayQueueTensorAllocator(new MetricRegistry());
         try {
             tmp = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tc, pool).get());
         } catch (Throwable t) {

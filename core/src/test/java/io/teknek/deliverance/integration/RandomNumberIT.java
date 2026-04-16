@@ -8,8 +8,8 @@ import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
 import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
@@ -32,12 +32,12 @@ public class RandomNumberIT {
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
-        TensorCache tensorCache = new TensorCache(mr);
+        ArrayQueueTensorAllocator arrayQueueTensorAllocator = new ArrayQueueTensorAllocator(mr);
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
-            NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache, pool).get());
+            NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(arrayQueueTensorAllocator, pool).get());
 
             try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                    new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true), fetch,
+                    new MetricRegistry(), arrayQueueTensorAllocator, new KvBufferCacheSettings(true), fetch,
                     new TokenizerRenderer(), new DefaultToolCallParser(), pool)) {
                 String prompt = "Pick a random number between 0 and 100";
                 PromptContext ctx = PromptContext.of(prompt);

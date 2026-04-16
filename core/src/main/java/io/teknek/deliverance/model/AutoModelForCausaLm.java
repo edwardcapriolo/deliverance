@@ -5,8 +5,9 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.qwen2.Qwen2TokenizerRenderer;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
+import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
 import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
@@ -48,7 +49,7 @@ public class AutoModelForCausaLm {
     public static class Builder {
         private final ModelFetcher fetch;
         private MetricRegistry mr = new MetricRegistry();
-        private TensorCache cache = new TensorCache(mr);
+        private TensorAllocator allocator = new ArrayQueueTensorAllocator(mr);
         private DType workingMem = DType.F32;
         private DType workingQuant = DType.I8;
         private TokenRenderer tokenRenderer = new NoOpTokenizerRenderer();
@@ -67,8 +68,8 @@ public class AutoModelForCausaLm {
             mr = metricRegistry;
             return this;
         }
-        public Builder withTensorCache(TensorCache tensorCache){
-            this.cache = tensorCache;
+        public Builder withTensorAllocator(TensorAllocator tensorAllocator){
+            this.allocator = tensorAllocator;
             return this;
         }
         public Builder withKvBufferCacheSettings(KvBufferCacheSettings settings){
@@ -112,7 +113,7 @@ public class AutoModelForCausaLm {
                 pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
             }
             if (provider == null){
-                ConfigurableTensorProvider base  = new ConfigurableTensorProvider(cache, pool);
+                ConfigurableTensorProvider base  = new ConfigurableTensorProvider(allocator, pool);
                  try {
                      NativeSimdTensorOperations operations = new NativeSimdTensorOperations(base.get());
                      provider = new ConfigurableTensorProvider(operations);
@@ -122,7 +123,7 @@ public class AutoModelForCausaLm {
                  }
             }
             return ModelSupport.loadModel(modelRoot, workingMem, workingQuant, provider,
-                    mr, cache, settings, fetch, tokenRenderer, toolCallParser, pool);
+                    mr, allocator, settings, fetch, tokenRenderer, toolCallParser, pool);
         }
 
         public ModelFetcher getFetch() {
@@ -133,8 +134,8 @@ public class AutoModelForCausaLm {
             return mr;
         }
 
-        public TensorCache getCache() {
-            return cache;
+        public TensorAllocator getAllocator() {
+            return allocator;
         }
 
         public DType getWorkingMem() {
