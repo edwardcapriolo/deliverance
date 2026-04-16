@@ -111,6 +111,7 @@ public final class PanamaTensorOperations implements TensorOperations {
                 case Q4 -> switch (vectorType) {
                     case AVX_256 -> new GemmerF32Q4_256(K, a, b, result, aColumnOffset, bColumnOffset, rOffset);
                     case AVX_512 -> new GemmerF32Q4_512(K, a, b, result, aColumnOffset, bColumnOffset, rOffset);
+                    case ARM_128 -> new GemmerF32Q4_128_arm(K, a, b, result, aColumnOffset, bColumnOffset, rOffset);
                     default -> throw new UnsupportedOperationException(vectorType.name());
                 };
                 default -> throw new UnsupportedOperationException(b.dType().name());
@@ -132,6 +133,91 @@ public final class PanamaTensorOperations implements TensorOperations {
         };
 
         gemm.matmul(0, M, bRowOffset, bRowOffset + N);
+    }
+
+    private class GemmerF32Q4_128_arm extends Gemmer {
+        final BiIntConsumer matmul1x1;
+        final Q4ByteBufferTensor b;
+
+        GemmerF32Q4_128_arm(int k, AbstractTensor a, AbstractTensor b, AbstractTensor c, int aColumnOffset, int bColumnOffset, int rOffset) {
+            super(k, a, b, c, aColumnOffset, bColumnOffset, rOffset);
+            this.matmul1x1 = initMatmul1x1();
+            this.b = (Q4ByteBufferTensor) b;
+        }
+
+        @Override
+        protected int pickKernel(int m0, int m, int n0, int n) {
+            kernel(m0, m, 1, n0, n, 1, matmul1x1);
+            return (1 << 4)| 1;
+        }
+
+        protected BiIntConsumer initMatmul1x1() {
+
+            return (i, j) -> {
+                int aoffset = aColumnOffset;
+                int boffset = bColumnOffset;
+                int alim = aoffset + k;
+                int slen = Q4ByteBufferTensor.BLOCK_SIZE;
+                FloatVector acc = FloatVector.zero(FloatVector.SPECIES_128);
+
+
+                for (; aoffset < alim; aoffset += slen, boffset += slen) {
+                    float scaleScalar = b.getFactorForIndex(j, boffset);
+                    FloatVector scale = FloatVector.broadcast(FloatVector.SPECIES_128, scaleScalar);
+                    var bytes = b.getVector(ByteVector.SPECIES_128, j, boffset);
+                    var lo = bytes.and(Q4_BYTE_MASK_128).sub(Q4_BYTE_SUB_128);
+                    var hi = bytes.lanewise(VectorOperators.LSHR, Q4_BYTE_SHIFT_128).sub(Q4_BYTE_SUB_128);
+                    FloatVector blockAcc = FloatVector.zero(FloatVector.SPECIES_128);
+                    for (int s = 0; s < 4; s++) {
+                        var aVec = (FloatVector) a.getVector(FloatVector.SPECIES_128, i, aoffset + s * 4);
+                        var bVec = lo.castShape(FloatVector.SPECIES_128, s);
+                        blockAcc = aVec.fma(bVec, blockAcc);
+                    }
+
+                    for (int s = 0; s < 4; s++) {
+                        var aVec = (FloatVector) a.getVector(FloatVector.SPECIES_128, i,
+                                aoffset + Q4ByteBufferTensor.HALF_BLOCK + s * 4);
+                        var bVec = hi.castShape(FloatVector.SPECIES_128, s);
+                        blockAcc = aVec.fma(bVec, blockAcc);
+                    }
+                    acc = blockAcc.fma(scale, acc);
+                }
+                c.set(acc.reduceLanes(VectorOperators.ADD), i, j + rOffset);
+            };
+
+        }
+/*
+        protected BiIntConsumer  initMatmul1x1(){
+            return (i,j) -> {
+                int aoffset = aColumnOffset;
+                int boffset = bColumnOffset;
+                int alim = aoffset + k;
+                int slen = Q4ByteBufferTensor.BLOCK_SIZE;
+                FloatVector acc = FloatVector.zero(FloatVector.SPECIES_128);
+                for (; aoffset< alim; aoffset+=slen, boffset+=slen){
+                    float scaleScalar = b.getFactorForIndex(j, boffset);
+                    FloatVector scale = FloatVector.broadcast(FloatVector.SPECIES_128, scaleScalar);
+                    ByteVector bytes = b.getVector(ByteVector.SPECIES_128, j, boffset);
+                    ByteVector lo = bytes.add(Q4_BYTE_MASK_128).sub(Q4_BYTE_SUB_128);
+                    ByteVector high = bytes.lanewise(VectorOperators.LSHR, Q4_BYTE_SHIFT_128).sub(Q4_BYTE_SUB_128);
+                    FloatVector blockAcc = FloatVector.zero(FloatVector.SPECIES_128);
+                    for (int s= 0; s<4; s++){
+                        var aVec = a.getVector(FloatVector.SPECIES_128,i, aoffset + s * 4);
+                        var bVec = lo.castShape(FloatVector.SPECIES_128, s);
+                        blockAcc = aVec.reinterpretAsFloats().fma(aVec, bVec);
+                        //blockAcc = aVec.fma(bVec, blockAcc);
+                    }
+                    for (int s= 0; s<4; s++){
+                        var aVec = a.getVector(FloatVector.SPECIES_128, i, aoffset + Q4ByteBufferTensor.HALF_BLOCK  * 4);
+                        var bVect = high.castShape(FloatVector.SPECIES_128, s);
+                        //blockAcc = aVec.fma(bVec, blockAcc);
+                        blockAcc = aVec.reinterpretAsFloats().fma(aVec, bVect);
+                    }
+                    acc = blockAcc.fma(scale, acc);
+                }
+                c.set(acc.reduceLanes(VectorOperators.ADD), i, j + rOffset);
+            };
+        } */
     }
 
     private class GemmerF32Q4_256 extends Gemmer {
