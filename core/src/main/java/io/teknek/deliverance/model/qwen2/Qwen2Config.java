@@ -54,7 +54,7 @@ public class Qwen2Config extends Config {
             List.of(eosToken),
             activationFunction,
             ropeTheta,
-            1.0,
+            null,
             null,
             embeddingLength / numberOfHeads,
             null,

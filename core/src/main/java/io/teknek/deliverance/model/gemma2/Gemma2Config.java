@@ -22,7 +22,7 @@ public class Gemma2Config extends Config {
             @JsonProperty("eos_token_id") Object eosTokens,
             @JsonProperty("hidden_act") ActivationFunction.Type activationFunction,
             @JsonProperty("rope_theta") Double ropeFreqsTheta,
-            @JsonProperty("rope_scaling") Map<String, String> ropeScaling,
+            @JsonProperty("rope_scaling") Map<String, Object> ropeScaling,
             @JsonProperty("head_dim") Integer headDim,
             @JsonProperty("final_logit_softcapping") Float finalLogitSoftCapping,
             @JsonProperty("attn_logit_softcapping") Float attnLogitSoftCapping
@@ -40,7 +40,7 @@ public class Gemma2Config extends Config {
                 eosTokens instanceof List ? (List<Integer>) eosTokens : List.of((Integer) eosTokens),
                 activationFunction,
                 ropeFreqsTheta == null ? 10000.0 : ropeFreqsTheta,
-                ropeScaling == null ? 1.0 : Double.parseDouble(ropeScaling.get("factor")),
+                ropeScaling,
                 headDim,
                 finalLogitSoftCapping,
                 attnLogitSoftCapping
