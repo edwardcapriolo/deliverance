@@ -40,7 +40,7 @@ public class MistralConfig extends Config {
                 List.of(eosToken),
                 activationFunction,
                 ropeTheta,
-                1.0,
+                null,
                 null,
                 headSize == null ? embeddingLength / numberOfHeads : headSize,
                 null,

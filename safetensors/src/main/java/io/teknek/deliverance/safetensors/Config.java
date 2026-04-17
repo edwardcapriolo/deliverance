@@ -43,7 +43,7 @@ public class Config {
     public final Optional<float[][]> ropeFreqs;
     public final Optional<BiMap<String, Integer>> classifcationLabels;
     public final List<String> architectures;
-
+    private Map<String,Object> ropeScaling;
     private volatile DistributedContext dctx;
 
     public Config(
@@ -59,7 +59,7 @@ public class Config {
             List<Integer> eosToken,
             ActivationFunction.Type activationFunction,
             Double ropeFreqsTheta,
-            Double ropeScalingFactor,
+            Map<String,Object> ropeScaling,
             Integer headSize,
             Float attnLogitSoftCapping,
             Float finalLogitSoftCapping
@@ -77,7 +77,7 @@ public class Config {
                 eosToken,
                 activationFunction,
                 ropeFreqsTheta,
-                ropeScalingFactor,
+                ropeScaling,
                 null,
                 headSize == null ? embeddingLength / numberOfHeads : headSize,
                 attnLogitSoftCapping,
@@ -103,7 +103,7 @@ public class Config {
             List<Integer> eosToken,
             ActivationFunction.Type activationFunction,
             Double ropeFreqsTheta,
-            Double ropeScalingFactor
+            Map<String,Object> ropeScaling
     ) {
         this(
                 contextLength,
@@ -118,7 +118,7 @@ public class Config {
                 eosToken,
                 activationFunction,
                 ropeFreqsTheta,
-                ropeScalingFactor,
+                ropeScaling,
                 null,
                 embeddingLength / numberOfHeads,
                 null,
@@ -144,7 +144,7 @@ public class Config {
             List<Integer> eosToken,
             ActivationFunction.Type activationFunction,
             Double ropeFreqsTheta,
-            Double ropeScalingFactor,
+            Map<String,Object> ropeScaling,
             Float residualMultiplier,
             Float attentionMultiplier,
             Float embeddingMultiplier,
@@ -163,7 +163,7 @@ public class Config {
                 eosToken,
                 activationFunction,
                 ropeFreqsTheta,
-                ropeScalingFactor,
+                ropeScaling,
                 null,
                 embeddingLength / numberOfHeads,
                 null,
@@ -189,7 +189,7 @@ public class Config {
             List<Integer> eosToken,
             ActivationFunction.Type activationFunction,
             Double ropeFreqsTheta,
-            Double ropeScalingFactor,
+            Map<String,Object> ropeScaling,
             Map<String, Integer> classifcationLabels
     ) {
         this(
@@ -205,7 +205,7 @@ public class Config {
                 eosToken,
                 activationFunction,
                 ropeFreqsTheta,
-                ropeScalingFactor,
+                ropeScaling,
                 classifcationLabels,
                 embeddingLength / numberOfHeads,
                 null,
@@ -217,6 +217,7 @@ public class Config {
                 null
         );
     }
+
 
     public Config(
             int contextLength,
@@ -231,7 +232,7 @@ public class Config {
             List<Integer> eosTokens,
             ActivationFunction.Type activationFunction,
             Double ropeFreqsTheta,
-            Double ropeScalingFactor,
+            Map<String,Object> ropeScaling,
             Map<String, Integer> classifcationLabels,
             Integer headSize,
             Float finalLogitSoftCapping,
@@ -258,11 +259,14 @@ public class Config {
         this.kvLength = numberOfKeyValueHeads * headSize;
         this.isGQA = numberOfKeyValueHeads < numberOfHeads;
         this.activationFunction = activationFunction;
+        this.ropeScaling = ropeScaling;
+        Object rs = ropeScaling == null ? null: ropeScaling.get("factor");
+        double ropeScalingFactor = rs == null? 1.0 : ((Number) rs).doubleValue();
 
         this.ropeFreqs = ropeFreqsTheta == null
                 ? Optional.empty()
                 : Optional.of(
-                VectorMathUtils.precomputeFreqsCis(headSize, contextLength, ropeFreqsTheta, ropeScalingFactor == null ? 1.0 : ropeScalingFactor)
+                VectorMathUtils.precomputeFreqsCis(headSize, contextLength, ropeFreqsTheta, ropeScalingFactor)
         );
 
         this.classifcationLabels = classifcationLabels == null ? Optional.empty() : Optional.of(ImmutableBiMap.copyOf(classifcationLabels));

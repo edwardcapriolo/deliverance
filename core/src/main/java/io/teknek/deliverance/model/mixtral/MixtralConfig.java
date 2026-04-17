@@ -43,7 +43,7 @@ public class MixtralConfig extends Config {
                 List.of(eosToken),
                 activationFunction,
                 ropeTheta,
-                1.0
+                null
         );
 
         this.numberOfExperts = numberOfExperts;
