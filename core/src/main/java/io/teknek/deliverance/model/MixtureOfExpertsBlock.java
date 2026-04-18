@@ -131,7 +131,8 @@ public class MixtureOfExpertsBlock implements FeedForward {
                     tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(buf)));
 
                     // matmul the projection and scale by gate weight
-                    model.configurableTensorProvider.get().scale(0.0f, moeResult, 0 , model.config.embeddingLength);
+
+                    //model.configurableTensorProvider.get().scale(0.0f, moeResult, 0 , model.config.embeddingLength);
                     try (AbstractTensor bufq = model.maybeQuantize(buf)) {
                         VectorMath.pchunk(0, model.config.embeddingLength, (chunkStart, chunkSize) -> {
                             model.configurableTensorProvider.get()
