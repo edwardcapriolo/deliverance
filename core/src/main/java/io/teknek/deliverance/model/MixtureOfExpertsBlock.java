@@ -81,7 +81,14 @@ public class MixtureOfExpertsBlock implements FeedForward {
                 softMax(expertResults, 0, numberOfExperts);
                 topk(expertResults);
 
+                // Re-normalize the selected top-k gate weights to sum to 1
+                float gateWeightSum = 0.0f;
                 for (int i = 0; i < numberOfExpertsPerToken; i++) {
+                    gateWeightSum += expertResults.get(0, selectedExperts[i]);
+                }
+
+                for (int i = 0; i < numberOfExpertsPerToken; i++) {
+                    float gateWeight = expertResults.get(0, selectedExperts[i]) / gateWeightSum;
                     batchWeights[0] = fullyConnectedWeights[selectedExperts[i]];
                     batchWeights[1] = upProjectionWeights[selectedExperts[i]];
                     AbstractTensor projectionWeight = projectionWeights[selectedExperts[i]];
@@ -110,13 +117,15 @@ public class MixtureOfExpertsBlock implements FeedForward {
 
                     tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(buf)));
 
-                    // matmul the projection and sum into result
+                    // matmul the projection and scale by gate weight
                     try (AbstractTensor bufq = model.maybeQuantize(buf)) {
                         VectorMath.pchunk(0, model.config.embeddingLength, (chunkStart, chunkSize) -> {
                             model.configurableTensorProvider.get()
                                     .dotProductChunk(moeResult, bufq, projectionWeight, 0, hiddenLength, chunkStart, chunkSize);
                         }, model.configurableTensorProvider.get().parallelSplitSize(), model.getPool());
                     }
+
+                    model.configurableTensorProvider.get().scale(gateWeight, moeResult, 0, model.config.embeddingLength);
 
                     if (i == 0) {
                         result.copyFrom(moeResult, 0, 0, model.config.embeddingLength);
