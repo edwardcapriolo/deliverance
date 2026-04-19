@@ -180,6 +180,17 @@ public class CausalSelfAttention {
                     bias -> configurableTensorProvider.get().accumulate(tmpValBatch, bias,
                             dctx.kvSegmentStart, dctx.kvSegmentLength)
             );
+            AbstractTensor[] querySlices = new AbstractTensor[batchSize];
+            AbstractTensor[] keySlices = new AbstractTensor[batchSize];
+            AbstractTensor[] valSlices = new AbstractTensor[batchSize];
+            AbstractTensor[] valueSlices = new AbstractTensor[batchSize];
+
+            for(int bi= 0 ; bi <batchSize; bi++) {
+                querySlices[bi] = queryBatch.slice(bi);
+                keySlices[bi] = tmpKeyBatch.slice(bi);
+                valSlices[bi] = tmpValBatch.slice(bi);
+                valueSlices[bi] = valueBatch.slice(bi);
+            }
 
             // This is our memory of the key and value vectors for each position
             for (int position = startPosition, bi = 0; position < startPosition + batchSize; position++, bi++) {
@@ -190,10 +201,10 @@ public class CausalSelfAttention {
                 AbstractTensor[] kvp = kvMem.getKeyTensorsUptoPosition(layerIndex, position);
                 AbstractTensor[] vvp = kvMem.getValTensorsUptoPosition(layerIndex, position);
 
-                AbstractTensor tmpKey = tmpKeyBatch.slice(bi);
-                AbstractTensor tmpVal = tmpValBatch.slice(bi);
-                AbstractTensor query = queryBatch.slice(bi);
-                AbstractTensor value = valueBatch.slice(bi);
+                AbstractTensor tmpKey = keySlices[bi];
+                AbstractTensor tmpVal = valSlices[bi];
+                AbstractTensor query = querySlices[bi];
+                AbstractTensor value = valueSlices[bi];
 
                 if (key.dType() != tmpKey.dType()) {
                     try (AbstractTensor tmpKey2 = configurableTensorProvider.get().quantize(tmpKey, key.dType(), 0, config.kvLength);
