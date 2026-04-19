@@ -7,9 +7,14 @@ import io.teknek.deliverance.math.BiIntConsumer;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.safetensors.DistributedContext;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.TensorDisplayUtil;
+import io.teknek.deliverance.tensor.VectorTensorMathUtils;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import net.jafama.FastMath;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -18,6 +23,8 @@ import java.util.function.Consumer;
 import static io.teknek.deliverance.tensor.VectorTensorMathUtils.softMax;
 
 public class MixtureOfExpertsBlock implements FeedForward {
+
+    private static final Logger LOG = LoggerFactory.getLogger(MixtureOfExpertsBlock.class);
 
     private final AbstractModel model;
     private final DistributedContext dctx;
@@ -78,8 +85,13 @@ public class MixtureOfExpertsBlock implements FeedForward {
                             0, i);
                 }, model.getPool());
 
-                softMax(expertResults, 0, numberOfExperts);
+                VectorTensorMathUtils.softMax(expertResults,0, numberOfExperts);
+
                 topk(expertResults);
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Experts after softmax: {} selected: {}", TensorDisplayUtil.pretty2dDisplayAll(expertResults),
+                            Arrays.toString(selectedExperts));
+                }
 
                 // Re-normalize the selected top-k gate weights to sum to 1
                 float gateWeightSum = 0.0f;
@@ -110,10 +122,11 @@ public class MixtureOfExpertsBlock implements FeedForward {
                     VectorMath.pfor(dctx.hiddenSegmentStart, dctx.hiddenSegmentEnd, iv -> {
                         float w1 = buf.get(0, iv);
                         float w1a = ActivationFunction.eval(activationFunction, w1);
-                        buf.set(w1a, 0, iv);
+                        //buf.set(w1a, 0, iv);
+                        buf.set(w1a * buf2.get(0, iv),0, iv);
                     }, model.getPool());
 
-                    model.configurableTensorProvider.get().maccumulate(buf, buf2, dctx.hiddenSegmentStart, dctx.hiddenSegmentLength);
+                    //model.configurableTensorProvider.get().maccumulate(buf, buf2, dctx.hiddenSegmentStart, dctx.hiddenSegmentLength);
 
                     tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(buf)));
 
@@ -129,7 +142,6 @@ public class MixtureOfExpertsBlock implements FeedForward {
                     model.configurableTensorProvider.get().scale(gateWeight, moeResult, 0, model.config.embeddingLength);
 
                     if (i == 0) {
-                        //result.copyFrom(moeResult, 0, 0, model.config.embeddingLength);
                         result.slice(b).copyFrom(moeResult, 0,0, model.config.embeddingLength);
                     } else {
                         model.configurableTensorProvider.get().accumulate(result.slice(b), moeResult, 0, model.config.embeddingLength);
@@ -139,10 +151,7 @@ public class MixtureOfExpertsBlock implements FeedForward {
 
             return result;
         }
-
     }
-
-
 
     private int[] topk(FloatBufferTensor probs) {
         long length = probs.size();
@@ -163,23 +172,4 @@ public class MixtureOfExpertsBlock implements FeedForward {
         return selectedExperts;
     }
 
-    public static void softMax(AbstractTensor x, int offset, int length) {
-        Preconditions.checkArgument(x.shape().first() == 1);
-        long size = offset + length;
-
-        float max_val = x.get(0, offset);
-        for (int i = offset + 1; i < size; i++) {
-            if (x.get(0, i) > max_val) {
-                max_val = x.get(0, i);
-            }
-        }
-        float sum = 0.0f;
-        for (int i = offset; i < size; i++) {
-            x.set((float) FastMath.exp(x.get(0, i) - max_val), 0, i);
-            sum += x.get(0, i);
-        }
-        for (int i = 0; i < size; i++) {
-            x.set(x.get(0, i) / sum, 0, i);
-        }
-    }
 }
