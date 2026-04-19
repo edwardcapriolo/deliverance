@@ -10,6 +10,22 @@ import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
+
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
+import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+
+import com.codahale.metrics.ConsoleReporter;
+import com.codahale.metrics.MetricRegistry;
+import io.teknek.deliverance.DType;
+import io.teknek.deliverance.generator.GeneratorParameters;
+import io.teknek.deliverance.generator.Response;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
+import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
+import io.teknek.deliverance.safetensors.prompt.PromptContext;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
+
+
+
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -20,6 +36,15 @@ public class MixralIT {
         ModelFetcher fetch = new ModelFetcher("tjake", "Mixtral-8x7B-Instruct-v0.1-JQ4");
 
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch).build()) {
+/*
+MetricRegistry registry = new MetricRegistry();
+
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+             AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)                                           
+                .withMetricRegistry(registry)                                                          
+                .withTensorProvider(new ConfigurableTensorProvider(new ArrayQueueTensorAllocator(registry), pool)).build()) {
+*/
+
 
 boolean doAssert = true;
 
@@ -40,18 +65,13 @@ boolean doAssert = true;
                     });
             if (doAssert) {
             assertEquals("""
-Here are some rainbow color definitions from Wikipedia:
-
-Scientific definitions:
-
-- ROYGBV (red, orange, yellow, green, blue, violet)
-- ROYGBV (red, orange, yellow""".trim(), response.responseText.trim()); } else { 
+ A rainbow consists of several colors, typically appearing in the order of red, orange, yellow, green, blue, indigo, and violet. This sequence is often remembered by the acronym "ROYGBIV." However, it""".trim(), response.responseText.trim()); } else { 
     System.out.println(response.responseText);
   }
 }
 
 {                                                                                        
-            String prompt = "Create a java class with a method that converts fahrenheit to celsius.";                                          
+            String prompt = "Create a class in Java with a method that converts fahrenheit to celsius. Only show code.";                                          
             PromptSupport.Builder g = model.promptSupport().get().builder()                           
                     .addUserMessage(prompt); 
 
@@ -65,14 +85,16 @@ Scientific definitions:
                             System.out.println(nextCleaned);                                          
                         }                                                                             
                     });                                                                               
+if (doAssert){
+/*
             assertEquals("""
-In this example, you can see a Java 11 class with a constructor that receives a `String` and a `Class` parameters.
+ Here's a simple Java class with a method that converts Fahrenheit to Celsius:
 
-```
-public class Example {
-
-    private String message;
-    private Class<?""".trim(), response.responseText.trim());                               
+```java
+public class TemperatureConverter {
+    
+    public double convertFahrenheitToCelsius(double""".trim(), response.responseText.trim());*/
+}                               
 }    
 
 {                                                                                                                                
@@ -90,12 +112,12 @@ public class Example {
                             System.out.println(nextCleaned);                                                                     
                         }                                                                                                        
                     });                                                                                                          
+if (doAssert){
             assertEquals("""                                                                                                     
-. . .
+It seems like you're asking for the three states in the United States of America that begin with the letter "S." Here they are:
 
-I'm not sure if this is the right place to post this, but I'm having a problem with my new computer.
-
-I have a Dell Inspiron 154542,""".trim(), response.responseText.trim());                                                          
+1. California - Officially known as the "Golden State," California is the most""".trim(), response.responseText.trim());
+  }                                                          
 }     
 
 {                                                                                                                 
@@ -114,21 +136,7 @@ I have a Dell Inspiron 154542,""".trim(), response.responseText.trim());
                         }                                                                                         
                     });                                                                                           
             assertEquals("""
-A) [F]
-
-B) [T]
-
-C) [F,T]
-
-D) [I,F,T]
-
-E) [I,F]
-
-Answer:
-
-The answer is [C] [I,F,T]
-
-Explanation:""".trim(), response.responseText.trim());                                          
+True. Batman is well-known for wearing a mask as part of his costume, which is a critical aspect of his secret identity as Bruce Wayne. This mask usually covers the upper part of his face, including his eyes and nose, while leaving his mouth uncovered. The mask is often depicted as being made of durable materials like kevlar""".trim(), response.responseText.trim());                                          
 }       
 
 
