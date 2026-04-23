@@ -209,6 +209,10 @@ public class KvBufferCache implements Closeable {
             currentContextPosition.set(position);
         }
 
+        /**
+         * Currently this is called by AbstractModel inside the generation loop. The position starts at 0
+         * interestingly the 0th token has special properties with respect to increment
+         */
         public void incrementContextPosition() {
             currentContextPosition.incrementAndGet();
         }

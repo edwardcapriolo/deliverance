@@ -11,8 +11,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.IntStream;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class AbstractTensorTests {
 
@@ -81,5 +80,65 @@ public class AbstractTensorTests {
         System.out.println(TensorDisplayUtil.pretty2dDisplayAll(sliced));
         assertEquals(10F, sliced.get(0, 0));
         assertEquals(10F, original.get(1, 0));
+    }
+
+
+    @Test
+    void iterateTest(){
+        int rows = 4;
+        int columns = 8;
+        AbstractTensor f = new FloatBufferTensor(rows, columns);
+        for (int i = 0; i < rows * columns; i++) {
+            f.set(i, 0, i);
+        }
+        int [] iterator = new int[]{0, 0};
+        boolean x = f.iterate(iterator);
+        assertTrue(x);
+        assertEquals(Arrays.toString(iterator), Arrays.toString(new int[] {0, 1}));
+        iterator[1]= 7;
+        x = f.iterate(iterator);
+        assertTrue(x);
+        assertEquals(Arrays.toString(iterator), Arrays.toString(new int[] {1, 0}));
+
+        //when it is at the end
+        iterator[0] = 3;
+        iterator[1] = 7;
+        x = f.iterate(iterator);
+        assertFalse(x);
+        assertEquals(Arrays.toString(iterator), Arrays.toString(new int[] {0, 0}));
+    }
+    
+    @Test
+    void iterate3dTest(){
+        int rows = 2;
+        int columns = 3;
+        int depth = 2;
+        TensorShape shape = TensorShape.of(rows, columns, depth);
+        Assertions.assertEquals( 12, shape.size());
+        AbstractTensor f = new FloatBufferTensor(rows, columns, depth);
+        Assertions.assertEquals( 12, f.size());
+        int z = 0;
+        for (int i = 0; i < rows; i++) {
+            for (int j =0 ; j < columns; j++){
+                for (int k = 0; k < depth; k++){
+                    f.set(z++, i, j, k);
+                }
+            }
+        }
+        {
+            //Wrong sized iterator throws
+            int[] iterator = new int[]{0, 0};
+            Assertions.assertThrows(IllegalArgumentException.class, () -> f.iterate(iterator));
+        }
+        int [] iterator = new int[]{0, 0, 0};
+        List<Float> results = new ArrayList<>();
+        List<String> indexes = new ArrayList<>();
+        do {
+            results.add(f.get(iterator));
+            indexes.add(Arrays.toString(iterator));
+        } while(f.iterate(iterator));
+        assertEquals( "[0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0]", results.toString()  );
+        assertEquals("[[0, 0, 0], [0, 0, 1], [0, 1, 0], [0, 1, 1], [0, 2, 0], [0, 2, 1], [1, 0, 0], [1, 0, 1], [1, 1, 0], [1, 1, 1], [1, 2, 0], [1, 2, 1]]", indexes.toString());
+
     }
 }
