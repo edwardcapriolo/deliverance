@@ -92,6 +92,19 @@ public final class FloatBufferTensor extends AbstractTensor<FloatVector, Float> 
     }
 
     @Override
+    public float get(int row, int column) {
+        Preconditions.checkArgument(2 == shape.dims(), "Shape is not 2 dimensions");
+        return underlyingByteBuffer.get(shape().getOffset(row, column));
+    }
+
+    @Override
+    public void set(float v, int row, int column) {
+        Preconditions.checkArgument(2 == shape.dims(), "Must specify all dimensions");
+        Preconditions.checkArgument(!underlyingByteBuffer.isReadOnly(), "Can't modify a read only buffer");
+        underlyingByteBuffer.put(shape().getOffset(row, column), v);
+    }
+
+    @Override
     public void set(float v, int... dims) {
         Preconditions.checkArgument(dims.length <= shape.dims(), "Too many dimensions specified for tensor");
         Preconditions.checkArgument(dims.length == shape.dims(), "Must specify all dimensions");
@@ -119,6 +132,12 @@ public final class FloatBufferTensor extends AbstractTensor<FloatVector, Float> 
     @Override
     public FloatVector getVector(VectorSpecies<Float> species, int... voffset) {
         int offset = getOffset(voffset);
+        return FloatVector.fromMemorySegment(species, segment, getMemorySegmentOffset(offset), ByteOrder.LITTLE_ENDIAN);
+    }
+
+    @Override
+    public FloatVector getVector(VectorSpecies<Float> species, int row, int column) {
+        int offset = getOffset(row, column);
         return FloatVector.fromMemorySegment(species, segment, getMemorySegmentOffset(offset), ByteOrder.LITTLE_ENDIAN);
     }
 

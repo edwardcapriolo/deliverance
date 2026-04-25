@@ -2,8 +2,13 @@ package io.teknek.deliverance.tensor;
 
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
+import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
+
+import static io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor.makeBlockShape;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class Q4Test {
@@ -30,5 +35,10 @@ public class Q4Test {
                 [2][0]= 59.3750 [2][1]= 59.3750 [2][2]= 71.2500 [2][3]= 71.2500 [2][4]= 71.2500 [2][5]= 71.2500 [2][6]= 71.2500 [2][7]= 71.2500 [2][8]= 71.2500 [2][9]= 71.2500 [2][10]= 71.2500 [2][11]= 71.2500 [2][12]= 71.2500 [2][13]= 71.2500 [2][14]= 83.1250 [2][15]= 83.1250 [2][16]= 83.1250 [2][17]= 83.1250 [2][18]= 83.1250 [2][19]= 83.1250 [2][20]= 83.1250 [2][21]= 83.1250 [2][22]= 83.1250 [2][23]= 83.1250 [2][24]= 83.1250 [2][25]= 83.1250 [2][26]= 95.0000 [2][27]= 95.0000 [2][28]= 95.0000 [2][29]= 95.0000 [2][30]= 95.0000 [2][31]= 95.0000\s
                 [3][0]= 95.2500 [3][1]= 95.2500 [3][2]= 95.2500 [3][3]= 95.2500 [3][4]= 95.2500 [3][5]= 95.2500 [3][6]= 95.2500 [3][7]= 95.2500 [3][8]=111.1250 [3][9]=111.1250 [3][10]=111.1250 [3][11]=111.1250 [3][12]=111.1250 [3][13]=111.1250 [3][14]=111.1250 [3][15]=111.1250 [3][16]=111.1250 [3][17]=111.1250 [3][18]=111.1250 [3][19]=111.1250 [3][20]=111.1250 [3][21]=111.1250 [3][22]=111.1250 [3][23]=111.1250 [3][24]=127.0000 [3][25]=127.0000 [3][26]=127.0000 [3][27]=127.0000 [3][28]=127.0000 [3][29]=127.0000 [3][30]=127.0000 [3][31]=127.0000\s""".trim();
         assertEquals(quant.trim(), TensorDisplayUtil.pretty2dDisplayAll(q4).trim());
+    }
+
+    @Test
+    public void testBlockShape(){
+        assertEquals(Arrays.toString(new int[] { 2, 0} ), Arrays.toString(makeBlockShape(new int[] { 2, 0} )));
     }
 }

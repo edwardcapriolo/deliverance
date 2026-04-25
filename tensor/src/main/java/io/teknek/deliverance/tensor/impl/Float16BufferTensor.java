@@ -76,6 +76,20 @@ public class Float16BufferTensor extends AbstractTensor<ShortVector, Short> {
     }
 
     @Override
+    public float get(int row, int column) {
+        Preconditions.checkArgument(2 == shape.dims(), "Must specify all dimensions");
+        return Float.float16ToFloat(b.get(shape().getOffset(row, column)));
+    }
+
+    @Override
+    public void set(float v, int row, int column) {
+        Preconditions.checkArgument(2 <= shape.dims(), "Too many dimensions specified for tensor");
+        Preconditions.checkArgument(2 == shape.dims(), "Must specify all dimensions");
+        Preconditions.checkArgument(!b.isReadOnly(), "Can't modify a read only buffer");
+        b.put(getOffset(row, column), Float.floatToFloat16(v));
+    }
+
+    @Override
     public void set(float v, int... dims) {
         Preconditions.checkArgument(dims.length <= shape.dims(), "Too many dimensions specified for tensor");
         Preconditions.checkArgument(dims.length == shape.dims(), "Must specify all dimensions");

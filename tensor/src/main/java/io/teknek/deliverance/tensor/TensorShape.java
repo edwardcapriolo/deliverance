@@ -96,6 +96,9 @@ public class TensorShape {
         return Optional.of(sparseColumnLength * (dimension1 - sparseRowOffset) + dimension2 - sparseColumnOffset);
     }
 
+    public final int getOffset(int row, int column){
+        return sparseColumnLength * (row - sparseRowOffset) + column - sparseColumnOffset;
+    }
     /**
      * Note: This method will return positions outside the tensor
      * @param pdims one or more dimenstions
@@ -117,10 +120,8 @@ public class TensorShape {
                     for (int i = tshape.length - 2; i > d; --i) { // factor scaling of each dim shape
                         offset *= tshape[i];
                     }
-
                     totalOffset += pdims[d] * offset;
                 }
-
                 return totalOffset + pdims[pdims.length - 1] - sparseColumnOffset;
         }
     }

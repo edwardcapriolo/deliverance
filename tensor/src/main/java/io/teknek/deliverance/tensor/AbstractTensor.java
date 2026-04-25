@@ -67,9 +67,23 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
     /** Get a value at the given coordinates */
     public abstract float get(int... dims);
 
+    /**
+     * potentially avoids array autoboxing.
+     * @return value at this position
+     */
+    public float get(int row, int column){
+        return get(new int[] { row, column });
+    }
+
     /** Set a value at the given coordinates */
     public abstract void set(float v, int... dims);
 
+    /**
+     * sets value potentially avoids autoboxing
+     */
+    public void set(float v, int row, int column){
+        set(v, new int[] { row, column});
+    }
     /**
      * For 2D tensor (3,4) slice(1) will return the second row (4 elements).
      * @param dims the dimension to slice on
@@ -187,6 +201,9 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
     public final int getOffset(int... dims) {
         return shape.getOffset(dims);
     }
+    public final int getOffset(int row, int col) {
+        return shape.getOffset(row, col);
+    }
 
     /** Transpose the tensor across all dimensions*/
     public final AbstractTensor transpose() {
@@ -219,6 +236,9 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
         return dType;
     }
 
+    public V getVector(VectorSpecies<T> species, int row, int column){
+        return getVector(species, new int[] { row, column });
+    }
     public abstract V getVector(VectorSpecies<T> species, int... offset);
 
     public abstract void intoTensor(V vector, int... offset);

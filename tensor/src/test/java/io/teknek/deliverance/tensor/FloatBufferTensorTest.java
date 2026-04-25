@@ -22,8 +22,6 @@ public class FloatBufferTensorTest {
             assertEquals(10, f.shape.dim(0));
             assertEquals(100, f.shape.size());
             assertThrowsExactly(IllegalArgumentException.class, () -> f.shape.dim(2));
-            FloatVector fv = f.getVector(VectorSpecies.ofPreferred(Float.TYPE), 0);
-            FloatVector abs = fv.abs();
         }
     }
 
