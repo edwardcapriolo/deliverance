@@ -131,6 +131,14 @@ public class Q8ByteBufferTensor extends AbstractTensor<ByteVector, Byte> {
         return b.get(i) * d;
     }
 
+    @Override
+    public float get(int row, int column) {
+        Preconditions.checkArgument(2 == shape.dims(), "Must specify all dimensions");
+        int i = getOffset(row, column);
+        float d = blockF.get(makeBlockShape(row, column));
+        return b.get(i) * d;
+    }
+
     public final FloatBufferTensor getBlockF() {
         return blockF;
     }

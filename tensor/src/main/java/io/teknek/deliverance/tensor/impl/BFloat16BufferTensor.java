@@ -65,9 +65,22 @@ public class BFloat16BufferTensor extends AbstractTensor<ShortVector, Short> {
 
     @Override
     public float get(int... dims) {
-        Preconditions.checkArgument(dims.length <= shape.dims(), "Too many dimensions specified");
         Preconditions.checkArgument(dims.length == shape.dims(), "Must specify all dimensions");
         return FloatConversions.bFloat16ToFloat32(b.get(getOffset(dims)));
+    }
+
+    @Override
+    public float get(int row, int column) {
+        Preconditions.checkArgument(2 == shape.dims(), "Must specify all dimensions");
+        return FloatConversions.bFloat16ToFloat32(b.get(getOffset(row, column)));
+    }
+
+    @Override
+    public void set(float v, int row, int column) {
+        Preconditions.checkArgument(2 <= shape.dims(), "Too many dimensions specified for tensor");
+        Preconditions.checkArgument(2 == shape.dims(), "Must specify all dimensions");
+        Preconditions.checkArgument(!b.isReadOnly(), "Can't modify a read only buffer");
+        b.put(getOffset(row, column), FloatConversions.float32ToBFloat16(v));
     }
 
     @Override
@@ -76,6 +89,12 @@ public class BFloat16BufferTensor extends AbstractTensor<ShortVector, Short> {
         Preconditions.checkArgument(dims.length == shape.dims(), "Must specify all dimensions");
         Preconditions.checkArgument(!b.isReadOnly(), "Can't modify a read only buffer");
         b.put(getOffset(dims), FloatConversions.float32ToBFloat16(v));
+    }
+
+    @Override
+    public ShortVector getVector(VectorSpecies<Short> species, int row, int column) {
+        int offset = getOffset(row, column);
+        return ShortVector.fromMemorySegment(species, segment, getMemorySegmentOffset(offset), ByteOrder.LITTLE_ENDIAN);
     }
 
     @Override

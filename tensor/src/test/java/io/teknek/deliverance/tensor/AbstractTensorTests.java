@@ -8,8 +8,6 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
-import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -106,6 +104,19 @@ public class AbstractTensorTests {
         x = f.iterate(iterator);
         assertFalse(x);
         assertEquals(Arrays.toString(iterator), Arrays.toString(new int[] {0, 0}));
+    }
+
+    @Test
+    void noBox2dTest() {
+        int rows = 4;
+        int columns = 8;
+        AbstractTensor f = new FloatBufferTensor(rows, columns);
+        for (int i = 0; i < rows * columns; i++) {
+            f.set(i, 0, i);
+        }
+        assertEquals(1f, f.get(0, 1));
+        f.set(20, 0, 3);
+        assertEquals(20f, f.get(0, 3));
     }
     
     @Test

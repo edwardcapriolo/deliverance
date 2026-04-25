@@ -107,7 +107,8 @@ public final class Q4ByteBufferTensor extends AbstractTensor<ByteVector, Byte> {
         }
     }
 
-    static int[] makeBlockShape(int... shape) {
+    public static int[] makeBlockShape(int... shape) {
+
         int[] blockShape = new int[shape.length];
         if (shape.length - 1 >= 0) {
             System.arraycopy(shape, 0, blockShape, 0, shape.length - 1);
@@ -115,6 +116,7 @@ public final class Q4ByteBufferTensor extends AbstractTensor<ByteVector, Byte> {
         blockShape[shape.length - 1] = (int) (shape[shape.length - 1] * I_BLOCK_SIZE);
         return blockShape;
     }
+
 
     static TensorShape makeBlockShape(TensorShape shape) {
 
@@ -160,6 +162,23 @@ public final class Q4ByteBufferTensor extends AbstractTensor<ByteVector, Byte> {
                 cacheSlices
         );
         return new Q4ByteBufferTensor(name, b.slice(offset / 2, length / 2), newBlockF, shape, cacheSlices);
+    }
+
+    @Override
+    public float get(int row, int column) {
+        Preconditions.checkArgument(2 == shape.dims(), "Must specify all dimensions");
+        int i = getOffset(row, column);
+        float scale = blockF.get(makeBlockShape(new int []{ row, column } ));
+        int ibyte = ((int) (i * I_BLOCK_SIZE)) * HALF_BLOCK + (i % BLOCK_SIZE);
+        int x;
+        if (i % BLOCK_SIZE < HALF_BLOCK) {
+            byte b0 = this.b.get(ibyte);
+            x = (b0 & 0x0F) - 8;
+        } else {
+            byte b0 = this.b.get(ibyte - HALF_BLOCK);
+            x = (b0 >> 4 & 0x0F) - 8;
+        }
+        return x * scale;
     }
 
     @Override
