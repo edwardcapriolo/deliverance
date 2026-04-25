@@ -98,7 +98,7 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
                             DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider provider,
-                            MetricRegistry metricRegistry, ArrayQueueTensorAllocator tensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
+                            MetricRegistry metricRegistry, TensorAllocator tensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
                             TokenRenderer tokenRenderer, ToolCallParser toolCallParser, WrappedForkJoinPool pool) {
         this.inferenceType = inferenceType;
         this.config = c;
