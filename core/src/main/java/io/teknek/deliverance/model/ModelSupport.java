@@ -102,7 +102,7 @@ public class ModelSupport {
 
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
                     WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class,
-                    ConfigurableTensorProvider.class, MetricRegistry.class, ArrayQueueTensorAllocator.class,
+                    ConfigurableTensorProvider.class, MetricRegistry.class, TensorAllocator.class,
                     KvBufferCacheSettings.class, TokenRenderer.class, ToolCallParser.class, WrappedForkJoinPool.class);
 
             AbstractModel am = cons.newInstance(AbstractModel.InferenceType.FULL_GENERATION, config, wl, tokenizer,
@@ -143,7 +143,7 @@ public class ModelSupport {
 
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
                     WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class,
-                    ConfigurableTensorProvider.class, MetricRegistry.class, ArrayQueueTensorAllocator.class,
+                    ConfigurableTensorProvider.class, MetricRegistry.class, TensorAllocator.class,
                     KvBufferCacheSettings.class, TokenRenderer.class, ToolCallParser.class, WrappedForkJoinPool.class);
 
             return cons.newInstance(AbstractModel.InferenceType.FULL_CLASSIFICATION, config, wl, tokenizer,
@@ -182,7 +182,7 @@ public class ModelSupport {
 
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
                     WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class,
-                    ConfigurableTensorProvider.class, MetricRegistry.class, ArrayQueueTensorAllocator.class,
+                    ConfigurableTensorProvider.class, MetricRegistry.class, TensorAllocator.class,
                     KvBufferCacheSettings.class, TokenRenderer.class, ToolCallParser.class, WrappedForkJoinPool.class) ;
 
             return cons.newInstance(infType, config, wl, tokenizer,
