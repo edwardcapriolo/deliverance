@@ -158,7 +158,7 @@ public class ModelSupport {
 
     public static AbstractModel  loadEmbeddingModel(File model, DType workingMemoryType, DType workingQuantizationType,
                                                     ConfigurableTensorProvider configurableTensorProvider,
-                                                    MetricRegistry metricRegistry, ArrayQueueTensorAllocator arrayQueueTensorAllocator,
+                                                    MetricRegistry metricRegistry, TensorAllocator arrayQueueTensorAllocator,
                                                     KvBufferCacheSettings kvBufferCacheSettings) {
      return load(AbstractModel.InferenceType.FULL_EMBEDDING, model, workingMemoryType, workingQuantizationType,
              configurableTensorProvider, metricRegistry, arrayQueueTensorAllocator,kvBufferCacheSettings);
@@ -166,7 +166,7 @@ public class ModelSupport {
     }
     protected static AbstractModel load(AbstractModel.InferenceType infType, File model, DType workingMemoryType, DType workingQuantizationType,
                                  ConfigurableTensorProvider configurableTensorProvider,
-                                 MetricRegistry metricRegistry, ArrayQueueTensorAllocator arrayQueueTensorAllocator,
+                                 MetricRegistry metricRegistry, TensorAllocator arrayQueueTensorAllocator,
                                  KvBufferCacheSettings kvBufferCacheSettings) {
         File configFile = new File(model, "config.json");
         if (!configFile.exists()){
