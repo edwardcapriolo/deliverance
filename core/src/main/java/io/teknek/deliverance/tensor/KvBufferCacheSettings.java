@@ -9,6 +9,7 @@ public class KvBufferCacheSettings {
     private final TensorAllocator dedicatedCache;
     private int maxPrefixTokensPerPrompt = 512;
     private int maxEntries = 10_000;
+    private int blockSize = 8;
 
     public enum KvFormat {
         BF16,
@@ -77,6 +78,22 @@ public class KvBufferCacheSettings {
 
     public KvBufferCacheSettings withMaxEntries(int maxEntries) {
         this.maxEntries = maxEntries;
+        return this;
+    }
+
+    public int getBlockSize() {
+        return blockSize;
+    }
+
+    public void setBlockSize(int blockSize) {
+        if (blockSize <= 0){
+            throw new IllegalArgumentException("blockSize must be > 0");
+        }
+        this.blockSize = blockSize;
+    }
+
+    public KvBufferCacheSettings withBlockSize(int blockSize) {
+        setBlockSize(blockSize);
         return this;
     }
 }

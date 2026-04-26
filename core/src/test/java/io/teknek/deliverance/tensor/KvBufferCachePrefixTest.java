@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -34,11 +35,10 @@ public class KvBufferCachePrefixTest {
     public void testExactPrefixHit(){
         KvBufferCacheSettings settings = new KvBufferCacheSettings(true).withMaxEntries(512);
         KvBufferCache cache = new KvBufferCache(mockModel(), settings);
-        int [] tokens = { 1, 2, 3, 4 };
+        int [] tokens = { 1, 2, 3, 4, 5 ,6,7, 8 ,9  };
         KvBufferCache.KvBuffer buf = cache.getEphemeralKvBuffer();
         cache.storePrefix(tokens, buf);
 
-        System.out.println(cache.prefixCache);
         {
             int [] tokens2 = { 1, 2, 3 };
             KvBufferCache.KvBuffer buf2 = cache.getEphemeralKvBuffer();
@@ -46,8 +46,7 @@ public class KvBufferCachePrefixTest {
         }
 
         KvBufferCache.PrefixEntry e = cache.lookupPrefix(tokens);
-        Assertions.assertSame(buf, e.buffer);
-        System.out.println(cache.prefixCache);
+        assertEquals(tokens.length - 1, e.length);
 
     }
 }
