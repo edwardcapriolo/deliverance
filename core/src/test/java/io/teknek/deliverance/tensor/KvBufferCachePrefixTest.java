@@ -6,7 +6,6 @@ import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.DistributedContext;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -46,7 +45,7 @@ public class KvBufferCachePrefixTest {
         }
 
         KvBufferCache.PrefixEntry e = cache.lookupPrefix(tokens);
-        assertEquals(tokens.length - 1, e.length);
+        assertEquals(tokens.length - 1, e.length());
 
     }
 }

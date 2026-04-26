@@ -26,16 +26,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class KvBufferCache implements Closeable {
 
-    public static class PrefixEntry {
-        public final KvBuffer buffer;
-        public final int length;
-
-        public PrefixEntry(KvBuffer buffer, int length) {
-            this.buffer = buffer;
-            this.length = length;
-        }
+    public record PrefixEntry(KvBuffer buffer, int length) {
 
     }
+
     private static final Logger logger = LoggerFactory.getLogger(KvBufferCache.class);
 
     private final AbstractModel model;
@@ -45,11 +39,13 @@ public class KvBufferCache implements Closeable {
     public final Map<List<Integer>, PrefixEntry> prefixCache = Collections.synchronizedMap(
             new LinkedHashMap<List<Integer>, PrefixEntry>(16, 0.75f, true) {
                 public boolean removeEldestEntry(Map.Entry<List<Integer>, PrefixEntry> eldest) {
-                    boolean evict= size()> kvBufferCacheSettings.getMaxEntries();
-                    if (evict && eldest != null && eldest.getValue() != null){
+                    boolean evict = size() > kvBufferCacheSettings.getMaxEntries();
+                    if (evict && eldest != null && eldest.getValue() != null) {
                         model.getMetricRegistry().meter("kvbuffercache.evict").mark();
-                        try { eldest.getValue().buffer.close(); }catch (RuntimeException e){
-                            logger.warn("could not close tensor in cache",e);
+                        try {
+                            eldest.getValue().buffer.close();
+                        } catch (RuntimeException e) {
+                            logger.warn("could not close tensor in cache", e);
                         }
                     }
                     return evict;
@@ -62,7 +58,7 @@ public class KvBufferCache implements Closeable {
         this.blockSize = kvBufferCacheSettings.getBlockSize();
     }
 
-    public PrefixEntry lookupPrefix(int [] tokens){
+    public PrefixEntry lookupPrefix(int[] tokens) {
         int limit = kvBufferCacheSettings.getMaxPrefixTokensPerPrompt();
         int len = Math.min(tokens.length, limit);
         List<Integer> soFar = new ArrayList<>();
@@ -71,12 +67,12 @@ public class KvBufferCache implements Closeable {
         for (int i = 0; i < tokenLimit; i++) {
             soFar.add(tokens[i]);
             PrefixEntry e = prefixCache.get(soFar);
-            if(e!= null){
+            if (e != null) {
                 best = e;
             }
         }
         model.getMetricRegistry().meter("kvbuffercache.lookup").mark();
-        if (best!= null && best.length >= blockSize && best.length % blockSize == 0){
+        if (best != null && best.length >= blockSize && best.length % blockSize == 0) {
             model.getMetricRegistry().meter("kvbuffercache.hits").mark();
             return best;
         }
@@ -84,14 +80,14 @@ public class KvBufferCache implements Closeable {
         return null;
     }
 
-    public void storePrefix(int [] tokens,KvBuffer buffer){
+    public void storePrefix(int[] tokens, KvBuffer buffer) {
         int limit = kvBufferCacheSettings.getMaxPrefixTokensPerPrompt();
         int tokenLen = Math.min(tokens.length, limit);
         List<Integer> soFar = new ArrayList<>();
-        for (int i =0; i< tokenLen; i++){
+        for (int i = 0; i < tokenLen; i++) {
             soFar.add(tokens[i]);
             int prefixLen = i + 1;
-            if (prefixLen < blockSize || prefixLen % blockSize != 0 ){
+            if (prefixLen < blockSize || prefixLen % blockSize != 0) {
                 continue;
             }
             KvBuffer snapshot = getEphemeralKvBuffer();
@@ -100,18 +96,18 @@ public class KvBufferCache implements Closeable {
         }
     }
 
-    public void copyPrefix(KvBuffer src, KvBuffer dest, int length){
+    public void copyPrefix(KvBuffer src, KvBuffer dest, int length) {
         Config c = model.getConfig();
         int layers = c.dctx().numberOfLayers;
-        for( int layer=0; layer <  layers; layer++){
-            for(int pos=0; pos<length; pos++){
+        for (int layer = 0; layer < layers; layer++) {
+            for (int pos = 0; pos < length; pos++) {
                 AbstractTensor srcK = src.getKeyTensorForPosition(layer, pos);
                 AbstractTensor srcV = src.getValTensorForPosition(layer, pos);
 
                 AbstractTensor dstK = dest.getKeyTensorForPosition(layer, pos);
                 AbstractTensor dstV = dest.getValTensorForPosition(layer, pos);
-                dstK.copyFrom(srcK,0,0, (int) srcK.size());
-                dstV.copyFrom(srcV, 0,0, (int) srcV.size());
+                dstK.copyFrom(srcK, 0, 0, (int) srcK.size());
+                dstV.copyFrom(srcV, 0, 0, (int) srcV.size());
                 srcK.close();
                 srcV.close();
                 dstK.close();
@@ -120,24 +116,14 @@ public class KvBufferCache implements Closeable {
         }
         dest.setCurrentContextPosition(length);
     }
-    /*
-    public KvBuffer getKvBuffer(String session) {
-        return kvBufferCache.computeIfAbsent(session, s -> new KvBuffer(s, 1 << 23)); // 8MB per page
-    }*/
 
-    /**just orphans less memory :) */
     public KvBuffer getEphemeralKvBuffer() {
         return new KvBuffer(UUID.randomUUID().toString(), 1 << 20);
     }
 
     @Override
     public void close() {
-        /*
-        Iterator<Map.Entry<String, KvBuffer>> it = kvBufferCache.entrySet().iterator();
-        while (it.hasNext()) {
-            it.next().getValue().close();
-            it.remove();
-        }*/
+        prefixCache.entrySet().iterator().forEachRemaining(e -> e.getValue().buffer().close());
     }
 
     class KvPageContext {
@@ -172,7 +158,7 @@ public class KvBufferCache implements Closeable {
             TensorShape s;
             Config c = model.getConfig();
             DistributedContext dctx = c.dctx();
-            int[] rawShape = new int[] { layersPerPage, 2, contextLengthPerPage, c.kvLength };
+            int[] rawShape = new int[]{layersPerPage, 2, contextLengthPerPage, c.kvLength};
 
             // Adjust the shape to be relative to the kv cache size (in case of GQA)
             if (c.kvLength != dctx.kvSegmentLength) {
@@ -201,7 +187,7 @@ public class KvBufferCache implements Closeable {
             if (kvBufferCacheSettings.isEphemeral()) {
                 this.raf = null;
                 TensorAllocator tc = kvBufferCacheSettings.getDedicatedCache() == null ?
-                        model.getTensorAllocator(): kvBufferCacheSettings.getDedicatedCache();
+                        model.getTensorAllocator() : kvBufferCacheSettings.getDedicatedCache();
                 this.tensor = tc.get(model.getWorkingDType(), pageCtx.pageShape);
             } else {
                 try {
@@ -218,7 +204,7 @@ public class KvBufferCache implements Closeable {
                         raf.setLength(bytes);
                     }
 
-                    AbstractTensor<?,?> t;
+                    AbstractTensor<?, ?> t;
                     if (model.getWorkingDType() == DType.F32) {
                         FloatBuffer fb = raf.getChannel()
                                 .map(FileChannel.MapMode.READ_WRITE, 0, bytes)
@@ -270,7 +256,7 @@ public class KvBufferCache implements Closeable {
 
         private final KvPageContext pageContext;
 
-            KvBuffer(String session, int maxPageSizeInBytes) {
+        KvBuffer(String session, int maxPageSizeInBytes) {
             this.session = session;
             this.pageContext = computePageSize(maxPageSizeInBytes);
             this.pages = new KvBufferPage[pageContext.numberOfLayerPages][pageContext.numberOfContextPages];

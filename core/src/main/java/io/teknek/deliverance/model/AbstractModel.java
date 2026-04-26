@@ -334,8 +334,8 @@ public abstract class AbstractModel implements Generator, Classifier {
                 KvBufferCache.PrefixEntry prefixHit = kvBufferCache.lookupPrefix(promptTokens);
                 int prefixLength = 0;
                 if (prefixHit != null) {
-                    prefixLength = prefixHit.length;
-                    kvBufferCache.copyPrefix(prefixHit.buffer, kvmem, prefixLength);
+                    prefixLength = prefixHit.length();
+                    kvBufferCache.copyPrefix(prefixHit.buffer(), kvmem, prefixLength);
                 }
                 int startPos = prefixLength;
                 kvmem.setCurrentContextPosition(startPos);

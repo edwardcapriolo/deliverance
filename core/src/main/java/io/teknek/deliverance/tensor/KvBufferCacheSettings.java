@@ -7,8 +7,15 @@ public class KvBufferCacheSettings {
     private final Boolean useTensorAllocator;
     private final File workingDirectory;
     private final TensorAllocator dedicatedCache;
+    /**
+     * The longest possible kvcache
+     */
     private int maxPrefixTokensPerPrompt = 512;
+    /** the maximum size of the cache before evictions happen **/
     private int maxEntries = 10_000;
+    /**
+    The block size of the kvcache. Cache hits will only happen at block boundaries, smaller blockize uses more memory
+     */
     private int blockSize = 8;
 
     public enum KvFormat {
