@@ -7,7 +7,16 @@ public class KvBufferCacheSettings {
     private final Boolean useTensorAllocator;
     private final File workingDirectory;
     private final TensorAllocator dedicatedCache;
+    private int maxPrefixTokensPerPrompt = 512;
+    private int maxEntries = 10_000;
 
+    public enum KvFormat {
+        BF16,
+        F32,
+        QUANTIZED_INT8
+    }
+
+    private KvFormat kvFormat = KvFormat.BF16;
     /**
      * Use the tensor cache shared with model
      */
@@ -44,5 +53,30 @@ public class KvBufferCacheSettings {
     @Nullable
     public TensorAllocator getDedicatedCache(){
         return this.dedicatedCache;
+    }
+
+    public int getMaxPrefixTokensPerPrompt() {
+        return maxPrefixTokensPerPrompt;
+    }
+
+    public void setMaxPrefixTokensPerPrompt(int maxPrefixTokensPerPrompt) {
+        this.maxPrefixTokensPerPrompt = maxPrefixTokensPerPrompt;
+    }
+    public KvBufferCacheSettings withMaxPrefixTokensPerPrompt(int maxEntries) {
+        this.maxPrefixTokensPerPrompt = maxEntries;
+        return this;
+    }
+
+    public int getMaxEntries() {
+        return maxEntries;
+    }
+
+    public void setMaxEntries(int maxEntries) {
+        this.maxEntries = maxEntries;
+    }
+
+    public KvBufferCacheSettings withMaxEntries(int maxEntries) {
+        this.maxEntries = maxEntries;
+        return this;
     }
 }
