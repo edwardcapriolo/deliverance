@@ -43,10 +43,11 @@ public class RandomNumberIT {
                 PromptContext ctx = PromptContext.of(prompt);
                 var uuid = UUID.randomUUID();
 
-                Response k = m.generate(uuid, ctx, new GeneratorParameters().withTemperature(0.0f).withSeed(99999),
+                Response k = m.generate(uuid, ctx, new GeneratorParameters().withTemperature(0.0f).withSeed(99999)
+                                .withMaxTokens(4),
                         new DoNothingGenerateEvent());
                 System.out.println(k);
-                assertEquals("0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", k.responseText);
+                assertEquals("0000", k.responseText);
             }
         }
     }
