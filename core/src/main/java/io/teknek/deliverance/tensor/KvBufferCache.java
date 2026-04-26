@@ -29,6 +29,7 @@ public class KvBufferCache implements Closeable {
     public static class PrefixEntry {
         public final KvBuffer buffer;
         public final int length;
+
         public PrefixEntry(KvBuffer buffer, int length) {
             this.buffer = buffer;
             this.length = length;
@@ -39,7 +40,7 @@ public class KvBufferCache implements Closeable {
 
     private final AbstractModel model;
     private final KvBufferCacheSettings kvBufferCacheSettings;
-    //public static final long HASH_BASE=13434L;
+    private final int blockSize;
 
     public final Map<List<Integer>, PrefixEntry> prefixCache = Collections.synchronizedMap(
             new LinkedHashMap<List<Integer>, PrefixEntry>(16, 0.75f, true) {
@@ -58,11 +59,11 @@ public class KvBufferCache implements Closeable {
     public KvBufferCache(AbstractModel model, KvBufferCacheSettings kvBufferCacheSettings) {
         this.model = model;
         this.kvBufferCacheSettings = kvBufferCacheSettings;
+        this.blockSize = kvBufferCacheSettings.getBlockSize();
     }
 
     public PrefixEntry lookupPrefix(int [] tokens){
         int limit = kvBufferCacheSettings.getMaxPrefixTokensPerPrompt();
-        //int len = Math.min(tokens.length, limit);
         int len = Math.min(tokens.length, limit);
         List<Integer> soFar = new ArrayList<>();
         PrefixEntry best = null;
@@ -75,31 +76,30 @@ public class KvBufferCache implements Closeable {
             }
         }
         model.getMetricRegistry().meter("kvbuffercache.lookup").mark();
-        if (best == null){
-            model.getMetricRegistry().meter("kvbuffercache.misses").mark();
-        } else {
+        if (best!= null && best.length >= blockSize && best.length % blockSize == 0){
             model.getMetricRegistry().meter("kvbuffercache.hits").mark();
+            return best;
         }
-        return best;
+        model.getMetricRegistry().meter("kvbuffercache.misses").mark();
+        return null;
     }
 
     public void storePrefix(int [] tokens,KvBuffer buffer){
         int limit = kvBufferCacheSettings.getMaxPrefixTokensPerPrompt();
-        int kvLen = Math.min(buffer.getCurrentContextPosition(), limit);
         int tokenLen = Math.min(tokens.length, limit);
-
-        KvBuffer snapshot = getEphemeralKvBuffer();
-        copyPrefix(buffer, snapshot, kvLen);
-
         List<Integer> soFar = new ArrayList<>();
-        for (Integer token : tokens) {
-            soFar.add(token);
-        }
         for (int i =0; i< tokenLen; i++){
+            soFar.add(tokens[i]);
             int prefixLen = i + 1;
-            prefixCache.putIfAbsent(soFar, new PrefixEntry(buffer, prefixLen));
+            if (prefixLen < blockSize || prefixLen % blockSize != 0 ){
+                continue;
+            }
+            KvBuffer snapshot = getEphemeralKvBuffer();
+            copyPrefix(buffer, snapshot, prefixLen);
+            prefixCache.putIfAbsent(new ArrayList<>(soFar), new PrefixEntry(snapshot, prefixLen));
         }
     }
+
     public void copyPrefix(KvBuffer src, KvBuffer dest, int length){
         Config c = model.getConfig();
         int layers = c.dctx().numberOfLayers;
