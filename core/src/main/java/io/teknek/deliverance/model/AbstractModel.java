@@ -311,6 +311,8 @@ public abstract class AbstractModel implements Generator, Classifier {
     @Override
     public Response generate(UUID sessionId, PromptContext promptContext, GeneratorParameters generatorParameters,
                                      GenerateEvent eventFired) {
+        Timer.Context t = this.metricRegistry.timer("generation.time_to_first_token").time();
+
         ResponseContext responseContext = new ResponseContext(this);
         Random random = generatorParameters.seed.map(Random::new).orElseGet(Random::new);
         long[] encoded = tokenizer.encode(promptContext.getPrompt());
@@ -325,17 +327,43 @@ public abstract class AbstractModel implements Generator, Classifier {
             throw new GenerationException(String.format("ntokens %d exceed config length %d",  ntokens, config.contextLength));
         }
         float temperature = generatorParameters.temperature.orElse(0.0f);
-        try (KvBufferCache.KvBuffer kvmem = kvBufferCache.getKvBuffer(sessionId.toString())) {
-            int startPos = kvmem.getCurrentContextPosition();
+        try (KvBufferCache.KvBuffer kvmem = kvBufferCache.getEphemeralKvBuffer()) {
             try (AbstractTensor logits = makeDenseTensor(config.vocabularySize)) {
                 int [] promptTokens = constructPromptTokens(encoded);
-                AbstractTensor last = batchForward(promptTokens, startPos, kvmem);
+
+                KvBufferCache.PrefixEntry prefixHit = kvBufferCache.lookupPrefix(promptTokens);
+                int prefixLength = 0;
+                if (prefixHit != null) {
+                    prefixLength = prefixHit.length;
+                    kvBufferCache.copyPrefix(prefixHit.buffer, kvmem, prefixLength);
+                }
+                int startPos = prefixLength;
+                kvmem.setCurrentContextPosition(startPos);
+                int [] tokensToProcess = (prefixLength > 0) ?
+                        Arrays.copyOfRange(promptTokens, prefixLength, promptTokens.length) : promptTokens;
+                AbstractTensor last;
+                if (tokensToProcess.length > 0) {
+                    last = batchForward(tokensToProcess, startPos, kvmem);
+                    kvBufferCache.storePrefix(promptTokens, kvmem);
+                } else {
+                    int lastToken = promptTokens[prefixLength - 1];
+                    last = forward(lastToken, startPos - 1, kvmem);
+                }
+                //if (tokensToProcess.length > 0) {
+                //    kvBufferCache.storePrefix(promptTokens, kvmem);
+                //}
+
                 SamplerReturn nextSamplerRet = createNextToken(generatorParameters, logits, last, responseContext, random, temperature);
                 int next = nextSamplerRet.token;
                 last.close();
                 responseContext.add(nextSamplerRet, eventFired);
+                long taken = t.stop();
+                logger.info("time_to_first_token={} prefix_length={}", taken/ 1_000_000.0 , prefixLength);
                 //here we have added the first token, consider checking stop conditions here
                 for (int i = startPos + promptTokens.length; i < ntokens; i++) {
+                //int decodeStart= prefixLength + tokensToProcess.length;
+
+                //for (int i=decodeStart; i < ntokens; i++){
                     AbstractTensor output = forward(next, i, kvmem);
                     //reuse next to save memory
                     SamplerReturn nextSample = createNextTokenLoop(generatorParameters, output, logits, responseContext, random, temperature);
