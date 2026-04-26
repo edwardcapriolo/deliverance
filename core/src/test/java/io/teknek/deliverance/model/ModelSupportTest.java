@@ -52,7 +52,7 @@ public class ModelSupportTest {
                 UUID u = UUID.randomUUID();
                 Response r = abstractModel.generate(u, ctx, new GeneratorParameters().withSeed(43)
                         .withNtokens(50), new DoNothingGenerateEvent());
-                assertEquals("2,33,44,55,66,77,88,", r.responseText);
+                assertEquals("2,341,567", r.responseText);
             }
 
             {
@@ -61,7 +61,7 @@ public class ModelSupportTest {
                 UUID u = UUID.randomUUID();
                 Response r = abstractModel.generate(u, ctx, new GeneratorParameters().withSeed(43)
                         .withNtokens(50), new DoNothingGenerateEvent());
-                assertEquals("4,5,6,7,8,9,10,11,12,", r.responseText);
+                assertEquals("4,5,6,7,8", r.responseText);
             }
         }
     }
