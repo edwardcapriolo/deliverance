@@ -11,6 +11,7 @@ import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
+import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
@@ -22,7 +23,7 @@ public class Gpt2Model extends AbstractModel{
     public Gpt2Model(AbstractModel.InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
                      DType workingMemoryQType, Optional<DType> modelQType,
                      ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
-                     ArrayQueueTensorAllocator arrayQueueTensorAllocator, KvBufferCacheSettings kvBufferCacheSettings, TokenRenderer tokenRenderer,
+                     TensorAllocator arrayQueueTensorAllocator, KvBufferCacheSettings kvBufferCacheSettings, TokenRenderer tokenRenderer,
                      ToolCallParser toolCallParser, WrappedForkJoinPool pool) {
         super(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType, configurableTensorProvider,
                 metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, tokenRenderer, toolCallParser, pool);
