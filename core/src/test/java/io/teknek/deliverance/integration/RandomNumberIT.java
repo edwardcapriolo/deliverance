@@ -60,7 +60,12 @@ public class RandomNumberIT {
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         var uuid = UUID.randomUUID();
 
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withMaxPrefixTokensPerPrompt(512)
+                .withMaxEntries(10_000)
+                .withBlockSize(8);
         try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).withWorkingQuantType(DType.I8)
+                .withKvBufferCacheSettings(settings)
                 .withTokenTokenRenderer(new TokenizerRenderer()).build()){
             String prompt = "Generate a java interface named Shape with a method name calculateArea.";
             PromptContext ctx = m.promptSupport().get().builder()

@@ -179,6 +179,7 @@ Open your browser to http://localhost:8080
 - [tool call parser](core/tool_parser.md) Explains how the tool call parser is implemented in the stack
 - [Vibrant-maven-plugin](https://www.youtube.com/watch?v=Glp_hAieOq8) Watch a video on Vibrant-maven-plugin generate code from XML based spec inside pom
 - [Generator_sampling](core/generator_sampling.md) Explains how temperature, top_p, top_k, and exclude top choice work
+- [Prefix_cache](core/PrefixCache.md) Describes how to get the most benefits from the prefix cache
 
 ### Models supported
 Generation:
