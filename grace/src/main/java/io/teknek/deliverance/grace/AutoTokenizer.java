@@ -1,167 +1,340 @@
 package io.teknek.deliverance.grace;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.teknek.deliverance.grace.bert.BertTokenizer;
 import io.teknek.deliverance.grace.models.TokenizerConfig;
-
-import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 
 import java.io.File;
 import java.io.IOException;
+import java.math.BigInteger;
 import java.nio.file.Path;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.SortedMap;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class AutoTokenizer {
 
-    private static ConcurrentHashMap<String, Class<PreTrainedTokenizerBase>> registry = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Class<PreTrainedTokenizerBase>> registry = new ConcurrentHashMap<>();
+
     static {
-        //registry.put("BERT", null);
-        //registry.put("QWEN2", null);
     }
+
     public static PreTrainedTokenizer fromPretrained(OwnerNameOrPath ownerNameOrPath,
-                                       java.util.Optional<String> tokenizerType,
-                                       java.util.Optional<java.util.List<Object>> inputs,
-                                       Map<String, ?> tokenizerInitArgs){
-        File path = null;
-        if (ownerNameOrPath.ownerName != null){
-            TokenizerModelFetcher mf = new TokenizerModelFetcher(ownerNameOrPath.ownerName.owner, ownerNameOrPath.ownerName.name);
-            path = mf.maybeDownload();
-        }
-        ObjectMapper om = new ObjectMapper();
+                                                     Optional<String> tokenizerType,
+                                                     Optional<List<Object>> inputs,
+                                                     Map<String, ?> tokenizerInitArgs) {
+        File path = resolveModelDirectory(ownerNameOrPath);
+        ObjectMapper objectMapper = new ObjectMapper();
 
-        String version = null;
         try {
-            File vocab = new File(path, "vocab.json");
-            Map<String, Integer> map;
-            if (vocab.exists()) {
-                map = om.readValue(new File(path, "vocab.json"), new TypeReference<Map<String, Integer>>() {
-                });
-            } else {
-                map = new HashMap<>();
-            }
-            JsonNode document = om.readTree(new File(path,"tokenizer.json"));
-            JsonNode versionNode = document.get("version");
-            if (!versionNode.isNull()){
-                version = versionNode.asText();
+            JsonNode tokenizerDocument = objectMapper.readTree(new File(path, "tokenizer.json"));
+            JsonNode tokenizerConfigDocument = readOptionalJson(objectMapper, new File(path, "tokenizer_config.json"));
+            JsonNode specialTokensMapDocument = readOptionalJson(objectMapper, new File(path, "special_tokens_map.json"));
+
+            Map<String, Integer> vocab = readVocab(path, tokenizerDocument, objectMapper);
+            SortedMap<Integer, AddedToken> addedTokenMap = computeSortedTokenMap(tokenizerDocument.path("added_tokens"));
+            if (addedTokenMap.isEmpty()) {
+                addedTokenMap = computeSortedTokenMap(tokenizerConfigDocument == null ? null : tokenizerConfigDocument.path("added_tokens_decoder"));
             }
 
-            SortedMap<Integer, AddedToken> addedTokenMap = computeSortedTokenMap(document.get("added_tokens"));
+            TokenizerConfig tokenizerConfig = parseTokenizerConfig(tokenizerConfigDocument, specialTokensMapDocument);
+            BytePairEncodingModel bytePairEncodingModel = parseBytePairEncodingModel(path, tokenizerDocument, vocab);
+            String tokenizerClass = tokenizerConfig.tokenizerClass() != null
+                    ? tokenizerConfig.tokenizerClass()
+                    : tokenizerType.orElse(null);
 
-            JsonNode configDotJson = om.readTree(new File(path,"config.json"));
-            //We have models for this inside of deliverance
-            JsonNode tokenizerConfigDotJson = om.readTree(new File(path,"tokenizer_config.json"));
-            JsonNode chatTemplate = tokenizerConfigDotJson.get("chat_template");
-
-            TokenizerConfig tokenizerConfig = new TokenizerConfig();
-            if (chatTemplate != null){
-                tokenizerConfig.chatTemplate = chatTemplate.asText();
+            if ("Qwen2Tokenizer".equals(tokenizerClass)) {
+                return new Quen2Tokenizer(new LinkedHashMap<>(), Optional.empty(), Optional.empty(), Optional.empty(),
+                        Optional.empty(), Optional.empty(), Optional.empty(), inputs,
+                        vocab, addedTokenMap, tokenizerConfig, bytePairEncodingModel);
+            }
+            if ("GemmaTokenizer".equals(tokenizerClass) || "LlamaTokenizer".equals(tokenizerClass)
+                    || "PreTrainedTokenizerFast".equals(tokenizerClass)) {
+                return new GemmaTokenizer(new LinkedHashMap<>(), Optional.empty(), Optional.empty(), Optional.empty(),
+                        Optional.empty(), Optional.empty(), Optional.empty(), inputs,
+                        vocab, addedTokenMap, tokenizerConfig, bytePairEncodingModel);
+            }
+            if ("BertTokenizer".equals(tokenizerClass)) {
+                return new BertTokenizer(new LinkedHashMap<>(), Optional.empty(), Optional.empty(), Optional.empty(),
+                        Optional.empty(), Optional.empty(), Optional.empty(), inputs,
+                        vocab, addedTokenMap, tokenizerConfig, bytePairEncodingModel);
             }
 
-            //  "tokenizer_class": "Qwen2Tokenizer",
-            String tclass = tokenizerConfigDotJson.get("tokenizer_class").asText();
-            if (tclass.equals("Qwen2Tokenizer")) {
-                return new Quen2Tokenizer(new HashMap<>(), Optional.empty(), Optional.empty(), Optional.empty(),
-                        Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
-                        map, addedTokenMap, tokenizerConfig
-                );
-            } else if (tclass.equals("GemmaTokenizer")) {
-                return new GemmaTokenizer(new HashMap<>(), Optional.empty(), Optional.empty(), Optional.empty(),
-                        Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
-                        map, addedTokenMap, tokenizerConfig
-                );
-            } else if (tclass.equals("LlamaTokenizer")){
-                return new GemmaTokenizer(new HashMap<>(), Optional.empty(), Optional.empty(), Optional.empty(),
-                        Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
-                        map, addedTokenMap, tokenizerConfig
-                );
-            } else if (tclass.equals("BertTokenizer")){
-                return new GemmaTokenizer(new HashMap<>(), Optional.empty(), Optional.empty(), Optional.empty(),
-                        Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
-                        map, addedTokenMap, tokenizerConfig
-                );
-            } else if (tclass.equals("PreTrainedTokenizerFast")){
-                //Llama thing
-                return new GemmaTokenizer(new HashMap<>(), Optional.empty(), Optional.empty(), Optional.empty(),
-                        Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
-                        map, addedTokenMap, tokenizerConfig
-                );
-            }
-
-
-            throw new io.teknek.dysfx.exception.UnreachableException("Could not find implementation " + tclass);
+            throw new io.teknek.dysfx.exception.UnreachableException("Could not find implementation " + tokenizerClass);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
-
-
-
-
-        /*
-        Class<PreTrainedTokenizerBase> clazz =  null;
-        if (tokenizerType.isPresent()){
-            clazz = registry.get(tokenizerType.get());
-            if (clazz == null){
-                throw new RuntimeException("The specified tokenizer_type is not found: " + tokenizerType.get()
-                        + " in registry: " + registry);
-            }
-        }*/
-        //return null;
-
     }
 
     public static PreTrainedTokenizer fromPretrained(OwnerNameOrPath ownerNameOrPath) {
         return fromPretrained(ownerNameOrPath, Optional.empty(), Optional.empty(), Collections.emptyMap());
     }
 
+    public static PreTrainedTokenizer fromPretrained(Path modelPath) {
+        return fromPretrained(OwnerNameOrPath.fromPath(modelPath));
+    }
+
     public static SortedMap<Integer, AddedToken> computeSortedTokenMap(JsonNode addedTokens) {
         SortedMap<Integer, AddedToken> addedTokenMap = new TreeMap<>();
-        if (!addedTokens.isNull()) {
-            if (addedTokens.isArray()) {
-                for (JsonNode addedToken : addedTokens) {
-                    int id = addedToken.get("id").asInt();
-                    String content = addedToken.get("content").asText();
-                    boolean singleWord = addedToken.get("single_word").asBoolean();
-                    boolean lstrip = addedToken.get("lstrip").asBoolean();
-                    boolean rstrip = addedToken.get("rstrip").asBoolean();
-                    boolean special = addedToken.get("special").asBoolean();
-                    JsonNode normalized = addedTokens.get("normalized");
-                    AddedToken a = new AddedToken(content, singleWord, lstrip, rstrip, special,
-                            normalized == null || normalized.isNull() ? null : normalized.asBoolean());
-                    addedTokenMap.put(id, a);
-                }
-            }
+        if (addedTokens == null || addedTokens.isMissingNode() || addedTokens.isNull()) {
+            return addedTokenMap;
+        }
 
+        if (addedTokens.isArray()) {
+            for (JsonNode addedToken : addedTokens) {
+                addTokenNode(addedTokenMap, addedToken.get("id").asInt(), addedToken);
+            }
+            return addedTokenMap;
+        }
+
+        if (addedTokens.isObject()) {
+            addedTokens.fields().forEachRemaining(entry -> addTokenNode(addedTokenMap, Integer.parseInt(entry.getKey()), entry.getValue()));
         }
         return addedTokenMap;
     }
 
+    private static void addTokenNode(SortedMap<Integer, AddedToken> addedTokenMap, int id, JsonNode addedToken) {
+        String content = readTokenValue(addedToken);
+        boolean singleWord = readBoolean(addedToken, "single_word", false);
+        boolean lstrip = readBoolean(addedToken, "lstrip", false);
+        boolean rstrip = readBoolean(addedToken, "rstrip", false);
+        boolean special = readBoolean(addedToken, "special", false);
+        JsonNode normalizedNode = addedToken.get("normalized");
+        AddedToken token = new AddedToken(content, singleWord, lstrip, rstrip, special,
+                normalizedNode == null || normalizedNode.isNull() ? null : normalizedNode.asBoolean());
+        addedTokenMap.put(id, token);
+    }
 
-    public static class OwnerName{
-        String owner;
-        String name;
-        public OwnerName(String owner, String name){
+    private static File resolveModelDirectory(OwnerNameOrPath ownerNameOrPath) {
+        if (ownerNameOrPath.ownerName != null) {
+            TokenizerModelFetcher fetcher = new TokenizerModelFetcher(ownerNameOrPath.ownerName.owner, ownerNameOrPath.ownerName.name);
+            return fetcher.maybeDownload();
+        }
+        if (ownerNameOrPath.modelPath != null) {
+            return ownerNameOrPath.modelPath.path.toFile();
+        }
+        throw new IllegalArgumentException("OwnerNameOrPath must contain either an owner/name pair or a local path");
+    }
+
+    private static Map<String, Integer> readVocab(File path, JsonNode tokenizerDocument, ObjectMapper objectMapper) throws IOException {
+        File vocabFile = new File(path, "vocab.json");
+        if (vocabFile.exists()) {
+            return objectMapper.readValue(vocabFile, new TypeReference<Map<String, Integer>>() {
+            });
+        }
+
+        JsonNode modelVocab = tokenizerDocument.path("model").path("vocab");
+        if (modelVocab.isObject()) {
+            return objectMapper.convertValue(modelVocab, new TypeReference<Map<String, Integer>>() {
+            });
+        }
+        return Map.of();
+    }
+
+    private static TokenizerConfig parseTokenizerConfig(JsonNode tokenizerConfigDocument, JsonNode specialTokensMapDocument) {
+        JsonNode mergedSpecialSource = specialTokensMapDocument == null ? tokenizerConfigDocument : specialTokensMapDocument;
+        Map<String, String> specialTokens = new LinkedHashMap<>();
+        for (String attribute : PreTrainedTokenizerBase.SPECIAL_TOKEN_ATTRIBUTES) {
+            String token = readTokenValue(mergedSpecialSource == null ? null : mergedSpecialSource.get(attribute));
+            if (token == null && tokenizerConfigDocument != null) {
+                token = readTokenValue(tokenizerConfigDocument.get(attribute));
+            }
+            if (token != null) {
+                specialTokens.put(attribute, token);
+            }
+        }
+
+        List<String> additionalSpecialTokens = readStringList(mergedSpecialSource == null ? null : mergedSpecialSource.get("additional_special_tokens"));
+        if (additionalSpecialTokens.isEmpty() && tokenizerConfigDocument != null) {
+            additionalSpecialTokens = readStringList(tokenizerConfigDocument.get("additional_special_tokens"));
+        }
+
+        return new TokenizerConfig(
+                readText(tokenizerConfigDocument, "chat_template"),
+                readText(tokenizerConfigDocument, "tokenizer_class"),
+                readBoolean(tokenizerConfigDocument, "clean_up_tokenization_spaces", false),
+                readBoolean(tokenizerConfigDocument, "split_special_tokens", false),
+                readBigInteger(tokenizerConfigDocument, "model_max_length", TokenizerUtils.VERY_LARGE_INTEGER),
+                parsePaddingSide(readText(tokenizerConfigDocument, "padding_side")),
+                parseTruncationSide(readText(tokenizerConfigDocument, "truncation_side")),
+                specialTokens,
+                additionalSpecialTokens);
+    }
+
+    private static BytePairEncodingModel parseBytePairEncodingModel(File path, JsonNode tokenizerDocument, Map<String, Integer> vocab) throws IOException {
+        JsonNode modelNode = tokenizerDocument.path("model");
+        if (!"BPE".equals(modelNode.path("type").asText())) {
+            return null;
+        }
+
+        List<String> merges = readStringList(modelNode.get("merges"));
+        if (merges.isEmpty()) {
+            File mergesFile = new File(path, "merges.txt");
+            if (mergesFile.exists()) {
+                merges = java.nio.file.Files.readAllLines(mergesFile.toPath()).stream()
+                        .filter(line -> !line.isBlank() && !line.startsWith("#"))
+                        .toList();
+            }
+        }
+
+        return new BytePairEncodingModel(
+                vocab,
+                BytePairEncodingModel.fromMerges(merges),
+                parsePreTokenizer(tokenizerDocument.path("pre_tokenizer")),
+                readText(modelNode, "unk_token"));
+    }
+
+    private static JsonNode readOptionalJson(ObjectMapper objectMapper, File file) throws IOException {
+        return file.exists() ? objectMapper.readTree(file) : null;
+    }
+
+    private static String readText(JsonNode node, String field) {
+        if (node == null) {
+            return null;
+        }
+        JsonNode fieldNode = node.get(field);
+        if (fieldNode == null || fieldNode.isNull()) {
+            return null;
+        }
+        return fieldNode.asText();
+    }
+
+    private static boolean readBoolean(JsonNode node, String field, boolean defaultValue) {
+        if (node == null) {
+            return defaultValue;
+        }
+        JsonNode fieldNode = node.get(field);
+        return fieldNode == null || fieldNode.isNull() ? defaultValue : fieldNode.asBoolean();
+    }
+
+    private static BigInteger readBigInteger(JsonNode node, String field, BigInteger defaultValue) {
+        if (node == null) {
+            return defaultValue;
+        }
+        JsonNode fieldNode = node.get(field);
+        if (fieldNode == null || fieldNode.isNull()) {
+            return defaultValue;
+        }
+        return fieldNode.canConvertToLong() ? BigInteger.valueOf(fieldNode.asLong()) : new BigInteger(fieldNode.asText());
+    }
+
+    private static String readTokenValue(JsonNode node) {
+        if (node == null || node.isNull() || node.isMissingNode()) {
+            return null;
+        }
+        if (node.isTextual()) {
+            return node.asText();
+        }
+        JsonNode contentNode = node.get("content");
+        return contentNode == null || contentNode.isNull() ? null : contentNode.asText();
+    }
+
+    private static List<String> readStringList(JsonNode node) {
+        if (node == null || node.isNull() || !node.isArray()) {
+            return List.of();
+        }
+        List<String> values = new ArrayList<>(node.size());
+        for (JsonNode child : node) {
+            String value = readTokenValue(child);
+            if (value != null) {
+                values.add(value);
+            }
+        }
+        return List.copyOf(values);
+    }
+
+    private static PreTokenizerConfig parsePreTokenizer(JsonNode preTokenizerNode) {
+        if (preTokenizerNode == null || preTokenizerNode.isNull() || preTokenizerNode.isMissingNode()) {
+            return new PreTokenizerConfig(null, false, false);
+        }
+
+        String splitPattern = null;
+        boolean addPrefixSpace = false;
+        boolean useRegex = false;
+
+        if ("Sequence".equals(preTokenizerNode.path("type").asText()) && preTokenizerNode.path("pretokenizers").isArray()) {
+            for (JsonNode child : preTokenizerNode.path("pretokenizers")) {
+                if ("Split".equals(child.path("type").asText())) {
+                    splitPattern = child.path("pattern").path("Regex").asText(null);
+                }
+                if ("ByteLevel".equals(child.path("type").asText())) {
+                    addPrefixSpace = readBoolean(child, "add_prefix_space", false);
+                    useRegex = readBoolean(child, "use_regex", false);
+                }
+            }
+            return new PreTokenizerConfig(splitPattern, addPrefixSpace, useRegex);
+        }
+
+        if ("ByteLevel".equals(preTokenizerNode.path("type").asText())) {
+            return new PreTokenizerConfig(
+                    null,
+                    readBoolean(preTokenizerNode, "add_prefix_space", false),
+                    readBoolean(preTokenizerNode, "use_regex", false));
+        }
+
+        if ("Split".equals(preTokenizerNode.path("type").asText())) {
+            return new PreTokenizerConfig(preTokenizerNode.path("pattern").path("Regex").asText(null), false, false);
+        }
+
+        return new PreTokenizerConfig(null, false, false);
+    }
+
+    private static PaddingSide parsePaddingSide(String side) {
+        if (side == null) {
+            return PaddingSide.RIGHT;
+        }
+        return "left".equalsIgnoreCase(side) ? PaddingSide.LEFT : PaddingSide.RIGHT;
+    }
+
+    private static TruncationSide parseTruncationSide(String side) {
+        if (side == null) {
+            return TruncationSide.RIGHT;
+        }
+        return "left".equalsIgnoreCase(side) ? TruncationSide.LEFT : TruncationSide.RIGHT;
+    }
+
+    public static class OwnerName {
+        private final String owner;
+        private final String name;
+
+        public OwnerName(String owner, String name) {
             this.owner = owner;
             this.name = name;
         }
     }
-    static class ModelPath {
-        Path path;
+
+    private static class ModelPath {
+        private final Path path;
+
+        private ModelPath(Path path) {
+            this.path = path;
+        }
     }
-    public static class OwnerNameOrPath{
+
+    public static class OwnerNameOrPath {
         private final OwnerName ownerName;
         private final ModelPath modelPath;
-        public OwnerNameOrPath(OwnerName ownerName){
+
+        public OwnerNameOrPath(OwnerName ownerName) {
             this.ownerName = ownerName;
             this.modelPath = null;
         }
 
-        public OwnerNameOrPath(ModelPath modelPath){
-            this.modelPath = modelPath;
+        public OwnerNameOrPath(Path modelPath) {
+            this.modelPath = new ModelPath(modelPath);
             this.ownerName = null;
         }
 
+        public static OwnerNameOrPath fromPath(Path modelPath) {
+            return new OwnerNameOrPath(modelPath);
+        }
     }
 }
