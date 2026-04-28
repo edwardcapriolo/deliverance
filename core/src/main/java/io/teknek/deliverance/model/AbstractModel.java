@@ -143,12 +143,16 @@ public abstract class AbstractModel implements Generator, Classifier {
         if (modelDType == DType.Q4
                 && workingMemoryQType == DType.I8
                 && (c.embeddingLength / Q8ByteBufferTensor.BLOCK_SIZE) % (FloatVector.SPECIES_PREFERRED.vectorBitSize() / Float.SIZE) != 0) {
+            logger.warn("Determined model could not support quant type. Request {} model {} falling back to {} ",
+                    workingMemoryQType, modelDType, DType.F32 );
             workingMemoryQType = DType.F32;
         }
 
         // Some operation providers don't support Q4I8
         if (modelDType == DType.Q4 && workingMemoryQType.size() < configurableTensorProvider.get().preferredWorkingQuantizedType().size()) {
             workingMemoryQType = configurableTensorProvider.get().preferredWorkingQuantizedType();
+            logger.warn("Tensor provider {} does not support Q4. Using {} as workingMemoryType ",
+                    configurableTensorProvider.get().name(), workingMemoryQType);
         }
 
         if (workingMemoryQType != workingMemoryDType) {

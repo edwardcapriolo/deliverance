@@ -14,6 +14,9 @@ import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentMap;
@@ -22,11 +25,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class ModelSupportTest {
 
+    String modelName = "microlama-lidor-finetuned";
+    String modelOwner = "lidoreliya13";
+    ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
+
     @Test
     void load() {
-        String modelName = "microlama-lidor-finetuned";
-        String modelOwner = "lidoreliya13";
-        ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
+
         File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
         ArrayQueueTensorAllocator tc = new ArrayQueueTensorAllocator(new MetricRegistry());
@@ -64,5 +69,35 @@ public class ModelSupportTest {
                 assertEquals("4,5,6,7,8", r.responseText);
             }
         }
+    }
+
+    @Test
+    public void diskBasedKv() throws IOException {
+        File f = new File("target/test-data");
+        f.mkdir();
+        KvBufferCacheSettings k = new KvBufferCacheSettings(f);
+        try (AbstractModel model = AutoModelForCausaLm.newBuilder(this.fetch).withKvBufferCacheSettings(k).build() ){
+            {
+                String prompt = "What comes next in the sequence? 1, 2, 3 ";
+                PromptContext ctx = PromptContext.of(prompt);
+                Response r = model.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(43)
+                        .withNtokens(50), new DoNothingGenerateEvent());
+                assertEquals("1,3,4,5,6,7,8,9,10,1", r.responseText);
+            }
+        }
+        Path directory = Paths.get(f.toURI());
+        Files.walkFileTree(directory, new SimpleFileVisitor<Path>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                Files.delete(file);
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+                Files.delete(dir);
+                return FileVisitResult.CONTINUE;
+            }
+        });
     }
 }
