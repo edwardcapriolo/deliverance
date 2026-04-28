@@ -1,0 +1,43 @@
+{
+  "added_tokens_decoder": {
+    "100": {
+      "content": "<pad>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": false,
+      "special": true
+    },
+    "101": {
+      "content": "<eos>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": false,
+      "special": true
+    },
+    "102": {
+      "content": "<assistant>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": false,
+      "special": true
+    },
+    "103": {
+      "content": "<tool_call>",
+      "lstrip": false,
+      "normalized": false,
+      "rstrip": false,
+      "single_word": false,
+      "special": false
+    }
+  },
+  "chat_template": "{%- for message in messages %}{{ message.role }}: {{ message.content }}{%- endfor %}",
+  "clean_up_tokenization_spaces": true,
+  "model_max_length": 32,
+  "padding_side": "left",
+  "split_special_tokens": false,
+  "tokenizer_class": "Qwen2Tokenizer",
+  "truncation_side": "right"
+}
