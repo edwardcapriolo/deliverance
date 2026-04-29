@@ -108,20 +108,6 @@ public class AutoModelForCausaLm {
             return this;
         }
 
-        private Optional<TensorOperations> getNative(TensorOperations inject){
-            String nm = "io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations";
-            try {
-                return Optional.of((TensorOperations) Class.forName(nm)
-                        .getConstructor(TensorOperations.class).newInstance(inject));
-            } catch (InstantiationException | ClassNotFoundException | NoSuchMethodException |
-                     InvocationTargetException | IllegalAccessException e) {
-                LOGGER.warn("unable to load native SIMD support", e);
-            } catch (UnsatisfiedLinkError e){
-                LOGGER.warn("unable to load native SIMD support", e);
-            }
-            return Optional.empty();
-        }
-
         public AbstractModel build(){
             System.setProperty("jdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK", this.oobCheck);
             File modelRoot = fetch.maybeDownload();
@@ -174,5 +160,19 @@ public class AutoModelForCausaLm {
         public WrappedForkJoinPool getPool() {
             return this.pool;
         }
+    }
+
+    public static Optional<TensorOperations> getNative(TensorOperations inject){
+        String nm = "io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations";
+        try {
+            return Optional.of((TensorOperations) Class.forName(nm)
+                    .getConstructor(TensorOperations.class).newInstance(inject));
+        } catch (InstantiationException | ClassNotFoundException | NoSuchMethodException |
+                 InvocationTargetException | IllegalAccessException e) {
+            LOGGER.warn("unable to load native SIMD support", e);
+        } catch (UnsatisfiedLinkError e){
+            LOGGER.warn("unable to load native SIMD support", e);
+        }
+        return Optional.empty();
     }
 }

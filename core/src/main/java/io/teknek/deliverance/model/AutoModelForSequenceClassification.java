@@ -8,17 +8,19 @@ import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
+import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.util.Optional;
 
 public class AutoModelForSequenceClassification {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AutoModelForSequenceClassification.class);
+    
     public static AbstractModel fromPretrained(ModelFetcher fetcher){
         return new AutoModelForSequenceClassification.Builder(fetcher).build();
     }
@@ -100,14 +102,11 @@ public class AutoModelForSequenceClassification {
             if (pool == null){
                 pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
             }
-            if (provider == null) {
+            if (provider == null){
                 ConfigurableTensorProvider base = new ConfigurableTensorProvider(allocator, pool);
-                try {
-                    NativeSimdTensorOperations operations = new NativeSimdTensorOperations(base.get());
-                    provider = new ConfigurableTensorProvider(operations);
-                } catch (UnsatisfiedLinkError e) {
-                    LOGGER.warn("unable to load native SIMD support", e);
-                    provider = base;
+                Optional<TensorOperations> maybe = AutoModelForCausaLm.getNative(base.get());
+                if (maybe.isPresent()){
+                    provider = new ConfigurableTensorProvider(maybe.get());
                 }
             }
             return ModelSupport.loadClassificationModel(modelRoot, workingMem, workingQuant, provider,
