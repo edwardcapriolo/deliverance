@@ -57,6 +57,7 @@
             <version>${project.version}</version>
             <classifier>${os.detected.name}-${os.detected.arch}</classifier>
             <optional>true</optional>
+            <scope>test</scope>
         </dependency>
 
         <dependency>
@@ -128,13 +129,6 @@
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
             <version>${guava.version}</version>
-        </dependency>
-
-        <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-core</artifactId>
-            <version>${langchain4j.version}</version>
-            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.mockito</groupId>

@@ -14,8 +14,6 @@
     <maven.compiler.release>24</maven.compiler.release>
     -->
     <build.plugins.plugin.version>3.5.3</build.plugins.plugin.version>
-
-
   </properties>
 
   <dependencies>

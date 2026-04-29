@@ -9,7 +9,7 @@ import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
+import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
 import io.teknek.deliverance.toolcallparser.LlamaToolCallParser;
 import io.teknek.deliverance.toolcallparser.QwenToolCallParser;
@@ -18,6 +18,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.lang.reflect.InvocationTargetException;
+import java.util.Optional;
 
 public class AutoModelForCausaLm {
     private static final Logger LOGGER = LoggerFactory.getLogger(AutoModelForCausaLm.class);
@@ -106,6 +108,20 @@ public class AutoModelForCausaLm {
             return this;
         }
 
+        private Optional<TensorOperations> getNative(TensorOperations inject){
+            String nm = "io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations";
+            try {
+                return Optional.of((TensorOperations) Class.forName(nm)
+                        .getConstructor(TensorOperations.class).newInstance(inject));
+            } catch (InstantiationException | ClassNotFoundException | NoSuchMethodException |
+                     InvocationTargetException | IllegalAccessException e) {
+                LOGGER.warn("unable to load native SIMD support", e);
+            } catch (UnsatisfiedLinkError e){
+                LOGGER.warn("unable to load native SIMD support", e);
+            }
+            return Optional.empty();
+        }
+
         public AbstractModel build(){
             System.setProperty("jdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK", this.oobCheck);
             File modelRoot = fetch.maybeDownload();
@@ -113,14 +129,11 @@ public class AutoModelForCausaLm {
                 pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
             }
             if (provider == null){
-                ConfigurableTensorProvider base  = new ConfigurableTensorProvider(allocator, pool);
-                 try {
-                     NativeSimdTensorOperations operations = new NativeSimdTensorOperations(base.get());
-                     provider = new ConfigurableTensorProvider(operations);
-                 } catch (UnsatisfiedLinkError e){
-                     LOGGER.warn("unable to load native SIMD support", e);
-                     provider = base;
-                 }
+                ConfigurableTensorProvider base = new ConfigurableTensorProvider(allocator, pool);
+                Optional<TensorOperations> maybe = getNative(base.get());
+                if (maybe.isPresent()){
+                    provider = new ConfigurableTensorProvider(maybe.get());
+                }
             }
             return ModelSupport.loadModel(modelRoot, workingMem, workingQuant, provider,
                     mr, allocator, settings, fetch, tokenRenderer, toolCallParser, pool);
