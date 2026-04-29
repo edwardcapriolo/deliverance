@@ -152,8 +152,7 @@ public class AutoTokenizer {
             }
         }
 
-        List<String> additionalSpecialTokens = readStringList(mergedSpecialSource == null ? null :
-                mergedSpecialSource.get("additional_special_tokens"));
+        List<String> additionalSpecialTokens = readStringList(mergedSpecialSource == null ? null : mergedSpecialSource.get("additional_special_tokens"));
         if (additionalSpecialTokens.isEmpty() && tokenizerConfigDocument != null) {
             additionalSpecialTokens = readStringList(tokenizerConfigDocument.get("additional_special_tokens"));
         }

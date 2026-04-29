@@ -18,6 +18,9 @@ public interface TensorOperations {
      */
     int parallelSplitSize();
 
+    /* This is the minimum the tensor provider supports. So for example if the model is Q4 and the provider falls below
+    this the working memory will be set to at least this type
+     */
     default DType preferredWorkingQuantizedType() {
         return DType.I8;
     }
