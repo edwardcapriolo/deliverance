@@ -23,33 +23,21 @@ public class ModelFetcher {
     protected String owner;
     protected String name;
     protected String token;
+    protected String modelUriBase = "https://huggingface.co/api/models/";
 
     protected ModelFetcher(){
-        //This isnt a great design but hacking at the extensibility here
+
     }
-    /**
-     * Attempts to locate a token though ENV then java properties
-     * @param owner
-     * @param name
-     */
+
     public ModelFetcher(String owner, String name){
         this.owner = owner;
         this.name = name;
-
         String home = System.getProperty("user.home");
         baseDir = Path.of(home, ".deliverance");
         token = System.getenv(HF_TOKEN);
-
         String tokenProp = System.getProperty(HF_PROP);
         if (tokenProp != null) {
             token = tokenProp;
-        }
-        if (!Files.exists(baseDir)){
-            try {
-                Files.createDirectory(baseDir);
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
         }
     }
 
@@ -58,22 +46,22 @@ public class ModelFetcher {
         this.token = token;
     }
 
-    public String getOwner() {
-        return owner;
-    }
-
-    public String getName() {
-        return name;
-    }
-
     public File maybeDownload(){
-        Path modelDir = Paths.get(baseDir.toString(), owner + "_" + name);
+        if (!Files.exists(baseDir)){
+            try {
+                Files.createDirectory(baseDir);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
+        Path modelDir = pathForModel();
         if (Files.exists(modelDir)){
             return modelDir.toFile();
         } else {
             try {
-                return maybeDownloadModel(baseDir.toString(), Optional.of(this.owner), this.name,
-                        true, Optional.empty(), token != null ? Optional.of(token): Optional.empty());
+                return maybeDownloadModel(Optional.of(this.owner), this.name,
+                        true, Optional.empty(),
+                        token != null ? Optional.of(token): Optional.empty(), modelUriBase);
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
@@ -81,9 +69,16 @@ public class ModelFetcher {
     }
 
     /**
+     *
+     * @return The path to where the model might exists
+     */
+    public Path pathForModel(){
+        return Paths.get(baseDir.toString(), owner + "_" + name);
+    }
+
+    /**
      * Download a model from HuggingFace and return the path to the model directory
      *
-     * @param modelDir The directory to save the model to
      * @param modelOwner The owner of the HF model (if any)
      * @param modelName The name of the HF model
      * @param downloadWeights Include the weights or leave them out
@@ -93,21 +88,21 @@ public class ModelFetcher {
      * @return The path to the downloaded model directory
      * @throws IOException
      */
-    protected static File maybeDownloadModel(
-            String modelDir,
+    protected File maybeDownloadModel(
             Optional<String> modelOwner,
             String modelName,
             boolean downloadWeights,
             Optional<String> optionalBranch,
-            Optional<String> optionalAuthHeader
+            Optional<String> optionalAuthHeader,
+            String baseUrl
     ) throws IOException {
-        Path localModelDir = constructLocalModelPath(modelDir, modelOwner.orElse("na"), modelName);
+        Path localModelDir = pathForModel();
         if (Files.exists(localModelDir.resolve(FINISHED_MARKER))) {
             return localModelDir.toFile();
         }
         String hfModel = modelOwner.map(mo -> mo + "/" + modelName).orElse(modelName);
         InputStream modelInfoStream = HttpSupport.getResponse(
-                "https://huggingface.co/api/models/" + hfModel + "/tree/" + optionalBranch.orElse("main"),
+                baseUrl + hfModel + "/tree/" + optionalBranch.orElse("main"),
                 optionalAuthHeader,
                 Optional.empty()
         ).getLeft();
@@ -119,28 +114,9 @@ public class ModelFetcher {
         if (allFiles.isEmpty()) {
             throw new IOException("No valid model found");
         }
-        List<String> tensorFiles = new ArrayList<>();
-        boolean hasSafetensor = false;
-        for (String currFile : allFiles) {
-            String f = currFile.toLowerCase();
-            if ((f.contains("safetensor") && !f.contains("consolidated"))
-                    || f.contains("readme")
-                    || f.equals("config.json")
-                    || f.contains("tokenizer")) {
-                if (f.contains("safetensor")) {
-                    hasSafetensor = true;
-                }
-                if (!downloadWeights && f.contains("safetensor")) {
-                    continue;
-                }
-                tensorFiles.add(currFile);
-            }
-        }
-        if (!hasSafetensor) {
-            throw new IOException("Model is not available in safetensor format");
-        }
+        List<String> filesToDownload = filesToDownload(allFiles, downloadWeights);
         Files.createDirectories(localModelDir);
-        for (String currFile : tensorFiles) {
+        for (String currFile : filesToDownload) {
             HttpSupport.downloadFile(
                     hfModel,
                     currFile,
@@ -154,9 +130,32 @@ public class ModelFetcher {
         return localModelDir.toFile();
     }
 
+    protected List<String> filesToDownload(List<String> allFiles, boolean downloadWeights){
+        List<String> filesToDownload = new ArrayList<>();
+        boolean hasSafetensor = false;
+        for (String currFile : allFiles) {
+            String lowerCaseFile = currFile.toLowerCase();
+            if ((lowerCaseFile.contains("safetensor") && !lowerCaseFile.contains("consolidated"))
+                    || lowerCaseFile.contains("readme")
+                    || lowerCaseFile.equals("config.json")
+                    || lowerCaseFile.contains("tokenizer")) {
+                if (lowerCaseFile.contains("safetensor")) {
+                    hasSafetensor = true;
+                }
+                if (!downloadWeights && lowerCaseFile.contains("safetensor")) {
+                    continue;
+                }
+                filesToDownload.add(currFile);
+            }
+        }
+        if (!hasSafetensor) {
+            throw new RuntimeException("Model is not available in safetensor format");
+        }
+        return  filesToDownload;
+    }
+
     protected static List<String> parseFileList(String modelInfo) throws IOException {
         List<String> fileList = new ArrayList<>();
-
         ObjectMapper objectMapper = new ObjectMapper();
         JsonNode siblingsNode = objectMapper.readTree(modelInfo);
         if (siblingsNode.isArray()) {
@@ -165,39 +164,30 @@ public class ModelFetcher {
                 fileList.add(rFilename);
             }
         }
-
         return fileList;
     }
 
-    private static File maybeDownloadModel(String modelDir, String fullModelName) throws IOException {
-        String[] parts = fullModelName.split("/");
-        if (parts.length == 0 || parts.length > 2) {
-            throw new IllegalArgumentException("Model must be in the form owner/name");
-        }
-
-        String owner;
-        String name;
-
-        if (parts.length == 1) {
-            owner = null;
-            name = fullModelName;
-        } else {
-            owner = parts[0];
-            name = parts[1];
-        }
-
-        return maybeDownloadModel(
-                modelDir,
-                Optional.ofNullable(owner),
-                name,
-                true,
-                Optional.empty(),
-                Optional.empty()
-        );
+    public String getModelUriBase() {
+        return modelUriBase;
     }
 
-    public static Path constructLocalModelPath(String modelDir, String owner, String modelName) {
-        return Paths.get(modelDir, owner + "_" + modelName);
+    public void setModelUriBase(String modelUriBase) {
+        this.modelUriBase = modelUriBase;
     }
 
+    public String getOwner() {
+        return owner;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public Path getBaseDir() {
+        return baseDir;
+    }
+
+    public void setBaseDir(Path baseDir) {
+        this.baseDir = baseDir;
+    }
 }
