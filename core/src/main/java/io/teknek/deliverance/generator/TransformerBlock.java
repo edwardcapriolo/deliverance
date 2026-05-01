@@ -162,7 +162,6 @@ public class TransformerBlock {
         AbstractTensor postFF;
         try (AbstractTensor qlnemb2 = model.maybeQuantize(lnpreFF)) {
             postFF = ffBlock.forward(qlnemb2, tensorReducer);
-            debug("post_ff", postFF, layerIndex);
         }
 
         AbstractTensor lnpostFF = maybeApplyNorm(postFF, postFFNorm);

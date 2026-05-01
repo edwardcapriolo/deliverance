@@ -26,6 +26,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class KvBufferCache implements Closeable {
 
+    public record CacheKey (Optional<String> salt, List<Integer> prefixTokens){
+    }
     public record PrefixEntry(KvBuffer buffer, int length) {
 
     }
@@ -36,9 +38,9 @@ public class KvBufferCache implements Closeable {
     private final KvBufferCacheSettings kvBufferCacheSettings;
     private final int blockSize;
 
-    public final Map<List<Integer>, PrefixEntry> prefixCache = Collections.synchronizedMap(
-            new LinkedHashMap<List<Integer>, PrefixEntry>(16, 0.75f, true) {
-                public boolean removeEldestEntry(Map.Entry<List<Integer>, PrefixEntry> eldest) {
+    public final Map<CacheKey, PrefixEntry> prefixCache = Collections.synchronizedMap(
+            new LinkedHashMap<CacheKey, PrefixEntry>(16, 0.75f, true) {
+                public boolean removeEldestEntry(Map.Entry<CacheKey, PrefixEntry> eldest) {
                     boolean evict = size() > kvBufferCacheSettings.getMaxEntries();
                     if (evict && eldest != null && eldest.getValue() != null) {
                         model.getMetricRegistry().meter("kvbuffercache.evict").mark();
@@ -58,7 +60,7 @@ public class KvBufferCache implements Closeable {
         this.blockSize = kvBufferCacheSettings.getBlockSize();
     }
 
-    public PrefixEntry lookupPrefix(int[] tokens) {
+    public PrefixEntry lookupPrefix(int[] tokens, Optional<String> salt) {
         int limit = kvBufferCacheSettings.getMaxPrefixTokensPerPrompt();
         int len = Math.min(tokens.length, limit);
         List<Integer> soFar = new ArrayList<>();
@@ -66,7 +68,7 @@ public class KvBufferCache implements Closeable {
         int tokenLimit = Math.min(tokens.length, len);
         for (int i = 0; i < tokenLimit; i++) {
             soFar.add(tokens[i]);
-            PrefixEntry e = prefixCache.get(soFar);
+            PrefixEntry e = prefixCache.get(new CacheKey(salt, soFar));
             if (e != null) {
                 best = e;
             }
@@ -80,7 +82,10 @@ public class KvBufferCache implements Closeable {
         return null;
     }
 
-    public void storePrefix(int[] tokens, KvBuffer buffer) {
+    public void storePrefix(int[] tokens, KvBuffer buffer, Optional<String> salt) {
+        if (kvBufferCacheSettings.getMaxEntries() < 1){
+            return;
+        }
         int limit = kvBufferCacheSettings.getMaxPrefixTokensPerPrompt();
         int tokenLen = Math.min(tokens.length, limit);
         List<Integer> soFar = new ArrayList<>();
@@ -92,7 +97,7 @@ public class KvBufferCache implements Closeable {
             }
             KvBuffer snapshot = getEphemeralKvBuffer();
             copyPrefix(buffer, snapshot, prefixLen);
-            prefixCache.putIfAbsent(new ArrayList<>(soFar), new PrefixEntry(snapshot, prefixLen));
+            prefixCache.putIfAbsent(new CacheKey(salt, new ArrayList<>(soFar)), new PrefixEntry(snapshot, prefixLen));
         }
     }
 
