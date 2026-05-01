@@ -335,7 +335,7 @@ public abstract class AbstractModel implements Generator, Classifier {
             try (AbstractTensor logits = makeDenseTensor(config.vocabularySize)) {
                 int [] promptTokens = constructPromptTokens(encoded);
 
-                KvBufferCache.PrefixEntry prefixHit = kvBufferCache.lookupPrefix(promptTokens);
+                KvBufferCache.PrefixEntry prefixHit = kvBufferCache.lookupPrefix(promptTokens, generatorParameters.cacheSalt);
                 int prefixLength = 0;
                 if (prefixHit != null) {
                     prefixLength = prefixHit.length();
@@ -348,14 +348,12 @@ public abstract class AbstractModel implements Generator, Classifier {
                 AbstractTensor last;
                 if (tokensToProcess.length > 0) {
                     last = batchForward(tokensToProcess, startPos, kvmem);
-                    kvBufferCache.storePrefix(promptTokens, kvmem);
+                    kvBufferCache.storePrefix(promptTokens, kvmem, generatorParameters.cacheSalt);
                 } else {
                     int lastToken = promptTokens[prefixLength - 1];
                     last = forward(lastToken, startPos - 1, kvmem);
                 }
-                //if (tokensToProcess.length > 0) {
-                //    kvBufferCache.storePrefix(promptTokens, kvmem);
-                //}
+
 
                 SamplerReturn nextSamplerRet = createNextToken(generatorParameters, logits, last, responseContext, random, temperature);
                 int next = nextSamplerRet.token;

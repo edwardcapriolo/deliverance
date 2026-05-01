@@ -20,7 +20,7 @@ import java.util.Optional;
 public class AutoModelForSequenceClassification {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AutoModelForSequenceClassification.class);
-    
+
     public static AbstractModel fromPretrained(ModelFetcher fetcher){
         return new AutoModelForSequenceClassification.Builder(fetcher).build();
     }
