@@ -2,7 +2,7 @@
 
 cat << EOF > Dockerfile
 ##################STAGE1#################
-FROM ecapriolo/jdk-25:0.0.1 AS deliverance-base
+FROM ecapriolo/jdk-25:0.0.2 AS deliverance-base
 RUN apk add git
 RUN apk add maven
 
@@ -28,13 +28,13 @@ RUN --mount=type=cache,target=/root/.m2 cd /build/deliverance && mvn install -Dm
 
 
 ##################STAGE3#################
-FROM ecapriolo/jdk-25:0.0.1 AS deliverance
+FROM ecapriolo/jdk-25:0.0.2 AS deliverance
 RUN mkdir /deliverance
 RUN apk add bash
 
 RUN addgroup -S deliverance && adduser -S -G deliverance -H -D deliverance
 RUN mkdir /deliverance/logs && chown deliverance:deliverance /deliverance/logs
-COPY --from=deliverance-sha /build/deliverance/web/target/web-0.0.6-SNAPSHOT.jar /deliverance/web.jar
+COPY --from=deliverance-sha /build/deliverance/web/target/web-0.0.10-SNAPSHOT.jar /deliverance/web.jar
 COPY entry_point.sh /deliverance/entry_point.sh
 COPY inlinerules.json /deliverance/inlinerules.json
 COPY simple.properties /deliverance/
@@ -46,7 +46,7 @@ ENTRYPOINT ["/deliverance/entry_point.sh"]
 EOF
 
 #SHA=$(curl -s 'https://api.github.com/repos/<you>/<your-repo>/commits' | jq -r '.[0].sha')
-SHA=v0.0.5
+SHA=v0.0.9
 
 DOCKER_BUILDKIT=1 docker build \
 --target deliverance-base \
