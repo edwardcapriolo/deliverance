@@ -50,13 +50,16 @@ SHA=v0.0.9
 
 DOCKER_BUILDKIT=1 docker build \
 --target deliverance-base \
+--no-cache \
 -t deliverance-base .
 
 DOCKER_BUILDKIT=1 docker build \
 --build-arg REPO_COMMIT_SHA=$SHA \
 --target deliverance-sha \
+--no-cache \
 -t deliverance-sha .
 
 DOCKER_BUILDKIT=1 docker build \
 --target deliverance \
+--no-cache \
 -t deliverance .
