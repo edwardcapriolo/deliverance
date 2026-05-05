@@ -312,6 +312,10 @@ public abstract class AbstractModel implements Generator, Classifier {
         return Optional.empty();
     }
 
+    protected Response postProcessResponse(Response response) {
+        return response;
+    }
+
     @Override
     public Response generate(UUID sessionId, PromptContext promptContext, GeneratorParameters generatorParameters,
                                      GenerateEvent eventFired) {
@@ -379,38 +383,38 @@ public abstract class AbstractModel implements Generator, Classifier {
                     if (generatorParameters.maxTokens.isPresent()){
                         if (responseContext.generatedTokens.size() >= generatorParameters.maxTokens.get()) {
                             FinishReason reason = FinishReason.MAX_TOKENS;
-                            return new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
-                                    reason,  encoded.length, responseContext.generatedTokens, 0, 0, responseContext.samplerReturnList);
+                            return postProcessResponse(new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
+                                    reason,  encoded.length, responseContext.generatedTokens, 0, 0, responseContext.samplerReturnList));
                         }
                     }
                     if (generatorParameters.guidedChoice.isPresent()) {
                         if (generatorParameters.guidedChoice.get().contains(responseContext.responseText.toString())) {
                             FinishReason reason = FinishReason.STOP_TOKEN;
-                            return new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
-                                    reason,  encoded.length, responseContext.generatedTokens, 0, 0, responseContext.samplerReturnList);
+                            return postProcessResponse(new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
+                                    reason,  encoded.length, responseContext.generatedTokens, 0, 0, responseContext.samplerReturnList));
                         }
                     }
                     Optional<Response> shouldEnd = stopWords(generatorParameters, responseContext, encoded.length);
                     if (shouldEnd.isPresent()) {
-                        return shouldEnd.get();
+                        return postProcessResponse(shouldEnd.get());
                     }
                     if (config.eosTokens.contains(next)){
                         FinishReason reason = FinishReason.STOP_TOKEN;
-                        return new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
-                                reason,  encoded.length, responseContext.generatedTokens, 0, 0, responseContext.samplerReturnList);
+                        return postProcessResponse(new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
+                                reason,  encoded.length, responseContext.generatedTokens, 0, 0, responseContext.samplerReturnList));
                     }
                     Optional<Response> shouldEndTools = getToolCallParser().shouldEndTurn(responseContext, encoded.length);
                     if (shouldEndTools.isPresent()) {
-                        return shouldEndTools.get();
+                        return postProcessResponse(shouldEndTools.get());
                     }
 
                 }
             }
         }
 
-        return  new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
+        return postProcessResponse(new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
                 FinishReason.MAX_TOKENS, encoded.length, responseContext.generatedTokens, 0, 0,
-                responseContext.samplerReturnList);
+                responseContext.samplerReturnList));
     }
 
     @Override

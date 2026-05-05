@@ -79,8 +79,14 @@ public class ChatCompletionController {
                         ready.generatorParameters(), new DoNothingGenerateEvent());
                 CreateChatCompletionResponse response = new CreateChatCompletionResponse();
                 List<ToolCall> tcs = model.getToolCallParser().extract(resp);
+                ChatCompletionResponseMessage message = new ChatCompletionResponseMessage()
+                        .role(ChatCompletionResponseMessage.RoleEnum.ASSISTANT)
+                        .content(resp.responseText);
+                if (resp.reasoning != null) {
+                    message.reasoning(resp.reasoning);
+                }
                 CreateChatCompletionResponseChoicesInner choice = new CreateChatCompletionResponseChoicesInner()
-                        .message(new ChatCompletionResponseMessage().content(resp.responseTextWithSpecialTokens))
+                        .message(message)
                         .index(0);
                 if (!tcs.isEmpty()) {
                     //We shouldn't need this but it seems like the behaivor is hadto model
