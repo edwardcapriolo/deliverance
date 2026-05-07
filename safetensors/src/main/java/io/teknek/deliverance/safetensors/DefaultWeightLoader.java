@@ -7,6 +7,10 @@ import com.google.common.primitives.Ints;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorInfo;
+import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor.impl.BFloat16BufferTensor;
+import io.teknek.deliverance.tensor.impl.Float16BufferTensor;
+import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -77,10 +81,10 @@ public class DefaultWeightLoader implements WeightLoader {
 
                 Map<String, String> metadata = new HashMap<>();
                 Map<String, TensorInfo> tensorInfoMap = readTensorInfoMap(header, Optional.of(metadata));
-                allTensorInfoMap.putAll(tensorInfoMap);
                 int endOfHeaderPosition = header.position();
 
                 Map<List<Long>, List<String>> splits = computeMmapSplits(tensorInfoMap, raf.length());
+                allTensorInfoMap.putAll(tensorInfoMap);
                 for (Map.Entry<List<Long>, List<String>> split : splits.entrySet()) {
                     long offset = split.getKey().get(0);
                     long length = split.getKey().get(1);
@@ -268,7 +272,83 @@ public class DefaultWeightLoader implements WeightLoader {
     @Override
     public AbstractTensor load(String name, DistributedContext dctx, boolean sparseRows, boolean sparseColumns) {
         Weights w = this.weightMap.get(name);
+        if (w == null){
+            throw new RuntimeException("weight cant be found " +name + " list" + this.weightMap.keySet());
+        }
         return w.load(name);
+    }
+
+    @Override
+    public AbstractTensor loadRows(String name, int rowOffset, int rowCount) {
+        Weights direct = this.weightMap.get(name);
+        if (direct != null) {
+            return direct.loadRows(name, rowOffset, rowCount);
+        }
+
+        TensorInfo logicalInfo = allTensorInfoMap.get(name);
+        if (logicalInfo == null || logicalInfo.shape.length != 2 || !allTensorInfoMap.containsKey(name + "-part-0")) {
+            throw new RuntimeException("weight cant be found " + name + " list" + this.weightMap.keySet());
+        }
+
+        int totalRows = Ints.checkedCast(logicalInfo.shape[0]);
+        int cols = Ints.checkedCast(logicalInfo.shape[1]);
+        if (rowOffset < 0 || rowCount < 0 || rowOffset + rowCount > totalRows) {
+            throw new IllegalArgumentException("Invalid row range " + rowOffset + "," + rowCount + " for " + name);
+        }
+
+        io.teknek.deliverance.tensor.AbstractTensor merged = null;
+        int copiedRows = 0;
+        int rowsSeen = 0;
+        try {
+            for (int partIndex = 0; ; partIndex++) {
+                String partName = name + "-part-" + partIndex;
+                TensorInfo partInfo = allTensorInfoMap.get(partName);
+                if (partInfo == null) {
+                    break;
+                }
+                int partRows = Ints.checkedCast(partInfo.shape[0]);
+                int partStart = rowsSeen;
+                int partEnd = rowsSeen + partRows;
+                int requestedStart = Math.max(rowOffset, partStart);
+                int requestedEnd = Math.min(rowOffset + rowCount, partEnd);
+                if (requestedStart < requestedEnd) {
+                    int localOffset = requestedStart - partStart;
+                    int localCount = requestedEnd - requestedStart;
+                    try (io.teknek.deliverance.tensor.AbstractTensor partSlice = weightMap.get(partName).loadRows(partName, localOffset, localCount)) {
+                        if (merged == null) {
+                            merged = allocateLike(logicalInfo.dType, rowCount, cols);
+                        }
+                        for (int row = 0; row < localCount; row++) {
+                            merged.copyFrom(partSlice, partSlice.getOffset(row, 0), merged.getOffset(copiedRows + row, 0), cols);
+                        }
+                        copiedRows += localCount;
+                    }
+                }
+                rowsSeen = partEnd;
+                if (copiedRows == rowCount) {
+                    break;
+                }
+            }
+            if (merged == null || copiedRows != rowCount) {
+                throw new IllegalArgumentException("Unable to load requested rows for split tensor " + name);
+            }
+            return merged;
+        } catch (Exception e) {
+            if (merged != null) {
+                merged.close();
+            }
+            throw e;
+        }
+    }
+
+    private AbstractTensor allocateLike(DType dType, int rows, int cols) {
+        TensorShape shape = TensorShape.of(rows, cols);
+        return switch (dType) {
+            case F32 -> new FloatBufferTensor(shape);
+            case BF16 -> new BFloat16BufferTensor(shape);
+            case F16 -> new Float16BufferTensor(shape);
+            default -> throw new UnsupportedOperationException("Unsupported dtype for row merge: " + dType);
+        };
     }
 
     @Override

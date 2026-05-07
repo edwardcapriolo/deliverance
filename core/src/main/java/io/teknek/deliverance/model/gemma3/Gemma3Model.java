@@ -12,8 +12,8 @@ import io.teknek.deliverance.model.llama.LlamaModel;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.AbstractTensor;
-import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
+import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
@@ -40,7 +40,7 @@ public class Gemma3Model extends LlamaModel {
             DType workingDType,
             DType workingQType,
             Optional<DType> modelQType, ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
-            ArrayQueueTensorAllocator arrayQueueTensorAllocator, KvBufferCacheSettings kvBufferCacheSettings, TokenRenderer tokenRenderer, ToolCallParser toolCallParser,
+            TensorAllocator arrayQueueTensorAllocator, KvBufferCacheSettings kvBufferCacheSettings, TokenRenderer tokenRenderer, ToolCallParser toolCallParser,
             WrappedForkJoinPool pool
     ) {
         super(inferenceType, config, weights, tokenizer, workingDType, workingQType, modelQType,

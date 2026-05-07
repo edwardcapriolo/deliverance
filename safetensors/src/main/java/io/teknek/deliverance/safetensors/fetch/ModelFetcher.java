@@ -138,6 +138,7 @@ public class ModelFetcher {
             if ((lowerCaseFile.contains("safetensor") && !lowerCaseFile.contains("consolidated"))
                     || lowerCaseFile.contains("readme")
                     || lowerCaseFile.equals("config.json")
+                    || lowerCaseFile.equals("chat_template.jinja")
                     || lowerCaseFile.contains("tokenizer")) {
                 if (lowerCaseFile.contains("safetensor")) {
                     hasSafetensor = true;

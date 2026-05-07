@@ -9,6 +9,7 @@ import io.teknek.deliverance.grace.models.TokenizerConfig;
 import java.io.File;
 import java.io.IOException;
 import java.math.BigInteger;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -45,7 +46,7 @@ public class AutoTokenizer {
                 addedTokenMap = computeSortedTokenMap(tokenizerConfigDocument == null ? null : tokenizerConfigDocument.path("added_tokens_decoder"));
             }
 
-            TokenizerConfig tokenizerConfig = parseTokenizerConfig(tokenizerConfigDocument, specialTokensMapDocument);
+            TokenizerConfig tokenizerConfig = parseTokenizerConfig(path, tokenizerConfigDocument, specialTokensMapDocument);
             BytePairEncodingModel bytePairEncodingModel = parseBytePairEncodingModel(path, tokenizerDocument, vocab);
             String tokenizerClass = tokenizerConfig.tokenizerClass() != null
                     ? tokenizerConfig.tokenizerClass()
@@ -139,7 +140,7 @@ public class AutoTokenizer {
         return Map.of();
     }
 
-    private static TokenizerConfig parseTokenizerConfig(JsonNode tokenizerConfigDocument, JsonNode specialTokensMapDocument) {
+    private static TokenizerConfig parseTokenizerConfig(File path, JsonNode tokenizerConfigDocument, JsonNode specialTokensMapDocument) {
         JsonNode mergedSpecialSource = specialTokensMapDocument == null ? tokenizerConfigDocument : specialTokensMapDocument;
         Map<String, String> specialTokens = new LinkedHashMap<>();
         for (String attribute : PreTrainedTokenizerBase.SPECIAL_TOKEN_ATTRIBUTES) {
@@ -157,8 +158,20 @@ public class AutoTokenizer {
             additionalSpecialTokens = readStringList(tokenizerConfigDocument.get("additional_special_tokens"));
         }
 
+        String chatTemplate = readText(tokenizerConfigDocument, "chat_template");
+        if (chatTemplate == null) {
+            File chatTemplateFile = new File(path, "chat_template.jinja");
+            if (chatTemplateFile.exists()) {
+                try {
+                    chatTemplate = Files.readString(chatTemplateFile.toPath());
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }
+
         return new TokenizerConfig(
-                readText(tokenizerConfigDocument, "chat_template"),
+                chatTemplate,
                 readText(tokenizerConfigDocument, "tokenizer_class"),
                 readBoolean(tokenizerConfigDocument, "clean_up_tokenization_spaces", false),
                 readBoolean(tokenizerConfigDocument, "split_special_tokens", false),

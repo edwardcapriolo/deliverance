@@ -106,8 +106,10 @@
         <configuration>
           <argLine>
             -XX:-UseCompactObjectHeaders
+            --add-opens java.base/java.nio=ALL-UNNAMED
             --add-modules jdk.incubator.vector
             -Djdk.attach.allowAttachSelf=true
+            --enable-native-access=ALL-UNNAMED
           </argLine>
         </configuration>
       </plugin>

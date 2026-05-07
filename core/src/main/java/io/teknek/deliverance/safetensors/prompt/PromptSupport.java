@@ -61,6 +61,7 @@ public class PromptSupport {
         private boolean addGenerationPrompt = true;
         private String customizedTemplate;
         private final List<Tool> tools = new ArrayList<>();
+        private final Map<String, Object> templateArgs = new HashMap<>();
 
         private final List<Message> messages = new ArrayList<>(2);
 
@@ -83,6 +84,18 @@ public class PromptSupport {
 
         public Builder addGenerationPrompt(boolean addGenerationPrompt) {
             this.addGenerationPrompt = addGenerationPrompt;
+            return this;
+        }
+
+        public Builder addTemplateArg(String name, Object value) {
+            templateArgs.put(name, value);
+            return this;
+        }
+
+        public Builder addTemplateArgs(Map<String, Object> values) {
+            if (values != null) {
+                templateArgs.putAll(values);
+            }
             return this;
         }
 
@@ -162,6 +175,7 @@ public class PromptSupport {
                 Map<String, Object> args = new HashMap<>();
                 args.putAll(Map.of("messages", Map.of(), "add_generation_prompt", false, "eos_token",
                         tokenizerModel.getEosToken(), "bos_token", ""));
+                args.putAll(templateArgs);
                 RenderResult r = jinJava.renderForResult(template, args);
                 preamble = r.getOutput();
             }
@@ -171,6 +185,7 @@ public class PromptSupport {
                     Map.of( "messages", messages.stream().map(Message::toMap).toList(), "add_generation_prompt",
                             addGenerationPrompt, "eos_token", tokenizerModel.getEosToken(), "bos_token", "")
             );
+            args.putAll(templateArgs);
             //optionalTools.ifPresent(tools -> args.put("tools", tools));
             optionalTools.ifPresent(this.tools::addAll);
             if (!tools.isEmpty()){

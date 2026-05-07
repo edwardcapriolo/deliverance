@@ -8,6 +8,7 @@ import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.bert.BertModelType;
 import io.teknek.deliverance.model.gemma2.Gemma2ModelType;
+import io.teknek.deliverance.model.gemma4.Gemma4ModelType;
 import io.teknek.deliverance.model.gemma3.Gemma3ModelType;
 import io.teknek.deliverance.model.gpt2.Gpt2ModelType;
 import io.teknek.deliverance.model.llama.LlamaModelType;
@@ -51,6 +52,7 @@ public class ModelSupport {
         registry.putIfAbsent("LLAMA", new LlamaModelType());
         registry.putIfAbsent("QWEN2", new Qwen2ModelType());
         registry.putIfAbsent("GEMMA2", new Gemma2ModelType());
+        registry.putIfAbsent("GEMMA4", new Gemma4ModelType());
         registry.putIfAbsent("GEMMA3_TEXT", new Gemma3ModelType());
         registry.putIfAbsent("MISTRAL", new MistralModelType());
         registry.putIfAbsent("GPT2", new Gpt2ModelType());

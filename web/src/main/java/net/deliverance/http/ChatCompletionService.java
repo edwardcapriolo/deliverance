@@ -65,6 +65,9 @@ public class ChatCompletionService {
         if (request.getChatTemplate() != null) {
             builder.useChatTemplate(request.getChatTemplate());
         }
+        if (request.getChatTemplateKwargs() != null) {
+            builder.addTemplateArgs(request.getChatTemplateKwargs());
+        }
         if (request.getMaxTokens() != null) {
             params.withMaxTokens(request.getMaxTokens());
         }

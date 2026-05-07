@@ -623,6 +623,10 @@ components:
           type: string
           description: The contents of the message.
           nullable: true
+        reasoning:
+          type: string
+          description: The extracted reasoning content for models that emit a separate thought channel.
+          nullable: true
         tool_calls:
           $ref: "#/components/schemas/ChatCompletionMessageToolCalls"
         role:
@@ -726,6 +730,11 @@ components:
           description: Change the chat template
           type: string
           nullable: true
+        chat_template_kwargs:
+          description: Additional template arguments passed to the chat template renderer.
+          type: object
+          nullable: true
+          additionalProperties: true
         ntokens:
           description: a control of prompt size before the models limit
           type: integer
@@ -1156,4 +1165,3 @@ components:
 
 security:
   - ApiKeyAuth: []
-

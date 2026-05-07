@@ -9,6 +9,7 @@ import java.util.List;
 public class  Response {
     public final String responseText;
     public final String responseTextWithSpecialTokens;
+    public final String reasoning;
     public final FinishReason finishReason;
     public final int promptTokens;
     public final List<Integer> generatedTokens;
@@ -29,6 +30,7 @@ public class  Response {
     ) {
         this.responseText = responseText;
         this.responseTextWithSpecialTokens = responseTextWithSpecialTokens;
+        this.reasoning = null;
         this.finishReason = finishReason;
         this.promptTokens = promptTokens;
         this.generatedTokens = generatedTokens;
@@ -41,6 +43,7 @@ public class  Response {
     private Response(
             String responseText,
             String responseTextWithSpecialTokens,
+            String reasoning,
             FinishReason finishReason,
             int promptTokens,
             List<Integer> generatedTokens,
@@ -51,6 +54,7 @@ public class  Response {
     ) {
         this.responseText = responseText;
         this.responseTextWithSpecialTokens = responseTextWithSpecialTokens;
+        this.reasoning = reasoning;
         this.finishReason = finishReason;
         this.promptTokens = promptTokens;
         this.generatedTokens = generatedTokens;
@@ -64,7 +68,23 @@ public class  Response {
         return new Response(
                 responseText,
                 responseTextWithSpecialTokens,
+                reasoning,
                 FinishReason.TOOL_CALLS,
+                promptTokens,
+                generatedTokens,
+                promptTimeMs,
+                generateTimeMs,
+                toolCalls,
+                samplerReturns
+        );
+    }
+
+    public Response copyWithText(String responseText, String responseTextWithSpecialTokens, String reasoning) {
+        return new Response(
+                responseText,
+                responseTextWithSpecialTokens,
+                reasoning,
+                finishReason,
                 promptTokens,
                 generatedTokens,
                 promptTimeMs,
@@ -79,6 +99,7 @@ public class  Response {
         return "Response{" +
                 "responseText='" + responseText + '\'' +
                 ", responseTextWithSpecialTokens='" + responseTextWithSpecialTokens + '\'' +
+                ", reasoning='" + reasoning + '\'' +
                 ", finishReason=" + finishReason +
                 ", promptTokens=" + promptTokens +
                 ", generatedTokens=" + generatedTokens +

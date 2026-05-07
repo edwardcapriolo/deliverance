@@ -20,6 +20,10 @@ public interface WeightLoader extends AutoCloseable {
         return load(name, null, false, false);
     }
 
+    default AbstractTensor loadRows(String name, int rowOffset, int rowCount) {
+        throw new UnsupportedOperationException("Row slicing not supported for " + getClass().getName());
+    }
+
     AbstractTensor load(String name, DistributedContext dctx, boolean sparseRows, boolean sparseColumns);
 
     DType getModelDType();

@@ -10,6 +10,7 @@ import com.google.common.collect.ImmutableBiMap;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -128,6 +129,14 @@ public class TokenizerModel {
                 }
                 if (configNode.has("bos_token")) {
                     model.setBosToken(configNode.get("bos_token").asText());
+                }
+            }
+            if (model.getPromptTemplates().isEmpty()) {
+                File chatTemplateFile = tokenizerJson.toPath().getParent().resolve("chat_template.jinja").toFile();
+                if (chatTemplateFile.exists()) {
+                    Map<String, String> promptTemplates = new HashMap<>();
+                    promptTemplates.put("default", Files.readString(chatTemplateFile.toPath()));
+                    model.setPromptTemplates(promptTemplates);
                 }
             }
             return model;
