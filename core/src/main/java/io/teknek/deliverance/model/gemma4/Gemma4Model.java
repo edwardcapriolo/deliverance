@@ -1,38 +1,37 @@
 package io.teknek.deliverance.model.gemma4;
 
 import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.Timer;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.*;
+import io.teknek.deliverance.math.FloatConversions;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.TokenRenderer;
-import io.teknek.deliverance.model.gemma3.Gemma3Model;
+import io.teknek.deliverance.model.llama.LlamaModel;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.AbstractTensor;
-import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
+import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
 
 import static io.teknek.deliverance.tensor.AbstractTensorUtils.quantize;
 
-public class Gemma4Model extends Gemma3Model {
-    private final Gemma4Config gemma4Config;
+public class Gemma4Model extends LlamaModel {
     private final ThreadLocal<Map<Integer, SharedKeyValues>> sharedKeyValues = new ThreadLocal<>();
-    private volatile AbstractTensor perLayerEmbeddingTable;
     private volatile AbstractTensor perLayerModelProjectionWeights;
     private volatile AbstractTensor perLayerProjectionNormWeights;
-    private final float perLayerEmbeddingScale;
-    private final float perLayerInputScale;
-    private final float perLayerModelProjectionScale;
+    private volatile AbstractTensor embedTokenWeights;
 
     public record SharedKeyValues(AbstractTensor key, AbstractTensor value) implements AutoCloseable {
         @Override
@@ -52,7 +51,7 @@ public class Gemma4Model extends Gemma3Model {
             Optional<DType> modelQType,
             ConfigurableTensorProvider configurableTensorProvider,
             MetricRegistry metricRegistry,
-            ArrayQueueTensorAllocator arrayQueueTensorAllocator,
+            TensorAllocator arrayQueueTensorAllocator,
             KvBufferCacheSettings kvBufferCacheSettings,
             TokenRenderer tokenRenderer,
             ToolCallParser toolCallParser,
@@ -74,18 +73,69 @@ public class Gemma4Model extends Gemma3Model {
                 toolCallParser,
                 pool
         );
-        this.gemma4Config = (Gemma4Config) config;
-        this.perLayerEmbeddingScale = gemma4Config.hiddenSizePerLayerInput == null ? 1.0f : (float) Math.sqrt(gemma4Config.hiddenSizePerLayerInput);
-        this.perLayerInputScale = (float) Math.pow(2.0, -0.5);
-        this.perLayerModelProjectionScale = (float) Math.pow(gemma4Config.embeddingLength, -0.5);
+    }
+
+    @Override
+    protected EmbedInput loadInputWeights() {
+        if (embedTokenWeights == null) {
+            embedTokenWeights = quantize(weights.load(resolveTextModelWeight("embed_tokens.weight")), workingDType);
+        }
+        final float embeddingScalingFactor = FloatConversions.bFloat16ToFloat32(
+                FloatConversions.float32ToBFloat16((float) Math.pow(config.embeddingLength, 0.5))
+        );
+        return new EmbedInput(this) {
+            @Override
+            public AbstractTensor inputTokenToEmbedding(int inputToken, int position) {
+                AbstractTensor embedding = makeDenseTensor(config.embeddingLength);
+                try (AbstractTensor at = embedTokenWeights.slice(true, inputToken)) {
+                    AbstractTensor source = at;
+                    if (embedTokenWeights.dType() != embedding.dType()) {
+                        source = configurableTensorProvider.get().quantize(at, embedding.dType(), 0, config.embeddingLength);
+                    }
+                    embedding.copyFrom(source, 0, 0, config.embeddingLength);
+                    if (source != at) {
+                        source.close();
+                    }
+                }
+                configurableTensorProvider.get().scale(embeddingScalingFactor, embedding, 0, config.embeddingLength);
+                return embedding;
+            }
+        };
+    }
+
+    @Override
+    protected SampleOutput loadOutputWeights() {
+        DType qType = modelQType.orElse(this.modelDType);
+        final LayerNorm outputLayerNorm = weights.isWeightPresent(resolveTextModelRoot() + "norm.weight")
+                ? new RmsNorm(this, quantize(weights.load(resolveTextModelWeight("norm.weight")), qType), 1.0f, metricRegistry)
+                : new IdentityLayerNorm(this, metricRegistry);
+        AbstractTensor classificationWeights = weights.isWeightPresent(resolveTextOutputWeight("lm_head.weight"))
+                ? quantize(weights.load(resolveTextOutputWeight("lm_head.weight")), workingDType)
+                : embedTokenWeights == null ? embedTokenWeights = quantize(weights.load(resolveTextModelWeight("embed_tokens.weight")), workingDType)
+                : embedTokenWeights;
+        configurableTensorProvider.get().registerModelTensor(classificationWeights);
+        return new SampleOutput() {
+            @Override
+            public LayerNorm getOutputLayerNorm() {
+                return outputLayerNorm;
+            }
+
+            @Override
+            public AbstractTensor getOutputLogitsWeights() {
+                return classificationWeights;
+            }
+        };
     }
 
     @Override
     protected TransformerBlock[] loadTransformerBlockWeights() {
+        Gemma4Config gemma4Config = gemma4Config();
         DType qType = modelQType.orElse(this.modelDType);
         TransformerBlock[] blocks = new TransformerBlock[config.dctx().numberOfLayers];
+        String root = resolveTextModelRoot();
         for (int i = config.dctx().layerStart; i < config.dctx().layerEnd; i++) {
-            String base = "model.layers." + i + ".";
+            int relativeLayer = i - config.dctx().layerStart;
+            String base = root + "layers." + i + ".";
             String layerType = gemma4Config.layerTypes.get(i);
             int sharedSource = gemma4Config.getSharedKvSourceLayer(i);
             boolean kvSharedLayer = sharedSource >= 0;
@@ -127,7 +177,7 @@ public class Gemma4Model extends Gemma3Model {
                         quantize(weights.load(base + "post_per_layer_input_norm.weight"), qType), metricRegistry));
             }
 
-            blocks[i] = new Gemma4TransformerBlock(
+            blocks[relativeLayer] = new Gemma4TransformerBlock(
                     this,
                     i,
                     new RmsNorm(this, quantize(weights.load(base + "input_layernorm.weight"), qType), 1.0f, metricRegistry),
@@ -151,10 +201,31 @@ public class Gemma4Model extends Gemma3Model {
     @Override
     public AbstractTensor batchForward(int[] tokenIds, int startPos, KvBufferCache.KvBuffer kvbuf,
             Optional<Consumer<java.util.List<AbstractTensor>>> tensorReducer) {
+        metricRegistry.histogram("gemma4.batch.tokens").update(tokenIds.length);
+        metricRegistry.histogram("gemma4.batch.start_pos").update(startPos);
         return withSharedKeyValues(() -> {
-            AbstractTensor embedding = embedInput.batchInputsToEmbeddings(tokenIds, startPos);
-            AbstractTensor[] perLayerInputs = computePerLayerInputs(tokenIds, embedding);
-            return forwardGemma4(embedding, perLayerInputs, startPos, kvbuf, tensorReducer);
+            Timer.Context embedTimer = metricRegistry.timer("gemma4.batch_forward.embed").time();
+            AbstractTensor embedding;
+            try {
+                embedding = embedInput.batchInputsToEmbeddings(tokenIds, startPos);
+            } finally {
+                embedTimer.stop();
+            }
+
+            Timer.Context pleTimer = metricRegistry.timer("gemma4.batch_forward.ple").time();
+            AbstractTensor[] perLayerInputs;
+            try {
+                perLayerInputs = computePerLayerInputs(tokenIds, embedding);
+            } finally {
+                pleTimer.stop();
+            }
+
+            Timer.Context forwardTimer = metricRegistry.timer("gemma4.batch_forward.forward").time();
+            try {
+                return forwardGemma4(embedding, perLayerInputs, startPos, kvbuf, tensorReducer);
+            } finally {
+                forwardTimer.stop();
+            }
         });
     }
 
@@ -218,8 +289,13 @@ public class Gemma4Model extends Gemma3Model {
             int relativeLayer = i - config.dctx().layerStart;
             AbstractTensor ref = embedding;
             AbstractTensor perLayerInput = perLayerInputs == null ? null : perLayerInputs[i];
-            embedding = ((Gemma4TransformerBlock) transformerBlocks[relativeLayer]).forward(embedding, perLayerInput,
-                    startPos, kvbuf, tensorReducer);
+            Timer.Context layerTimer = metricRegistry.timer("gemma4.layer." + i + "." + gemma4Config().layerTypes.get(i)).time();
+            try {
+                embedding = ((Gemma4TransformerBlock) transformerBlocks[relativeLayer]).forward(embedding, perLayerInput,
+                        startPos, kvbuf, tensorReducer);
+            } finally {
+                layerTimer.stop();
+            }
             ref.close();
         }
         if (perLayerInputs != null) {
@@ -233,16 +309,17 @@ public class Gemma4Model extends Gemma3Model {
     }
 
     private synchronized void ensurePerLayerWeightsLoaded() {
-        if (gemma4Config.hiddenSizePerLayerInput == null || perLayerEmbeddingTable != null) {
+        Gemma4Config gemma4Config = gemma4Config();
+        if (gemma4Config.hiddenSizePerLayerInput == null || perLayerModelProjectionWeights != null) {
             return;
         }
         DType qType = modelQType.orElse(this.modelDType);
-        perLayerEmbeddingTable = quantize(weights.load("model.embed_tokens_per_layer.weight"), workingDType);
-        perLayerModelProjectionWeights = quantize(weights.load("model.per_layer_model_projection.weight"), qType);
-        perLayerProjectionNormWeights = quantize(weights.load("model.per_layer_projection_norm.weight"), qType);
+        perLayerModelProjectionWeights = quantize(weights.load(resolveTextModelWeight("per_layer_model_projection.weight")), qType);
+        perLayerProjectionNormWeights = quantize(weights.load(resolveTextModelWeight("per_layer_projection_norm.weight")), qType);
     }
 
     private AbstractTensor[] computePerLayerInputs(int[] tokenIds, AbstractTensor embeddings) {
+        Gemma4Config gemma4Config = gemma4Config();
         if (gemma4Config.hiddenSizePerLayerInput == null) {
             return null;
         }
@@ -254,19 +331,17 @@ public class Gemma4Model extends Gemma3Model {
                 AbstractTensor projected = makeDenseTensor(batchSize, packedLength)
         ) {
             for (int b = 0; b < batchSize; b++) {
-                try (AbstractTensor row = perLayerEmbeddingTable.slice(true, tokenIds[b])) {
-                    tokenIdentity.copyFrom(row, 0, tokenIdentity.getOffset(b, 0), packedLength);
-                }
+                copyPerLayerEmbeddingRow(tokenIds[b], tokenIdentity, b, packedLength);
             }
-            configurableTensorProvider.get().scale(perLayerEmbeddingScale, tokenIdentity, 0, packedLength);
+            configurableTensorProvider.get().scale(perLayerEmbeddingScale(), tokenIdentity, 0, packedLength);
 
             configurableTensorProvider.get().dotProductChunk(projected, embeddings, perLayerModelProjectionWeights, 0,
                     gemma4Config.embeddingLength, 0, packedLength);
-            configurableTensorProvider.get().scale(perLayerModelProjectionScale, projected, 0, packedLength);
+            configurableTensorProvider.get().scale(perLayerModelProjectionScale(), projected, 0, packedLength);
             Gemma4RmsNormSupport.applyInPlace(projected, gemma4Config.numberOfLayers,
                     gemma4Config.hiddenSizePerLayerInput, gemma4Config.layerNormEps, perLayerProjectionNormWeights);
             configurableTensorProvider.get().accumulate(projected, tokenIdentity, 0, packedLength);
-            configurableTensorProvider.get().scale(perLayerInputScale, projected, 0, packedLength);
+            configurableTensorProvider.get().scale(perLayerInputScale(), projected, 0, packedLength);
 
             AbstractTensor[] split = new AbstractTensor[gemma4Config.numberOfLayers];
             for (int layer = 0; layer < gemma4Config.numberOfLayers; layer++) {
@@ -302,6 +377,66 @@ public class Gemma4Model extends Gemma3Model {
                 sharedKeyValues.remove();
             } else {
                 sharedKeyValues.set(previous);
+            }
+        }
+    }
+
+    private Gemma4Config gemma4Config() {
+        return (Gemma4Config) config;
+    }
+
+    private float perLayerEmbeddingScale() {
+        Gemma4Config cfg = gemma4Config();
+        return cfg.hiddenSizePerLayerInput == null ? 1.0f : (float) Math.sqrt(cfg.hiddenSizePerLayerInput);
+    }
+
+    private float perLayerInputScale() {
+        return (float) Math.pow(2.0, -0.5);
+    }
+
+    private float perLayerModelProjectionScale() {
+        return (float) Math.pow(config.embeddingLength, -0.5);
+    }
+
+    private String resolveTextModelRoot() {
+        List<String> candidates = List.of("model.language_model.", "language_model.model.", "language_model.", "model.");
+        for (String candidate : candidates) {
+            if (weights.isWeightPresent(candidate + "embed_tokens.weight")
+                    || weights.isWeightPresent(candidate + "layers.0.self_attn.q_proj.weight")) {
+                return candidate;
+            }
+        }
+        throw new IllegalArgumentException("Unable to locate Gemma4 text model root");
+    }
+
+    private String resolveTextModelWeight(String suffix) {
+        String root = resolveTextModelRoot();
+        String name = root + suffix;
+        if (weights.isWeightPresent(name)) {
+            return name;
+        }
+        throw new IllegalArgumentException("Missing Gemma4 text weight " + name);
+    }
+
+    private String resolveTextOutputWeight(String suffix) {
+        List<String> candidates = List.of(suffix, "language_model." + suffix, resolveTextModelRoot() + suffix);
+        for (String candidate : candidates) {
+            if (weights.isWeightPresent(candidate)) {
+                return candidate;
+            }
+        }
+        return suffix;
+    }
+
+    private void copyPerLayerEmbeddingRow(int tokenId, AbstractTensor destination, int batchIndex, int packedLength) {
+        try (AbstractTensor row = weights.loadRows(resolveTextModelWeight("embed_tokens_per_layer.weight"), tokenId, 1)) {
+            AbstractTensor source = row;
+            if (row.dType() != destination.dType()) {
+                source = configurableTensorProvider.get().quantize(row, destination.dType(), 0, packedLength);
+            }
+            destination.copyFrom(source, 0, destination.getOffset(batchIndex, 0), packedLength);
+            if (source != row) {
+                source.close();
             }
         }
     }

@@ -24,7 +24,7 @@ public class VectorTensorMathUtils {
             sum += x.get(0, i);
         }
         // normalize
-        for (int i = 0; i < size; i++) {
+        for (int i = offset; i < size; i++) {
             x.set(x.get(0, i) / sum, 0, i);
         }
     }

@@ -20,7 +20,7 @@
 #define MAX(a,b) (((a)>(b))?(a):(b))
 
 static inline short fp32_to_bf16(float s) {
-    char bf;
+    uint16_t bf;
     union {
         float f;
         uint32_t i;
@@ -1048,8 +1048,8 @@ void gemm_bf16_128_arm(int m0, int m, int n0, int n, int RM, int RN, struct gemm
                     float32x4_t va1 = vreinterpretq_f32_u32(vshlq_n_u32(va1i, 16));
 
                     // Multiply and accumulate
-                    sums[ni][mi] = vmlaq_f32(sums[ni][mi], va0, vb0);
-                    sums[ni][mi] = vmlaq_f32(sums[ni][mi], va1, vb1);
+                    sums[mi][ni] = vmlaq_f32(sums[mi][ni], va0, vb0);
+                    sums[mi][ni] = vmlaq_f32(sums[mi][ni], va1, vb1);
                 }
             }
         }
@@ -1118,7 +1118,7 @@ void __attribute__((noinline)) gemm_bf16_256(int m0, int m, int n0, int n, int R
                     __m256 va0 = _mm256_castsi256_ps(_mm256_slli_epi32(va0i, 16));
 
                     // Extract lower 8 shorts and convert to int (upper 128 bits)
-                    __m256i va1i = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(va, 1));
+                    __m256i va1i = _mm256_cvtepu16_epi32(_mm256_extracti128_si256(va, 1));
                     // Shift left 16 bits and convert to float
                     __m256 va1 = _mm256_castsi256_ps(_mm256_slli_epi32(va1i, 16));
 
@@ -1186,7 +1186,7 @@ void gemm_bf16_512(int m0, int m, int n0, int n, int RM, int RN, struct gemm_par
 
                 for (int mi = 0; mi < RM; ++mi) {
                     // Load shorts
-                    __m512i va = _mm512_loadu_si512((__m512i*)(params.as + params.lda * (jj + ni) + ao));
+                    __m512i va = _mm512_loadu_si512((__m512i*)(params.as + params.lda * (ii + mi) + ao));
 
                     // Extract lower 8 shorts and convert to int (lower 128 bits)
                     __m512i va0i = _mm512_cvtepu16_epi32(_mm512_extracti32x8_epi32(va, 0));

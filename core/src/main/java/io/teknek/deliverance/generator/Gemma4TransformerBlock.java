@@ -1,5 +1,6 @@
 package io.teknek.deliverance.generator;
 
+import com.codahale.metrics.Timer;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.tensor.AbstractTensor;
@@ -57,6 +58,8 @@ public class Gemma4TransformerBlock extends TransformerBlock {
             KvBufferCache.KvBuffer kvBuffer,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer
     ) {
+        Timer.Context totalTimer = model.getMetricRegistry().timer("gemma4.block." + layerIndex + ".total").time();
+        try {
         AbstractTensor lnemb = preAttentionNorm.map(ln -> ln.forward(embedding)).orElse(embedding);
         AbstractTensor postAttention;
         try (AbstractTensor qlnemb = model.maybeQuantize(lnemb)) {
@@ -115,6 +118,9 @@ public class Gemma4TransformerBlock extends TransformerBlock {
         else lnattn.close();
 
         return lnpostFF;
+        } finally {
+            totalTimer.stop();
+        }
     }
 
     private AbstractTensor maybeApplyNorm(AbstractTensor tensor, Optional<LayerNorm> norm) {

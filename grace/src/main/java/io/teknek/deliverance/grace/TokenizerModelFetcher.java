@@ -47,7 +47,8 @@ public class TokenizerModelFetcher extends ModelFetcher {
         List<String> tensorFiles = new ArrayList<>();
         for (String currFile : allFiles) {
             String f = currFile.toLowerCase();
-            if (f.contains("tokenizer") || f.contains("merges") || f.contains("vocab") || f.equals("config.json") ) {
+            if (f.contains("tokenizer") || f.contains("merges") || f.contains("vocab") || f.equals("config.json")
+                    || f.equals("chat_template.jinja")) {
                 tensorFiles.add(currFile);
             }
         }

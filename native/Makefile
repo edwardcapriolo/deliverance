@@ -42,6 +42,7 @@ SRC2_DIR := src/main/c/gpu
 SRCS2    := $(wildcard $(SRC2_DIR)/*.c)
 OBJS2    := $(SRCS2:$(SRC2_DIR)/%.c=$(OBJ2_DIR)/%.o)
 LIB2     := $(LIB_DIR)/$(LIB_NAME)gpu.$(LIB_EXT)
+BF16_TEST := $(OBJ_DIR)/test_bf16_gemm
 
 all: $(LIB)
 ifdef CFLAGS2
@@ -99,7 +100,13 @@ $(OBJ2_DIR)/%.o: $(SRC2_DIR)/%.c
 clean:
 	rm -rf $(LIB_DIR) $(OBJ_DIR)
 
+$(BF16_TEST): src/test/c/test_bf16_gemm.c $(SRC_DIR)/vector_simd.c
+	mkdir -p $(OBJ_DIR)
+	$(CC) $(CFLAGS) -I$(SRC_DIR) $^ -o $@ -lm
+
+test-bf16-gemm-run: $(BF16_TEST)
+	$(BF16_TEST)
+
 ## Debug support
 # use `make print-VARIABLE name` to see the value of any variable
 print-%  : ; @echo $* = $($*)
-

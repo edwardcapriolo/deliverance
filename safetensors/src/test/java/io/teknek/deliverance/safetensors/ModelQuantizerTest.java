@@ -66,7 +66,7 @@ public class ModelQuantizerTest {
             tensors.put("model.layers.0.self_attn.q_proj.weight", proj);
             SafeTensorWriter.write(sourceDir.resolve("model.safetensors"), Map.of(), tensors);
 
-            new ModelQuantizer(64).quantizeCachedModel("acme", "demo-model", "acme", "demo-model-q4");
+            new ModelQuantizer(16).quantizeCachedModel("acme", "demo-model", "acme", "demo-model-q4");
 
             assertTrue(Files.exists(outputDir.resolve(SafeTensorIndexPojo.MODEL_INDEX_JSON)));
             try (DefaultWeightLoader loader = new DefaultWeightLoader(outputDir.toFile())) {

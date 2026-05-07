@@ -170,6 +170,36 @@ public class Weights implements WeightLoader {
     }
 
     @Override
+    public AbstractTensor loadRows(String name, int rowOffset, int rowCount) {
+        TensorInfo info = tensorInfoMap.get(name);
+        if (info == null) {
+            throw new NoSuchElementException(name + " not found in weights");
+        }
+        if (info.shape.length != 2) {
+            throw new IllegalArgumentException("Row slicing only supported for 2D tensors: " + name);
+        }
+        if (info.dType == DType.Q4 || info.dType == DType.I8) {
+            throw new UnsupportedOperationException("Row slicing for quantized tensors is not supported: " + name);
+        }
+
+        int rows = Ints.checkedCast(info.shape[0]);
+        int cols = Ints.checkedCast(info.shape[1]);
+        if (rowOffset < 0 || rowCount < 0 || rowOffset + rowCount > rows) {
+            throw new IllegalArgumentException("Invalid row range " + rowOffset + "," + rowCount + " for " + name);
+        }
+
+        int bytesPerRow = info.dType.size() * cols;
+        long positionOffset = info.dataOffsets[0] + ((long) rowOffset * bytesPerRow);
+        long positionLimit = positionOffset + ((long) rowCount * bytesPerRow);
+        TensorShape shape = TensorShape.of(rowCount, cols);
+        ByteBuffer b = bytes.duplicate()
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .position(Ints.checkedCast(positionOffset))
+                .limit(Ints.checkedCast(positionLimit));
+        return loadTensorFromBuffer(name, info.dType, majorityDType, shape, b, false, false, null, parent.orElse(this));
+    }
+
+    @Override
     public DType getModelDType() {
         return majorityDType;
     }

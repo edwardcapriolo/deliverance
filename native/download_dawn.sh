@@ -23,6 +23,8 @@
 
 set -o pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 # You can adjust these if you fork or use a different repository.
 OWNER="tjake"
 REPO="build-dawn"
@@ -53,6 +55,18 @@ fi
 #   wgpu-macos-x86_64-release.zip
 #
 ASSET_NAME="dawn-${PLATFORM}-${ARCH}-${TAG}.zip"
+LOCAL_ASSET="${SCRIPT_DIR}/${ASSET_NAME}"
+
+if [ -f "$LOCAL_ASSET" ]; then
+  echo "Using vendored Dawn asset '$LOCAL_ASSET'"
+  mkdir -p "$TARGET_DIR"
+  echo "Extracting '$ASSET_NAME' into '$TARGET_DIR'..."
+  unzip -o "$LOCAL_ASSET" -d "$TARGET_DIR"
+  echo "Extraction complete!"
+  echo "Files have been placed in: $TARGET_DIR"
+  exit 0
+fi
+
 echo "Downloading release asset '$ASSET_NAME'..."
 
 # Fetch release JSON via GitHub's API
@@ -100,4 +114,3 @@ unzip -o "$TEMP_ZIP" -d "$TARGET_DIR"
 
 echo "Download and extraction complete!"
 echo "Files have been placed in: $TARGET_DIR"
-

@@ -17,8 +17,8 @@ public class SafeTensorIndexPojo {
     @JsonCreator
     public SafeTensorIndexPojo(@JsonProperty("metadata") Map<String, String> metadata,
                                @JsonProperty("weight_map") Map<String, String> weightFileMap) {
-        this.metadata = ImmutableMap.copyOf(metadata);
-        this.weightFileMap = ImmutableMap.copyOf(weightFileMap);
+        this.metadata = ImmutableMap.copyOf(metadata == null ? Map.of() : metadata);
+        this.weightFileMap = ImmutableMap.copyOf(weightFileMap == null ? Map.of() : weightFileMap);
     }
 
 
