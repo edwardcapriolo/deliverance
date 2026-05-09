@@ -10,14 +10,12 @@ import io.teknek.deliverance.model.TokenRenderer;
 import io.teknek.deliverance.model.llama.LlamaModel;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
-import io.teknek.deliverance.tensor.AbstractTensor;
-import io.teknek.deliverance.tensor.KvBufferCache;
-import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorAllocator;
-import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor.*;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tokenizer.Tokenizer;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.List;
@@ -28,7 +26,9 @@ import java.util.function.Consumer;
 import static io.teknek.deliverance.tensor.AbstractTensorUtils.quantize;
 
 public class Gemma4Model extends LlamaModel {
-    private final ThreadLocal<Map<Integer, SharedKeyValues>> sharedKeyValues = new ThreadLocal<>();
+    private static final Logger logger = LoggerFactory.getLogger(Gemma4Model.class);
+    private static final boolean DEBUG_LAYER_SUMMARIES = false;
+    private final ThreadLocal<Map<String, SharedKeyValues>> sharedKeyValues = new ThreadLocal<>();
     private volatile AbstractTensor perLayerModelProjectionWeights;
     private volatile AbstractTensor perLayerProjectionNormWeights;
     private volatile AbstractTensor embedTokenWeights;
@@ -107,7 +107,7 @@ public class Gemma4Model extends LlamaModel {
     protected SampleOutput loadOutputWeights() {
         DType qType = modelQType.orElse(this.modelDType);
         final LayerNorm outputLayerNorm = weights.isWeightPresent(resolveTextModelRoot() + "norm.weight")
-                ? new RmsNorm(this, quantize(weights.load(resolveTextModelWeight("norm.weight")), qType), 1.0f, metricRegistry)
+                ? new RmsNorm(this, quantize(weights.load(resolveTextModelWeight("norm.weight")), qType), 0.0f, metricRegistry)
                 : new IdentityLayerNorm(this, metricRegistry);
         AbstractTensor classificationWeights = weights.isWeightPresent(resolveTextOutputWeight("lm_head.weight"))
                 ? quantize(weights.load(resolveTextOutputWeight("lm_head.weight")), workingDType)
@@ -146,7 +146,6 @@ public class Gemma4Model extends LlamaModel {
                     layerType,
                     kvSharedLayer,
                     gemma4Config.storesSharedKvState(i),
-                    sharedSource,
                     quantize(weights.load(base + "self_attn.q_proj.weight"), qType),
                     quantize(weights.load(base + "self_attn.q_norm.weight"), qType),
                     kvSharedLayer ? Optional.empty() : Optional.of(quantize(weights.load(base + "self_attn.k_proj.weight"), qType)),
@@ -173,19 +172,19 @@ public class Gemma4Model extends LlamaModel {
             if (gemma4Config.hiddenSizePerLayerInput != null && weights.isWeightPresent(base + "per_layer_input_gate.weight")) {
                 perLayerInputGate = Optional.of(quantize(weights.load(base + "per_layer_input_gate.weight"), qType));
                 perLayerProjection = Optional.of(quantize(weights.load(base + "per_layer_projection.weight"), qType));
-                postPerLayerInputNorm = Optional.of(new RmsNorm(this,
-                        quantize(weights.load(base + "post_per_layer_input_norm.weight"), qType), metricRegistry));
+                    postPerLayerInputNorm = Optional.of(new RmsNorm(this,
+                        quantize(weights.load(base + "post_per_layer_input_norm.weight"), qType), 0.0f, metricRegistry));
             }
 
             blocks[relativeLayer] = new Gemma4TransformerBlock(
                     this,
                     i,
-                    new RmsNorm(this, quantize(weights.load(base + "input_layernorm.weight"), qType), 1.0f, metricRegistry),
+                    new RmsNorm(this, quantize(weights.load(base + "input_layernorm.weight"), qType), 0.0f, metricRegistry),
                     attention,
-                    new RmsNorm(this, quantize(weights.load(base + "post_attention_layernorm.weight"), qType), 1.0f, metricRegistry),
-                    new RmsNorm(this, quantize(weights.load(base + "pre_feedforward_layernorm.weight"), qType), 1.0f, metricRegistry),
+                    new RmsNorm(this, quantize(weights.load(base + "post_attention_layernorm.weight"), qType), 0.0f, metricRegistry),
+                    new RmsNorm(this, quantize(weights.load(base + "pre_feedforward_layernorm.weight"), qType), 0.0f, metricRegistry),
                     mlp,
-                    new RmsNorm(this, quantize(weights.load(base + "post_feedforward_layernorm.weight"), qType), 1.0f, metricRegistry),
+                    new RmsNorm(this, quantize(weights.load(base + "post_feedforward_layernorm.weight"), qType), 0.0f, metricRegistry),
                     configurableTensorProvider,
                     perLayerInputGate,
                     perLayerProjection,
@@ -200,7 +199,7 @@ public class Gemma4Model extends LlamaModel {
 
     @Override
     public AbstractTensor batchForward(int[] tokenIds, int startPos, KvBufferCache.KvBuffer kvbuf,
-            Optional<Consumer<java.util.List<AbstractTensor>>> tensorReducer) {
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
         metricRegistry.histogram("gemma4.batch.tokens").update(tokenIds.length);
         metricRegistry.histogram("gemma4.batch.start_pos").update(startPos);
         return withSharedKeyValues(() -> {
@@ -236,7 +235,7 @@ public class Gemma4Model extends LlamaModel {
 
     @Override
     public AbstractTensor forward(int tokenId, int pos, KvBufferCache.KvBuffer kvbuf,
-            Optional<Consumer<java.util.List<AbstractTensor>>> tensorReducer) {
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
         return withSharedKeyValues(() -> {
             AbstractTensor embedding = embedInput.inputTokenToEmbedding(tokenId, pos);
             AbstractTensor[] perLayerInputs = computePerLayerInputs(new int[]{tokenId}, embedding);
@@ -246,7 +245,7 @@ public class Gemma4Model extends LlamaModel {
 
     @Override
     public AbstractTensor forward(AbstractTensor embedding, int startPos, KvBufferCache.KvBuffer kvbuf,
-            Optional<Consumer<java.util.List<AbstractTensor>>> tensorReducer) {
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
         return withSharedKeyValues(() -> forwardGemma4(embedding, null, startPos, kvbuf, tensorReducer));
     }
 
@@ -259,20 +258,20 @@ public class Gemma4Model extends LlamaModel {
         return response.copyWithText(parsed.content(), response.responseTextWithSpecialTokens, parsed.reasoning());
     }
 
-    public SharedKeyValues getSharedKeyValues(int layerIndex) {
-        Map<Integer, SharedKeyValues> current = sharedKeyValues.get();
-        if (current == null || !current.containsKey(layerIndex)) {
-            throw new IllegalStateException("Missing shared kv state for layer " + layerIndex);
+    public SharedKeyValues getSharedKeyValues(String layerType) {
+        Map<String, SharedKeyValues> current = sharedKeyValues.get();
+        if (current == null || !current.containsKey(layerType)) {
+            throw new IllegalStateException("Missing shared kv state for layer type " + layerType);
         }
-        return current.get(layerIndex);
+        return current.get(layerType);
     }
 
-    public void putSharedKeyValues(int layerIndex, AbstractTensor key, AbstractTensor value) {
-        Map<Integer, SharedKeyValues> current = sharedKeyValues.get();
+    public void putSharedKeyValues(String layerType, AbstractTensor key, AbstractTensor value) {
+        Map<String, SharedKeyValues> current = sharedKeyValues.get();
         if (current == null) {
             throw new IllegalStateException("Shared kv state not initialized");
         }
-        SharedKeyValues previous = current.remove(layerIndex);
+        SharedKeyValues previous = current.remove(layerType);
         if (previous != null) {
             previous.close();
         }
@@ -280,11 +279,11 @@ public class Gemma4Model extends LlamaModel {
         AbstractTensor valueCopy = makeDenseTensor(TensorShape.of(value.shape().first(), value.shape().last()));
         keyCopy.copyFrom(key, 0, 0, (int) key.size());
         valueCopy.copyFrom(value, 0, 0, (int) value.size());
-        current.put(layerIndex, new SharedKeyValues(keyCopy, valueCopy));
+        current.put(layerType, new SharedKeyValues(keyCopy, valueCopy));
     }
 
     private AbstractTensor forwardGemma4(AbstractTensor embedding, AbstractTensor[] perLayerInputs, int startPos,
-            KvBufferCache.KvBuffer kvbuf, Optional<Consumer<java.util.List<AbstractTensor>>> tensorReducer) {
+            KvBufferCache.KvBuffer kvbuf, Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
         for (int i = config.dctx().layerStart; i < config.dctx().layerEnd; i++) {
             int relativeLayer = i - config.dctx().layerStart;
             AbstractTensor ref = embedding;
@@ -296,6 +295,9 @@ public class Gemma4Model extends LlamaModel {
             } finally {
                 layerTimer.stop();
             }
+            if (DEBUG_LAYER_SUMMARIES) {
+                logLayerSummary(i, gemma4Config().layerTypes.get(i), embedding);
+            }
             ref.close();
         }
         if (perLayerInputs != null) {
@@ -306,6 +308,51 @@ public class Gemma4Model extends LlamaModel {
             }
         }
         return embedding;
+    }
+
+    /**
+     * Emits a compact summary of row 0 of the current hidden state. This is intended for locating
+     * the first layer where prefill activations become suspicious without dumping full tensors.
+     */
+    void logLayerSummary(int layerIndex, String layerType, AbstractTensor hiddenStates) {
+        if (hiddenStates.shape().first() < 1 || hiddenStates.shape().last() < 1) {
+            logger.info("gemma4 layer_summary layer={} type={} empty=true", layerIndex, layerType);
+            return;
+        }
+        int width = hiddenStates.shape().last();
+        float min = Float.POSITIVE_INFINITY;
+        float max = Float.NEGATIVE_INFINITY;
+        double sum = 0.0d;
+        double sumSquares = 0.0d;
+        StringBuilder first = new StringBuilder();
+        int preview = Math.min(8, width);
+        for (int i = 0; i < width; i++) {
+            float v = hiddenStates.get(0, i);
+            if (v < min) {
+                min = v;
+            }
+            if (v > max) {
+                max = v;
+            }
+            sum += v;
+            sumSquares += (double) v * v;
+            if (i < preview) {
+                if (i > 0) {
+                    first.append(',');
+                }
+                first.append(String.format(java.util.Locale.ROOT, "%.4f", v));
+            }
+        }
+        double mean = sum / width;
+        double l2 = Math.sqrt(sumSquares);
+        logger.info("gemma4 layer_summary layer={} type={} row0_min={} row0_max={} row0_mean={} row0_l2={} row0_first8=[{}]",
+                layerIndex,
+                layerType,
+                String.format(java.util.Locale.ROOT, "%.6f", min),
+                String.format(java.util.Locale.ROOT, "%.6f", max),
+                String.format(java.util.Locale.ROOT, "%.6f", mean),
+                String.format(java.util.Locale.ROOT, "%.6f", l2),
+                first);
     }
 
     private synchronized void ensurePerLayerWeightsLoaded() {
@@ -330,29 +377,10 @@ public class Gemma4Model extends LlamaModel {
                 AbstractTensor tokenIdentity = makeDenseTensor(batchSize, packedLength);
                 AbstractTensor projected = makeDenseTensor(batchSize, packedLength)
         ) {
-            for (int b = 0; b < batchSize; b++) {
-                copyPerLayerEmbeddingRow(tokenIds[b], tokenIdentity, b, packedLength);
-            }
-            configurableTensorProvider.get().scale(perLayerEmbeddingScale(), tokenIdentity, 0, packedLength);
-
-            configurableTensorProvider.get().dotProductChunk(projected, embeddings, perLayerModelProjectionWeights, 0,
-                    gemma4Config.embeddingLength, 0, packedLength);
-            configurableTensorProvider.get().scale(perLayerModelProjectionScale(), projected, 0, packedLength);
-            Gemma4RmsNormSupport.applyInPlace(projected, gemma4Config.numberOfLayers,
-                    gemma4Config.hiddenSizePerLayerInput, gemma4Config.layerNormEps, perLayerProjectionNormWeights);
-            configurableTensorProvider.get().accumulate(projected, tokenIdentity, 0, packedLength);
-            configurableTensorProvider.get().scale(perLayerInputScale(), projected, 0, packedLength);
-
-            AbstractTensor[] split = new AbstractTensor[gemma4Config.numberOfLayers];
-            for (int layer = 0; layer < gemma4Config.numberOfLayers; layer++) {
-                split[layer] = makeDenseTensor(batchSize, gemma4Config.hiddenSizePerLayerInput);
-                int offset = layer * gemma4Config.hiddenSizePerLayerInput;
-                for (int b = 0; b < batchSize; b++) {
-                    split[layer].copyFrom(projected, projected.getOffset(b, offset), split[layer].getOffset(b, 0),
-                            gemma4Config.hiddenSizePerLayerInput);
-                }
-            }
-            return split;
+            computeTokenIdentityPerLayerInputs(tokenIds, tokenIdentity, packedLength);
+            computeProjectedPerLayerInputs(embeddings, projected, packedLength, gemma4Config);
+            combinePerLayerInputs(projected, tokenIdentity, packedLength);
+            return splitPerLayerInputs(projected, batchSize, gemma4Config.numberOfLayers, gemma4Config.hiddenSizePerLayerInput);
         }
     }
 
@@ -366,8 +394,8 @@ public class Gemma4Model extends LlamaModel {
     }
 
     private <T> T withSharedKeyValues(java.util.function.Supplier<T> supplier) {
-        Map<Integer, SharedKeyValues> previous = sharedKeyValues.get();
-        Map<Integer, SharedKeyValues> current = new HashMap<>();
+        Map<String, SharedKeyValues> previous = sharedKeyValues.get();
+        Map<String, SharedKeyValues> current = new HashMap<>();
         sharedKeyValues.set(current);
         try {
             return supplier.get();
@@ -398,6 +426,41 @@ public class Gemma4Model extends LlamaModel {
         return (float) Math.pow(config.embeddingLength, -0.5);
     }
 
+    /**
+     * Populates the packed token-identity component of Gemma4 PLE from the per-layer embedding table,
+     * then applies the upstream `sqrt(hidden_size_per_layer_input)` scale.
+     */
+    void computeTokenIdentityPerLayerInputs(int[] tokenIds, AbstractTensor tokenIdentity, int packedLength) {
+        for (int b = 0; b < tokenIds.length; b++) {
+            copyPerLayerEmbeddingRow(tokenIds[b], tokenIdentity, b, packedLength);
+        }
+        configurableTensorProvider.get().scale(perLayerEmbeddingScale(), tokenIdentity, 0, packedLength);
+    }
+
+    /**
+     * Computes the context-dependent PLE projection, applies the upstream projection scale, and then
+     * normalizes each per-layer slice with `per_layer_projection_norm`.
+     */
+    void computeProjectedPerLayerInputs(AbstractTensor embeddings, AbstractTensor projected, int packedLength, Gemma4Config gemma4Config) {
+        configurableTensorProvider.get().dotProductChunk(projected, embeddings, perLayerModelProjectionWeights, 0,
+                gemma4Config.embeddingLength, 0, packedLength);
+        configurableTensorProvider.get().scale(perLayerModelProjectionScale(), projected, 0, packedLength);
+        Gemma4RmsNormSupport.applyInPlace(projected, gemma4Config.numberOfLayers,
+                gemma4Config.hiddenSizePerLayerInput, gemma4Config.layerNormEps, perLayerProjectionNormWeights);
+    }
+
+    /**
+     * Upstream combines token-identity and projected PLE components as `(identity + projected) / sqrt(2)`.
+     */
+    void combinePerLayerInputs(AbstractTensor projected, AbstractTensor tokenIdentity, int packedLength) {
+        Gemma4PleSupport.combinePerLayerInputs(configurableTensorProvider, projected, tokenIdentity, perLayerInputScale(), packedLength);
+    }
+
+    AbstractTensor[] splitPerLayerInputs(AbstractTensor projected, int batchSize, int numberOfLayers, int hiddenSizePerLayerInput) {
+        return Gemma4PleSupport.splitPerLayerInputs(projected, batchSize, numberOfLayers, hiddenSizePerLayerInput,
+                this::makeDenseTensor);
+    }
+
     private String resolveTextModelRoot() {
         List<String> candidates = List.of("model.language_model.", "language_model.model.", "language_model.", "model.");
         for (String candidate : candidates) {
@@ -412,7 +475,7 @@ public class Gemma4Model extends LlamaModel {
     private String resolveTextModelWeight(String suffix) {
         String root = resolveTextModelRoot();
         String name = root + suffix;
-        if (weights.isWeightPresent(name)) {
+        if (weights.isWeightPresent(name) || weights.isWeightPresent(name + "-part-0")) {
             return name;
         }
         throw new IllegalArgumentException("Missing Gemma4 text weight " + name);

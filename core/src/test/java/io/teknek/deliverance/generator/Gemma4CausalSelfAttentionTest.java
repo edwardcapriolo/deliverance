@@ -8,9 +8,8 @@ import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
-
-import java.util.List;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -66,6 +65,22 @@ public class Gemma4CausalSelfAttentionTest {
             assertEquals(15.0f, packed.get(2, 3), 1.0e-5f);
             assertEquals(16.0f, packed.get(3, 0), 1.0e-5f);
             assertEquals(19.0f, packed.get(3, 3), 1.0e-5f);
+        }
+    }
+
+    @Test
+    public void fillVisibleRowsFromDenseUsesContiguousWindow() {
+        try (AttentionFixture fixture = new AttentionFixture(null);
+             AbstractTensor dense = matrix(5, 4, 0);
+             AbstractTensor packed = new FloatBufferTensor(3, 4)) {
+            int rows = fixture.attention.fillVisibleRowsFromDense(packed, dense, 1, 3, 4);
+            assertEquals(3, rows);
+            assertEquals(4.0f, packed.get(0, 0), 1.0e-5f);
+            assertEquals(7.0f, packed.get(0, 3), 1.0e-5f);
+            assertEquals(8.0f, packed.get(1, 0), 1.0e-5f);
+            assertEquals(11.0f, packed.get(1, 3), 1.0e-5f);
+            assertEquals(12.0f, packed.get(2, 0), 1.0e-5f);
+            assertEquals(15.0f, packed.get(2, 3), 1.0e-5f);
         }
     }
 
@@ -142,7 +157,6 @@ public class Gemma4CausalSelfAttentionTest {
                     "sliding_attention",
                     false,
                     false,
-                    -1,
                     q,
                     qNorm,
                     Optional.of(k),

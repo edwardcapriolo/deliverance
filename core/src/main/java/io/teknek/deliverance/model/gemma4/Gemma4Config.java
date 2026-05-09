@@ -5,13 +5,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.VectorMathUtils;
 import io.teknek.deliverance.safetensors.Config;
+import net.jafama.FastMath;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 
 public class Gemma4Config extends Config {
     public final Integer slidingWindow;
@@ -88,11 +84,9 @@ public class Gemma4Config extends Config {
         for (String layerType : this.layerTypes.stream().distinct().toList()) {
             Map<String, Object> params = mapValue(ropeParameters, layerType);
             typedRopeParams.put(layerType, params);
-            int headDim = getLayerHeadDim(layerType);
-            double partialRotaryFactor = doubleValue(params, "partial_rotary_factor", 1.0);
-            int rotaryDim = Math.max(2, evenFloor((int) Math.round(headDim * partialRotaryFactor)));
+            int rotaryDim = evenFloor(getLayerHeadDim(layerType));
             typedRotaryDims.put(layerType, rotaryDim);
-            typedFreqs.put(layerType, VectorMathUtils.precomputeFreqsCis(rotaryDim, contextLength, ropeTheta(params, 10000.0), 1.0));
+            typedFreqs.put(layerType, precomputeRopeFreqs(layerType, params));
         }
         this.ropeParametersByLayerType = Collections.unmodifiableMap(typedRopeParams);
         this.ropeFreqsByLayerType = Collections.unmodifiableMap(typedFreqs);
@@ -106,15 +100,66 @@ public class Gemma4Config extends Config {
         return defaultHeadDim;
     }
 
-    public int getLayerKeyValueHeads(String layerType) {
-        if (Objects.equals(layerType, "full_attention") && numGlobalKeyValueHeads != null) {
+    /**
+     * Gemma4 full-attention layers do not always use {@code num_global_key_value_heads}. They only
+     * switch to the global KV head count when {@code attention_k_eq_v} is enabled. Otherwise they
+     * continue to use the regular text KV head count with the larger {@code global_head_dim}.
+     */
+    public int getLayerKeyValueProjectionHeads(String layerType) {
+        if (Objects.equals(layerType, "full_attention") && attentionKEqV && numGlobalKeyValueHeads != null) {
             return numGlobalKeyValueHeads;
         }
         return defaultKeyValueHeads;
     }
 
+    public int getLayerQueryProjectionLength(String layerType) {
+        return numberOfHeads * getLayerHeadDim(layerType);
+    }
+
+    public int getLayerKeyValueProjectionLength(String layerType) {
+        return getLayerHeadDim(layerType) * getLayerKeyValueProjectionHeads(layerType);
+    }
+
     public int getLayerKvLength(String layerType) {
-        return getLayerHeadDim(layerType) * getLayerKeyValueHeads(layerType);
+        return getLayerKeyValueProjectionLength(layerType);
+    }
+
+    /**
+     * Gemma4 proportional RoPE keeps the full head width but zero-fills the non-rotary inverse
+     * frequencies, which yields identity rotation (`cos=1`, `sin=0`) for the remaining pairs.
+     */
+    float[][] precomputeRopeFreqs(String layerType, Map<String, Object> ropeParams) {
+        int headDim = evenFloor(getLayerHeadDim(layerType));
+        int halfDim = headDim / 2;
+        float[] freqs = new float[halfDim];
+        String ropeType = stringValue(ropeParams, "rope_type");
+        double theta = ropeTheta(ropeParams, 10000.0);
+        double factor = doubleValue(ropeParams, "factor", 1.0);
+
+        if (Objects.equals(ropeType, "proportional")) {
+            double partialRotaryFactor = doubleValue(ropeParams, "partial_rotary_factor", 1.0);
+            int ropeAngles = Math.min(halfDim, Math.max(1, (int) ((partialRotaryFactor * headDim) / 2.0)));
+            float step = 0.0f;
+            for (int i = 0; i < ropeAngles; i++, step += 2.0f) {
+                freqs[i] = (float) ((1.0 / FastMath.pow(theta, step / headDim)) / factor);
+            }
+        } else {
+            float step = 0.0f;
+            for (int i = 0; i < freqs.length; i++, step += 2.0f) {
+                freqs[i] = (float) ((1.0 / FastMath.pow(theta, step / headDim)) / factor);
+            }
+        }
+
+        float[] t = new float[contextLength];
+        for (int i = 0; i < contextLength; i++) {
+            t[i] = i;
+        }
+        float[] freqsCis = VectorMathUtils.outerProduct(t, freqs);
+        float[][] result = new float[freqsCis.length][];
+        for (int i = 0; i < freqsCis.length; i++) {
+            result[i] = new float[]{(float) FastMath.cos(freqsCis[i]), (float) FastMath.sin(freqsCis[i])};
+        }
+        return result;
     }
 
     public int getLayerHiddenLength(int layerIndex) {
