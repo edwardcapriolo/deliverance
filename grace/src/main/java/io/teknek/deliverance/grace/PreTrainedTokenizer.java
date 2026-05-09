@@ -4,12 +4,7 @@ import io.teknek.deliverance.grace.models.TokenizerConfig;
 import io.teknek.dysfx.multiple.Tuple2;
 
 import java.math.BigInteger;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.SortedMap;
+import java.util.*;
 
 public abstract class PreTrainedTokenizer extends PreTrainedTokenizerBase {
     public PreTrainedTokenizer(Map<String, String> modelSpecificSpecialTokens,
@@ -133,11 +128,15 @@ public abstract class PreTrainedTokenizer extends PreTrainedTokenizerBase {
                 .replace(" 'll", "'ll");
     }
 
+    protected String decodeRegularTokens(String encoded) {
+        return ByteLevelCodec.decode(encoded);
+    }
+
     private void flushRegularTokens(StringBuilder result, StringBuilder regularTokenBuffer) {
         if (regularTokenBuffer.isEmpty()) {
             return;
         }
-        result.append(ByteLevelCodec.decode(regularTokenBuffer.toString()));
+        result.append(decodeRegularTokens(regularTokenBuffer.toString()));
         regularTokenBuffer.setLength(0);
     }
 

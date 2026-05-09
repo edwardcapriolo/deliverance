@@ -1,29 +1,11 @@
-import io.teknek.deliverance.grace.AutoTokenizer;
-import io.teknek.deliverance.grace.BatchEncoding;
-import io.teknek.deliverance.grace.EncodeOptions;
-import io.teknek.deliverance.grace.Encoding;
-import io.teknek.deliverance.grace.PaddingOptions;
-import io.teknek.deliverance.grace.PaddingSide;
-import io.teknek.deliverance.grace.PaddingStrategy;
-import io.teknek.deliverance.grace.PreTrainedTokenizer;
-import io.teknek.deliverance.grace.TokenIds;
-import io.teknek.deliverance.grace.Tokens;
-import io.teknek.deliverance.grace.TruncationOptions;
-import io.teknek.deliverance.grace.TruncationSide;
+import io.teknek.deliverance.grace.*;
 import org.junit.jupiter.api.Test;
 
 import java.net.URISyntaxException;
 import java.nio.file.Path;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.OptionalInt;
+import java.util.*;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class TokenizerFixtureTest {
 
@@ -171,7 +153,35 @@ public class TokenizerFixtureTest {
         assertArrayEquals(new int[]{0, 1}, leftTruncated.specialTokensMask());
     }
 
+    @Test
+    void pretokenizePreservesUnmatchedSegmentsAroundRegexMatches() throws Exception {
+        PreTrainedTokenizer tokenizer = AutoTokenizer.fromPretrained(fixturePath());
+
+        assertArrayEquals(new String[]{"Hello", "$", "Ġworld"}, tokenizer.tokenize("Hello$ world").getInputs());
+    }
+
+    @Test
+    void gemmaFixtureKeepsTurnTokensAtomicAndDecodesSpaces() throws Exception {
+        PreTrainedTokenizer tokenizer = AutoTokenizer.fromPretrained(gemmaFixturePath());
+
+        String prompt = """
+                <|turn>system
+                """;
+
+        Encoding encoding = tokenizer.encode(prompt);
+        assertEquals(105, encoding.inputIds()[0]);
+        assertEquals(9730, encoding.inputIds()[encoding.inputIds().length - 1]);
+        assertEquals(prompt, tokenizer.decode(new TokenIds(encoding.inputIds()), false, false, false, false));
+
+        assertEquals("You are a concise assistant.",
+                tokenizer.decode(new TokenIds(new int[]{3048, 659, 496, 63510, 16326, 236761}), false, false, false, false));
+    }
+
     private Path fixturePath() throws URISyntaxException {
         return Path.of(getClass().getResource("/tokenizers/tiny-qwen").toURI());
+    }
+
+    private Path gemmaFixturePath() throws URISyntaxException {
+        return Path.of(getClass().getResource("/tokenizers/tiny-gemma").toURI());
     }
 }

@@ -3,19 +3,7 @@ package io.teknek.deliverance.grace;
 import io.teknek.deliverance.grace.models.TokenizerConfig;
 
 import java.math.BigInteger;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.OptionalInt;
-import java.util.Set;
-import java.util.SortedMap;
-import java.util.TreeMap;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -494,13 +482,14 @@ public abstract class PreTrainedTokenizerBase {
         }
     }
 
-    private List<String> tokenizeSegment(String text) {
+    protected List<String> tokenizeSegment(String text) {
         Optional<BytePairEncodingModel> optionalModel = bytePairEncodingModel();
         if (optionalModel.isEmpty()) {
             throw new UnsupportedOperationException("Tokenizer does not have an encode model");
         }
         BytePairEncodingModel model = optionalModel.orElseThrow();
-        List<String> pretokenized = pretokenize(text, model.preTokenizer());
+        String normalized = normalizeForBpeInput(text, model);
+        List<String> pretokenized = pretokenize(normalized, model.preTokenizer());
         List<String> tokens = new ArrayList<>();
         for (String piece : pretokenized) {
             if (piece.isEmpty()) {
@@ -511,7 +500,11 @@ public abstract class PreTrainedTokenizerBase {
         return tokens;
     }
 
-    private List<String> pretokenize(String text, PreTokenizerConfig config) {
+    protected String normalizeForBpeInput(String text, BytePairEncodingModel model) {
+        return text;
+    }
+
+    protected List<String> pretokenize(String text, PreTokenizerConfig config) {
         if (text.isEmpty()) {
             return List.of();
         }
@@ -525,8 +518,16 @@ public abstract class PreTrainedTokenizerBase {
         Pattern pattern = Pattern.compile(splitPattern);
         Matcher matcher = pattern.matcher(normalized);
         List<String> pieces = new ArrayList<>();
+        int cursor = 0;
         while (matcher.find()) {
+            if (matcher.start() > cursor) {
+                pieces.add(normalized.substring(cursor, matcher.start()));
+            }
             pieces.add(matcher.group());
+            cursor = matcher.end();
+        }
+        if (cursor < normalized.length()) {
+            pieces.add(normalized.substring(cursor));
         }
         if (pieces.isEmpty()) {
             pieces.add(normalized);
@@ -534,8 +535,12 @@ public abstract class PreTrainedTokenizerBase {
         return pieces;
     }
 
-    private List<String> applyBpe(String token, BytePairEncodingModel model) {
-        String encoded = ByteLevelCodec.encode(token);
+    protected String encodeForBpe(String token, BytePairEncodingModel model) {
+        return ByteLevelCodec.encode(token);
+    }
+
+    protected List<String> applyBpe(String token, BytePairEncodingModel model) {
+        String encoded = encodeForBpe(token, model);
         if (model.vocab().containsKey(encoded)) {
             return List.of(encoded);
         }

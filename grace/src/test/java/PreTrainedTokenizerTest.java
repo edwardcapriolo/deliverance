@@ -1,15 +1,12 @@
 import io.teknek.deliverance.grace.AutoTokenizer;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class PreTrainedTokenizerTest {
     @TempDir
