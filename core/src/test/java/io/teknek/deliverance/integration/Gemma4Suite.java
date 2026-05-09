@@ -19,9 +19,10 @@ public class Gemma4Suite {
     public static AbstractModel getOrCreate() {
         if (model == null) {
             ModelFetcher fetch = new ModelFetcher("google", "gemma-4-E2B-it");
+            //ModelFetcher fetch = new ModelFetcher("edward", "gemma-4-E2B-it-JQ4");
             builder = AutoModelForCausaLm.newBuilder(fetch);
-            //builder.withTensorProvider(new ConfigurableTensorProvider(builder.getAllocator(),
-            //        new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())));
+            builder.withTensorProvider(new ConfigurableTensorProvider(builder.getAllocator(),
+                    new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())));
             model = builder.build();
         }
         return model;

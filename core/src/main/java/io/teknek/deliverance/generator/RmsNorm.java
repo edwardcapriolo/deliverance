@@ -33,7 +33,9 @@ public class RmsNorm extends LayerNorm {
                 float v = input.get(b, j);
                 ss += v * v;
             }
-            ss /= model.getConfig().embeddingLength;
+            //originally normalizaing over the enter length
+            //ss /= model.getConfig().embeddingLength;
+            ss /= length;
             ss += model.getConfig().layerNormEps;
             ss = (1.0 / FastMath.sqrt(ss));
             for (int j = offset; j < limit; j++) {
