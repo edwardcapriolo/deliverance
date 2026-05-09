@@ -3,7 +3,6 @@ package io.teknek.deliverance.safetensors;
 import com.google.common.collect.BiMap;
 import com.google.common.collect.ImmutableBiMap;
 import io.teknek.deliverance.math.ActivationFunction;
-
 import io.teknek.deliverance.math.VectorMathUtils;
 
 import java.util.List;

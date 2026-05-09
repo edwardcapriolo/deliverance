@@ -2,19 +2,21 @@ package io.teknek.deliverance.safetensors;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.primitives.Ints;
+import io.teknek.deliverance.DType;
+import io.teknek.deliverance.safetensors.fetch.Pair;
+import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.SparseOffset;
+import io.teknek.deliverance.tensor.TensorInfo;
+import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor.impl.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.nio.ShortBuffer;
 import java.util.*;
-
-import io.teknek.deliverance.DType;
-import io.teknek.deliverance.safetensors.fetch.Pair;
-import io.teknek.deliverance.tensor.*;
-import io.teknek.deliverance.tensor.impl.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class Weights implements WeightLoader {
     private static final Logger logger = LoggerFactory.getLogger(Weights.class);
@@ -71,9 +73,6 @@ public class Weights implements WeightLoader {
         if (info == null) {
             throw new NoSuchElementException(name + " not found in weights");
         }
-        if (info.shape.length < 1) {
-            throw new RuntimeException("Invalid shape dimensions " + info.shape.length + " encountered for " + name);
-        }
         if (dctx != null && info.shape.length != 2) {
             throw new RuntimeException("Invalid shape dimensions " + info.shape.length + " encountered for " + name + " with offset");
         }
@@ -88,7 +87,7 @@ public class Weights implements WeightLoader {
     static Pair<TensorShape, Pair<Long, Long>> getLoadOffsets(TensorInfo info, DistributedContext dctx, boolean sparseRows) {
         long positionOffset = info.dataOffsets[0];
         long positionLimit = info.dataOffsets[1];
-        TensorShape shape = TensorShape.of(info.shape);
+        TensorShape shape = toTensorShape(info.shape);
 
         // If this is a sparse tensor, we need to fetch only the section of the tensor that is needed
         if (dctx != null && sparseRows) {
@@ -105,6 +104,21 @@ public class Weights implements WeightLoader {
             shape = TensorShape.sparseRow(info.shape, SparseOffset.of(dctx.getShardOffsetForLength(rows), dctx.getShardLength(rows)));
         }
         return Pair.of(shape, Pair.of(positionOffset, positionLimit));
+    }
+
+    /**
+     * Converts safetensors shapes into Deliverance tensor shapes.
+     *
+     * Safetensors permits zero-dimensional scalar tensors with {@code shape: []}, while Deliverance
+     * tensors are always represented as at least two-dimensional. Scalar tensors are therefore
+     * normalized to a logical {@code [1,1]} tensor so they can still be loaded and consumed by the
+     * rest of the stack.
+     */
+    static TensorShape toTensorShape(int[] shape) {
+        if (shape.length == 0) {
+            return TensorShape.of(1, 1);
+        }
+        return TensorShape.of(shape);
     }
 
     static AbstractTensor loadTensorFromBuffer(

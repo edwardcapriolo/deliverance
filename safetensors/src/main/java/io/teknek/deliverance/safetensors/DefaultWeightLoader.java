@@ -14,12 +14,10 @@ import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.UncheckedIOException;
-import java.util.LinkedHashMap;
-
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
@@ -29,7 +27,6 @@ import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
-
 
 import static io.teknek.deliverance.safetensors.SafeTensorIndexPojo.MODEL_INDEX_JSON;
 import static io.teknek.deliverance.safetensors.Weights.findDType;
@@ -286,17 +283,33 @@ public class DefaultWeightLoader implements WeightLoader {
         }
 
         TensorInfo logicalInfo = allTensorInfoMap.get(name);
-        if (logicalInfo == null || logicalInfo.shape.length != 2 || !allTensorInfoMap.containsKey(name + "-part-0")) {
+        if ((logicalInfo != null && logicalInfo.shape.length != 2) || !allTensorInfoMap.containsKey(name + "-part-0")) {
             throw new RuntimeException("weight cant be found " + name + " list" + this.weightMap.keySet());
         }
 
-        int totalRows = Ints.checkedCast(logicalInfo.shape[0]);
-        int cols = Ints.checkedCast(logicalInfo.shape[1]);
+        TensorInfo firstPart = allTensorInfoMap.get(name + "-part-0");
+        if (firstPart == null || firstPart.shape.length != 2) {
+            throw new IllegalArgumentException("Split tensor row slicing only supported for 2D tensors: " + name);
+        }
+
+        int cols = Ints.checkedCast(firstPart.shape[1]);
+        int totalRows = 0;
+        DType dType = firstPart.dType;
+        for (int partIndex = 0; ; partIndex++) {
+            TensorInfo partInfo = allTensorInfoMap.get(name + "-part-" + partIndex);
+            if (partInfo == null) {
+                break;
+            }
+            if (partInfo.shape.length != 2 || Ints.checkedCast(partInfo.shape[1]) != cols || partInfo.dType != dType) {
+                throw new IllegalArgumentException("Incompatible split tensor metadata for " + name);
+            }
+            totalRows += Ints.checkedCast(partInfo.shape[0]);
+        }
         if (rowOffset < 0 || rowCount < 0 || rowOffset + rowCount > totalRows) {
             throw new IllegalArgumentException("Invalid row range " + rowOffset + "," + rowCount + " for " + name);
         }
 
-        io.teknek.deliverance.tensor.AbstractTensor merged = null;
+        AbstractTensor merged = null;
         int copiedRows = 0;
         int rowsSeen = 0;
         try {
@@ -311,16 +324,16 @@ public class DefaultWeightLoader implements WeightLoader {
                 int partEnd = rowsSeen + partRows;
                 int requestedStart = Math.max(rowOffset, partStart);
                 int requestedEnd = Math.min(rowOffset + rowCount, partEnd);
-                if (requestedStart < requestedEnd) {
-                    int localOffset = requestedStart - partStart;
-                    int localCount = requestedEnd - requestedStart;
-                    try (io.teknek.deliverance.tensor.AbstractTensor partSlice = weightMap.get(partName).loadRows(partName, localOffset, localCount)) {
-                        if (merged == null) {
-                            merged = allocateLike(logicalInfo.dType, rowCount, cols);
-                        }
-                        for (int row = 0; row < localCount; row++) {
-                            merged.copyFrom(partSlice, partSlice.getOffset(row, 0), merged.getOffset(copiedRows + row, 0), cols);
-                        }
+                    if (requestedStart < requestedEnd) {
+                        int localOffset = requestedStart - partStart;
+                        int localCount = requestedEnd - requestedStart;
+                        try (AbstractTensor partSlice = weightMap.get(partName).loadRows(partName, localOffset, localCount)) {
+                            if (merged == null) {
+                                merged = allocateLike(dType, rowCount, cols);
+                            }
+                            for (int row = 0; row < localCount; row++) {
+                                merged.copyFrom(partSlice, partSlice.getOffset(row, 0), merged.getOffset(copiedRows + row, 0), cols);
+                            }
                         copiedRows += localCount;
                     }
                 }
