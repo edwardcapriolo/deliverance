@@ -11,14 +11,7 @@ import java.io.IOException;
 import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.SortedMap;
-import java.util.TreeMap;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class AutoTokenizer {
@@ -57,9 +50,13 @@ public class AutoTokenizer {
                         Optional.empty(), Optional.empty(), Optional.empty(), inputs,
                         vocab, addedTokenMap, tokenizerConfig, bytePairEncodingModel);
             }
-            if ("GemmaTokenizer".equals(tokenizerClass) || "LlamaTokenizer".equals(tokenizerClass)
-                    || "PreTrainedTokenizerFast".equals(tokenizerClass)) {
+            if (isGemmaLikeTokenizer(tokenizerClass, tokenizerDocument)) {
                 return new GemmaTokenizer(new LinkedHashMap<>(), Optional.empty(), Optional.empty(), Optional.empty(),
+                        Optional.empty(), Optional.empty(), Optional.empty(), inputs,
+                        vocab, addedTokenMap, tokenizerConfig, bytePairEncodingModel);
+            }
+            if (isByteLevelBpeTokenizer(tokenizerClass, tokenizerDocument)) {
+                return new ByteLevelBpeTokenizer(new LinkedHashMap<>(), Optional.empty(), Optional.empty(), Optional.empty(),
                         Optional.empty(), Optional.empty(), Optional.empty(), inputs,
                         vocab, addedTokenMap, tokenizerConfig, bytePairEncodingModel);
             }
@@ -188,11 +185,11 @@ public class AutoTokenizer {
             return null;
         }
 
-        List<String> merges = readStringList(modelNode.get("merges"));
+        List<String> merges = readMerges(modelNode.get("merges"));
         if (merges.isEmpty()) {
             File mergesFile = new File(path, "merges.txt");
             if (mergesFile.exists()) {
-                merges = java.nio.file.Files.readAllLines(mergesFile.toPath()).stream()
+                merges = Files.readAllLines(mergesFile.toPath()).stream()
                         .filter(line -> !line.isBlank() && !line.startsWith("#"))
                         .toList();
             }
@@ -203,6 +200,67 @@ public class AutoTokenizer {
                 BytePairEncodingModel.fromMerges(merges),
                 parsePreTokenizer(tokenizerDocument.path("pre_tokenizer")),
                 readText(modelNode, "unk_token"));
+    }
+
+    private static boolean isGemmaLikeTokenizer(String tokenizerClass, JsonNode tokenizerDocument) {
+        if ("GemmaTokenizer".equals(tokenizerClass)) {
+            return true;
+        }
+        JsonNode normalizer = tokenizerDocument.path("normalizer");
+        JsonNode preTokenizer = tokenizerDocument.path("pre_tokenizer");
+        return "Replace".equals(normalizer.path("type").asText())
+                && " ".equals(normalizer.path("pattern").path("String").asText(null))
+                && "▁".equals(normalizer.path("content").asText(null))
+                && "Split".equals(preTokenizer.path("type").asText())
+                && " ".equals(preTokenizer.path("pattern").path("String").asText(null));
+    }
+
+    private static boolean isByteLevelBpeTokenizer(String tokenizerClass, JsonNode tokenizerDocument) {
+        if ("LlamaTokenizer".equals(tokenizerClass) || "PreTrainedTokenizerFast".equals(tokenizerClass)) {
+            return true;
+        }
+        JsonNode preTokenizer = tokenizerDocument.path("pre_tokenizer");
+        JsonNode decoder = tokenizerDocument.path("decoder");
+        if ("ByteLevel".equals(preTokenizer.path("type").asText()) || "ByteLevel".equals(decoder.path("type").asText())) {
+            return true;
+        }
+        if ("Sequence".equals(preTokenizer.path("type").asText()) && preTokenizer.path("pretokenizers").isArray()) {
+            for (JsonNode child : preTokenizer.path("pretokenizers")) {
+                if ("ByteLevel".equals(child.path("type").asText())) {
+                    return true;
+                }
+            }
+        }
+        if ("Sequence".equals(decoder.path("type").asText()) && decoder.path("decoders").isArray()) {
+            for (JsonNode child : decoder.path("decoders")) {
+                if ("ByteLevel".equals(child.path("type").asText())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static List<String> readMerges(JsonNode node) {
+        if (node == null || node.isNull() || !node.isArray()) {
+            return List.of();
+        }
+        List<String> merges = new ArrayList<>(node.size());
+        for (JsonNode child : node) {
+            if (child.isTextual()) {
+                merges.add(child.asText());
+                continue;
+            }
+            if (child.isArray() && child.size() == 2 && child.get(0).isTextual() && child.get(1).isTextual()) {
+                merges.add(child.get(0).asText() + " " + child.get(1).asText());
+                continue;
+            }
+            String maybeToken = readTokenValue(child);
+            if (maybeToken != null) {
+                merges.add(maybeToken);
+            }
+        }
+        return List.copyOf(merges);
     }
 
     private static JsonNode readOptionalJson(ObjectMapper objectMapper, File file) throws IOException {

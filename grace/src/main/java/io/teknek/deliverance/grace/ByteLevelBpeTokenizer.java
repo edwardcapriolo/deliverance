@@ -5,24 +5,31 @@ import io.teknek.deliverance.grace.models.TokenizerConfig;
 import java.math.BigInteger;
 import java.util.*;
 
-public class GemmaTokenizer extends PreTrainedTokenizer {
+/**
+ * Generic byte-level BPE tokenizer path for GPT/Qwen/Llama-style fast tokenizers.
+ *
+ * This intentionally keeps the default byte-level encode/decode hooks from
+ * {@link PreTrainedTokenizerBase} / {@link PreTrainedTokenizer} and should not be used for
+ * Gemma-style "space to ▁" tokenizers.
+ */
+public class ByteLevelBpeTokenizer extends PreTrainedTokenizer {
     private final Map<String, Integer> vocab;
     private final Map<Integer, String> idToToken;
     private final TokenizerConfig tokenizerConfig;
     private final BytePairEncodingModel bytePairEncodingModel;
 
-    public GemmaTokenizer(Map<String, String> modelSpecificSpecialTokens,
-                          Optional<BigInteger> maxLen,
-                          Optional<PaddingSide> paddingSide,
-                          Optional<TruncationSide> truncationSide,
-                          Optional<Boolean> cleanUpTokenizationSpaces,
-                          Optional<Boolean> splitSpecialTokens,
-                          Optional<Object> backend,
-                          Optional<List<Object>> filesLoaded,
-                          Map<String, Integer> vocab,
-                          SortedMap<Integer, AddedToken> addedTokenMap,
-                          TokenizerConfig tokenizerConfig,
-                          BytePairEncodingModel bytePairEncodingModel) {
+    public ByteLevelBpeTokenizer(Map<String, String> modelSpecificSpecialTokens,
+                                 Optional<BigInteger> maxLen,
+                                 Optional<PaddingSide> paddingSide,
+                                 Optional<TruncationSide> truncationSide,
+                                 Optional<Boolean> cleanUpTokenizationSpaces,
+                                 Optional<Boolean> splitSpecialTokens,
+                                 Optional<Object> backend,
+                                 Optional<List<Object>> filesLoaded,
+                                 Map<String, Integer> vocab,
+                                 SortedMap<Integer, AddedToken> addedTokenMap,
+                                 TokenizerConfig tokenizerConfig,
+                                 BytePairEncodingModel bytePairEncodingModel) {
         super(modelSpecificSpecialTokens, maxLen, paddingSide, truncationSide, cleanUpTokenizationSpaces,
                 splitSpecialTokens, backend, filesLoaded, Optional.of(tokenizerConfig), Optional.of(addedTokenMap));
         this.vocab = Collections.unmodifiableMap(new LinkedHashMap<>(vocab));
@@ -49,21 +56,6 @@ public class GemmaTokenizer extends PreTrainedTokenizer {
     @Override
     protected Optional<BytePairEncodingModel> bytePairEncodingModel() {
         return Optional.ofNullable(bytePairEncodingModel);
-    }
-
-    @Override
-    protected String normalizeForBpeInput(String text, BytePairEncodingModel model) {
-        return text.replace(" ", "▁");
-    }
-
-    @Override
-    protected String encodeForBpe(String token, BytePairEncodingModel model) {
-        return token;
-    }
-
-    @Override
-    protected String decodeRegularTokens(String encoded) {
-        return encoded.replace("▁", " ");
     }
 
     private Map<Integer, String> buildIdToToken(Map<String, Integer> sourceVocab) {

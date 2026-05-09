@@ -13,6 +13,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /*
+model_id = 'google/gemma-4-E2B-it'
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+
 from transformers import AutoTokenizer
 model_id = 'Qwen/Qwen2.5-0.5B-Instruct'
 tokenizer = AutoTokenizer.from_pretrained(model_id)

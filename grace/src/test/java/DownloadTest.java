@@ -1,11 +1,8 @@
 import io.teknek.deliverance.grace.AutoTokenizer;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.grace.TokenIds;
-import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-
-import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 

@@ -1,0 +1,87 @@
+{
+  "version": "1.0",
+  "truncation": null,
+  "padding": null,
+  "added_tokens": [
+    {
+      "id": 105,
+      "content": "<|turn>",
+      "single_word": false,
+      "lstrip": false,
+      "rstrip": false,
+      "normalized": false,
+      "special": true
+    },
+    {
+      "id": 106,
+      "content": "<turn|>",
+      "single_word": false,
+      "lstrip": false,
+      "rstrip": false,
+      "normalized": false,
+      "special": true
+    }
+  ],
+  "normalizer": {
+    "type": "Replace",
+    "pattern": {
+      "String": " "
+    },
+    "content": "▁"
+  },
+  "pre_tokenizer": {
+    "type": "Split",
+    "pattern": {
+      "String": " "
+    },
+    "behavior": "MergedWithPrevious",
+    "invert": false
+  },
+  "decoder": {
+    "type": "Sequence",
+    "decoders": [
+      {
+        "type": "Replace",
+        "pattern": {
+          "String": "▁"
+        },
+        "content": " "
+      },
+      {
+        "type": "Fuse"
+      }
+    ]
+  },
+  "model": {
+    "type": "BPE",
+    "dropout": null,
+    "unk_token": "<unk>",
+    "continuing_subword_prefix": "",
+    "end_of_word_suffix": "",
+    "fuse_unk": true,
+    "byte_fallback": true,
+    "vocab": {
+      "<unk>": 0,
+      "system\n": 9730,
+      "system": 9731,
+      "user": 2364,
+      "model": 4368,
+      "You": 3048,
+      "▁are": 659,
+      "▁a": 496,
+      "▁concise": 63510,
+      "▁assistant": 16326,
+      ".": 236761,
+      "What": 3689,
+      "▁is": 563,
+      "▁the": 506,
+      "▁capital": 5279,
+      "▁of": 529,
+      "▁New": 1799,
+      "▁York": 3773,
+      "?": 236881,
+      "\n": 107
+    },
+    "merges": []
+  }
+}

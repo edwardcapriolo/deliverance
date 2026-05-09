@@ -1,0 +1,5 @@
+{
+  "tokenizer_class": "GemmaTokenizer",
+  "eos_token": "<eos>",
+  "bos_token": "<bos>"
+}
