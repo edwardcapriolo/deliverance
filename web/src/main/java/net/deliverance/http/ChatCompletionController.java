@@ -10,7 +10,6 @@ import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.safetensors.prompt.ToolCall;
 import io.teknek.dysfx.Either;
 import io.teknek.dysfx.Left;
-
 import io.teknek.dysfx.Right;
 import io.teknek.dysfx.exception.UnreachableException;
 import org.slf4j.Logger;
@@ -22,6 +21,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -88,6 +88,10 @@ public class ChatCompletionController {
                 CreateChatCompletionResponseChoicesInner choice = new CreateChatCompletionResponseChoicesInner()
                         .message(message)
                         .index(0);
+                CreateChatCompletionResponseChoicesInnerLogprobs logprobs = toLogProbs(resp);
+                if (logprobs != null) {
+                    choice.logprobs(logprobs);
+                }
                 if (!tcs.isEmpty()) {
                     //We shouldn't need this but it seems like the behaivor is hadto model
                     choice.setFinishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.TOOL_CALLS);
@@ -179,6 +183,60 @@ public class ChatCompletionController {
             return new ResponseEntity<>(out, HttpStatus.OK);
         }*/
         throw new UnsupportedOperationException("Hit bottom");
+    }
+
+    /**
+     * Maps internal sampler-return data into the OpenAI-compatible logprobs response shape when the
+     * generator captured top-logprob candidates. Returns {@code null} when logprobs were not requested.
+     */
+    static CreateChatCompletionResponseChoicesInnerLogprobs toLogProbs(Response response) {
+        if (response.samplerReturns == null || response.samplerReturns.isEmpty()) {
+            return null;
+        }
+        boolean hasAny = response.samplerReturns.stream().anyMatch(s -> s.getTopNLogProbs().isPresent());
+        if (!hasAny) {
+            return null;
+        }
+        CreateChatCompletionResponseChoicesInnerLogprobs out = new CreateChatCompletionResponseChoicesInnerLogprobs();
+        response.samplerReturns.forEach(s -> out.addContentItem(toTokenLogprob(s)));
+        return out;
+    }
+
+    static ChatCompletionTokenLogprob toTokenLogprob(SamplerReturn samplerReturn) {
+        ChatCompletionTokenLogprob token = new ChatCompletionTokenLogprob()
+                .token(firstTokenString(samplerReturn))
+                .logprob(BigDecimal.valueOf(chosenLogProb(samplerReturn)))
+                .topLogprobs(toTopLogprobs(samplerReturn));
+        return token;
+    }
+
+    static List<ChatCompletionTokenLogprobTopLogprobsInner> toTopLogprobs(SamplerReturn samplerReturn) {
+        if (samplerReturn.getTopNLogProbs().isEmpty()) {
+            return List.of();
+        }
+        ArrayList<IndexValueToken> ranked = new ArrayList<>(samplerReturn.getTopNLogProbs().get());
+        ranked.sort((a, b) -> Float.compare(b.value, a.value));
+        ArrayList<ChatCompletionTokenLogprobTopLogprobsInner> mapped = new ArrayList<>(ranked.size());
+        for (IndexValueToken candidate : ranked) {
+            mapped.add(new ChatCompletionTokenLogprobTopLogprobsInner()
+                    .token(candidate.token)
+                    .logprob(BigDecimal.valueOf(candidate.logProb)));
+        }
+        return mapped;
+    }
+
+    private static String firstTokenString(SamplerReturn samplerReturn) {
+        return samplerReturn.getTopNLogProbs()
+                .flatMap(queue -> queue.stream().filter(t -> t.index == samplerReturn.getToken()).findFirst())
+                .map(t -> t.token)
+                .orElse(String.valueOf(samplerReturn.getToken()));
+    }
+
+    private static double chosenLogProb(SamplerReturn samplerReturn) {
+        return samplerReturn.getTopNLogProbs()
+                .flatMap(queue -> queue.stream().filter(t -> t.index == samplerReturn.getToken()).findFirst())
+                .map(t -> (double) t.logProb)
+                .orElse(-9999.0d);
     }
 
     private CreateChatCompletionStreamResponse sendComplete(UUID sessionId, AtomicInteger index){

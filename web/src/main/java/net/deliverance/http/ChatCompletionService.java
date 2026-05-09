@@ -42,6 +42,12 @@ public class ChatCompletionService {
         if (request.getTopK()!=null){
             params.withTopK(request.getTopK().floatValue());
         }
+        if (request.getLogprobs() != null) {
+            params.withLogProbs(request.getLogprobs());
+        }
+        if (request.getTopLogprobs() != null) {
+            params.withTopLogProbs(request.getTopLogprobs());
+        }
         if (request.getXtcThreshold()!=null){
             params.withXtcThreshold(request.getXtcThreshold().floatValue());
         }
