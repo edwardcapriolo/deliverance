@@ -31,6 +31,7 @@
         <surefire.version>3.5.3</surefire.version>
         <maven.gpg.plugin.version>3.2.8</maven.gpg.plugin.version>
         <maven.javadoc.plugin.version>3.12.0</maven.javadoc.plugin.version>
+        <excludedITGroups>large-model</excludedITGroups>
 
         <jackson.version>2.20.1</jackson.version>
         <dysfx.version>0.0.5</dysfx.version>
@@ -89,6 +90,7 @@
                     <includes>
                         <include>**/*IT.java</include>
                     </includes>
+                    <excludedGroups>${excludedITGroups}</excludedGroups>
                     <skipTests>${skipIntegrationTests}</skipTests>
                 </configuration>
                 <executions>

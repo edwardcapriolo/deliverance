@@ -15,6 +15,7 @@ import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.toolcallparser.LlamaToolCallParser;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
@@ -22,6 +23,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class MistralIT {
+    @Tag("large-model")
     @Test
     public void chat(){
         ModelFetcher fetch = new ModelFetcher("tjake", "Mistral-7B-Instruct-v0.3-JQ4");
