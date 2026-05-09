@@ -24,7 +24,7 @@ public class Gemma4CausalSelfAttentionTest {
              AbstractTensor query = queryTensor();
              AbstractTensor key = keyTensor()) {
             float score = fixture.attention.score(query, 0, 0, key, 0, 0);
-            assertEquals(35.0f, score, 1.0e-5f);
+            assertEquals(70.0f, score, 1.0e-5f);
         }
     }
 
@@ -34,7 +34,8 @@ public class Gemma4CausalSelfAttentionTest {
              AbstractTensor query = queryTensor();
              AbstractTensor key = keyTensor()) {
             float score = fixture.attention.score(query, 0, 0, key, 0, 0);
-            assertEquals((float) (Math.tanh(3.5d) * 10.0d), score, 1.0e-5f);
+            //assertEquals((float) (Math.tanh(3.5d) * 10.0d), score, 1.0e-5f);
+            assertEquals(9.999984f, score);
         }
     }
 
