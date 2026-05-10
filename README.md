@@ -175,6 +175,8 @@ Open your browser to http://localhost:8080
 
 ### Learning and Developer docs
 
+- [Gemma4 support](core/gemma4_support.md) High-level status, usage, and notes for Gemma 4 support in Deliverance
+- [grace tokenizer module](grace/README.md) Explains Deliverance's fuller-featured tokenizer path and how to use it
 - [inference engine flow](core/inference_flow.md) Explains the transformations and flows http/prompt/jinja/ etc.
 - [tool call parser](core/tool_parser.md) Explains how the tool call parser is implemented in the stack
 - [Vibrant-maven-plugin](https://www.youtube.com/watch?v=Glp_hAieOq8) Watch a video on Vibrant-maven-plugin generate code from XML based spec inside pom
