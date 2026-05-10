@@ -138,7 +138,7 @@ public class Gemma4Model extends LlamaModel {
             String base = root + "layers." + i + ".";
             String layerType = gemma4Config.layerTypes.get(i);
             int sharedSource = gemma4Config.getSharedKvSourceLayer(i);
-            boolean kvSharedLayer = sharedSource >= 0;
+            boolean kvSharedLayer = sharedSource >= 0 && !Gemma4CausalSelfAttention.isSharedKvDisabled();
 
             Gemma4CausalSelfAttention attention = new Gemma4CausalSelfAttention(
                     this,

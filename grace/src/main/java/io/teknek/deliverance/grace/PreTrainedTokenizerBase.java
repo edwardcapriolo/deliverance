@@ -114,6 +114,14 @@ public abstract class PreTrainedTokenizerBase {
         return padToken().isPresent() ? tokenToId(padToken().orElseThrow()) : OptionalInt.empty();
     }
 
+    public Optional<String> bosToken() {
+        return specialToken("bos_token");
+    }
+
+    public OptionalInt bosTokenId() {
+        return bosToken().isPresent() ? tokenToId(bosToken().orElseThrow()) : OptionalInt.empty();
+    }
+
     public Optional<String> eosToken() {
         return specialToken("eos_token");
     }

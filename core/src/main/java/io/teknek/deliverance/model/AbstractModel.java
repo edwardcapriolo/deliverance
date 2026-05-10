@@ -240,6 +240,20 @@ public abstract class AbstractModel implements Generator, Classifier {
         return tokenizer.encode(text);
     }
 
+    /**
+     * Exposes the actual runtime prompt-token encoding path for debugging and tests.
+     */
+    public long[] encodeForRuntime(String text) {
+        return encodeText(text);
+    }
+
+    /**
+     * Exposes the final generation prompt-token construction path, including any BOS insertion.
+     */
+    public int[] constructPromptTokensForRuntime(String text) {
+        return constructPromptTokens(encodeText(text));
+    }
+
     protected String decodeToken(long token) {
         if (preTrainedTokenizer != null) {
             return preTrainedTokenizer.decode(new io.teknek.deliverance.grace.TokenIds(Ints.checkedCast(token)), false, false, false, false);

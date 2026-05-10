@@ -69,6 +69,9 @@ public class ModelFetcher {
             }
         }
         Path modelDir = pathForModel();
+        if (isLocallyComplete(fetchPolicy, modelDir)) {
+            return modelDir.toFile();
+        }
         try {
             return maybeDownloadModel(Optional.of(this.owner), this.name,
                     fetchPolicy,
@@ -174,6 +177,64 @@ public class ModelFetcher {
     protected boolean isFileComplete(Path localFile, RemoteFileMetadata remoteFile) {
         File file = localFile.toFile();
         return file.exists() && file.length() > 0 && file.length() == remoteFile.size();
+    }
+
+    /**
+     * Allows locally created model directories (for example quantized outputs) to be used offline
+     * without first contacting Hugging Face. The check is intentionally simple: required files must
+     * exist and be non-empty for the requested fetch policy.
+     */
+    protected boolean isLocallyComplete(FetchPolicy fetchPolicy, Path localModelDir) {
+        if (!Files.isDirectory(localModelDir)) {
+            return false;
+        }
+        if (Files.exists(localModelDir.resolve(FINISHED_MARKER))) {
+            return true;
+        }
+        if (fetchPolicy == FetchPolicy.TOKENIZER_ONLY) {
+            return hasAnyNonEmptyFile(localModelDir,
+                    "tokenizer.json",
+                    "tokenizer.model",
+                    "tokenizer_config.json",
+                    "vocab.json",
+                    "merges.txt");
+        }
+        return hasNonEmptyFile(localModelDir, "config.json")
+                && hasAnyNonEmptyWeightFile(localModelDir)
+                && hasAnyNonEmptyFile(localModelDir,
+                "tokenizer.json",
+                "tokenizer.model",
+                "tokenizer_config.json",
+                "vocab.json",
+                "merges.txt");
+    }
+
+    protected boolean hasAnyNonEmptyWeightFile(Path localModelDir) {
+        File[] files = localModelDir.toFile().listFiles();
+        if (files == null) {
+            return false;
+        }
+        for (File file : files) {
+            String name = file.getName().toLowerCase();
+            if (file.isFile() && file.length() > 0 && (name.endsWith(".safetensors") || name.equals("model.safetensors.index.json"))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected boolean hasAnyNonEmptyFile(Path localModelDir, String... names) {
+        for (String name : names) {
+            if (hasNonEmptyFile(localModelDir, name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected boolean hasNonEmptyFile(Path localModelDir, String name) {
+        File file = localModelDir.resolve(name).toFile();
+        return file.isFile() && file.length() > 0;
     }
 
     protected List<String> filesToDownload(List<String> allFiles, boolean downloadWeights){

@@ -21,7 +21,8 @@ import java.util.function.Consumer;
 
 public class Gemma4CausalSelfAttention extends CausalSelfAttention {
     private static final Logger logger = LoggerFactory.getLogger(Gemma4CausalSelfAttention.class);
-    private static final boolean DEBUG_SHARED_KV = true;
+    private static final boolean DEBUG_SHARED_KV = false;
+    private static final boolean DISABLE_SHARED_KV = false;
     private final AbstractModel model;
     private final Gemma4Config config;
     private final int layerIndex;
@@ -47,6 +48,10 @@ public class Gemma4CausalSelfAttention extends CausalSelfAttention {
     private final ConfigurableTensorProvider configurableTensorProvider;
     private final MetricRegistry metricRegistry;
 
+    public static boolean isSharedKvDisabled() {
+        return DISABLE_SHARED_KV;
+    }
+
     public Gemma4CausalSelfAttention(
             AbstractModel model,
             int layerIndex,
@@ -69,8 +74,8 @@ public class Gemma4CausalSelfAttention extends CausalSelfAttention {
         this.layerIndex = layerIndex;
         this.layerType = layerType;
         this.slidingAttention = "sliding_attention".equals(layerType);
-        this.kvSharedLayer = kvSharedLayer;
-        this.storeSharedKv = storeSharedKv;
+        this.kvSharedLayer = kvSharedLayer && !DISABLE_SHARED_KV;
+        this.storeSharedKv = storeSharedKv && !DISABLE_SHARED_KV;
         this.headDim = config.getLayerHeadDim(layerType);
         this.rotaryDim = config.rotaryDimensionsByLayerType.get(layerType);
         this.numberOfHeads = config.numberOfHeads;
@@ -88,6 +93,8 @@ public class Gemma4CausalSelfAttention extends CausalSelfAttention {
         this.outputProjectionWeights = outputProjectionWeights;
         this.configurableTensorProvider = configurableTensorProvider;
         this.metricRegistry = metricRegistry;
+        logNormWeightSummary("q_norm_weight", queryNormWeights);
+        keyNormWeights.ifPresent(w -> logNormWeightSummary("k_norm_weight", w));
     }
 
     @Override
@@ -113,10 +120,12 @@ public class Gemma4CausalSelfAttention extends CausalSelfAttention {
                     project(input, keyBatch, keyWeights.orElseThrow(), kvLength);
                     logFullAttentionSummary("k_after_proj", keyBatch);
                     project(input, valueBatch, valueWeights.orElse(keyWeights.orElseThrow()), kvLength);
+                    logFullAttentionSummary("v_after_proj", valueBatch);
                     Gemma4RmsNormSupport.applyInPlace(keyBatch, numberOfKeyValueHeads, headDim, config.layerNormEps,
                             keyNormWeights.orElseThrow());
                     logFullAttentionSummary("k_after_norm", keyBatch);
                     Gemma4RmsNormSupport.applyInPlace(valueBatch, numberOfKeyValueHeads, headDim, config.layerNormEps, null);
+                    logFullAttentionSummary("v_after_norm", valueBatch);
                 }
             } finally {
                 projectTimer.stop();
@@ -143,14 +152,16 @@ public class Gemma4CausalSelfAttention extends CausalSelfAttention {
                     Gemma4Model.SharedKeyValues shared = kvSharedLayer ? ((Gemma4Model) model).getSharedKeyValues(layerType) : null;
                     if (DEBUG_SHARED_KV && (kvSharedLayer || storeSharedKv || "full_attention".equals(layerType))) {
                         String sharedShape = shared == null ? "none" : shared.key().shape() + "/" + shared.value().shape();
-                        logger.info("gemma4 attn_runtime layer={} type={} kvSharedLayer={} storeSharedKv={} queryLength={} kvLength={} sharedShape={}",
+                        logger.debug("gemma4 attn_runtime layer={} type={} kvSharedLayer={} storeSharedKv={} queryLength={} kvLength={} sharedShape={}",
                                 layerIndex, layerType, kvSharedLayer, storeSharedKv, queryLength, kvLength, sharedShape);
                     }
                     logFullAttentionSummary("q_after_rope", queryBatch);
                     if (kvSharedLayer && shared != null) {
                         logFullAttentionSummary("k_shared", shared.key());
+                        logFullAttentionSummary("v_shared", shared.value());
                     } else {
                         logFullAttentionSummary("k_after_rope", keyBatch);
+                        logFullAttentionSummary("v_after_norm_or_raw", valueBatch);
                     }
                     for (int position = startPosition, batchIndex = 0; position < startPosition + batchSize; position++, batchIndex++) {
                         AbstractTensor keyTensor = null;
@@ -160,7 +171,11 @@ public class Gemma4CausalSelfAttention extends CausalSelfAttention {
                         if (!kvSharedLayer) {
                             keyTensor = kvMem.getKeyTensorForPosition(layerIndex, position);
                             valueTensor = kvMem.getValTensorForPosition(layerIndex, position);
+                            logKvRowSummary("key_batch_before_cache", keyBatch, batchIndex, kvLength);
+                            logKvRowSummary("value_batch_before_cache", valueBatch, batchIndex, kvLength);
                             copyKvRow(keyBatch, valueBatch, batchIndex, keyTensor, valueTensor);
+                            logKvTensorSummary("key_cache_row", keyTensor, kvLength);
+                            logKvTensorSummary("value_cache_row", valueTensor, kvLength);
                             keyPages = kvMem.getKeyTensorsUptoPosition(layerIndex, position);
                             valuePages = kvMem.getValTensorsUptoPosition(layerIndex, position);
                         }
@@ -177,7 +192,7 @@ public class Gemma4CausalSelfAttention extends CausalSelfAttention {
                                 fillVisibleRows(packedValues, valuePages, position, windowStart, kvLength);
                             }
                             if (DEBUG_SHARED_KV && batchIndex == 0 && (kvSharedLayer || storeSharedKv || "full_attention".equals(layerType))) {
-                                logger.info("gemma4 attn_window layer={} type={} position={} windowStart={} visibleLength={} packedKeyShape={} packedValueShape={}",
+                                logger.debug("gemma4 attn_window layer={} type={} position={} windowStart={} visibleLength={} packedKeyShape={} packedValueShape={}",
                                         layerIndex,
                                         layerType,
                                         position,
@@ -255,6 +270,10 @@ public class Gemma4CausalSelfAttention extends CausalSelfAttention {
                              AbstractTensor fullValues = model.getTensorAllocator().getDirty(valueBatch.dType(), TensorShape.of(lastPosition + 1, kvLength))) {
                             fillVisibleRows(fullKeys, keyPages, lastPosition, 0, kvLength);
                             fillVisibleRows(fullValues, valuePages, lastPosition, 0, kvLength);
+                            logKvTensorSummary("packed_full_k_row0", fullKeys, kvLength);
+                            logKvTensorSummary("packed_full_v_row0", fullValues, kvLength);
+                            logFullAttentionSummary("stored_full_k", fullKeys);
+                            logFullAttentionSummary("stored_full_v", fullValues);
                             ((Gemma4Model) model).putSharedKeyValues(layerType, fullKeys, fullValues);
                         } finally {
                             closeAll(keyPages);
@@ -308,8 +327,13 @@ public class Gemma4CausalSelfAttention extends CausalSelfAttention {
             if (overlapStart < overlapEnd) {
                 int rowOffset = overlapStart - globalOffset;
                 int size = overlapEnd - overlapStart;
-                packed.copyFrom(page, page.getOffset(rowOffset, 0), packed.getOffset(packedRow, 0), size * rowWidth);
-                packedRow += size;
+                // Temporary debugging fallback: copy row-by-row until we prove the page-slice layout
+                // matches the bulk copy assumptions here. If this fixes Gemma4 shared-KV reuse, this
+                // should be revisited and removed in favor of a faster bulk path.
+                for (int row = 0; row < size; row++) {
+                    packed.copyFrom(page, page.getOffset(rowOffset + row, 0), packed.getOffset(packedRow, 0), rowWidth);
+                    packedRow++;
+                }
             }
             globalOffset += page.shape().first();
         }
@@ -399,7 +423,7 @@ public class Gemma4CausalSelfAttention extends CausalSelfAttention {
     }
 
     private void logFullAttentionSummary(String stage, AbstractTensor tensor, int width) {
-        if (!DEBUG_SHARED_KV || (layerIndex != 4 && layerIndex != 34)) {
+        if (!DEBUG_SHARED_KV || (layerIndex != 4 && layerIndex != 14 && layerIndex != 34)) {
             return;
         }
         int effectiveWidth = Math.min(width, tensor.shape().last());
@@ -423,6 +447,83 @@ public class Gemma4CausalSelfAttention extends CausalSelfAttention {
         double mean = sum / effectiveWidth;
         double l2 = Math.sqrt(sumSquares);
         logger.info("gemma4 attn_summary layer={} stage={} row0_min={} row0_max={} row0_mean={} row0_l2={} row0_first8=[{}]",
+                layerIndex,
+                stage,
+                String.format(java.util.Locale.ROOT, "%.6f", min),
+                String.format(java.util.Locale.ROOT, "%.6f", max),
+                String.format(java.util.Locale.ROOT, "%.6f", mean),
+                String.format(java.util.Locale.ROOT, "%.6f", l2),
+                first);
+    }
+
+    private void logNormWeightSummary(String stage, AbstractTensor tensor) {
+        if (!DEBUG_SHARED_KV || (layerIndex != 4 && layerIndex != 14 && layerIndex != 34)) {
+            return;
+        }
+        int width = tensor.shape().dims() == 1 ? tensor.shape().first() : tensor.shape().last();
+        float min = Float.POSITIVE_INFINITY;
+        float max = Float.NEGATIVE_INFINITY;
+        double sum = 0.0d;
+        double sumSquares = 0.0d;
+        StringBuilder first = new StringBuilder();
+        int preview = Math.min(8, width);
+        for (int i = 0; i < width; i++) {
+            float v = tensor.shape().dims() == 1 ? tensor.get(i) : tensor.get(0, i);
+            if (v < min) min = v;
+            if (v > max) max = v;
+            sum += v;
+            sumSquares += (double) v * v;
+            if (i < preview) {
+                if (i > 0) first.append(',');
+                first.append(String.format(java.util.Locale.ROOT, "%.4f", v));
+            }
+        }
+        double mean = sum / width;
+        double l2 = Math.sqrt(sumSquares);
+        logger.info("gemma4 attn_weight_summary layer={} stage={} min={} max={} mean={} l2={} first8=[{}]",
+                layerIndex,
+                stage,
+                String.format(java.util.Locale.ROOT, "%.6f", min),
+                String.format(java.util.Locale.ROOT, "%.6f", max),
+                String.format(java.util.Locale.ROOT, "%.6f", mean),
+                String.format(java.util.Locale.ROOT, "%.6f", l2),
+                first);
+    }
+
+    private void logKvRowSummary(String stage, AbstractTensor tensor, int batchIndex, int width) {
+        if (!DEBUG_SHARED_KV || layerIndex != 14 || batchIndex != 0) {
+            return;
+        }
+        try (AbstractTensor row = tensor.slice(batchIndex)) {
+            logKvTensorSummary(stage, row, width);
+        }
+    }
+
+    private void logKvTensorSummary(String stage, AbstractTensor tensor, int width) {
+        if (!DEBUG_SHARED_KV || layerIndex != 14) {
+            return;
+        }
+        int effectiveWidth = Math.min(width, tensor.shape().last());
+        float min = Float.POSITIVE_INFINITY;
+        float max = Float.NEGATIVE_INFINITY;
+        double sum = 0.0d;
+        double sumSquares = 0.0d;
+        StringBuilder first = new StringBuilder();
+        int preview = Math.min(8, effectiveWidth);
+        for (int i = 0; i < effectiveWidth; i++) {
+            float v = tensor.get(0, i);
+            if (v < min) min = v;
+            if (v > max) max = v;
+            sum += v;
+            sumSquares += (double) v * v;
+            if (i < preview) {
+                if (i > 0) first.append(',');
+                first.append(String.format(java.util.Locale.ROOT, "%.4f", v));
+            }
+        }
+        double mean = sum / effectiveWidth;
+        double l2 = Math.sqrt(sumSquares);
+        logger.info("gemma4 kv_summary layer={} stage={} row0_min={} row0_max={} row0_mean={} row0_l2={} row0_first8=[{}]",
                 layerIndex,
                 stage,
                 String.format(java.util.Locale.ROOT, "%.6f", min),
