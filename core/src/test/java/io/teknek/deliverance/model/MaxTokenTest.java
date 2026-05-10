@@ -25,12 +25,16 @@ public class MaxTokenTest {
         ModelFetcher fetch = new ModelFetcher("tjake", "Llama-3.2-1B-Instruct-JQ4");
         var uuid = UUID.randomUUID();
         MetricRegistry registry = new MetricRegistry();
+        /*
         final ConsoleReporter reporter = ConsoleReporter.forRegistry(registry)
                 .convertRatesTo(TimeUnit.SECONDS)
                 .convertDurationsTo(TimeUnit.MILLISECONDS)
                 .build();
 
+
+
         reporter.start(10, TimeUnit.SECONDS);
+         */
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
              AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).withWorkingQuantType(DType.I8)
                 .withTokenTokenRenderer(new TokenizerRenderer())
@@ -49,7 +53,7 @@ public class MaxTokenTest {
             assertEquals(17, k.generatedTokens.size());
             assertEquals("Here's a short story about a Java developer who takes a significant role in the Rust", k.responseText);
 
-            reporter.close();
+            //sreporter.close();
         }
     }
 }
