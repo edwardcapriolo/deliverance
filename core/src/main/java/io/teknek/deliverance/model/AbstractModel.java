@@ -17,6 +17,7 @@ import io.teknek.deliverance.classifier.ClassifyOutput;
 import io.teknek.deliverance.embedding.PoolingLayer;
 import io.teknek.deliverance.embedding.PoolingType;
 import io.teknek.deliverance.generator.*;
+import io.teknek.deliverance.grace.EncodeOptions;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.VectorMath;
@@ -324,6 +325,10 @@ public abstract class AbstractModel implements Generator, Classifier {
         ResponseContext responseContext = new ResponseContext(this);
         Random random = generatorParameters.seed.map(Random::new).orElseGet(Random::new);
         long[] encoded = tokenizer.encode(promptContext.getPrompt());
+
+        //long [] encoded = this.preTrainedTokenizer.encode(promptContext.getPrompt(), EncodeOptions.defaults());
+
+        //can we get pos token from tokziers
         if (encoded.length > 0 && encoded[0] == config.bosToken) {
             logger.warn("encoded [] started with BOS token removing it");
             encoded = Arrays.copyOfRange(encoded, 1, encoded.length);

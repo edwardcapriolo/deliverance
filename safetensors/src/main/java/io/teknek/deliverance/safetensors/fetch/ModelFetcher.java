@@ -11,13 +11,23 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 public class ModelFetcher {
     public static final String HF_TOKEN = "HF_TOKEN";
     public static final String HF_PROP = "huggingface.auth.token";
     private static final String FINISHED_MARKER = ".finished";
+
+    public enum FetchPolicy {
+        FULL_MODEL,
+        TOKENIZER_ONLY
+    }
+
+    public record RemoteFileMetadata(String name, long size) {
+    }
 
     protected Path baseDir;
     protected String owner;
@@ -47,6 +57,10 @@ public class ModelFetcher {
     }
 
     public File maybeDownload(){
+        return maybeDownload(FetchPolicy.FULL_MODEL);
+    }
+
+    public File maybeDownload(FetchPolicy fetchPolicy){
         if (!Files.exists(baseDir)){
             try {
                 Files.createDirectory(baseDir);
@@ -55,16 +69,13 @@ public class ModelFetcher {
             }
         }
         Path modelDir = pathForModel();
-        if (Files.exists(modelDir)){
-            return modelDir.toFile();
-        } else {
-            try {
-                return maybeDownloadModel(Optional.of(this.owner), this.name,
-                        true, Optional.empty(),
-                        token != null ? Optional.of(token): Optional.empty(), modelUriBase);
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
+        try {
+            return maybeDownloadModel(Optional.of(this.owner), this.name,
+                    fetchPolicy,
+                    Optional.empty(),
+                    token != null ? Optional.of(token): Optional.empty(), modelUriBase);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
     }
 
@@ -91,15 +102,12 @@ public class ModelFetcher {
     protected File maybeDownloadModel(
             Optional<String> modelOwner,
             String modelName,
-            boolean downloadWeights,
+            FetchPolicy fetchPolicy,
             Optional<String> optionalBranch,
             Optional<String> optionalAuthHeader,
             String baseUrl
     ) throws IOException {
         Path localModelDir = pathForModel();
-        if (Files.exists(localModelDir.resolve(FINISHED_MARKER))) {
-            return localModelDir.toFile();
-        }
         String hfModel = modelOwner.map(mo -> mo + "/" + modelName).orElse(modelName);
         InputStream modelInfoStream = HttpSupport.getResponse(
                 baseUrl + hfModel + "/tree/" + optionalBranch.orElse("main"),
@@ -114,9 +122,11 @@ public class ModelFetcher {
         if (allFiles.isEmpty()) {
             throw new IOException("No valid model found");
         }
-        List<String> filesToDownload = filesToDownload(allFiles, downloadWeights);
+        List<String> filesToDownload = filesToDownload(allFiles, fetchPolicy == FetchPolicy.FULL_MODEL);
+        Map<String, RemoteFileMetadata> metadata = fetchRemoteMetadata(hfModel, filesToDownload, optionalBranch, optionalAuthHeader);
         Files.createDirectories(localModelDir);
-        for (String currFile : filesToDownload) {
+        List<String> incompleteFiles = findIncompleteFiles(metadata, localModelDir);
+        for (String currFile : incompleteFiles) {
             HttpSupport.downloadFile(
                     hfModel,
                     currFile,
@@ -126,8 +136,44 @@ public class ModelFetcher {
                     localModelDir.resolve(currFile)
             );
         }
-        Files.createFile(localModelDir.resolve(FINISHED_MARKER));
+        if (fetchPolicy == FetchPolicy.FULL_MODEL) {
+            Files.deleteIfExists(localModelDir.resolve(FINISHED_MARKER));
+            Files.createFile(localModelDir.resolve(FINISHED_MARKER));
+        }
         return localModelDir.toFile();
+    }
+
+    protected Map<String, RemoteFileMetadata> fetchRemoteMetadata(
+            String hfModel,
+            List<String> filesToDownload,
+            Optional<String> optionalBranch,
+            Optional<String> optionalAuthHeader
+    ) throws IOException {
+        Map<String, RemoteFileMetadata> metadata = new LinkedHashMap<>();
+        for (String currFile : filesToDownload) {
+            long size = HttpSupport.getResponse(
+                    "https://huggingface.co/" + hfModel + "/resolve/" + optionalBranch.orElse("main") + "/" + currFile,
+                    optionalAuthHeader,
+                    Optional.of(Pair.of(0L, 0L))
+            ).getRight();
+            metadata.put(currFile, new RemoteFileMetadata(currFile, size));
+        }
+        return metadata;
+    }
+
+    protected List<String> findIncompleteFiles(Map<String, RemoteFileMetadata> remoteFiles, Path localModelDir) {
+        List<String> incomplete = new ArrayList<>();
+        for (RemoteFileMetadata metadata : remoteFiles.values()) {
+            if (!isFileComplete(localModelDir.resolve(metadata.name()), metadata)) {
+                incomplete.add(metadata.name());
+            }
+        }
+        return incomplete;
+    }
+
+    protected boolean isFileComplete(Path localFile, RemoteFileMetadata remoteFile) {
+        File file = localFile.toFile();
+        return file.exists() && file.length() > 0 && file.length() == remoteFile.size();
     }
 
     protected List<String> filesToDownload(List<String> allFiles, boolean downloadWeights){
