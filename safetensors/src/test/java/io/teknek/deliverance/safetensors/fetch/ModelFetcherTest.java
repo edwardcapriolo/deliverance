@@ -65,6 +65,27 @@ public class ModelFetcherTest {
         );
 
         List<String> missing = fetch.findIncompleteFiles(metadata, temp);
-        Assertions.assertEquals(List.of("config.json", "chat_template.jinja"), missing);
+        Assertions.assertEquals(List.of("config.json", "chat_template.jinja").stream().sorted().toList(),
+                missing.stream().sorted().toList());
+    }
+
+    @Test
+    void localFullModelDirectoryCanBeUsedOffline() throws Exception {
+        ModelFetcher fetch = new ModelFetcher("edward", "gemma-4-E2B-it-JQ4");
+        Path temp = Files.createTempDirectory("fetcher-local-model");
+        Files.writeString(temp.resolve("config.json"), "{}");
+        Files.writeString(temp.resolve("tokenizer.json"), "{}");
+        Files.writeString(temp.resolve("model.safetensors.index.json"), "{}");
+
+        Assertions.assertTrue(fetch.isLocallyComplete(ModelFetcher.FetchPolicy.FULL_MODEL, temp));
+    }
+
+    @Test
+    void localTokenizerDirectoryCanBeUsedOffline() throws Exception {
+        ModelFetcher fetch = new ModelFetcher("google", "gemma-4-E2B-it");
+        Path temp = Files.createTempDirectory("fetcher-local-tokenizer");
+        Files.writeString(temp.resolve("tokenizer.json"), "{}");
+
+        Assertions.assertTrue(fetch.isLocallyComplete(ModelFetcher.FetchPolicy.TOKENIZER_ONLY, temp));
     }
 }

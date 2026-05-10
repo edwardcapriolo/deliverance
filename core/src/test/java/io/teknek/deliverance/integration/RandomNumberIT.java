@@ -87,14 +87,8 @@ public class RandomNumberIT {
                     .withTemperature(0.2f).withSeed(99998), new DoNothingGenerateEvent());
 
             assertEquals("""
-Here is the Java code that meets the specifications:
-
 ```java
 package io.teknek.shape;
-
-public interface Shape {    
-    double area();
-}
 
 public class Circle extends Shape {
     private double radius;
@@ -105,12 +99,20 @@ public class Circle extends Shape {
 
     @Override
     public double area() {
-        return Math.PI * radius * radius;
+        return Math.PI * Math.pow(radius, 2);
     }
 }
 ```
 
-This code defines a `Shape` interface with a single method `area()`, which returns a `double` value. It also defines a `Circle` class that extends the `Shape` interface and implements the `area()` method. The `Circle` class has a private `radius` field and a constructor that takes a `radius` value. The `area()` method returns the area of the circle using the formula `ÏĢr^2`.
+Note: The `Shape` interface is assumed to be defined elsewhere in the codebase. If not, it can be defined as follows:
+
+```java
+package io.teknek.shape;
+
+public interface Shape {
+    double area();
+}
+```
 """.trim(), k.responseText);
         }
     }

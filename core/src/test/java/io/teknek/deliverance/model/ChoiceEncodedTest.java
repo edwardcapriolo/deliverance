@@ -15,7 +15,7 @@ public class ChoiceEncodedTest {
     @Test
     void buildEncoded(){
         AbstractModel m = Gemma2Suite.getOrCreate();
-        ChoiceEncoded ci = new ChoiceEncoded(Arrays.asList("Giants", "Jets"), m.tokenizer);
+        ChoiceEncoded ci = new ChoiceEncoded(Arrays.asList("Giants", "Jets"), m);
         assertEquals( GemmaTokenizer.class, m.tokenizer.getClass());
         GemmaTokenizer gemmaT = (GemmaTokenizer) m.tokenizer;
         //Important: just because a model has the complete token in the vocabulary it might not be an optioa after
@@ -28,11 +28,19 @@ public class ChoiceEncodedTest {
     @Test
     void longerName(){
         AbstractModel m = Gemma2Suite.getOrCreate();
-        ChoiceEncoded ci = new ChoiceEncoded(List.of("New York football Giants"), m.tokenizer);
+        ChoiceEncoded ci = new ChoiceEncoded(List.of("New York football Giants"), m);
         assertEquals(GemmaTokenizer.class, m.tokenizer.getClass());
         GemmaTokenizer gemmaT = (GemmaTokenizer) m.tokenizer;
-        assertEquals(1, ci.getEncoded().size());
-        assertEquals(Arrays.asList(2441L, 249L, 46671L, 249L, 43563L, 249L, 218954L),
+        assertEquals(1, ci.getEncoded().size());//
+        assertEquals(Arrays.asList(2441L, 3459L, 9715L, 54795L),
                 ci.getEncoded().get("New York football Giants"));
+    }
+
+    @Test
+    void prefixMatchingUsesEncodedTokenIds(){
+        AbstractModel m = Gemma2Suite.getOrCreate();
+        ChoiceEncoded ci = new ChoiceEncoded(List.of("Giants"), m);
+        assertEquals(true, ci.anyStartsWith(List.of(218954)));
+        assertEquals(false, ci.anyStartsWith(List.of(2441)));
     }
 }

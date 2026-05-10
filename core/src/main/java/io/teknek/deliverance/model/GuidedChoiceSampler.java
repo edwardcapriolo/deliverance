@@ -5,11 +5,11 @@ import io.teknek.deliverance.CausualWhisperer;
 import io.teknek.deliverance.generator.LayerNorm;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.tensor.AbstractTensor;
-import io.teknek.deliverance.tokenizer.Tokenizer;
 import net.jafama.FastMath;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class GuidedChoiceSampler {
@@ -23,19 +23,17 @@ public class GuidedChoiceSampler {
 
     private final AbstractTensor logits;
     private final LayerNorm layerNorm;
-    private final Tokenizer tokenizer;
-    private final List<String> currentChoices;
-    private final StringBuilder current;
+    private final ChoiceEncoded encodedChoices;
+    private final ResponseContext responseContext;
 
     public GuidedChoiceSampler(AbstractModel abstractModel, AbstractTensor output,
-                               AbstractTensor logits, LayerNorm layerNorm, Tokenizer tokenizer, List<String> choices, StringBuilder current) {
+                               AbstractTensor logits, LayerNorm layerNorm, List<String> choices, ResponseContext responseContext) {
         this.abstractModel = abstractModel;
         this.output = output;
         this.logits = logits;
         this.layerNorm = layerNorm;
-        this.tokenizer = tokenizer;
-        this.currentChoices = choices;
-        this.current = current;
+        this.encodedChoices = new ChoiceEncoded(choices, abstractModel);
+        this.responseContext = responseContext;
 
         forward1 = abstractModel.metricRegistry.histogram("sample.foward1");
         dotprod2 = abstractModel.metricRegistry.histogram("sample.dotproduct2");
@@ -69,7 +67,6 @@ public class GuidedChoiceSampler {
             }
             int maxi = Integer.MIN_VALUE;
             double maxv = Double.NEGATIVE_INFINITY;
-            String bestMatch = "";
             for (int i = 0; i < abstractModel.config.vocabularySize; i++) {
                 float v = logits.get(0, i);
                 if (abstractModel.config.finalLogitSoftCapping != null) {
@@ -79,17 +76,15 @@ public class GuidedChoiceSampler {
                     logits.set(v, 0, i);
                 }
                 if (v > maxv) {
-                    String decodedToken = tokenizer.decode(i);
-                    String entire = current + decodedToken;
-                    if (!decodedToken.isEmpty() && currentChoices.stream().anyMatch(ch -> ch.startsWith(entire))) {
+                    ArrayList<Integer> candidate = new ArrayList<>(responseContext.generatedTokens.size() + 1);
+                    candidate.addAll(responseContext.generatedTokens);
+                    candidate.add(i);
+                    if (encodedChoices.anyStartsWith(candidate)) {
                         if (LOG.isDebugEnabled()) {
-                            LOG.debug("candidate found token {} {} {} ", i, decodedToken, entire);
+                            LOG.debug("candidate found token {} prefix {}", i, candidate);
                         }
-                        if (entire.length() > bestMatch.length()) {
-                            maxi = i;
-                            maxv = v;
-                            bestMatch = decodedToken;
-                        }
+                        maxi = i;
+                        maxv = v;
                     }
                 }
             }

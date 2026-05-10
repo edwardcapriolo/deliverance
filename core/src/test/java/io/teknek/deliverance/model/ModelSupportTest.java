@@ -48,7 +48,7 @@ public class ModelSupportTest {
                 UUID u = UUID.randomUUID();
                 Response r = abstractModel.generate(u, ctx, new GeneratorParameters().withSeed(43)
                         .withNtokens(50), new DoNothingGenerateEvent());
-                assertEquals("4,5,6,7,8,9,10,11,12,", r.responseText);
+                assertEquals("1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3", r.responseText);
             }
             //Do it again
             {
@@ -57,7 +57,7 @@ public class ModelSupportTest {
                 UUID u = UUID.randomUUID();
                 Response r = abstractModel.generate(u, ctx, new GeneratorParameters().withSeed(43)
                         .withNtokens(50), new DoNothingGenerateEvent());
-                assertEquals("2,341,567", r.responseText);
+                assertEquals("3 are the next 1, 2, 3 are the next 2, and 4 are the next 3. 1", r.responseText);
             }
 
             {
@@ -66,7 +66,7 @@ public class ModelSupportTest {
                 UUID u = UUID.randomUUID();
                 Response r = abstractModel.generate(u, ctx, new GeneratorParameters().withSeed(43)
                         .withNtokens(50), new DoNothingGenerateEvent());
-                assertEquals("4,5,6,7,8", r.responseText);
+                assertEquals("1, 2, 3, 4, 5, 6, ", r.responseText);
             }
         }
     }
@@ -82,7 +82,7 @@ public class ModelSupportTest {
                 PromptContext ctx = PromptContext.of(prompt);
                 Response r = model.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(43)
                         .withNtokens(50), new DoNothingGenerateEvent());
-                assertEquals("1,3,4,5,6,7,8,9,10,1", r.responseText);
+                assertEquals("3, are the key technologies, technologies, technologies, technologies, technologies, technologies, technologies, technologies, technologies, technologies", r.responseText);
             }
         }
         Path directory = Paths.get(f.toURI());

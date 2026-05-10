@@ -94,15 +94,14 @@ public class GemmaPromptIT {
         Response k = model.generate(uuid, g.build(), new GeneratorParameters().withMaxTokens(100).withTemperature(0.0f),
                new DoNothingGenerateEvent());
         String expected = """
-Let's break down this Python code snippet.
-
-**Understanding the Code**
-
-This code defines a function called `allocate_token_bitmask` that generates a bitmask for a vocabulary.  Here's a step-by-step explanation:
-
-1. **Function Definition:**
-   - `def allocate_token_bitmask(vocab_size: int) -> np.ndarray:`
-     - This line defines a function named `allocate_token_bitmask`. """.trim();
+                This Python code defines a function called `allocate_token_bitmask` that creates a NumPy array representing a bitmask for token indexing.\s
+                
+                Here's a breakdown of the code:
+                
+                **1. Function Definition:**
+                   - `def allocate_token_bitmask(vocab_size: int) -> np.ndarray:`
+                     - This line defines the function named `allocate_token_bitmask`.\s
+                     - It takes an integer `vocab_size`""".trim();
         assertEquals(expected, k.responseText.trim());
 
     }

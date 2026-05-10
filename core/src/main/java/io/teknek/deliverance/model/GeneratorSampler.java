@@ -100,7 +100,7 @@ public class GeneratorSampler {
                     logits.set(v, 0, i);
                 }
                 if (logProbs) {
-                    IndexValueToken token = new IndexValueToken(i, v, abstractModel.getTokenizer().decode(i));
+                    IndexValueToken token = new IndexValueToken(i, v, abstractModel.decodeToken(i));
                     topNLogProbs.offer(token);
                     if (topNLogProbs.size() > topLogProbs) {
                         topNLogProbs.poll();
@@ -127,7 +127,7 @@ public class GeneratorSampler {
             if (temperature == 0.0) {
                 if (chosen.isPresent() && chosen.get().index != maxi) {
                     if (LOGGER.isDebugEnabled()) {
-                        LOGGER.debug("xtc: {} maxi: {}", abstractModel.tokenizer.decode(chosen.get().index), maxi);
+                        LOGGER.debug("xtc: {} maxi: {}", abstractModel.decodeToken(chosen.get().index), maxi);
                     }
                     return logProbs ? new SamplerReturn(chosen.get().index, topNLogProbs) : new SamplerReturn(chosen.get().index);
                 } else {
