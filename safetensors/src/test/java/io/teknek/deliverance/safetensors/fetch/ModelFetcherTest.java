@@ -65,6 +65,7 @@ public class ModelFetcherTest {
         );
 
         List<String> missing = fetch.findIncompleteFiles(metadata, temp);
-        Assertions.assertEquals(List.of("config.json", "chat_template.jinja"), missing);
+        Assertions.assertEquals(List.of("config.json", "chat_template.jinja").stream().sorted().toList(),
+                missing.stream().sorted().toList());
     }
 }

@@ -81,7 +81,7 @@ class DeliveranceLegacySampler extends AbstractGeneratorSampler {
                     logits.set(v, 0, i);
                 }
                 if (logProbs) {
-                    IndexValueToken token = new IndexValueToken(i, v, model.getTokenizer().decode(i));
+                    IndexValueToken token = new IndexValueToken(i, v, model.decodeToken(i));
                     topNLogProbs.offer(token);
                     if (topNLogProbs.size() > topLogProbs) {
                         topNLogProbs.poll();
@@ -107,7 +107,7 @@ class DeliveranceLegacySampler extends AbstractGeneratorSampler {
             if (temperature == 0.0) {
                 if (chosen.isPresent() && chosen.get().index != maxi) {
                     if (LOGGER.isDebugEnabled()) {
-                        LOGGER.debug("xtc: {} maxi: {}", model.tokenizer.decode(chosen.get().index), maxi);
+                        LOGGER.debug("xtc: {} maxi: {}", model.decodeToken(chosen.get().index), maxi);
                     }
                     return logProbs ? new SamplerReturn(chosen.get().index, topNLogProbs) : new SamplerReturn(chosen.get().index);
                 } else {
@@ -183,7 +183,7 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
                     logits.set(v, 0, i);
                 }
                 if (logProbs) {
-                    IndexValueToken token = new IndexValueToken(i, v, model.getTokenizer().decode(i));
+                    IndexValueToken token = new IndexValueToken(i, v, model.decodeToken(i));
                     topNLogProbs.offer(token);
                     if (topNLogProbs.size() > topLogProbs) {
                         topNLogProbs.poll();
@@ -206,7 +206,7 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
             if (temperature == 0.0) {
                 if (chosen.isPresent() && chosen.get().index != maxi) {
                     if (LOGGER.isDebugEnabled()) {
-                        LOGGER.debug("xtc: {} maxi: {}", model.tokenizer.decode(chosen.get().index), maxi);
+                        LOGGER.debug("xtc: {} maxi: {}", model.decodeToken(chosen.get().index), maxi);
                     }
                     return logProbs ? new SamplerReturn(chosen.get().index, topNLogProbs) : new SamplerReturn(chosen.get().index);
                 } else {
@@ -218,7 +218,7 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
             }
             if (parameters.topK.isPresent()) {
                 float topK = parameters.topK.get();
-                LOGGER.debug("max maxv {} maxi {} decoded {}", maxi, maxv, model.tokenizer.decode(maxi));
+                LOGGER.debug("max maxv {} maxi {} decoded {}", maxi, maxv, model.decodeToken(maxi));
                 try (AbstractTensor scaledLogits = model.getTensorAllocator().getDirty(logits.dType(), logits.shape())) {
                     for (int i = 0; i < model.config.vocabularySize; i++) {
                         float v = logits.get(0, i) / temperature;
@@ -244,14 +244,14 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
                                     inProb.set(zz.getKey(), 0, topPick);
                                     inLogits.set(zz.getValue().get(i), 0, topPick);
                                     //tokens can have funky space
-                                    inToks.add(zz.getValue().get(i) + " " + model.getTokenizer().decode(zz.getValue().get(i)));
+                                    inToks.add(zz.getValue().get(i) + " " + model.decodeToken(zz.getValue().get(i)));
                                     topPick++;
                                 }
                             }
                         }
                         topPick--;
                         LOGGER.debug("topk {} logit {} token {} prob {}", topK, inLogits.get(0, topPick),
-                                model.tokenizer.decode((int) inLogits.get(0, topPick)), inProb.get(0, topPick));
+                                model.decodeToken((int) inLogits.get(0, topPick)), inProb.get(0, topPick));
                         //System.out.println(TensorDisplayUtil.pretty2dDisplayAll(inProb));
                         //System.out.println(TensorDisplayUtil.pretty2dDisplayAll(inLogits));
                         //System.out.println(inToks);
@@ -268,7 +268,7 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
                         scaledLogits.set(v, 0, i);
 
                         if (logProbs) {
-                            IndexValueToken token = new IndexValueToken(i, v, model.getTokenizer().decode(i));
+                            IndexValueToken token = new IndexValueToken(i, v, model.decodeToken(i));
                             topXLogProbs.offer(token);
                             if (topXLogProbs.size() > topLogProbs) {
                                 topXLogProbs.poll();
@@ -282,7 +282,7 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
                     chosen = picker.process();
                     if (chosen.isPresent() && chosen.get().index != maxi) {
                         if (LOGGER.isDebugEnabled()) {
-                            LOGGER.debug("xtc: {} maxi: {}", model.tokenizer.decode(chosen.get().index), maxi);
+                            LOGGER.debug("xtc: {} maxi: {}", model.decodeToken(chosen.get().index), maxi);
                         }
                         return logProbs ? new SamplerReturn(chosen.get().index, topXLogProbs) : new SamplerReturn(chosen.get().index);
                     } else {
@@ -308,11 +308,11 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
                     try (AbstractTensor inProb = model.getTensorAllocator().getDirty(logits.dType(), TensorShape.of(topPSummary.count));
                          AbstractTensor inLogits = model.getTensorAllocator().getDirty(logits.dType(), TensorShape.of(topPSummary.count))) {
                         List<String> inToks = new ArrayList<>();
-                        for (int i = 0; i < topPSummary.count; i++) {
-                            inLogits.set(topPSummary.underCutoffLogits.get(i), 0, i);
-                            inProb.set(topPSummary.underCutoffProb.get(i), 0, i);
-                            inToks.add(model.tokenizer.decode((long) topPSummary.underCutoffLogits.get(i)));
-                        }
+                    for (int i = 0; i < topPSummary.count; i++) {
+                        inLogits.set(topPSummary.underCutoffLogits.get(i), 0, i);
+                        inProb.set(topPSummary.underCutoffProb.get(i), 0, i);
+                        inToks.add(model.decodeToken((long) topPSummary.underCutoffLogits.get(i)));
+                    }
                         //System.out.println(TensorDisplayUtil.pretty2dDisplayAll(inProb));
                         //System.out.println(TensorDisplayUtil.pretty2dDisplayAll(inLogits));
                         //System.out.println(inToks);
@@ -446,4 +446,3 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
 
     }
 }
-

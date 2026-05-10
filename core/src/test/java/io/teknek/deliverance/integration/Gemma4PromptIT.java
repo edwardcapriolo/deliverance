@@ -20,8 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 
 public class Gemma4PromptIT {
-    //@Test
+
     @Disabled
+    //@Test
     public void chatWithThinking() {
         AbstractModel model = Gemma4Suite.getOrCreate();
         PromptSupport.Builder builder = model.promptSupport().get().builder()

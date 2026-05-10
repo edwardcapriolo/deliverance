@@ -52,12 +52,12 @@ public class ExcludeTopChoicePicker {
             float ls = logSum.get(0, i);
             float prob = (float) Math.exp(ls);
 
-            if (prob > xtcThreshold){
+                if (prob > xtcThreshold){
                 PreTrainedTokenizer tokenizer = abstractModel.getPreTrainedTokenizer();
                 if (tokenizer == null){
                     throw new IllegalStateException("tokenizer is null");
                 }
-                IndexValueToken token = new IndexValueToken(i, logits.get(0, i), abstractModel.getTokenizer().decode(i));
+                IndexValueToken token = new IndexValueToken(i, logits.get(0, i), abstractModel.decodeToken(i));
                 token.logProb = ls;
                 if (aboveThreshold.isEmpty() || aboveThreshold.size() == 1){
                     aboveThreshold.add(token);

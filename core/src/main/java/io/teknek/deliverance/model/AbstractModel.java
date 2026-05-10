@@ -233,6 +233,24 @@ public abstract class AbstractModel implements Generator, Classifier {
         return tokenizer.promptSupport();
     }
 
+    protected long[] encodeText(String text) {
+        if (preTrainedTokenizer != null) {
+            return Arrays.stream(preTrainedTokenizer.encode(text, EncodeOptions.defaults().withoutSpecialTokens()).inputIds()).asLongStream().toArray();
+        }
+        return tokenizer.encode(text);
+    }
+
+    protected String decodeToken(long token) {
+        if (preTrainedTokenizer != null) {
+            return preTrainedTokenizer.decode(new io.teknek.deliverance.grace.TokenIds(Ints.checkedCast(token)), false, false, false, false);
+        }
+        return tokenizer.decode(token);
+    }
+
+    protected String decodeToken(int token) {
+        return decodeToken((long) token);
+    }
+
     protected boolean addBosToken() {
         return true;
     }
@@ -259,7 +277,7 @@ public abstract class AbstractModel implements Generator, Classifier {
                         ResponseContext responseContext, Random random, float temperature){
         if (generatorParameters.guidedChoice.isPresent()) {
             GuidedChoiceSampler sampler = new GuidedChoiceSampler(this, last.slice(last.shape().first() - 1),
-                    logits, sampleOutput.getOutputLayerNorm(), tokenizer, generatorParameters.guidedChoice.get(), responseContext.responseText);
+                    logits, sampleOutput.getOutputLayerNorm(), generatorParameters.guidedChoice.get(), responseContext);
            return new SamplerReturn(sampler.sample());
         } else {
             DeliveranceSampler legacy = new DeliveranceSampler(this, generatorParameters,
@@ -272,7 +290,7 @@ public abstract class AbstractModel implements Generator, Classifier {
                             AbstractTensor logits, ResponseContext responseContext, Random random, float temperature){
         if (generatorParameters.guidedChoice.isPresent()) {
             GuidedChoiceSampler sampler1 = new GuidedChoiceSampler(this, output, logits,
-                    sampleOutput.getOutputLayerNorm(), tokenizer, generatorParameters.guidedChoice.get(), responseContext.responseText);
+                    sampleOutput.getOutputLayerNorm(), generatorParameters.guidedChoice.get(), responseContext);
             //TODO should guided choice have logits how expesnive is two code paths going forward
             return new SamplerReturn(sampler1.sample());
         } else {
@@ -317,6 +335,38 @@ public abstract class AbstractModel implements Generator, Classifier {
         return response;
     }
 
+    private Optional<Response> maybeStopAfterToken(GeneratorParameters generatorParameters, ResponseContext responseContext,
+                                                   long[] encoded, int promptLength, int next) {
+        if (generatorParameters.maxTokens.isPresent()) {
+            if (responseContext.generatedTokens.size() >= generatorParameters.maxTokens.get()) {
+                FinishReason reason = FinishReason.MAX_TOKENS;
+                return Optional.of(postProcessResponse(new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
+                        reason, promptLength, responseContext.generatedTokens, 0, 0, responseContext.samplerReturnList)));
+            }
+        }
+        if (generatorParameters.guidedChoice.isPresent()) {
+            if (generatorParameters.guidedChoice.get().contains(responseContext.responseText.toString())) {
+                FinishReason reason = FinishReason.STOP_TOKEN;
+                return Optional.of(postProcessResponse(new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
+                        reason, promptLength, responseContext.generatedTokens, 0, 0, responseContext.samplerReturnList)));
+            }
+        }
+        Optional<Response> shouldEnd = stopWords(generatorParameters, responseContext, encoded.length);
+        if (shouldEnd.isPresent()) {
+            return Optional.of(postProcessResponse(shouldEnd.get()));
+        }
+        if (config.eosTokens.contains(next)) {
+            FinishReason reason = FinishReason.STOP_TOKEN;
+            return Optional.of(postProcessResponse(new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
+                    reason, promptLength, responseContext.generatedTokens, 0, 0, responseContext.samplerReturnList)));
+        }
+        Optional<Response> shouldEndTools = getToolCallParser().shouldEndTurn(responseContext, encoded.length);
+        if (shouldEndTools.isPresent()) {
+            return Optional.of(postProcessResponse(shouldEndTools.get()));
+        }
+        return Optional.empty();
+    }
+
     @Override
     public Response generate(UUID sessionId, PromptContext promptContext, GeneratorParameters generatorParameters,
                                      GenerateEvent eventFired) {
@@ -324,7 +374,7 @@ public abstract class AbstractModel implements Generator, Classifier {
 
         ResponseContext responseContext = new ResponseContext(this);
         Random random = generatorParameters.seed.map(Random::new).orElseGet(Random::new);
-        long[] encoded = tokenizer.encode(promptContext.getPrompt());
+        long[] encoded = encodeText(promptContext.getPrompt());
 
         //long [] encoded = this.preTrainedTokenizer.encode(promptContext.getPrompt(), EncodeOptions.defaults());
 
@@ -370,7 +420,10 @@ public abstract class AbstractModel implements Generator, Classifier {
                 responseContext.add(nextSamplerRet, eventFired);
                 long taken = t.stop();
                 logger.info("time_to_first_token={} prefix_length={}", taken/ 1_000_000.0 , prefixLength);
-                //here we have added the first token, consider checking stop conditions here
+                Optional<Response> firstStop = maybeStopAfterToken(generatorParameters, responseContext, encoded, encoded.length, next);
+                if (firstStop.isPresent()) {
+                    return firstStop.get();
+                }
                 for (int i = startPos + promptTokens.length; i < ntokens; i++) {
                 //int decodeStart= prefixLength + tokensToProcess.length;
 
@@ -383,32 +436,9 @@ public abstract class AbstractModel implements Generator, Classifier {
                     kvmem.incrementContextPosition();
                     responseContext.add(nextSample, eventFired);
 
-                    if (generatorParameters.maxTokens.isPresent()){
-                        if (responseContext.generatedTokens.size() >= generatorParameters.maxTokens.get()) {
-                            FinishReason reason = FinishReason.MAX_TOKENS;
-                            return postProcessResponse(new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
-                                    reason,  encoded.length, responseContext.generatedTokens, 0, 0, responseContext.samplerReturnList));
-                        }
-                    }
-                    if (generatorParameters.guidedChoice.isPresent()) {
-                        if (generatorParameters.guidedChoice.get().contains(responseContext.responseText.toString())) {
-                            FinishReason reason = FinishReason.STOP_TOKEN;
-                            return postProcessResponse(new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
-                                    reason,  encoded.length, responseContext.generatedTokens, 0, 0, responseContext.samplerReturnList));
-                        }
-                    }
-                    Optional<Response> shouldEnd = stopWords(generatorParameters, responseContext, encoded.length);
-                    if (shouldEnd.isPresent()) {
-                        return postProcessResponse(shouldEnd.get());
-                    }
-                    if (config.eosTokens.contains(next)){
-                        FinishReason reason = FinishReason.STOP_TOKEN;
-                        return postProcessResponse(new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
-                                reason,  encoded.length, responseContext.generatedTokens, 0, 0, responseContext.samplerReturnList));
-                    }
-                    Optional<Response> shouldEndTools = getToolCallParser().shouldEndTurn(responseContext, encoded.length);
-                    if (shouldEndTools.isPresent()) {
-                        return postProcessResponse(shouldEndTools.get());
+                    Optional<Response> stop = maybeStopAfterToken(generatorParameters, responseContext, encoded, encoded.length, next);
+                    if (stop.isPresent()) {
+                        return stop.get();
                     }
 
                 }
@@ -461,7 +491,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     }
     protected float[] timedEmbedding(String input, PoolingType poolingType) {
         CausualWhisperer.LOGGER.debug("embedding on {} using pooling type {}", input, poolingType);
-        int[] encoded = Arrays.stream(tokenizer.encode(input)).mapToInt(Ints::checkedCast).toArray();
+        int[] encoded = Arrays.stream(encodeText(input)).mapToInt(Ints::checkedCast).toArray();
         Preconditions.checkArgument(encoded.length < config.contextLength);
         float [] outputEmbedding = new float[config.embeddingLength];
         CausualWhisperer.LOGGER.debug("created float [] outputEmbedding of length {}", config.embeddingLength);

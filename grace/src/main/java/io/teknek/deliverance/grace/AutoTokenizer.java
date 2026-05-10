@@ -203,7 +203,7 @@ public class AutoTokenizer {
     }
 
     private static boolean isGemmaLikeTokenizer(String tokenizerClass, JsonNode tokenizerDocument) {
-        if ("GemmaTokenizer".equals(tokenizerClass)) {
+        if ("GemmaTokenizer".equals(tokenizerClass) || "LlamaTokenizer".equals(tokenizerClass)) {
             return true;
         }
         JsonNode normalizer = tokenizerDocument.path("normalizer");
@@ -216,7 +216,7 @@ public class AutoTokenizer {
     }
 
     private static boolean isByteLevelBpeTokenizer(String tokenizerClass, JsonNode tokenizerDocument) {
-        if ("LlamaTokenizer".equals(tokenizerClass) || "PreTrainedTokenizerFast".equals(tokenizerClass)) {
+        if ("PreTrainedTokenizerFast".equals(tokenizerClass)) {
             return true;
         }
         JsonNode preTokenizer = tokenizerDocument.path("pre_tokenizer");
