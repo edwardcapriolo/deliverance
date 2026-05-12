@@ -292,6 +292,45 @@ What we learned:
 - production Gemma 4 projections are much harsher than tiny toy cases
 - if direct BF16×Q4 yields garbled model output while the old fallback yields coherent output, the direct kernel is wrong or incomplete
 
+### What was actually wrong
+
+The original direct `BF16 x Q4` path had a real kernel correctness bug, not a quantization-margin issue.
+
+Important evidence:
+
+- `PanamaTensorOperationsTest.batchDotProductBf16Q4WithOffsetsAndRowChunk` compared Panama against `NaiveTensorOperations` on the **same** BF16/Q4 tensors
+- the mismatch was large and structured, not small floating-point drift
+- the output deltas repeated by output column across multiple rows
+- that pattern pointed to deterministic packed-lane / block-group misalignment in the direct kernel
+
+In practice, the suspect area was the direct SIMD `GemmerBF16Q4` implementation, especially implicit lane-group assumptions while pairing BF16 values with packed Q4 nibbles.
+
+### What fixed correctness
+
+The stable rebuild path was:
+
+1. treat `NaiveTensorOperations` as the arithmetic oracle for BF16/Q4
+2. stop relying on packed SIMD lane reinterpretation for correctness
+3. decode Q4 explicitly from flat tensor offsets and raw packed bytes
+4. use a block-aware reference gemmer that works directly from:
+   - `a.getMemorySegment()` for BF16 activations
+   - `b.getMemorySegment()` for packed Q4 bytes
+   - `b.getFactorForIndex(row, column)` for per-block scale
+
+This corrected the gibberish output and restored coherent Gemma 4 JQ4 generation.
+
+### Important semantic lesson
+
+For Q4 tensors, correctness depends on three things being aligned at the same time:
+
+- row/window semantics
+- logical column offset semantics
+- packed block layout semantics
+
+Using `b.get(row, col)` as a generic fallback was too naive for the hot path and also easy to get wrong around views/shapes. The more stable reference implementation worked from flat offsets and decoded the Q4 block structure directly.
+
+### Better test strategy
+
 ### Better test strategy
 
 Toy tests are necessary but not sufficient.
@@ -303,6 +342,71 @@ Useful direct kernel tests should include:
 - nonzero offsets
 - chunked row selection
 - comparison against a trusted reference path
+
+The two most useful BF16/Q4 tensor tests during this work were:
+
+- `PanamaTensorOperationsTest.batchDotProductBf16Q4WithOffsetsAndRowChunk`
+- `PanamaTensorOperationsTest.batchDotProductBf16Q4MultiRowMultiCol`
+
+These exposed bugs that smaller happy-path tests did not.
+
+### Current known-good runtime shape
+
+The current known-good BF16/Q4 path is no longer the old "materialize BF16 activations to F32 and reuse F32xQ4" fallback.
+
+Instead it is:
+
+- a correctness-first, block-aware BF16/Q4 reference path
+- plus ARM tiling improvements layered on top of that reference layout
+
+That was enough to move from:
+
+- gibberish model output
+
+to:
+
+- coherent JQ4 output like:
+  - `The capital of New York is **New York City`
+
+### Performance learnings from the rebuild
+
+On the ARM path, the rebuild progressed roughly like this:
+
+- correctness-first reference block decoder: coherent output, but slow
+- added `1x4` shared-block reuse: major improvement
+- added `4x1`: additional improvement
+- added `4x4`: another meaningful improvement
+
+This showed that for BF16/Q4, reuse across both rows and columns matters materially.
+
+### Optimization ideas worth revisiting later
+
+One later optimization pass was **not** a clear win overall and was reverted.
+
+That experiment tried to:
+
+- hoist more repeated math inside the aligned block loops
+- reduce repeated `bf16ToFloat(...)` structure overhead
+- process 2 packed Q4 bytes at a time
+- accumulate unscaled block sums and apply scale once per block
+
+Observed behavior:
+
+- decode after the first token looked faster
+- but `timeToFirstToken` got much worse in end-to-end runs
+- this suggests the optimization may have helped steady-state decode while hurting prompt/prefill enough to lose overall
+
+So the idea itself should **not** be discarded, but it needs dedicated profiling before being trusted.
+
+If someone has dedicated profiling time later, good candidates to revisit are:
+
+- inner-loop hoisting of repeated address math in the aligned 32-wide block paths
+- reducing BF16 conversion overhead further
+- processing 2 packed Q4 bytes at a time, but only if it helps real TTFT not just post-first-token decode
+- tile-selection heuristics for `1x4`, `4x1`, and `4x4`
+- phase-aware heuristics if prefill and decode benefit from different tiles
+
+The big lesson is: end-to-end `timeToFirstToken` must stay the primary metric. A micro-optimization that improves post-first-token decode but hurts prefill can look good in a hot loop and still be a regression for real requests.
 
 ### API semantics lesson
 
@@ -366,7 +470,13 @@ For quantization policy, a known-good external Q4 checkpoint was the best oracle
 
 - the quantizer policy is now close to the known-good Gemma 2 Q4 policy
 - runtime speed still depends on real Q4 projection kernels, not just disk format
-- if the direct BF16×Q4 kernel is not trustworthy, keep a known-good fallback/reference path while debugging it
+- if the direct BF16×Q4 kernel is not trustworthy, keep a known-good reference path while debugging it
+- prefer block-aware BF16/Q4 implementations that decode Q4 layout explicitly over clever lane-reinterpretation tricks
+- benchmark whole-request behavior, not just a kernel micro-loop
+- when testing optimizations, track at least:
+  - `timeToFirstTokenMs`
+  - `totalTimeMs`
+  - tokens/sec after first token
 
 ### For debugging
 

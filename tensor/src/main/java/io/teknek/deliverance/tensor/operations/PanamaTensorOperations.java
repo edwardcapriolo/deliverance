@@ -596,38 +596,6 @@ public final class PanamaTensorOperations implements TensorOperations {
             };
 
         }
-/*
-        protected BiIntConsumer  initMatmul1x1(){
-            return (i,j) -> {
-                int aoffset = aColumnOffset;
-                int boffset = bColumnOffset;
-                int alim = aoffset + k;
-                int slen = Q4ByteBufferTensor.BLOCK_SIZE;
-                FloatVector acc = FloatVector.zero(FloatVector.SPECIES_128);
-                for (; aoffset< alim; aoffset+=slen, boffset+=slen){
-                    float scaleScalar = b.getFactorForIndex(j, boffset);
-                    FloatVector scale = FloatVector.broadcast(FloatVector.SPECIES_128, scaleScalar);
-                    ByteVector bytes = b.getVector(ByteVector.SPECIES_128, j, boffset);
-                    ByteVector lo = bytes.add(Q4_BYTE_MASK_128).sub(Q4_BYTE_SUB_128);
-                    ByteVector high = bytes.lanewise(VectorOperators.LSHR, Q4_BYTE_SHIFT_128).sub(Q4_BYTE_SUB_128);
-                    FloatVector blockAcc = FloatVector.zero(FloatVector.SPECIES_128);
-                    for (int s= 0; s<4; s++){
-                        var aVec = a.getVector(FloatVector.SPECIES_128,i, aoffset + s * 4);
-                        var bVec = lo.castShape(FloatVector.SPECIES_128, s);
-                        blockAcc = aVec.reinterpretAsFloats().fma(aVec, bVec);
-                        //blockAcc = aVec.fma(bVec, blockAcc);
-                    }
-                    for (int s= 0; s<4; s++){
-                        var aVec = a.getVector(FloatVector.SPECIES_128, i, aoffset + Q4ByteBufferTensor.HALF_BLOCK  * 4);
-                        var bVect = high.castShape(FloatVector.SPECIES_128, s);
-                        //blockAcc = aVec.fma(bVec, blockAcc);
-                        blockAcc = aVec.reinterpretAsFloats().fma(aVec, bVect);
-                    }
-                    acc = blockAcc.fma(scale, acc);
-                }
-                c.set(acc.reduceLanes(VectorOperators.ADD), i, j + rOffset);
-            };
-        } */
     }
 
     private class GemmerF32Q4_256 extends Gemmer {
@@ -654,27 +622,9 @@ public final class PanamaTensorOperations implements TensorOperations {
         @Override
         protected int pickKernel(int m0, int m, int n0, int n) {
             short mc, nc;
-            /*if (m - m0 >= 3 && n - n0 >= 4)
-            {
-                mc = 3;
-                nc = 4;
-                kernel(m0, m, 3, n0, n, 4, matmul3x4);
-            }
-            else if (m - m0 >= 4 && n - n0 >= 1)
-            {
-                mc = 4;
-                nc = 1;
-                kernel(m0, m, 4, n0, n, 1, matmul4x1);
-            }
-            else if (m - m0 >= 1 && n - n0 >= 2) {
-                mc = 1;
-                nc = 2;
-                kernel(m0, m, 1, n0, n, 2, matmul1x4);
-            } else*/ {
-                mc = 1;
-                nc = 1;
-                kernel(m0, m, 1, n0, n, 1, matmul1x1);
-            }
+            mc = 1;
+            nc = 1;
+            kernel(m0, m, 1, n0, n, 1, matmul1x1);
 
             return (mc << 4) | nc;
         }
@@ -1719,9 +1669,6 @@ public final class PanamaTensorOperations implements TensorOperations {
     private class GemmerBF16 extends Gemmer {
 
         final BiIntConsumer matmul1x1;
-        /*final BiIntConsumer matmul1x4;
-        final BiIntConsumer matmul3x4;
-        final BiIntConsumer matmul4x1;*/
 
         final BFloat16BufferTensor a;
         final BFloat16BufferTensor b;
@@ -1730,9 +1677,6 @@ public final class PanamaTensorOperations implements TensorOperations {
             super(k, ta, tb, c, ith, nth, rOffset);
 
             this.matmul1x1 = initMatmul1x1();
-            /*this.matmul1x4 = initMatmul1x4();
-            this.matmul3x4 = initMatmul3x4();
-            this.matmul4x1 = initMatmul4x1();*/
 
             this.a = (BFloat16BufferTensor) ta;
             this.b = (BFloat16BufferTensor) tb;
@@ -1741,23 +1685,9 @@ public final class PanamaTensorOperations implements TensorOperations {
         @Override
         protected int pickKernel(int m0, int m, int n0, int n) {
             short mc, nc;
-            /*if (m - m0 >= 3 && n - n0 >= 4) {
-                mc = 3;
-                nc = 4;
-                kernel(m0, m, 3, n0, n, 4, matmul3x4);
-            } else if (m - m0 >= 4 && n - n0 >= 1) {
-                mc = 4;
-                nc = 1;
-                kernel(m0, m, 4, n0, n, 1, matmul4x1);
-            } else if (m - m0 >= 1 && n - n0 >= 4) {
-                mc = 1;
-                nc = 4;
-                kernel(m0, m, 1, n0, n, 4, matmul1x4);
-            } else {*/
             mc = 1;
             nc = 1;
             kernel(m0, m, 1, n0, n, 1, matmul1x1);
-            // }
 
             return (mc << 4) | nc;
         }
@@ -1797,164 +1727,11 @@ public final class PanamaTensorOperations implements TensorOperations {
             };
         }
 
-        /*protected BiIntConsumer initMatmul1x4() {
-            return (i, j) -> {
-                FloatVector vc0 = FloatVector.zero(FloatVector.SPECIES_PREFERRED);
-                FloatVector vc1 = FloatVector.zero(FloatVector.SPECIES_PREFERRED);
-                FloatVector vc2 = FloatVector.zero(FloatVector.SPECIES_PREFERRED);
-                FloatVector vc3 = FloatVector.zero(FloatVector.SPECIES_PREFERRED);
-
-                int aoffset = aColumnOffset;
-                int boffset = bColumnOffset;
-                int alim = aColumnOffset + k;
-                int blim = bColumnOffset + k;
-
-                for (;
-                     aoffset < alim || boffset < blim;
-                     aoffset += FloatVector.SPECIES_PREFERRED.length(),
-                             boffset += FloatVector.SPECIES_PREFERRED.length()) {
-                    FloatVector va = a.getVector(FloatVector.SPECIES_PREFERRED, i, aoffset)
-                            .reinterpretAsFloats();
-                    FloatVector vb0 = b.getVector(FloatVector.SPECIES_PREFERRED, j + 0, boffset)
-                            .reinterpretAsFloats();
-                    FloatVector vb1 = b.getVector(FloatVector.SPECIES_PREFERRED, j + 1, boffset)
-                            .reinterpretAsFloats();
-                    FloatVector vb2 = b.getVector(FloatVector.SPECIES_PREFERRED, j + 2, boffset)
-                            .reinterpretAsFloats();
-                    FloatVector vb3 = b.getVector(FloatVector.SPECIES_PREFERRED, j + 3, boffset)
-                            .reinterpretAsFloats();
-                    vc0 = va.fma(vb0, vc0);
-                    vc1 = va.fma(vb1, vc1);
-                    vc2 = va.fma(vb2, vc2);
-                    vc3 = va.fma(vb3, vc3);
-                }
-
-                c.set(vc0.reduceLanes(VectorOperators.ADD), i, j + 0);
-                c.set(vc1.reduceLanes(VectorOperators.ADD), i, j + 1);
-                c.set(vc2.reduceLanes(VectorOperators.ADD), i, j + 2);
-                c.set(vc3.reduceLanes(VectorOperators.ADD), i, j + 3);
-            };
-        }
-
-        protected BiIntConsumer initMatmul3x4() {
-            return (i, j) -> {
-                FloatVector vc00 = FloatVector.zero(FloatVector.SPECIES_PREFERRED);
-                FloatVector vc01 = FloatVector.zero(FloatVector.SPECIES_PREFERRED);
-                FloatVector vc02 = FloatVector.zero(FloatVector.SPECIES_PREFERRED);
-                FloatVector vc03 = FloatVector.zero(FloatVector.SPECIES_PREFERRED);
-                FloatVector vc10 = FloatVector.zero(FloatVector.SPECIES_PREFERRED);
-                FloatVector vc11 = FloatVector.zero(FloatVector.SPECIES_PREFERRED);
-                FloatVector vc12 = FloatVector.zero(FloatVector.SPECIES_PREFERRED);
-                FloatVector vc13 = FloatVector.zero(FloatVector.SPECIES_PREFERRED);
-                FloatVector vc20 = FloatVector.zero(FloatVector.SPECIES_PREFERRED);
-                FloatVector vc21 = FloatVector.zero(FloatVector.SPECIES_PREFERRED);
-                FloatVector vc22 = FloatVector.zero(FloatVector.SPECIES_PREFERRED);
-                FloatVector vc23 = FloatVector.zero(FloatVector.SPECIES_PREFERRED);
-
-                int aoffset = aColumnOffset;
-                int boffset = bColumnOffset;
-                int alim = aColumnOffset + k;
-                int blim = bColumnOffset + k;
-
-                for (;
-                     aoffset < alim || boffset < blim;
-                     aoffset += FloatVector.SPECIES_PREFERRED.length(),
-                             boffset += FloatVector.SPECIES_PREFERRED.length()) {
-                    FloatVector vb0 = b.getVector(FloatVector.SPECIES_PREFERRED, j + 0, boffset)
-                            .reinterpretAsFloats();
-                    FloatVector vb1 = b.getVector(FloatVector.SPECIES_PREFERRED, j + 1, boffset)
-                            .reinterpretAsFloats();
-                    FloatVector vb2 = b.getVector(FloatVector.SPECIES_PREFERRED, j + 2, boffset)
-                            .reinterpretAsFloats();
-                    FloatVector vb3 = b.getVector(FloatVector.SPECIES_PREFERRED, j + 3, boffset)
-                            .reinterpretAsFloats();
-
-                    FloatVector va = a.getVector(FloatVector.SPECIES_PREFERRED, i + 0, aoffset)
-                            .reinterpretAsFloats();
-                    vc00 = va.fma(vb0, vc00);
-                    vc01 = va.fma(vb1, vc01);
-                    vc02 = va.fma(vb2, vc02);
-                    vc03 = va.fma(vb3, vc03);
-
-                    FloatVector va1 = a.getVector(FloatVector.SPECIES_PREFERRED, i + 1, aoffset)
-                            .reinterpretAsFloats();
-                    vc10 = va1.fma(vb0, vc10);
-                    vc11 = va1.fma(vb1, vc11);
-                    vc12 = va1.fma(vb2, vc12);
-                    vc13 = va1.fma(vb3, vc13);
-
-                    FloatVector va2 = a.getVector(FloatVector.SPECIES_PREFERRED, i + 2, aoffset)
-                            .reinterpretAsFloats();
-                    vc20 = va2.fma(vb0, vc20);
-                    vc21 = va2.fma(vb1, vc21);
-                    vc22 = va2.fma(vb2, vc22);
-                    vc23 = va2.fma(vb3, vc23);
-                }
-
-                c.set(vc00.reduceLanes(VectorOperators.ADD), i + 0, j + 0);
-                c.set(vc01.reduceLanes(VectorOperators.ADD), i + 0, j + 1);
-                c.set(vc02.reduceLanes(VectorOperators.ADD), i + 0, j + 2);
-                c.set(vc03.reduceLanes(VectorOperators.ADD), i + 0, j + 3);
-
-                c.set(vc10.reduceLanes(VectorOperators.ADD), i + 1, j + 0);
-                c.set(vc11.reduceLanes(VectorOperators.ADD), i + 1, j + 1);
-                c.set(vc12.reduceLanes(VectorOperators.ADD), i + 1, j + 2);
-                c.set(vc13.reduceLanes(VectorOperators.ADD), i + 1, j + 3);
-
-                c.set(vc20.reduceLanes(VectorOperators.ADD), i + 2, j + 0);
-                c.set(vc21.reduceLanes(VectorOperators.ADD), i + 2, j + 1);
-                c.set(vc22.reduceLanes(VectorOperators.ADD), i + 2, j + 2);
-                c.set(vc23.reduceLanes(VectorOperators.ADD), i + 2, j + 3);
-            };
-        }
-
-        protected BiIntConsumer initMatmul4x1() {
-            return (i, j) -> {
-                FloatVector vc0 = FloatVector.zero(FloatVector.SPECIES_PREFERRED);
-                FloatVector vc1 = FloatVector.zero(FloatVector.SPECIES_PREFERRED);
-                FloatVector vc2 = FloatVector.zero(FloatVector.SPECIES_PREFERRED);
-                FloatVector vc3 = FloatVector.zero(FloatVector.SPECIES_PREFERRED);
-
-                int aoffset = aColumnOffset;
-                int boffset = bColumnOffset;
-                int alim = aColumnOffset + k;
-                int blim = bColumnOffset + k;
-
-                for (;
-                     aoffset < alim || boffset < blim;
-                     aoffset += FloatVector.SPECIES_PREFERRED.length(),
-                             boffset += FloatVector.SPECIES_PREFERRED.length()) {
-                    FloatVector va0 = a.getVector(FloatVector.SPECIES_PREFERRED, i + 0, aoffset)
-                            .reinterpretAsFloats();
-                    FloatVector va1 = a.getVector(FloatVector.SPECIES_PREFERRED, i + 1, aoffset)
-                            .reinterpretAsFloats();
-                    FloatVector va2 = a.getVector(FloatVector.SPECIES_PREFERRED, i + 2, aoffset)
-                            .reinterpretAsFloats();
-                    FloatVector va3 = a.getVector(FloatVector.SPECIES_PREFERRED, i + 3, aoffset)
-                            .reinterpretAsFloats();
-                    FloatVector vb0 = b.getVector(FloatVector.SPECIES_PREFERRED, j, boffset)
-                            .reinterpretAsFloats();
-
-                    vc0 = va0.fma(vb0, vc0);
-                    vc1 = va1.fma(vb0, vc1);
-                    vc2 = va2.fma(vb0, vc2);
-                    vc3 = va3.fma(vb0, vc3);
-                }
-
-                c.set(vc0.reduceLanes(VectorOperators.ADD), i + 0, j);
-                c.set(vc1.reduceLanes(VectorOperators.ADD), i + 1, j);
-                c.set(vc2.reduceLanes(VectorOperators.ADD), i + 2, j);
-                c.set(vc3.reduceLanes(VectorOperators.ADD), i + 3, j);
-            };
-        }*/
     }
 
     private class GemmerF32BF16 extends Gemmer {
 
         final BiIntConsumer matmul1x1;
-        /*final BiIntConsumer matmul1x4;
-        final BiIntConsumer matmul3x4;
-        final BiIntConsumer matmul4x1;*/
 
         final FloatBufferTensor a;
         final BFloat16BufferTensor b;
@@ -1963,9 +1740,6 @@ public final class PanamaTensorOperations implements TensorOperations {
             super(k, ta, tb, c, ith, nth, rOffset);
 
             this.matmul1x1 = initMatmul1x1();
-            /*this.matmul1x4 = initMatmul1x4();
-            this.matmul3x4 = initMatmul3x4();
-            this.matmul4x1 = initMatmul4x1();*/
             this.a = (FloatBufferTensor) ta;
             this.b = (BFloat16BufferTensor) tb;
         }
@@ -1973,23 +1747,9 @@ public final class PanamaTensorOperations implements TensorOperations {
         @Override
         protected int pickKernel(int m0, int m, int n0, int n) {
             short mc, nc;
-            /*if (m - m0 >= 3 && n - n0 >= 4) {
-                mc = 3;
-                nc = 4;
-                kernel(m0, m, 3, n0, n, 4, matmul3x4);
-            } else if (m - m0 >= 4 && n - n0 >= 1) {
-                mc = 4;
-                nc = 1;
-                kernel(m0, m, 4, n0, n, 1, matmul4x1);
-            } else if (m - m0 >= 1 && n - n0 >= 4) {
-                mc = 1;
-                nc = 4;
-                kernel(m0, m, 1, n0, n, 4, matmul1x4);
-            } else {*/
             mc = 1;
             nc = 1;
             kernel(m0, m, 1, n0, n, 1, matmul1x1);
-            // }
 
             return (mc << 4) | nc;
         }
@@ -2024,6 +1784,16 @@ public final class PanamaTensorOperations implements TensorOperations {
         }
     }
 
+    /**
+     * Helper for GEMM-style tiled matrix multiplication.
+     *
+     * <p>GEMM stands for "general matrix multiply". In this file a {@code Gemmer} owns the logic for executing
+     * some matrix product over tensors {@code a} and {@code b}, writing results into {@code c}.</p>
+     *
+     * <p>A "kernel" is the smallest concrete compute routine used by the gemmer, usually over one fixed tile
+     * shape such as {@code 1x1}, {@code 1x4}, {@code 4x1}, or {@code 4x4}. The gemmer chooses which kernel to
+     * use for the current remaining rectangle and then repeatedly applies that kernel across the tile grid.</p>
+     */
     private abstract class Gemmer {
         final int k;
         final AbstractTensor a;
@@ -2033,7 +1803,23 @@ public final class PanamaTensorOperations implements TensorOperations {
         final int bColumnOffset;
         final int rOffset;
 
-        // The id of each thread is called ith and the number of threads is called nth.
+        /**
+         * Creates a matrix-multiply helper over a logical subproblem.
+         *
+         * <p>The tensors are interpreted as a matrix product over a shared inner dimension {@code k}:
+         * rows of {@code a} are dotted with rows of {@code b}, and the results are written into {@code c}.
+         * The offset fields describe where that logical subproblem starts inside the backing tensors.</p>
+         *
+         * @param k logical length of the shared reduction dimension. This is the number of columns consumed
+         *          from {@code a} and {@code b} for each dot product.
+         * @param a left-hand input tensor. In the common case this supplies the M rows being multiplied.
+         * @param b right-hand input tensor. In the common case this supplies the N rows being multiplied.
+         * @param c output tensor that receives the computed tile results.
+         * @param aColumnOffset starting column in {@code a} for the logical subproblem.
+         * @param bColumnOffset starting column in {@code b} for the logical subproblem.
+         * @param rOffset output column offset in {@code c}. This lets callers place a tile into a later
+         *                result-column position without slicing {@code c} first.
+         */
         Gemmer(int k, AbstractTensor a, AbstractTensor b, AbstractTensor c, int aColumnOffset, int bColumnOffset, int rOffset) {
             this.k = k;
             this.a = a;
@@ -2044,10 +1830,36 @@ public final class PanamaTensorOperations implements TensorOperations {
             this.rOffset = rOffset;
         }
 
+        /**
+         * Executes the matrix multiply for the logical rectangle {@code [m0, m) x [n0, n)}.
+         *
+         * <p>The M dimension refers to rows from {@code a}. The N dimension refers to rows from {@code b}
+         * (which become output columns in {@code c}). This method is the public entrypoint for a gemmer and
+         * delegates to the recursive tile packer.</p>
+         *
+         * @param m0 inclusive start row in the logical M range.
+         * @param m exclusive end row in the logical M range.
+         * @param n0 inclusive start row in the logical N range.
+         * @param n exclusive end row in the logical N range.
+         */
         void matmul(int m0, int m, int n0, int n) {
             mnpack(m0, m, n0, n);
         }
 
+        /**
+         * Recursively covers the remaining logical rectangle with the largest tile the current gemmer knows
+         * how to execute.
+         *
+         * <p>{@link #pickKernel(int, int, int, int)} chooses one tile shape. This method then computes how much
+         * of the current rectangle can be covered by that tile, executes the aligned interior through
+         * {@link #kernel(int, int, int, int, int, int, BiIntConsumer)}, and recursively handles the bottom and
+         * right edge remainders.</p>
+         *
+         * @param m0 inclusive start row in the logical M range.
+         * @param m exclusive end row in the logical M range.
+         * @param n0 inclusive start row in the logical N range.
+         * @param n exclusive end row in the logical N range.
+         */
         private void mnpack(int m0, int m, int n0, int n) {
             if (m - m0 <= 0 || n - n0 <= 0) {
                 return;
@@ -2064,8 +1876,54 @@ public final class PanamaTensorOperations implements TensorOperations {
             mnpack(m0, mp, np, n);
         }
 
+        /**
+         * Chooses the kernel shape to use for the remaining logical rectangle.
+         *
+         * <p>The arguments describe an uncovered sub-rectangle of the output matrix:</p>
+         *
+         * <ul>
+         * <li>{@code m0}: inclusive start of the remaining M rows</li>
+         * <li>{@code m}: exclusive end of the remaining M rows</li>
+         * <li>{@code n0}: inclusive start of the remaining N rows</li>
+         * <li>{@code n}: exclusive end of the remaining N rows</li>
+         * </ul>
+         *
+         * <p>Here, M means rows from {@code a}; N means rows from {@code b} / columns written into {@code c}.
+         * Implementations usually inspect the remaining extents {@code m - m0} and {@code n - n0}, select a
+         * tile shape such as {@code 1x1}, {@code 1x4}, {@code 4x1}, or {@code 4x4}, and immediately execute
+         * that interior tile coverage via {@link #kernel(int, int, int, int, int, int, BiIntConsumer)}.</p>
+         *
+         * <p>The return value is a packed tile shape used by {@link #mnpack(int, int, int, int)} to recurse over
+         * the uncovered edges. The high 4 bits store the tile height ({@code mc}, rows in M). The low 4 bits
+         * store the tile width ({@code nc}, rows in N / output columns).</p>
+         *
+         * @param m0 inclusive start of the remaining M rows.
+         * @param m exclusive end of the remaining M rows.
+         * @param n0 inclusive start of the remaining N rows.
+         * @param n exclusive end of the remaining N rows.
+         * @return packed tile shape {@code (mc << 4) | nc}, where {@code mc} is the number of rows consumed from
+         *         M and {@code nc} is the number of rows consumed from N for each kernel invocation.
+         */
         protected abstract int pickKernel(int m0, int m, int n0, int n);
 
+        /**
+         * Runs one concrete tile kernel over the rectangular region that can be evenly covered by that tile.
+         *
+         * <p>{@code RM} and {@code RN} are the tile dimensions of {@code action}: each invocation consumes
+         * {@code RM} rows in M and {@code RN} rows in N. This method walks the tile grid in row-major order and
+         * calls {@code action.accept(i, j)} for each tile origin.</p>
+         *
+         * <p>It does not handle leftovers that are smaller than the tile size; that is the job of
+         * {@link #mnpack(int, int, int, int)}.</p>
+         *
+         * @param m0 inclusive start of the covered M range.
+         * @param m exclusive end of the covered M range.
+         * @param RM tile height in M rows.
+         * @param n0 inclusive start of the covered N range.
+         * @param n exclusive end of the covered N range.
+         * @param RN tile width in N rows / output columns.
+         * @param action kernel body to run for each tile origin {@code (i, j)}.
+         */
         void kernel(int m0, int m, int RM, int n0, int n, int RN, BiIntConsumer action) {
             int ytiles = (m - m0) / RM;
             int xtiles = (n - n0) / RN;
@@ -2117,37 +1975,6 @@ public final class PanamaTensorOperations implements TensorOperations {
             return new BFloat16BufferTensor(ft);
         }
         throw new UnsupportedOperationException("Unreachable");
-        /*
-        // Up to caller to release
-        BFloat16BufferTensor qft = (BFloat16BufferTensor) tensorCache.getDirty(DType.BF16, ft.shape());
-        int batchSize = ft.shape().first();
-        for (int b = 0; b < batchSize; b++) {
-            for (int i = offset; i < offset + length; i += ShortVector.SPECIES_PREFERRED.length()) {
-                var r0 = ft.getVector(FloatVector.SPECIES_PREFERRED, b, i)
-                        .reinterpretAsInts()
-                        .lanewise(VectorOperators.ASHR, BF16_BYTE_SHIFT)
-                        .convertShape(VectorOperators.I2S, ShortVector.SPECIES_PREFERRED, 0);
-
-                var r1 = ft.getVector(FloatVector.SPECIES_PREFERRED, b, i + FloatVector.SPECIES_PREFERRED.length())
-                        .reinterpretAsInts()
-                        .lanewise(VectorOperators.ASHR, BF16_BYTE_SHIFT)
-                        .convertShape(VectorOperators.I2S, ShortVector.SPECIES_PREFERRED, -1);
-
-                VectorMask<Short> mask = VectorMask.fromLong(
-                        ShortVector.SPECIES_PREFERRED,
-                        (1L << FloatVector.SPECIES_PREFERRED.length()) - 1
-                );
-                mask = mask.not(); // Invert the mask to select the second half
-
-                var r = r0.blend(r1, mask);
-
-                qft.intoTensor((ShortVector) r, b, i);
-            }
-        }
-
-        return qft;
-
-         */
     }
 
     public FloatBufferTensor quantizeBF16_F32(BFloat16BufferTensor ft, final int offset, int length) {
