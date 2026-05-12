@@ -49,6 +49,54 @@ public class ModelQuantizerTest {
     }
 
     @Test
+    public void keepsNormWeightsDenseEvenIfStoredAsRowVectors() throws Exception {
+        Path sourceDir = tempDir.resolve("source-norm");
+        Path outputDir = tempDir.resolve("output-norm");
+        Files.createDirectories(sourceDir);
+        Files.writeString(sourceDir.resolve("config.json"), "{\"model_type\":\"llama\"}");
+
+        FloatBufferTensor norm = new FloatBufferTensor(1, 32);
+        FloatBufferTensor proj = new FloatBufferTensor(1, 32);
+        for (int i = 0; i < 32; i++) {
+            norm.set(1.0f, 0, i);
+            proj.set(i - 8, 0, i);
+        }
+        Map<String, AbstractTensor> tensors = new LinkedHashMap<>();
+        tensors.put("model.layers.0.input_layernorm.weight", norm);
+        tensors.put("model.layers.0.self_attn.q_proj.weight", proj);
+        SafeTensorWriter.write(sourceDir.resolve("model.safetensors"), Map.of(), tensors);
+
+        new ModelQuantizer(64).quantizeModelDirectory(sourceDir, outputDir);
+
+        try (DefaultWeightLoader loader = new DefaultWeightLoader(outputDir.toFile())) {
+            assertEquals(DType.F32, loader.tensorInfoMap().get("model.layers.0.input_layernorm.weight").dType);
+            assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.self_attn.q_proj.weight").dType);
+        }
+    }
+
+    @Test
+    public void keepsNonAllowlistedTwoDimensionalWeightsDense() throws Exception {
+        Path sourceDir = tempDir.resolve("source-nonallow");
+        Path outputDir = tempDir.resolve("output-nonallow");
+        Files.createDirectories(sourceDir);
+        Files.writeString(sourceDir.resolve("config.json"), "{\"model_type\":\"llama\"}");
+
+        FloatBufferTensor misc = new FloatBufferTensor(1, 32);
+        for (int i = 0; i < 32; i++) {
+            misc.set(i + 1, 0, i);
+        }
+        Map<String, AbstractTensor> tensors = new LinkedHashMap<>();
+        tensors.put("model.layers.0.some_other.weight", misc);
+        SafeTensorWriter.write(sourceDir.resolve("model.safetensors"), Map.of(), tensors);
+
+        new ModelQuantizer(64).quantizeModelDirectory(sourceDir, outputDir);
+
+        try (DefaultWeightLoader loader = new DefaultWeightLoader(outputDir.toFile())) {
+            assertEquals(DType.F32, loader.tensorInfoMap().get("model.layers.0.some_other.weight").dType);
+        }
+    }
+
+    @Test
     public void quantizesUsingDeliveranceCachePaths() throws Exception {
         Path fakeHome = tempDir.resolve("home");
         String previousHome = System.getProperty("user.home");
@@ -139,7 +187,7 @@ public class ModelQuantizerTest {
         }
     }
 
-    @Disabled
+    @Test
     void fullModelQuantizerTest(){
         //google_gemma-4-E2B-it
         new ModelQuantizer().quantizeCachedModel("google", "gemma-4-E2B-it",

@@ -7,6 +7,7 @@ import com.google.common.primitives.Ints;
 
 import java.nio.FloatBuffer;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 
@@ -349,34 +350,64 @@ public abstract class AbstractModel implements Generator, Classifier {
         return response;
     }
 
+    private static double nanosToMs(long nanos) {
+        return nanos / 1_000_000.0;
+    }
+
+    private Response withGenerationTiming(Response response, long generationStartNanos, long timeToFirstTokenNanos) {
+        double totalTimeMs = nanosToMs(System.nanoTime() - generationStartNanos);
+        double timeToFirstTokenMs = nanosToMs(timeToFirstTokenNanos);
+        int generatedTokenCount = response.generatedTokens == null ? 0 : response.generatedTokens.size();
+        double avgTimePerTokenMs = generatedTokenCount == 0 ? 0.0 : totalTimeMs / generatedTokenCount;
+        return response.copyWithTiming(timeToFirstTokenMs, avgTimePerTokenMs, totalTimeMs);
+    }
+
+    private Response buildTimedResponse(
+            FinishReason reason,
+            int promptLength,
+            ResponseContext responseContext,
+            long generationStartNanos,
+            long timeToFirstTokenNanos
+    ) {
+        return postProcessResponse(withGenerationTiming(new Response(
+                        responseContext.responseText.toString(),
+                        responseContext.responseTextWithSpecialTokens.toString(),
+                        reason,
+                        promptLength,
+                        responseContext.generatedTokens,
+                        0,
+                        0,
+                        responseContext.samplerReturnList),
+                generationStartNanos,
+                timeToFirstTokenNanos));
+    }
+
     private Optional<Response> maybeStopAfterToken(GeneratorParameters generatorParameters, ResponseContext responseContext,
-                                                   long[] encoded, int promptLength, int next) {
+                                                   long[] encoded, int promptLength, int next,
+                                                   long generationStartNanos, long timeToFirstTokenNanos) {
         if (generatorParameters.maxTokens.isPresent()) {
             if (responseContext.generatedTokens.size() >= generatorParameters.maxTokens.get()) {
                 FinishReason reason = FinishReason.MAX_TOKENS;
-                return Optional.of(postProcessResponse(new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
-                        reason, promptLength, responseContext.generatedTokens, 0, 0, responseContext.samplerReturnList)));
+                return Optional.of(buildTimedResponse(reason, promptLength, responseContext, generationStartNanos, timeToFirstTokenNanos));
             }
         }
         if (generatorParameters.guidedChoice.isPresent()) {
             if (generatorParameters.guidedChoice.get().contains(responseContext.responseText.toString())) {
                 FinishReason reason = FinishReason.STOP_TOKEN;
-                return Optional.of(postProcessResponse(new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
-                        reason, promptLength, responseContext.generatedTokens, 0, 0, responseContext.samplerReturnList)));
+                return Optional.of(buildTimedResponse(reason, promptLength, responseContext, generationStartNanos, timeToFirstTokenNanos));
             }
         }
         Optional<Response> shouldEnd = stopWords(generatorParameters, responseContext, encoded.length);
         if (shouldEnd.isPresent()) {
-            return Optional.of(postProcessResponse(shouldEnd.get()));
+            return Optional.of(postProcessResponse(withGenerationTiming(shouldEnd.get(), generationStartNanos, timeToFirstTokenNanos)));
         }
         if (config.eosTokens.contains(next)) {
             FinishReason reason = FinishReason.STOP_TOKEN;
-            return Optional.of(postProcessResponse(new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
-                    reason, promptLength, responseContext.generatedTokens, 0, 0, responseContext.samplerReturnList)));
+            return Optional.of(buildTimedResponse(reason, promptLength, responseContext, generationStartNanos, timeToFirstTokenNanos));
         }
         Optional<Response> shouldEndTools = getToolCallParser().shouldEndTurn(responseContext, encoded.length);
         if (shouldEndTools.isPresent()) {
-            return Optional.of(postProcessResponse(shouldEndTools.get()));
+            return Optional.of(postProcessResponse(withGenerationTiming(shouldEndTools.get(), generationStartNanos, timeToFirstTokenNanos)));
         }
         return Optional.empty();
     }
@@ -384,7 +415,8 @@ public abstract class AbstractModel implements Generator, Classifier {
     @Override
     public Response generate(UUID sessionId, PromptContext promptContext, GeneratorParameters generatorParameters,
                                      GenerateEvent eventFired) {
-        Timer.Context t = this.metricRegistry.timer("generation.time_to_first_token").time();
+        long generationStartNanos = System.nanoTime();
+        long timeToFirstTokenNanos = 0L;
 
         ResponseContext responseContext = new ResponseContext(this);
         Random random = generatorParameters.seed.map(Random::new).orElseGet(Random::new);
@@ -432,11 +464,13 @@ public abstract class AbstractModel implements Generator, Classifier {
                 int next = nextSamplerRet.token;
                 last.close();
                 responseContext.add(nextSamplerRet, eventFired);
-                long taken = t.stop();
-                logger.info("time_to_first_token={} prefix_length={}", taken/ 1_000_000.0 , prefixLength);
-                Optional<Response> firstStop = maybeStopAfterToken(generatorParameters, responseContext, encoded, encoded.length, next);
+                timeToFirstTokenNanos = System.nanoTime() - generationStartNanos;
+                this.metricRegistry.timer("generation.time_to_first_token").update(timeToFirstTokenNanos, TimeUnit.NANOSECONDS);
+                logger.info("time_to_first_token={} prefix_length={}", timeToFirstTokenNanos / 1_000_000.0 , prefixLength);
+                Optional<Response> firstStop = maybeStopAfterToken(generatorParameters, responseContext, encoded, encoded.length, next,
+                        generationStartNanos, timeToFirstTokenNanos);
                 if (firstStop.isPresent()) {
-                    return firstStop.get();
+                    return withGenerationTiming(firstStop.get(), generationStartNanos, timeToFirstTokenNanos);
                 }
                 for (int i = startPos + promptTokens.length; i < ntokens; i++) {
                 //int decodeStart= prefixLength + tokensToProcess.length;
@@ -450,18 +484,27 @@ public abstract class AbstractModel implements Generator, Classifier {
                     kvmem.incrementContextPosition();
                     responseContext.add(nextSample, eventFired);
 
-                    Optional<Response> stop = maybeStopAfterToken(generatorParameters, responseContext, encoded, encoded.length, next);
+                    Optional<Response> stop = maybeStopAfterToken(generatorParameters, responseContext, encoded, encoded.length, next,
+                            generationStartNanos, timeToFirstTokenNanos);
                     if (stop.isPresent()) {
-                        return stop.get();
+                        return withGenerationTiming(stop.get(), generationStartNanos, timeToFirstTokenNanos);
                     }
 
                 }
             }
         }
 
-        return postProcessResponse(new Response(responseContext.responseText.toString(), responseContext.responseTextWithSpecialTokens.toString(),
-                FinishReason.MAX_TOKENS, encoded.length, responseContext.generatedTokens, 0, 0,
-                responseContext.samplerReturnList));
+        return withGenerationTiming(postProcessResponse(new Response(
+                        responseContext.responseText.toString(),
+                        responseContext.responseTextWithSpecialTokens.toString(),
+                        FinishReason.MAX_TOKENS,
+                        encoded.length,
+                        responseContext.generatedTokens,
+                        0,
+                        0,
+                        responseContext.samplerReturnList)),
+                generationStartNanos,
+                timeToFirstTokenNanos);
     }
 
     @Override

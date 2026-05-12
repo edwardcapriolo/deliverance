@@ -1,7 +1,9 @@
 package io.teknek.deliverance.tensor.operations;
 
+import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.tensor.*;
+import io.teknek.deliverance.tensor.impl.BFloat16BufferTensor;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
@@ -71,5 +73,135 @@ public class PanamaTensorOperationsTest {
             PanamaTensorOperations p = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, Mockito.mock(TensorAllocator.class), pool);
             assertEquals(control, p.dotProduct(q8, q4, size), control * .01f);
         }
+    }
+
+    @Test
+    void dotProductChunkBf16Q4Test() {
+        AbstractTensor a = new FloatBufferTensor(1, 32);
+        for (int i = 0; i < 32; i++) {
+            a.set(1.0f, 0, i);
+        }
+        BFloat16BufferTensor aBf16 = new BFloat16BufferTensor(a);
+        Q4ByteBufferTensor q4 = (Q4ByteBufferTensor) AbstractTensorUtils.quantize(a, DType.Q4, true);
+        FloatBufferTensor result = (FloatBufferTensor) PanamaTensorOperationsTest.allZeros(1);
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
+            PanamaTensorOperations ops = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, Mockito.mock(TensorAllocator.class), pool);
+            ops.dotProductChunk(result, aBf16, q4, 0, 32, 0, 1);
+        }
+        assertEquals("[0][0]= 32.0000".trim(), TensorDisplayUtil.pretty2dDisplayAll(result).trim());
+    }
+
+    @Test
+    void dotProductChunkBf16Q4AlternatingSigns() {
+        AbstractTensor a = new FloatBufferTensor(1, 32);
+        AbstractTensor b = new FloatBufferTensor(1, 32);
+        for (int i = 0; i < 32; i++) {
+            float av = (i % 2 == 0) ? 2.0f : -2.0f;
+            float bv = (i % 2 == 0) ? 3.0f : -1.0f;
+            a.set(av, 0, i);
+            b.set(bv, 0, i);
+        }
+        BFloat16BufferTensor aBf16 = new BFloat16BufferTensor(a);
+        Q4ByteBufferTensor q4 = (Q4ByteBufferTensor) AbstractTensorUtils.quantize(b, DType.Q4, true);
+        FloatBufferTensor result = (FloatBufferTensor) PanamaTensorOperationsTest.allZeros(1);
+        FloatBufferTensor expected = (FloatBufferTensor) PanamaTensorOperationsTest.allZeros(1);
+        new NaiveTensorOperations().dotProductChunk(expected, aBf16, q4, 0, 32, 0, 1);
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
+            PanamaTensorOperations ops = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, Mockito.mock(TensorAllocator.class), pool);
+            ops.dotProductChunk(result, aBf16, q4, 0, 32, 0, 1);
+        }
+        assertEquals(TensorDisplayUtil.pretty2dDisplayAll(expected).trim(), TensorDisplayUtil.pretty2dDisplayAll(result).trim());
+    }
+
+    @Test
+    void dotProductChunkBf16Q4RampValues() {
+        AbstractTensor a = new FloatBufferTensor(1, 32);
+        AbstractTensor b = new FloatBufferTensor(1, 32);
+        for (int i = 0; i < 32; i++) {
+            a.set(i + 1, 0, i);
+            b.set(2.0f, 0, i);
+        }
+        BFloat16BufferTensor aBf16 = new BFloat16BufferTensor(a);
+        Q4ByteBufferTensor q4 = (Q4ByteBufferTensor) AbstractTensorUtils.quantize(b, DType.Q4, true);
+        FloatBufferTensor result = (FloatBufferTensor) PanamaTensorOperationsTest.allZeros(1);
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
+            PanamaTensorOperations ops = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, Mockito.mock(TensorAllocator.class), pool);
+            ops.dotProductChunk(result, aBf16, q4, 0, 32, 0, 1);
+        }
+        assertEquals("[0][0]=1056.0000".trim(), TensorDisplayUtil.pretty2dDisplayAll(result).trim());
+    }
+
+    @Test
+    void dotProductChunkBf16Q4TwoOutputRows() {
+        AbstractTensor a = new FloatBufferTensor(2, 32);
+        AbstractTensor b = new FloatBufferTensor(2, 32);
+        for (int i = 0; i < 32; i++) {
+            a.set(1.0f, 0, i);
+            a.set(2.0f, 1, i);
+            b.set(3.0f, 0, i);
+            b.set(4.0f, 1, i);
+        }
+        BFloat16BufferTensor aBf16 = new BFloat16BufferTensor(a);
+        Q4ByteBufferTensor q4 = (Q4ByteBufferTensor) AbstractTensorUtils.quantize(b, DType.Q4, true);
+        FloatBufferTensor result = new FloatBufferTensor(2, 2);
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
+            PanamaTensorOperations ops = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, Mockito.mock(TensorAllocator.class), pool);
+            ops.dotProductChunk(result, aBf16, q4, 0, 32, 0, 2);
+        }
+        assertEquals("[0][0]= 96.0000 [0][1]=128.0000 \n[1][0]=192.0000 [1][1]=256.0000".trim(), TensorDisplayUtil.pretty2dDisplayAll(result).trim());
+    }
+
+    @Test
+    void batchDotProductBf16Q4MultiRowMultiCol() {
+        FloatBufferTensor a = new FloatBufferTensor(3, 256);
+        FloatBufferTensor b = new FloatBufferTensor(4, 256);
+        for (int row = 0; row < 3; row++) {
+            for (int col = 0; col < 256; col++) {
+                a.set((col % 7) - 3 + row, row, col);
+            }
+        }
+        for (int row = 0; row < 4; row++) {
+            for (int col = 0; col < 256; col++) {
+                b.set((col % 5) - 2 + row, row, col);
+            }
+        }
+        BFloat16BufferTensor aBf16 = new BFloat16BufferTensor(a);
+        Q4ByteBufferTensor q4 = (Q4ByteBufferTensor) AbstractTensorUtils.quantize(b, DType.Q4, true);
+        FloatBufferTensor expected = new FloatBufferTensor(3, 4);
+        FloatBufferTensor actual = new FloatBufferTensor(3, 4);
+
+        new NaiveTensorOperations().batchDotProduct(expected, aBf16, q4, 0, 0, 256, 0, 0, 4);
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
+            PanamaTensorOperations ops = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, Mockito.mock(TensorAllocator.class), pool);
+            ops.batchDotProduct(actual, aBf16, q4, 0, 0, 256, 0, 0, 4);
+        }
+        assertEquals(TensorDisplayUtil.pretty2dDisplayAll(expected).trim(), TensorDisplayUtil.pretty2dDisplayAll(actual).trim());
+    }
+
+    @Test
+    void batchDotProductBf16Q4WithOffsetsAndRowChunk() {
+        FloatBufferTensor a = new FloatBufferTensor(2, 256);
+        FloatBufferTensor b = new FloatBufferTensor(5, 256);
+        for (int row = 0; row < 2; row++) {
+            for (int col = 0; col < 256; col++) {
+                a.set((col % 9) - 4 + row, row, col);
+            }
+        }
+        for (int row = 0; row < 5; row++) {
+            for (int col = 0; col < 256; col++) {
+                b.set((col % 6) - 3 + row, row, col);
+            }
+        }
+        BFloat16BufferTensor aBf16 = new BFloat16BufferTensor(a);
+        Q4ByteBufferTensor q4 = (Q4ByteBufferTensor) AbstractTensorUtils.quantize(b, DType.Q4, true);
+        FloatBufferTensor expected = new FloatBufferTensor(2, 4);
+        FloatBufferTensor actual = new FloatBufferTensor(2, 4);
+
+        new NaiveTensorOperations().batchDotProduct(expected, aBf16, q4, 32, 32, 128, 0, 1, 3);
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
+            PanamaTensorOperations ops = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, Mockito.mock(TensorAllocator.class), pool);
+            ops.batchDotProduct(actual, aBf16, q4, 32, 32, 128, 0, 1, 3);
+        }
+        assertEquals(TensorDisplayUtil.pretty2dDisplayAll(expected).trim(), TensorDisplayUtil.pretty2dDisplayAll(actual).trim());
     }
 }

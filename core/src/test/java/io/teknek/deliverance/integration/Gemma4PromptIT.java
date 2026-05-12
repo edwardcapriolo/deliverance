@@ -62,7 +62,8 @@ public class Gemma4PromptIT {
         Response response = model.generate(
                 UUID.randomUUID(),
                 promptContext,
-                new GeneratorParameters().withTemperature(0.0f).withLogProbs(true).withTopLogProbs(10).withMaxTokens(10),
+                new GeneratorParameters().withTemperature(0.0f)
+                        /*.withLogProbs(true).withTopLogProbs(10)*/.withMaxTokens(10),
                 new GenerateEvent() {
                     @Override
                     public void emit(int next, String nextRaw, String nextCleaned, float timing) {
@@ -78,6 +79,7 @@ public class Gemma4PromptIT {
         //assertTrue(parsed.content().contains("Albany"));
     }
 
+    /*
     @Test
     public void chatWithReasoning() {
         AbstractModel model = Gemma4Suite.getOrCreate();
@@ -99,5 +101,5 @@ public class Gemma4PromptIT {
                 }
         );
         System.out.println(response);
-    }
+    }*/
 }

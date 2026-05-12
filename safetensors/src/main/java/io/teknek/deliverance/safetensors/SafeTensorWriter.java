@@ -143,7 +143,14 @@ public final class SafeTensorWriter {
     private static NamedTensorPayload named(String name, AbstractTensor tensor) {
         ByteBuffer bytes = tensor.getMemorySegment().asByteBuffer().duplicate().order(ByteOrder.LITTLE_ENDIAN);
         bytes.clear();
-        return new NamedTensorPayload(name, tensor.dType(), tensor.shape().shapeArray(), bytes.slice().order(ByteOrder.LITTLE_ENDIAN));
+        return new NamedTensorPayload(name, tensor.dType(), canonicalShape(tensor.shape().shapeArray()), bytes.slice().order(ByteOrder.LITTLE_ENDIAN));
+    }
+
+    static int[] canonicalShape(int[] shape) {
+        if (shape.length == 1) {
+            return new int[]{1, shape[0]};
+        }
+        return shape;
     }
 
     private static TensorInfo toTensorInfo(DType dType, int[] shape, long start, long end) {

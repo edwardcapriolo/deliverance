@@ -44,6 +44,24 @@ public class SafeTensorWriterTest {
     }
 
     @Test
+    public void writesDenseVectorAsRowVector() throws Exception {
+        FloatBufferTensor vector = new FloatBufferTensor(4);
+        vector.set(1.0f, 0);
+        vector.set(2.0f, 1);
+        vector.set(3.0f, 2);
+        vector.set(4.0f, 3);
+
+        Path output = tempDir.resolve("model.safetensors");
+        SafeTensorWriter.write(output, Map.of(), Map.of("norm.weight", vector));
+
+        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile())) {
+            assertEquals(2, loader.tensorInfoMap().get("norm.weight").shape.length);
+            assertEquals(1, loader.tensorInfoMap().get("norm.weight").shape[0]);
+            assertEquals(4, loader.tensorInfoMap().get("norm.weight").shape[1]);
+        }
+    }
+
+    @Test
     public void writesShardedModelWithIndex() throws Exception {
         FloatBufferTensor first = new FloatBufferTensor(1, 32);
         FloatBufferTensor second = new FloatBufferTensor(1, 32);

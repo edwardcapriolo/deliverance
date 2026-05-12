@@ -16,6 +16,9 @@ public class  Response {
     public final List<SamplerReturn> samplerReturns;
     public final long promptTimeMs;
     public final long generateTimeMs;
+    public final double timeToFirstTokenMs;
+    public final double avgTimePerTokenMs;
+    public final double totalTimeMs;
     public final List<ToolCall> toolCalls;
 
     public Response(
@@ -28,16 +31,21 @@ public class  Response {
             long generateTimeMs,
             List<SamplerReturn> samplerReturns
     ) {
-        this.responseText = responseText;
-        this.responseTextWithSpecialTokens = responseTextWithSpecialTokens;
-        this.reasoning = null;
-        this.finishReason = finishReason;
-        this.promptTokens = promptTokens;
-        this.generatedTokens = generatedTokens;
-        this.promptTimeMs = promptTimeMs;
-        this.generateTimeMs = generateTimeMs;
-        this.toolCalls = Collections.emptyList();
-        this.samplerReturns = samplerReturns;
+        this(
+                responseText,
+                responseTextWithSpecialTokens,
+                null,
+                finishReason,
+                promptTokens,
+                generatedTokens,
+                promptTimeMs,
+                generateTimeMs,
+                0.0,
+                0.0,
+                0.0,
+                Collections.emptyList(),
+                samplerReturns
+        );
     }
 
     private Response(
@@ -49,6 +57,9 @@ public class  Response {
             List<Integer> generatedTokens,
             long promptTimeMs,
             long generateTimeMs,
+            double timeToFirstTokenMs,
+            double avgTimePerTokenMs,
+            double totalTimeMs,
             List<ToolCall> toolCalls,
             List<SamplerReturn> samplerReturns
     ) {
@@ -60,6 +71,9 @@ public class  Response {
         this.generatedTokens = generatedTokens;
         this.promptTimeMs = promptTimeMs;
         this.generateTimeMs = generateTimeMs;
+        this.timeToFirstTokenMs = timeToFirstTokenMs;
+        this.avgTimePerTokenMs = avgTimePerTokenMs;
+        this.totalTimeMs = totalTimeMs;
         this.toolCalls = toolCalls;
         this.samplerReturns = samplerReturns;
     }
@@ -74,6 +88,9 @@ public class  Response {
                 generatedTokens,
                 promptTimeMs,
                 generateTimeMs,
+                timeToFirstTokenMs,
+                avgTimePerTokenMs,
+                totalTimeMs,
                 toolCalls,
                 samplerReturns
         );
@@ -89,6 +106,27 @@ public class  Response {
                 generatedTokens,
                 promptTimeMs,
                 generateTimeMs,
+                timeToFirstTokenMs,
+                avgTimePerTokenMs,
+                totalTimeMs,
+                toolCalls,
+                samplerReturns
+        );
+    }
+
+    public Response copyWithTiming(double timeToFirstTokenMs, double avgTimePerTokenMs, double totalTimeMs) {
+        return new Response(
+                responseText,
+                responseTextWithSpecialTokens,
+                reasoning,
+                finishReason,
+                promptTokens,
+                generatedTokens,
+                promptTimeMs,
+                generateTimeMs,
+                timeToFirstTokenMs,
+                avgTimePerTokenMs,
+                totalTimeMs,
                 toolCalls,
                 samplerReturns
         );
@@ -106,6 +144,9 @@ public class  Response {
                 ", samplerReturns=" + samplerReturns +
                 ", promptTimeMs=" + promptTimeMs +
                 ", generateTimeMs=" + generateTimeMs +
+                ", timeToFirstTokenMs=" + timeToFirstTokenMs +
+                ", avgTimePerTokenMs=" + avgTimePerTokenMs +
+                ", totalTimeMs=" + totalTimeMs +
                 ", toolCalls=" + toolCalls +
                 '}';
     }

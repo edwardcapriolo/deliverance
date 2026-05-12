@@ -15,6 +15,8 @@ import jdk.incubator.vector.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.foreign.ValueLayout;
+
 public final class PanamaTensorOperations implements TensorOperations {
     private static final Logger logger = LoggerFactory.getLogger(PanamaTensorOperations.class);
     static final ByteVector Q4_BYTE_SUB_128 = ByteVector.broadcast(ByteVector.SPECIES_128, 8);
@@ -103,6 +105,12 @@ public final class PanamaTensorOperations implements TensorOperations {
         int M = a.shape().dim(0);
         int N = rowChunkSize; // b.shape().dim(0);
         int K = columnLength; // a.shape().dim(1);
+        int bStart = Math.max(bRowOffset, b.shape().sparseRowOffset());
+        int bEnd = Math.min(bRowOffset + N, b.shape().sparseRowOffset() + b.shape().sparseRowLength());
+
+        if (bEnd <= bStart) {
+            return;
+        }
 
         Gemmer gemm = switch (a.dType()) {
             case F32 -> switch (b.dType()) {
@@ -127,12 +135,414 @@ public final class PanamaTensorOperations implements TensorOperations {
             };
             case BF16 -> switch (b.dType()) {
                 case BF16 -> new GemmerBF16(K, a, b, result, aColumnOffset, bColumnOffset, rOffset);
+                case Q4 -> new GemmerBF16Q4(K, a, b, result, aColumnOffset, bColumnOffset, rOffset);
                 default -> throw new UnsupportedOperationException(b.dType().name());
             };
             default -> throw new UnsupportedOperationException(a.dType().name() + " " + b.dType().name());
         };
 
-        gemm.matmul(0, M, bRowOffset, bRowOffset + N);
+        gemm.matmul(0, M, bStart, bEnd);
+    }
+
+    private class GemmerBF16Q4 extends Gemmer {
+        final BiIntConsumer matmul1x1;
+        final BiIntConsumer matmul1x4;
+        final BiIntConsumer matmul4x1;
+        final BiIntConsumer matmul4x4;
+        final Q4ByteBufferTensor b;
+        final BFloat16BufferTensor a;
+
+        GemmerBF16Q4(int k, AbstractTensor a, AbstractTensor b, AbstractTensor c, int aColumnOffset, int bColumnOffset, int rOffset) {
+            super(k, a, b, c, aColumnOffset, bColumnOffset, rOffset);
+            this.a = (BFloat16BufferTensor) a;
+            this.b = (Q4ByteBufferTensor) b;
+            this.matmul1x1 = switch (vectorType) {
+                case AVX_256 -> initMatmul1x1_256();
+                case AVX_512 -> initMatmul1x1_512();
+                //case AVX_128,
+                case ARM_128 -> initMatmul1x1_arm();
+                default -> throw new UnsupportedOperationException(vectorType.name());
+            };
+            this.matmul1x4 = switch (vectorType) {
+                case AVX_256 -> initMatmul1x4_256();
+                case AVX_512 -> initMatmul1x4_512();
+                //case AVX_128,
+                case ARM_128 -> initMatmul1x4_arm();
+                default -> throw new UnsupportedOperationException(vectorType.name());
+            };
+            this.matmul4x1 = switch (vectorType) {
+                case ARM_128 -> initMatmul4x1_arm();
+                default -> null;
+            };
+            this.matmul4x4 = switch (vectorType) {
+                case ARM_128 -> initMatmul4x4_arm();
+                default -> null;
+            };
+        }
+
+        @Override
+        protected int pickKernel(int m0, int m, int n0, int n) {
+            short mc, nc;
+            if (matmul4x4 != null && m - m0 >= 4 && n - n0 >= 4) {
+                mc = 4;
+                nc = 4;
+                kernel(m0, m, 4, n0, n, 4, matmul4x4);
+            } else if (matmul4x1 != null && m - m0 >= 4 && n - n0 >= 1) {
+                mc = 4;
+                nc = 1;
+                kernel(m0, m, 4, n0, n, 1, matmul4x1);
+            } else if (matmul1x4 != null && (vectorType == MachineSpec.Type.AVX_512 || vectorType == MachineSpec.Type.ARM_128)
+                    && m - m0 >= 1 && n - n0 >= 4) {
+                mc = 1;
+                nc = 4;
+                kernel(m0, m, 1, n0, n, 4, matmul1x4);
+            } else if (matmul1x4 != null && vectorType == MachineSpec.Type.AVX_256 && m - m0 >= 1 && n - n0 >= 2) {
+                // The AVX-256 kernel only writes two output columns, so tile it as 1x2.
+                mc = 1;
+                nc = 2;
+                kernel(m0, m, 1, n0, n, 2, matmul1x4);
+            } else {
+                mc = 1;
+                nc = 1;
+                kernel(m0, m, 1, n0, n, 1, matmul1x1);
+            }
+            return (mc << 4) | nc;
+        }
+
+        @Override
+        void matmul(int m0, int m, int n0, int n) {
+            super.matmul(m0, m, n0, n);
+        }
+
+        private int residentRowEnd() {
+            return b.shape().sparseRowOffset() + b.shape().sparseRowLength();
+        }
+
+        private float decodeQ4(int row, int column) {
+            Preconditions.checkArgument(row >= b.shape().sparseRowOffset() && row < residentRowEnd(),
+                    "Requested row %s outside resident Q4 rows [%s,%s)", row, b.shape().sparseRowOffset(), residentRowEnd());
+            Preconditions.checkArgument(column >= b.shape().sparseColumnOffset()
+                            && column < b.shape().sparseColumnOffset() + b.shape().sparseColumnLength(),
+                    "Requested column %s outside resident Q4 columns [%s,%s)",
+                    column,
+                    b.shape().sparseColumnOffset(),
+                    b.shape().sparseColumnOffset() + b.shape().sparseColumnLength());
+
+            int flatIndex = b.getOffset(row, column);
+            int blockBaseByte = (flatIndex / Q4ByteBufferTensor.BLOCK_SIZE) * Q4ByteBufferTensor.HALF_BLOCK;
+            int withinBlock = flatIndex % Q4ByteBufferTensor.BLOCK_SIZE;
+            int byteIndex = blockBaseByte + (withinBlock % Q4ByteBufferTensor.HALF_BLOCK);
+            int packed = Byte.toUnsignedInt(b.getMemorySegment().get(ValueLayout.JAVA_BYTE, byteIndex));
+            int q = withinBlock < Q4ByteBufferTensor.HALF_BLOCK ? (packed & 0x0F) - 8 : ((packed >>> 4) & 0x0F) - 8;
+            return q * b.getFactorForIndex(row, column);
+        }
+
+        private static float bf16ToFloat(short raw) {
+            return Float.intBitsToFloat(Short.toUnsignedInt(raw) << 16);
+        }
+
+        private float scalarDot(int i, int j) {
+            float acc = 0f;
+            int aidx = aColumnOffset;
+            int bidx = bColumnOffset;
+            int remaining = k;
+
+            if (((aColumnOffset | bColumnOffset | k) & (Q4ByteBufferTensor.BLOCK_SIZE - 1)) == 0) {
+                var aSegment = a.getMemorySegment();
+                var bSegment = b.getMemorySegment();
+                while (remaining >= Q4ByteBufferTensor.BLOCK_SIZE) {
+                    int aFlat = a.getOffset(i, aidx);
+                    int bFlat = b.getOffset(j, bidx);
+                    long aByteBase = a.getMemorySegmentOffset(aFlat);
+                    long bByteBase = b.getMemorySegmentOffset(bFlat);
+                    float scale = b.getFactorForIndex(j, bidx);
+
+                    for (int p = 0; p < Q4ByteBufferTensor.HALF_BLOCK; p++) {
+                        int packed = Byte.toUnsignedInt(bSegment.get(ValueLayout.JAVA_BYTE, bByteBase + p));
+                        int q0 = (packed & 0x0F) - 8;
+                        int q1 = ((packed >>> 4) & 0x0F) - 8;
+
+                        short low = aSegment.get(ValueLayout.JAVA_SHORT, aByteBase + ((long) p * Short.BYTES));
+                        short high = aSegment.get(ValueLayout.JAVA_SHORT,
+                                aByteBase + ((long) (p + Q4ByteBufferTensor.HALF_BLOCK) * Short.BYTES));
+
+                        acc += bf16ToFloat(low) * q0 * scale;
+                        acc += bf16ToFloat(high) * q1 * scale;
+                    }
+
+                    aidx += Q4ByteBufferTensor.BLOCK_SIZE;
+                    bidx += Q4ByteBufferTensor.BLOCK_SIZE;
+                    remaining -= Q4ByteBufferTensor.BLOCK_SIZE;
+                }
+            }
+
+            for (int alim = aidx + remaining; aidx < alim; aidx++, bidx++) {
+                acc += a.get(i, aidx) * decodeQ4(j, bidx);
+            }
+            return acc;
+        }
+
+        private void scalarDotColumns(int i, int j, int width) {
+            for (int col = 0; col < width; col++) {
+                c.set(scalarDot(i, j + col), i, j + col + rOffset);
+            }
+        }
+
+        private void blockDotColumns(int i, int j, int width) {
+            if (((aColumnOffset | bColumnOffset | k) & (Q4ByteBufferTensor.BLOCK_SIZE - 1)) != 0) {
+                scalarDotColumns(i, j, width);
+                return;
+            }
+
+            Preconditions.checkArgument(width == 4, "Unsupported width %s", width);
+
+            var aSegment = a.getMemorySegment();
+            var bSegment = b.getMemorySegment();
+            float acc0 = 0f;
+            float acc1 = 0f;
+            float acc2 = 0f;
+            float acc3 = 0f;
+
+            for (int aidx = aColumnOffset, bidx = bColumnOffset, remaining = k;
+                 remaining >= Q4ByteBufferTensor.BLOCK_SIZE;
+                 aidx += Q4ByteBufferTensor.BLOCK_SIZE, bidx += Q4ByteBufferTensor.BLOCK_SIZE, remaining -= Q4ByteBufferTensor.BLOCK_SIZE) {
+                int aFlat = a.getOffset(i, aidx);
+                long aByteBase = a.getMemorySegmentOffset(aFlat);
+
+                int bFlat0 = b.getOffset(j, bidx);
+                int bFlat1 = b.getOffset(j + 1, bidx);
+                int bFlat2 = b.getOffset(j + 2, bidx);
+                int bFlat3 = b.getOffset(j + 3, bidx);
+                long bByteBase0 = b.getMemorySegmentOffset(bFlat0);
+                long bByteBase1 = b.getMemorySegmentOffset(bFlat1);
+                long bByteBase2 = b.getMemorySegmentOffset(bFlat2);
+                long bByteBase3 = b.getMemorySegmentOffset(bFlat3);
+                float scale0 = b.getFactorForIndex(j, bidx);
+                float scale1 = b.getFactorForIndex(j + 1, bidx);
+                float scale2 = b.getFactorForIndex(j + 2, bidx);
+                float scale3 = b.getFactorForIndex(j + 3, bidx);
+
+                for (int p = 0; p < Q4ByteBufferTensor.HALF_BLOCK; p++) {
+                    short low = aSegment.get(ValueLayout.JAVA_SHORT, aByteBase + ((long) p * Short.BYTES));
+                    short high = aSegment.get(ValueLayout.JAVA_SHORT,
+                            aByteBase + ((long) (p + Q4ByteBufferTensor.HALF_BLOCK) * Short.BYTES));
+                    float lowf = bf16ToFloat(low);
+                    float highf = bf16ToFloat(high);
+
+                    int packed0 = Byte.toUnsignedInt(bSegment.get(ValueLayout.JAVA_BYTE, bByteBase0 + p));
+                    int packed1 = Byte.toUnsignedInt(bSegment.get(ValueLayout.JAVA_BYTE, bByteBase1 + p));
+                    int packed2 = Byte.toUnsignedInt(bSegment.get(ValueLayout.JAVA_BYTE, bByteBase2 + p));
+                    int packed3 = Byte.toUnsignedInt(bSegment.get(ValueLayout.JAVA_BYTE, bByteBase3 + p));
+
+                    acc0 += lowf * ((packed0 & 0x0F) - 8) * scale0;
+                    acc0 += highf * (((packed0 >>> 4) & 0x0F) - 8) * scale0;
+                    acc1 += lowf * ((packed1 & 0x0F) - 8) * scale1;
+                    acc1 += highf * (((packed1 >>> 4) & 0x0F) - 8) * scale1;
+                    acc2 += lowf * ((packed2 & 0x0F) - 8) * scale2;
+                    acc2 += highf * (((packed2 >>> 4) & 0x0F) - 8) * scale2;
+                    acc3 += lowf * ((packed3 & 0x0F) - 8) * scale3;
+                    acc3 += highf * (((packed3 >>> 4) & 0x0F) - 8) * scale3;
+                }
+            }
+
+            c.set(acc0, i, j + rOffset);
+            c.set(acc1, i, j + 1 + rOffset);
+            c.set(acc2, i, j + 2 + rOffset);
+            c.set(acc3, i, j + 3 + rOffset);
+        }
+
+        private void blockDotRows(int i, int j, int height) {
+            if (((aColumnOffset | bColumnOffset | k) & (Q4ByteBufferTensor.BLOCK_SIZE - 1)) != 0) {
+                for (int row = 0; row < height; row++) {
+                    c.set(scalarDot(i + row, j), i + row, j + rOffset);
+                }
+                return;
+            }
+
+            Preconditions.checkArgument(height == 4, "Unsupported height %s", height);
+
+            var aSegment = a.getMemorySegment();
+            var bSegment = b.getMemorySegment();
+            float acc0 = 0f;
+            float acc1 = 0f;
+            float acc2 = 0f;
+            float acc3 = 0f;
+
+            for (int aidx = aColumnOffset, bidx = bColumnOffset, remaining = k;
+                 remaining >= Q4ByteBufferTensor.BLOCK_SIZE;
+                 aidx += Q4ByteBufferTensor.BLOCK_SIZE, bidx += Q4ByteBufferTensor.BLOCK_SIZE, remaining -= Q4ByteBufferTensor.BLOCK_SIZE) {
+                int aFlat0 = a.getOffset(i, aidx);
+                int aFlat1 = a.getOffset(i + 1, aidx);
+                int aFlat2 = a.getOffset(i + 2, aidx);
+                int aFlat3 = a.getOffset(i + 3, aidx);
+                long aByteBase0 = a.getMemorySegmentOffset(aFlat0);
+                long aByteBase1 = a.getMemorySegmentOffset(aFlat1);
+                long aByteBase2 = a.getMemorySegmentOffset(aFlat2);
+                long aByteBase3 = a.getMemorySegmentOffset(aFlat3);
+
+                int bFlat = b.getOffset(j, bidx);
+                long bByteBase = b.getMemorySegmentOffset(bFlat);
+                float scale = b.getFactorForIndex(j, bidx);
+
+                for (int p = 0; p < Q4ByteBufferTensor.HALF_BLOCK; p++) {
+                    int packed = Byte.toUnsignedInt(bSegment.get(ValueLayout.JAVA_BYTE, bByteBase + p));
+                    float lowq = ((packed & 0x0F) - 8) * scale;
+                    float highq = (((packed >>> 4) & 0x0F) - 8) * scale;
+
+                    short low0 = aSegment.get(ValueLayout.JAVA_SHORT, aByteBase0 + ((long) p * Short.BYTES));
+                    short low1 = aSegment.get(ValueLayout.JAVA_SHORT, aByteBase1 + ((long) p * Short.BYTES));
+                    short low2 = aSegment.get(ValueLayout.JAVA_SHORT, aByteBase2 + ((long) p * Short.BYTES));
+                    short low3 = aSegment.get(ValueLayout.JAVA_SHORT, aByteBase3 + ((long) p * Short.BYTES));
+                    short high0 = aSegment.get(ValueLayout.JAVA_SHORT, aByteBase0 + ((long) (p + Q4ByteBufferTensor.HALF_BLOCK) * Short.BYTES));
+                    short high1 = aSegment.get(ValueLayout.JAVA_SHORT, aByteBase1 + ((long) (p + Q4ByteBufferTensor.HALF_BLOCK) * Short.BYTES));
+                    short high2 = aSegment.get(ValueLayout.JAVA_SHORT, aByteBase2 + ((long) (p + Q4ByteBufferTensor.HALF_BLOCK) * Short.BYTES));
+                    short high3 = aSegment.get(ValueLayout.JAVA_SHORT, aByteBase3 + ((long) (p + Q4ByteBufferTensor.HALF_BLOCK) * Short.BYTES));
+
+                    acc0 += bf16ToFloat(low0) * lowq + bf16ToFloat(high0) * highq;
+                    acc1 += bf16ToFloat(low1) * lowq + bf16ToFloat(high1) * highq;
+                    acc2 += bf16ToFloat(low2) * lowq + bf16ToFloat(high2) * highq;
+                    acc3 += bf16ToFloat(low3) * lowq + bf16ToFloat(high3) * highq;
+                }
+            }
+
+            c.set(acc0, i, j + rOffset);
+            c.set(acc1, i + 1, j + rOffset);
+            c.set(acc2, i + 2, j + rOffset);
+            c.set(acc3, i + 3, j + rOffset);
+        }
+
+        private void blockDot4x4(int i, int j) {
+            if (((aColumnOffset | bColumnOffset | k) & (Q4ByteBufferTensor.BLOCK_SIZE - 1)) != 0) {
+                for (int row = 0; row < 4; row++) {
+                    scalarDotColumns(i + row, j, 4);
+                }
+                return;
+            }
+
+            var aSegment = a.getMemorySegment();
+            var bSegment = b.getMemorySegment();
+
+            float acc00 = 0f, acc01 = 0f, acc02 = 0f, acc03 = 0f;
+            float acc10 = 0f, acc11 = 0f, acc12 = 0f, acc13 = 0f;
+            float acc20 = 0f, acc21 = 0f, acc22 = 0f, acc23 = 0f;
+            float acc30 = 0f, acc31 = 0f, acc32 = 0f, acc33 = 0f;
+
+            for (int aidx = aColumnOffset, bidx = bColumnOffset, remaining = k;
+                 remaining >= Q4ByteBufferTensor.BLOCK_SIZE;
+                 aidx += Q4ByteBufferTensor.BLOCK_SIZE, bidx += Q4ByteBufferTensor.BLOCK_SIZE, remaining -= Q4ByteBufferTensor.BLOCK_SIZE) {
+                int aFlat0 = a.getOffset(i, aidx);
+                int aFlat1 = a.getOffset(i + 1, aidx);
+                int aFlat2 = a.getOffset(i + 2, aidx);
+                int aFlat3 = a.getOffset(i + 3, aidx);
+                long aByteBase0 = a.getMemorySegmentOffset(aFlat0);
+                long aByteBase1 = a.getMemorySegmentOffset(aFlat1);
+                long aByteBase2 = a.getMemorySegmentOffset(aFlat2);
+                long aByteBase3 = a.getMemorySegmentOffset(aFlat3);
+
+                int bFlat0 = b.getOffset(j, bidx);
+                int bFlat1 = b.getOffset(j + 1, bidx);
+                int bFlat2 = b.getOffset(j + 2, bidx);
+                int bFlat3 = b.getOffset(j + 3, bidx);
+                long bByteBase0 = b.getMemorySegmentOffset(bFlat0);
+                long bByteBase1 = b.getMemorySegmentOffset(bFlat1);
+                long bByteBase2 = b.getMemorySegmentOffset(bFlat2);
+                long bByteBase3 = b.getMemorySegmentOffset(bFlat3);
+                float scale0 = b.getFactorForIndex(j, bidx);
+                float scale1 = b.getFactorForIndex(j + 1, bidx);
+                float scale2 = b.getFactorForIndex(j + 2, bidx);
+                float scale3 = b.getFactorForIndex(j + 3, bidx);
+
+                for (int p = 0; p < Q4ByteBufferTensor.HALF_BLOCK; p++) {
+                    float a0l = bf16ToFloat(aSegment.get(ValueLayout.JAVA_SHORT, aByteBase0 + ((long) p * Short.BYTES)));
+                    float a1l = bf16ToFloat(aSegment.get(ValueLayout.JAVA_SHORT, aByteBase1 + ((long) p * Short.BYTES)));
+                    float a2l = bf16ToFloat(aSegment.get(ValueLayout.JAVA_SHORT, aByteBase2 + ((long) p * Short.BYTES)));
+                    float a3l = bf16ToFloat(aSegment.get(ValueLayout.JAVA_SHORT, aByteBase3 + ((long) p * Short.BYTES)));
+                    float a0h = bf16ToFloat(aSegment.get(ValueLayout.JAVA_SHORT, aByteBase0 + ((long) (p + Q4ByteBufferTensor.HALF_BLOCK) * Short.BYTES)));
+                    float a1h = bf16ToFloat(aSegment.get(ValueLayout.JAVA_SHORT, aByteBase1 + ((long) (p + Q4ByteBufferTensor.HALF_BLOCK) * Short.BYTES)));
+                    float a2h = bf16ToFloat(aSegment.get(ValueLayout.JAVA_SHORT, aByteBase2 + ((long) (p + Q4ByteBufferTensor.HALF_BLOCK) * Short.BYTES)));
+                    float a3h = bf16ToFloat(aSegment.get(ValueLayout.JAVA_SHORT, aByteBase3 + ((long) (p + Q4ByteBufferTensor.HALF_BLOCK) * Short.BYTES)));
+
+                    int packed0 = Byte.toUnsignedInt(bSegment.get(ValueLayout.JAVA_BYTE, bByteBase0 + p));
+                    int packed1 = Byte.toUnsignedInt(bSegment.get(ValueLayout.JAVA_BYTE, bByteBase1 + p));
+                    int packed2 = Byte.toUnsignedInt(bSegment.get(ValueLayout.JAVA_BYTE, bByteBase2 + p));
+                    int packed3 = Byte.toUnsignedInt(bSegment.get(ValueLayout.JAVA_BYTE, bByteBase3 + p));
+                    float q0l = ((packed0 & 0x0F) - 8) * scale0;
+                    float q0h = (((packed0 >>> 4) & 0x0F) - 8) * scale0;
+                    float q1l = ((packed1 & 0x0F) - 8) * scale1;
+                    float q1h = (((packed1 >>> 4) & 0x0F) - 8) * scale1;
+                    float q2l = ((packed2 & 0x0F) - 8) * scale2;
+                    float q2h = (((packed2 >>> 4) & 0x0F) - 8) * scale2;
+                    float q3l = ((packed3 & 0x0F) - 8) * scale3;
+                    float q3h = (((packed3 >>> 4) & 0x0F) - 8) * scale3;
+
+                    acc00 += a0l * q0l + a0h * q0h;
+                    acc01 += a0l * q1l + a0h * q1h;
+                    acc02 += a0l * q2l + a0h * q2h;
+                    acc03 += a0l * q3l + a0h * q3h;
+                    acc10 += a1l * q0l + a1h * q0h;
+                    acc11 += a1l * q1l + a1h * q1h;
+                    acc12 += a1l * q2l + a1h * q2h;
+                    acc13 += a1l * q3l + a1h * q3h;
+                    acc20 += a2l * q0l + a2h * q0h;
+                    acc21 += a2l * q1l + a2h * q1h;
+                    acc22 += a2l * q2l + a2h * q2h;
+                    acc23 += a2l * q3l + a2h * q3h;
+                    acc30 += a3l * q0l + a3h * q0h;
+                    acc31 += a3l * q1l + a3h * q1h;
+                    acc32 += a3l * q2l + a3h * q2h;
+                    acc33 += a3l * q3l + a3h * q3h;
+                }
+            }
+
+            c.set(acc00, i, j + rOffset);
+            c.set(acc01, i, j + 1 + rOffset);
+            c.set(acc02, i, j + 2 + rOffset);
+            c.set(acc03, i, j + 3 + rOffset);
+            c.set(acc10, i + 1, j + rOffset);
+            c.set(acc11, i + 1, j + 1 + rOffset);
+            c.set(acc12, i + 1, j + 2 + rOffset);
+            c.set(acc13, i + 1, j + 3 + rOffset);
+            c.set(acc20, i + 2, j + rOffset);
+            c.set(acc21, i + 2, j + 1 + rOffset);
+            c.set(acc22, i + 2, j + 2 + rOffset);
+            c.set(acc23, i + 2, j + 3 + rOffset);
+            c.set(acc30, i + 3, j + rOffset);
+            c.set(acc31, i + 3, j + 1 + rOffset);
+            c.set(acc32, i + 3, j + 2 + rOffset);
+            c.set(acc33, i + 3, j + 3 + rOffset);
+        }
+
+        protected BiIntConsumer initMatmul1x1_arm() {
+            return (i, j) -> c.set(scalarDot(i, j), i, j + rOffset);
+        }
+
+        protected BiIntConsumer initMatmul1x4_arm() {
+            return (i, j) -> blockDotColumns(i, j, 4);
+        }
+
+        protected BiIntConsumer initMatmul4x1_arm() {
+            return (i, j) -> blockDotRows(i, j, 4);
+        }
+
+        protected BiIntConsumer initMatmul4x4_arm() {
+            return this::blockDot4x4;
+        }
+
+        protected BiIntConsumer initMatmul1x1_256() {
+            return (i, j) -> c.set(scalarDot(i, j), i, j + rOffset);
+        }
+
+        protected BiIntConsumer initMatmul1x4_256() {
+            return (i, j) -> scalarDotColumns(i, j, 2);
+        }
+
+        protected BiIntConsumer initMatmul1x1_512() {
+            return (i, j) -> c.set(scalarDot(i, j), i, j + rOffset);
+        }
+
+        protected BiIntConsumer initMatmul1x4_512() {
+            return (i, j) -> scalarDotColumns(i, j, 4);
+        }
     }
 
     private class GemmerF32Q4_128_arm extends Gemmer {

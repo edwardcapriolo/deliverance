@@ -18,6 +18,7 @@ public class Gemma2Suite {
     public static AbstractModel getOrCreate(){
         if (model == null){
             ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
+            //ModelFetcher fetch = new ModelFetcher("google", "gemma-2-2b-it" );
             builder = AutoModelForCausaLm.newBuilder(fetch);
             model = builder.build();
         }

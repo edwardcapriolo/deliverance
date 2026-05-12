@@ -4,6 +4,7 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.AbstractTensorUtils;
+import io.teknek.deliverance.tensor.TensorInfo;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -20,11 +21,18 @@ public class ModelQuantizer {
     public static final Predicate<String> DEFAULT_Q4_TENSOR_FILTER = name ->
             !name.endsWith(".qb")
                     && name.endsWith(".weight")
-                    // Keep embedding tables and lm_head dense across both plain and wrapped model roots
-                    // (for example model.embed_tokens.weight vs model.language_model.embed_tokens.weight).
-                    && !name.endsWith("embed_tokens.weight")
-                    && !name.endsWith("embed_tokens_per_layer.weight")
-                    && !name.endsWith("lm_head.weight");
+                    // Match the known-good external Q4 policy more closely: quantize only the large
+                    // attention/MLP projection matrices, while keeping embeddings, norm vectors,
+                    // lm_head, and miscellaneous dense weights in their original dtype.
+                    && (
+                    name.endsWith("self_attn.q_proj.weight")
+                            || name.endsWith("self_attn.k_proj.weight")
+                            || name.endsWith("self_attn.v_proj.weight")
+                            || name.endsWith("self_attn.o_proj.weight")
+                            || name.endsWith("mlp.gate_proj.weight")
+                            || name.endsWith("mlp.up_proj.weight")
+                            || name.endsWith("mlp.down_proj.weight")
+            );
 
     public ModelQuantizer() {
         this(SafeTensorWriter.DEFAULT_MAX_SHARD_SIZE);
@@ -95,6 +103,10 @@ public class ModelQuantizer {
      */
     boolean canQuantize(AbstractTensor tensor, DType targetType) {
         return tensor.dType() != targetType && tensor.shape().dims() == 2;
+    }
+
+    boolean canQuantize(TensorInfo tensorInfo, DType targetType) {
+        return tensorInfo.dType != targetType && tensorInfo.shape.length == 2;
     }
 
     /**
