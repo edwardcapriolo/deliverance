@@ -39,6 +39,15 @@
         <metrics.version>4.2.37</metrics.version>
 
         <langchain4j.version>1.11.0</langchain4j.version>
+        <!-- Shared plugin versions -->
+        <openapi.generator.version>7.16.0</openapi.generator.version>
+        <maven.compiler.plugin.version>3.14.0</maven.compiler.plugin.version>
+        <build.helper.maven.plugin.version>3.5.0</build.helper.maven.plugin.version>
+        <retrofit.version>2.11.0</retrofit.version>
+        <okhttp.version>4.12.0</okhttp.version>
+        <jakarta.annotation.version>2.1.1</jakarta.annotation.version>
+        <jackson.nullable.version>0.2.6</jackson.nullable.version>
+        <oltu.version>1.0.1</oltu.version>
     </properties>
 
     <modules>
@@ -50,6 +59,7 @@
         <module>sketches</module>
         <module>web</module>
         <module>grace</module>
+        <module>client</module>
        <!-- <module>vibrant-maven-plugin</module> -->
     </modules>
     <build>

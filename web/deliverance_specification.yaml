@@ -5,12 +5,12 @@ info:
   version: "3.0.0"
   contact:
     name: deliverance code owners
-    url: github.com/edwardcapriolo/deliverance
+    url: https://github.com/edwardcapriolo/deliverance
   license:
     name: ASFV2
-    url: https://LICENSE
+    url: https://www.apache.org/licenses/LICENSE-2.0
 servers:
-  - url: https://soon
+  - url: http://localhost:8080
 
 paths:
   /chat/completions:
