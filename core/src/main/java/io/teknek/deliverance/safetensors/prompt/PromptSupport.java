@@ -136,23 +136,20 @@ public class PromptSupport {
         }
 
         public PromptContext build() {
-            if (tools.isEmpty()) {
-                return build(Optional.empty());
-            } else {
-                return build(Optional.of(tools));
-            }
+            return build(Optional.empty());
         }
 
         /**
          *
-         * @param tools adds the list of tools to the existing list inside the builder
+         * @param additionalTools adds the list of tools to the existing list inside the builder
          */
         public PromptContext build(List<Tool> additionalTools) {
-            tools.addAll(additionalTools);
-            return build(Optional.of(tools));
+            return build(Optional.of(additionalTools));
         }
 
         private PromptContext build(Optional<List<Tool>> optionalTools) {
+            List<Tool> renderTools = new ArrayList<>(tools);
+            optionalTools.ifPresent(renderTools::addAll);
             if (messages.isEmpty()) {
                 throw new IllegalArgumentException("No messages to generate prompt");
             }
@@ -167,7 +164,7 @@ public class PromptSupport {
                         .map(t -> t.get(type.name().toLowerCase()))
                         .orElseThrow(() -> new UnsupportedOperationException("Prompt template not available for type: " + type));
             }
-            if (optionalTools.isPresent() && !optionalTools.get().isEmpty() && !tokenizerModel.hasToolSupport()) {
+            if (!renderTools.isEmpty() && !tokenizerModel.hasToolSupport()) {
                 throw new RuntimeException("This model does not support tools, but tools are specified");
             }
             String preamble = "";
@@ -186,10 +183,8 @@ public class PromptSupport {
                             addGenerationPrompt, "eos_token", tokenizerModel.getEosToken(), "bos_token", "")
             );
             args.putAll(templateArgs);
-            //optionalTools.ifPresent(tools -> args.put("tools", tools));
-            optionalTools.ifPresent(this.tools::addAll);
-            if (!tools.isEmpty()){
-                args.put("tools", tools);
+            if (!renderTools.isEmpty()){
+                args.put("tools", renderTools);
             }
             RenderResult renderResult = jinJava.renderForResult(template, args);
             if (renderResult.hasErrors()) {

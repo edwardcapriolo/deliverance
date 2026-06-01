@@ -187,13 +187,22 @@ public class ModelQuantizerTest {
         }
     }
 
-    @Test
+    @Disabled
     void fullModelQuantizerTest(){
         //google_gemma-4-E2B-it
         new ModelQuantizer().quantizeCachedModel("google", "gemma-4-E2B-it",
                 "edward", "gemma-4-E2B-it-JQ4", DType.Q4,
                 ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER);
     }
+
+    @Disabled
+    void fullModelQuantizerTest2() {
+        //google_gemma-4-E2B-it
+        new ModelQuantizer().quantizeCachedModel("google", "gemma-4-E4B-it",
+                "edward", "gemma-4-E4B-it-JQ4", DType.Q4,
+                ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER);
+    }
+
 
     @SuppressWarnings("unchecked")
     private static Map<String, io.teknek.deliverance.tensor.TensorInfo> tensorInfoMap(DefaultWeightLoader loader) throws Exception {

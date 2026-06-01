@@ -8,8 +8,10 @@ import io.teknek.deliverance.grace.TokenIds;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.GenerateEvent;
 import io.teknek.deliverance.model.gemma4.Gemma4ResponseParser;
+import io.teknek.deliverance.safetensors.prompt.Function;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
+import io.teknek.deliverance.safetensors.prompt.Tool;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -18,6 +20,7 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class Gemma4PromptIT {
@@ -102,4 +105,29 @@ public class Gemma4PromptIT {
         );
         System.out.println(response);
     }*/
+
+    @Test
+    public void chatWithToolTemplate() {
+        AbstractModel model = Gemma4Suite.getOrCreate();
+        Tool tool = Tool.from(
+                Function.builder()
+                        .name("get_weather")
+                        .description("Gets the current weather.")
+                        .addParameter("location", "string", "City and state.", true)
+                        .build()
+        );
+
+        PromptContext promptContext = model.promptSupport().orElseThrow().builder()
+                .addToolItem(tool)
+                .addUserMessage("What is the weather in Albany, NY?")
+                .build();
+
+        assertEquals("""
+                <|turn>system
+                <|tool>declaration:get_weather{description:<|"|>Gets the current weather.<|"|>,parameters:{properties:{location:{description:<|"|>City and state.<|"|>,type:<|"|>STRING<|"|>}},required:[<|"|>location<|"|>],type:<|"|>OBJECT<|"|>}}<tool|><turn|>
+                <|turn>user
+                What is the weather in Albany, NY?<turn|>
+                <|turn>model
+                """, promptContext.getPrompt());
+    }
 }
