@@ -401,13 +401,13 @@ public abstract class AbstractModel implements Generator, Classifier {
         if (shouldEnd.isPresent()) {
             return Optional.of(postProcessResponse(withGenerationTiming(shouldEnd.get(), generationStartNanos, timeToFirstTokenNanos)));
         }
-        if (config.eosTokens.contains(next)) {
-            FinishReason reason = FinishReason.STOP_TOKEN;
-            return Optional.of(buildTimedResponse(reason, promptLength, responseContext, generationStartNanos, timeToFirstTokenNanos));
-        }
         Optional<Response> shouldEndTools = getToolCallParser().shouldEndTurn(responseContext, encoded.length);
         if (shouldEndTools.isPresent()) {
             return Optional.of(postProcessResponse(withGenerationTiming(shouldEndTools.get(), generationStartNanos, timeToFirstTokenNanos)));
+        }
+        if (config.eosTokens.contains(next)) {
+            FinishReason reason = FinishReason.STOP_TOKEN;
+            return Optional.of(buildTimedResponse(reason, promptLength, responseContext, generationStartNanos, timeToFirstTokenNanos));
         }
         return Optional.empty();
     }
