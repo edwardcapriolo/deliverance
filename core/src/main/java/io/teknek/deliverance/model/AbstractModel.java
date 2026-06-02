@@ -40,11 +40,46 @@ import org.slf4j.LoggerFactory;
 
 import static io.teknek.deliverance.tensor.DebugSupport.debug;
 
-
+/**
+ * Base implementation for generation, classification, embedding, and shared model utilities.
+ *
+ * <h2>Prefix KV-cache contract</h2>
+ * <p>Generation can reuse block-aligned KV prefixes through {@link KvBufferCache}. The cache is an internal
+ * performance path: it avoids recomputing already-seen prompt prefixes, then runs any uncached suffix tokens and
+ * begins decoding after the full prompt length. The position invariant is strict: cache hits must not change the
+ * decode start position or the token budget. For example, with an 8-token cached prefix and a 9-token prompt, the
+ * first generated token belongs at position 9, not 17.</p>
+ *
+ * <h2>What this does not guarantee</h2>
+ * <p>This class does not guarantee that generated text is exactly identical between a cold full-prefill request and
+ * a cache-hit request. That stronger property requires batch/chunk-invariant kernels. In practice, full prefill and
+ * split prefill can differ numerically because matrix multiplication, attention, RMSNorm, and activation
+ * quantization may use different reduction strategies or scaling decisions for different batch/chunk shapes. This is
+ * consistent with the behavior of common inference engines unless they explicitly enable deterministic,
+ * batch-invariant kernels.</p>
+ *
+ * <p>Useful background: Thinking Machines, "Defeating Nondeterminism in LLM Inference",
+ * https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/</p>
+ */
 public abstract class AbstractModel implements Generator, Classifier {
     private static final Logger logger = LoggerFactory.getLogger(AbstractModel.class);
 
     private static final Integer MAX_BATCH_SIZE = Integer.getInteger("jlama.max_batch_size", 256);
+
+    public enum GenerationDebugEventType {
+        AFTER_PREFIX_COPY,
+        AFTER_PROMPT_PREFILL
+    }
+
+    public record GenerationDebugEvent(
+            GenerationDebugEventType type,
+            int[] promptTokens,
+            int prefixLength,
+            int startPos,
+            int tokensToProcessLength,
+            KvBufferCache.KvBuffer kvBuffer
+    ) {
+    }
 
     public enum InferenceType {
         // Used for distributed inference
@@ -97,6 +132,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     protected ClassifyOutput classifyOutput;
     protected WrappedForkJoinPool pool;
     protected PreTrainedTokenizer preTrainedTokenizer;
+    private volatile Consumer<GenerationDebugEvent> generationDebugHook = event -> {};
 
     protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
                             DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider provider,
@@ -192,6 +228,22 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public void setPreTrainedTokenizer(PreTrainedTokenizer preTrainedTokenizer) {
         this.preTrainedTokenizer = preTrainedTokenizer;
+    }
+
+    /**
+     * Installs a transient observer for generation internals.
+     *
+     * <p>This hook is intentionally diagnostic rather than API-facing. It exists so tests and local debugging can
+     * inspect prefix-cache control flow or compute immediate KV fingerprints without sprinkling temporary printlns
+     * through generation. The callback must not retain references to tensors or KV buffers; compute any diagnostics
+     * inside the callback while the event is being delivered.</p>
+     */
+    public void setGenerationDebugHook(Consumer<GenerationDebugEvent> generationDebugHook) {
+        this.generationDebugHook = generationDebugHook == null ? event -> {} : generationDebugHook;
+    }
+
+    public void clearGenerationDebugHook() {
+        this.generationDebugHook = event -> {};
     }
 
 
@@ -440,24 +492,41 @@ public abstract class AbstractModel implements Generator, Classifier {
             try (AbstractTensor logits = makeDenseTensor(config.vocabularySize)) {
                 int [] promptTokens = constructPromptTokens(encoded);
 
+                // Prefix cache only changes how prompt KV state is obtained. It must not change prompt length,
+                // decode start, or generation budget. Exact generated text equivalence is a stronger
+                // batch/chunk-invariance property and is not assumed here.
                 KvBufferCache.PrefixEntry prefixHit = kvBufferCache.lookupPrefix(promptTokens, generatorParameters.cacheSalt);
                 int prefixLength = 0;
                 if (prefixHit != null) {
                     prefixLength = prefixHit.length();
                     kvBufferCache.copyPrefix(prefixHit.buffer(), kvmem, prefixLength);
+                    generationDebugHook.accept(new GenerationDebugEvent(
+                            GenerationDebugEventType.AFTER_PREFIX_COPY,
+                            promptTokens,
+                            prefixLength,
+                            prefixLength,
+                            promptTokens.length - prefixLength,
+                            kvmem));
                 }
-                int startPos = prefixLength;
+                GenerationCursor cursor = GenerationCursor.from(promptTokens, prefixLength);
+                int startPos = cursor.startPosition();
                 kvmem.setCurrentContextPosition(startPos);
-                int [] tokensToProcess = (prefixLength > 0) ?
-                        Arrays.copyOfRange(promptTokens, prefixLength, promptTokens.length) : promptTokens;
+                int [] tokensToProcess = cursor.tokensToProcess();
                 AbstractTensor last;
-                if (tokensToProcess.length > 0) {
+                if (cursor.hasTokensToProcess()) {
                     last = batchForward(tokensToProcess, startPos, kvmem);
                     kvBufferCache.storePrefix(promptTokens, kvmem, generatorParameters.cacheSalt);
                 } else {
-                    int lastToken = promptTokens[prefixLength - 1];
-                    last = forward(lastToken, startPos - 1, kvmem);
+                    last = forward(cursor.replayToken(), cursor.replayPosition(), kvmem);
                 }
+
+                generationDebugHook.accept(new GenerationDebugEvent(
+                        GenerationDebugEventType.AFTER_PROMPT_PREFILL,
+                        promptTokens,
+                        prefixLength,
+                        startPos,
+                        tokensToProcess.length,
+                        kvmem));
 
 
                 SamplerReturn nextSamplerRet = createNextToken(generatorParameters, logits, last, responseContext, random, temperature);
@@ -472,10 +541,7 @@ public abstract class AbstractModel implements Generator, Classifier {
                 if (firstStop.isPresent()) {
                     return withGenerationTiming(firstStop.get(), generationStartNanos, timeToFirstTokenNanos);
                 }
-                for (int i = startPos + promptTokens.length; i < ntokens; i++) {
-                //int decodeStart= prefixLength + tokensToProcess.length;
-
-                //for (int i=decodeStart; i < ntokens; i++){
+                for (int i = cursor.decodeStartPosition(); i < ntokens; i++) {
                     AbstractTensor output = forward(next, i, kvmem);
                     //reuse next to save memory
                     SamplerReturn nextSample = createNextTokenLoop(generatorParameters, output, logits, responseContext, random, temperature);

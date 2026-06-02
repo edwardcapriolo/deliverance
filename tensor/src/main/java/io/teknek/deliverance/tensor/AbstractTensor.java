@@ -251,6 +251,15 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
 
     public abstract int getMemorySegmentOffset(int offset);
 
+    /**
+     * Copies {@code length} logical tensor elements from {@code src} into this tensor.
+     *
+     * <p>The offsets and length are expressed in tensor elements, not bytes. Implementations that
+     * copy through raw memory segments must convert element counts to byte counts according to
+     * their storage width. For example, F32 copies {@code length * 4} bytes, BF16/F16 copy
+     * {@code length * 2} bytes, I8 copies {@code length} bytes, and packed Q4 copies
+     * {@code length / 2} bytes plus its side metadata.</p>
+     */
     public abstract void copyFrom(AbstractTensor src, int srcOffset, int destOffset, int length);
 
     /** Zero out the tensor */

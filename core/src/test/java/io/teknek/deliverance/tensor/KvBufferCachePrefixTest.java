@@ -129,6 +129,29 @@ public class KvBufferCachePrefixTest {
         }
     }
 
+    @Test
+    public void storeLookupAndCopyPrefixPreservesKeysAndValues() {
+        int blockSize = new KvBufferCacheSettings(true).getBlockSize();
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true).withMaxEntries(512);
+        AbstractModel model = mockModel();
+        KvBufferCache cache = new KvBufferCache(model, settings);
+        int[] tokens = {1, 2, 3, 4, 5, 6, 7, 8, 9};
+
+        try (KvBufferCache.KvBuffer source = cache.getEphemeralKvBuffer();
+             KvBufferCache.KvBuffer copied = cache.getEphemeralKvBuffer()) {
+            fillKv(source, model.getConfig(), blockSize);
+
+            cache.storePrefix(tokens, source, Optional.empty());
+            KvBufferCache.PrefixEntry hit = cache.lookupPrefix(tokens, Optional.empty());
+
+            assertNotNull(hit);
+            assertEquals(blockSize, hit.length());
+
+            cache.copyPrefix(hit.buffer(), copied, hit.length());
+            assertKvPrefixEquals(source, copied, model.getConfig(), hit.length());
+        }
+    }
+
     private static int fillVisibleRows(AbstractTensor packed, AbstractTensor[] pages, int position, int windowStart, int rowWidth) {
         int packedRow = 0;
         int globalOffset = 0;
@@ -145,6 +168,43 @@ public class KvBufferCachePrefixTest {
             globalOffset += page.shape().first();
         }
         return packedRow;
+    }
+
+    private static void fillKv(KvBufferCache.KvBuffer buffer, Config config, int length) {
+        for (int layer = 0; layer < config.dctx().numberOfLayers; layer++) {
+            for (int pos = 0; pos < length; pos++) {
+                try (AbstractTensor key = buffer.getKeyTensorForPosition(layer, pos);
+                     AbstractTensor value = buffer.getValTensorForPosition(layer, pos)) {
+                    for (int i = 0; i < config.kvLength; i++) {
+                        key.set(kvValue(layer, pos, i, 1_000), 0, i);
+                        value.set(kvValue(layer, pos, i, 2_000), 0, i);
+                    }
+                }
+            }
+        }
+    }
+
+    private static void assertKvPrefixEquals(KvBufferCache.KvBuffer expected, KvBufferCache.KvBuffer actual,
+            Config config, int length) {
+        for (int layer = 0; layer < config.dctx().numberOfLayers; layer++) {
+            for (int pos = 0; pos < length; pos++) {
+                try (AbstractTensor expectedKey = expected.getKeyTensorForPosition(layer, pos);
+                     AbstractTensor actualKey = actual.getKeyTensorForPosition(layer, pos);
+                     AbstractTensor expectedValue = expected.getValTensorForPosition(layer, pos);
+                     AbstractTensor actualValue = actual.getValTensorForPosition(layer, pos)) {
+                    for (int i = 0; i < config.kvLength; i++) {
+                        assertEquals(expectedKey.get(0, i), actualKey.get(0, i), 0.0f,
+                                "key layer=" + layer + " pos=" + pos + " index=" + i);
+                        assertEquals(expectedValue.get(0, i), actualValue.get(0, i), 0.0f,
+                                "value layer=" + layer + " pos=" + pos + " index=" + i);
+                    }
+                }
+            }
+        }
+    }
+
+    private static float kvValue(int layer, int pos, int index, int offset) {
+        return offset + layer * 100 + pos * 10 + index;
     }
 
 }
