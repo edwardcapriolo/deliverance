@@ -34,7 +34,6 @@ public class AutoModelForSequenceClassification {
         private TensorAllocator allocator = new ArrayQueueTensorAllocator(mr);
         private DType workingMem = DType.F32;
         private DType workingQuant = DType.I8;
-        private TokenRenderer tokenRenderer = new NoOpTokenizerRenderer();
         private ToolCallParser toolCallParser = new DefaultToolCallParser();
 
         private KvBufferCacheSettings settings = new KvBufferCacheSettings(true);
@@ -76,11 +75,6 @@ public class AutoModelForSequenceClassification {
             return this;
         }
 
-        public Builder withTokenTokenRenderer(TokenRenderer tokenRenderer) {
-            this.tokenRenderer = tokenRenderer;
-            return this;
-        }
-
         public Builder withToolCallParser(ToolCallParser toolCallParser) {
             this.toolCallParser = toolCallParser;
             return this;
@@ -110,7 +104,7 @@ public class AutoModelForSequenceClassification {
                 }
             }
             return ModelSupport.loadClassificationModel(modelRoot, workingMem, workingQuant, provider,
-                    mr, allocator, settings, fetch, tokenRenderer, toolCallParser, pool);
+                    mr, allocator, settings, fetch, toolCallParser, pool);
         }
 
         public ModelFetcher getFetch() {
@@ -131,10 +125,6 @@ public class AutoModelForSequenceClassification {
 
         public DType getWorkingQuant() {
             return workingQuant;
-        }
-
-        public TokenRenderer getTokenRenderer() {
-            return tokenRenderer;
         }
 
         public KvBufferCacheSettings getSettings() {

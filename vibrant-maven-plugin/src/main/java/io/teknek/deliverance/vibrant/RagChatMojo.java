@@ -150,7 +150,7 @@ public class RagChatMojo  extends AbstractMojo {
                                 .withStopWords(List.of("<|eot_id|>"))
                                 .withTemperature(0.2f)
                                 .withSeed(99998), (int next, String tok, String s1, float f1) -> {
-                            System.out.print( model.getTokenRenderer().tokenizerToRendered(s1));
+                            System.out.print(s1);
                         });
                         System.out.println(">> ");
                         continue;
@@ -164,7 +164,7 @@ public class RagChatMojo  extends AbstractMojo {
                             .withStopWords(List.of("<|eot_id|>"))
                             .withTemperature(0.2f)
                             .withSeed(99998), (int next, String tok, String s1, float f1) -> {
-                        System.out.print(model.getTokenRenderer().tokenizerToRendered(s1));
+                        System.out.print(s1);
                     });
                     System.out.println();
                     System.out.print(">> ");

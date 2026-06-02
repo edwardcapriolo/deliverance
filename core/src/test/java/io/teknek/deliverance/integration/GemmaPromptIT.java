@@ -39,7 +39,7 @@ public class GemmaPromptIT {
         WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(arrayQueueTensorAllocator, pool).get());
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                mr, arrayQueueTensorAllocator, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer(), new DefaultToolCallParser(), pool)) {
+                mr, arrayQueueTensorAllocator, new KvBufferCacheSettings(true), fetch, new DefaultToolCallParser(), pool)) {
             String prompt = """
                     You are a software engineer.
                     

@@ -26,7 +26,7 @@ KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
                 .withBlockSize(16);
 try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).withWorkingQuantType(DType.I8)
         .withKvBufferCacheSettings(settings)
-        .withTokenTokenRenderer(new TokenizerRenderer()).build()){
+        .build()){
 ```
 
 * maxPrefixTokensPerPrompt - Regardless of how long a prompt is sent only consider this many tokens for the cache

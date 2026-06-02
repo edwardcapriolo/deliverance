@@ -7,7 +7,6 @@ import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.model.qwen2.Qwen2ModelType;
-import io.teknek.deliverance.model.qwen2.Qwen2TokenizerRenderer;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.*;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
@@ -40,7 +39,7 @@ public class  QwenPromptTest {
         try (
              AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
                 new MetricRegistry(), arrayQueueTensorAllocator, new KvBufferCacheSettings(true), fetch,
-                new Qwen2TokenizerRenderer(), new DefaultToolCallParser(), pool)) {
+                new DefaultToolCallParser(), pool)) {
             String prompt = "What is the capital of New York, USA?";
             PromptSupport.Builder g = m.promptSupport().get().builder()
                     .addSystemMessage("You provide short answers to questions.")
@@ -75,7 +74,7 @@ public class  QwenPromptTest {
                     .description("This methods will flip a coin. The result will be H for heads or T for tails.").build());
             try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
                     new MetricRegistry(), arrayQueueTensorAllocator, new KvBufferCacheSettings(true), fetch,
-                    new TokenizerRenderer(), new DefaultToolCallParser(), pool)) {
+                    new DefaultToolCallParser(), pool)) {
                 String prompt = "Call the function flip_coin print the result.";
                 PromptSupport.Builder g = m.promptSupport().get().builder()
                         .useChatTemplate(text)
@@ -128,7 +127,7 @@ Use the coinflip tool any analyze the result<|eot_id|><|start_header_id|>assista
             ModelSupport.addModel("QWEN2", new Qwen2ModelType());
             try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
                     new MetricRegistry(), arrayQueueTensorAllocator, new KvBufferCacheSettings(true), fetch,
-                    new Qwen2TokenizerRenderer(), new DefaultToolCallParser(), pool)) {
+                    new DefaultToolCallParser(), pool)) {
                 /**
                  *     >>> tokenizer("Hello world")["input_ids"]
                  *     [9707, 1879]
@@ -166,8 +165,7 @@ Use the coinflip tool any analyze the result<|eot_id|><|start_header_id|>assista
         ModelFetcher fetch = new ModelFetcher("tjake", "Qwen2.5-0.5B-Instruct-JQ4");
         Tool tool = Tool.from(Function.builder().name("flip_coin")
                 .description("This methods will flip a coin. The result will be H for heads or T for tails.").build());
-        try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch)
-                .withTokenTokenRenderer(new Qwen2TokenizerRenderer()).build()){
+        try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).build()){
             String prompt = "Call a function to simulate a coin flip";
             PromptSupport.Builder g = m.promptSupport().get().builder()
                     .addToolCall(new ToolCall("flip_coin", "flip_coin1", Map.of()))

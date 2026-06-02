@@ -25,14 +25,12 @@ public class ResponseContext {
         int token = samplerReturn.token;
         generatedTokens.add(token);
         String decoded = abstractModel.decodeToken(token);
-        //todo do we need this anymore since grace should handle padding right?
-        String cleaned = abstractModel.tokenRenderer.tokenizerToRendered(decoded);
-        if (abstractModel.tokenizer.getModel().isSpecialToken(token)) {
-            responseTextWithSpecialTokens.append(cleaned);
+        if (abstractModel.isSpecialToken(token)) {
+            responseTextWithSpecialTokens.append(decoded);
         } else {
-            event.emit(token, decoded, cleaned, 0);
-            responseText.append(cleaned);
-            responseTextWithSpecialTokens.append(cleaned);
+            event.emit(token, decoded, decoded, 0);
+            responseText.append(decoded);
+            responseTextWithSpecialTokens.append(decoded);
         }
     }
 

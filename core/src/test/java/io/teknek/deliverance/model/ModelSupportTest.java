@@ -6,7 +6,6 @@ import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
-import io.teknek.deliverance.model.llama.LlamaTokenizer;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.tensor.*;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
@@ -39,9 +38,9 @@ public class ModelSupportTest {
 
              AbstractModel abstractModel = ModelSupport.loadModel(f, DType.F32, DType.F32,
                      new ConfigurableTensorProvider(tc, pool), mr, new ArrayQueueTensorAllocator(mr),
-                     new KvBufferCacheSettings(true), fetch, new TokenizerRenderer(), new DefaultToolCallParser(), pool)) {
+                     new KvBufferCacheSettings(true), fetch, new DefaultToolCallParser(), pool)) {
 
-            assertEquals(LlamaTokenizer.class, abstractModel.tokenizer.getClass());
+            assertEquals(io.teknek.deliverance.grace.GemmaTokenizer.class, abstractModel.getTokenizer().getClass());
             {
                 String prompt = "What comes next in the sequence? 1, 2, 3 ";
                 PromptContext ctx = PromptContext.of(prompt);

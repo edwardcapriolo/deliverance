@@ -38,7 +38,7 @@ public class RandomNumberIT {
 
             try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
                     new MetricRegistry(), arrayQueueTensorAllocator, new KvBufferCacheSettings(true), fetch,
-                    new TokenizerRenderer(), new DefaultToolCallParser(), pool)) {
+                    new DefaultToolCallParser(), pool)) {
                 String prompt = "Pick a random number between 0 and 100";
                 PromptContext ctx = PromptContext.of(prompt);
                 var uuid = UUID.randomUUID();
@@ -66,7 +66,7 @@ public class RandomNumberIT {
                 .withBlockSize(8);
         try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).withWorkingQuantType(DType.I8)
                 .withKvBufferCacheSettings(settings)
-                .withTokenTokenRenderer(new TokenizerRenderer()).build()){
+                .build()){
             String prompt = "Generate a java interface named Shape with a method name calculateArea.";
             PromptContext ctx = m.promptSupport().get().builder()
                     .addSystemMessage("You are an assistant that produces concise, production-grade software.")

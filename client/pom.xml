@@ -132,15 +132,15 @@
                             <inputSpec>${project.basedir}/../web/deliverance_specification.yaml</inputSpec>
                             <generatorName>java</generatorName>
                             <library>retrofit2</library>
-<!--
                             <globalProperties>
                                 <apis>true</apis>
                                 <models>true</models>
                                 <supportingFiles>true</supportingFiles>
+                                <apiTests>false</apiTests>
+                                <modelTests>false</modelTests>
                                 <apiDocs>false</apiDocs>
                                 <modelDocs>false</modelDocs>
                             </globalProperties>
--->
                             <!-- Use standard OpenAPI output; sources live under src/main/java inside this dir -->
                             <output>${project.build.directory}/generated-sources/openapi</output>
 
@@ -178,6 +178,27 @@
                             <sources>
                                 <source>${project.build.directory}/generated-sources/openapi/src/main/java</source>
                             </sources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <artifactId>maven-clean-plugin</artifactId>
+                <version>3.4.1</version>
+                <executions>
+                    <execution>
+                        <id>remove-generated-openapi-tests</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                        <configuration>
+                            <excludeDefaultDirectories>true</excludeDefaultDirectories>
+                            <filesets>
+                                <fileset>
+                                    <directory>${project.build.directory}/generated-sources/openapi/src/test</directory>
+                                </fileset>
+                            </filesets>
                         </configuration>
                     </execution>
                 </executions>

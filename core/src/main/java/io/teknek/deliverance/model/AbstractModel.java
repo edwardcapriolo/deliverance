@@ -16,6 +16,7 @@ import io.teknek.deliverance.Classifier;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.classifier.ClassifyOutput;
 import io.teknek.deliverance.embedding.PoolingLayer;
+
 import io.teknek.deliverance.embedding.PoolingType;
 import io.teknek.deliverance.generator.*;
 import io.teknek.deliverance.grace.EncodeOptions;
@@ -32,7 +33,6 @@ import io.teknek.deliverance.tensor.*;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import io.teknek.deliverance.tokenizer.Tokenizer;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import jdk.incubator.vector.FloatVector;
 import org.slf4j.Logger;
@@ -110,7 +110,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     protected final InferenceType inferenceType;
     protected final Config config;
     protected final WeightLoader weights;
-    protected final Tokenizer tokenizer;
+    protected final PreTrainedTokenizer tokenizer;
     protected final DType modelDType;
     protected final DType workingDType;
     protected final DType workingQType;
@@ -126,18 +126,16 @@ public abstract class AbstractModel implements Generator, Classifier {
     //embedding
     protected Optional<PoolingLayer> poolingLayer;
 
-    protected final TokenRenderer tokenRenderer;
     protected final ToolCallParser toolCallParser;
 
     protected ClassifyOutput classifyOutput;
     protected WrappedForkJoinPool pool;
-    protected PreTrainedTokenizer preTrainedTokenizer;
     private volatile Consumer<GenerationDebugEvent> generationDebugHook = event -> {};
 
-    protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, Tokenizer t, DType workingMemoryDType,
+    protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer t, DType workingMemoryDType,
                             DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider provider,
                             MetricRegistry metricRegistry, TensorAllocator tensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
-                            TokenRenderer tokenRenderer, ToolCallParser toolCallParser, WrappedForkJoinPool pool) {
+                            ToolCallParser toolCallParser, WrappedForkJoinPool pool) {
         this.inferenceType = inferenceType;
         this.config = c;
         this.weights = w;
@@ -150,7 +148,6 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.configurableTensorProvider = provider;
         this.metricRegistry = metricRegistry;
         this.tensorAllocator = tensorAllocator;
-        this.tokenRenderer = tokenRenderer;
         this.toolCallParser = toolCallParser;
 
         if (workingMemoryQType == null) {
@@ -221,15 +218,6 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.pool = pool;
     }
 
-    //Everything else is constuctor driven but im tired of adding things to that constructor
-    public PreTrainedTokenizer getPreTrainedTokenizer() {
-        return preTrainedTokenizer;
-    }
-
-    public void setPreTrainedTokenizer(PreTrainedTokenizer preTrainedTokenizer) {
-        this.preTrainedTokenizer = preTrainedTokenizer;
-    }
-
     /**
      * Installs a transient observer for generation internals.
      *
@@ -245,8 +233,6 @@ public abstract class AbstractModel implements Generator, Classifier {
     public void clearGenerationDebugHook() {
         this.generationDebugHook = event -> {};
     }
-
-
 
     protected abstract EmbedInput loadInputWeights();
     protected abstract SampleOutput loadOutputWeights();
@@ -283,14 +269,14 @@ public abstract class AbstractModel implements Generator, Classifier {
      * @return Some if the tokenizer inside this model has a chat_template/prompt template Empty if not.
      */
     public Optional<PromptSupport> promptSupport() {
-        return tokenizer.promptSupport();
+        return tokenizer.chatTemplate().map(template -> new PromptSupport(
+                Map.of("default", template),
+                tokenizer.eosToken().orElse(""),
+                template.toLowerCase(Locale.ROOT).contains("tools")));
     }
 
     protected long[] encodeText(String text) {
-        if (preTrainedTokenizer != null) {
-            return Arrays.stream(preTrainedTokenizer.encode(text, EncodeOptions.defaults().withoutSpecialTokens()).inputIds()).asLongStream().toArray();
-        }
-        return tokenizer.encode(text);
+        return Arrays.stream(tokenizer.encode(text, EncodeOptions.defaults().withoutSpecialTokens()).inputIds()).asLongStream().toArray();
     }
 
     /**
@@ -308,10 +294,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     }
 
     protected String decodeToken(long token) {
-        if (preTrainedTokenizer != null) {
-            return preTrainedTokenizer.decode(new io.teknek.deliverance.grace.TokenIds(Ints.checkedCast(token)), false, false, false, false);
-        }
-        return tokenizer.decode(token);
+        return tokenizer.decode(new io.teknek.deliverance.grace.TokenIds(Ints.checkedCast(token)), false, false, false, false);
     }
 
     protected String decodeToken(int token) {
@@ -727,8 +710,12 @@ public abstract class AbstractModel implements Generator, Classifier {
         return t2;
     }
 
-    public Tokenizer getTokenizer(){
+    public PreTrainedTokenizer getTokenizer(){
         return this.tokenizer;
+    }
+
+    public boolean isSpecialToken(int token) {
+        return tokenizer.allSpecialIds().contains(token);
     }
 
     public TensorAllocator getTensorAllocator(){
@@ -742,10 +729,6 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     protected PoolingLayer loadPoolingWeights() {
         return null;
-    }
-
-    public TokenRenderer getTokenRenderer(){
-        return this.tokenRenderer;
     }
 
     public ToolCallParser getToolCallParser() {

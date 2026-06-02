@@ -19,7 +19,6 @@ package io.teknek.deliverance.model.qwen2;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.ModelType;
 import io.teknek.deliverance.safetensors.Config;
-import io.teknek.deliverance.tokenizer.Tokenizer;
 
 public class Qwen2ModelType implements ModelType {
     @Override
@@ -32,8 +31,4 @@ public class Qwen2ModelType implements ModelType {
         return Qwen2Config.class;
     }
 
-    @Override
-    public Class<? extends Tokenizer> getTokenizerClass() {
-        return Qwen2Tokenizer.class;
-    }
 }

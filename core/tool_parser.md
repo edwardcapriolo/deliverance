@@ -17,7 +17,7 @@ tool to flip a coin.
 ```
 Tool tool = Tool.from(Function.builder().name("flip_coin").description("This methods will flip a coin. The result will be H for he
 try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),                  
-        new MetricRegistry(), arrayQueueTensorAllocator, new KvBufferCacheSettings(true), fetch, new TokenizerRenderer())) {                    
+        new MetricRegistry(), arrayQueueTensorAllocator, new KvBufferCacheSettings(true), fetch)) {                    
     String prompt = "I would like to decide who goes first by a coin flip";                                                       
     PromptSupport.Builder g = m.promptSupport().get().builder()                                                                   
             .useChatTemplate(text)                                                                                                
@@ -144,5 +144,4 @@ response.addChoicesItem(z2);
 - The model argument of the tool are Map<String,Object>, but in the JSON it is a flat string. This means \" escapes for json etc.
 - The FINISH_REASON is "tools_call". However the model can continue generating a lot of text, and hit stop_words or max_tokens be mindful of this.
 - The code is responsible for creating ids for each tool call ""id": "call_123"
-
 

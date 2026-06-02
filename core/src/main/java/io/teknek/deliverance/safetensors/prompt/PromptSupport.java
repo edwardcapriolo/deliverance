@@ -8,7 +8,6 @@ import com.hubspot.jinjava.LegacyOverrides;
 import com.hubspot.jinjava.interpret.RenderResult;
 import com.hubspot.jinjava.lib.fn.ELFunctionDefinition;
 import io.teknek.deliverance.JsonUtils;
-import io.teknek.deliverance.tokenizer.TokenizerModel;
 
 import java.util.*;
 
@@ -16,11 +15,15 @@ import static io.teknek.deliverance.safetensors.fetch.HttpSupport.logger;
 
 public class PromptSupport {
 
-    private final TokenizerModel tokenizerModel;
+    private final Map<String, String> promptTemplates;
+    private final String eosToken;
+    private final boolean hasToolSupport;
     private final Jinjava jinjava;
 
-    public PromptSupport(TokenizerModel tokenizerModel){
-        this.tokenizerModel = tokenizerModel;
+    public PromptSupport(Map<String, String> promptTemplates, String eosToken, boolean hasToolSupport){
+        this.promptTemplates = Map.copyOf(promptTemplates == null ? Map.of() : promptTemplates);
+        this.eosToken = eosToken == null ? "" : eosToken;
+        this.hasToolSupport = hasToolSupport;
         jinjava = new Jinjava(
                 JinjavaConfig.newBuilder()
                         .withTrimBlocks(true)
@@ -51,11 +54,13 @@ public class PromptSupport {
     }
 
     public Builder builder(){
-        return new Builder(this.tokenizerModel, this.jinjava);
+        return new Builder(this.promptTemplates, this.eosToken, this.hasToolSupport, this.jinjava);
     }
 
     public static class Builder {
-        private final TokenizerModel tokenizerModel;
+        private final Map<String, String> promptTemplates;
+        private final String eosToken;
+        private final boolean hasToolSupport;
         private final Jinjava jinJava;
         private PromptType type = PromptType.DEFAULT;
         private boolean addGenerationPrompt = true;
@@ -67,8 +72,10 @@ public class PromptSupport {
 
         private boolean stripPreamble = false;
 
-        private Builder(TokenizerModel m, Jinjava jinJava) {
-            this.tokenizerModel = m;
+        private Builder(Map<String, String> promptTemplates, String eosToken, boolean hasToolSupport, Jinjava jinJava) {
+            this.promptTemplates = promptTemplates;
+            this.eosToken = eosToken;
+            this.hasToolSupport = hasToolSupport;
             this.jinJava = jinJava;
         }
 
@@ -153,25 +160,24 @@ public class PromptSupport {
             if (messages.isEmpty()) {
                 throw new IllegalArgumentException("No messages to generate prompt");
             }
-            if (tokenizerModel.getPromptTemplates().isEmpty()) {
+            if (promptTemplates.isEmpty()) {
                 throw new UnsupportedOperationException("Prompt templates are not available for this model");
             }
             String template;
             if (customizedTemplate != null){
                 template = customizedTemplate;
             } else {
-                template = tokenizerModel.getPromptTemplates()
-                        .map(t -> t.get(type.name().toLowerCase()))
+                template = Optional.ofNullable(promptTemplates.get(type.name().toLowerCase()))
                         .orElseThrow(() -> new UnsupportedOperationException("Prompt template not available for type: " + type));
             }
-            if (!renderTools.isEmpty() && !tokenizerModel.hasToolSupport()) {
+            if (!renderTools.isEmpty() && !hasToolSupport) {
                 throw new RuntimeException("This model does not support tools, but tools are specified");
             }
             String preamble = "";
             if (stripPreamble) {
                 Map<String, Object> args = new HashMap<>();
                 args.putAll(Map.of("messages", Map.of(), "add_generation_prompt", false, "eos_token",
-                        tokenizerModel.getEosToken(), "bos_token", ""));
+                        eosToken, "bos_token", ""));
                 args.putAll(templateArgs);
                 RenderResult r = jinJava.renderForResult(template, args);
                 preamble = r.getOutput();
@@ -180,7 +186,7 @@ public class PromptSupport {
             Map<String, Object> args = new HashMap<>();
             args.putAll(
                     Map.of( "messages", messages.stream().map(Message::toMap).toList(), "add_generation_prompt",
-                            addGenerationPrompt, "eos_token", tokenizerModel.getEosToken(), "bos_token", "")
+                            addGenerationPrompt, "eos_token", eosToken, "bos_token", "")
             );
             args.putAll(templateArgs);
             if (!renderTools.isEmpty()){

@@ -2,7 +2,6 @@ package io.teknek.sketches;
 
 import com.google.common.collect.BiMap;
 import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.tokenizer.Tokenizer;
 import io.teknek.sketches.types.ContextFreeGrammar;
 import io.teknek.sketches.types.JsonSchema;
 import io.teknek.sketches.types.Regex;
@@ -67,10 +66,10 @@ public class Sketches {
 
 
 
-    /* deliverance looks somewhat like transformaers and with grace we will get much closer. This
-    interface uses the current model and tokenizer from core
+    /* deliverance looks somewhat like transformers and with grace we will get much closer. This
+    interface uses the current model and its grace tokenizer.
      */
-    public SteerableModel frommDeliverance(AbstractModel model, Tokenizer tokenizer){
+    public SteerableModel frommDeliverance(AbstractModel model){
         return null;
     }
 }
