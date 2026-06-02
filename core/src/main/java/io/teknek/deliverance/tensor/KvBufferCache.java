@@ -23,6 +23,18 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * A cache for key-value buffers used in the model.
+ *
+ * <p>This cache stores complete block-aligned prompt prefixes. For a prompt with 9 runtime tokens and a block
+ * size of 8, only the first 8 tokens are eligible for reuse; the suffix token must still be run through the model
+ * at position 8. The cache key is the token prefix plus an optional salt supplied by generation parameters.</p>
+ *
+ * <p>This class guarantees only the mechanical cache behavior: block-aligned lookup, snapshot storage, and copying the
+ * stored key/value rows back into another KV buffer. Tests in {@code KvBufferCachePrefixTest} assert that round trip at
+ * the tensor-value level.</p>
+ *
+ * <p>Whether using this cache preserves generated output is a larger model-execution invariant involving
+ * {@code AbstractModel.generate}, split prefill, attention, quantization, and the selected tensor provider. See
+ * {@code core/PrefixCache.md} for the project-level contract and caveats.</p>
  */
 public class KvBufferCache implements Closeable {
 

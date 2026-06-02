@@ -124,8 +124,9 @@ public class Float16BufferTensor extends AbstractTensor<ShortVector, Short> {
     public void copyFrom(AbstractTensor src, int srcOffset, int destOffset, int length) {
         Preconditions.checkArgument(this.dType == src.getDType(), "different types");
         Preconditions.checkArgument(!b.isReadOnly(), "Read-only");
-        segment.asSlice(getMemorySegmentOffset(destOffset), length)
-                .copyFrom(src.getMemorySegment().asSlice(src.getMemorySegmentOffset(srcOffset), length));
+        long bytes = (long) length * dType.size();
+        segment.asSlice(getMemorySegmentOffset(destOffset), bytes)
+                .copyFrom(src.getMemorySegment().asSlice(src.getMemorySegmentOffset(srcOffset), bytes));
     }
 
     @Override
