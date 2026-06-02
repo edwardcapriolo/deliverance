@@ -374,7 +374,12 @@ fast disk and ample RAM are needed as the disk access is very heavy (load from d
 do not have enough RAM disk cache and IOWait will be a big bottleneck
 
 #### KVBuffer Cache
-KvBufferCache can be sized in bytes. It can also be persisted to disk, but it does not clean up itself so feature is off by default.
+KvBufferCache can be sized in bytes. By default it uses in-memory tensor allocation for active KV pages. It can also use
+disk-backed memory-mapped active KV pages via `KvBufferCacheSettings(File)`. Disk-backed pages now clean up on
+`KvBuffer.close()` by default, and a daemon sweeper removes stale orphaned `.page` files from the working directory.
+
+Disk-backed KV pages are active storage, not a persistent prefix cache. See [Disk KV Backend](core/DiskKvBackend.md) for
+configuration, cleanup behavior, metrics, and the prefix-cache boundary.
 
 
 
