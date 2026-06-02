@@ -130,6 +130,7 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     protected ClassifyOutput classifyOutput;
     protected WrappedForkJoinPool pool;
+    protected PreTrainedTokenizer preTrainedTokenizer;
     private volatile Consumer<GenerationDebugEvent> generationDebugHook = event -> {};
 
     protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer t, DType workingMemoryDType,
@@ -233,6 +234,24 @@ public abstract class AbstractModel implements Generator, Classifier {
     public void clearGenerationDebugHook() {
         this.generationDebugHook = event -> {};
     }
+
+    /**
+     * Installs a transient observer for generation internals.
+     *
+     * <p>This hook is intentionally diagnostic rather than API-facing. It exists so tests and local debugging can
+     * inspect prefix-cache control flow or compute immediate KV fingerprints without sprinkling temporary printlns
+     * through generation. The callback must not retain references to tensors or KV buffers; compute any diagnostics
+     * inside the callback while the event is being delivered.</p>
+     */
+    public void setGenerationDebugHook(Consumer<GenerationDebugEvent> generationDebugHook) {
+        this.generationDebugHook = generationDebugHook == null ? event -> {} : generationDebugHook;
+    }
+
+    public void clearGenerationDebugHook() {
+        this.generationDebugHook = event -> {};
+    }
+
+
 
     protected abstract EmbedInput loadInputWeights();
     protected abstract SampleOutput loadOutputWeights();
