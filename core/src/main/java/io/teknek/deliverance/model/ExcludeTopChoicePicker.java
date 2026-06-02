@@ -1,6 +1,5 @@
 package io.teknek.deliverance.model;
 
-import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.VectorTensorMathUtils;
 import org.slf4j.Logger;
@@ -53,10 +52,6 @@ public class ExcludeTopChoicePicker {
             float prob = (float) Math.exp(ls);
 
                 if (prob > xtcThreshold){
-                PreTrainedTokenizer tokenizer = abstractModel.getPreTrainedTokenizer();
-                if (tokenizer == null){
-                    throw new IllegalStateException("tokenizer is null");
-                }
                 IndexValueToken token = new IndexValueToken(i, logits.get(0, i), abstractModel.decodeToken(i));
                 token.logProb = ls;
                 if (aboveThreshold.isEmpty() || aboveThreshold.size() == 1){
@@ -76,7 +71,7 @@ public class ExcludeTopChoicePicker {
         if (aboveThreshold.isEmpty()){
             return Optional.empty();
         }
-        if (abstractModel.getPreTrainedTokenizer().allSpecialIds().contains(aboveThreshold.last().index)){
+        if (abstractModel.getTokenizer().allSpecialIds().contains(aboveThreshold.last().index)){
             if (LOGGER.isDebugEnabled()){
                 LOGGER.debug("Special token {} at max index.", aboveThreshold.last());
             }

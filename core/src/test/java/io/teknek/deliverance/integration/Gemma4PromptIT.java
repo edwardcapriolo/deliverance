@@ -34,21 +34,19 @@ public class Gemma4PromptIT {
                 .addSystemMessage("You are a concise assistant.")
                 .addUserMessage("What is the capital of New York?");
         PromptContext promptContext = builder.build();
-        long[] legacyPromptTokens = model.getTokenizer().encode(promptContext.getPrompt());
+        int[] gracePromptTokens = model.getTokenizer().encode(promptContext.getPrompt()).inputIds();
         long[] runtimePromptTokens = model.encodeForRuntime(promptContext.getPrompt());
         int[] finalPromptTokens = model.constructPromptTokensForRuntime(promptContext.getPrompt());
         System.out.println("PROMPT_RENDERED_START");
         System.out.println(promptContext.getPrompt());
         System.out.println("PROMPT_RENDERED_END");
-        System.out.println("LEGACY_PROMPT_TOKEN_IDS=" + Arrays.toString(legacyPromptTokens));
-        System.out.println("LEGACY_PROMPT_DECODED_START");
-        System.out.println(model.getTokenizer().decode(legacyPromptTokens));
-        System.out.println("LEGACY_PROMPT_DECODED_END");
+        System.out.println("GRACE_PROMPT_TOKEN_IDS=" + Arrays.toString(gracePromptTokens));
+        System.out.println("GRACE_PROMPT_DECODED_START");
+        System.out.println(model.getTokenizer().decode(new TokenIds(gracePromptTokens), false, false, false, false));
+        System.out.println("GRACE_PROMPT_DECODED_END");
         System.out.println("RUNTIME_PROMPT_TOKEN_IDS=" + Arrays.toString(runtimePromptTokens));
         System.out.println("RUNTIME_PROMPT_DECODED_START");
-        System.out.println(model.getPreTrainedTokenizer() == null
-                ? model.getTokenizer().decode(runtimePromptTokens)
-                : model.getPreTrainedTokenizer().decode(new TokenIds(Arrays.stream(runtimePromptTokens).mapToInt(v -> (int) v).toArray()), false, false, false, false));
+        System.out.println(model.getTokenizer().decode(new TokenIds(Arrays.stream(runtimePromptTokens).mapToInt(v -> (int) v).toArray()), false, false, false, false));
         System.out.println("RUNTIME_PROMPT_DECODED_END");
         System.out.println("FINAL_PROMPT_TOKEN_IDS=" + Arrays.toString(finalPromptTokens));
 

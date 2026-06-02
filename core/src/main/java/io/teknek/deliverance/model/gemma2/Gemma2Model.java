@@ -5,9 +5,9 @@ package io.teknek.deliverance.model.gemma2;
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.*;
+import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.FloatConversions;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
-import io.teknek.deliverance.model.TokenRenderer;
 import io.teknek.deliverance.model.llama.LlamaModel;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
@@ -16,7 +16,6 @@ import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import io.teknek.deliverance.tokenizer.Tokenizer;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,15 +36,15 @@ public class Gemma2Model extends LlamaModel {
             InferenceType inferenceType,
             Config config,
             WeightLoader weights,
-            Tokenizer tokenizer,
+            PreTrainedTokenizer tokenizer,
             DType workingDType,
             DType workingQType,
             Optional<DType> modelQType, ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
-            TensorAllocator arrayQueueTensorAllocator, KvBufferCacheSettings kvBufferCacheSettings, TokenRenderer tokenRenderer,
+            TensorAllocator arrayQueueTensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
             ToolCallParser toolCallParser, WrappedForkJoinPool pool
     ) {
         super(inferenceType, config, weights, tokenizer, workingDType, workingQType, modelQType,
-                configurableTensorProvider, metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, tokenRenderer, toolCallParser, pool);
+                configurableTensorProvider, metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, toolCallParser, pool);
         // https://github.com/huggingface/transformers/blob/1082361a1978d30db5c3932d1ee08914d74d9697/src/transformers/models/gemma/modeling_gemma.py#L898
         // This is the scaling factor for the embedding layer but google's implementation is a is rounded to 16 bits
         this.embeddingScalingFactor = FloatConversions.bFloat16ToFloat32(

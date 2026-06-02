@@ -8,6 +8,7 @@ import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
+import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
@@ -49,7 +50,7 @@ public class GemmaPromptIT {
         WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(arrayQueueTensorAllocator, pool).get());
         try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                mr, arrayQueueTensorAllocator, new KvBufferCacheSettings(true), fetch, new NoOpTokenizerRenderer(), new DefaultToolCallParser(), pool)) {
+                mr, arrayQueueTensorAllocator, new KvBufferCacheSettings(true), fetch, new DefaultToolCallParser(), pool)) {
             String prompt = """
                     You are a software engineer.
                     
@@ -149,6 +150,30 @@ public class GemmaPromptIT {
     }
 
     @Test
+    public void prefixCacheHitHonorsMaxTokens() {
+        AbstractModel m = Gemma2Suite.getOrCreate();
+        String prompt = "list the books of the bible starting with Genesis.";
+        int blockSize = new KvBufferCacheSettings(true).getBlockSize();
+        assertTrue(m.constructPromptTokensForRuntime(prompt).length >= blockSize + 1,
+                "prompt must be long enough to produce a partial prefix-cache hit");
+
+        String salt = "prefix-cache-max-tokens-" + UUID.randomUUID();
+        GeneratorParameters params = new GeneratorParameters()
+                .withTemperature(0.0f)
+                .withSeed(42)
+                .withMaxTokens(3)
+                .withCacheSalt(salt);
+
+        Response cold = m.generate(UUID.randomUUID(), PromptContext.of(prompt), params, new DoNothingGenerateEvent());
+        long hitsBefore = m.getMetricRegistry().meter("kvbuffercache.hits").getCount();
+        Response hot = m.generate(UUID.randomUUID(), PromptContext.of(prompt), params, new DoNothingGenerateEvent());
+        assertTrue(m.getMetricRegistry().meter("kvbuffercache.hits").getCount() > hitsBefore,
+                "second request should hit the prefix cache");
+        assertEquals(3, cold.generatedTokens.size(), "cold path should honor maxTokens");
+        assertEquals(3, hot.generatedTokens.size(), "prefix-cache hit path should honor maxTokens");
+    }
+                      
+    @Test                  
     public void diskKvPagesCreatedByGemmaGenerationCanBeSwept() throws IOException {
         ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
         KvBufferCacheSettings settings = new KvBufferCacheSettings(tempDir.toFile())

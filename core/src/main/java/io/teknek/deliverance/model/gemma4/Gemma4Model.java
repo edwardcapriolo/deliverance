@@ -4,15 +4,14 @@ import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.Timer;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.*;
+import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.FloatConversions;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
-import io.teknek.deliverance.model.TokenRenderer;
 import io.teknek.deliverance.model.llama.LlamaModel;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.*;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import io.teknek.deliverance.tokenizer.Tokenizer;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,7 +44,7 @@ public class Gemma4Model extends LlamaModel {
             InferenceType inferenceType,
             Config config,
             WeightLoader weights,
-            Tokenizer tokenizer,
+            PreTrainedTokenizer tokenizer,
             DType workingDType,
             DType workingQType,
             Optional<DType> modelQType,
@@ -53,7 +52,6 @@ public class Gemma4Model extends LlamaModel {
             MetricRegistry metricRegistry,
             TensorAllocator arrayQueueTensorAllocator,
             KvBufferCacheSettings kvBufferCacheSettings,
-            TokenRenderer tokenRenderer,
             ToolCallParser toolCallParser,
             WrappedForkJoinPool pool
     ) {
@@ -69,7 +67,6 @@ public class Gemma4Model extends LlamaModel {
                 metricRegistry,
                 arrayQueueTensorAllocator,
                 kvBufferCacheSettings,
-                tokenRenderer,
                 toolCallParser,
                 pool
         );

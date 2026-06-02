@@ -3,7 +3,6 @@ package io.teknek.deliverance.model;
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
-import io.teknek.deliverance.model.qwen2.Qwen2TokenizerRenderer;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.TensorAllocator;
@@ -25,11 +24,9 @@ public class AutoModelForCausaLm {
     private static final Logger LOGGER = LoggerFactory.getLogger(AutoModelForCausaLm.class);
     public static void applyTuning(ModelFetcher fetcher, Builder b){
         if (fetcher.getName().startsWith("Llama")){
-            b.withTokenTokenRenderer(new TokenizerRenderer());
             b.withToolCallParser(new LlamaToolCallParser());
         }
         if (fetcher.getName().startsWith("Qwen")){
-            b.withTokenTokenRenderer(new Qwen2TokenizerRenderer());
             b.withToolCallParser(new QwenToolCallParser());
         }
     }
@@ -54,7 +51,6 @@ public class AutoModelForCausaLm {
         private TensorAllocator allocator = new ArrayQueueTensorAllocator(mr);
         private DType workingMem = DType.F32;
         private DType workingQuant = DType.I8;
-        private TokenRenderer tokenRenderer = new NoOpTokenizerRenderer();
         private ToolCallParser toolCallParser = new DefaultToolCallParser();
 
         private KvBufferCacheSettings settings = new KvBufferCacheSettings(true);
@@ -90,10 +86,6 @@ public class AutoModelForCausaLm {
             this.provider = provider;
             return this;
         }
-        public Builder withTokenTokenRenderer(TokenRenderer tokenRenderer){
-            this.tokenRenderer = tokenRenderer;
-            return this;
-        }
         public Builder withToolCallParser(ToolCallParser toolCallParser){
             this.toolCallParser = toolCallParser;
             return this;
@@ -122,7 +114,7 @@ public class AutoModelForCausaLm {
                 }
             }
             return ModelSupport.loadModel(modelRoot, workingMem, workingQuant, provider,
-                    mr, allocator, settings, fetch, tokenRenderer, toolCallParser, pool);
+                    mr, allocator, settings, fetch, toolCallParser, pool);
         }
 
         public ModelFetcher getFetch() {
@@ -143,10 +135,6 @@ public class AutoModelForCausaLm {
 
         public DType getWorkingQuant() {
             return workingQuant;
-        }
-
-        public TokenRenderer getTokenRenderer() {
-            return tokenRenderer;
         }
 
         public KvBufferCacheSettings getSettings() {

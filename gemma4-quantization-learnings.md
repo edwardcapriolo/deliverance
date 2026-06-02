@@ -21,7 +21,7 @@ It is intended as a practical engineering note so we do not re-learn the same le
 - switched Gemma 4 runtime prompt/tokenization to prefer `grace`
 - changed `AbstractModel.encodeText(...)` to use:
   - `EncodeOptions.defaults().withoutSpecialTokens()`
-- made `TokenizerRenderer` a no-op
+- removed the legacy token-rendering layer
 - fixed Gemma 4 attention scaling mismatch:
   - upstream/vLLM use normalized attention with scaling `1.0`
   - Deliverance had incorrectly applied `1/sqrt(head_dim)`

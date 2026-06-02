@@ -21,7 +21,6 @@ import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import io.teknek.deliverance.tokenizer.Tokenizer;
 import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import jdk.incubator.vector.FloatVector;
@@ -86,11 +85,11 @@ public class ModelSupport {
     }
 
     public static AbstractModel loadModel(File model, DType workingMemoryType, DType workingQuantizationType,
-                                          ConfigurableTensorProvider configurableTensorProvider,
-                                          MetricRegistry metricRegistry,    TensorAllocator arrayQueueTensorAllocator,
-                                          KvBufferCacheSettings kvBufferCacheSettings,
-                                          ModelFetcher fetcher, TokenRenderer tr, ToolCallParser toolCallParser,
-                                          WrappedForkJoinPool pool) {
+                                           ConfigurableTensorProvider configurableTensorProvider,
+                                           MetricRegistry metricRegistry,    TensorAllocator arrayQueueTensorAllocator,
+                                           KvBufferCacheSettings kvBufferCacheSettings,
+                                           ModelFetcher fetcher, ToolCallParser toolCallParser,
+                                           WrappedForkJoinPool pool) {
         LOGGER.info("Machine Vector Spec: {} Byte Order: {}", FloatVector.SPECIES_PREFERRED.vectorBitSize(), ByteOrder.nativeOrder().toString());
         File configFile = new File(model, "config.json");
         if (!configFile.exists()){
@@ -99,25 +98,17 @@ public class ModelSupport {
         ModelType modelType = detectModel(configFile);
         try {
             Config config = om.readValue(configFile, modelType.getConfigClass());
-            Tokenizer tokenizer = modelType.getTokenizerClass().getConstructor(Path.class).newInstance(model.toPath());
+            PreTrainedTokenizer tokenizer = AutoTokenizer.fromPretrained(model.toPath());
             WeightLoader wl = new DefaultWeightLoader(model);
 
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
-                    WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class,
+                    WeightLoader.class, PreTrainedTokenizer.class, DType.class, DType.class, Optional.class,
                     ConfigurableTensorProvider.class, MetricRegistry.class, TensorAllocator.class,
-                    KvBufferCacheSettings.class, TokenRenderer.class, ToolCallParser.class, WrappedForkJoinPool.class);
+                    KvBufferCacheSettings.class, ToolCallParser.class, WrappedForkJoinPool.class);
 
             AbstractModel am = cons.newInstance(AbstractModel.InferenceType.FULL_GENERATION, config, wl, tokenizer,
                     workingMemoryType, workingQuantizationType, Optional.empty(), configurableTensorProvider,
-                    metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, tr, toolCallParser, pool);
-
-            try {
-                PreTrainedTokenizer t = AutoTokenizer.fromPretrained(new AutoTokenizer.OwnerNameOrPath(
-                        new AutoTokenizer.OwnerName(fetcher.getOwner(), fetcher.getName())));
-                am.setPreTrainedTokenizer(t);
-            } catch (Exception e){
-                LOGGER.warn("Could not load grace support", e);
-            }
+                    metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, toolCallParser, pool);
             return am;
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);
@@ -127,11 +118,11 @@ public class ModelSupport {
 
     //Note complete copy of above only different enuum
     public static AbstractModel loadClassificationModel(File model, DType workingMemoryType, DType workingQuantizationType,
-                                          ConfigurableTensorProvider configurableTensorProvider,
-                                          MetricRegistry metricRegistry, TensorAllocator arrayQueueTensorAllocator,
-                                          KvBufferCacheSettings kvBufferCacheSettings,
-                                          ModelFetcher fetcher, TokenRenderer tr, ToolCallParser toolCallParser,
-                                          WrappedForkJoinPool pool) {
+                                           ConfigurableTensorProvider configurableTensorProvider,
+                                           MetricRegistry metricRegistry, TensorAllocator arrayQueueTensorAllocator,
+                                           KvBufferCacheSettings kvBufferCacheSettings,
+                                           ModelFetcher fetcher, ToolCallParser toolCallParser,
+                                           WrappedForkJoinPool pool) {
         LOGGER.info("Machine Vector Spec: {} Byte Order: {}", FloatVector.SPECIES_PREFERRED.vectorBitSize(), ByteOrder.nativeOrder().toString());
         File configFile = new File(model, "config.json");
         if (!configFile.exists()){
@@ -140,17 +131,18 @@ public class ModelSupport {
         ModelType modelType = detectModel(configFile);
         try {
             Config config = om.readValue(configFile, modelType.getConfigClass());
-            Tokenizer tokenizer = modelType.getTokenizerClass().getConstructor(Path.class).newInstance(model.toPath());
+            PreTrainedTokenizer tokenizer = AutoTokenizer.fromPretrained(model.toPath());
             WeightLoader wl = new DefaultWeightLoader(model);
 
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
-                    WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class,
+                    WeightLoader.class, PreTrainedTokenizer.class, DType.class, DType.class, Optional.class,
                     ConfigurableTensorProvider.class, MetricRegistry.class, TensorAllocator.class,
-                    KvBufferCacheSettings.class, TokenRenderer.class, ToolCallParser.class, WrappedForkJoinPool.class);
+                    KvBufferCacheSettings.class, ToolCallParser.class, WrappedForkJoinPool.class);
 
-            return cons.newInstance(AbstractModel.InferenceType.FULL_CLASSIFICATION, config, wl, tokenizer,
+            AbstractModel am = cons.newInstance(AbstractModel.InferenceType.FULL_CLASSIFICATION, config, wl, tokenizer,
                     workingMemoryType, workingQuantizationType, Optional.empty(), configurableTensorProvider,
-                    metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, tr, toolCallParser, pool);
+                    metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, toolCallParser, pool);
+            return am;
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }
@@ -178,19 +170,20 @@ public class ModelSupport {
 
         try {
             Config config = om.readValue(configFile, modelType.getConfigClass());
-            Tokenizer tokenizer = modelType.getTokenizerClass().getConstructor(Path.class).newInstance(model.toPath());
+            PreTrainedTokenizer tokenizer = AutoTokenizer.fromPretrained(model.toPath());
 
             WeightLoader wl = new DefaultWeightLoader(model);
 
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
-                    WeightLoader.class, Tokenizer.class, DType.class, DType.class, Optional.class,
+                    WeightLoader.class, PreTrainedTokenizer.class, DType.class, DType.class, Optional.class,
                     ConfigurableTensorProvider.class, MetricRegistry.class, TensorAllocator.class,
-                    KvBufferCacheSettings.class, TokenRenderer.class, ToolCallParser.class, WrappedForkJoinPool.class) ;
+                    KvBufferCacheSettings.class, ToolCallParser.class, WrappedForkJoinPool.class) ;
 
-            return cons.newInstance(infType, config, wl, tokenizer,
+            AbstractModel am = cons.newInstance(infType, config, wl, tokenizer,
                     workingMemoryType, workingQuantizationType, Optional.empty(), configurableTensorProvider,
-                    metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, new NoOpTokenizerRenderer(), new DefaultToolCallParser(),
+                    metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, new DefaultToolCallParser(),
                     new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores()));
+            return am;
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }
@@ -218,20 +211,21 @@ public class ModelSupport {
             Config c = om.readValue(configFile, modelType.getConfigClass());
             distributedContextLoader.ifPresent(loader -> c.setDistributedContext(loader.apply(c)));
             //c.setWorkingDirectory(workingDirectory);
-            Tokenizer t = modelType.getTokenizerClass().getConstructor(Path.class).newInstance(baseDir.toPath());
+            PreTrainedTokenizer t = AutoTokenizer.fromPretrained(baseDir.toPath());
             WeightLoader wl = weightLoaderSupplier.apply(baseDir);
 
-            return modelType.getModelClass()
+            AbstractModel am = modelType.getModelClass()
                     .getConstructor(
                             AbstractModel.InferenceType.class,
                             Config.class,
                             WeightLoader.class,
-                            Tokenizer.class,
+                            PreTrainedTokenizer.class,
                             DType.class,
                             DType.class,
                             Optional.class
                     )
                     .newInstance(inferenceType, c, wl, t, workingMemoryType, workingQuantizationType, modelQuantization);
+            return am;
 
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);

@@ -5,7 +5,6 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.ModelSupport;
-import io.teknek.deliverance.model.NoOpTokenizerRenderer;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
@@ -81,7 +80,7 @@ class MultiModelConfiguration {
             //TODO switch to builder/auto here
             AbstractModel model = ModelSupport.loadModel(f, DType.F32, DType.I8, provider,
                     metricRegistry, arrayQueueTensorAllocator, new KvBufferCacheSettings(true), fetch,
-                    new NoOpTokenizerRenderer(), new DefaultToolCallParser(), pool);
+                    new DefaultToolCallParser(), pool);
             return model;
         } else {
             throw new IllegalArgumentException("Wrong type: " + config.getInferenceType());
