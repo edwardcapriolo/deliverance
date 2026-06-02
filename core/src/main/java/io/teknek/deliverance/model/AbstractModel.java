@@ -251,6 +251,16 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.generationDebugHook = event -> {};
     }
 
+    /**
+     * Forces the model's disk-backed KV page cleanup pass to run immediately.
+     *
+     * <p>This is a maintenance/test hook for active disk KV page storage. It does not operate on prefix-cache entries or
+     * any persistent token-prefix manifest.</p>
+     */
+    public void runDiskKvPageSweep() {
+        kvBufferCache.runDiskPageSweep();
+    }
+
 
 
     protected abstract EmbedInput loadInputWeights();

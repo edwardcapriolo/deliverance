@@ -2,11 +2,16 @@ package io.teknek.deliverance.tensor;
 
 import javax.annotation.Nullable;
 import java.io.File;
+import java.time.Duration;
 
 public class KvBufferCacheSettings {
     private final Boolean useTensorAllocator;
     private final File workingDirectory;
     private final TensorAllocator dedicatedCache;
+    private boolean deleteDiskPagesOnClose = true;
+    private boolean diskPageSweeperEnabled = true;
+    private Duration diskPageSweepInterval = Duration.ofMinutes(5);
+    private Duration diskPageMaxAge = Duration.ofHours(1);
     /**
      * The longest possible kvcache
      */
@@ -44,6 +49,9 @@ public class KvBufferCacheSettings {
     }
 
     public KvBufferCacheSettings(File workingDirectory) {
+        if (workingDirectory == null) {
+            throw new IllegalArgumentException("workingDirectory must not be null");
+        }
         this.workingDirectory = workingDirectory;
         this.useTensorAllocator = false;
         this.dedicatedCache = null;
@@ -101,6 +109,64 @@ public class KvBufferCacheSettings {
 
     public KvBufferCacheSettings withBlockSize(int blockSize) {
         setBlockSize(blockSize);
+        return this;
+    }
+
+    public boolean isDeleteDiskPagesOnClose() {
+        return deleteDiskPagesOnClose;
+    }
+
+    public void setDeleteDiskPagesOnClose(boolean deleteDiskPagesOnClose) {
+        this.deleteDiskPagesOnClose = deleteDiskPagesOnClose;
+    }
+
+    public KvBufferCacheSettings withDeleteDiskPagesOnClose(boolean deleteDiskPagesOnClose) {
+        setDeleteDiskPagesOnClose(deleteDiskPagesOnClose);
+        return this;
+    }
+
+    public boolean isDiskPageSweeperEnabled() {
+        return diskPageSweeperEnabled;
+    }
+
+    public void setDiskPageSweeperEnabled(boolean diskPageSweeperEnabled) {
+        this.diskPageSweeperEnabled = diskPageSweeperEnabled;
+    }
+
+    public KvBufferCacheSettings withDiskPageSweeperEnabled(boolean diskPageSweeperEnabled) {
+        setDiskPageSweeperEnabled(diskPageSweeperEnabled);
+        return this;
+    }
+
+    public Duration getDiskPageSweepInterval() {
+        return diskPageSweepInterval;
+    }
+
+    public void setDiskPageSweepInterval(Duration diskPageSweepInterval) {
+        if (diskPageSweepInterval == null || diskPageSweepInterval.toMillis() < 1) {
+            throw new IllegalArgumentException("diskPageSweepInterval must be at least 1 millisecond");
+        }
+        this.diskPageSweepInterval = diskPageSweepInterval;
+    }
+
+    public KvBufferCacheSettings withDiskPageSweepInterval(Duration diskPageSweepInterval) {
+        setDiskPageSweepInterval(diskPageSweepInterval);
+        return this;
+    }
+
+    public Duration getDiskPageMaxAge() {
+        return diskPageMaxAge;
+    }
+
+    public void setDiskPageMaxAge(Duration diskPageMaxAge) {
+        if (diskPageMaxAge == null || diskPageMaxAge.toMillis() < 1) {
+            throw new IllegalArgumentException("diskPageMaxAge must be at least 1 millisecond");
+        }
+        this.diskPageMaxAge = diskPageMaxAge;
+    }
+
+    public KvBufferCacheSettings withDiskPageMaxAge(Duration diskPageMaxAge) {
+        setDiskPageMaxAge(diskPageMaxAge);
         return this;
     }
 }

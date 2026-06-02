@@ -16,13 +16,25 @@ import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.nio.ShortBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * A cache for key-value buffers used in the model.
+ *
+ * <p>The disk-backed mode is an active-page storage backend for live {@link KvBuffer} instances. It is not a durable
+ * prefix cache: disk page names are session/page coordinates, not token-prefix keys, and pages are deleted when their
+ * owning buffer closes unless explicitly retained for inspection. A background sweeper can also remove stale closed or
+ * orphaned page files from the working directory.</p>
  *
  * <p>This cache stores complete block-aligned prompt prefixes. For a prompt with 9 runtime tokens and a block
  * size of 8, only the first 8 tokens are eligible for reuse; the suffix token must still be run through the model
@@ -49,6 +61,10 @@ public class KvBufferCache implements Closeable {
     private final AbstractModel model;
     private final KvBufferCacheSettings kvBufferCacheSettings;
     private final int blockSize;
+    private final Set<Path> activeDiskPages = Collections.synchronizedSet(new HashSet<>());
+    private final Map<Path, Long> diskPageBytes = Collections.synchronizedMap(new HashMap<>());
+    private final AtomicBoolean closed = new AtomicBoolean(false);
+    private ScheduledExecutorService diskSweeperExecutor;
 
     public final Map<CacheKey, PrefixEntry> prefixCache = Collections.synchronizedMap(
             new LinkedHashMap<CacheKey, PrefixEntry>(16, 0.75f, true) {
@@ -70,6 +86,111 @@ public class KvBufferCache implements Closeable {
         this.model = model;
         this.kvBufferCacheSettings = kvBufferCacheSettings;
         this.blockSize = kvBufferCacheSettings.getBlockSize();
+        prepareDiskWorkingDirectory();
+        startDiskPageSweeper();
+    }
+
+    private void prepareDiskWorkingDirectory() {
+        if (kvBufferCacheSettings.isEphemeral()) {
+            return;
+        }
+        File workingDirectory = kvBufferCacheSettings.getWorkingDirectory();
+        if (workingDirectory == null) {
+            model.getMetricRegistry().meter("kvbuffercache.disk.directory.error").mark();
+            throw new IllegalStateException("Disk KV cache requires a workingDirectory");
+        }
+        try {
+            Files.createDirectories(workingDirectory.toPath());
+        } catch (IOException e) {
+            model.getMetricRegistry().meter("kvbuffercache.disk.directory.error").mark();
+            throw new IOError(e);
+        }
+        if (!workingDirectory.isDirectory()) {
+            model.getMetricRegistry().meter("kvbuffercache.disk.directory.error").mark();
+            throw new IllegalArgumentException("KV disk workingDirectory must be a directory: " + workingDirectory);
+        }
+    }
+
+    private void startDiskPageSweeper() {
+        if (kvBufferCacheSettings.isEphemeral() || !kvBufferCacheSettings.isDiskPageSweeperEnabled()) {
+            return;
+        }
+        diskSweeperExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread thread = new Thread(r,
+                    "deliverance-kv-disk-sweeper-" + Integer.toHexString(System.identityHashCode(this)));
+            thread.setDaemon(true);
+            return thread;
+        });
+        long intervalMillis = kvBufferCacheSettings.getDiskPageSweepInterval().toMillis();
+        diskSweeperExecutor.scheduleWithFixedDelay(this::runDiskPageSweepSafely,
+                intervalMillis, intervalMillis, TimeUnit.MILLISECONDS);
+    }
+
+    private void runDiskPageSweepSafely() {
+        try {
+            runDiskPageSweep();
+        } catch (RuntimeException e) {
+            model.getMetricRegistry().meter("kvbuffercache.disk.sweeper.error").mark();
+            logger.warn("KV disk page sweeper failed", e);
+        }
+    }
+
+    /**
+     * Removes stale disk-backed KV page files from the active-page working directory.
+     *
+     * <p>The sweep is age based: only {@code *.page} files older than
+     * {@link KvBufferCacheSettings#getDiskPageMaxAge()} are eligible. Pages currently open by this cache instance are
+     * skipped even if their file timestamp is old. This is a cleanup safety net for orphaned or intentionally retained
+     * active KV page files, not a persistent prefix-cache manifest or token-index cleanup process.</p>
+     */
+    public void runDiskPageSweep() {
+        if (kvBufferCacheSettings.isEphemeral()) {
+            return;
+        }
+        model.getMetricRegistry().meter("kvbuffercache.disk.sweeper.run").mark();
+        Path workingDirectory = kvBufferCacheSettings.getWorkingDirectory().toPath();
+        Instant deleteBefore = Instant.now().minus(kvBufferCacheSettings.getDiskPageMaxAge());
+        try (DirectoryStream<Path> pages = Files.newDirectoryStream(workingDirectory, "*.page")) {
+            for (Path page : pages) {
+                model.getMetricRegistry().meter("kvbuffercache.disk.sweeper.page.scan").mark();
+                Path normalizedPage = page.toAbsolutePath().normalize();
+                if (activeDiskPages.contains(normalizedPage)) {
+                    model.getMetricRegistry().meter("kvbuffercache.disk.sweeper.page.skip.active").mark();
+                    continue;
+                }
+                Instant lastModified = Files.getLastModifiedTime(page).toInstant();
+                if (!lastModified.isBefore(deleteBefore)) {
+                    model.getMetricRegistry().meter("kvbuffercache.disk.sweeper.page.skip.young").mark();
+                    continue;
+                }
+                deleteDiskPageFile(normalizedPage, true);
+            }
+        } catch (IOException e) {
+            model.getMetricRegistry().meter("kvbuffercache.disk.sweeper.error").mark();
+            throw new IOError(e);
+        }
+    }
+
+    private Path normalizeDiskPagePath(Path path) {
+        return path.toAbsolutePath().normalize();
+    }
+
+    private void deleteDiskPageFile(Path path, boolean fromSweeper) throws IOException {
+        long fileBytes = 0;
+        if (Files.exists(path)) {
+            fileBytes = Files.size(path);
+        }
+        if (Files.deleteIfExists(path)) {
+            model.getMetricRegistry().meter("kvbuffercache.disk.page.delete").mark();
+            model.getMetricRegistry().counter("kvbuffercache.disk.bytes.deleted").inc(fileBytes);
+            Long trackedBytes = diskPageBytes.remove(path);
+            if (trackedBytes != null) {
+                model.getMetricRegistry().counter("kvbuffercache.disk.bytes.live").dec(trackedBytes);
+            }
+            if (fromSweeper) {
+                model.getMetricRegistry().meter("kvbuffercache.disk.sweeper.page.delete").mark();
+            }
+        }
     }
 
     public PrefixEntry lookupPrefix(int[] tokens, Optional<String> salt) {
@@ -140,7 +261,12 @@ public class KvBufferCache implements Closeable {
 
     @Override
     public void close() {
-        prefixCache.entrySet().iterator().forEachRemaining(e -> e.getValue().buffer().close());
+        if (closed.compareAndSet(false, true)) {
+            if (diskSweeperExecutor != null) {
+                diskSweeperExecutor.shutdownNow();
+            }
+            prefixCache.entrySet().iterator().forEachRemaining(e -> e.getValue().buffer().close());
+        }
     }
 
     class KvPageContext {
@@ -198,27 +324,40 @@ public class KvBufferCache implements Closeable {
 
         private final AtomicBoolean closed = new AtomicBoolean(false);
         private final RandomAccessFile raf;
+        private final Path diskPath;
 
         KvBufferPage(KvPageContext pageCtx, String pageId) {
             //this looks more and more like two subclasses vs an if statement
             if (kvBufferCacheSettings.isEphemeral()) {
                 this.raf = null;
+                this.diskPath = null;
                 TensorAllocator tc = kvBufferCacheSettings.getDedicatedCache() == null ?
                         model.getTensorAllocator() : kvBufferCacheSettings.getDedicatedCache();
                 this.tensor = tc.get(model.getWorkingDType(), pageCtx.pageShape);
             } else {
+                Path path = normalizeDiskPagePath(Paths.get(
+                        kvBufferCacheSettings.getWorkingDirectory().toString(),
+                        pageCtx.session.toString() + "-" + pageId + ".page"
+                ));
+                long bytes = pageCtx.pageShape.size() * model.getWorkingDType().size();
+                boolean existed = Files.exists(path);
                 try {
-                    raf = new RandomAccessFile(
-                            Paths.get(
-                                    kvBufferCacheSettings.getWorkingDirectory().toString(),
-                                    pageCtx.session.toString() + "-" + pageId + ".page"
-                            ).toFile(),
-                            "rw"
-                    );
-                    long bytes = pageCtx.pageShape.size() * model.getWorkingDType().size();
+                    raf = new RandomAccessFile(path.toFile(), "rw");
+                    model.getMetricRegistry().meter("kvbuffercache.disk.page.open").mark();
+                    if (!existed) {
+                        model.getMetricRegistry().meter("kvbuffercache.disk.page.create").mark();
+                        model.getMetricRegistry().counter("kvbuffercache.disk.bytes.allocated").inc(bytes);
+                        model.getMetricRegistry().counter("kvbuffercache.disk.bytes.live").inc(bytes);
+                        diskPageBytes.put(path, bytes);
+                    }
                     logger.debug("Allocating page {} with {} bytes {}", pageId, bytes, raf.length());
                     if (raf.length() != bytes) {
+                        long previousLength = raf.length();
                         raf.setLength(bytes);
+                        if (existed && bytes > previousLength) {
+                            model.getMetricRegistry().counter("kvbuffercache.disk.bytes.allocated")
+                                    .inc(bytes - previousLength);
+                        }
                     }
 
                     AbstractTensor<?, ?> t;
@@ -240,14 +379,21 @@ public class KvBufferCache implements Closeable {
                         throw new UnsupportedOperationException("Only F32/BF16 is supported for now");
                     }
                     this.tensor = t;
+                    this.diskPath = path;
+                    activeDiskPages.add(path);
                 } catch (IOException e) {
+                    model.getMetricRegistry().meter("kvbuffercache.disk.page.open.error").mark();
                     throw new IOError(e);
                 }
             }
         }
 
         public AbstractTensor getTensor() {
-            assert !closed.get() : "Page is closed";
+            if (closed.get()) {
+                model.getMetricRegistry().meter("kvbuffercache.page.closed.access").mark();
+                logger.warn("Attempted to access a closed KV buffer page");
+                throw new IllegalStateException("KV buffer page is closed");
+            }
             return tensor;
         }
 
@@ -258,10 +404,32 @@ public class KvBufferCache implements Closeable {
         @Override
         public void close() throws IOException {
             if (closed.compareAndSet(false, true)) {
-                if (raf != null) {
-                    raf.close();
+                try {
+                    if (raf != null) {
+                        raf.close();
+                    }
+                    tensor.close();
+                    if (diskPath != null) {
+                        model.getMetricRegistry().meter("kvbuffercache.disk.page.close").mark();
+                    }
+                } catch (IOException | RuntimeException e) {
+                    if (diskPath != null) {
+                        model.getMetricRegistry().meter("kvbuffercache.disk.page.close.error").mark();
+                    }
+                    throw e;
                 }
-                tensor.close();
+                if (diskPath != null && kvBufferCacheSettings.isDeleteDiskPagesOnClose()) {
+                    try {
+                        deleteDiskPageFile(diskPath, false);
+                    } catch (IOException | RuntimeException e) {
+                        model.getMetricRegistry().meter("kvbuffercache.disk.page.delete.error").mark();
+                        throw e;
+                    } finally {
+                        activeDiskPages.remove(diskPath);
+                    }
+                } else if (diskPath != null) {
+                    activeDiskPages.remove(diskPath);
+                }
             }
         }
     }
@@ -415,7 +583,7 @@ public class KvBufferCache implements Closeable {
                 KvBufferPage page = layerPages[i];
 
                 if (page == null || page.isClosed()) {
-                    page = new KvBufferPage(pageContext, "L" + layerPageIndex + "C" + contextPageIndex);
+                    page = new KvBufferPage(pageContext, "L" + layerPageIndex + "C" + i);
                     layerPages[i] = page;
                 }
 

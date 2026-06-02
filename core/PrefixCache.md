@@ -87,6 +87,10 @@ vLLM/OpenAI sense for that runtime configuration.
 Deliverance prefix cache currently supports the mechanical cache behavior: block-aligned lookup, KV copy round trips,
 and correct decode-start/token-budget math. This is useful for reducing prefill work on shared prompt prefixes.
 
+The disk KV backend is separate from prefix-cache identity. `KvBufferCacheSettings(File)` stores active KV pages as
+memory-mapped page files for live `KvBuffer` instances; it does not make those files durable prefix-cache entries. See
+`core/DiskKvBackend.md` for the active disk-page storage contract, cleanup behavior, and metrics.
+
 Deliverance does not currently provide a documented deterministic or batch/chunk-invariant inference mode. That means
 the project does not currently promise exact generated-token or generated-text equality between cold full-prefill and
 cache-hit split-prefill paths for every model and tensor-provider configuration.
