@@ -236,22 +236,6 @@ public abstract class AbstractModel implements Generator, Classifier {
     }
 
     /**
-     * Installs a transient observer for generation internals.
-     *
-     * <p>This hook is intentionally diagnostic rather than API-facing. It exists so tests and local debugging can
-     * inspect prefix-cache control flow or compute immediate KV fingerprints without sprinkling temporary printlns
-     * through generation. The callback must not retain references to tensors or KV buffers; compute any diagnostics
-     * inside the callback while the event is being delivered.</p>
-     */
-    public void setGenerationDebugHook(Consumer<GenerationDebugEvent> generationDebugHook) {
-        this.generationDebugHook = generationDebugHook == null ? event -> {} : generationDebugHook;
-    }
-
-    public void clearGenerationDebugHook() {
-        this.generationDebugHook = event -> {};
-    }
-
-    /**
      * Forces the model's disk-backed KV page cleanup pass to run immediately.
      *
      * <p>This is a maintenance/test hook for active disk KV page storage. It does not operate on prefix-cache entries or
@@ -261,7 +245,37 @@ public abstract class AbstractModel implements Generator, Classifier {
         kvBufferCache.runDiskPageSweep();
     }
 
+    /**
+     * Returns the primary input kind accepted by this model at its forward/generation boundary.
+     *
+     * <p>Text generation models normally use {@link ModelInputName#INPUT_IDS}. Models with non-text primary inputs,
+     * such as audio or vision encoders, should override this method with the input kind they expect. This is a runtime
+     * model capability, not a raw checkpoint configuration value.</p>
+     */
+    public ModelInputName getMainInputName() {
+        return ModelInputName.INPUT_IDS;
+    }
 
+    /**
+     * Prepares the typed model inputs for one generation forward step.
+     *
+     * @param inputIds token ids for one request. When used, this is a one-dimensional sequence of vocabulary ids.
+     * @param inputsEmbeds optional precomputed embeddings with shape {@code [batch, sequence, embedding]}. Dimension 0
+     * is request batch index, dimension 1 is token position, and dimension 2 is the dense embedding vector.
+     * @param attentionMask optional one-dimensional mask aligned to the sequence dimension; non-null values are sliced
+     * to match the prepared sequence length.
+     * @param encoderAttentionMask optional one-dimensional encoder-side mask for encoder-decoder models. It is retained
+     * as encoder input context and is not sliced to the decoder sequence length.
+     * @param positionIds optional one-dimensional positions aligned to the sequence dimension; non-null values are
+     * sliced to match the prepared sequence length.
+     * @param tokenTypeIds optional one-dimensional segment ids aligned to the sequence dimension; non-null values are
+     * sliced to match the prepared sequence length.
+     * @param mmTokenTypeIds optional one-dimensional multimodal token type ids aligned to the sequence dimension;
+     * non-null values are sliced to match the prepared sequence length.
+     */
+    protected GenerationStepInputs prepareInputsForGeneration(int[] inputIds, Integer nextSequenceLength, PastKeyValues pastKeyValues, int[] attentionMask, int[] encoderAttentionMask, AbstractTensor inputsEmbeds, boolean firstIteration, int[] positionIds, int[] tokenTypeIds, int[] mmTokenTypeIds) {
+        return GenerationInputPreparer.prepareInputsForGeneration(config, inputIds, nextSequenceLength, pastKeyValues, attentionMask, encoderAttentionMask, inputsEmbeds, firstIteration, positionIds, tokenTypeIds, mmTokenTypeIds, this::makeDenseTensor);
+    }
 
     protected abstract EmbedInput loadInputWeights();
     protected abstract SampleOutput loadOutputWeights();

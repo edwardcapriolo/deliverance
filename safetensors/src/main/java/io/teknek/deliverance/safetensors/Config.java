@@ -42,6 +42,7 @@ public class Config {
     public final Optional<float[][]> ropeFreqs;
     public final Optional<BiMap<String, Integer>> classifcationLabels;
     public final List<String> architectures;
+    public final boolean isEncoderDecoder;
     private Map<String,Object> ropeScaling;
     private volatile DistributedContext dctx;
 
@@ -86,6 +87,49 @@ public class Config {
                 null,
                 null,
                 null
+        );
+    }
+
+    public Config(
+            int contextLength,
+            int embeddingLength,
+            int hiddenLength,
+            int numberOfHeads,
+            int numberOfKeyValueHeads,
+            int numberOfLayers,
+            float layerNormEps,
+            int vocabularySize,
+            int bosToken,
+            List<Integer> eosToken,
+            ActivationFunction.Type activationFunction,
+            Double ropeFreqsTheta,
+            Map<String,Object> ropeScaling,
+            boolean isEncoderDecoder
+    ) {
+        this(
+                contextLength,
+                embeddingLength,
+                hiddenLength,
+                numberOfHeads,
+                numberOfKeyValueHeads,
+                numberOfLayers,
+                layerNormEps,
+                vocabularySize,
+                bosToken,
+                eosToken,
+                activationFunction,
+                ropeFreqsTheta,
+                ropeScaling,
+                null,
+                embeddingLength / numberOfHeads,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                isEncoderDecoder
         );
     }
 
@@ -242,6 +286,58 @@ public class Config {
             Float logitMultiplier,
             List<String> architectures
     ) {
+        this(
+                contextLength,
+                embeddingLength,
+                hiddenLength,
+                numberOfHeads,
+                numberOfKeyValueHeads,
+                numberOfLayers,
+                layerNormEps,
+                vocabularySize,
+                bosToken,
+                eosTokens,
+                activationFunction,
+                ropeFreqsTheta,
+                ropeScaling,
+                classifcationLabels,
+                headSize,
+                finalLogitSoftCapping,
+                attnLogitSoftCapping,
+                residualMultiplier,
+                attentionMultiplier,
+                embeddingMultiplier,
+                logitMultiplier,
+                architectures,
+                false
+        );
+    }
+
+    public Config(
+            int contextLength,
+            int embeddingLength,
+            int hiddenLength,
+            int numberOfHeads,
+            int numberOfKeyValueHeads,
+            int numberOfLayers,
+            float layerNormEps,
+            int vocabularySize,
+            int bosToken,
+            List<Integer> eosTokens,
+            ActivationFunction.Type activationFunction,
+            Double ropeFreqsTheta,
+            Map<String,Object> ropeScaling,
+            Map<String, Integer> classifcationLabels,
+            Integer headSize,
+            Float finalLogitSoftCapping,
+            Float attnLogitSoftCapping,
+            Float residualMultiplier,
+            Float attentionMultiplier,
+            Float embeddingMultiplier,
+            Float logitMultiplier,
+            List<String> architectures,
+            boolean isEncoderDecoder
+    ) {
         this.contextLength = contextLength;
         this.attentionLength = numberOfHeads * headSize;
         this.embeddingLength = embeddingLength;
@@ -278,6 +374,7 @@ public class Config {
         this.logitMultiplier = logitMultiplier;
 
         this.architectures = architectures;
+        this.isEncoderDecoder = isEncoderDecoder;
         // Set default values
         this.dctx = DistributedContext.builder(this).build();
     }
