@@ -5,7 +5,6 @@ import com.codahale.metrics.Timer;
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.safetensors.DistributedContext;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
@@ -27,7 +26,6 @@ public class CausalSelfAttention {
     private final AbstractModel m;
     private final Config config;
     private final int layerIndex;
-    private final DistributedContext dctx;
     private final Optional<AbstractTensor> queryAttnBias;
     private final Optional<AbstractTensor> keyAttnBias;
 
@@ -93,7 +91,6 @@ public class CausalSelfAttention {
         this.m = m;
         this.layerIndex = layerIndex;
         this.config = m.getConfig();
-        this.dctx = m.getConfig().dctx();
         this.queryAttnBias = queryAttnBias;
         this.keyAttnBias = keyAttnBias;
         this.valueAttnBias = valueAttnBias;
@@ -119,14 +116,6 @@ public class CausalSelfAttention {
         this.metricRegistry = metricRegistry;
     }
 
-                 /*
-                DistributedContext{c=io.teknek.deliverance.model.llama.LlamaConfig@5df417a7, modelShard=0,
-                numModelShards=1, layerShard=0, numLayerShards=1, embeddingSegmentStart=0, embeddingSegmentLength=2048,
-                embeddingSegmentEnd=2048, attentionSegmentStart=0, attentionSegmentLength=2048, attentionSegmentEnd=2048,
-                hiddenSegmentStart=0, hiddenSegmentLength=5632, hiddenSegmentEnd=5632, kvSegmentStart=0, kvSegmentLength=256,
-                kvSegmentEnd=256, headStart=0, headEnd=32, groupHeadStart=0, groupHeadEnd=4, numberOfLayers=22, layerStart=0, layerEnd=22}
-                 */
-
     public AbstractTensor forward(AbstractTensor input, int startPosition, KvBufferCache.KvBuffer kvMem,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
         Preconditions.checkArgument(input.dims() == 2 && input.shape().last() == config.embeddingLength);
@@ -138,11 +127,11 @@ public class CausalSelfAttention {
                 AbstractTensor valueBatch = m.makeDenseTensor(batchSize, attentionLength)) {
             if (config.isGQA) {
                 Timer tm = metricRegistry.timer("causualselfattention.forward_gqa_querybatch_1");
-                VectorMath.pchunkMetrics(dctx.attentionSegmentStart, dctx.attentionSegmentLength, (chunkStart, chunkLength) -> {
+                VectorMath.pchunkMetrics(0, attentionLength, (chunkStart, chunkLength) -> {
                     configurableTensorProvider.get()
                                 .dotProductChunk(queryBatch, input, queryAttnWeights, 0, config.embeddingLength, chunkStart, chunkLength);
                 }, splitSize, tm, m.getPool());
-                VectorMath.pchunk(dctx.kvSegmentStart, dctx.kvSegmentLength, (chunkStart, chunkLength) -> {
+                VectorMath.pchunk(0, config.kvLength, (chunkStart, chunkLength) -> {
                     Timer t = metricRegistry.timer("causualselfattention.forward_gqa_key_2");
                     try (Timer.Context context = t.time()) {
                         configurableTensorProvider.get()
@@ -160,7 +149,7 @@ public class CausalSelfAttention {
                 qkvResults[0] = queryBatch;
                 qkvResults[1] = tmpKeyBatch;
                 qkvResults[2] = tmpValBatch;
-                VectorMath.pchunk(dctx.attentionSegmentStart, dctx.attentionSegmentLength, (chunkStart, chunkLength) -> {
+                VectorMath.pchunk(0, attentionLength, (chunkStart, chunkLength) -> {
                     long start = System.nanoTime();
                     configurableTensorProvider.get()
                             .dotProductBatchChunk(qkvResults, input, qkvWeights, 0, config.embeddingLength, chunkStart, chunkLength);
@@ -170,15 +159,15 @@ public class CausalSelfAttention {
 
             queryAttnBias.ifPresent(
                     bias -> configurableTensorProvider.get().accumulate(queryBatch, bias,
-                            dctx.attentionSegmentStart, dctx.attentionSegmentLength)
+                            0, attentionLength)
             );
             keyAttnBias.ifPresent(
                     bias -> configurableTensorProvider.get().accumulate(tmpKeyBatch, bias,
-                            dctx.kvSegmentStart, dctx.kvSegmentLength)
+                            0, config.kvLength)
             );
             valueAttnBias.ifPresent(
                     bias -> configurableTensorProvider.get().accumulate(tmpValBatch, bias,
-                            dctx.kvSegmentStart, dctx.kvSegmentLength)
+                            0, config.kvLength)
             );
             AbstractTensor[] querySlices = new AbstractTensor[batchSize];
             AbstractTensor[] keySlices = new AbstractTensor[batchSize];
@@ -209,16 +198,12 @@ public class CausalSelfAttention {
                 if (key.dType() != tmpKey.dType()) {
                     try (AbstractTensor tmpKey2 = configurableTensorProvider.get().quantize(tmpKey, key.dType(), 0, config.kvLength);
                          AbstractTensor tmpVal2 = configurableTensorProvider.get().quantize(tmpVal, val.dType(), 0, config.kvLength)) {
-                        key.copyFrom(tmpKey2, tmpKey2.getOffset(0, dctx.kvSegmentStart), key.getOffset(0, dctx.kvSegmentStart),
-                                dctx.kvSegmentLength);
-                        val.copyFrom(tmpVal2, tmpVal2.getOffset(0, dctx.kvSegmentStart), val.getOffset(0, dctx.kvSegmentStart),
-                                dctx.kvSegmentLength);
+                        key.copyFrom(tmpKey2, 0, 0, config.kvLength);
+                        val.copyFrom(tmpVal2, 0, 0, config.kvLength);
                     }
                 } else {
-                    key.copyFrom(tmpKey, tmpKey.getOffset(0, dctx.kvSegmentStart), key.getOffset(0, dctx.kvSegmentStart),
-                            dctx.kvSegmentLength);
-                    val.copyFrom(tmpVal, tmpVal.getOffset(0, dctx.kvSegmentStart), val.getOffset(0, dctx.kvSegmentStart),
-                            dctx.kvSegmentLength);
+                    key.copyFrom(tmpKey, 0, 0, config.kvLength);
+                    val.copyFrom(tmpVal, 0, 0, config.kvLength);
                 }
 
                 // apply RoPE if present (accounting for huggingface permutation)
@@ -229,7 +214,7 @@ public class CausalSelfAttention {
 
                     if (config.isGQA) {
                         // apply RoPE rotation to the q and k vectors for each head
-                        for (int h = dctx.headStart; h < dctx.headEnd; h++) {
+                        for (int h = 0; h < config.numberOfHeads; h++) {
                             // get the q vectors for this head
                             int offset = h * config.headSize;
 
@@ -249,7 +234,7 @@ public class CausalSelfAttention {
                             }
                         }
 
-                        for (int h = dctx.groupHeadStart; h < dctx.groupHeadEnd; h++) {
+                        for (int h = 0; h < config.numberOfKeyValueHeads; h++) {
                             // get the k vectors for this head
                             int offset = h * config.headSize;
                             if (offset >= key.shape().last()) break;
@@ -266,7 +251,7 @@ public class CausalSelfAttention {
                         }
                     } else {
                         // apply RoPE rotation to the q and k vectors for each head
-                        for (int h = dctx.headStart; h < dctx.headEnd; h++) {
+                        for (int h = 0; h < config.numberOfHeads; h++) {
                             // get the q and k vectors for this head
                             int offset = h * config.headSize;
                             // rotate q and k by the freq theta and freq r
@@ -290,7 +275,7 @@ public class CausalSelfAttention {
                 });
 
                 // Attention
-                VectorMath.pfor(dctx.headStart, dctx.headEnd, h -> {
+                VectorMath.pfor(0, config.numberOfHeads, h -> {
                     int xoffset = config.maybeMapToGroupHead(h) * config.headSize;
                     int yoffset = h * config.headSize;
 
@@ -345,8 +330,8 @@ public class CausalSelfAttention {
                                     result,
                                     vq,
                                     outputProjectionWeights,
-                                    dctx.attentionSegmentStart,
-                                    dctx.attentionSegmentLength,
+                                    0,
+                                    attentionLength,
                                     chunkStart,
                                     chunkSize
                             );

@@ -267,7 +267,7 @@ public class DefaultWeightLoader implements WeightLoader {
     }
 
     @Override
-    public AbstractTensor load(String name, DistributedContext dctx, boolean sparseRows, boolean sparseColumns) {
+    public AbstractTensor load(String name) {
         Weights w = this.weightMap.get(name);
         if (w == null){
             throw new RuntimeException("weight cant be found " +name + " list" + this.weightMap.keySet());

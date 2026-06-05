@@ -81,9 +81,9 @@ public class BertModel extends AbstractModel {
 
     @Override
     protected TransformerBlock[] loadTransformerBlockWeights() {
-        TransformerBlock[] transformerBlocks = new TransformerBlock[config.dctx().embeddingSegmentLength];
+        TransformerBlock[] transformerBlocks = new TransformerBlock[config.numberOfLayers];
 
-        for (int i = config.dctx().layerStart; i < config.dctx().layerEnd; i++) {
+        for (int i = 0; i < config.numberOfLayers; i++) {
             String b = "encoder.layer." + i + ".";
             String prefix = b + "attention.";
 

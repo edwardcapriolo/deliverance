@@ -128,10 +128,10 @@ public class Gemma4Model extends LlamaModel {
     protected TransformerBlock[] loadTransformerBlockWeights() {
         Gemma4Config gemma4Config = gemma4Config();
         DType qType = modelQType.orElse(this.modelDType);
-        TransformerBlock[] blocks = new TransformerBlock[config.dctx().numberOfLayers];
+        TransformerBlock[] blocks = new TransformerBlock[config.numberOfLayers];
         String root = resolveTextModelRoot();
-        for (int i = config.dctx().layerStart; i < config.dctx().layerEnd; i++) {
-            int relativeLayer = i - config.dctx().layerStart;
+        for (int i = 0; i < config.numberOfLayers; i++) {
+            int relativeLayer = i;
             String base = root + "layers." + i + ".";
             String layerType = gemma4Config.layerTypes.get(i);
             int sharedSource = gemma4Config.getSharedKvSourceLayer(i);
@@ -281,8 +281,8 @@ public class Gemma4Model extends LlamaModel {
 
     private AbstractTensor forwardGemma4(AbstractTensor embedding, AbstractTensor[] perLayerInputs, int startPos,
             KvBufferCache.KvBuffer kvbuf, Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
-        for (int i = config.dctx().layerStart; i < config.dctx().layerEnd; i++) {
-            int relativeLayer = i - config.dctx().layerStart;
+        for (int i = 0; i < config.numberOfLayers; i++) {
+            int relativeLayer = i;
             AbstractTensor ref = embedding;
             AbstractTensor perLayerInput = perLayerInputs == null ? null : perLayerInputs[i];
             Timer.Context layerTimer = metricRegistry.timer("gemma4.layer." + i + "." + gemma4Config().layerTypes.get(i)).time();

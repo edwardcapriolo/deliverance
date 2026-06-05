@@ -737,8 +737,8 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public AbstractTensor forward(AbstractTensor embedding, int startPos, KvBufferCache.KvBuffer kvbuf,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
-        for (int i = config.dctx().layerStart; i < config.dctx().layerEnd; i++) {
-            int relativeLayer = i - config.dctx().layerStart;
+        for (int i = 0; i < config.numberOfLayers; i++) {
+            int relativeLayer = i;
             AbstractTensor ref = embedding; // reference so we can free
             embedding = transformerBlocks[relativeLayer].forward(embedding, startPos, kvbuf, tensorReducer);
             ref.close();

@@ -59,9 +59,9 @@ public class Qwen2Model extends LlamaModel {
     @Override
     protected TransformerBlock[] loadTransformerBlockWeights() {
         DType qType = modelQType.orElse(this.modelDType);
-        TransformerBlock[] transformerBlocks = new TransformerBlock[config.dctx().numberOfLayers];
-        IntStream.range(config.dctx().layerStart, config.dctx().layerEnd).parallel().forEach(i -> {
-            int relativeLayer = i - config.dctx().layerStart; // FIXME: add a helper to the context
+        TransformerBlock[] transformerBlocks = new TransformerBlock[config.numberOfLayers];
+        IntStream.range(0, config.numberOfLayers).parallel().forEach(i -> {
+            int relativeLayer = i;
             String base = "model.layers." + i + ".";
             String prefix = base + "self_attn.";
             CausalSelfAttention attention = new CausalSelfAttention(
@@ -70,11 +70,11 @@ public class Qwen2Model extends LlamaModel {
                     Optional.of(quantize(weights.load(prefix + "q_proj.bias"), qType)),
                     Optional.of(quantize(weights.load(prefix + "k_proj.bias"), qType)),
                     Optional.of(quantize(weights.load(prefix + "v_proj.bias"), qType)),
-                    quantize(weights.load(prefix + "q_proj.weight", config.dctx(), true, false), qType),
-                    quantize(weights.load(prefix + "k_proj.weight", config.dctx(), true, false), qType),
-                    quantize(weights.load(prefix + "v_proj.weight", config.dctx(), true, false), qType),
+                    quantize(weights.load(prefix + "q_proj.weight"), qType),
+                    quantize(weights.load(prefix + "k_proj.weight"), qType),
+                    quantize(weights.load(prefix + "v_proj.weight"), qType),
                     Optional.empty(),
-                    quantize(weights.load(prefix + "o_proj.weight", config.dctx(), false, true), qType),
+                    quantize(weights.load(prefix + "o_proj.weight"), qType),
                     configurableTensorProvider,
                     metricRegistry
             );
@@ -83,9 +83,9 @@ public class Qwen2Model extends LlamaModel {
             MLPBlock mlp = new MLPBlock(
                     this,
                     config.activationFunction,
-                    quantize(weights.load(prefix + "gate_proj.weight", config.dctx(), true, false), qType), // w1
-                    quantize(weights.load(prefix + "down_proj.weight", config.dctx(), false, true), qType), // w2
-                    quantize(weights.load(prefix + "up_proj.weight", config.dctx(), true, false), qType),
+                    quantize(weights.load(prefix + "gate_proj.weight"), qType), // w1
+                    quantize(weights.load(prefix + "down_proj.weight"), qType), // w2
+                    quantize(weights.load(prefix + "up_proj.weight"), qType),
                     configurableTensorProvider
             ); // w3
 

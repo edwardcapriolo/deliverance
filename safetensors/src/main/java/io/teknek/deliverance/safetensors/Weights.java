@@ -3,9 +3,7 @@ package io.teknek.deliverance.safetensors;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.primitives.Ints;
 import io.teknek.deliverance.DType;
-import io.teknek.deliverance.safetensors.fetch.Pair;
 import io.teknek.deliverance.tensor.AbstractTensor;
-import io.teknek.deliverance.tensor.SparseOffset;
 import io.teknek.deliverance.tensor.TensorInfo;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.impl.*;
@@ -68,42 +66,16 @@ public class Weights implements WeightLoader {
 
 
     @Override
-    public AbstractTensor load(String name, DistributedContext dctx, boolean sparseRows, boolean sparseColumns) {
+    public AbstractTensor load(String name) {
         TensorInfo info = tensorInfoMap.get(name);
         if (info == null) {
             throw new NoSuchElementException(name + " not found in weights");
         }
-        if (dctx != null && info.shape.length != 2) {
-            throw new RuntimeException("Invalid shape dimensions " + info.shape.length + " encountered for " + name + " with offset");
-        }
-        Pair<TensorShape, Pair<Long, Long>> offsets = getLoadOffsets(info, dctx, sparseRows);
         ByteBuffer b = bytes.duplicate()
                 .order(ByteOrder.LITTLE_ENDIAN)
-                .position(Ints.checkedCast(offsets.right().left()))
-                .limit(Ints.checkedCast(offsets.right().right()));
-        return loadTensorFromBuffer(name, info.dType, majorityDType, offsets.left(), b, sparseRows, sparseColumns, dctx, parent.orElse(this));
-    }
-
-    static Pair<TensorShape, Pair<Long, Long>> getLoadOffsets(TensorInfo info, DistributedContext dctx, boolean sparseRows) {
-        long positionOffset = info.dataOffsets[0];
-        long positionLimit = info.dataOffsets[1];
-        TensorShape shape = toTensorShape(info.shape);
-
-        // If this is a sparse tensor, we need to fetch only the section of the tensor that is needed
-        if (dctx != null && sparseRows) {
-            int rows = info.shape[0];
-            int columnLength = info.shape[1] * info.dType.size();
-
-            // Hack for Q4
-            if (info.dType == DType.Q4) {
-                columnLength /= 2;
-            }
-
-            positionOffset = info.dataOffsets[0] + (dctx.getShardOffsetForLength(rows) * columnLength);
-            positionLimit = positionOffset + (dctx.getShardLength(rows) * columnLength);
-            shape = TensorShape.sparseRow(info.shape, SparseOffset.of(dctx.getShardOffsetForLength(rows), dctx.getShardLength(rows)));
-        }
-        return Pair.of(shape, Pair.of(positionOffset, positionLimit));
+                .position(Ints.checkedCast(info.dataOffsets[0]))
+                .limit(Ints.checkedCast(info.dataOffsets[1]));
+        return loadTensorFromBuffer(name, info.dType, majorityDType, toTensorShape(info.shape), b, parent.orElse(this));
     }
 
     /**
@@ -127,9 +99,6 @@ public class Weights implements WeightLoader {
             DType majorityDType,
             TensorShape shape,
             ByteBuffer b,
-            boolean sparseRows,
-            boolean sparseColumns,
-            DistributedContext dctx,
             WeightLoader loader
     ) {
         int len;
@@ -162,25 +131,18 @@ public class Weights implements WeightLoader {
                 t = new BFloat16BufferTensor(name, sb, shape, true);
                 break;
             case Q4:
-                FloatBufferTensor qb = (FloatBufferTensor) loader.load(name + ".qb", dctx, sparseRows, false /*only need sparsify once*/);
+                FloatBufferTensor qb = (FloatBufferTensor) loader.load(name + ".qb");
                 t = new Q4ByteBufferTensor(name, b.slice(), qb, shape, true);
                 break;
             case I8:
-                FloatBufferTensor qb1 = (FloatBufferTensor) loader.load(
-                        name + ".qb",
-                        dctx,
-                        sparseRows,
-                        false /*only need to sparsify once*/
-                );
+                FloatBufferTensor qb1 = (FloatBufferTensor) loader.load(name + ".qb");
                 t = new Q8ByteBufferTensor(name, b.slice(), qb1, shape, true);
                 break;
             default:
                 throw new IllegalArgumentException("Unsupported Tensor type: " + dType.name() + " for " + name);
         }
 
-        return dctx != null && sparseColumns && dctx.hasModelShard()
-                ? t.sparsify(dctx.getShardOffsetForLength(shape.last()), dctx.getShardLength(shape.last()))
-                : t;
+        return t;
     }
 
     @Override
@@ -210,7 +172,7 @@ public class Weights implements WeightLoader {
                 .order(ByteOrder.LITTLE_ENDIAN)
                 .position(Ints.checkedCast(positionOffset))
                 .limit(Ints.checkedCast(positionLimit));
-        return loadTensorFromBuffer(name, info.dType, majorityDType, shape, b, false, false, null, parent.orElse(this));
+        return loadTensorFromBuffer(name, info.dType, majorityDType, shape, b, parent.orElse(this));
     }
 
     @Override

@@ -3,7 +3,6 @@ package io.teknek.deliverance.generator;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.safetensors.DistributedContext;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
@@ -19,7 +18,6 @@ import java.util.stream.IntStream;
  */
 public class MLPBlock implements FeedForward {
     private final AbstractModel model;
-    private final DistributedContext dctx;
     private final Optional<AbstractTensor> fullyConnectedBias;
     private final AbstractTensor fullyConnectedWeights;
 
@@ -74,7 +72,6 @@ public class MLPBlock implements FeedForward {
             ConfigurableTensorProvider configurableTensorProvider
     ) {
         this.model = model;
-        this.dctx = model.getConfig().dctx();
         this.activationFunction = activationFunction;
         this.fullyConnectedBias = fullyConnectedBias;
         this.fullyConnectedWeights = fullyConnectedWeights;
@@ -106,7 +103,7 @@ public class MLPBlock implements FeedForward {
             batchResults[0] = buf;
             batchResults[1] = buf2;
 
-            VectorMath.pchunk(dctx.hiddenSegmentStart, dctx.hiddenSegmentLength, (chunkStart, chunkSize) -> {
+            VectorMath.pchunk(0, hiddenLength, (chunkStart, chunkSize) -> {
                 if (upProjectionWeights != null) {
                     configurableTensorProvider.get()
                             .dotProductBatchChunk(batchResults, lnemb, batchWeights, 0, model.getConfig().embeddingLength, chunkStart, chunkSize);
@@ -117,11 +114,11 @@ public class MLPBlock implements FeedForward {
             }, configurableTensorProvider.get().parallelSplitSize(), model.getPool());
 
             fullyConnectedBias.ifPresent(
-                    bias -> configurableTensorProvider.get().accumulate(buf, bias, dctx.hiddenSegmentStart, dctx.hiddenSegmentLength)
+                    bias -> configurableTensorProvider.get().accumulate(buf, bias, 0, hiddenLength)
             );
 
             // Not using pfor because we can use all cores
-            IntStream.range(dctx.hiddenSegmentStart, dctx.hiddenSegmentEnd).parallel().forEach(i -> {
+            IntStream.range(0, hiddenLength).parallel().forEach(i -> {
                 for (int j = 0; j < batchSize; j++) {
                     float w1 = buf.get(j, i);
                     float w1a = ActivationFunction.eval(activationFunction, w1);
@@ -142,8 +139,8 @@ public class MLPBlock implements FeedForward {
                                     result,
                                     bufq,
                                     projectionWeights,
-                                    dctx.hiddenSegmentStart,
-                                    dctx.hiddenSegmentLength,
+                                    0,
+                                    hiddenLength,
                                     chunkStart,
                                     chunkSize
                             );

@@ -17,14 +17,12 @@ public interface WeightLoader extends AutoCloseable {
     }
 
     default AbstractTensor load(String name) {
-        return load(name, null, false, false);
+        throw new UnsupportedOperationException("Weight loading not supported for " + getClass().getName());
     }
 
     default AbstractTensor loadRows(String name, int rowOffset, int rowCount) {
         throw new UnsupportedOperationException("Row slicing not supported for " + getClass().getName());
     }
-
-    AbstractTensor load(String name, DistributedContext dctx, boolean sparseRows, boolean sparseColumns);
 
     DType getModelDType();
 }

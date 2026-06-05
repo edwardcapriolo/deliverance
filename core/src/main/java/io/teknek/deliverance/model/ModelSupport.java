@@ -196,7 +196,6 @@ public class ModelSupport {
             DType workingQuantizationType,
             Optional<DType> modelQuantization,
             Optional<Integer> threadCount,
-            Optional<Function<Config, DistributedContext>> distributedContextLoader,
             Function<File, WeightLoader> weightLoaderSupplier) {
 
         File baseDir = modelFetcher.maybeDownload();
@@ -209,7 +208,6 @@ public class ModelSupport {
             //threadCount.ifPresent(PhysicalCoreExecutor::overrideThreadCount);
             ModelType modelType = detectModel(configFile);
             Config c = om.readValue(configFile, modelType.getConfigClass());
-            distributedContextLoader.ifPresent(loader -> c.setDistributedContext(loader.apply(c)));
             //c.setWorkingDirectory(workingDirectory);
             PreTrainedTokenizer t = AutoTokenizer.fromPretrained(baseDir.toPath());
             WeightLoader wl = weightLoaderSupplier.apply(baseDir);

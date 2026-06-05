@@ -3,9 +3,7 @@ package io.teknek.deliverance.model;
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.generator.FeedForward;
 import io.teknek.deliverance.math.ActivationFunction;
-import io.teknek.deliverance.math.BiIntConsumer;
 import io.teknek.deliverance.math.VectorMath;
-import io.teknek.deliverance.safetensors.DistributedContext;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorDisplayUtil;
 import io.teknek.deliverance.tensor.VectorTensorMathUtils;
@@ -27,7 +25,6 @@ public class MixtureOfExpertsBlock implements FeedForward {
     private static final Logger LOG = LoggerFactory.getLogger(MixtureOfExpertsBlock.class);
 
     private final AbstractModel model;
-    private final DistributedContext dctx;
     private final AbstractTensor moeGateWeight;
     private final int numberOfExperts;
     private final int numberOfExpertsPerToken;
@@ -51,7 +48,6 @@ public class MixtureOfExpertsBlock implements FeedForward {
             AbstractTensor[] projectionWeights,
             AbstractTensor[] upProjectionWeights) {
         this.model = model;
-        this.dctx = model.config.dctx();
         this.numberOfExperts = numberOfExperts;
         this.numberOfExpertsPerToken = numberOfExpertsPerToken;
         this.moeGateWeight = moeGateWeight;
@@ -107,7 +103,7 @@ public class MixtureOfExpertsBlock implements FeedForward {
                     batchResults[0] = buf;
                     batchResults[1] = buf2;
 
-                    VectorMath.pchunk(dctx.hiddenSegmentStart, dctx.hiddenSegmentLength, (chunkStart, chunkSize) -> {
+                    VectorMath.pchunk(0, hiddenLength, (chunkStart, chunkSize) -> {
                         model.configurableTensorProvider.get()
                                 .dotProductBatchChunk(
                                         batchResults,
@@ -119,7 +115,7 @@ public class MixtureOfExpertsBlock implements FeedForward {
                                         chunkSize);
                     }, model.configurableTensorProvider.get().parallelSplitSize(), model.getPool());
 
-                    VectorMath.pfor(dctx.hiddenSegmentStart, dctx.hiddenSegmentEnd, iv -> {
+                    VectorMath.pfor(0, hiddenLength, iv -> {
                         float w1 = buf.get(0, iv);
                         float w1a = ActivationFunction.eval(activationFunction, w1);
                         //buf.set(w1a, 0, iv);

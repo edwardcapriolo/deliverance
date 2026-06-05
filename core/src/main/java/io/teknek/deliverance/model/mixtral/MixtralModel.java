@@ -36,19 +36,19 @@ public class MixtralModel extends LlamaModel {
     protected TransformerBlock[] loadTransformerBlockWeights() {
         MixtralConfig mixtralConfig = (MixtralConfig) config;
         DType qType = modelQType.orElse(this.modelDType);
-        TransformerBlock[] transformerBlocks = new TransformerBlock[config.dctx().numberOfLayers];
+        TransformerBlock[] transformerBlocks = new TransformerBlock[config.numberOfLayers];
 
-        IntStream.range(config.dctx().layerStart, config.dctx().layerEnd).parallel().forEach(i -> {
+        IntStream.range(0, config.numberOfLayers).parallel().forEach(i -> {
             String base = "model.layers." + i + ".";
             String prefix = base + "self_attn.";
 
             CausalSelfAttention attention = new CausalSelfAttention(
                     this,
                     i,
-                    quantize(weights.load(prefix + "q_proj.weight", config.dctx(), true, false), qType),
-                    quantize(weights.load(prefix + "k_proj.weight", config.dctx(), true, false), qType),
-                    quantize(weights.load(prefix + "v_proj.weight", config.dctx(), true, false), qType),
-                    quantize(weights.load(prefix + "o_proj.weight", config.dctx(), false, true), qType),
+                    quantize(weights.load(prefix + "q_proj.weight"), qType),
+                    quantize(weights.load(prefix + "k_proj.weight"), qType),
+                    quantize(weights.load(prefix + "v_proj.weight"), qType),
+                    quantize(weights.load(prefix + "o_proj.weight"), qType),
                     this.configurableTensorProvider,
                     this.metricRegistry
             );
@@ -61,9 +61,9 @@ public class MixtralModel extends LlamaModel {
 
             for (int e = 0; e < mixtralConfig.numberOfExperts; e++) {
                 String expertPrefix = prefix + "experts." + e + ".";
-                expertGateWeights[e] = quantize(weights.load(expertPrefix + "w1.weight", config.dctx(), true, false), qType);
-                expertDownWeights[e] = quantize(weights.load(expertPrefix + "w2.weight", config.dctx(), false, true), qType);
-                expertUpWeights[e] = quantize(weights.load(expertPrefix + "w3.weight", config.dctx(), true, false), qType);
+                expertGateWeights[e] = quantize(weights.load(expertPrefix + "w1.weight"), qType);
+                expertDownWeights[e] = quantize(weights.load(expertPrefix + "w2.weight"), qType);
+                expertUpWeights[e] = quantize(weights.load(expertPrefix + "w3.weight"), qType);
             }
 
             MixtureOfExpertsBlock moe = new MixtureOfExpertsBlock(
@@ -71,7 +71,7 @@ public class MixtralModel extends LlamaModel {
                     mixtralConfig.numberOfExperts,
                     mixtralConfig.numberOfExpertsPerToken,
                     config.activationFunction,
-                    quantize(weights.load(prefix + "gate.weight", config.dctx(), false, false), qType),
+                    quantize(weights.load(prefix + "gate.weight"), qType),
                     expertGateWeights, // w1
                     expertDownWeights, // w2
                     expertUpWeights

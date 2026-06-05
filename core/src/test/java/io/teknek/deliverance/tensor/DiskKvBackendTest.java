@@ -5,7 +5,6 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.safetensors.Config;
-import io.teknek.deliverance.safetensors.DistributedContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -160,8 +159,6 @@ public class DiskKvBackendTest {
         Config config = new Config(128, 64, 128, 4,
                 4, 2, 1e-5f, 1000, 0,
                 List.of(1), ActivationFunction.Type.GELU_PYTORCH_TANH, null, null);
-        DistributedContext dctx = DistributedContext.builder(config).build();
-        config.setDistributedContext(dctx);
         AbstractModel model = mock(AbstractModel.class);
         when(model.getConfig()).thenReturn(config);
         when(model.getWorkingDType()).thenReturn(DType.F32);

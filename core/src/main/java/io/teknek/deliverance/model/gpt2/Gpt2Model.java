@@ -68,9 +68,9 @@ public class Gpt2Model extends AbstractModel{
 
     @Override
     protected TransformerBlock[] loadTransformerBlockWeights() {
-        TransformerBlock[] transformerBlocks = new TransformerBlock[config.dctx().numberOfLayers];
+        TransformerBlock[] transformerBlocks = new TransformerBlock[config.numberOfLayers];
 
-        for (int i = config.dctx().layerStart; i < config.dctx().layerEnd; i++) {
+        for (int i = 0; i < config.numberOfLayers; i++) {
             String b = "h." + i + ".";
             String prefix = b + "attn.";
 

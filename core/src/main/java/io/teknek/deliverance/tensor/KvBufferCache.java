@@ -4,7 +4,6 @@ import com.google.common.base.Preconditions;
 import io.teknek.deliverance.DType;
 
 import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.safetensors.DistributedContext;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.tensor.impl.BFloat16BufferTensor;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
@@ -236,7 +235,7 @@ public class KvBufferCache implements Closeable {
 
     public void copyPrefix(KvBuffer src, KvBuffer dest, int length) {
         Config c = model.getConfig();
-        int layers = c.dctx().numberOfLayers;
+        int layers = c.numberOfLayers;
         for (int layer = 0; layer < layers; layer++) {
             for (int pos = 0; pos < length; pos++) {
                 AbstractTensor srcK = src.getKeyTensorForPosition(layer, pos);
@@ -300,16 +299,8 @@ public class KvBufferCache implements Closeable {
 
             TensorShape s;
             Config c = model.getConfig();
-            DistributedContext dctx = c.dctx();
             int[] rawShape = new int[]{layersPerPage, 2, contextLengthPerPage, c.kvLength};
-
-            // Adjust the shape to be relative to the kv cache size (in case of GQA)
-            if (c.kvLength != dctx.kvSegmentLength) {
-                SparseOffset<Integer> kvOffset = SparseOffset.of(dctx.kvSegmentStart, dctx.kvSegmentEnd);
-                s = TensorShape.sparseColumn(rawShape, kvOffset);
-            } else {
-                s = TensorShape.of(rawShape);
-            }
+            s = TensorShape.of(rawShape);
             this.pageShape = s;
         }
     }
@@ -466,11 +457,11 @@ public class KvBufferCache implements Closeable {
         public KvPageContext computePageSize(long maxPageSizeInBytes) {
             Config c = model.getConfig();
             DType workingDType = model.getWorkingDType();
-            long s = 2L * workingDType.size() * c.dctx().kvSegmentLength; // Size per layer per context
+            long s = 2L * workingDType.size() * c.kvLength; // Size per layer per context
 
             Preconditions.checkArgument(maxPageSizeInBytes > s, "maxPageSizeInBytes must be greater than the size of a single layer");
 
-            int N = c.dctx().numberOfLayers;
+            int N = c.numberOfLayers;
             int C = c.contextLength;
 
             int optimalLayersPerPage = 1;

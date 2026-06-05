@@ -44,7 +44,6 @@ public class Config {
     public final List<String> architectures;
     public final boolean isEncoderDecoder;
     private Map<String,Object> ropeScaling;
-    private volatile DistributedContext dctx;
 
     public Config(
             int contextLength,
@@ -375,20 +374,6 @@ public class Config {
 
         this.architectures = architectures;
         this.isEncoderDecoder = isEncoderDecoder;
-        // Set default values
-        this.dctx = DistributedContext.builder(this).build();
-    }
-
-    public DistributedContext dctx() {
-        return dctx;
-    }
-
-    public void setDistributedContext(DistributedContext dctx) {
-        this.dctx = dctx;
-    }
-
-    public DistributedContext getDistributedContext() {
-        return this.dctx;
     }
 
     public int maybeMapToGroupHead(int head) {

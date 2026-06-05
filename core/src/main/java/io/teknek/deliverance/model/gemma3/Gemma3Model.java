@@ -55,15 +55,15 @@ public class Gemma3Model extends LlamaModel {
     @Override
     protected TransformerBlock[] loadTransformerBlockWeights() {
         DType qType = modelQType.orElse(this.modelDType);
-        TransformerBlock[] transformerBlocks = new TransformerBlock[config.dctx().numberOfLayers];
-        IntStream.range(config.dctx().layerStart, config.dctx().layerEnd).parallel().forEach(i -> {
+        TransformerBlock[] transformerBlocks = new TransformerBlock[config.numberOfLayers];
+        IntStream.range(0, config.numberOfLayers).parallel().forEach(i -> {
             String base = "model.layers." + i + ".";
             String prefix = base + "self_attn.";
             CausalSelfAttention attention = new CausalSelfAttention(this, i,
-                    quantize(weights.load(prefix + "q_proj.weight", config.dctx(), true, false), qType),
-                    quantize(weights.load(prefix + "k_proj.weight", config.dctx(), true, false), qType),
-                    quantize(weights.load(prefix + "v_proj.weight", config.dctx(), true, false), qType),
-                    quantize(weights.load(prefix + "o_proj.weight", config.dctx(), false, true), qType),
+                    quantize(weights.load(prefix + "q_proj.weight"), qType),
+                    quantize(weights.load(prefix + "k_proj.weight"), qType),
+                    quantize(weights.load(prefix + "v_proj.weight"), qType),
+                    quantize(weights.load(prefix + "o_proj.weight"), qType),
                     configurableTensorProvider,
                     metricRegistry
             );
@@ -72,9 +72,9 @@ public class Gemma3Model extends LlamaModel {
             MLPBlock mlp = new MLPBlock(
                     this,
                     config.activationFunction,
-                    quantize(weights.load(prefix + "gate_proj.weight", config.dctx(), true, false), qType), // w1
-                    quantize(weights.load(prefix + "down_proj.weight", config.dctx(), false, true), qType), // w2
-                    quantize(weights.load(prefix + "up_proj.weight", config.dctx(), true, false), qType), // w3,
+                    quantize(weights.load(prefix + "gate_proj.weight"), qType), // w1
+                    quantize(weights.load(prefix + "down_proj.weight"), qType), // w2
+                    quantize(weights.load(prefix + "up_proj.weight"), qType), // w3,
                     configurableTensorProvider
             );
 
