@@ -8,6 +8,7 @@ import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.FloatConversions;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.llama.LlamaModel;
+import io.teknek.deliverance.model.tensorparallel.TensorParallelContext;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.*;
@@ -53,7 +54,8 @@ public class Gemma4Model extends LlamaModel {
             TensorAllocator arrayQueueTensorAllocator,
             KvBufferCacheSettings kvBufferCacheSettings,
             ToolCallParser toolCallParser,
-            WrappedForkJoinPool pool
+            WrappedForkJoinPool pool,
+            TensorParallelContext tensorParallelContext
     ) {
         super(
                 inferenceType,
@@ -68,7 +70,8 @@ public class Gemma4Model extends LlamaModel {
                 arrayQueueTensorAllocator,
                 kvBufferCacheSettings,
                 toolCallParser,
-                pool
+                pool,
+                tensorParallelContext
         );
     }
 

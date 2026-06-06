@@ -3,6 +3,8 @@ package io.teknek.deliverance.model;
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
+import io.teknek.deliverance.model.tensorparallel.StaticTensorParallelContext;
+import io.teknek.deliverance.model.tensorparallel.TensorParallelContext;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.TensorAllocator;
@@ -18,6 +20,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.lang.reflect.InvocationTargetException;
+import java.util.Objects;
 import java.util.Optional;
 
 public class AutoModelForCausaLm {
@@ -57,6 +60,7 @@ public class AutoModelForCausaLm {
         private ConfigurableTensorProvider provider;
         private WrappedForkJoinPool pool;
         private String oobCheck = "2";
+        private TensorParallelContext tensorParallelContext = new StaticTensorParallelContext(0, 1);
 
         public Builder(ModelFetcher fetch){
             this.fetch = fetch;
@@ -94,6 +98,13 @@ public class AutoModelForCausaLm {
             this.pool = pool;
             return this;
         }
+        public Builder withTensorParallelContext(TensorParallelContext tensorParallelContext) {
+            this.tensorParallelContext = Objects.requireNonNull(tensorParallelContext, "tensorParallelContext");
+            return this;
+        }
+        public Builder withTensorParallel(int rank, int size) {
+            return withTensorParallelContext(new StaticTensorParallelContext(rank, size));
+        }
         /** This is a JVM wide property! **/
         public Builder withSystemPropertyForVectorOobCheck(String value){
             this.oobCheck = value;
@@ -114,7 +125,7 @@ public class AutoModelForCausaLm {
                 }
             }
             return ModelSupport.loadModel(modelRoot, workingMem, workingQuant, provider,
-                    mr, allocator, settings, fetch, toolCallParser, pool);
+                    mr, allocator, settings, fetch, toolCallParser, pool, tensorParallelContext);
         }
 
         public ModelFetcher getFetch() {
@@ -147,6 +158,10 @@ public class AutoModelForCausaLm {
 
         public WrappedForkJoinPool getPool() {
             return this.pool;
+        }
+
+        public TensorParallelContext getTensorParallelContext() {
+            return tensorParallelContext;
         }
     }
 

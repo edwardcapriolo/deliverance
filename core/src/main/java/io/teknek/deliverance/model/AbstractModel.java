@@ -25,6 +25,9 @@ import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.math.VectorMathUtils;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
+import io.teknek.deliverance.model.tensorparallel.StaticTensorParallelContext;
+import io.teknek.deliverance.model.tensorparallel.TensorParallelContext;
+import io.teknek.deliverance.model.tensorparallel.TensorParallelPlanner;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
@@ -122,6 +125,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     protected final ConfigurableTensorProvider configurableTensorProvider;
     protected final MetricRegistry metricRegistry;
     protected final TensorAllocator tensorAllocator;
+    protected final TensorParallelContext tensorParallelContext;
 
     //embedding
     protected Optional<PoolingLayer> poolingLayer;
@@ -137,10 +141,21 @@ public abstract class AbstractModel implements Generator, Classifier {
                             DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider provider,
                             MetricRegistry metricRegistry, TensorAllocator tensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
                             ToolCallParser toolCallParser, WrappedForkJoinPool pool) {
+        this(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType, provider, metricRegistry,
+                tensorAllocator, kvBufferCacheSettings, toolCallParser, pool, new StaticTensorParallelContext(0, 1));
+    }
+
+    protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer t, DType workingMemoryDType,
+                            DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider provider,
+                            MetricRegistry metricRegistry, TensorAllocator tensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
+                            ToolCallParser toolCallParser, WrappedForkJoinPool pool,
+                            TensorParallelContext tensorParallelContext) {
         this.inferenceType = inferenceType;
         this.config = c;
         this.weights = w;
         this.tokenizer = t;
+        this.tensorParallelContext = Objects.requireNonNull(tensorParallelContext, "tensorParallelContext");
+        TensorParallelPlanner.validate(c, tensorParallelContext);
 
         this.modelDType = w.getModelDType();
         this.workingDType = workingMemoryDType;
@@ -217,6 +232,10 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.classifyOutput = inferenceType.isClassify ? loadClassifierWeights() : null;
         this.poolingLayer = inferenceType.isPooling ? Optional.ofNullable(loadPoolingWeights()) : Optional.empty();
         this.pool = pool;
+    }
+
+    public TensorParallelContext getTensorParallelContext() {
+        return tensorParallelContext;
     }
 
     /**

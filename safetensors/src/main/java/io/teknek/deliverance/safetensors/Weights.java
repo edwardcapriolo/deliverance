@@ -176,6 +176,36 @@ public class Weights implements WeightLoader {
     }
 
     @Override
+    public AbstractTensor load(String name, TensorShardSpec shardSpec) {
+        TensorInfo info = tensorInfoMap.get(name);
+        if (info == null) {
+            throw new NoSuchElementException(name + " not found in weights");
+        }
+        if (info.shape.length != 2) {
+            throw new IllegalArgumentException("Tensor sharding only supported for 2D tensors: " + name);
+        }
+        return switch (shardSpec.axis()) {
+            case ROWS -> loadRows(name, shardSpec.startInclusive(), shardSpec.length());
+            case COLUMNS -> loadColumnShard(name, shardSpec, info);
+        };
+    }
+
+    private AbstractTensor loadColumnShard(String name, TensorShardSpec shardSpec, TensorInfo info) {
+        int cols = Ints.checkedCast(info.shape[1]);
+        if (shardSpec.endExclusive() > cols) {
+            throw new IllegalArgumentException("Invalid column range " + shardSpec.startInclusive() + ","
+                    + shardSpec.endExclusive() + " for " + name);
+        }
+        AbstractTensor full = load(name);
+        AbstractTensor shard = full.sparsify(shardSpec.startInclusive(), shardSpec.length());
+        if (shard == full) {
+            return full;
+        }
+        full.close();
+        return shard;
+    }
+
+    @Override
     public DType getModelDType() {
         return majorityDType;
     }

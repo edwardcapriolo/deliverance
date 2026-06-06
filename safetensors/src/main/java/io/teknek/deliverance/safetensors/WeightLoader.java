@@ -24,5 +24,9 @@ public interface WeightLoader extends AutoCloseable {
         throw new UnsupportedOperationException("Row slicing not supported for " + getClass().getName());
     }
 
+    default AbstractTensor load(String name, TensorShardSpec shardSpec) {
+        throw new UnsupportedOperationException("Tensor sharding not supported for " + getClass().getName());
+    }
+
     DType getModelDType();
 }

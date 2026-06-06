@@ -354,6 +354,20 @@ public class DefaultWeightLoader implements WeightLoader {
         }
     }
 
+    @Override
+    public AbstractTensor load(String name, TensorShardSpec shardSpec) {
+        Weights direct = this.weightMap.get(name);
+        if (direct != null) {
+            return direct.load(name, shardSpec);
+        }
+        if (shardSpec.axis() == TensorShardAxis.ROWS) {
+            return loadRows(name, shardSpec.startInclusive(), shardSpec.length());
+        }
+        try (AbstractTensor full = load(name)) {
+            return full.sparsify(shardSpec.startInclusive(), shardSpec.length());
+        }
+    }
+
     private AbstractTensor allocateLike(DType dType, int rows, int cols) {
         TensorShape shape = TensorShape.of(rows, cols);
         return switch (dType) {

@@ -8,6 +8,7 @@ import io.teknek.deliverance.generator.*;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.tensorparallel.TensorParallelContext;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.AbstractTensor;
@@ -26,12 +27,12 @@ public class LlamaModel extends AbstractModel {
 
     private volatile AbstractTensor embedTokenWeights;
     public LlamaModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer t, DType workingMemoryDType,
-                      DType workingMemoryQType, Optional<DType> modelQType,
-                      ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
-                      TensorAllocator arrayQueueTensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
-                      ToolCallParser toolCallParser, WrappedForkJoinPool pool) {
+                       DType workingMemoryQType, Optional<DType> modelQType,
+                       ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
+                       TensorAllocator arrayQueueTensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
+                       ToolCallParser toolCallParser, WrappedForkJoinPool pool, TensorParallelContext tensorParallelContext) {
         super(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType, configurableTensorProvider,
-                metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, toolCallParser, pool);
+                metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, toolCallParser, pool, tensorParallelContext);
     }
 
     @Override
