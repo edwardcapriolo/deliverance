@@ -26,6 +26,8 @@ import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.math.VectorMathUtils;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.tensorparallel.StaticTensorParallelContext;
+import io.teknek.deliverance.model.tensorparallel.SingleRankTensorParallelCollectives;
+import io.teknek.deliverance.model.tensorparallel.TensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelContext;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelPlanner;
 import io.teknek.deliverance.safetensors.Config;
@@ -126,6 +128,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     protected final MetricRegistry metricRegistry;
     protected final TensorAllocator tensorAllocator;
     protected final TensorParallelContext tensorParallelContext;
+    protected final TensorParallelCollectives tensorParallelCollectives;
 
     //embedding
     protected Optional<PoolingLayer> poolingLayer;
@@ -142,7 +145,8 @@ public abstract class AbstractModel implements Generator, Classifier {
                             MetricRegistry metricRegistry, TensorAllocator tensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
                             ToolCallParser toolCallParser, WrappedForkJoinPool pool) {
         this(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType, provider, metricRegistry,
-                tensorAllocator, kvBufferCacheSettings, toolCallParser, pool, new StaticTensorParallelContext(0, 1));
+                tensorAllocator, kvBufferCacheSettings, toolCallParser, pool, new StaticTensorParallelContext(0, 1),
+                new SingleRankTensorParallelCollectives());
     }
 
     protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer t, DType workingMemoryDType,
@@ -150,11 +154,23 @@ public abstract class AbstractModel implements Generator, Classifier {
                             MetricRegistry metricRegistry, TensorAllocator tensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
                             ToolCallParser toolCallParser, WrappedForkJoinPool pool,
                             TensorParallelContext tensorParallelContext) {
+        this(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType, provider, metricRegistry,
+                tensorAllocator, kvBufferCacheSettings, toolCallParser, pool, tensorParallelContext,
+                new SingleRankTensorParallelCollectives());
+    }
+
+    protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer t, DType workingMemoryDType,
+                            DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider provider,
+                            MetricRegistry metricRegistry, TensorAllocator tensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
+                            ToolCallParser toolCallParser, WrappedForkJoinPool pool,
+                            TensorParallelContext tensorParallelContext,
+                            TensorParallelCollectives tensorParallelCollectives) {
         this.inferenceType = inferenceType;
         this.config = c;
         this.weights = w;
         this.tokenizer = t;
         this.tensorParallelContext = Objects.requireNonNull(tensorParallelContext, "tensorParallelContext");
+        this.tensorParallelCollectives = Objects.requireNonNull(tensorParallelCollectives, "tensorParallelCollectives");
         TensorParallelPlanner.validate(c, tensorParallelContext);
 
         this.modelDType = w.getModelDType();
@@ -236,6 +252,26 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public TensorParallelContext getTensorParallelContext() {
         return tensorParallelContext;
+    }
+
+    public TensorParallelCollectives getTensorParallelCollectives() {
+        return tensorParallelCollectives;
+    }
+
+    public int getLocalNumberOfHeads() {
+        return config.numberOfHeads / tensorParallelContext.size();
+    }
+
+    public int getLocalNumberOfKeyValueHeads() {
+        return config.numberOfKeyValueHeads / tensorParallelContext.size();
+    }
+
+    public int getLocalAttentionLength() {
+        return config.attentionLength / tensorParallelContext.size();
+    }
+
+    public int getLocalKvLength() {
+        return config.kvLength / tensorParallelContext.size();
     }
 
     /**
@@ -717,6 +753,12 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public AbstractTensor batchForward(int[] token_ids, int startPos, KvBufferCache.KvBuffer kvbuf) {
         return batchForward(token_ids, startPos, kvbuf, Optional.empty());
+    }
+
+    public AbstractTensor batchForward(int[] tokenIds, int startPos) {
+        try (KvBufferCache.KvBuffer kvBuffer = kvBufferCache.getEphemeralKvBuffer()) {
+            return batchForward(tokenIds, startPos, kvBuffer, Optional.empty());
+        }
     }
 
     public AbstractTensor batchForward(int[] token_ids, int startPos, KvBufferCache.KvBuffer kvbuf,

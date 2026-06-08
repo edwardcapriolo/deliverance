@@ -299,7 +299,7 @@ public class KvBufferCache implements Closeable {
 
             TensorShape s;
             Config c = model.getConfig();
-            int[] rawShape = new int[]{layersPerPage, 2, contextLengthPerPage, c.kvLength};
+            int[] rawShape = new int[]{layersPerPage, 2, contextLengthPerPage, model.getLocalKvLength()};
             s = TensorShape.of(rawShape);
             this.pageShape = s;
         }
@@ -457,7 +457,7 @@ public class KvBufferCache implements Closeable {
         public KvPageContext computePageSize(long maxPageSizeInBytes) {
             Config c = model.getConfig();
             DType workingDType = model.getWorkingDType();
-            long s = 2L * workingDType.size() * c.kvLength; // Size per layer per context
+            long s = 2L * workingDType.size() * model.getLocalKvLength(); // Size per layer per context
 
             Preconditions.checkArgument(maxPageSizeInBytes > s, "maxPageSizeInBytes must be greater than the size of a single layer");
 

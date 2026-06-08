@@ -4,6 +4,10 @@ import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.tensorparallel.StaticTensorParallelContext;
+import io.teknek.deliverance.model.tensorparallel.SingleRankTensorParallelCollectives;
+import io.teknek.deliverance.model.tensorparallel.GossipParallelMembership;
+import io.teknek.deliverance.model.tensorparallel.GossipParallelSettings;
+import io.teknek.deliverance.model.tensorparallel.TensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelContext;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
@@ -20,8 +24,11 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.lang.reflect.InvocationTargetException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Function;
 
 public class AutoModelForCausaLm {
     private static final Logger LOGGER = LoggerFactory.getLogger(AutoModelForCausaLm.class);
@@ -61,6 +68,8 @@ public class AutoModelForCausaLm {
         private WrappedForkJoinPool pool;
         private String oobCheck = "2";
         private TensorParallelContext tensorParallelContext = new StaticTensorParallelContext(0, 1);
+        private TensorParallelCollectives tensorParallelCollectives = new SingleRankTensorParallelCollectives();
+        private Optional<GossipParallelSettings> parallelSettings = Optional.empty();
 
         public Builder(ModelFetcher fetch){
             this.fetch = fetch;
@@ -105,6 +114,74 @@ public class AutoModelForCausaLm {
         public Builder withTensorParallel(int rank, int size) {
             return withTensorParallelContext(new StaticTensorParallelContext(rank, size));
         }
+        public Builder withTensorParallelCollectives(TensorParallelCollectives tensorParallelCollectives) {
+            this.tensorParallelCollectives = Objects.requireNonNull(tensorParallelCollectives, "tensorParallelCollectives");
+            return this;
+        }
+        public Builder withParallelSettings(GossipParallelSettings parallelSettings) {
+            this.parallelSettings = Optional.of(Objects.requireNonNull(parallelSettings, "parallelSettings"));
+            return this;
+        }
+        public GossipParallelMembership startParallelMembership() {
+            return GossipParallelMembership.start(parallelSettings.orElseThrow(() ->
+                    new IllegalStateException("parallelSettings must be configured before starting membership")));
+        }
+
+        /**
+         * Creates one builder per tensor-parallel rank assigned to this physical node.
+         *
+         * <p>The assignment comes from gossip membership. This method does not build or load models; it only projects the
+         * committed rank assignment into rank-specific builders.</p>
+         */
+        public List<Builder> localAssignedRankBuilders(GossipParallelMembership membership) {
+            return localAssignedRankBuilders(membership, ignored -> tensorParallelCollectives);
+        }
+
+        public List<Builder> localAssignedRankBuilders(GossipParallelMembership membership,
+                Function<TensorParallelContext, TensorParallelCollectives> collectivesFactory) {
+            Objects.requireNonNull(membership, "membership");
+            Objects.requireNonNull(collectivesFactory, "collectivesFactory");
+            if (!membership.assignmentMatchesLocalTopology()) {
+                throw new IllegalStateException("Committed tensor-parallel assignment does not match local topology");
+            }
+            int tensorParallelSize = membership.requireAssignment().tensorParallelSize();
+            List<Builder> builders = new ArrayList<>();
+            for (int rank : membership.localRanks()) {
+                TensorParallelContext context = new StaticTensorParallelContext(rank, tensorParallelSize);
+                builders.add(copyForRank(context, collectivesFactory.apply(context)));
+            }
+            return List.copyOf(builders);
+        }
+
+        public List<AbstractModel> buildLocalAssignedRanks(GossipParallelMembership membership) {
+            return buildLocalAssignedRanks(membership, ignored -> tensorParallelCollectives);
+        }
+
+        public List<AbstractModel> buildLocalAssignedRanks(GossipParallelMembership membership,
+                Function<TensorParallelContext, TensorParallelCollectives> collectivesFactory) {
+            List<AbstractModel> models = new ArrayList<>();
+            for (Builder builder : localAssignedRankBuilders(membership, collectivesFactory)) {
+                models.add(builder.build());
+            }
+            return List.copyOf(models);
+        }
+
+        private Builder copyForRank(TensorParallelContext context, TensorParallelCollectives collectives) {
+            Builder copy = new Builder(fetch);
+            copy.mr = this.mr;
+            copy.allocator = this.allocator;
+            copy.workingMem = this.workingMem;
+            copy.workingQuant = this.workingQuant;
+            copy.toolCallParser = this.toolCallParser;
+            copy.settings = this.settings;
+            copy.provider = this.provider;
+            copy.pool = this.pool;
+            copy.oobCheck = this.oobCheck;
+            copy.tensorParallelContext = context;
+            copy.tensorParallelCollectives = Objects.requireNonNull(collectives, "collectives");
+            copy.parallelSettings = this.parallelSettings;
+            return copy;
+        }
         /** This is a JVM wide property! **/
         public Builder withSystemPropertyForVectorOobCheck(String value){
             this.oobCheck = value;
@@ -125,7 +202,7 @@ public class AutoModelForCausaLm {
                 }
             }
             return ModelSupport.loadModel(modelRoot, workingMem, workingQuant, provider,
-                    mr, allocator, settings, fetch, toolCallParser, pool, tensorParallelContext);
+                    mr, allocator, settings, fetch, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives);
         }
 
         public ModelFetcher getFetch() {
@@ -162,6 +239,14 @@ public class AutoModelForCausaLm {
 
         public TensorParallelContext getTensorParallelContext() {
             return tensorParallelContext;
+        }
+
+        public TensorParallelCollectives getTensorParallelCollectives() {
+            return tensorParallelCollectives;
+        }
+
+        public Optional<GossipParallelSettings> getParallelSettings() {
+            return parallelSettings;
         }
     }
 

@@ -9,7 +9,12 @@ import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.FloatConversions;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.llama.LlamaModel;
+import io.teknek.deliverance.model.tensorparallel.DefaultTransformerWeightPolicyResolver;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelContext;
+import io.teknek.deliverance.model.tensorparallel.TensorParallelCollectives;
+import io.teknek.deliverance.model.tensorparallel.TensorParallelPlanner;
+import io.teknek.deliverance.model.tensorparallel.TensorParallelShardPlan;
+import io.teknek.deliverance.model.tensorparallel.TensorParallelWeightLoader;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.AbstractTensor;
@@ -42,11 +47,12 @@ public class Gemma2Model extends LlamaModel {
             DType workingQType,
             Optional<DType> modelQType, ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
             TensorAllocator arrayQueueTensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
-            ToolCallParser toolCallParser, WrappedForkJoinPool pool, TensorParallelContext tensorParallelContext
+            ToolCallParser toolCallParser, WrappedForkJoinPool pool, TensorParallelContext tensorParallelContext,
+            TensorParallelCollectives tensorParallelCollectives
     ) {
         super(inferenceType, config, weights, tokenizer, workingDType, workingQType, modelQType,
                 configurableTensorProvider, metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, toolCallParser, pool,
-                tensorParallelContext);
+                tensorParallelContext, tensorParallelCollectives);
         // https://github.com/huggingface/transformers/blob/1082361a1978d30db5c3932d1ee08914d74d9697/src/transformers/models/gemma/modeling_gemma.py#L898
         // This is the scaling factor for the embedding layer but google's implementation is a is rounded to 16 bits
         this.embeddingScalingFactor = FloatConversions.bFloat16ToFloat32(
@@ -57,15 +63,18 @@ public class Gemma2Model extends LlamaModel {
     @Override
     protected TransformerBlock[] loadTransformerBlockWeights() {
         DType qType = modelQType.orElse(this.modelDType);
+        TensorParallelShardPlan tensorParallelPlan = TensorParallelPlanner.plan(config, tensorParallelContext);
+        TensorParallelWeightLoader tensorParallelWeights = new TensorParallelWeightLoader(weights,
+                tensorParallelContext, tensorParallelPlan, new DefaultTransformerWeightPolicyResolver());
         TransformerBlock[] transformerBlocks = new TransformerBlock[config.numberOfLayers];
         IntStream.range(0, config.numberOfLayers).parallel().forEach(i -> {
             String base = "model.layers." + i + ".";
             String prefix = base + "self_attn.";
             CausalSelfAttention attention = new CausalSelfAttention(this, i,
-                    quantize(weights.load(prefix + "q_proj.weight"), qType),
-                    quantize(weights.load(prefix + "k_proj.weight"), qType),
-                    quantize(weights.load(prefix + "v_proj.weight"), qType),
-                    quantize(weights.load(prefix + "o_proj.weight"), qType),
+                    quantize(tensorParallelWeights.load(prefix + "q_proj.weight"), qType),
+                    quantize(tensorParallelWeights.load(prefix + "k_proj.weight"), qType),
+                    quantize(tensorParallelWeights.load(prefix + "v_proj.weight"), qType),
+                    quantize(tensorParallelWeights.load(prefix + "o_proj.weight"), qType),
                     configurableTensorProvider,
                     metricRegistry
             );
@@ -74,10 +83,11 @@ public class Gemma2Model extends LlamaModel {
             MLPBlock mlp = new MLPBlock(
                     this,
                     config.activationFunction,
-                    quantize(weights.load(prefix + "gate_proj.weight"), qType), // w1
-                    quantize(weights.load(prefix + "down_proj.weight"), qType), // w2
-                    quantize(weights.load(prefix + "up_proj.weight"), qType), // w3,
-                    configurableTensorProvider
+                    quantize(tensorParallelWeights.load(prefix + "gate_proj.weight"), qType), // w1
+                    quantize(tensorParallelWeights.load(prefix + "down_proj.weight"), qType), // w2
+                    quantize(tensorParallelWeights.load(prefix + "up_proj.weight"), qType), // w3,
+                    configurableTensorProvider,
+                    "layer." + i + ".mlp.down_proj"
             );
 
             transformerBlocks[i] = new TransformerBlock(this, i,

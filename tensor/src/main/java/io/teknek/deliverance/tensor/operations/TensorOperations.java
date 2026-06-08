@@ -79,12 +79,36 @@ public interface TensorOperations {
     void maccumulate(AbstractTensor a, AbstractTensor b, int offset, int length);
 
     /**
-     * The value computed is Y[i] = (alpha * X[i]) + Y[i]
+     * Performs the BLAS SAXPY operation {@code y = alpha * x + y} over a contiguous vector window.
+     *
+     * <p>SAXPY means "single-precision A times X plus Y". This method updates {@code y} in place:</p>
+     *
+     * <pre>
+     * for i in 0..limit:
+     *     y[yoffset + i] += alpha * x[xoffset + i]
+     * </pre>
+     *
+     * <p>The offsets are element offsets within the logical tensor row/vector being used. In attention this operation is
+     * used to accumulate weighted value vectors into the current attention output.</p>
      */
     void saxpy(float alpha, AbstractTensor x, AbstractTensor y, int xoffset, int yoffset, int limit);
 
     /**
-     * The value computed is Y[i] = (alpha[j] * X[j, i]) + Y[i]
+     * Performs repeated SAXPY operations using one scalar from {@code alpha} for each selected row of {@code x}.
+     *
+     * <p>This method updates {@code y} in place:</p>
+     *
+     * <pre>
+     * int alphaIndex = aOffset;
+     * for row in xRowOffset .. xRowOffset + batchSize:
+     *     for i in 0..limit:
+     *         y[yoffset + i] += alpha[alphaIndex] * x[row][xoffset + i]
+     *     alphaIndex++
+     * </pre>
+     *
+     * <p>In attention, {@code alpha} is usually the attention weight vector and {@code x} is a packed page/window of
+     * value vectors. {@code aOffset} and {@code xRowOffset} allow callers to process only the portion of the attention
+     * window that overlaps a specific KV page.</p>
      */
     default void saxpy(
             AbstractTensor alpha,
@@ -97,7 +121,9 @@ public interface TensorOperations {
             int xRowOffset,
             int batchSize
     ) {
-        Preconditions.checkArgument(alpha.shape().last() == x.shape().first() && y.shape().first() == 1);
+        Preconditions.checkArgument(y.shape().first() == 1);
+        Preconditions.checkArgument(aOffset >= 0 && aOffset + batchSize <= alpha.shape().last());
+        Preconditions.checkArgument(xRowOffset >= 0 && xRowOffset + batchSize <= x.shape().first());
         int batchLimit = xRowOffset + batchSize;
         for (int xi = xRowOffset; xi < batchLimit; xi++) {
             saxpy(alpha.get(0, aOffset++), x.slice(xi), y, xoffset, yoffset, limit);

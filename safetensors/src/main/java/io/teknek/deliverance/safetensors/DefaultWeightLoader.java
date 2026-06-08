@@ -38,66 +38,155 @@ public class DefaultWeightLoader implements WeightLoader {
     private static final MapType metadataTypeReference = JsonUtils.om.getTypeFactory().constructMapType(Map.class, String.class, String.class);
 
     private final SafeTensorIndexPojo index;
-    private final ConcurrentHashMap<String, RandomAccessFile> fileMap = new ConcurrentHashMap<>();
-    private final Map<String, TensorInfo> allTensorInfoMap = new ConcurrentHashMap<>();
-    private final Map<String, Weights> weightMap = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, RandomAccessFile> fileMap;
+    private final Map<String, TensorInfo> allTensorInfoMap;
+    private final Map<String, Weights> weightMap;
     private final Path modelRoot;
     private final DType majorityDType;
 
 
     public DefaultWeightLoader(File baseDir){
-        this.modelRoot = Paths.get(baseDir.toURI());
-        Path singleFile = Paths.get(baseDir.getAbsolutePath(), SafeTensorIndexPojo.SINGLE_MODEL_NAME);
-        if (Files.exists(Paths.get(baseDir.getAbsolutePath(), MODEL_INDEX_JSON))){
-            String indexFile = String.format("%s/%s", modelRoot, MODEL_INDEX_JSON);
+        this(openWeights(baseDir));
+    }
+
+    private DefaultWeightLoader(LoadedWeights loadedWeights) {
+        this.modelRoot = loadedWeights.modelRoot();
+        this.index = loadedWeights.index();
+        this.fileMap = loadedWeights.fileMap();
+        this.allTensorInfoMap = loadedWeights.allTensorInfoMap();
+        this.weightMap = loadedWeights.weightMap();
+        this.majorityDType = loadedWeights.majorityDType();
+    }
+
+    public static DefaultWeightLoader open(File baseDir) {
+        return new DefaultWeightLoader(new LoaderStateBuilder(baseDir).openWeights());
+    }
+
+    private static LoadedWeights openWeights(File baseDir) {
+        return new LoaderStateBuilder(baseDir).openWeights();
+    }
+
+    private record LoadedWeights(Path modelRoot, SafeTensorIndexPojo index,
+            ConcurrentHashMap<String, RandomAccessFile> fileMap,
+            Map<String, TensorInfo> allTensorInfoMap,
+            Map<String, Weights> weightMap,
+            DType majorityDType) {
+    }
+
+    private static final class LoaderStateBuilder implements WeightLoader {
+        private final File baseDir;
+        private final Path modelRoot;
+        private final SafeTensorIndexPojo index;
+        private final ConcurrentHashMap<String, RandomAccessFile> fileMap = new ConcurrentHashMap<>();
+        private final Map<String, TensorInfo> allTensorInfoMap = new ConcurrentHashMap<>();
+        private final Map<String, Weights> weightMap = new ConcurrentHashMap<>();
+
+        private LoaderStateBuilder(File baseDir) {
+            this.baseDir = baseDir;
+            this.modelRoot = Paths.get(baseDir.toURI());
             try {
-                index = JsonUtils.om.readValue(new File(indexFile), SafeTensorIndexPojo.class);
+                this.index = readIndex();
             } catch (IOException e) {
-                throw new RuntimeException(e);
+                throw new UncheckedIOException(e);
             }
-        } else if (Files.exists(singleFile)){
-            index = new SafeTensorIndexPojo(Collections.emptyMap(), Map.of("model-file", singleFile.toFile().getName()));
-        } else {
+        }
+
+        private LoadedWeights openWeights() {
+            try {
+                loadWeights();
+                return new LoadedWeights(modelRoot, index, fileMap, allTensorInfoMap, weightMap, findDType(allTensorInfoMap));
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
+
+        private SafeTensorIndexPojo readIndex() throws IOException {
+            Path singleFile = Paths.get(baseDir.getAbsolutePath(), SafeTensorIndexPojo.SINGLE_MODEL_NAME);
+            if (Files.exists(Paths.get(baseDir.getAbsolutePath(), MODEL_INDEX_JSON))){
+                String indexFile = String.format("%s/%s", modelRoot, MODEL_INDEX_JSON);
+                return JsonUtils.om.readValue(new File(indexFile), SafeTensorIndexPojo.class);
+            } else if (Files.exists(singleFile)){
+                return new SafeTensorIndexPojo(Collections.emptyMap(), Map.of("model-file", singleFile.toFile().getName()));
+            }
             throw new IllegalArgumentException("weights not found");
         }
 
-        try {
-            loadWeights();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        this.majorityDType = findDType(allTensorInfoMap);
-    }
+        private void loadWeights() throws IOException {
+            for (Map.Entry<String, String> e : index.getWeightFileMap().entrySet()) {
+                if (!fileMap.containsKey(e.getValue())) {
+                    RandomAccessFile raf = new RandomAccessFile(Paths.get(modelRoot.toString(), e.getValue()).toFile(), "r");
+                    fileMap.put(e.getValue(), raf);
+                    ByteBuffer header = raf.getChannel().map(FileChannel.MapMode.READ_ONLY, 0, Math.min(1 << 20, raf.length()));
 
-    public void loadWeights() throws IOException {
-        for (Map.Entry<String, String> e : index.getWeightFileMap().entrySet()) {
-            if (!fileMap.containsKey(e.getValue())) {
-                RandomAccessFile raf = new RandomAccessFile(Paths.get(modelRoot.toString(), e.getValue()).toFile(), "r");
-                fileMap.put(e.getValue(), raf);
-                ByteBuffer header = raf.getChannel().map(FileChannel.MapMode.READ_ONLY, 0, Math.min(1 << 20, raf.length()));
+                    Map<String, String> metadata = new HashMap<>();
+                    Map<String, TensorInfo> tensorInfoMap = readTensorInfoMap(header, Optional.of(metadata));
+                    int endOfHeaderPosition = header.position();
 
-                Map<String, String> metadata = new HashMap<>();
-                Map<String, TensorInfo> tensorInfoMap = readTensorInfoMap(header, Optional.of(metadata));
-                int endOfHeaderPosition = header.position();
-
-                Map<List<Long>, List<String>> splits = computeMmapSplits(tensorInfoMap, raf.length());
-                allTensorInfoMap.putAll(tensorInfoMap);
-                for (Map.Entry<List<Long>, List<String>> split : splits.entrySet()) {
-                    long offset = split.getKey().get(0);
-                    long length = split.getKey().get(1);
-                    List<String> tensors = split.getValue();
-                    int lengthInt = Ints.checkedCast(length - offset);
-                    ByteBuffer buf = raf.getChannel().map(FileChannel.MapMode.READ_ONLY, endOfHeaderPosition + offset, lengthInt);
-                    Map<String, TensorInfo> mmapTensorInfoMap = tensorInfoMap.entrySet()
-                            .stream()
-                            .filter(x -> tensors.contains(x.getKey()))
-                            .collect(ImmutableMap.toImmutableMap(Map.Entry::getKey, Map.Entry::getValue));
-                    Weights mmapWeights = new Weights(metadata, mmapTensorInfoMap, buf, Optional.of(this));
-                    for (String tensor : tensors) {
-                        weightMap.put(tensor, mmapWeights);
+                    Map<List<Long>, List<String>> splits = computeMmapSplits(tensorInfoMap, raf.length());
+                    allTensorInfoMap.putAll(tensorInfoMap);
+                    for (Map.Entry<List<Long>, List<String>> split : splits.entrySet()) {
+                        long offset = split.getKey().get(0);
+                        long length = split.getKey().get(1);
+                        List<String> tensors = split.getValue();
+                        int lengthInt = Ints.checkedCast(length - offset);
+                        ByteBuffer buf = raf.getChannel().map(FileChannel.MapMode.READ_ONLY, endOfHeaderPosition + offset, lengthInt);
+                        Map<String, TensorInfo> mmapTensorInfoMap = tensorInfoMap.entrySet()
+                                .stream()
+                                .filter(x -> tensors.contains(x.getKey()))
+                                .collect(ImmutableMap.toImmutableMap(Map.Entry::getKey, Map.Entry::getValue));
+                        Weights mmapWeights = new Weights(metadata, mmapTensorInfoMap, buf, Optional.of(this));
+                        for (String tensor : tensors) {
+                            weightMap.put(tensor, mmapWeights);
+                        }
                     }
                 }
             }
+        }
+
+        @Override
+        public Map<String, String> metadata() {
+            return index.getMetadata();
+        }
+
+        @Override
+        public Map<String, TensorInfo> tensorInfoMap() {
+            return allTensorInfoMap;
+        }
+
+        @Override
+        public AbstractTensor load(String name) {
+            Weights w = weightMap.get(name);
+            if (w == null){
+                throw new RuntimeException("weight cant be found " + name + " list" + weightMap.keySet());
+            }
+            return w.load(name);
+        }
+
+        @Override
+        public AbstractTensor loadRows(String name, int rowOffset, int rowCount) {
+            Weights w = weightMap.get(name);
+            if (w == null){
+                throw new RuntimeException("weight cant be found " + name + " list" + weightMap.keySet());
+            }
+            return w.loadRows(name, rowOffset, rowCount);
+        }
+
+        @Override
+        public AbstractTensor load(String name, TensorShardSpec shardSpec) {
+            Weights w = weightMap.get(name);
+            if (w == null){
+                throw new RuntimeException("weight cant be found " + name + " list" + weightMap.keySet());
+            }
+            return w.load(name, shardSpec);
+        }
+
+        @Override
+        public DType getModelDType() {
+            return findDType(allTensorInfoMap);
+        }
+
+        @Override
+        public void close() {
         }
     }
 
@@ -145,7 +234,7 @@ public class DefaultWeightLoader implements WeightLoader {
         }
     }
 
-    private Map<List<Long>, List<String>> computeMmapSplits(Map<String, TensorInfo> tensorInfoMap, long fileLength) {
+    private static Map<List<Long>, List<String>> computeMmapSplits(Map<String, TensorInfo> tensorInfoMap, long fileLength) {
         Map<List<Long>, List<String>> splits = new HashMap<>();
         long lastSplitOffset = 0;
         int tensorsInFile = tensorInfoMap.size();

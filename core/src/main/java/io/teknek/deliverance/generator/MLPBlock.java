@@ -3,6 +3,7 @@ package io.teknek.deliverance.generator;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.tensorparallel.TensorParallelMlp;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
@@ -31,11 +32,19 @@ public class MLPBlock implements FeedForward {
     private final AbstractTensor[] batchResults;
     private final AbstractTensor[] batchWeights;
     private final ConfigurableTensorProvider configurableTensorProvider;
+    private final String tensorParallelCollectiveKey;
 
     public MLPBlock(AbstractModel model, ActivationFunction.Type activationFunction, AbstractTensor fullyConnectedWeights,
             AbstractTensor projectionWeights, AbstractTensor upProjectionWeights, ConfigurableTensorProvider configurableTensorProvider) {
+        this(model, activationFunction, fullyConnectedWeights, projectionWeights, upProjectionWeights,
+                configurableTensorProvider, null);
+    }
+
+    public MLPBlock(AbstractModel model, ActivationFunction.Type activationFunction, AbstractTensor fullyConnectedWeights,
+            AbstractTensor projectionWeights, AbstractTensor upProjectionWeights,
+            ConfigurableTensorProvider configurableTensorProvider, String tensorParallelCollectiveKey) {
         this(model, activationFunction, Optional.empty(), fullyConnectedWeights,
-                Optional.empty(), projectionWeights, upProjectionWeights, configurableTensorProvider);
+                Optional.empty(), projectionWeights, upProjectionWeights, configurableTensorProvider, tensorParallelCollectiveKey);
     }
 
     public MLPBlock(
@@ -56,7 +65,8 @@ public class MLPBlock implements FeedForward {
                 Optional.of(projectionBias),
                 projectionWeights,
                 null,
-                configurableTensorProvider
+                configurableTensorProvider,
+                null
         );
     }
 
@@ -69,7 +79,8 @@ public class MLPBlock implements FeedForward {
             Optional<AbstractTensor> projectionBias,
             AbstractTensor projectionWeights,
             AbstractTensor upProjectionWeights,
-            ConfigurableTensorProvider configurableTensorProvider
+            ConfigurableTensorProvider configurableTensorProvider,
+            String tensorParallelCollectiveKey
     ) {
         this.model = model;
         this.activationFunction = activationFunction;
@@ -81,6 +92,7 @@ public class MLPBlock implements FeedForward {
         this.batchResults = new AbstractTensor[2];
         this.batchWeights = new AbstractTensor[] { fullyConnectedWeights, upProjectionWeights };
         this.configurableTensorProvider = configurableTensorProvider;
+        this.tensorParallelCollectiveKey = tensorParallelCollectiveKey;
 
         configurableTensorProvider.get().registerModelTensor(fullyConnectedWeights);
         if (upProjectionWeights != null) {
@@ -94,6 +106,18 @@ public class MLPBlock implements FeedForward {
     public AbstractTensor forward(AbstractTensor lnemb, Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
         int hiddenLength = model.getConfig().hiddenLength;
         int batchSize = lnemb.shape().first();
+        if (usesLocalTensorParallelShard(hiddenLength)) {
+            if (tensorParallelCollectiveKey == null) {
+                throw new IllegalStateException("Tensor-parallel MLP requires a collective key");
+            }
+            AbstractTensor reduced = TensorParallelMlp.forward(lnemb, fullyConnectedWeights, upProjectionWeights,
+                    projectionWeights, activationFunction, configurableTensorProvider,
+                    shape -> model.getTensorAllocator().getDirty(model.getWorkingDType(), shape),
+                    model.getTensorParallelCollectives(), tensorParallelCollectiveKey);
+            projectionBias.ifPresent(bias -> configurableTensorProvider.get().accumulate(reduced, bias, 0,
+                    model.getConfig().embeddingLength));
+            return reduced;
+        }
         try (
                 //TODO ensure its ok to use dirty here do we write the entire tensor
                 AbstractTensor buf = model.getTensorAllocator().getDirty(model.getWorkingDType(), TensorShape.of(batchSize, hiddenLength));
@@ -152,5 +176,11 @@ public class MLPBlock implements FeedForward {
                 return result;
             }
         }
+    }
+
+    private boolean usesLocalTensorParallelShard(int hiddenLength) {
+        return model.getTensorParallelContext().enabled()
+                && upProjectionWeights != null
+                && fullyConnectedWeights.shape().first() != hiddenLength;
     }
 }

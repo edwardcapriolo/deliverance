@@ -17,16 +17,15 @@ public class WeightLoaderTest {
         String modelOwner = "tjake";
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         File f = fetch.maybeDownload();
-        DefaultWeightLoader wl = new DefaultWeightLoader(f);
-        assertTrue(wl.tensorInfoMap().containsKey("model.norm.weight"));
-        assertTrue(wl.tensorInfoMap().containsKey("model.layers.1.self_attn.o_proj.weight"));
+        try (DefaultWeightLoader wl = new DefaultWeightLoader(f)) {
+            assertTrue(wl.tensorInfoMap().containsKey("model.norm.weight"));
+            assertTrue(wl.tensorInfoMap().containsKey("model.layers.1.self_attn.o_proj.weight"));
+        }
 
-        wl.close();
-        assertEquals(0, wl.tensorInfoMap().size());
-        wl.loadWeights();
-        assertTrue(wl.tensorInfoMap().containsKey("model.layers.1.self_attn.o_proj.weight"));
-        assertTrue(wl.isWeightPresent("model.layers.1.self_attn.o_proj.weight"));
-        assertEquals(355, wl.tensorInfoMap().size());
-        wl.close();
+        try (DefaultWeightLoader wl = new DefaultWeightLoader(f)) {
+            assertTrue(wl.tensorInfoMap().containsKey("model.layers.1.self_attn.o_proj.weight"));
+            assertTrue(wl.isWeightPresent("model.layers.1.self_attn.o_proj.weight"));
+            assertEquals(355, wl.tensorInfoMap().size());
+        }
     }
 }

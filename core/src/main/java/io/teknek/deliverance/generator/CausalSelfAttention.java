@@ -41,6 +41,10 @@ public class CausalSelfAttention {
 
     private final float attentionScale;
     private final int attentionLength;
+    private final int kvLength;
+    private final int numberOfHeads;
+    private final int numberOfKeyValueHeads;
+    private final int headGroupSize;
 
     private final AbstractTensor[] qkvResults;
     private final AbstractTensor[] qkvWeights;
@@ -100,7 +104,11 @@ public class CausalSelfAttention {
 
         this.outputProjectionBias = outputProjectionBias;
         this.outputProjectionWeights = outputProjectionWeights;
-        this.attentionLength = config.numberOfHeads * config.headSize;
+        this.attentionLength = m.getLocalAttentionLength();
+        this.kvLength = m.getLocalKvLength();
+        this.numberOfHeads = m.getLocalNumberOfHeads();
+        this.numberOfKeyValueHeads = m.getLocalNumberOfKeyValueHeads();
+        this.headGroupSize = numberOfHeads / numberOfKeyValueHeads;
 
         this.attentionScale = config.attentionMultiplier != null ? config.attentionMultiplier : (float) (1.0 / StrictMath.sqrt(config.headSize));
 
@@ -122,8 +130,8 @@ public class CausalSelfAttention {
         int batchSize = input.shape().first();
         int splitSize = configurableTensorProvider.get().parallelSplitSize();
         try (AbstractTensor queryBatch = m.makeDenseTensor(batchSize, attentionLength);
-                AbstractTensor tmpKeyBatch = m.makeDenseTensor(batchSize, config.kvLength);
-                AbstractTensor tmpValBatch = m.makeDenseTensor(batchSize, config.kvLength);
+                AbstractTensor tmpKeyBatch = m.makeDenseTensor(batchSize, kvLength);
+                AbstractTensor tmpValBatch = m.makeDenseTensor(batchSize, kvLength);
                 AbstractTensor valueBatch = m.makeDenseTensor(batchSize, attentionLength)) {
             if (config.isGQA) {
                 Timer tm = metricRegistry.timer("causualselfattention.forward_gqa_querybatch_1");
@@ -131,7 +139,7 @@ public class CausalSelfAttention {
                     configurableTensorProvider.get()
                                 .dotProductChunk(queryBatch, input, queryAttnWeights, 0, config.embeddingLength, chunkStart, chunkLength);
                 }, splitSize, tm, m.getPool());
-                VectorMath.pchunk(0, config.kvLength, (chunkStart, chunkLength) -> {
+                VectorMath.pchunk(0, kvLength, (chunkStart, chunkLength) -> {
                     Timer t = metricRegistry.timer("causualselfattention.forward_gqa_key_2");
                     try (Timer.Context context = t.time()) {
                         configurableTensorProvider.get()
@@ -163,11 +171,11 @@ public class CausalSelfAttention {
             );
             keyAttnBias.ifPresent(
                     bias -> configurableTensorProvider.get().accumulate(tmpKeyBatch, bias,
-                            0, config.kvLength)
+                            0, kvLength)
             );
             valueAttnBias.ifPresent(
                     bias -> configurableTensorProvider.get().accumulate(tmpValBatch, bias,
-                            0, config.kvLength)
+                            0, kvLength)
             );
             AbstractTensor[] querySlices = new AbstractTensor[batchSize];
             AbstractTensor[] keySlices = new AbstractTensor[batchSize];
@@ -196,14 +204,14 @@ public class CausalSelfAttention {
                 AbstractTensor value = valueSlices[bi];
 
                 if (key.dType() != tmpKey.dType()) {
-                    try (AbstractTensor tmpKey2 = configurableTensorProvider.get().quantize(tmpKey, key.dType(), 0, config.kvLength);
-                         AbstractTensor tmpVal2 = configurableTensorProvider.get().quantize(tmpVal, val.dType(), 0, config.kvLength)) {
-                        key.copyFrom(tmpKey2, 0, 0, config.kvLength);
-                        val.copyFrom(tmpVal2, 0, 0, config.kvLength);
+                    try (AbstractTensor tmpKey2 = configurableTensorProvider.get().quantize(tmpKey, key.dType(), 0, kvLength);
+                         AbstractTensor tmpVal2 = configurableTensorProvider.get().quantize(tmpVal, val.dType(), 0, kvLength)) {
+                        key.copyFrom(tmpKey2, 0, 0, kvLength);
+                        val.copyFrom(tmpVal2, 0, 0, kvLength);
                     }
                 } else {
-                    key.copyFrom(tmpKey, 0, 0, config.kvLength);
-                    val.copyFrom(tmpVal, 0, 0, config.kvLength);
+                    key.copyFrom(tmpKey, 0, 0, kvLength);
+                    val.copyFrom(tmpVal, 0, 0, kvLength);
                 }
 
                 // apply RoPE if present (accounting for huggingface permutation)
@@ -214,14 +222,14 @@ public class CausalSelfAttention {
 
                     if (config.isGQA) {
                         // apply RoPE rotation to the q and k vectors for each head
-                        for (int h = 0; h < config.numberOfHeads; h++) {
+                        for (int h = 0; h < numberOfHeads; h++) {
                             // get the q vectors for this head
                             int offset = h * config.headSize;
 
                             // skip if we are out of bounds
                             if (offset >= query.shape().last()) break;
 
-                            int goffset = config.maybeMapToGroupHead(h) * config.headSize;
+                            int goffset = Math.floorDiv(h, headGroupSize) * config.headSize;
                             // rotate q by the freq theta and freq r
                             for (int i = offset, g = goffset; i < (offset + headPiece); i++, g++) {
                                 float q0 = query.get(0, i);
@@ -234,7 +242,7 @@ public class CausalSelfAttention {
                             }
                         }
 
-                        for (int h = 0; h < config.numberOfKeyValueHeads; h++) {
+                        for (int h = 0; h < numberOfKeyValueHeads; h++) {
                             // get the k vectors for this head
                             int offset = h * config.headSize;
                             if (offset >= key.shape().last()) break;
@@ -251,7 +259,7 @@ public class CausalSelfAttention {
                         }
                     } else {
                         // apply RoPE rotation to the q and k vectors for each head
-                        for (int h = 0; h < config.numberOfHeads; h++) {
+                        for (int h = 0; h < numberOfHeads; h++) {
                             // get the q and k vectors for this head
                             int offset = h * config.headSize;
                             // rotate q and k by the freq theta and freq r
@@ -275,8 +283,8 @@ public class CausalSelfAttention {
                 });
 
                 // Attention
-                VectorMath.pfor(0, config.numberOfHeads, h -> {
-                    int xoffset = config.maybeMapToGroupHead(h) * config.headSize;
+                VectorMath.pfor(0, numberOfHeads, h -> {
+                    int xoffset = Math.floorDiv(h, headGroupSize) * config.headSize;
                     int yoffset = h * config.headSize;
 
                     if (yoffset >= query.shape().last()) return;
@@ -336,11 +344,16 @@ public class CausalSelfAttention {
                                     chunkSize
                             );
                 }, splitSize, m.getPool());
-                tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(result)));
-                outputProjectionBias.ifPresent(bias -> configurableTensorProvider.get().accumulate(result, bias, 0, config.embeddingLength));
+                AbstractTensor reduced = m.getTensorParallelContext().enabled()
+                        ? m.getTensorParallelCollectives().allReduceSum("layer." + layerIndex + ".self_attn.o_proj", result)
+                        : result;
+                tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(reduced)));
+                outputProjectionBias.ifPresent(bias -> configurableTensorProvider.get().accumulate(reduced, bias, 0, config.embeddingLength));
+                if (reduced != result) {
+                    result.close();
+                }
+                return reduced;
             }
-
-            return result;
         }
     }
 }
