@@ -149,6 +149,35 @@ public class GemmaPromptIT {
 
     }
 
+
+   // "What is tensor parallelism?"
+   @Test
+   public void aTest() throws IOException {
+       ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
+       KvBufferCacheSettings settings = new KvBufferCacheSettings(tempDir.toFile())
+               .withDeleteDiskPagesOnClose(false)
+               .withDiskPageSweeperEnabled(false)
+               .withDiskPageMaxAge(Duration.ofMillis(1))
+               .withMaxEntries(0);
+
+       try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
+               .withWorkingQuantType(DType.I8)
+               .withKvBufferCacheSettings(settings)
+               .build()) {
+           PromptSupport.Builder prompt = model.promptSupport().get().builder()
+                   .addUserMessage("What is tensor parallelism?");
+
+           Response response = model.generate(UUID.randomUUID(), prompt.build(), new GeneratorParameters()
+                           .withMaxTokens(50)
+                           .withTemperature(0.0f),
+                   new DoNothingGenerateEvent());
+
+            System.out.println(response);
+       }
+   }
+
+
+
     @Test
     public void prefixCacheHitHonorsMaxTokens() {
         AbstractModel m = Gemma2Suite.getOrCreate();

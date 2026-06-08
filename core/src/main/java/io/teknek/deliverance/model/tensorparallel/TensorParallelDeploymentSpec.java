@@ -5,10 +5,9 @@ import java.util.Objects;
 /**
  * Desired tensor-parallel deployment metadata shared through cluster membership.
  */
-public record TensorParallelDeploymentSpec(String deploymentId, String modelId, int requestedNodes, int maxRanksPerNode) {
+public record TensorParallelDeploymentSpec(String deploymentId, int requestedNodes, int maxRanksPerNode) {
     public TensorParallelDeploymentSpec {
         Objects.requireNonNull(deploymentId, "deploymentId");
-        Objects.requireNonNull(modelId, "modelId");
         if (requestedNodes < 1) {
             throw new IllegalArgumentException("requestedNodes must be >= 1");
         }
@@ -17,8 +16,8 @@ public record TensorParallelDeploymentSpec(String deploymentId, String modelId, 
         }
     }
 
-    public TensorParallelDeploymentSpec(String deploymentId, String modelId, int requestedNodes) {
-        this(deploymentId, modelId, requestedNodes, 1);
+    public TensorParallelDeploymentSpec(String deploymentId, int requestedNodes) {
+        this(deploymentId, requestedNodes, 1);
     }
 
     public String sharedDataKey() {
@@ -35,5 +34,9 @@ public record TensorParallelDeploymentSpec(String deploymentId, String modelId, 
 
     public String assignmentKey() {
         return "deliverance.tp.assignment." + deploymentId;
+    }
+
+    public String rankEndpointsKey() {
+        return "deliverance.tp.rankEndpoints." + deploymentId;
     }
 }

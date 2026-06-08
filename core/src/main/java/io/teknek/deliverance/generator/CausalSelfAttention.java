@@ -229,7 +229,8 @@ public class CausalSelfAttention {
                             // skip if we are out of bounds
                             if (offset >= query.shape().last()) break;
 
-                            int goffset = Math.floorDiv(h, headGroupSize) * config.headSize;
+                            int globalHead = m.getTensorParallelContext().rank() * numberOfHeads + h;
+                            int goffset = Math.floorDiv(globalHead, headGroupSize) * config.headSize;
                             // rotate q by the freq theta and freq r
                             for (int i = offset, g = goffset; i < (offset + headPiece); i++, g++) {
                                 float q0 = query.get(0, i);
@@ -246,11 +247,13 @@ public class CausalSelfAttention {
                             // get the k vectors for this head
                             int offset = h * config.headSize;
                             if (offset >= key.shape().last()) break;
+                            int globalOffset = (m.getTensorParallelContext().rank() * numberOfKeyValueHeads + h)
+                                    * config.headSize;
                             // rotate k by the freq theta and freq r
-                            for (int i = offset; i < (offset + headPiece); i++) {
+                            for (int i = offset, g = globalOffset; i < (offset + headPiece); i++, g++) {
                                 float k00 = key.get(0, i);
                                 float k1 = key.get(0, i + headPiece); // hf permutation is 0,64,1,65 etc...
-                                float[] f = rf[poffset + i];
+                                float[] f = rf[poffset + g];
                                 float fcr = f[0];
                                 float fci = f[1];
                                 key.set(k00 * fcr - k1 * fci, 0, i);

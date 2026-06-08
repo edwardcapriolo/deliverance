@@ -149,18 +149,23 @@ public class NativeGPUTensorOperations implements TensorOperations {
         }
     }
 
-    private final ThreadLocal<Long> gpuBuffers = ThreadLocal.withInitial(() -> {
-        // Allocate scratch buffers
+    private Long gpuBuffers;
+
+    private synchronized Long gpuBuffers() {
         synchronized (tensorCache) {
             if (limitReached.get()) {
                 return null;
             }
+            if (gpuBuffers != null) {
+                return gpuBuffers;
+            }
             totalBytesAllocated.addAndGet(
                 MAX_SCRATCH_SIZE + params_size + MAX_SCRATCH_SIZE + (MAX_SCRATCH_SIZE / Q4ByteBufferTensor.BLOCK_SIZE)
             );
-            return NativeGPU.register_scratch_buffers(params_size, MAX_SCRATCH_SIZE, MAX_SCRATCH_SIZE);
+            gpuBuffers = NativeGPU.register_scratch_buffers(params_size, MAX_SCRATCH_SIZE, MAX_SCRATCH_SIZE);
+            return gpuBuffers;
         }
-    });
+    }
 
     @Override
     public String name() {
@@ -239,7 +244,7 @@ public class NativeGPUTensorOperations implements TensorOperations {
         Long btId = tensorCache.get(bt.getUid());
 
         if (gpuSupported(btId, at.dType(), bt.dType(), result.dType())) {
-            long scratchId = gpuBuffers.get();
+            long scratchId = gpuBuffers();
 
             int M = at.shape().dim(0);
             int N = rowChunkSize; // b.shape().dim(0);

@@ -182,6 +182,8 @@ Open your browser to http://localhost:8080
 - [Vibrant-maven-plugin](https://www.youtube.com/watch?v=Glp_hAieOq8) Watch a video on Vibrant-maven-plugin generate code from XML based spec inside pom
 - [Generator_sampling](core/generator_sampling.md) Explains how temperature, top_p, top_k, and exclude top choice work
 - [Prefix_cache](core/PrefixCache.md) Describes how to get the most benefits from the prefix cache
+- [Tensor parallel guide](core/TensorParallelGuide.md) Explains how to enable tensor-parallel generation for Gemma2
+- [Tensor parallel developer notes](core/TensorParallelDeveloper.md) Details the implementation changes behind tensor parallelism
 
 ### Models supported
 Generation:

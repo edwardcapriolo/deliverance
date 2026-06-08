@@ -33,7 +33,10 @@ public class NaiveTensorOperations implements TensorOperations {
     // a[0..n] *= b[0..n]
     @Override
     public void maccumulate(AbstractTensor a, AbstractTensor b, int offset, int length) {
-        Preconditions.checkArgument(a.size() == b.size() && a.dims() == b.dims());
+        Preconditions.checkArgument(a.dims() == b.dims());
+        Preconditions.checkArgument(a.shape().last() == b.shape().last());
+        Preconditions.checkArgument(b.shape().first() == 1 || a.shape().first() == b.shape().first());
+        Preconditions.checkArgument(offset >= 0 && length >= 0 && offset + length <= a.shape().last());
 
         boolean isBatch = b.shape().first() > 1;
         for (int ai = 0; ai < a.shape().first(); ai++) {

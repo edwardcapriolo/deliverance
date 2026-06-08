@@ -2379,9 +2379,12 @@ public final class PanamaTensorOperations implements TensorOperations {
     @Override
     public void maccumulate(AbstractTensor aBatch, AbstractTensor bBatch, int offset, int limit) {
         Preconditions.checkArgument(aBatch.dType() == bBatch.dType());
-        Preconditions.checkArgument(limit % 8 == 0);
+        Preconditions.checkArgument(offset >= 0 && limit >= 0);
+        Preconditions.checkArgument(offset + limit <= aBatch.shape().last());
+        Preconditions.checkArgument(offset + limit <= bBatch.shape().last());
 
         boolean isBatch = bBatch.shape().first() > 1;
+        Preconditions.checkArgument(!isBatch || aBatch.shape().first() == bBatch.shape().first());
         for (int ai = 0; ai < aBatch.shape().first(); ai++) {
             AbstractTensor a = aBatch.slice(ai);
             AbstractTensor b = isBatch ? bBatch.slice(ai) : bBatch;

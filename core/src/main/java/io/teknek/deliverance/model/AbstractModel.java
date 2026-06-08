@@ -86,6 +86,15 @@ public abstract class AbstractModel implements Generator, Classifier {
     ) {
     }
 
+    /**
+     * Forward execution boundary used by generation coordinators that do not own local KV memory directly.
+     */
+    public interface GenerationForwarder {
+        AbstractTensor batchForward(int[] tokenIds, int startPosition);
+
+        AbstractTensor forward(int tokenId, int position);
+    }
+
     public enum InferenceType {
         // Used for distributed inference
         INPUT_TO_EMBEDDING(true, false, false, false, false),
@@ -256,6 +265,10 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public TensorParallelCollectives getTensorParallelCollectives() {
         return tensorParallelCollectives;
+    }
+
+    public KvBufferCache.KvBuffer newKvBuffer() {
+        return kvBufferCache.getEphemeralKvBuffer();
     }
 
     public int getLocalNumberOfHeads() {
@@ -547,7 +560,7 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     @Override
     public Response generate(UUID sessionId, PromptContext promptContext, GeneratorParameters generatorParameters,
-                                     GenerateEvent eventFired) {
+                                      GenerateEvent eventFired) {
         long generationStartNanos = System.nanoTime();
         long timeToFirstTokenNanos = 0L;
 
@@ -637,6 +650,80 @@ public abstract class AbstractModel implements Generator, Classifier {
                         return withGenerationTiming(stop.get(), generationStartNanos, timeToFirstTokenNanos);
                     }
 
+                }
+            }
+        }
+
+        return withGenerationTiming(postProcessResponse(new Response(
+                        responseContext.responseText.toString(),
+                        responseContext.responseTextWithSpecialTokens.toString(),
+                        FinishReason.MAX_TOKENS,
+                        encoded.length,
+                        responseContext.generatedTokens,
+                        0,
+                        0,
+                        responseContext.samplerReturnList)),
+                generationStartNanos,
+                timeToFirstTokenNanos);
+    }
+
+    /**
+     * Runs the standard generation/token sampling loop while delegating transformer forward execution.
+     *
+     * <p>This is used by tensor-parallel coordinators: the coordinator model still owns tokenizer, output projection,
+     * sampler, stop handling, and response post-processing, while rank endpoints own prompt/decode forward execution and
+     * KV state. Prefix-cache reuse is intentionally local to {@link #generate(UUID, PromptContext, GeneratorParameters,
+     * GenerateEvent)} because this method's KV state lives behind the supplied forwarder.</p>
+     */
+    public Response generateWithForwarder(UUID sessionId, PromptContext promptContext, GeneratorParameters generatorParameters,
+                                          GenerateEvent eventFired, GenerationForwarder forwarder) {
+        Objects.requireNonNull(sessionId, "sessionId");
+        Objects.requireNonNull(forwarder, "forwarder");
+        long generationStartNanos = System.nanoTime();
+        long timeToFirstTokenNanos = 0L;
+
+        ResponseContext responseContext = new ResponseContext(this);
+        Random random = generatorParameters.seed.map(Random::new).orElseGet(Random::new);
+        long[] encoded = encodeText(promptContext.getPrompt());
+        if (encoded.length > 0 && encoded[0] == config.bosToken) {
+            logger.warn("encoded [] started with BOS token removing it");
+            encoded = Arrays.copyOfRange(encoded, 1, encoded.length);
+        }
+        int ntokens = generatorParameters.ntokens.orElse(config.contextLength);
+        Preconditions.checkArgument(encoded.length < config.contextLength
+                && encoded.length < ntokens, "Prompt exceeds ntokens");
+        if (ntokens > config.contextLength) {
+            throw new GenerationException(String.format("ntokens %d exceed config length %d",  ntokens, config.contextLength));
+        }
+        float temperature = generatorParameters.temperature.orElse(0.0f);
+        try (AbstractTensor logits = makeDenseTensor(config.vocabularySize)) {
+            int[] promptTokens = constructPromptTokens(encoded);
+            GenerationCursor cursor = GenerationCursor.from(promptTokens, 0);
+            AbstractTensor last = forwarder.batchForward(cursor.tokensToProcess(), cursor.startPosition());
+            SamplerReturn nextSamplerRet = createNextToken(generatorParameters, logits, last, responseContext, random, temperature);
+            int next = nextSamplerRet.token;
+            last.close();
+            responseContext.add(nextSamplerRet, eventFired);
+            timeToFirstTokenNanos = System.nanoTime() - generationStartNanos;
+            this.metricRegistry.timer("generation.time_to_first_token").update(timeToFirstTokenNanos, TimeUnit.NANOSECONDS);
+            logger.info("time_to_first_token={} prefix_length={}", timeToFirstTokenNanos / 1_000_000.0, 0);
+            Optional<Response> firstStop = maybeStopAfterToken(generatorParameters, responseContext, encoded, encoded.length,
+                    next, generationStartNanos, timeToFirstTokenNanos);
+            if (firstStop.isPresent()) {
+                return withGenerationTiming(firstStop.get(), generationStartNanos, timeToFirstTokenNanos);
+            }
+            for (int i = cursor.decodeStartPosition(); i < ntokens; i++) {
+                AbstractTensor output = forwarder.forward(next, i);
+                SamplerReturn nextSample = createNextTokenLoop(generatorParameters, output, logits, responseContext, random,
+                        temperature);
+                next = nextSample.token;
+                output.close();
+                responseContext.add(nextSample, eventFired);
+
+                Optional<Response> stop = maybeStopAfterToken(generatorParameters, responseContext, encoded, encoded.length,
+                        next, generationStartNanos, timeToFirstTokenNanos);
+                if (stop.isPresent()) {
+                    return withGenerationTiming(stop.get(), generationStartNanos, timeToFirstTokenNanos);
                 }
             }
         }

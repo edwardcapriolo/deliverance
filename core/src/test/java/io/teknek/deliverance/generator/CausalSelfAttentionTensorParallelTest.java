@@ -85,6 +85,50 @@ public class CausalSelfAttentionTensorParallelTest {
         }
     }
 
+    @Test
+    public void tensorParallelGqaRopeUsesGlobalHeadOffsets() throws Exception {
+        Config config = gqaRopeConfig();
+        ConfigurableTensorProvider provider = new ConfigurableTensorProvider(new NaiveTensorOperations());
+        TensorAllocator tensorAllocator = new ArrayQueueTensorAllocator(new MetricRegistry());
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(new ForkJoinPool(1));
+             AbstractTensor input = gqaInput();
+             AbstractTensor q = identity(8);
+             AbstractTensor k = matrix(4, 8, 0.13f);
+             AbstractTensor v = matrix(4, 8, -0.07f);
+             AbstractTensor o = identity(8);
+             AbstractTensor qRank0 = rowShard(q, 0, 4);
+             AbstractTensor kRank0 = rowShard(k, 0, 2);
+             AbstractTensor vRank0 = rowShard(v, 0, 2);
+             AbstractTensor oRank0 = columnShard(o, 0, 4);
+             AbstractTensor qRank1 = rowShard(q, 4, 8);
+             AbstractTensor kRank1 = rowShard(k, 2, 4);
+             AbstractTensor vRank1 = rowShard(v, 2, 4);
+             AbstractTensor oRank1 = columnShard(o, 4, 8)) {
+
+            AbstractTensor full = forward(config, provider, tensorAllocator, pool, new StaticTensorParallelContext(0, 1),
+                    new SingleRankTensorParallelCollectives(), input, q, k, v, o);
+            InProcessTensorParallelCollectives.Group group = new InProcessTensorParallelCollectives.Group(Duration.ofSeconds(5));
+            InProcessTensorParallelCollectives rank0Collectives = new InProcessTensorParallelCollectives(
+                    new StaticTensorParallelContext(0, 2), group);
+            InProcessTensorParallelCollectives rank1Collectives = new InProcessTensorParallelCollectives(
+                    new StaticTensorParallelContext(1, 2), group);
+
+            try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+                Future<AbstractTensor> rank0Future = executor.submit(() -> forward(config, provider, tensorAllocator, pool,
+                        new StaticTensorParallelContext(0, 2), rank0Collectives, input, qRank0, kRank0, vRank0, oRank0));
+                Future<AbstractTensor> rank1Future = executor.submit(() -> forward(config, provider, tensorAllocator, pool,
+                        new StaticTensorParallelContext(1, 2), rank1Collectives, input, qRank1, kRank1, vRank1, oRank1));
+                AbstractTensor rank0 = rank0Future.get();
+                AbstractTensor rank1 = rank1Future.get();
+
+                try (full; rank0; rank1) {
+                    assertTensorClose(full, rank0, 0.0001f);
+                    assertTensorClose(full, rank1, 0.0001f);
+                }
+            }
+        }
+    }
+
     private static AbstractTensor forward(Config config, ConfigurableTensorProvider provider,
             TensorAllocator tensorAllocator, WrappedForkJoinPool pool, TensorParallelContext context,
             TensorParallelCollectives collectives, AbstractTensor input, AbstractTensor q, AbstractTensor k,
@@ -129,6 +173,11 @@ public class CausalSelfAttentionTensorParallelTest {
                 1.0e-6f, 32, 2, List.of(1), ActivationFunction.Type.GELU_PYTORCH_TANH, null, null);
     }
 
+    private static Config gqaRopeConfig() {
+        return new Config(16, 8, 16, 4, 2, 1,
+                1.0e-6f, 32, 2, List.of(1), ActivationFunction.Type.GELU_PYTORCH_TANH, 10_000.0, null);
+    }
+
     private static AbstractTensor input() {
         AbstractTensor input = new FloatBufferTensor(2, 4);
         input.set(1.0f, 0, 0);
@@ -142,10 +191,33 @@ public class CausalSelfAttentionTensorParallelTest {
         return input;
     }
 
+    private static AbstractTensor gqaInput() {
+        AbstractTensor input = new FloatBufferTensor(2, 8);
+        float value = -0.35f;
+        for (int row = 0; row < 2; row++) {
+            for (int col = 0; col < 8; col++) {
+                input.set(value, row, col);
+                value += 0.17f;
+            }
+        }
+        return input;
+    }
+
     private static AbstractTensor identity(int size) {
         AbstractTensor tensor = new FloatBufferTensor(size, size);
         for (int i = 0; i < size; i++) {
             tensor.set(1.0f, i, i);
+        }
+        return tensor;
+    }
+
+    private static AbstractTensor matrix(int rows, int cols, float scale) {
+        AbstractTensor tensor = new FloatBufferTensor(rows, cols);
+        int value = 1;
+        for (int row = 0; row < rows; row++) {
+            for (int col = 0; col < cols; col++) {
+                tensor.set(value++ * scale, row, col);
+            }
         }
         return tensor;
     }
@@ -172,5 +244,16 @@ public class CausalSelfAttentionTensorParallelTest {
 
     private static String normalize(String display) {
         return display.strip().replaceAll("(?m) +$", "");
+    }
+
+    private static void assertTensorClose(AbstractTensor expected, AbstractTensor actual, float tolerance) {
+        assertEquals(expected.shape().first(), actual.shape().first());
+        assertEquals(expected.shape().last(), actual.shape().last());
+        for (int row = 0; row < expected.shape().first(); row++) {
+            for (int col = 0; col < expected.shape().last(); col++) {
+                assertEquals(expected.get(row, col), actual.get(row, col), tolerance,
+                        "row=" + row + " col=" + col);
+            }
+        }
     }
 }

@@ -84,7 +84,7 @@ public class AutoModelForCausaLmTensorParallelTest {
     public void builderStoresParallelSettings() throws Exception {
         GossipParallelSettings settings = new GossipParallelSettings("cluster", "node-0",
                 new URI("udp://127.0.0.1:41000"), List.of(), new GossipSettings(),
-                new TensorParallelDeploymentSpec("demo", "gemma2", 2, 1));
+                new TensorParallelDeploymentSpec("demo", 2, 1));
 
         AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(new ModelFetcher("owner", "model"))
                 .withParallelSettings(settings);

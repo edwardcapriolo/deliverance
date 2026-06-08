@@ -9,6 +9,7 @@ import io.teknek.gossip.lock.vote.VoteCandidate;
 import io.teknek.gossip.manager.GossipManager;
 import io.teknek.gossip.manager.GossipManagerBuilder;
 import io.teknek.gossip.model.SharedDataMessage;
+import io.teknek.gossip.model.PerNodeDataMessage;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -161,6 +162,49 @@ public class GossipParallelMembership implements AutoCloseable {
 
     public List<Integer> localRanks() {
         return requireAssignment().ranksForNode(gossipManager.getMyself().getId());
+    }
+
+    public String localNodeId() {
+        return gossipManager.getMyself().getId();
+    }
+
+    public void publishRankEndpoints(List<TensorParallelRankEndpoint> endpoints) {
+        PerNodeDataMessage message = new PerNodeDataMessage();
+        message.setKey(deploymentSpec.rankEndpointsKey());
+        message.setPayload(List.copyOf(endpoints));
+        message.setTimestamp(System.currentTimeMillis());
+        message.setExpireAt(Long.MAX_VALUE);
+        gossipManager.gossipPerNodeData(message);
+    }
+
+    @SuppressWarnings("unchecked")
+    public List<TensorParallelRankEndpoint> findRankEndpoints(String nodeId) {
+        PerNodeDataMessage message = gossipManager.findPerNodeGossipData(nodeId, deploymentSpec.rankEndpointsKey());
+        if (message == null || message.getPayload() == null) {
+            return List.of();
+        }
+        return (List<TensorParallelRankEndpoint>) message.getPayload();
+    }
+
+    public List<TensorParallelRankEndpoint> rankEndpointsForAssignment() {
+        TensorParallelAssignment assignment = requireAssignment();
+        List<TensorParallelRankEndpoint> endpoints = new ArrayList<>();
+        for (String nodeId : assignment.ranks().stream().map(TensorParallelRankAssignment::nodeId).distinct().toList()) {
+            endpoints.addAll(findRankEndpoints(nodeId));
+        }
+        endpoints.sort(java.util.Comparator.comparingInt(TensorParallelRankEndpoint::rank));
+        if (endpoints.size() != assignment.tensorParallelSize()) {
+            throw new IllegalStateException("Expected " + assignment.tensorParallelSize() + " rank endpoints but found "
+                    + endpoints.size());
+        }
+        for (int i = 0; i < endpoints.size(); i++) {
+            TensorParallelRankEndpoint endpoint = endpoints.get(i);
+            TensorParallelRankAssignment expected = assignment.ranks().get(i);
+            if (endpoint.rank() != expected.rank() || !endpoint.nodeId().equals(expected.nodeId())) {
+                throw new IllegalStateException("Rank endpoint does not match assignment at rank " + i);
+            }
+        }
+        return List.copyOf(endpoints);
     }
 
     public boolean assignmentMatchesLocalTopology() {

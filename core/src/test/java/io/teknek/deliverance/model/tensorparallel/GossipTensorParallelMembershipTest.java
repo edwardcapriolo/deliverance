@@ -38,7 +38,7 @@ public class GossipTensorParallelMembershipTest {
         settings.setCleanupInterval(2_000);
         ModelFetcher fetcher = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
         int tensorParallelRanks = assertGemma2TensorParallelRankCapacity(fetcher, 10);
-        TensorParallelDeploymentSpec deploymentSpec = new TensorParallelDeploymentSpec("demo", "gemma2", tensorParallelRanks, 2);
+        TensorParallelDeploymentSpec deploymentSpec = new TensorParallelDeploymentSpec("demo", tensorParallelRanks, 2);
 
         AutoModelForCausaLm.Builder node0Builder = AutoModelForCausaLm.newBuilder(fetcher)
                 .withParallelSettings(new GossipParallelSettings(cluster, "node-0", node0Uri, seedMembers, settings,

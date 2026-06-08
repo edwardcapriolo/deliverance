@@ -42,7 +42,7 @@ public final class TensorParallelMlp {
                     gate.set(ActivationFunction.eval(activationFunction, gate.get(row, i)), row, i);
                 }
             });
-            multiplyInPlace(gate, up, batchSize, localHiddenLength);
+            tensorProvider.get().maccumulate(gate, up, 0, localHiddenLength);
 
             AbstractTensor partial = tensorFactory.apply(TensorShape.of(batchSize, embeddingLength));
             tensorProvider.get().dotProductChunk(partial, gate, downProjectionWeights, 0, localHiddenLength, 0,
@@ -80,14 +80,6 @@ public final class TensorParallelMlp {
         }
         if (downProjectionWeights.shape().first() != embeddingLength || downProjectionWeights.shape().last() != localHiddenLength) {
             throw new IllegalArgumentException("downProjectionWeights must have shape [embedding, localHidden]");
-        }
-    }
-
-    private static void multiplyInPlace(AbstractTensor left, AbstractTensor right, int rows, int columns) {
-        for (int row = 0; row < rows; row++) {
-            for (int column = 0; column < columns; column++) {
-                left.set(left.get(row, column) * right.get(row, column), row, column);
-            }
         }
     }
 }

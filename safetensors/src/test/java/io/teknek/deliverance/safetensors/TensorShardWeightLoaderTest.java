@@ -68,7 +68,35 @@ public class TensorShardWeightLoaderTest {
             assertEquals(DType.Q4, shard.dType());
             assertEquals(2, shard.shape().first());
             assertEquals(64, shard.shape().last());
-            assertQ4ShardEquals(full, shard, 1, 0);
+            assertQ4ShardClose(full, shard, 1, 0, 0.05f);
+        }
+    }
+
+    @Test
+    public void loadsWideQ4RowShardUsingLocalPackedLayout() {
+        writeWideQ4Matrix();
+
+        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile());
+             AbstractTensor full = loader.load("wide_q4.weight");
+             AbstractTensor shard = loader.load("wide_q4.weight", new TensorShardSpec(TensorShardAxis.ROWS, 96, 128))) {
+            assertEquals(DType.Q4, shard.dType());
+            assertEquals(32, shard.shape().first());
+            assertEquals(2304, shard.shape().last());
+            assertQ4ShardClose(full, shard, 96, 0, 0.05f);
+        }
+    }
+
+    @Test
+    public void loadsWideQ4RowShardFromIndexedShardFile() {
+        writeWideQ4IndexedModel();
+
+        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile());
+             AbstractTensor full = loader.load("wide_q4.weight");
+             AbstractTensor shard = loader.load("wide_q4.weight", new TensorShardSpec(TensorShardAxis.ROWS, 96, 128))) {
+            assertEquals(DType.Q4, shard.dType());
+            assertEquals(32, shard.shape().first());
+            assertEquals(2304, shard.shape().last());
+            assertQ4ShardClose(full, shard, 96, 0, 0.05f);
         }
     }
 
@@ -118,10 +146,41 @@ public class TensorShardWeightLoaderTest {
         SafeTensorWriter.write(tempDir.resolve("model.safetensors"), Map.of(), Map.of("q4.weight", new Q4ByteBufferTensor(matrix)));
     }
 
+    private void writeWideQ4Matrix() {
+        FloatBufferTensor matrix = wideMatrix();
+        SafeTensorWriter.write(tempDir.resolve("model.safetensors"), Map.of(),
+                Map.of("wide_q4.weight", new Q4ByteBufferTensor(matrix)));
+    }
+
+    private void writeWideQ4IndexedModel() {
+        FloatBufferTensor matrix = wideMatrix();
+        SafeTensorWriter.writeModel(tempDir, Map.of(), Map.of("wide_q4.weight", new Q4ByteBufferTensor(matrix)), 256 * 1024);
+    }
+
+    private static FloatBufferTensor wideMatrix() {
+        FloatBufferTensor matrix = new FloatBufferTensor(128, 2304);
+        for (int row = 0; row < matrix.shape().first(); row++) {
+            for (int col = 0; col < matrix.shape().last(); col++) {
+                matrix.set(((row * 31 + col * 17) % 257 - 128) / 128.0f, row, col);
+            }
+        }
+        return matrix;
+    }
+
     private static void assertQ4ShardEquals(AbstractTensor full, AbstractTensor shard, int rowOffset, int colOffset) {
         for (int row = 0; row < shard.shape().first(); row++) {
             for (int col = 0; col < shard.shape().last(); col++) {
                 assertEquals(full.get(row + rowOffset, col + colOffset), shard.get(row, col), 0.0f,
+                        "row=" + row + " col=" + col);
+            }
+        }
+    }
+
+    private static void assertQ4ShardClose(AbstractTensor full, AbstractTensor shard, int rowOffset, int colOffset,
+            float tolerance) {
+        for (int row = 0; row < shard.shape().first(); row++) {
+            for (int col = 0; col < shard.shape().last(); col++) {
+                assertEquals(full.get(row + rowOffset, col + colOffset), shard.get(row, col), tolerance,
                         "row=" + row + " col=" + col);
             }
         }

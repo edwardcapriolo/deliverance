@@ -5,7 +5,7 @@ import java.util.function.Function;
 
 public class MemorySegmentSupport {
     private static final int MAX_BATCH_SIZE = 4;
-    private static final ThreadLocal<MemorySegment[]> tmpArr = ThreadLocal.withInitial(() -> scratchMemorySegments(MAX_BATCH_SIZE));
+    private static final MemorySegment[] tmpArr = scratchMemorySegments(MAX_BATCH_SIZE);
 
     private static MemorySegment[] scratchMemorySegments(int batchSize) {
         return new MemorySegment[] {
@@ -15,8 +15,8 @@ public class MemorySegmentSupport {
         };
     }
 
-    public static MemorySegment[] setupBatch(Function<Integer, MemorySegment> r, Function<Integer, MemorySegment> b, Function<Integer, MemorySegment> c, int limit) {
-        MemorySegment[] tmp = tmpArr.get();
+    public static synchronized MemorySegment[] setupBatch(Function<Integer, MemorySegment> r, Function<Integer, MemorySegment> b, Function<Integer, MemorySegment> c, int limit) {
+        MemorySegment[] tmp = tmpArr;
         MemorySegment ra = tmp[0];
         MemorySegment rb = tmp[1];
         MemorySegment rc = tmp[2];

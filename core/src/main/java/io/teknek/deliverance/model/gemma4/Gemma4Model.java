@@ -29,7 +29,7 @@ import static io.teknek.deliverance.tensor.AbstractTensorUtils.quantize;
 public class Gemma4Model extends LlamaModel {
     private static final Logger logger = LoggerFactory.getLogger(Gemma4Model.class);
     private static final boolean DEBUG_LAYER_SUMMARIES = false;
-    private final ThreadLocal<Map<String, SharedKeyValues>> sharedKeyValues = new ThreadLocal<>();
+    private Map<String, SharedKeyValues> sharedKeyValues;
     private volatile AbstractTensor perLayerModelProjectionWeights;
     private volatile AbstractTensor perLayerProjectionNormWeights;
     private volatile AbstractTensor embedTokenWeights;
@@ -262,7 +262,7 @@ public class Gemma4Model extends LlamaModel {
     }
 
     public SharedKeyValues getSharedKeyValues(String layerType) {
-        Map<String, SharedKeyValues> current = sharedKeyValues.get();
+        Map<String, SharedKeyValues> current = sharedKeyValues;
         if (current == null || !current.containsKey(layerType)) {
             throw new IllegalStateException("Missing shared kv state for layer type " + layerType);
         }
@@ -270,7 +270,7 @@ public class Gemma4Model extends LlamaModel {
     }
 
     public void putSharedKeyValues(String layerType, AbstractTensor key, AbstractTensor value) {
-        Map<String, SharedKeyValues> current = sharedKeyValues.get();
+        Map<String, SharedKeyValues> current = sharedKeyValues;
         if (current == null) {
             throw new IllegalStateException("Shared kv state not initialized");
         }
@@ -397,18 +397,14 @@ public class Gemma4Model extends LlamaModel {
     }
 
     private <T> T withSharedKeyValues(java.util.function.Supplier<T> supplier) {
-        Map<String, SharedKeyValues> previous = sharedKeyValues.get();
+        Map<String, SharedKeyValues> previous = sharedKeyValues;
         Map<String, SharedKeyValues> current = new HashMap<>();
-        sharedKeyValues.set(current);
+        sharedKeyValues = current;
         try {
             return supplier.get();
         } finally {
             current.values().forEach(SharedKeyValues::close);
-            if (previous == null) {
-                sharedKeyValues.remove();
-            } else {
-                sharedKeyValues.set(previous);
-            }
+            sharedKeyValues = previous;
         }
     }
 
