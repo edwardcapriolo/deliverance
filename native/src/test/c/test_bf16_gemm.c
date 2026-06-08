@@ -26,6 +26,33 @@ static void assert_close(float actual, float expected, float eps) {
     assert(fabsf(actual - expected) <= eps);
 }
 
+static void test_f32_q4_tail_corner_is_written(void) {
+    enum { m = 13, n = 16, k = 128 };
+    float a[m * k];
+    float bf[n * (k / Q4_BLOCK_SIZE)];
+    char b[n * (k / 2)];
+    float out[m * n];
+
+    for (int i = 0; i < m * k; i++) {
+        a[i] = 1.0f;
+    }
+    for (int i = 0; i < n * (k / Q4_BLOCK_SIZE); i++) {
+        bf[i] = 1.0f;
+    }
+    for (int i = 0; i < n * (k / 2); i++) {
+        b[i] = (char) 0x99; /* both Q4 nibbles decode to 1: 9 - 8 */
+    }
+    for (int i = 0; i < m * n; i++) {
+        out[i] = 0.0f;
+    }
+
+    gemm_f32_q4(0, a, 0, bf, b, 0, out, 0, m, 0, n, k, k, k / 2, k / 32, n);
+
+    /* Before the bottom-right recursion fix, row 10 col 15 was never written. */
+    assert_close(out[10 * n + 15], 128.0f, 0.001f);
+    assert_close(out[12 * n + 15], 128.0f, 0.001f);
+}
+
 int main(void) {
     /* Small explicit BF16 samples for correctness smoke tests. */
     uint16_t a_bf16[32] = {
@@ -81,5 +108,6 @@ test_fp32_to_bf16(0.0f), test_fp32_to_bf16(0.0f), test_fp32_to_bf16(0.0f), test_
 
     assert_close(out_bf16[0], 70.0f, 0.5f);
     assert_close(out_f32_bf16[0], 70.0f, 0.5f);
+    test_f32_q4_tail_corner_is_written();
     return 0;
 }

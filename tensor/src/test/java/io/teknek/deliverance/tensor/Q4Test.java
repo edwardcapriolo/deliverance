@@ -3,13 +3,17 @@ package io.teknek.deliverance.tensor;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
+import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.Arrays;
 
 import static io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor.makeBlockShape;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 public class Q4Test {
 
@@ -40,5 +44,69 @@ public class Q4Test {
     @Test
     public void testBlockShape(){
         assertEquals(Arrays.toString(new int[] { 2, 0} ), Arrays.toString(makeBlockShape(new int[] { 2, 0} )));
+    }
+
+    @Test
+    public void q4GetUsesIntegerBlockIndexAboveFloatPrecisionLimit() {
+        int columns = 2304;
+        int logicalOffset = 16_777_247;
+        int row = logicalOffset / columns;
+        int column = logicalOffset % columns;
+        int rows = row + 1;
+        int correctByteOffset = q4ByteOffset(logicalOffset);
+        int legacyByteOffset = legacyQ4ByteOffset(logicalOffset);
+        assertNotEquals(correctByteOffset, legacyByteOffset, "regression coordinate must expose float rounding");
+
+        ByteBuffer bytes = ByteBuffer.allocateDirect((rows * columns) / 2).order(ByteOrder.LITTLE_ENDIAN);
+        FloatBufferTensor blockScales = new FloatBufferTensor(rows, columns / Q4ByteBufferTensor.BLOCK_SIZE);
+        float scale = -0.0018997192f;
+        blockScales.set(scale, row, column / Q4ByteBufferTensor.BLOCK_SIZE);
+        bytes.put(correctByteOffset, (byte) 0xCE); // high nibble decodes to 4.
+        bytes.put(legacyByteOffset, (byte) 0x88); // both nibbles decode to 0.
+
+        try (AbstractTensor q4 = new Q4ByteBufferTensor("large-q4", bytes, blockScales,
+                TensorShape.of(rows, columns), true)) {
+            assertEquals(4 * scale, q4.get(row, column), 0.0f);
+            assertEquals(4 * scale, q4.get(new int[] { row, column }), 0.0f);
+        }
+    }
+
+    @Test
+    public void q8ScaleLookupUsesIntegerBlockIndexAboveFloatPrecisionLimit() {
+        int logicalOffset = 16_777_247;
+        int correctBlock = logicalOffset / Q8ByteBufferTensor.BLOCK_SIZE;
+        int legacyBlock = (int) (logicalOffset * Q8ByteBufferTensor.I_BLOCK_SIZE);
+        assertNotEquals(correctBlock, legacyBlock, "regression coordinate must expose float rounding");
+        int columns = (Math.max(correctBlock, legacyBlock) + 1) * Q8ByteBufferTensor.BLOCK_SIZE;
+
+        ByteBuffer bytes = ByteBuffer.allocateDirect(columns).order(ByteOrder.LITTLE_ENDIAN);
+        FloatBufferTensor blockScales = new FloatBufferTensor(1, columns / Q8ByteBufferTensor.BLOCK_SIZE);
+        blockScales.set(3.5f, 0, correctBlock);
+        blockScales.set(1.25f, 0, legacyBlock);
+        bytes.put(logicalOffset, (byte) 2);
+
+        try (Q8ByteBufferTensor q8 = new Q8ByteBufferTensor("large-q8", bytes, blockScales,
+                TensorShape.of(1, columns), true)) {
+            assertEquals(3.5f, q8.getFactorForIndex(0, logicalOffset), 0.0f);
+            assertEquals(7.0f, q8.get(0, logicalOffset), 0.0f);
+        }
+    }
+
+    private static int q4ByteOffset(int logicalOffset) {
+        int offsetInBlock = logicalOffset % Q4ByteBufferTensor.BLOCK_SIZE;
+        int byteOffset = (logicalOffset / Q4ByteBufferTensor.BLOCK_SIZE) * Q4ByteBufferTensor.HALF_BLOCK
+                + offsetInBlock;
+        return offsetInBlock < Q4ByteBufferTensor.HALF_BLOCK
+                ? byteOffset
+                : byteOffset - Q4ByteBufferTensor.HALF_BLOCK;
+    }
+
+    private static int legacyQ4ByteOffset(int logicalOffset) {
+        int offsetInBlock = logicalOffset % Q4ByteBufferTensor.BLOCK_SIZE;
+        int byteOffset = (int) (logicalOffset * Q4ByteBufferTensor.I_BLOCK_SIZE) * Q4ByteBufferTensor.HALF_BLOCK
+                + offsetInBlock;
+        return offsetInBlock < Q4ByteBufferTensor.HALF_BLOCK
+                ? byteOffset
+                : byteOffset - Q4ByteBufferTensor.HALF_BLOCK;
     }
 }

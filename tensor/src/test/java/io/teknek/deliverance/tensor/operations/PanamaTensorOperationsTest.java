@@ -204,4 +204,67 @@ public class PanamaTensorOperationsTest {
         }
         assertEquals(TensorDisplayUtil.pretty2dDisplayAll(expected).trim(), TensorDisplayUtil.pretty2dDisplayAll(actual).trim());
     }
+
+    @Test
+    void batchDotProductF32Q4RowShardMatchesFullProjectionForRemainderBatchRow() {
+        int batchSize = 13;
+        int embeddingLength = 2304;
+        int fullRows = 2048;
+        int shardRows = 512;
+        FloatBufferTensor input = deterministicInput(batchSize, embeddingLength);
+        FloatBufferTensor fullWeightSource = deterministicWeight(fullRows, embeddingLength);
+        FloatBufferTensor shardWeightSource = rowShard(fullWeightSource, 0, shardRows);
+        Q4ByteBufferTensor fullWeight = new Q4ByteBufferTensor(fullWeightSource);
+        Q4ByteBufferTensor shardWeight = new Q4ByteBufferTensor(shardWeightSource);
+        FloatBufferTensor fullOutput = new FloatBufferTensor(batchSize, fullRows);
+        FloatBufferTensor shardOutput = new FloatBufferTensor(batchSize, shardRows);
+
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
+            PanamaTensorOperations ops = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
+                    Mockito.mock(TensorAllocator.class), pool);
+            ops.batchDotProduct(fullOutput, input, fullWeight, 0, 0, embeddingLength, 0, 0, fullRows);
+            ops.batchDotProduct(shardOutput, input, shardWeight, 0, 0, embeddingLength, 0, 0, shardRows);
+        }
+
+        assertRowShardProjectionEquals(fullOutput, shardOutput, batchSize - 1, 0.0001f);
+    }
+
+    private static FloatBufferTensor deterministicInput(int rows, int cols) {
+        FloatBufferTensor tensor = new FloatBufferTensor(rows, cols);
+        for (int row = 0; row < rows; row++) {
+            for (int col = 0; col < cols; col++) {
+                tensor.set(((row * 17 + col * 31) % 257 - 128) / 64.0f, row, col);
+            }
+        }
+        return tensor;
+    }
+
+    private static FloatBufferTensor deterministicWeight(int rows, int cols) {
+        FloatBufferTensor tensor = new FloatBufferTensor(rows, cols);
+        for (int row = 0; row < rows; row++) {
+            for (int col = 0; col < cols; col++) {
+                tensor.set(((row * 43 + col * 19) % 251 - 125) / 80.0f, row, col);
+            }
+        }
+        return tensor;
+    }
+
+    private static FloatBufferTensor rowShard(AbstractTensor source, int startInclusive, int length) {
+        FloatBufferTensor shard = new FloatBufferTensor(length, source.shape().last());
+        for (int row = 0; row < length; row++) {
+            shard.copyFrom(source, source.getOffset(startInclusive + row, 0), shard.getOffset(row, 0),
+                    source.shape().last());
+        }
+        return shard;
+    }
+
+    private static void assertRowShardProjectionEquals(AbstractTensor full, AbstractTensor shard, int batchRow,
+            float tolerance) {
+        for (int col = 0; col < shard.shape().last(); col++) {
+            float expected = full.get(batchRow, col);
+            float actual = shard.get(batchRow, col);
+            assertEquals(expected, actual, tolerance,
+                    "batchRow=" + batchRow + " col=" + col + " expected=" + expected + " actual=" + actual);
+        }
+    }
 }

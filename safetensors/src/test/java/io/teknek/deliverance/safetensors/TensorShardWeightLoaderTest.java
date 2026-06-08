@@ -5,8 +5,13 @@ import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorDisplayUtil;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
+import io.teknek.deliverance.tensor.operations.MachineSpec;
+import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
+import io.teknek.deliverance.tensor.TensorAllocator;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.Mockito;
 
 import java.nio.file.Path;
 import java.util.Map;
@@ -68,7 +73,7 @@ public class TensorShardWeightLoaderTest {
             assertEquals(DType.Q4, shard.dType());
             assertEquals(2, shard.shape().first());
             assertEquals(64, shard.shape().last());
-            assertQ4ShardClose(full, shard, 1, 0, 0.05f);
+            assertQ4ShardEquals(full, shard, 1, 0);
         }
     }
 
@@ -82,7 +87,7 @@ public class TensorShardWeightLoaderTest {
             assertEquals(DType.Q4, shard.dType());
             assertEquals(32, shard.shape().first());
             assertEquals(2304, shard.shape().last());
-            assertQ4ShardClose(full, shard, 96, 0, 0.05f);
+            assertQ4ShardEquals(full, shard, 96, 0);
         }
     }
 
@@ -96,7 +101,7 @@ public class TensorShardWeightLoaderTest {
             assertEquals(DType.Q4, shard.dType());
             assertEquals(32, shard.shape().first());
             assertEquals(2304, shard.shape().last());
-            assertQ4ShardClose(full, shard, 96, 0, 0.05f);
+            assertQ4ShardEquals(full, shard, 96, 0);
         }
     }
 
@@ -121,6 +126,68 @@ public class TensorShardWeightLoaderTest {
         try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile())) {
             assertThrows(IllegalArgumentException.class,
                     () -> loader.load("q4.weight", new TensorShardSpec(TensorShardAxis.COLUMNS, 16, 48)));
+        }
+    }
+
+    @Test
+    public void loadsGemmaLikeQ4MlpShardsAsLocalDenseTensors() {
+        FloatBufferTensor gate = deterministicMatrix(128, 64, 0.03125f);
+        FloatBufferTensor up = deterministicMatrix(128, 64, -0.0175f);
+        FloatBufferTensor down = deterministicMatrix(64, 128, 0.0225f);
+        SafeTensorWriter.write(tempDir.resolve("model.safetensors"), Map.of(), Map.of(
+                "model.layers.0.mlp.gate_proj.weight", new Q4ByteBufferTensor(gate),
+                "model.layers.0.mlp.up_proj.weight", new Q4ByteBufferTensor(up),
+                "model.layers.0.mlp.down_proj.weight", new Q4ByteBufferTensor(down)));
+
+        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile());
+             AbstractTensor fullGate = loader.load("model.layers.0.mlp.gate_proj.weight");
+             AbstractTensor gateShard = loader.load("model.layers.0.mlp.gate_proj.weight",
+                     new TensorShardSpec(TensorShardAxis.ROWS, 32, 64));
+             AbstractTensor fullUp = loader.load("model.layers.0.mlp.up_proj.weight");
+             AbstractTensor upShard = loader.load("model.layers.0.mlp.up_proj.weight",
+                     new TensorShardSpec(TensorShardAxis.ROWS, 64, 96));
+             AbstractTensor fullDown = loader.load("model.layers.0.mlp.down_proj.weight");
+             AbstractTensor downShard = loader.load("model.layers.0.mlp.down_proj.weight",
+                     new TensorShardSpec(TensorShardAxis.COLUMNS, 32, 64))) {
+            assertEquals(DType.Q4, gateShard.dType());
+            assertEquals(DType.Q4, upShard.dType());
+            assertEquals(DType.Q4, downShard.dType());
+            assertQ4ShardEquals(fullGate, gateShard, 32, 0);
+            assertQ4ShardEquals(fullUp, upShard, 64, 0);
+            assertQ4ShardEquals(fullDown, downShard, 0, 32);
+        } finally {
+            gate.close();
+            up.close();
+            down.close();
+        }
+    }
+
+    @Test
+    public void loadedQ4RowShardProducesSamePanamaProjectionAsFullTensor() {
+        int batchSize = 13;
+        int embeddingLength = 2304;
+        int fullRows = 2048;
+        int shardRows = 512;
+        FloatBufferTensor input = deterministicMatrix(batchSize, embeddingLength, 1.0f / 64.0f);
+        FloatBufferTensor weights = deterministicMatrix(fullRows, embeddingLength, 1.0f / 80.0f);
+        SafeTensorWriter.write(tempDir.resolve("model.safetensors"), Map.of(), Map.of(
+                "projection.weight", new Q4ByteBufferTensor(weights)));
+
+        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile());
+             AbstractTensor fullWeight = loader.load("projection.weight");
+             AbstractTensor shardWeight = loader.load("projection.weight",
+                     new TensorShardSpec(TensorShardAxis.ROWS, 0, shardRows));
+             AbstractTensor fullOutput = new FloatBufferTensor(batchSize, fullRows);
+             AbstractTensor shardOutput = new FloatBufferTensor(batchSize, shardRows);
+             WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
+            PanamaTensorOperations ops = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
+                    Mockito.mock(TensorAllocator.class), pool);
+            ops.batchDotProduct(fullOutput, input, fullWeight, 0, 0, embeddingLength, 0, 0, fullRows);
+            ops.batchDotProduct(shardOutput, input, shardWeight, 0, 0, embeddingLength, 0, 0, shardRows);
+            assertProjectionShardEquals(fullOutput, shardOutput, batchSize - 1, 0.0001f);
+        } finally {
+            input.close();
+            weights.close();
         }
     }
 
@@ -167,20 +234,30 @@ public class TensorShardWeightLoaderTest {
         return matrix;
     }
 
+    private static FloatBufferTensor deterministicMatrix(int rows, int cols, float scale) {
+        FloatBufferTensor matrix = new FloatBufferTensor(rows, cols);
+        for (int row = 0; row < rows; row++) {
+            for (int col = 0; col < cols; col++) {
+                matrix.set(((row * 31 + col * 17) % 257 - 128) * scale, row, col);
+            }
+        }
+        return matrix;
+    }
+
+    private static void assertProjectionShardEquals(AbstractTensor full, AbstractTensor shard, int batchRow,
+            float tolerance) {
+        for (int col = 0; col < shard.shape().last(); col++) {
+            float expected = full.get(batchRow, col);
+            float actual = shard.get(batchRow, col);
+            assertEquals(expected, actual, tolerance,
+                    "batchRow=" + batchRow + " col=" + col + " expected=" + expected + " actual=" + actual);
+        }
+    }
+
     private static void assertQ4ShardEquals(AbstractTensor full, AbstractTensor shard, int rowOffset, int colOffset) {
         for (int row = 0; row < shard.shape().first(); row++) {
             for (int col = 0; col < shard.shape().last(); col++) {
                 assertEquals(full.get(row + rowOffset, col + colOffset), shard.get(row, col), 0.0f,
-                        "row=" + row + " col=" + col);
-            }
-        }
-    }
-
-    private static void assertQ4ShardClose(AbstractTensor full, AbstractTensor shard, int rowOffset, int colOffset,
-            float tolerance) {
-        for (int row = 0; row < shard.shape().first(); row++) {
-            for (int col = 0; col < shard.shape().last(); col++) {
-                assertEquals(full.get(row + rowOffset, col + colOffset), shard.get(row, col), tolerance,
                         "row=" + row + " col=" + col);
             }
         }

@@ -1,7 +1,9 @@
 package io.teknek.deliverance.integration;
 
+import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.DoNothingGenerateEvent;
@@ -19,6 +21,11 @@ import io.teknek.deliverance.model.tensorparallel.transport.HttpTensorParallelCo
 import io.teknek.deliverance.model.tensorparallel.transport.HttpTensorParallelRankClient;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
+import io.teknek.deliverance.tensor.TensorAllocator;
+import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor.operations.MachineSpec;
+import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
 import io.teknek.gossip.GossipSettings;
 import io.teknek.gossip.Member;
 import io.teknek.gossip.RemoteMember;
@@ -58,14 +65,30 @@ public class Gemma2TensorParallelIT {
 
         ModelFetcher fetcher = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
         TensorParallelDeploymentSpec deploymentSpec = new TensorParallelDeploymentSpec("demo", 4, 2);
+        MetricRegistry node0Metrics = new MetricRegistry();
+        MetricRegistry node1Metrics = new MetricRegistry();
+        WrappedForkJoinPool node0Pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+        WrappedForkJoinPool node1Pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+        TensorAllocator node0Allocator = new ArrayQueueTensorAllocator(node0Metrics);
+        TensorAllocator node1Allocator = new ArrayQueueTensorAllocator(node1Metrics);
         AutoModelForCausaLm.Builder node0Builder = AutoModelForCausaLm.newBuilder(fetcher)
+                .withMetricRegistry(node0Metrics)
+                .withWrappedForkJoinPool(node0Pool)
+                .withTensorAllocator(node0Allocator)
+                .withTensorProvider(panamaProvider(node0Allocator, node0Pool))
                 .withParallelSettings(new GossipParallelSettings(cluster, "node-0", node0Uri, seedMembers, settings,
                         deploymentSpec));
         AutoModelForCausaLm.Builder node1Builder = AutoModelForCausaLm.newBuilder(fetcher)
+                .withMetricRegistry(node1Metrics)
+                .withWrappedForkJoinPool(node1Pool)
+                .withTensorAllocator(node1Allocator)
+                .withTensorProvider(panamaProvider(node1Allocator, node1Pool))
                 .withParallelSettings(new GossipParallelSettings(cluster, "node-1", node1Uri, seedMembers, settings,
                         deploymentSpec));
 
-        try (GossipParallelMembership node0 = node0Builder.startParallelMembership();
+        try (node0Pool;
+             node1Pool;
+             GossipParallelMembership node0 = node0Builder.startParallelMembership();
              GossipParallelMembership node1 = node1Builder.startParallelMembership()) {
             eventually(() -> node0.liveMembers().size() == 1 && node1.liveMembers().size() == 1, Duration.ofSeconds(10));
             eventually(() -> node0.candidateNodeIds().size() == 2 && node1.candidateNodeIds().size() == 2,
@@ -100,7 +123,17 @@ public class Gemma2TensorParallelIT {
                                 new HttpTensorParallelRankClient(URI.create(endpoint.uri())), false))
                         .toList());
 
-                try (group; AbstractModel coordinatorModel = AutoModelForCausaLm.newBuilder(fetcher).build()) {
+                MetricRegistry coordinatorMetrics = new MetricRegistry();
+                WrappedForkJoinPool coordinatorPool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+                TensorAllocator coordinatorAllocator = new ArrayQueueTensorAllocator(coordinatorMetrics);
+                try (coordinatorPool;
+                     group;
+                     AbstractModel coordinatorModel = AutoModelForCausaLm.newBuilder(fetcher)
+                             .withMetricRegistry(coordinatorMetrics)
+                             .withWrappedForkJoinPool(coordinatorPool)
+                             .withTensorAllocator(coordinatorAllocator)
+                             .withTensorProvider(panamaProvider(coordinatorAllocator, coordinatorPool))
+                             .build()) {
                     {
                         var prompt = coordinatorModel.promptSupport().get().builder()
                                 .addUserMessage("What is 1 + 1?")
@@ -217,6 +250,10 @@ public class Gemma2TensorParallelIT {
             promptTokens[i + 1] = Math.toIntExact(encoded[i]);
         }
         return promptTokens;
+    }
+
+    private static ConfigurableTensorProvider panamaProvider(TensorAllocator allocator, WrappedForkJoinPool pool) {
+        return new ConfigurableTensorProvider(new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, allocator, pool));
     }
 
 }

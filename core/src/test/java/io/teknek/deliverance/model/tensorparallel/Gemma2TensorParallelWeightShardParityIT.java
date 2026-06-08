@@ -1,10 +1,14 @@
 package io.teknek.deliverance.model.tensorparallel;
 
 import io.teknek.deliverance.safetensors.DefaultWeightLoader;
+import io.teknek.deliverance.safetensors.TensorShardAxis;
+import io.teknek.deliverance.safetensors.TensorShardSpec;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
 import org.junit.jupiter.api.Test;
 
+import java.lang.foreign.ValueLayout;
 import java.io.File;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -21,8 +25,11 @@ public class Gemma2TensorParallelWeightShardParityIT {
             assertRowShardsMatch(loader, "model.layers.0.self_attn.v_proj.weight");
             assertColumnShardsMatch(loader, "model.layers.0.self_attn.o_proj.weight");
             assertRowShardsMatch(loader, "model.layers.0.mlp.gate_proj.weight");
+            assertDirectRowShardsMatch(loader, "model.layers.0.mlp.gate_proj.weight.qb");
             assertRowShardsMatch(loader, "model.layers.0.mlp.up_proj.weight");
+            assertDirectRowShardsMatch(loader, "model.layers.0.mlp.up_proj.weight.qb");
             assertColumnShardsMatch(loader, "model.layers.0.mlp.down_proj.weight");
+            assertDirectColumnShardsMatch(loader, "model.layers.0.mlp.down_proj.weight.qb");
         }
     }
 
@@ -34,7 +41,7 @@ public class Gemma2TensorParallelWeightShardParityIT {
                 try (AbstractTensor shard = tpLoader.load(weightName)) {
                     assertEquals(range.length(), shard.shape().first(), weightName + " rank=" + rank + " row count");
                     assertEquals(full.shape().last(), shard.shape().last(), weightName + " rank=" + rank + " column count");
-                    assertShardValues(weightName, full, shard, rank, range.startInclusive(), 0, 0.05f);
+                    assertShardValues(weightName, full, shard, rank, range.startInclusive(), 0, 0.0f);
                 }
             }
         }
@@ -46,6 +53,34 @@ public class Gemma2TensorParallelWeightShardParityIT {
                 TensorParallelWeightLoader tpLoader = tensorParallelWeightLoader(loader, rank, full, weightName);
                 ShardRange range = columnRangeFor(weightName, full, rank);
                 try (AbstractTensor shard = tpLoader.load(weightName)) {
+                    assertEquals(full.shape().first(), shard.shape().first(), weightName + " rank=" + rank + " row count");
+                    assertEquals(range.length(), shard.shape().last(), weightName + " rank=" + rank + " column count");
+                    assertShardValues(weightName, full, shard, rank, 0, range.startInclusive(), 0.0f);
+                }
+            }
+        }
+    }
+
+    private static void assertDirectRowShardsMatch(DefaultWeightLoader loader, String weightName) {
+        try (AbstractTensor full = loader.load(weightName)) {
+            for (int rank = 0; rank < TP_SIZE; rank++) {
+                ShardRange range = rowRangeFor(weightName, full, rank);
+                try (AbstractTensor shard = loader.load(weightName,
+                        new TensorShardSpec(TensorShardAxis.ROWS, range.startInclusive(), range.endExclusive()))) {
+                    assertEquals(range.length(), shard.shape().first(), weightName + " rank=" + rank + " row count");
+                    assertEquals(full.shape().last(), shard.shape().last(), weightName + " rank=" + rank + " column count");
+                    assertShardValues(weightName, full, shard, rank, range.startInclusive(), 0, 0.0f);
+                }
+            }
+        }
+    }
+
+    private static void assertDirectColumnShardsMatch(DefaultWeightLoader loader, String weightName) {
+        try (AbstractTensor full = loader.load(weightName)) {
+            for (int rank = 0; rank < TP_SIZE; rank++) {
+                ShardRange range = columnRangeFor(weightName, full, rank);
+                try (AbstractTensor shard = loader.load(weightName,
+                        new TensorShardSpec(TensorShardAxis.COLUMNS, range.startInclusive(), range.endExclusive()))) {
                     assertEquals(full.shape().first(), shard.shape().first(), weightName + " rank=" + rank + " row count");
                     assertEquals(range.length(), shard.shape().last(), weightName + " rank=" + rank + " column count");
                     assertShardValues(weightName, full, shard, rank, 0, range.startInclusive(), 0.0f);
@@ -110,8 +145,57 @@ public class Gemma2TensorParallelWeightShardParityIT {
         int fullRow = localRow + rowOffset;
         int fullCol = localCol + columnOffset;
         String message = weightName + " rank=" + rank
+                + " fullShape=" + full.shape()
+                + " shardShape=" + shard.shape()
+                + " fullDType=" + full.dType()
+                + " shardDType=" + shard.dType()
+                + " rowOffset=" + rowOffset
+                + " columnOffset=" + columnOffset
                 + " local=(" + localRow + "," + localCol + ") full=(" + fullRow + "," + fullCol + ")"
-                + " expected=" + expected + " actual=" + actual;
+                + " expected=" + expected + " actual=" + actual
+                + q4BlockScaleMessage(full, shard, fullRow, fullCol, localRow, localCol);
         return message;
+    }
+
+    private static String q4BlockScaleMessage(AbstractTensor full, AbstractTensor shard, int fullRow, int fullCol,
+            int localRow, int localCol) {
+        if (!(full instanceof Q4ByteBufferTensor fullQ4) || !(shard instanceof Q4ByteBufferTensor shardQ4)) {
+            return "";
+        }
+        int fullBlockColumn = fullCol / Q4ByteBufferTensor.BLOCK_SIZE;
+        int localBlockColumn = localCol / Q4ByteBufferTensor.BLOCK_SIZE;
+        float fullScale = fullQ4.getBlockF().get(fullRow, fullBlockColumn);
+        float shardScale = shardQ4.getBlockF().get(localRow, localBlockColumn);
+        int fullLogicalOffset = fullQ4.getOffset(fullRow, fullCol);
+        int shardLogicalOffset = shardQ4.getOffset(localRow, localCol);
+        int fullByteOffset = q4PackedByteOffset(fullLogicalOffset);
+        int shardByteOffset = q4PackedByteOffset(shardLogicalOffset);
+        byte fullByte = fullQ4.getMemorySegment().get(ValueLayout.JAVA_BYTE, fullByteOffset);
+        byte shardByte = shardQ4.getMemorySegment().get(ValueLayout.JAVA_BYTE, shardByteOffset);
+        return " fullQ4Scale=(" + fullRow + "," + fullBlockColumn + ")=" + fullScale
+                + " shardQ4Scale=(" + localRow + "," + localBlockColumn + ")=" + shardScale
+                + " fullQ4ByteOffset=" + fullByteOffset
+                + " shardQ4ByteOffset=" + shardByteOffset
+                + " fullQ4Byte=" + Byte.toUnsignedInt(fullByte)
+                + " shardQ4Byte=" + Byte.toUnsignedInt(shardByte)
+                + " fullQ4Nibble=" + q4Nibble(fullByte, fullLogicalOffset)
+                + " shardQ4Nibble=" + q4Nibble(shardByte, shardLogicalOffset);
+    }
+
+    private static int q4PackedByteOffset(int logicalOffset) {
+        int offsetInBlock = logicalOffset % Q4ByteBufferTensor.BLOCK_SIZE;
+        int byteOffset = (logicalOffset / Q4ByteBufferTensor.BLOCK_SIZE) * Q4ByteBufferTensor.HALF_BLOCK
+                + offsetInBlock;
+        return offsetInBlock < Q4ByteBufferTensor.HALF_BLOCK
+                ? byteOffset
+                : byteOffset - Q4ByteBufferTensor.HALF_BLOCK;
+    }
+
+    private static int q4Nibble(byte packedByte, int logicalOffset) {
+        int unsigned = Byte.toUnsignedInt(packedByte);
+        int offsetInBlock = logicalOffset % Q4ByteBufferTensor.BLOCK_SIZE;
+        return offsetInBlock < Q4ByteBufferTensor.HALF_BLOCK
+                ? (unsigned & 0x0F) - 8
+                : ((unsigned >> 4) & 0x0F) - 8;
     }
 }

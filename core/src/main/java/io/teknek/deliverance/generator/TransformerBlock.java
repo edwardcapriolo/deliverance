@@ -157,6 +157,7 @@ public class TransformerBlock {
             configurableTensorProvider.get().scale(model.getConfig().residualMultiplier, lnattn, 0, model.getConfig().embeddingLength);
         }
         configurableTensorProvider.get().accumulate(lnattn, embedding, 0, model.getConfig().embeddingLength);
+        model.emitLayerDebug(layerIndex, "post_attention_residual", lnattn);
 
         AbstractTensor lnpreFF = preFFNorm.map(ln -> ln.forward(lnattn)).orElse(lnattn);
         AbstractTensor postFF;
@@ -171,6 +172,7 @@ public class TransformerBlock {
             configurableTensorProvider.get().scale(model.getConfig().residualMultiplier, lnpostFF, 0, model.getConfig().embeddingLength);
         }
         configurableTensorProvider.get().accumulate(lnpostFF, lnattn, 0, model.getConfig().embeddingLength);
+        model.emitLayerDebug(layerIndex, "post_ff_residual", lnpostFF);
 
         // Release any tmp buffers (embedding is released by caller)
         if (lnemb != embedding) lnemb.close();

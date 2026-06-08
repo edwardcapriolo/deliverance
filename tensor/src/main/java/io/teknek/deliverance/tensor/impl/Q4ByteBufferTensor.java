@@ -13,6 +13,7 @@ import java.util.stream.IntStream;
 
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.SparseOffset;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.UnsafeDirectByteBuffer;
 import jdk.incubator.vector.ByteVector;
@@ -113,14 +114,20 @@ public final class Q4ByteBufferTensor extends AbstractTensor<ByteVector, Byte> {
         if (shape.length - 1 >= 0) {
             System.arraycopy(shape, 0, blockShape, 0, shape.length - 1);
         }
-        blockShape[shape.length - 1] = (int) (shape[shape.length - 1] * I_BLOCK_SIZE);
+        blockShape[shape.length - 1] = blockIndex(shape[shape.length - 1]);
         return blockShape;
     }
 
 
     static TensorShape makeBlockShape(TensorShape shape) {
-
-        return shape.scaleLastDim(I_BLOCK_SIZE);
+        int[] blockShape = shape.shapeArray();
+        blockShape[blockShape.length - 1] = blockIndex(blockShape[blockShape.length - 1]);
+        if (shape.sparseColumnOffset() != 0 || shape.sparseColumnLength() != shape.last()) {
+            return TensorShape.sparseColumn(blockShape, SparseOffset.of(
+                    blockIndex(shape.sparseColumnOffset()),
+                    blockIndex(shape.sparseColumnLength())));
+        }
+        return TensorShape.of(blockShape);
     }
 
     public Q4ByteBufferTensor(TensorShape shape) {
@@ -156,8 +163,8 @@ public final class Q4ByteBufferTensor extends AbstractTensor<ByteVector, Byte> {
     @Override
     protected AbstractTensor make(int offset, int length, TensorShape shape, boolean cacheSlices) {
         FloatBufferTensor newBlockF = (FloatBufferTensor) this.blockF.make(
-                (int) (offset * I_BLOCK_SIZE),
-                (int) (length * I_BLOCK_SIZE),
+                blockIndex(offset),
+                blockIndex(length),
                 makeBlockShape(shape),
                 cacheSlices
         );
@@ -169,7 +176,7 @@ public final class Q4ByteBufferTensor extends AbstractTensor<ByteVector, Byte> {
         Preconditions.checkArgument(2 == shape.dims(), "Must specify all dimensions");
         int i = getOffset(row, column);
         float scale = blockF.get(makeBlockShape(new int []{ row, column } ));
-        int ibyte = ((int) (i * I_BLOCK_SIZE)) * HALF_BLOCK + (i % BLOCK_SIZE);
+        int ibyte = blockIndex(i) * HALF_BLOCK + (i % BLOCK_SIZE);
         int x;
         if (i % BLOCK_SIZE < HALF_BLOCK) {
             byte b0 = this.b.get(ibyte);
@@ -189,7 +196,7 @@ public final class Q4ByteBufferTensor extends AbstractTensor<ByteVector, Byte> {
         float scale = blockF.get(makeBlockShape(dims));
 
         // Represents the offset in the q4 byte array
-        int ibyte = ((int) (i * I_BLOCK_SIZE)) * HALF_BLOCK + (i % BLOCK_SIZE);
+        int ibyte = blockIndex(i) * HALF_BLOCK + (i % BLOCK_SIZE);
 
         int x;
         if (i % BLOCK_SIZE < HALF_BLOCK) {
@@ -203,8 +210,21 @@ public final class Q4ByteBufferTensor extends AbstractTensor<ByteVector, Byte> {
     }
 
     public float getFactorForIndex(int d, int i) {
-        int ix = (int) (i * I_BLOCK_SIZE);
+        int ix = blockIndex(i);
         return blockF.get(d, ix);
+    }
+
+    /**
+     * Returns the quantization block index for a logical value offset.
+     *
+     * <p>Do not replace this with {@code (int) (offset * (1.0f / BLOCK_SIZE))}. Large model tensors routinely exceed
+     * {@code 2^24} logical values, after which {@code float} cannot represent every integer. Around that boundary the
+     * reciprocal-multiply form can round the offset to a neighboring block and decode the wrong packed byte while all
+     * local shard offsets still appear correct. Integer division is exact for these offsets and documents the real
+     * layout invariant: one Q4/Q8 scale applies to each contiguous {@link #BLOCK_SIZE}-value block.</p>
+     */
+    public static int blockIndex(int offset) {
+        return offset / BLOCK_SIZE;
     }
 
     public FloatBufferTensor getBlockF() {

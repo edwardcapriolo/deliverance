@@ -86,6 +86,14 @@ public abstract class AbstractModel implements Generator, Classifier {
     ) {
     }
 
+    public record LayerDebugEvent(
+            int layerIndex,
+            String stage,
+            TensorParallelContext tensorParallelContext,
+            AbstractTensor hiddenStates
+    ) {
+    }
+
     /**
      * Forward execution boundary used by generation coordinators that do not own local KV memory directly.
      */
@@ -148,6 +156,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     protected WrappedForkJoinPool pool;
     protected PreTrainedTokenizer preTrainedTokenizer;
     private volatile Consumer<GenerationDebugEvent> generationDebugHook = event -> {};
+    private volatile Consumer<LayerDebugEvent> layerDebugHook = event -> {};
 
     protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer t, DType workingMemoryDType,
                             DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider provider,
@@ -301,6 +310,18 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public void clearGenerationDebugHook() {
         this.generationDebugHook = event -> {};
+    }
+
+    public void setLayerDebugHook(Consumer<LayerDebugEvent> layerDebugHook) {
+        this.layerDebugHook = layerDebugHook == null ? event -> {} : layerDebugHook;
+    }
+
+    public void clearLayerDebugHook() {
+        this.layerDebugHook = event -> {};
+    }
+
+    public void emitLayerDebug(int layerIndex, String stage, AbstractTensor hiddenStates) {
+        layerDebugHook.accept(new LayerDebugEvent(layerIndex, stage, tensorParallelContext, hiddenStates));
     }
 
     /**
@@ -885,10 +906,12 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public AbstractTensor forward(AbstractTensor embedding, int startPos, KvBufferCache.KvBuffer kvbuf,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
+        emitLayerDebug(-1, "input", embedding);
         for (int i = 0; i < config.numberOfLayers; i++) {
             int relativeLayer = i;
             AbstractTensor ref = embedding; // reference so we can free
             embedding = transformerBlocks[relativeLayer].forward(embedding, startPos, kvbuf, tensorReducer);
+            emitLayerDebug(relativeLayer, "layer_output", embedding);
             ref.close();
         }
         return embedding;

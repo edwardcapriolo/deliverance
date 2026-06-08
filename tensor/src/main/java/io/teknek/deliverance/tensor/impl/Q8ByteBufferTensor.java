@@ -114,8 +114,8 @@ public class Q8ByteBufferTensor extends AbstractTensor<ByteVector, Byte> {
     @Override
     protected AbstractTensor make(int offset, int length, TensorShape shape, boolean cacheSlices) {
         FloatBufferTensor newBlockF = (FloatBufferTensor) this.blockF.make(
-                (int) (offset * I_BLOCK_SIZE),
-                (int) (length * I_BLOCK_SIZE),
+                Q4ByteBufferTensor.blockIndex(offset),
+                Q4ByteBufferTensor.blockIndex(length),
                 makeBlockShape(shape),
                 cacheSlices
         );
@@ -144,7 +144,7 @@ public class Q8ByteBufferTensor extends AbstractTensor<ByteVector, Byte> {
     }
 
     public final float getFactorForIndex(int d, int i) {
-        int ix = (int) (i * I_BLOCK_SIZE);
+        int ix = Q4ByteBufferTensor.blockIndex(i);
         if (ix >= blockF.size()) throw new RuntimeException();
         return blockF.get(d, ix);
     }

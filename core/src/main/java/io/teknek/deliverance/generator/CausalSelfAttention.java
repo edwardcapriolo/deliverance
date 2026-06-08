@@ -177,6 +177,9 @@ public class CausalSelfAttention {
                     bias -> configurableTensorProvider.get().accumulate(tmpValBatch, bias,
                             0, kvLength)
             );
+            m.emitLayerDebug(layerIndex, "query_projection", queryBatch);
+            m.emitLayerDebug(layerIndex, "key_projection", tmpKeyBatch);
+            m.emitLayerDebug(layerIndex, "value_projection", tmpValBatch);
             AbstractTensor[] querySlices = new AbstractTensor[batchSize];
             AbstractTensor[] keySlices = new AbstractTensor[batchSize];
             AbstractTensor[] valSlices = new AbstractTensor[batchSize];
@@ -333,6 +336,7 @@ public class CausalSelfAttention {
 
             // matmul the projection and sum into input
             // input += c_proj_weight @ ybuf + c_proj_bias
+            m.emitLayerDebug(layerIndex, "attention_value", valueBatch);
             AbstractTensor result = m.makeDenseTensor(batchSize, config.embeddingLength);
             try (AbstractTensor vq = m.maybeQuantize(valueBatch)) {
                 VectorMath.pchunk(0, config.embeddingLength, (chunkStart, chunkSize) -> {
@@ -350,6 +354,7 @@ public class CausalSelfAttention {
                 AbstractTensor reduced = m.getTensorParallelContext().enabled()
                         ? m.getTensorParallelCollectives().allReduceSum("layer." + layerIndex + ".self_attn.o_proj", result)
                         : result;
+                m.emitLayerDebug(layerIndex, "attention_output", reduced);
                 tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(reduced)));
                 outputProjectionBias.ifPresent(bias -> configurableTensorProvider.get().accumulate(reduced, bias, 0, config.embeddingLength));
                 if (reduced != result) {

@@ -42,6 +42,41 @@ public class TensorParallelMlpTest {
         }
     }
 
+    @Test
+    public void fourRankPartialsMatchFullMlpOutput() {
+        ConfigurableTensorProvider provider = new ConfigurableTensorProvider(new NaiveTensorOperations());
+        try (AbstractTensor input = input();
+             AbstractTensor gate = matrix(8, 3, 0.10f);
+             AbstractTensor up = matrix(8, 3, 0.20f);
+             AbstractTensor down = matrix(3, 8, -0.15f);
+             AbstractTensor gateRank0 = rowShard(gate, 0, 2);
+             AbstractTensor upRank0 = rowShard(up, 0, 2);
+             AbstractTensor downRank0 = columnShard(down, 0, 2);
+             AbstractTensor gateRank1 = rowShard(gate, 2, 4);
+             AbstractTensor upRank1 = rowShard(up, 2, 4);
+             AbstractTensor downRank1 = columnShard(down, 2, 4);
+             AbstractTensor gateRank2 = rowShard(gate, 4, 6);
+             AbstractTensor upRank2 = rowShard(up, 4, 6);
+             AbstractTensor downRank2 = columnShard(down, 4, 6);
+             AbstractTensor gateRank3 = rowShard(gate, 6, 8);
+             AbstractTensor upRank3 = rowShard(up, 6, 8);
+             AbstractTensor downRank3 = columnShard(down, 6, 8);
+             AbstractTensor full = TensorParallelMlp.forwardPartial(input, gate, up, down,
+                     ActivationFunction.Type.SILU, provider, FloatBufferTensor::new);
+             AbstractTensor partial0 = TensorParallelMlp.forwardPartial(input, gateRank0, upRank0, downRank0,
+                     ActivationFunction.Type.SILU, provider, FloatBufferTensor::new);
+             AbstractTensor partial1 = TensorParallelMlp.forwardPartial(input, gateRank1, upRank1, downRank1,
+                     ActivationFunction.Type.SILU, provider, FloatBufferTensor::new);
+             AbstractTensor partial2 = TensorParallelMlp.forwardPartial(input, gateRank2, upRank2, downRank2,
+                     ActivationFunction.Type.SILU, provider, FloatBufferTensor::new);
+             AbstractTensor partial3 = TensorParallelMlp.forwardPartial(input, gateRank3, upRank3, downRank3,
+                     ActivationFunction.Type.SILU, provider, FloatBufferTensor::new);
+             AbstractTensor summed = sumPartials(partial0, partial1, partial2, partial3)) {
+
+            assertTensorEquals(full, summed, 0.0001f);
+        }
+    }
+
     private static AbstractTensor input() {
         AbstractTensor input = new FloatBufferTensor(1, 3);
         input.set(0.5f, 0, 0);
@@ -90,6 +125,29 @@ public class TensorParallelMlpTest {
             }
         }
         return result;
+    }
+
+    private static AbstractTensor sumPartials(AbstractTensor... tensors) {
+        AbstractTensor result = new FloatBufferTensor(tensors[0].shape());
+        for (AbstractTensor tensor : tensors) {
+            for (int row = 0; row < result.shape().first(); row++) {
+                for (int col = 0; col < result.shape().last(); col++) {
+                    result.set(result.get(row, col) + tensor.get(row, col), row, col);
+                }
+            }
+        }
+        return result;
+    }
+
+    private static void assertTensorEquals(AbstractTensor expected, AbstractTensor actual, float tolerance) {
+        assertEquals(expected.shape().first(), actual.shape().first(), "row count");
+        assertEquals(expected.shape().last(), actual.shape().last(), "column count");
+        for (int row = 0; row < expected.shape().first(); row++) {
+            for (int col = 0; col < expected.shape().last(); col++) {
+                assertEquals(expected.get(row, col), actual.get(row, col), tolerance,
+                        "row=" + row + " col=" + col);
+            }
+        }
     }
 
     private static final class FixedSumCollectives implements TensorParallelCollectives {
