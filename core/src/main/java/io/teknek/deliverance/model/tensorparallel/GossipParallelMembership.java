@@ -10,24 +10,43 @@ import io.teknek.gossip.manager.GossipManager;
 import io.teknek.gossip.manager.GossipManagerBuilder;
 import io.teknek.gossip.model.SharedDataMessage;
 import io.teknek.gossip.model.PerNodeDataMessage;
+import io.teknek.deliverance.model.AutoModelForCausaLm;
+import io.teknek.deliverance.model.tensorparallel.transport.HttpTensorParallelCollectiveServer;
+import io.teknek.deliverance.model.tensorparallel.transport.HttpTensorParallelCollectives;
+import io.teknek.deliverance.model.tensorparallel.transport.HttpTensorParallelRankClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 
 /**
  * Running gossip membership handle for one Deliverance tensor-parallel node.
  */
 public class GossipParallelMembership implements AutoCloseable {
+    private static final Logger LOGGER = LoggerFactory.getLogger(GossipParallelMembership.class);
     private final GossipManager gossipManager;
     private final TensorParallelDeploymentSpec deploymentSpec;
+    private volatile boolean closed;
+    private Thread assignmentCoordinator;
+    private HttpTensorParallelCollectiveServer collectiveServer;
+    private AutoModelForCausaLm.Builder rankBuilder;
+    private TensorParallelWorker worker;
+    private final String rankBindHost;
 
-    private GossipParallelMembership(GossipManager gossipManager, TensorParallelDeploymentSpec deploymentSpec) {
+    private GossipParallelMembership(GossipManager gossipManager, TensorParallelDeploymentSpec deploymentSpec,
+            String rankBindHost) {
         this.gossipManager = gossipManager;
         this.deploymentSpec = deploymentSpec;
+        this.rankBindHost = rankBindHost;
     }
 
     public static GossipParallelMembership start(GossipParallelSettings settings) {
@@ -39,10 +58,17 @@ public class GossipParallelMembership implements AutoCloseable {
                 .gossipSettings(settings.gossipSettings())
                 .build();
         manager.init();
-        GossipParallelMembership membership = new GossipParallelMembership(manager, settings.deploymentSpec());
+        GossipParallelMembership membership = new GossipParallelMembership(manager, settings.deploymentSpec(),
+                settings.uri().getHost());
         membership.publishDeploymentSpec();
         membership.publishCandidate();
+        membership.startAssignmentCoordinator();
         return membership;
+    }
+
+    public synchronized void startWorkerWhenReady(AutoModelForCausaLm.Builder rankBuilder) {
+        this.rankBuilder = rankBuilder;
+        notifyAll();
     }
 
     public List<LocalMember> liveMembers() {
@@ -119,6 +145,77 @@ public class GossipParallelMembership implements AutoCloseable {
         mergeSharedData(deploymentSpec.leaderVoteKey(), new MajorityVote(candidates));
     }
 
+    /**
+     * Publishes this node's leader vote only if a leader has not already been elected.
+     *
+     * <p>Callers should wait until the expected candidates are visible before invoking this method. Starting an election
+     * too early can vote against an incomplete topology. This method only avoids redundant votes once an election has
+     * already converged.</p>
+     */
+    public void voteForLeaderIfNeeded() {
+        if (electedLeader() == null) {
+            voteForLeader();
+        }
+    }
+
+    private void startAssignmentCoordinator() {
+        assignmentCoordinator = new Thread(this::coordinateAssignment,
+                "deliverance-tp-assignment-" + deploymentSpec.deploymentId() + "-" + localNodeId());
+        assignmentCoordinator.setDaemon(true);
+        assignmentCoordinator.start();
+    }
+
+    private void coordinateAssignment() {
+        try {
+            while (!closed && candidateNodeIds().size() < deploymentSpec.minimumPhysicalNodes()) {
+                Thread.sleep(100);
+            }
+            if (closed) {
+                return;
+            }
+            voteForLeaderIfNeeded();
+            while (!closed && electedLeader() == null) {
+                Thread.sleep(100);
+                voteForLeaderIfNeeded();
+            }
+            if (localNodeId().equals(electedLeader())) {
+                publishAssignmentAsLeader();
+            }
+            while (!closed && findAssignment() == null) {
+                Thread.sleep(100);
+            }
+            startCollectiveServerIfLeader();
+            while (!closed && findCollectiveUri() == null) {
+                Thread.sleep(100);
+            }
+            startWorkerIfReady();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (RuntimeException e) {
+            LOGGER.warn("Tensor-parallel assignment coordination failed", e);
+        }
+    }
+
+    private synchronized void startCollectiveServerIfLeader() {
+        if (closed || collectiveServer != null || !localNodeId().equals(electedLeader())) {
+            return;
+        }
+        collectiveServer = new HttpTensorParallelCollectiveServer(new InetSocketAddress("127.0.0.1", 0),
+                Duration.ofSeconds(30));
+        collectiveServer.start();
+        publishSharedData(deploymentSpec.collectiveUriKey(), collectiveServer.uri().toString());
+    }
+
+    private synchronized void startWorkerIfReady() throws InterruptedException {
+        while (!closed && rankBuilder == null) {
+            wait(100);
+        }
+        if (closed || worker != null || rankBuilder == null) {
+            return;
+        }
+        worker = TensorParallelWorker.start(rankBuilder, this, tensorParallelCollectivesFactory(), rankBindHost);
+    }
+
     public String electedLeader() {
         Crdt<?, ?> crdt = gossipManager.findCrdt(deploymentSpec.leaderVoteKey());
         if (!(crdt instanceof MajorityVote vote)) {
@@ -158,6 +255,35 @@ public class GossipParallelMembership implements AutoCloseable {
                     + deploymentSpec.deploymentId());
         }
         return assignment;
+    }
+
+    public URI findCollectiveUri() {
+        Object payload = findSharedData(deploymentSpec.collectiveUriKey());
+        return payload == null ? null : URI.create(String.valueOf(payload));
+    }
+
+    public URI requireCollectiveUri() {
+        URI uri = findCollectiveUri();
+        if (uri == null) {
+            throw new IllegalStateException("No tensor-parallel collective URI found for deployment "
+                    + deploymentSpec.deploymentId());
+        }
+        return uri;
+    }
+
+    public Function<TensorParallelContext, TensorParallelCollectives> tensorParallelCollectivesFactory() {
+        URI uri = requireCollectiveUri();
+        return context -> new HttpTensorParallelCollectives(context, uri);
+    }
+
+    public TensorParallelGenerationGroup openGenerationGroup() {
+        TensorParallelAssignment assignment = requireAssignment();
+        List<TensorParallelRankEndpoint> endpoints = rankEndpointsForAssignment();
+        return TensorParallelGenerationGroup.fromEndpoints(endpoints.stream()
+                .map(endpoint -> new TensorParallelGenerationGroup.RankEndpoint(endpoint.rank(),
+                        assignment.tensorParallelSize(), new HttpTensorParallelRankClient(URI.create(endpoint.uri())),
+                        false))
+                .toList());
     }
 
     public List<Integer> localRanks() {
@@ -238,6 +364,18 @@ public class GossipParallelMembership implements AutoCloseable {
 
     @Override
     public void close() {
+        closed = true;
+        if (assignmentCoordinator != null) {
+            assignmentCoordinator.interrupt();
+        }
+        if (collectiveServer != null) {
+            collectiveServer.close();
+            collectiveServer = null;
+        }
+        if (worker != null) {
+            worker.close();
+            worker = null;
+        }
         gossipManager.shutdown();
     }
 }

@@ -20,6 +20,10 @@ public record TensorParallelDeploymentSpec(String deploymentId, int requestedNod
         this(deploymentId, requestedNodes, 1);
     }
 
+    public int minimumPhysicalNodes() {
+        return (requestedNodes + maxRanksPerNode - 1) / maxRanksPerNode;
+    }
+
     public String sharedDataKey() {
         return "deliverance.tp.deployment." + deploymentId;
     }
@@ -38,5 +42,9 @@ public record TensorParallelDeploymentSpec(String deploymentId, int requestedNod
 
     public String rankEndpointsKey() {
         return "deliverance.tp.rankEndpoints." + deploymentId;
+    }
+
+    public String collectiveUriKey() {
+        return "deliverance.tp.collectiveUri." + deploymentId;
     }
 }

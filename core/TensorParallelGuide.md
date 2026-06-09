@@ -38,77 +38,81 @@ TensorParallelDeploymentSpec deploymentSpec = new TensorParallelDeploymentSpec("
 
 ## Node Setup
 
-Each physical node creates an `AutoModelForCausaLm.Builder` with matching `GossipParallelSettings`.
+Each physical node builds an `AbstractModel` with matching `GossipParallelSettings`.
 
 ```java
 ModelFetcher fetcher = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
 
-AutoModelForCausaLm.Builder nodeBuilder = AutoModelForCausaLm.newBuilder(fetcher)
+AbstractModel nodeModel = AutoModelForCausaLm.newBuilder(fetcher)
         .withParallelSettings(new GossipParallelSettings(
                 clusterName,
                 nodeId,
                 nodeUri,
                 seedMembers,
                 gossipSettings,
-                deploymentSpec));
+                deploymentSpec))
+        .build();
 ```
 
 Every node in the deployment must use the same `clusterName`, seed list, and `deploymentSpec`.
 
-## Membership And Assignment
-
-Start gossip membership on every node:
+When `withParallelSettings(...)` is present, `build()` starts the node's gossip membership and attaches it to the model:
 
 ```java
-GossipParallelMembership membership = nodeBuilder.startParallelMembership();
+GossipParallelMembership membership = nodeModel.gossipParallelMembership().orElseThrow();
 ```
 
-The cluster needs a committed rank assignment before workers start. The current low-level API exposes the steps directly:
+## Runtime Lifecycle
 
-```java
-membership.voteForLeader();
-membership.publishAssignmentAsLeader();
+Membership, leader election, assignment, collectives, and rank workers are now implementation details started from the
+model build. The user does not need to call `startParallelMembership()`, `voteForLeader()`, `publishAssignmentAsLeader()`,
+or `TensorParallelWorker.start(...)` directly.
+
+The automatic lifecycle is:
+
+```text
+        node model build()                         gossip shared state
+  +----------------------------+              +-------------------------+
+  | AutoModelForCausaLm.Builder|              | deployment spec         |
+  |   withParallelSettings     |              | candidates              |
+  +-------------+--------------+              | leader vote             |
+                |                             | assignment              |
+                v                             | collective URI          |
+  +----------------------------+              | rank endpoints          |
+  | AbstractModel              |              +-----------+-------------+
+  |  owns GossipMembership     |                          ^
+  +-------------+--------------+                          |
+                |                                         |
+                v                                         |
+  +----------------------------+                          |
+  | GossipParallelMembership   |--------------------------+
+  |  waits for candidates      |
+  |  elects leader             |
+  |  publishes assignment      |
+  |  leader starts collective  |
+  |  starts local worker       |
+  +-------------+--------------+
+                |
+                v
+  +----------------------------+       +-------------------------------+
+  | TensorParallelWorker       |       | HttpTensorParallelCollective  |
+  |  starts rank HTTP servers  |<----->| Server (leader-owned)         |
+  |  publishes rank endpoints  |       +-------------------------------+
+  +-------------+--------------+
+                |
+                v
+       rank-local transformer forward
 ```
-
-Production code should wait for all expected nodes to be visible before publishing the assignment.
-
-## Start Workers
-
-Workers build all ranks assigned to the local physical node and publish HTTP rank endpoints into gossip.
-
-```java
-HttpTensorParallelCollectiveServer collectiveServer = new HttpTensorParallelCollectiveServer(
-        new InetSocketAddress("127.0.0.1", 0), Duration.ofSeconds(30));
-collectiveServer.start();
-
-Function<TensorParallelContext, TensorParallelCollectives> collectivesFactory =
-        context -> new HttpTensorParallelCollectives(context, collectiveServer.uri());
-
-TensorParallelWorker worker = TensorParallelWorker.start(
-        nodeBuilder,
-        membership,
-        collectivesFactory,
-        "127.0.0.1");
-```
-
-Each worker starts one rank server per local assigned rank.
 
 ## Run Generate
 
-The coordinator discovers all rank endpoints, builds a `TensorParallelGenerationGroup`, and calls `generate(...)`.
+The coordinator still uses a normal non-rank model for tokenizer, prompt rendering, output projection, sampling, stop
+handling, and response construction. The distributed transformer forward path is opened from the membership:
 
 ```java
-List<TensorParallelRankEndpoint> endpoints = membership.rankEndpointsForAssignment();
+GossipParallelMembership membership = nodeModel.gossipParallelMembership().orElseThrow();
 
-TensorParallelGenerationGroup group = TensorParallelGenerationGroup.fromEndpoints(endpoints.stream()
-        .map(endpoint -> new TensorParallelGenerationGroup.RankEndpoint(
-                endpoint.rank(),
-                deploymentSpec.requestedNodes(),
-                new HttpTensorParallelRankClient(URI.create(endpoint.uri())),
-                false))
-        .toList());
-
-try (group;
+try (TensorParallelGenerationGroup group = membership.openGenerationGroup();
      AbstractModel coordinatorModel = AutoModelForCausaLm.newBuilder(fetcher).build()) {
     var prompt = coordinatorModel.promptSupport().get().builder()
             .addUserMessage("What is 1 + 1?")
@@ -128,7 +132,11 @@ try (group;
 ```
 
 The coordinator model is not a tensor-parallel rank. It provides tokenizer, output projection, sampler, stop handling,
-and response construction. Transformer prefill and decode execution goes through the rank endpoints.
+and response construction. Transformer prefill and decode execution goes through the rank endpoints published by the
+workers.
+
+`membership.openGenerationGroup()` hides endpoint discovery and HTTP rank-client construction. The returned group owns the
+rank clients and should be closed by the caller.
 
 For instruct checkpoints, prefer `model.promptSupport().get().builder()` over `PromptContext.of(...)`. Raw prompts are
 completion prompts and may cause the model to echo part of the user text before answering.
@@ -144,13 +152,15 @@ MAVEN_OPTS="-XX:TieredStopAtLevel=1" mvn -pl core -am \
   test
 ```
 
-The test proves the full path: two gossip nodes, two workers, four HTTP rank endpoints, HTTP collectives, and
-`TensorParallelGenerationGroup.generate(...)` producing a `Response`.
+The test proves the full path: two gossip nodes, automatic leader election and assignment, leader-owned HTTP collectives,
+automatic local worker startup, four HTTP rank endpoints, and `TensorParallelGenerationGroup.generate(...)` producing a
+`Response`.
 
 ## Operational Notes
 
 * Keep all nodes on the same model files and Deliverance build.
 * Do not mix model families in one deployment.
 * Use one deployment id per logical model deployment.
-* Wait for all rank endpoints before serving traffic.
+* Wait for all rank endpoints before serving traffic; `openGenerationGroup()` requires a completed assignment and rank
+  endpoint publication.
 * Treat non-Gemma2 model families as unsupported until they have explicit tensor-parallel tests.

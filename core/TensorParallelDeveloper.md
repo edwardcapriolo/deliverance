@@ -48,11 +48,14 @@ Membership and transport:
 
 * `TensorParallelDeploymentSpec` describes one deployment: deployment id, tensor-parallel rank count, and maximum ranks
   per physical node.
-* `GossipParallelMembership` publishes deployment state, candidates, leader votes, committed assignment, and rank
-  endpoints.
-* `TensorParallelWorker` builds all local assigned ranks and starts one HTTP rank server per rank.
+* `GossipParallelMembership` publishes deployment state, candidates, leader votes, committed assignment, the leader-owned
+  collective URI, and rank endpoints. Models built with `GossipParallelSettings` start membership automatically and expose
+  it through `AbstractModel.gossipParallelMembership()`.
+* `TensorParallelWorker` builds all local assigned ranks and starts one HTTP rank server per rank. Membership starts the
+  local worker automatically after assignment and collective URI discovery.
 * `HttpTensorParallelRankServer` and `HttpTensorParallelRankClient` expose `/batchForward` and `/forward`.
-* `HttpTensorParallelCollectiveServer` and `HttpTensorParallelCollectives` provide HTTP all-reduce support.
+* `HttpTensorParallelCollectiveServer` and `HttpTensorParallelCollectives` provide HTTP all-reduce support. The elected
+  leader starts the collective server and publishes its URI through gossip.
 * HTTP collectives add a deterministic per-rank sequence number to logical collective keys so repeated decode steps do not
   reuse the same wire key.
 * `BinaryTensorPayloadCodec` is the runtime tensor wire format. Control messages are JSON; tensor bodies are binary.
@@ -67,8 +70,9 @@ Implemented pieces:
 * Attention uses local attention head, KV head, attention length, and KV length calculations.
 * MLP computes rank-local partials and reduces output across ranks.
 * KV cache allocation uses local KV length.
-* Full generation is exercised by `Gemma2TensorParallelIT` using two gossip nodes, two workers, HTTP rank endpoints, HTTP
-  collectives, and `TensorParallelGenerationGroup.generate(...)`.
+* Full generation is exercised by `Gemma2TensorParallelIT` using two gossip nodes, automatic leader election and
+  assignment, leader-owned HTTP collectives, automatic local worker startup, HTTP rank endpoints, and
+  `TensorParallelGenerationGroup.generate(...)`.
 
 Known Gemma2 split requirements for `tjake/gemma-2-2b-it-JQ4`:
 

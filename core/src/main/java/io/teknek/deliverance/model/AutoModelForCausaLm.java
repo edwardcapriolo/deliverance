@@ -179,7 +179,6 @@ public class AutoModelForCausaLm {
             copy.oobCheck = this.oobCheck;
             copy.tensorParallelContext = context;
             copy.tensorParallelCollectives = Objects.requireNonNull(collectives, "collectives");
-            copy.parallelSettings = this.parallelSettings;
             return copy;
         }
         /** This is a JVM wide property! **/
@@ -197,12 +196,16 @@ public class AutoModelForCausaLm {
             if (provider == null){
                 ConfigurableTensorProvider base = new ConfigurableTensorProvider(allocator, pool);
                 Optional<TensorOperations> maybe = getNative(base.get());
-                if (maybe.isPresent()){
-                    provider = new ConfigurableTensorProvider(maybe.get());
-                }
+                provider = maybe.map(ConfigurableTensorProvider::new).orElse(base);
             }
-            return ModelSupport.loadModel(modelRoot, workingMem, workingQuant, provider,
+            AbstractModel model = ModelSupport.loadModel(modelRoot, workingMem, workingQuant, provider,
                     mr, allocator, settings, fetch, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives);
+            if (parallelSettings.isPresent()) {
+                GossipParallelMembership membership = GossipParallelMembership.start(parallelSettings.get());
+                model.setGossipParallelMembership(membership);
+                membership.startWorkerWhenReady(this);
+            }
+            return model;
         }
 
         public ModelFetcher getFetch() {

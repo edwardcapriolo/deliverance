@@ -27,6 +27,7 @@ import io.teknek.deliverance.math.VectorMathUtils;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.tensorparallel.StaticTensorParallelContext;
 import io.teknek.deliverance.model.tensorparallel.SingleRankTensorParallelCollectives;
+import io.teknek.deliverance.model.tensorparallel.GossipParallelMembership;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelContext;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelPlanner;
@@ -146,6 +147,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     protected final TensorAllocator tensorAllocator;
     protected final TensorParallelContext tensorParallelContext;
     protected final TensorParallelCollectives tensorParallelCollectives;
+    private GossipParallelMembership gossipParallelMembership;
 
     //embedding
     protected Optional<PoolingLayer> poolingLayer;
@@ -372,7 +374,19 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     @Override
     public void close() {
+        if (gossipParallelMembership != null) {
+            gossipParallelMembership.close();
+            gossipParallelMembership = null;
+        }
         kvBufferCache.close();
+    }
+
+    public Optional<GossipParallelMembership> gossipParallelMembership() {
+        return Optional.ofNullable(gossipParallelMembership);
+    }
+
+    void setGossipParallelMembership(GossipParallelMembership gossipParallelMembership) {
+        this.gossipParallelMembership = Objects.requireNonNull(gossipParallelMembership, "gossipParallelMembership");
     }
 
     public Config getConfig(){
