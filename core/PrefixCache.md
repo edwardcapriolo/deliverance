@@ -23,7 +23,7 @@ The settings are applied when the model is initialized. (not per query)
 KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
                 .withMaxPrefixTokensPerPrompt(512)
                 .withMaxEntries(10_000)
-                .withBlockSize(16);
+                .withBlockSize(32);
 try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).withWorkingQuantType(DType.I8)
         .withKvBufferCacheSettings(settings)
         .build()){
@@ -38,8 +38,8 @@ It is possible to store the KVs at each token, but that is a bad idea with limit
 tokens and the KV information is large (MBs). We get the most value from a long complete match, so matches only occur
 at block boundaries.
 
-With an 8-token block size, a 9-token prompt can reuse the first 8 prompt tokens from cache. The ninth prompt token
-must still run through the model at position 8, and the first generated token must be decoded at position 9. Prefix
+With a 32-token block size, a 33-token prompt can reuse the first 32 prompt tokens from cache. The thirty-third prompt token
+must still run through the model at position 32, and the first generated token must be decoded at position 33. Prefix
 length should never reduce the generation token budget.
 
 ### Invariants

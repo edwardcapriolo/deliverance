@@ -15,6 +15,7 @@ import io.teknek.dysfx.exception.UnreachableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -43,9 +44,12 @@ public class ChatCompletionController {
     }
 
     private PreGenerateSlot slot;
+    private final boolean debugChatRequest;
 
-    public ChatCompletionController(Optional<PreGenerateSlot> slot){
+    public ChatCompletionController(Optional<PreGenerateSlot> slot,
+            @Value("${deliverance.debug.chat-request:false}") boolean debugChatRequest){
         this.slot = slot.orElse((x,y) -> Either.Right(y));
+        this.debugChatRequest = debugChatRequest;
     }
 
     @RequestMapping(method = RequestMethod.POST, value = "/chat/completions", produces = { "application/json",
@@ -54,70 +58,81 @@ public class ChatCompletionController {
                                 @RequestBody CreateChatCompletionRequest request) {
         Optional<Map.Entry<MultiModelConfig, AbstractModel>> z = findModel(request.getModel());
         if (z.isEmpty()){
-            throw new RuntimeException("model not found " + request.getModel());
+            return badRequest("model not found " + request.getModel());
         }
         AbstractModel model = z.get().getValue();
+        debugRequest(request);
 
         if (request.getStream() == null || (request.getStream() != null && request.getStream() == false)) {
-            Either<Error, PreparedRequest> bla = ChatCompletionService.mapRequest(headers, model, request);
-            if (bla.isLeft()) {
-                Left<Error, ?> l = (Left<Error, ?>) bla;
-                Error r = (Error) l.productIterator().next();
-                return new ResponseEntity<>(new ErrorResponse().error(r), HttpStatus.BAD_REQUEST);
-            } else {
-                PreparedRequest ready = (PreparedRequest) bla.productIterator().next();
-                Either<Error, PreparedRequest> afterSlot = slot.handle(request, ready);
-                switch (afterSlot) {
-                    case Left<Error, PreparedRequest> e -> {
-                        return new ResponseEntity<>(new ErrorResponse().error(e.get()), HttpStatus.BAD_REQUEST);
-                    }
-                    case Right<Error, PreparedRequest> r -> {
-                        ready = r.get();
-                    }
-                }
-                Response resp = model.generate(UUID.randomUUID(), ready.promptSupportBuilder().build(),
-                        ready.generatorParameters(), new DoNothingGenerateEvent());
-                CreateChatCompletionResponse response = new CreateChatCompletionResponse();
-                List<ToolCall> tcs = model.getToolCallParser().extract(resp);
-                ChatCompletionResponseMessage message = new ChatCompletionResponseMessage()
-                        .role(ChatCompletionResponseMessage.RoleEnum.ASSISTANT)
-                        .content(resp.responseText);
-                if (resp.reasoning != null) {
-                    message.reasoning(resp.reasoning);
-                }
-                CreateChatCompletionResponseChoicesInner choice = new CreateChatCompletionResponseChoicesInner()
-                        .message(message)
-                        .index(0);
-                CreateChatCompletionResponseChoicesInnerLogprobs logprobs = toLogProbs(resp);
-                if (logprobs != null) {
-                    choice.logprobs(logprobs);
-                }
-                if (!tcs.isEmpty()) {
-                    //We shouldn't need this but it seems like the behaivor is hadto model
-                    choice.setFinishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.TOOL_CALLS);
+            try {
+                long mapStart = System.nanoTime();
+                Either<Error, PreparedRequest> bla = ChatCompletionService.mapRequest(headers, model, request);
+                debugElapsed("chat.map_request", mapStart);
+                if (bla.isLeft()) {
+                    Left<Error, ?> l = (Left<Error, ?>) bla;
+                    Error r = (Error) l.productIterator().next();
+                    return new ResponseEntity<>(new ErrorResponse().error(r), HttpStatus.BAD_REQUEST);
                 } else {
-                    switch (resp.finishReason){
-                        case MAX_TOKENS -> choice.setFinishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.LENGTH);
-                        case TOOL_CALLS -> choice.setFinishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.TOOL_CALLS);
-                        case STOP_TOKEN -> choice.setFinishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.STOP);
-                        case CONTENT_FILTER, FUNCTION_CALL -> throw new UnreachableException("not implemented");
-                        case null -> throw new UnreachableException("unexpected null return");
+                    PreparedRequest ready = (PreparedRequest) bla.productIterator().next();
+                    Either<Error, PreparedRequest> afterSlot = slot.handle(request, ready);
+                    switch (afterSlot) {
+                        case Left<Error, PreparedRequest> e -> {
+                            return new ResponseEntity<>(new ErrorResponse().error(e.get()), HttpStatus.BAD_REQUEST);
+                        }
+                        case Right<Error, PreparedRequest> r -> {
+                            ready = r.get();
+                        }
                     }
+                    var promptContext = ready.promptSupportBuilder().build();
+                    debugPrompt(promptContext.getPrompt());
+                    long generateStart = System.nanoTime();
+                    Response resp = model.generate(UUID.randomUUID(), promptContext,
+                            ready.generatorParameters(), new DoNothingGenerateEvent());
+                    debugElapsed("chat.generate", generateStart);
+                    CreateChatCompletionResponse response = new CreateChatCompletionResponse();
+                    List<ToolCall> tcs = model.getToolCallParser().extract(resp);
+                    ChatCompletionResponseMessage message = new ChatCompletionResponseMessage()
+                            .role(ChatCompletionResponseMessage.RoleEnum.ASSISTANT)
+                            .content(resp.responseText);
+                    if (resp.reasoning != null) {
+                        message.reasoning(resp.reasoning);
+                    }
+                    CreateChatCompletionResponseChoicesInner choice = new CreateChatCompletionResponseChoicesInner()
+                            .message(message)
+                            .index(0);
+                    CreateChatCompletionResponseChoicesInnerLogprobs logprobs = toLogProbs(resp);
+                    if (logprobs != null) {
+                        choice.logprobs(logprobs);
+                    }
+                    if (!tcs.isEmpty()) {
+                        //We shouldn't need this but it seems like the behaivor is hadto model
+                        choice.setFinishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.TOOL_CALLS);
+                    } else {
+                        switch (resp.finishReason){
+                            case MAX_TOKENS -> choice.setFinishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.LENGTH);
+                            case TOOL_CALLS -> choice.setFinishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.TOOL_CALLS);
+                            case STOP_TOKEN -> choice.setFinishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.STOP);
+                            case CONTENT_FILTER, FUNCTION_CALL -> throw new UnreachableException("not implemented");
+                            case null -> throw new UnreachableException("unexpected null return");
+                        }
+                    }
+                    tcs.forEach(tc -> {
+                        ChatCompletionMessageToolCall t = new ChatCompletionMessageToolCall();
+                        t.id(tc.getId());
+                        t.function(new ChatCompletionMessageToolCallFunction().name(tc.getName()));
+                        try {
+                            String paramsAsString = JsonUtils.om.writeValueAsString(tc.getParameters());
+                            t.getFunction().arguments(paramsAsString);
+                        } catch (JsonProcessingException e) {
+                            throw new RuntimeException(e);
+                        }
+                        choice.getMessage().addToolCallsItem(t);
+                    });
+                    response.addChoicesItem(choice);
+                    return new ResponseEntity<>(response, HttpStatus.OK);
                 }
-                tcs.forEach(tc -> {
-                    ChatCompletionMessageToolCall t = new ChatCompletionMessageToolCall();
-                    t.id(tc.getId());
-                    t.function(new ChatCompletionMessageToolCallFunction().name(tc.getName()));
-                    try {
-                        String paramsAsString = JsonUtils.om.writeValueAsString(tc.getParameters());
-                        t.getFunction().arguments(paramsAsString);
-                    } catch (JsonProcessingException e) {
-                        throw new RuntimeException(e);
-                    }
-                    choice.getMessage().addToolCallsItem(t);
-                });
-                response.addChoicesItem(choice);
-                return new ResponseEntity<>(response, HttpStatus.OK);
+            } catch (IllegalArgumentException | GenerationException e) {
+                return badRequest(e.getMessage());
             }
         }
 
@@ -258,6 +273,50 @@ public class ChatCompletionController {
                                         .delta(new ChatCompletionStreamResponseDelta().content(t))));
     }
 
+    private ResponseEntity<ErrorResponse> badRequest(String message) {
+        return new ResponseEntity<>(new ErrorResponse().error(new Error()
+                .code(Integer.toString(HttpStatus.BAD_REQUEST.value()))
+                .message(message)
+                .type("bad_request")), HttpStatus.BAD_REQUEST);
+    }
+
+    private void debugRequest(CreateChatCompletionRequest request) {
+        if (!debugChatRequest) {
+            return;
+        }
+        LOGGER.info("chat.request model={} messages={} tools={} ntokens={} max_tokens={} temperature={}",
+                request.getModel(),
+                request.getMessages() == null ? 0 : request.getMessages().size(),
+                request.getTools() == null ? 0 : request.getTools().size(),
+                request.getNtokens(),
+                request.getMaxTokens(),
+                request.getTemperature());
+        if (request.getMessages() != null) {
+            for (int i = 0; i < request.getMessages().size(); i++) {
+                LOGGER.info("chat.message[{}] {}", i, preview(String.valueOf(request.getMessages().get(i)), 512));
+            }
+        }
+    }
+
+    private void debugPrompt(String prompt) {
+        if (!debugChatRequest) {
+            return;
+        }
+        LOGGER.info("chat.prompt chars={} preview={}", prompt.length(), preview(prompt, 1200));
+    }
+
+    private void debugElapsed(String label, long startNanos) {
+        if (!debugChatRequest) {
+            return;
+        }
+        LOGGER.info("{} elapsed_ms={}", label, (System.nanoTime() - startNanos) / 1_000_000.0);
+    }
+
+    private static String preview(String value, int limit) {
+        String sanitized = value.replace("\n", "\\n").replace("\r", "\\r");
+        return sanitized.length() <= limit ? sanitized : sanitized.substring(0, limit) + "...";
+    }
+
     /**
      *
      * @param builder
@@ -284,6 +343,10 @@ public class ChatCompletionController {
                 builder.addSystemMessage(m.getChatCompletionRequestSystemMessage().getContent());
             } else if (m.getActualInstance() instanceof ChatCompletionRequestAssistantMessage) {
                 builder.addAssistantMessage(m.getChatCompletionRequestAssistantMessage().getContent());
+            } else if (m.getActualInstance() instanceof ChatCompletionRequestToolMessage) {
+                ChatCompletionRequestToolMessage toolMessage = m.getChatCompletionRequestToolMessage();
+                builder.addToolResult(io.teknek.deliverance.safetensors.prompt.ToolResult.from("tool",
+                        toolMessage.getToolCallId(), toolMessage.getContent()));
             } else {
                 return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
             }

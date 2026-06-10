@@ -37,7 +37,6 @@ public class Gemma2Model extends LlamaModel {
     private final float embeddingScalingFactor;
     private AbstractTensor wte;
 
-
     public Gemma2Model(
             InferenceType inferenceType,
             Config config,

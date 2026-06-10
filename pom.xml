@@ -40,7 +40,7 @@
 
         <langchain4j.version>1.11.0</langchain4j.version>
         <!-- Shared plugin versions -->
-        <openapi.generator.version>7.16.0</openapi.generator.version>
+        <openapi.generator.version>7.23.0</openapi.generator.version>
         <maven.compiler.plugin.version>3.14.0</maven.compiler.plugin.version>
         <build.helper.maven.plugin.version>3.5.0</build.helper.maven.plugin.version>
         <retrofit.version>2.11.0</retrofit.version>
@@ -60,7 +60,8 @@
         <module>web</module>
         <module>grace</module>
         <module>client</module>
-       <!-- <module>vibrant-maven-plugin</module> -->
+        <module>nanocode-deliverance</module>
+        <!-- <module>vibrant-maven-plugin</module> -->
     </modules>
     <build>
         <extensions>

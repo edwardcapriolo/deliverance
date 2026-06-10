@@ -132,15 +132,13 @@
                             <inputSpec>${project.basedir}/../web/deliverance_specification.yaml</inputSpec>
                             <generatorName>java</generatorName>
                             <library>retrofit2</library>
-                            <globalProperties>
-                                <apis>true</apis>
-                                <models>true</models>
-                                <supportingFiles>true</supportingFiles>
-                                <apiTests>false</apiTests>
-                                <modelTests>false</modelTests>
-                                <apiDocs>false</apiDocs>
-                                <modelDocs>false</modelDocs>
-                            </globalProperties>
+                            <generateApis>true</generateApis>
+                            <generateModels>true</generateModels>
+                            <generateSupportingFiles>true</generateSupportingFiles>
+                            <generateApiTests>false</generateApiTests>
+                            <generateModelTests>false</generateModelTests>
+                            <generateApiDocumentation>false</generateApiDocumentation>
+                            <generateModelDocumentation>false</generateModelDocumentation>
                             <!-- Use standard OpenAPI output; sources live under src/main/java inside this dir -->
                             <output>${project.build.directory}/generated-sources/openapi</output>
 

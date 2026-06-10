@@ -60,6 +60,12 @@
             <groupId>io.teknek.deliverance</groupId>
             <artifactId>core</artifactId>
             <version>${project.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-simple</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>io.teknek.dysfx</groupId>
@@ -71,6 +77,12 @@
             <artifactId>native</artifactId>
             <version>${project.version}</version>
             <classifier>${os.detected.name}-${os.detected.arch}</classifier>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-simple</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>com.google.guava</groupId>
