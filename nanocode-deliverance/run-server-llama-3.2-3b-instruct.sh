@@ -20,7 +20,7 @@ java \
   --add-modules jdk.incubator.vector \
   -Xmx4G \
   -Dserver.port=${DELIVERANCE_PORT:-8085} \
-  -Ddeliverance.kv.disk-dir=${DELIVERANCE_KV_DISK_DIR:-./kv-cache} \
+  ${DELIVERANCE_KV_DISK_DIR:+-Ddeliverance.kv.disk-dir=$DELIVERANCE_KV_DISK_DIR} \
   -Ddeliverance.debug.chat-request=${DELIVERANCE_DEBUG_CHAT_REQUEST:-true} \
   -Ddebug=${DELIVERANCE_SPRING_DEBUG:-false} \
   -Dlogging.level.root=${DELIVERANCE_ROOT_LOG_LEVEL:-INFO} \

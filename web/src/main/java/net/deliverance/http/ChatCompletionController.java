@@ -92,8 +92,7 @@ public class ChatCompletionController {
                     CreateChatCompletionResponse response = new CreateChatCompletionResponse();
                     List<ToolCall> tcs = model.getToolCallParser().extract(resp);
                     ChatCompletionResponseMessage message = new ChatCompletionResponseMessage()
-                            .role(ChatCompletionResponseMessage.RoleEnum.ASSISTANT)
-                            .content(resp.responseText);
+                            .role(ChatCompletionResponseMessage.RoleEnum.ASSISTANT);
                     if (resp.reasoning != null) {
                         message.reasoning(resp.reasoning);
                     }
@@ -105,9 +104,11 @@ public class ChatCompletionController {
                         choice.logprobs(logprobs);
                     }
                     if (!tcs.isEmpty()) {
+                        message.content(null);
                         //We shouldn't need this but it seems like the behaivor is hadto model
                         choice.setFinishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.TOOL_CALLS);
                     } else {
+                        message.content(resp.responseText);
                         switch (resp.finishReason){
                             case MAX_TOKENS -> choice.setFinishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.LENGTH);
                             case TOOL_CALLS -> choice.setFinishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.TOOL_CALLS);

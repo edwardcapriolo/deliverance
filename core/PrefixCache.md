@@ -88,8 +88,10 @@ Deliverance prefix cache currently supports the mechanical cache behavior: block
 and correct decode-start/token-budget math. This is useful for reducing prefill work on shared prompt prefixes.
 
 The disk KV backend is separate from prefix-cache identity. `KvBufferCacheSettings(File)` stores active KV pages as
-memory-mapped page files for live `KvBuffer` instances; it does not make those files durable prefix-cache entries. See
-`core/DiskKvBackend.md` for the active disk-page storage contract, cleanup behavior, and metrics.
+memory-mapped page files for live `KvBuffer` instances; it does not make those files durable prefix-cache entries. When
+disk KV is enabled, Deliverance skips prefix snapshot storage entirely. This is intentional: the current prefix cache is
+copy-snapshot based, and storing every block-aligned prefix snapshot as disk-backed KV pages can create quadratic disk
+growth. See `core/DiskKvBackend.md` for the active disk-page storage contract, cleanup behavior, and metrics.
 
 Deliverance does not currently provide a documented deterministic or batch/chunk-invariant inference mode. That means
 the project does not currently promise exact generated-token or generated-text equality between cold full-prefill and
@@ -126,6 +128,7 @@ across model families, tensor providers, quantization modes, and attention imple
 Use three categories of tests:
 
 * Mechanical tests: assert block-aligned lookup, KV copy round trips, and decode-start/token-budget math.
+* Disk KV boundary tests: assert disk-backed active pages do not populate prefix-cache snapshots.
 * Split-prefill tests: compare full prefill against prefix-plus-suffix prefill before involving the cache.
 * Output-preservation tests: compare generated tokens/text with and without cache only after split-prefill equivalence is known to hold for that model and tensor-provider configuration.
 

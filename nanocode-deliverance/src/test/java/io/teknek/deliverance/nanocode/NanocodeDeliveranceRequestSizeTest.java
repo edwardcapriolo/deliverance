@@ -17,7 +17,7 @@ class NanocodeDeliveranceRequestSizeTest {
     @SuppressWarnings({"rawtypes", "unchecked"})
     void fiveDefaultToolsProduceSmallChatRequest() throws Exception {
         NanocodeDeliverance agent = new NanocodeDeliverance(new NanocodeDeliverance.Config(
-                "http://localhost:8085", "Llama-3.2-3B-Instruct-JQ4", null, 256, 0.0d, true, false, false));
+                "http://localhost:8085", "Llama-3.2-3B-Instruct-JQ4", null, 256, 2000, 0.0d, true, false, false));
         CreateChatCompletionRequest request = new CreateChatCompletionRequest()
                 .model("Llama-3.2-3B-Instruct-JQ4")
                 .maxTokens(256)

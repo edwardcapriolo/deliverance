@@ -60,6 +60,7 @@ Environment variables:
 * `DELIVERANCE_MODEL`, default `default`
 * `NANOCODE_NTOKENS`, optional total prompt+generation token budget
 * `NANOCODE_MAX_TOKENS`, default `2048`
+* `NANOCODE_MAX_TOOL_RESULT_CHARS`, default `2000`
 * `NANOCODE_TEMPERATURE`, default `0.0`
 * `NANOCODE_TOOLS`, default `true`
 
@@ -69,6 +70,7 @@ Flags:
 --base-url http://localhost:8080
 --model tjake/gemma-2-2b-it-JQ4
 --max-tokens 4096
+--max-tool-result-chars 2000
 --temperature 0.0
 --no-tools
 --allow-risky-tools

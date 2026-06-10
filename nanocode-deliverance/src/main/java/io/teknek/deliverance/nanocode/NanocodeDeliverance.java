@@ -119,10 +119,13 @@ public final class NanocodeDeliverance {
                     continue;
                 }
                 messages.add(message("user", input));
+                long turnStart = System.nanoTime();
                 try {
                     runConversationTurn(messages, cwd);
+                    printContextSummary(messages, turnStart);
                 } catch (Exception e) {
                     System.out.println(RED + "error: " + e.getMessage() + RESET);
+                    printContextSummary(messages, turnStart);
                 }
             }
         }
@@ -154,7 +157,7 @@ public final class NanocodeDeliverance {
                 String name = toolCall.getFunction().getName();
                 JsonNode arguments = parseJsonObject(toolCall.getFunction().getArguments());
                 System.out.println(GREEN + "tool " + name + RESET + " " + preview(arguments.toString(), 80));
-                String result = runTool(name, arguments);
+                String result = truncateToolResult(runTool(name, arguments));
                 System.out.println(DIM + preview(result, 120) + RESET);
                 messages.add(toolMessage(id, result));
             }
@@ -205,8 +208,8 @@ public final class NanocodeDeliverance {
         tools.add(tool("glob", "Find files by glob pattern, sorted by modified time.", schema(
                 props(prop("path", "string"), prop("pattern", "string")),
                 array("pattern"))));
-        tools.add(tool("grep", "Search text files with a Java regular expression.", schema(
-                props(prop("path", "string"), prop("pattern", "string")),
+        tools.add(tool("grep", "Search text files with a Java regular expression. Returns at most limit matches, default 10.", schema(
+                props(prop("path", "string"), prop("pattern", "string"), prop("limit", "integer")),
                 array("pattern"))));
         if (config.allowRiskyTools) {
             tools.add(tool("bash", "Risky/eval tool. Run a shell command with a 30 second timeout.", schema(
@@ -300,10 +303,11 @@ public final class NanocodeDeliverance {
     private static String toolGrep(JsonNode args) throws IOException {
         Pattern pattern = Pattern.compile(args.path("pattern").asText());
         Path base = Path.of(args.path("path").asText("."));
+        int limit = Math.max(1, args.path("limit").asInt(10));
         List<String> hits = new ArrayList<>();
         try (var walk = Files.walk(base)) {
             for (Path file : walk.filter(Files::isRegularFile).toList()) {
-                if (hits.size() >= 100) {
+                if (hits.size() >= limit) {
                     break;
                 }
                 List<String> lines;
@@ -312,14 +316,14 @@ public final class NanocodeDeliverance {
                 } catch (Exception e) {
                     continue;
                 }
-                for (int i = 0; i < lines.size() && hits.size() < 100; i++) {
+                for (int i = 0; i < lines.size() && hits.size() < limit; i++) {
                     if (pattern.matcher(lines.get(i)).find()) {
                         hits.add(file + ":" + (i + 1) + ":" + lines.get(i));
                     }
                 }
             }
         }
-        return hits.isEmpty() ? "none" : String.join("\n", hits);
+        return hits.isEmpty() ? "matches=0" : "matches=" + hits.size() + "\n" + String.join("\n", hits);
     }
 
     private static String toolBash(JsonNode args) throws IOException, InterruptedException {
@@ -407,13 +411,31 @@ public final class NanocodeDeliverance {
         return singleLine.length() <= max ? singleLine : singleLine.substring(0, max) + "...";
     }
 
-    record Config(String baseUrl, String model, Integer ntokens, int maxTokens, double temperature, boolean toolsEnabled,
-            boolean allowRiskyTools, boolean help) {
+    private String truncateToolResult(String result) {
+        if (result.length() <= config.maxToolResultChars) {
+            return result;
+        }
+        int omitted = result.length() - config.maxToolResultChars;
+        return result.substring(0, config.maxToolResultChars)
+                + "\n... (truncated, " + omitted + " chars omitted)";
+    }
+
+    private static void printContextSummary(List<Map<String, Object>> messages, long turnStartNanos) {
+        int chars = messages.stream().mapToInt(message -> message.toString().length()).sum();
+        long elapsedMillis = (System.nanoTime() - turnStartNanos) / 1_000_000L;
+        System.out.println(DIM + "context: messages=" + messages.size()
+                + " approx_chars=" + chars
+                + " turn_ms=" + elapsedMillis + RESET);
+    }
+
+    record Config(String baseUrl, String model, Integer ntokens, int maxTokens, int maxToolResultChars,
+            double temperature, boolean toolsEnabled, boolean allowRiskyTools, boolean help) {
         static Config parse(String[] args) {
             String baseUrl = env("DELIVERANCE_BASE_URL", "http://localhost:8080");
             String model = env("DELIVERANCE_MODEL", "default");
             Integer ntokens = optionalIntEnv("NANOCODE_NTOKENS");
             int maxTokens = Integer.parseInt(env("NANOCODE_MAX_TOKENS", "2048"));
+            int maxToolResultChars = Integer.parseInt(env("NANOCODE_MAX_TOOL_RESULT_CHARS", "2000"));
             double temperature = Double.parseDouble(env("NANOCODE_TEMPERATURE", "0.0"));
             boolean toolsEnabled = Boolean.parseBoolean(env("NANOCODE_TOOLS", "true"));
             boolean allowRiskyTools = Boolean.parseBoolean(env("NANOCODE_ALLOW_RISKY_TOOLS", "false"));
@@ -424,6 +446,7 @@ public final class NanocodeDeliverance {
                     case "--model" -> model = args[++i];
                     case "--ntokens" -> ntokens = Integer.parseInt(args[++i]);
                     case "--max-tokens" -> maxTokens = Integer.parseInt(args[++i]);
+                    case "--max-tool-result-chars" -> maxToolResultChars = Integer.parseInt(args[++i]);
                     case "--temperature" -> temperature = Double.parseDouble(args[++i]);
                     case "--no-tools" -> toolsEnabled = false;
                     case "--tools" -> toolsEnabled = true;
@@ -432,8 +455,8 @@ public final class NanocodeDeliverance {
                     default -> throw new IllegalArgumentException("unknown argument: " + args[i]);
                 }
             }
-            return new Config(stripTrailingSlash(baseUrl), model, ntokens, maxTokens, temperature, toolsEnabled,
-                    allowRiskyTools, help);
+            return new Config(stripTrailingSlash(baseUrl), model, ntokens, maxTokens, maxToolResultChars,
+                    temperature, toolsEnabled, allowRiskyTools, help);
         }
 
         private static String env(String name, String defaultValue) {
@@ -461,6 +484,7 @@ public final class NanocodeDeliverance {
                       --model MODEL           Model name, default DELIVERANCE_MODEL or default
                       --ntokens N             Optional total prompt+generation token budget; defaults to model context
                       --max-tokens N          Max response tokens, default 2048
+                      --max-tool-result-chars N Max tool result chars kept in context, default 2000
                       --temperature VALUE     Temperature, default 0.0
                       --no-tools              Do not send tool definitions
                       --tools                 Send tool definitions
