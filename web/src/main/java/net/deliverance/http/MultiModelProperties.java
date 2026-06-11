@@ -4,14 +4,14 @@ import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.stereotype.Component;
@@ -46,16 +46,19 @@ class MultiModelConfiguration {
     private final TensorAllocator arrayQueueTensorAllocator;
     private final ConfigurableTensorProvider provider;
     private final WrappedForkJoinPool pool;
+    private final String kvDiskDirectory;
 
     public MultiModelConfiguration(MultiModelProperties multiModelProperties, MetricRegistry metricRegistry,
-                                   TensorAllocator arrayQueueTensorAllocator,
-                                   ConfigurableTensorProvider provider,
-                                   WrappedForkJoinPool pool){
+                                    TensorAllocator arrayQueueTensorAllocator,
+                                    ConfigurableTensorProvider provider,
+                                    WrappedForkJoinPool pool,
+                                    @Value("${deliverance.kv.disk-dir:}") String kvDiskDirectory){
         this.multiModelProperties = multiModelProperties;
         this.metricRegistry = metricRegistry;
         this.arrayQueueTensorAllocator = arrayQueueTensorAllocator;
         this.provider = provider;
         this.pool = pool;
+        this.kvDiskDirectory = kvDiskDirectory;
     }
 
 
@@ -74,17 +77,26 @@ class MultiModelConfiguration {
         File f = fetch.maybeDownload();
         if ("EMBEDDING".equalsIgnoreCase(config.getInferenceType())){
             AbstractModel model = ModelSupport.loadEmbeddingModel(f, DType.F32, DType.I8, provider,
-                    metricRegistry, this.arrayQueueTensorAllocator, new KvBufferCacheSettings(true));
+                    metricRegistry, this.arrayQueueTensorAllocator, kvBufferCacheSettings());
             return model;
         } else if ("GENERATION".equalsIgnoreCase(config.getInferenceType())){
-            //TODO switch to builder/auto here
-            AbstractModel model = ModelSupport.loadModel(f, DType.F32, DType.I8, provider,
-                    metricRegistry, arrayQueueTensorAllocator, new KvBufferCacheSettings(true), fetch,
-                    new DefaultToolCallParser(), pool);
-            return model;
+            return AutoModelForCausaLm.newBuilder(fetch)
+                    .withMetricRegistry(metricRegistry)
+                    .withTensorAllocator(arrayQueueTensorAllocator)
+                    .withTensorProvider(provider)
+                    .withWrappedForkJoinPool(pool)
+                    .withKvBufferCacheSettings(kvBufferCacheSettings())
+                    .build();
         } else {
             throw new IllegalArgumentException("Wrong type: " + config.getInferenceType());
         }
 
+    }
+
+    private KvBufferCacheSettings kvBufferCacheSettings() {
+        if (kvDiskDirectory == null || kvDiskDirectory.isBlank()) {
+            return new KvBufferCacheSettings(true);
+        }
+        return new KvBufferCacheSettings(new File(kvDiskDirectory));
     }
 }

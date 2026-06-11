@@ -23,7 +23,7 @@ The settings are applied when the model is initialized. (not per query)
 KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
                 .withMaxPrefixTokensPerPrompt(512)
                 .withMaxEntries(10_000)
-                .withBlockSize(16);
+                .withBlockSize(32);
 try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).withWorkingQuantType(DType.I8)
         .withKvBufferCacheSettings(settings)
         .build()){
@@ -38,8 +38,8 @@ It is possible to store the KVs at each token, but that is a bad idea with limit
 tokens and the KV information is large (MBs). We get the most value from a long complete match, so matches only occur
 at block boundaries.
 
-With an 8-token block size, a 9-token prompt can reuse the first 8 prompt tokens from cache. The ninth prompt token
-must still run through the model at position 8, and the first generated token must be decoded at position 9. Prefix
+With a 32-token block size, a 33-token prompt can reuse the first 32 prompt tokens from cache. The thirty-third prompt token
+must still run through the model at position 32, and the first generated token must be decoded at position 33. Prefix
 length should never reduce the generation token budget.
 
 ### Invariants
@@ -88,8 +88,10 @@ Deliverance prefix cache currently supports the mechanical cache behavior: block
 and correct decode-start/token-budget math. This is useful for reducing prefill work on shared prompt prefixes.
 
 The disk KV backend is separate from prefix-cache identity. `KvBufferCacheSettings(File)` stores active KV pages as
-memory-mapped page files for live `KvBuffer` instances; it does not make those files durable prefix-cache entries. See
-`core/DiskKvBackend.md` for the active disk-page storage contract, cleanup behavior, and metrics.
+memory-mapped page files for live `KvBuffer` instances; it does not make those files durable prefix-cache entries. When
+disk KV is enabled, Deliverance skips prefix snapshot storage entirely. This is intentional: the current prefix cache is
+copy-snapshot based, and storing every block-aligned prefix snapshot as disk-backed KV pages can create quadratic disk
+growth. See `core/DiskKvBackend.md` for the active disk-page storage contract, cleanup behavior, and metrics.
 
 Deliverance does not currently provide a documented deterministic or batch/chunk-invariant inference mode. That means
 the project does not currently promise exact generated-token or generated-text equality between cold full-prefill and
@@ -126,6 +128,7 @@ across model families, tensor providers, quantization modes, and attention imple
 Use three categories of tests:
 
 * Mechanical tests: assert block-aligned lookup, KV copy round trips, and decode-start/token-budget math.
+* Disk KV boundary tests: assert disk-backed active pages do not populate prefix-cache snapshots.
 * Split-prefill tests: compare full prefill against prefix-plus-suffix prefill before involving the cache.
 * Output-preservation tests: compare generated tokens/text with and without cache only after split-prefill equivalence is known to hold for that model and tensor-provider configuration.
 

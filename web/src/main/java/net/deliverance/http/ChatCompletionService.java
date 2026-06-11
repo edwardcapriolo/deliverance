@@ -6,6 +6,7 @@ import io.teknek.deliverance.model.Error;
 import io.teknek.deliverance.safetensors.prompt.Function;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.safetensors.prompt.Tool;
+import io.teknek.deliverance.safetensors.prompt.ToolResult;
 import io.teknek.dysfx.Either;
 import org.springframework.http.HttpStatus;
 
@@ -97,6 +98,9 @@ public class ChatCompletionService {
                 builder.addSystemMessage(m.getChatCompletionRequestSystemMessage().getContent());
             } else if (m.getActualInstance() instanceof ChatCompletionRequestAssistantMessage) {
                 builder.addAssistantMessage(m.getChatCompletionRequestAssistantMessage().getContent());
+            } else if (m.getActualInstance() instanceof ChatCompletionRequestToolMessage) {
+                ChatCompletionRequestToolMessage toolMessage = m.getChatCompletionRequestToolMessage();
+                builder.addToolResult(ToolResult.from("tool", toolMessage.getToolCallId(), toolMessage.getContent()));
             } else {
                 return Either.Left(new Error().code(HttpStatus.BAD_REQUEST.value() + "")
                         .message("Could not handle " + m.getActualInstance()));

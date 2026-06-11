@@ -215,6 +215,10 @@ public class KvBufferCache implements Closeable {
     }
 
     public void storePrefix(int[] tokens, KvBuffer buffer, Optional<String> salt) {
+        if (!kvBufferCacheSettings.isEphemeral()) {
+            model.getMetricRegistry().meter("kvbuffercache.prefix.disk.skip").mark();
+            return;
+        }
         if (kvBufferCacheSettings.getMaxEntries() < 1){
             return;
         }

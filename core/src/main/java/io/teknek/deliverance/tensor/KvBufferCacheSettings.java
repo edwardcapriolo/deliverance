@@ -21,7 +21,7 @@ public class KvBufferCacheSettings {
     /**
     The block size of the kvcache. Cache hits will only happen at block boundaries, smaller blockize uses more memory
      */
-    private int blockSize = 8;
+    private int blockSize = 32;
 
     public enum KvFormat {
         BF16,

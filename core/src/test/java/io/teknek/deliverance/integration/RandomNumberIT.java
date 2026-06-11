@@ -40,14 +40,15 @@ public class RandomNumberIT {
                     new MetricRegistry(), arrayQueueTensorAllocator, new KvBufferCacheSettings(true), fetch,
                     new DefaultToolCallParser(), pool)) {
                 String prompt = "Pick a random number between 0 and 100";
-                PromptContext ctx = PromptContext.of(prompt);
+                PromptContext ctx = m.promptSupport().get().builder()
+                        .addUserMessage(prompt)
+                        .build();
                 var uuid = UUID.randomUUID();
-
                 Response k = m.generate(uuid, ctx, new GeneratorParameters().withTemperature(0.0f).withSeed(99999)
                                 .withMaxTokens(4),
                         new DoNothingGenerateEvent());
                 System.out.println(k);
-                assertEquals("0000", k.responseText);
+                assertEquals(":\n\n1", k.responseText);
             }
         }
     }
@@ -114,6 +115,34 @@ public interface Shape {
 }
 ```
 """.trim(), k.responseText);
+        }
+    }
+
+    @Test
+    public void nanocodeRootPromptHiNoTools() {
+        String modelName = "Llama-3.2-3B-Instruct-JQ4";
+        String modelOwner = "tjake";
+        ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
+        var uuid = UUID.randomUUID();
+
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withMaxPrefixTokensPerPrompt(512)
+                .withMaxEntries(10_000)
+                .withBlockSize(8);
+        try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).withWorkingQuantType(DType.I8)
+                .withKvBufferCacheSettings(settings)
+                .build()) {
+            PromptContext ctx = m.promptSupport().get().builder()
+                    .addSystemMessage("You are a concise coding assistant. cwd: /tmp. Use tools when needed. Prefer small, direct changes.")
+                    .addUserMessage("hi")
+                    .build();
+
+            Response response = m.generate(uuid, ctx, new GeneratorParameters()
+                    .withNtokens(1024)
+                    .withMaxTokens(200)
+                    .withTemperature(0.0f)
+                    .withSeed(99999), new DoNothingGenerateEvent());
+            System.out.println(response);
         }
     }
 

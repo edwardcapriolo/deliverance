@@ -177,6 +177,12 @@ public class TokenizerFixtureTest {
                 tokenizer.decode(new TokenIds(new int[]{3048, 659, 496, 63510, 16326, 236761}), false, false, false, false));
     }
 
+    @Test
+    void llamaByteFallbackTokensDecodeToUtf8Characters() {
+        assertEquals("\n\n# Display", LlamaTokenizer.decodeByteFallback("<0x0A><0x0A># Display"));
+        assertEquals("é", LlamaTokenizer.decodeByteFallback("<0xC3><0xA9>"));
+    }
+
     private Path fixturePath() throws URISyntaxException {
         return Path.of(getClass().getResource("/tokenizers/tiny-qwen").toURI());
     }

@@ -6,6 +6,10 @@ memory-mapped page files instead of allocating every KV page through the tensor 
 This is not a persistent prefix cache. Disk page files are named by active buffer session and page coordinates, not by
 token prefixes, and there is no durable token index, manifest, model fingerprint, or cross-process reuse contract.
 
+Disk KV also does not store in-memory prefix-cache snapshots. When `KvBufferCacheSettings(File)` is used, prefix-cache
+storage is skipped and only the live request's active KV pages are backed by disk. This prevents the snapshot-copy prefix
+cache from creating many cumulative disk-backed KV buffers for every block-aligned prompt prefix.
+
 ## Configuration
 
 Use `KvBufferCacheSettings(File workingDirectory)` to enable disk-backed active pages:
@@ -17,7 +21,8 @@ KvBufferCacheSettings settings = new KvBufferCacheSettings(new File("/tmp/delive
 The backend creates the working directory if it does not already exist.
 
 By default, page files are deleted when the owning `KvBuffer` closes. This matches the active-page storage contract and
-prevents stale generation pages from accumulating indefinitely.
+prevents stale generation pages from accumulating indefinitely. Disk KV should be treated as an opt-in memory-pressure
+fallback, not the default fast path; it trades direct-memory pressure for memory-mapped file I/O.
 
 For debugging or performance inspection, pages can be retained:
 
@@ -86,6 +91,7 @@ The disk backend records these Dropwizard metrics:
 * `kvbuffercache.disk.sweeper.page.delete`: a stale `.page` file was deleted by the sweeper.
 * `kvbuffercache.disk.sweeper.page.skip.active`: a `.page` file was skipped because this cache still has it open.
 * `kvbuffercache.disk.sweeper.page.skip.young`: a `.page` file was skipped because it is newer than `diskPageMaxAge`.
+* `kvbuffercache.prefix.disk.skip`: prefix snapshot storage was skipped because disk KV is active.
 
 `kvbuffercache.disk.bytes.live` is process-local accounting for pages created by the current cache instance. It is not a
 startup scanner for files retained by a prior run.
@@ -94,4 +100,4 @@ startup scanner for files retained by a prior run.
 
 A persistent prefix cache would need a separate durable index keyed by token-prefix hashes plus model/config/tokenizer
 fingerprints. This backend intentionally does not provide that. It only stores active KV pages for the lifetime of their
-owning buffer.
+owning buffer, and prefix snapshot storage is disabled in disk-backed mode.

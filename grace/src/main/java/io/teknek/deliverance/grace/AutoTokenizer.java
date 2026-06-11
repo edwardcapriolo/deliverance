@@ -50,6 +50,11 @@ public class AutoTokenizer {
                         Optional.empty(), Optional.empty(), Optional.empty(), inputs,
                         vocab, addedTokenMap, tokenizerConfig, bytePairEncodingModel);
             }
+            if ("LlamaTokenizer".equals(tokenizerClass)) {
+                return new LlamaTokenizer(new LinkedHashMap<>(), Optional.empty(), Optional.empty(), Optional.empty(),
+                        Optional.empty(), Optional.empty(), Optional.empty(), inputs,
+                        vocab, addedTokenMap, tokenizerConfig, bytePairEncodingModel);
+            }
             if (isGemmaLikeTokenizer(tokenizerClass, tokenizerDocument)) {
                 return new GemmaTokenizer(new LinkedHashMap<>(), Optional.empty(), Optional.empty(), Optional.empty(),
                         Optional.empty(), Optional.empty(), Optional.empty(), inputs,
@@ -203,7 +208,7 @@ public class AutoTokenizer {
     }
 
     private static boolean isGemmaLikeTokenizer(String tokenizerClass, JsonNode tokenizerDocument) {
-        if ("GemmaTokenizer".equals(tokenizerClass) || "LlamaTokenizer".equals(tokenizerClass)) {
+        if ("GemmaTokenizer".equals(tokenizerClass)) {
             return true;
         }
         JsonNode normalizer = tokenizerDocument.path("normalizer");
