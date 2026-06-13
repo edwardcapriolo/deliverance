@@ -22,7 +22,7 @@ public class TinyLlamaSuite {
             String modelOwner = "tjake";
             ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
             builder = AutoModelForCausaLm.newBuilder(fetch);
-            model = builder.build();
+            model = builder.buildLocalTransformerModel();
         }
         return model;
     }

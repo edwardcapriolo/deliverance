@@ -15,6 +15,7 @@ import io.teknek.dysfx.exception.UnreachableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -35,9 +36,10 @@ public class ChatCompletionController {
     private static final String DELIVERANCE_SESSION_HEADER = "X-Deliverance-Session";
 
     @Autowired
-    private Map<MultiModelConfig,AbstractModel> models;
+    @Qualifier("causalLanguageModels")
+    private Map<MultiModelConfig, CausalLanguageModel> models;
 
-    private Optional<Map.Entry<MultiModelConfig, AbstractModel>> findModel(String name){
+    private Optional<Map.Entry<MultiModelConfig, CausalLanguageModel>> findModel(String name){
         return models.entrySet().stream()
                 .filter(x-> x.getKey().getModelName()
                         .equalsIgnoreCase(name)).findFirst();
@@ -56,11 +58,11 @@ public class ChatCompletionController {
             "text/event-stream" }, consumes = { "application/json" })
     Object createChatCompletion(@RequestHeader Map<String, String> headers,
                                 @RequestBody CreateChatCompletionRequest request) {
-        Optional<Map.Entry<MultiModelConfig, AbstractModel>> z = findModel(request.getModel());
+        Optional<Map.Entry<MultiModelConfig, CausalLanguageModel>> z = findModel(request.getModel());
         if (z.isEmpty()){
             return badRequest("model not found " + request.getModel());
         }
-        AbstractModel model = z.get().getValue();
+        CausalLanguageModel model = z.get().getValue();
         debugRequest(request);
 
         if (request.getStream() == null || (request.getStream() != null && request.getStream() == false)) {

@@ -30,7 +30,7 @@ public class MistralIT {
 
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
              AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
-                .withTensorProvider(new ConfigurableTensorProvider(new ArrayQueueTensorAllocator(new MetricRegistry()), pool)).build()) {
+                .withTensorProvider(new ConfigurableTensorProvider(new ArrayQueueTensorAllocator(new MetricRegistry()), pool)).buildLocalTransformerModel()) {
             String prompt = "Who is Edward Capriolo";
             PromptSupport.Builder g = model.promptSupport().get().builder()
                     .addUserMessage(prompt);
@@ -52,7 +52,7 @@ public class MistralIT {
     public void completeToolWithMockAgent(){
         ModelFetcher fetch = new ModelFetcher("tjake", "Mistral-7B-Instruct-v0.3-JQ4");
 
-        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch).withToolCallParser(new LlamaToolCallParser()).build()) {
+        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch).withToolCallParser(new LlamaToolCallParser()).buildLocalTransformerModel()) {
             String prompt = "What is the temperature in NYC right now?";
             PromptSupport.Builder builder = model.promptSupport().get().builder()
                     .addUserMessage(prompt);

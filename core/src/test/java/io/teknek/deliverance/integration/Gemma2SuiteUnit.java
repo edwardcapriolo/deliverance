@@ -21,7 +21,7 @@ public class Gemma2SuiteUnit {
             ModelFetcher fetch = new ModelFetcher("google", "gemma-2-2b-it");
             //ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
             builder = AutoModelForCausaLm.newBuilder(fetch);
-            model = builder.build();
+            model = builder.buildLocalTransformerModel();
         }
         return model;
     }

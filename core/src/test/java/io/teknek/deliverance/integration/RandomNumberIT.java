@@ -67,7 +67,7 @@ public class RandomNumberIT {
                 .withBlockSize(8);
         try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).withWorkingQuantType(DType.I8)
                 .withKvBufferCacheSettings(settings)
-                .build()){
+                .buildLocalTransformerModel()){
             String prompt = "Generate a java interface named Shape with a method name calculateArea.";
             PromptContext ctx = m.promptSupport().get().builder()
                     .addSystemMessage("You are an assistant that produces concise, production-grade software.")
@@ -131,7 +131,7 @@ public interface Shape {
                 .withBlockSize(8);
         try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).withWorkingQuantType(DType.I8)
                 .withKvBufferCacheSettings(settings)
-                .build()) {
+                .buildLocalTransformerModel()) {
             PromptContext ctx = m.promptSupport().get().builder()
                     .addSystemMessage("You are a concise coding assistant. cwd: /tmp. Use tools when needed. Prefer small, direct changes.")
                     .addUserMessage("hi")

@@ -36,14 +36,14 @@ public class MixralIT {
     public void chat() {
         ModelFetcher fetch = new ModelFetcher("tjake", "Mixtral-8x7B-Instruct-v0.1-JQ4");
 
-        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch).build()) {
+        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch).buildLocalTransformerModel()) {
 /*
 MetricRegistry registry = new MetricRegistry();
 
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
              AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)                                           
                 .withMetricRegistry(registry)                                                          
-                .withTensorProvider(new ConfigurableTensorProvider(new ArrayQueueTensorAllocator(registry), pool)).build()) {
+                .withTensorProvider(new ConfigurableTensorProvider(new ArrayQueueTensorAllocator(registry), pool)).buildLocalTransformerModel()) {
 */
 
 

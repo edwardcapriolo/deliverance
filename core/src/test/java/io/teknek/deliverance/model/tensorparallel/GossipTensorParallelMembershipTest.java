@@ -104,7 +104,7 @@ public class GossipTensorParallelMembershipTest {
     }
 
     private static int assertGemma2TensorParallelRankCapacity(ModelFetcher fetcher, int requestedNodes) {
-        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetcher).build()) {
+        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetcher).buildLocalTransformerModel()) {
             assertInstanceOf(Gemma2Model.class, model);
             assertEquals(8, model.getConfig().numberOfHeads);
             assertEquals(4, model.getConfig().numberOfKeyValueHeads);

@@ -30,6 +30,7 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -163,7 +164,7 @@ public class GemmaPromptIT {
        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
                .withWorkingQuantType(DType.I8)
                .withKvBufferCacheSettings(settings)
-               .build()) {
+               .buildLocalTransformerModel()) {
            PromptSupport.Builder prompt = model.promptSupport().get().builder()
                    .addUserMessage("What is tensor parallelism?");
 
@@ -182,7 +183,7 @@ public class GemmaPromptIT {
     public void prefixCacheHitHonorsMaxTokens() {
         AbstractModel m = Gemma2Suite.getOrCreate();
         String prompt = "list the books of the bible starting with Genesis.";
-        int blockSize = new KvBufferCacheSettings(true).getBlockSize();
+        int blockSize = 8;
         assertTrue(m.constructPromptTokensForRuntime(prompt).length >= blockSize + 1,
                 "prompt must be long enough to produce a partial prefix-cache hit");
 
@@ -195,9 +196,20 @@ public class GemmaPromptIT {
 
         Response cold = m.generate(UUID.randomUUID(), PromptContext.of(prompt), params, new DoNothingGenerateEvent());
         long hitsBefore = m.getMetricRegistry().meter("kvbuffercache.hits").getCount();
+        AtomicInteger copiedPrefixLength = new AtomicInteger(-1);
+        AtomicInteger suffixLength = new AtomicInteger(-1);
+        m.setGenerationDebugHook(event -> {
+            if (event.type() == AbstractModel.GenerationDebugEventType.AFTER_PREFIX_COPY) {
+                copiedPrefixLength.set(event.prefixLength());
+                suffixLength.set(event.tokensToProcessLength());
+            }
+        });
         Response hot = m.generate(UUID.randomUUID(), PromptContext.of(prompt), params, new DoNothingGenerateEvent());
+        m.clearGenerationDebugHook();
         assertTrue(m.getMetricRegistry().meter("kvbuffercache.hits").getCount() > hitsBefore,
                 "second request should hit the prefix cache");
+        assertEquals(blockSize, copiedPrefixLength.get(), "prefix hit should copy exactly one configured cache block");
+        assertTrue(suffixLength.get() > 0, "prefix hit should still process an uncached suffix");
         assertEquals(3, cold.generatedTokens.size(), "cold path should honor maxTokens");
         assertEquals(3, hot.generatedTokens.size(), "prefix-cache hit path should honor maxTokens");
     }
@@ -214,7 +226,7 @@ public class GemmaPromptIT {
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
                 .withWorkingQuantType(DType.I8)
                 .withKvBufferCacheSettings(settings)
-                .build()) {
+                 .buildLocalTransformerModel()) {
             PromptSupport.Builder prompt = model.promptSupport().get().builder()
                     .addUserMessage("What is 1 + 1?");
 

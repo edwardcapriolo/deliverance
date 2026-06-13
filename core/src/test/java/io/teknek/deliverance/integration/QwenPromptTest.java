@@ -165,7 +165,7 @@ Use the coinflip tool any analyze the result<|eot_id|><|start_header_id|>assista
         ModelFetcher fetch = new ModelFetcher("tjake", "Qwen2.5-0.5B-Instruct-JQ4");
         Tool tool = Tool.from(Function.builder().name("flip_coin")
                 .description("This methods will flip a coin. The result will be H for heads or T for tails.").build());
-        try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).build()){
+        try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).buildLocalTransformerModel()){
             String prompt = "Call a function to simulate a coin flip";
             PromptSupport.Builder g = m.promptSupport().get().builder()
                     .addToolCall(new ToolCall("flip_coin", "flip_coin1", Map.of()))

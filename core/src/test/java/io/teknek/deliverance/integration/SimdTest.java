@@ -53,7 +53,7 @@ public class SimdTest {
         String modelName = "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4";
         String modelOwner = "tjake";
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
-        try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).build()) {
+        try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).buildLocalTransformerModel()) {
             String prompt = "What is the best season to plant avocados?";
             PromptContext ctx;
             {

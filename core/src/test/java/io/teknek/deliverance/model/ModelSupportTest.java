@@ -75,7 +75,7 @@ public class ModelSupportTest {
         File f = new File("target/test-data");
         f.mkdir();
         KvBufferCacheSettings k = new KvBufferCacheSettings(f);
-        try (AbstractModel model = AutoModelForCausaLm.newBuilder(this.fetch).withKvBufferCacheSettings(k).build() ){
+        try (AbstractModel model = AutoModelForCausaLm.newBuilder(this.fetch).withKvBufferCacheSettings(k).buildLocalTransformerModel() ){
             {
                 String prompt = "What comes next in the sequence? 1, 2, 3 ";
                 PromptContext ctx = PromptContext.of(prompt);

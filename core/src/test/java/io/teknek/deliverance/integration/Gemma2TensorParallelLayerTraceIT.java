@@ -79,7 +79,7 @@ public class Gemma2TensorParallelLayerTraceIT {
                      .withTensorParallelCollectives(new InProcessTensorParallelCollectives(
                              new StaticTensorParallelContext(0, TP_SIZE),
                              new InProcessTensorParallelCollectives.Group(Duration.ofSeconds(30))))
-                     .build()) {
+                     .buildLocalTransformerModel()) {
             String renderedPrompt = rankModel.promptSupport().get().builder()
                     .addUserMessage("What is tensor parallelism?")
                     .build()
@@ -142,7 +142,7 @@ public class Gemma2TensorParallelLayerTraceIT {
                 .withWorkingQuantType(DType.F32)
                 .withTensorProvider(tensorProvider(tensorProviderMode, allocator, pool));
         try (pool;
-             AbstractModel single = singleBuilder.build()) {
+             AbstractModel single = singleBuilder.buildLocalTransformerModel()) {
             String renderedPrompt = single.promptSupport().get().builder()
                     .addUserMessage("What is tensor parallelism?")
                     .build()
@@ -173,7 +173,7 @@ public class Gemma2TensorParallelLayerTraceIT {
                         .withTensorParallelContext(new StaticTensorParallelContext(rank, TP_SIZE))
                         .withTensorParallelCollectives(new InProcessTensorParallelCollectives(
                                 new StaticTensorParallelContext(rank, TP_SIZE), collectiveGroup));
-                AbstractModel rankModel = rankBuilder.build();
+                AbstractModel rankModel = rankBuilder.buildLocalTransformerModel();
                 rankModel.setLayerDebugHook(event -> tpLayersByRank
                         .computeIfAbsent(rankId, ignored -> new ConcurrentHashMap<>())
                         .put(key(event.layerIndex(), event.stage()), RowSnapshot.capture(event.hiddenStates())));
