@@ -17,7 +17,7 @@ public class DeliveranceServiceTest {
     public void seeSplits(){
         try ( WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
             AbstractModel m = AutoModelForCausaLm.newBuilder(new ModelFetcher("tjake", "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4"))
-                    .withTensorProvider(new ConfigurableTensorProvider(new ArrayQueueTensorAllocator(new MetricRegistry()), pool)).build();
+                    .withTensorProvider(new ConfigurableTensorProvider(new ArrayQueueTensorAllocator(new MetricRegistry()), pool)).buildLocalTransformerModel();
             DeliveranceService d = new DeliveranceService(m, 10, true, true);
             assertEquals(4, d.getHeadsPerLayerShard());
             assertEquals(2, d.getLayersPerShard());

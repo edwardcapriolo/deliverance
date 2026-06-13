@@ -68,7 +68,7 @@ import static io.teknek.deliverance.tensor.DebugSupport.debug;
  * https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/</p>
  */
 public abstract class AbstractModel implements Generator, Classifier {
-    private static final Logger logger = LoggerFactory.getLogger(AbstractModel.class);
+    static final Logger logger = LoggerFactory.getLogger(AbstractModel.class);
 
     private static final Integer MAX_BATCH_SIZE = Integer.getInteger("jlama.max_batch_size", 256);
 
@@ -326,6 +326,10 @@ public abstract class AbstractModel implements Generator, Classifier {
         layerDebugHook.accept(new LayerDebugEvent(layerIndex, stage, tensorParallelContext, hiddenStates));
     }
 
+    void emitGenerationDebug(GenerationDebugEvent event) {
+        generationDebugHook.accept(event);
+    }
+
     /**
      * Forces the model's disk-backed KV page cleanup pass to run immediately.
      *
@@ -408,6 +412,22 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public DType getWorkingDType() {
         return workingDType;
+    }
+
+    public DType getWorkingQType() {
+        return workingQType;
+    }
+
+    public DType getModelDType() {
+        return modelDType;
+    }
+
+    public String getTensorProviderName() {
+        return configurableTensorProvider.get().name();
+    }
+
+    public int getTensorProviderParallelSplitSize() {
+        return configurableTensorProvider.get().parallelSplitSize();
     }
 
     /**
@@ -595,111 +615,8 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     @Override
     public Response generate(UUID sessionId, PromptContext promptContext, GeneratorParameters generatorParameters,
-                                      GenerateEvent eventFired) {
-        long generationStartNanos = System.nanoTime();
-        long timeToFirstTokenNanos = 0L;
-
-        ResponseContext responseContext = new ResponseContext(this);
-        Random random = generatorParameters.seed.map(Random::new).orElseGet(Random::new);
-        long[] encoded = encodeText(promptContext.getPrompt());
-
-        //long [] encoded = this.preTrainedTokenizer.encode(promptContext.getPrompt(), EncodeOptions.defaults());
-
-        //can we get pos token from tokziers
-        if (encoded.length > 0 && encoded[0] == config.bosToken) {
-            logger.warn("encoded [] started with BOS token removing it");
-            encoded = Arrays.copyOfRange(encoded, 1, encoded.length);
-        }
-        int ntokens = generatorParameters.ntokens.orElse(config.contextLength);
-        Preconditions.checkArgument(encoded.length < config.contextLength
-                && encoded.length < ntokens, "Prompt exceeds ntokens");
-        if (ntokens > config.contextLength) {
-            throw new GenerationException(String.format("ntokens %d exceed config length %d",  ntokens, config.contextLength));
-        }
-        float temperature = generatorParameters.temperature.orElse(0.0f);
-        try (KvBufferCache.KvBuffer kvmem = kvBufferCache.getEphemeralKvBuffer()) {
-            try (AbstractTensor logits = makeDenseTensor(config.vocabularySize)) {
-                int [] promptTokens = constructPromptTokens(encoded);
-
-                // Prefix cache only changes how prompt KV state is obtained. It must not change prompt length,
-                // decode start, or generation budget. Exact generated text equivalence is a stronger
-                // batch/chunk-invariance property and is not assumed here.
-                KvBufferCache.PrefixEntry prefixHit = kvBufferCache.lookupPrefix(promptTokens, generatorParameters.cacheSalt);
-                int prefixLength = 0;
-                if (prefixHit != null) {
-                    prefixLength = prefixHit.length();
-                    kvBufferCache.copyPrefix(prefixHit.buffer(), kvmem, prefixLength);
-                    generationDebugHook.accept(new GenerationDebugEvent(
-                            GenerationDebugEventType.AFTER_PREFIX_COPY,
-                            promptTokens,
-                            prefixLength,
-                            prefixLength,
-                            promptTokens.length - prefixLength,
-                            kvmem));
-                }
-                GenerationCursor cursor = GenerationCursor.from(promptTokens, prefixLength);
-                int startPos = cursor.startPosition();
-                kvmem.setCurrentContextPosition(startPos);
-                int [] tokensToProcess = cursor.tokensToProcess();
-                AbstractTensor last;
-                if (cursor.hasTokensToProcess()) {
-                    last = batchForward(tokensToProcess, startPos, kvmem);
-                    kvBufferCache.storePrefix(promptTokens, kvmem, generatorParameters.cacheSalt);
-                } else {
-                    last = forward(cursor.replayToken(), cursor.replayPosition(), kvmem);
-                }
-
-                generationDebugHook.accept(new GenerationDebugEvent(
-                        GenerationDebugEventType.AFTER_PROMPT_PREFILL,
-                        promptTokens,
-                        prefixLength,
-                        startPos,
-                        tokensToProcess.length,
-                        kvmem));
-
-
-                SamplerReturn nextSamplerRet = createNextToken(generatorParameters, logits, last, responseContext, random, temperature);
-                int next = nextSamplerRet.token;
-                last.close();
-                responseContext.add(nextSamplerRet, eventFired);
-                timeToFirstTokenNanos = System.nanoTime() - generationStartNanos;
-                this.metricRegistry.timer("generation.time_to_first_token").update(timeToFirstTokenNanos, TimeUnit.NANOSECONDS);
-                logger.info("time_to_first_token={} prefix_length={}", timeToFirstTokenNanos / 1_000_000.0 , prefixLength);
-                Optional<Response> firstStop = maybeStopAfterToken(generatorParameters, responseContext, encoded, encoded.length, next,
-                        generationStartNanos, timeToFirstTokenNanos);
-                if (firstStop.isPresent()) {
-                    return withGenerationTiming(firstStop.get(), generationStartNanos, timeToFirstTokenNanos);
-                }
-                for (int i = cursor.decodeStartPosition(); i < ntokens; i++) {
-                    AbstractTensor output = forward(next, i, kvmem);
-                    //reuse next to save memory
-                    SamplerReturn nextSample = createNextTokenLoop(generatorParameters, output, logits, responseContext, random, temperature);
-                    next = nextSample.token;
-                    output.close();
-                    kvmem.incrementContextPosition();
-                    responseContext.add(nextSample, eventFired);
-
-                    Optional<Response> stop = maybeStopAfterToken(generatorParameters, responseContext, encoded, encoded.length, next,
-                            generationStartNanos, timeToFirstTokenNanos);
-                    if (stop.isPresent()) {
-                        return withGenerationTiming(stop.get(), generationStartNanos, timeToFirstTokenNanos);
-                    }
-
-                }
-            }
-        }
-
-        return withGenerationTiming(postProcessResponse(new Response(
-                        responseContext.responseText.toString(),
-                        responseContext.responseTextWithSpecialTokens.toString(),
-                        FinishReason.MAX_TOKENS,
-                        encoded.length,
-                        responseContext.generatedTokens,
-                        0,
-                        0,
-                        responseContext.samplerReturnList)),
-                generationStartNanos,
-                timeToFirstTokenNanos);
+                                       GenerateEvent eventFired) {
+        return DefaultCausalLanguageModel.local(this).generate(sessionId, promptContext, generatorParameters, eventFired);
     }
 
     /**
@@ -714,66 +631,8 @@ public abstract class AbstractModel implements Generator, Classifier {
                                           GenerateEvent eventFired, GenerationForwarder forwarder) {
         Objects.requireNonNull(sessionId, "sessionId");
         Objects.requireNonNull(forwarder, "forwarder");
-        long generationStartNanos = System.nanoTime();
-        long timeToFirstTokenNanos = 0L;
-
-        ResponseContext responseContext = new ResponseContext(this);
-        Random random = generatorParameters.seed.map(Random::new).orElseGet(Random::new);
-        long[] encoded = encodeText(promptContext.getPrompt());
-        if (encoded.length > 0 && encoded[0] == config.bosToken) {
-            logger.warn("encoded [] started with BOS token removing it");
-            encoded = Arrays.copyOfRange(encoded, 1, encoded.length);
-        }
-        int ntokens = generatorParameters.ntokens.orElse(config.contextLength);
-        Preconditions.checkArgument(encoded.length < config.contextLength
-                && encoded.length < ntokens, "Prompt exceeds ntokens");
-        if (ntokens > config.contextLength) {
-            throw new GenerationException(String.format("ntokens %d exceed config length %d",  ntokens, config.contextLength));
-        }
-        float temperature = generatorParameters.temperature.orElse(0.0f);
-        try (AbstractTensor logits = makeDenseTensor(config.vocabularySize)) {
-            int[] promptTokens = constructPromptTokens(encoded);
-            GenerationCursor cursor = GenerationCursor.from(promptTokens, 0);
-            AbstractTensor last = forwarder.batchForward(cursor.tokensToProcess(), cursor.startPosition());
-            SamplerReturn nextSamplerRet = createNextToken(generatorParameters, logits, last, responseContext, random, temperature);
-            int next = nextSamplerRet.token;
-            last.close();
-            responseContext.add(nextSamplerRet, eventFired);
-            timeToFirstTokenNanos = System.nanoTime() - generationStartNanos;
-            this.metricRegistry.timer("generation.time_to_first_token").update(timeToFirstTokenNanos, TimeUnit.NANOSECONDS);
-            logger.info("time_to_first_token={} prefix_length={}", timeToFirstTokenNanos / 1_000_000.0, 0);
-            Optional<Response> firstStop = maybeStopAfterToken(generatorParameters, responseContext, encoded, encoded.length,
-                    next, generationStartNanos, timeToFirstTokenNanos);
-            if (firstStop.isPresent()) {
-                return withGenerationTiming(firstStop.get(), generationStartNanos, timeToFirstTokenNanos);
-            }
-            for (int i = cursor.decodeStartPosition(); i < ntokens; i++) {
-                AbstractTensor output = forwarder.forward(next, i);
-                SamplerReturn nextSample = createNextTokenLoop(generatorParameters, output, logits, responseContext, random,
-                        temperature);
-                next = nextSample.token;
-                output.close();
-                responseContext.add(nextSample, eventFired);
-
-                Optional<Response> stop = maybeStopAfterToken(generatorParameters, responseContext, encoded, encoded.length,
-                        next, generationStartNanos, timeToFirstTokenNanos);
-                if (stop.isPresent()) {
-                    return withGenerationTiming(stop.get(), generationStartNanos, timeToFirstTokenNanos);
-                }
-            }
-        }
-
-        return withGenerationTiming(postProcessResponse(new Response(
-                        responseContext.responseText.toString(),
-                        responseContext.responseTextWithSpecialTokens.toString(),
-                        FinishReason.MAX_TOKENS,
-                        encoded.length,
-                        responseContext.generatedTokens,
-                        0,
-                        0,
-                        responseContext.samplerReturnList)),
-                generationStartNanos,
-                timeToFirstTokenNanos);
+        return new GenerationEngine().generate(this, new ForwarderGenerationBackend(forwarder), sessionId, promptContext,
+                generatorParameters, eventFired);
     }
 
     @Override

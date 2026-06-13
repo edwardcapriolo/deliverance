@@ -3,6 +3,7 @@
 ## Collaboration Rules
 
 - For non-trivial requests, sketch a plan first, get user agreement, then implement.
+- I need to do what people ask not estimate what they ask beause I believe I am smarter then them and can anticipate their needs.
 - LLM memory is lossy. When planning, verify claims against repo source, docs, or web/source references before relying on them.
 - Do not assume this project works like another project; many implementations here are bespoke. Verify behavior locally before mapping concepts from HuggingFace, Spring, vLLM, etc.
 - Do not present a proposed fix as "the fix" unless there is strong evidence it addresses the issue. Say "hypothesis" or "candidate fix" when that is what it is.

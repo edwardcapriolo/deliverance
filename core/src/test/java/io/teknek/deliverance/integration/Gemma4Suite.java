@@ -23,7 +23,7 @@ public class Gemma4Suite {
             builder = AutoModelForCausaLm.newBuilder(fetch);
             builder.withTensorProvider(new ConfigurableTensorProvider(builder.getAllocator(),
                   new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())));
-            model = builder.build();
+            model = builder.buildLocalTransformerModel();
         }
         return model;
     }

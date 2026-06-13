@@ -17,7 +17,7 @@ public class DirectNoPromptTest {
     @Test
     public void noPromptContext() throws IOException {
         ModelFetcher fetch = new ModelFetcher("lidoreliya13", "microlama-lidor-finetuned");
-        try (AbstractModel m = AutoModelForCausaLm.fromPretrained(fetch)) {
+        try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).buildLocalTransformerModel()) {
             String prompt = "What comes next in the sequence? 1, 2 ";
             PromptContext ctx = PromptContext.of(prompt);
             Response r = m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(43).withMaxTokens(15),

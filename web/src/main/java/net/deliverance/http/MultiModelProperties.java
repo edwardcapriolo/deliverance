@@ -5,6 +5,7 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
+import io.teknek.deliverance.model.CausalLanguageModel;
 import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
@@ -63,34 +64,43 @@ class MultiModelConfiguration {
 
 
     @Bean
-    public Map<MultiModelConfig,AbstractModel> models(){
-        Map<MultiModelConfig,AbstractModel> models = new HashMap<>();
+    public Map<MultiModelConfig, CausalLanguageModel> causalLanguageModels(){
+        Map<MultiModelConfig, CausalLanguageModel> models = new HashMap<>();
         for (var x : multiModelProperties.getConfigs()){
-            models.put(x, fromConfig(x));
+            if ("GENERATION".equalsIgnoreCase(x.getInferenceType())) {
+                models.put(x, causalLanguageModelFromConfig(x));
+            }
         }
         return models;
     }
 
+    @Bean
+    public Map<MultiModelConfig, AbstractModel> embeddingModels(){
+        Map<MultiModelConfig, AbstractModel> models = new HashMap<>();
+        for (var x : multiModelProperties.getConfigs()){
+            if ("EMBEDDING".equalsIgnoreCase(x.getInferenceType())) {
+                models.put(x, embeddingModelFromConfig(x));
+            }
+        }
+        return models;
+    }
 
-    private AbstractModel fromConfig(MultiModelConfig config){
+    private AbstractModel embeddingModelFromConfig(MultiModelConfig config){
         ModelFetcher fetch = new ModelFetcher(config.getModelOwner(),config.getModelName());
         File f = fetch.maybeDownload();
-        if ("EMBEDDING".equalsIgnoreCase(config.getInferenceType())){
-            AbstractModel model = ModelSupport.loadEmbeddingModel(f, DType.F32, DType.I8, provider,
-                    metricRegistry, this.arrayQueueTensorAllocator, kvBufferCacheSettings());
-            return model;
-        } else if ("GENERATION".equalsIgnoreCase(config.getInferenceType())){
-            return AutoModelForCausaLm.newBuilder(fetch)
-                    .withMetricRegistry(metricRegistry)
-                    .withTensorAllocator(arrayQueueTensorAllocator)
-                    .withTensorProvider(provider)
-                    .withWrappedForkJoinPool(pool)
-                    .withKvBufferCacheSettings(kvBufferCacheSettings())
-                    .build();
-        } else {
-            throw new IllegalArgumentException("Wrong type: " + config.getInferenceType());
-        }
+        return ModelSupport.loadEmbeddingModel(f, DType.F32, DType.I8, provider,
+                metricRegistry, this.arrayQueueTensorAllocator, kvBufferCacheSettings());
+    }
 
+    private CausalLanguageModel causalLanguageModelFromConfig(MultiModelConfig config){
+        ModelFetcher fetch = new ModelFetcher(config.getModelOwner(),config.getModelName());
+        return AutoModelForCausaLm.newBuilder(fetch)
+                .withMetricRegistry(metricRegistry)
+                .withTensorAllocator(arrayQueueTensorAllocator)
+                .withTensorProvider(provider)
+                .withWrappedForkJoinPool(pool)
+                .withKvBufferCacheSettings(kvBufferCacheSettings())
+                .build();
     }
 
     private KvBufferCacheSettings kvBufferCacheSettings() {

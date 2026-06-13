@@ -6,6 +6,7 @@ import io.teknek.deliverance.model.CreateEmbeddingRequest;
 import io.teknek.deliverance.model.CreateEmbeddingResponse;
 import io.teknek.deliverance.model.Embedding;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
@@ -21,9 +22,10 @@ import java.util.Optional;
 public class EmbeddingController {
 
     @Autowired
+    @Qualifier("embeddingModels")
     private Map<MultiModelConfig, AbstractModel> models;
 
-    public EmbeddingController(Map<MultiModelConfig, AbstractModel> models){
+    public EmbeddingController(@Qualifier("embeddingModels") Map<MultiModelConfig, AbstractModel> models){
         this.models = models;
     }
 

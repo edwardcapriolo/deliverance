@@ -76,7 +76,7 @@ public class Gemma2TensorParallelIT {
                          .withWrappedForkJoinPool(coordinatorPool)
                          .withTensorAllocator(coordinatorAllocator)
                          .withTensorProvider(panamaProvider(coordinatorAllocator, coordinatorPool))
-                         .build()) {
+                         .buildLocalTransformerModel()) {
                     {
                         var prompt = coordinatorModel.promptSupport().get().builder()
                                 .addUserMessage("What is 1 + 1?")
@@ -133,7 +133,7 @@ public class Gemma2TensorParallelIT {
                 .withTensorProvider(panamaProvider(allocator, pool))
                 .withParallelSettings(new GossipParallelSettings(cluster, nodeId, nodeUri, seedMembers, settings,
                         deploymentSpec))
-                .build();
+                .buildAbstractModel();
         return new TestNode(nodeId, model, pool, model.gossipParallelMembership().orElseThrow());
     }
 

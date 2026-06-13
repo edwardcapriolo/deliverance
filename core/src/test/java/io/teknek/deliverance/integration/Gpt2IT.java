@@ -23,7 +23,7 @@ public class Gpt2IT {
         ModelFetcher fetch = new ModelFetcher("openai-community", "gpt2-large");
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
              AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
-                .withTensorProvider(new ConfigurableTensorProvider(new ArrayQueueTensorAllocator(new MetricRegistry()), pool)).build()) {
+                .withTensorProvider(new ConfigurableTensorProvider(new ArrayQueueTensorAllocator(new MetricRegistry()), pool)).buildLocalTransformerModel()) {
             String prompt = "Who is Micheal Jordan?";
             //This model does not have prompt support
             var uuid = UUID.randomUUID();

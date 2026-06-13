@@ -99,22 +99,29 @@ Q4 shard constraints:
 
 ## Generation Flow
 
-`AbstractModel.generate(...)` remains the canonical single-model generation implementation.
+`GenerationEngine` is the canonical token loop for causal language-model generation.
 
-Tensor parallel generation reuses the same logic through:
+Local and tensor-parallel generation now differ by backend, not by a second copied token loop:
 
 ```java
-AbstractModel.generateWithForwarder(..., GenerationForwarder forwarder)
+CausalLanguageModel.generate(...)
+  -> GenerationEngine
+  -> GenerationBackend
 ```
 
-The forwarder lets `TensorParallelGenerationGroup` inject distributed rank execution while the coordinator model reuses
-normal tokenizer, sampler, stop-word, tool-call, and response code.
+`LocalGenerationBackend` owns local ephemeral KV state and prefix-cache lookup/copy/store. Tensor-parallel generation uses
+rank-local KV state through `TensorParallelGenerationGroup` and the `ForwarderGenerationBackend` adapter.
 
-This keeps generation behavior in one place and avoids copy/pasting the token loop into the tensor-parallel package.
+This keeps generation behavior in one place and avoids copy/pasting the token loop into the tensor-parallel package. It
+does not make every backend behavior identical. Current tensor-parallel generation reports a zero prefix length to the
+shared engine and does not reuse the local prefix-cache path; rank-local KV state is request scoped behind the forwarder.
+Generated text can also differ from local inference because sharded weights, collective reductions, and tensor providers
+can change floating-point reduction order.
 
 ## Current Limits
 
 * Gemma2 is the only model family with a full passing end-to-end tensor-parallel generation test.
+* Tensor-parallel generation does not currently expose local prefix-cache reuse through `GenerationBackend.prefixLength()`.
 * Runtime tensor payloads currently support `DType.F32`.
 * Worker readiness state and assignment-hash readiness checks are still follow-up hardening work.
 * Broader model support needs family-specific review. GPT2 packed QKV and MoE models are not expected to work without

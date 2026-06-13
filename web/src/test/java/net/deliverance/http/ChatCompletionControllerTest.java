@@ -73,7 +73,7 @@ public class ChatCompletionControllerTest {
                         new ChatCompletionRequestUserMessageContent("Generate the first letter of the alphabet is"))));
 
         request.addToolsItem(new ChatCompletionTool().function( new FunctionObject().name("some tool")));
-        AbstractModel m = Mockito.mock(AbstractModel.class);
+        CausalLanguageModel m = Mockito.mock(CausalLanguageModel.class);
         JSON j = new JSON();
 
         Either<Error, PreparedRequest> response = ChatCompletionService.mapRequest(new HashMap<>(), m , request);
@@ -93,7 +93,7 @@ public class ChatCompletionControllerTest {
                 new ChatCompletionRequestUserMessage().content(
                         new ChatCompletionRequestUserMessageContent("Generate the first letter of the alphabet is"))));
 
-        AbstractModel m = Mockito.mock(AbstractModel.class);
+        CausalLanguageModel m = Mockito.mock(CausalLanguageModel.class);
         io.teknek.deliverance.safetensors.prompt.PromptSupport promptSupport = Mockito.mock(io.teknek.deliverance.safetensors.prompt.PromptSupport.class);
         io.teknek.deliverance.safetensors.prompt.PromptSupport.Builder builder = Mockito.mock(io.teknek.deliverance.safetensors.prompt.PromptSupport.Builder.class);
         Mockito.when(m.promptSupport()).thenReturn(Optional.of(promptSupport));

@@ -32,7 +32,7 @@ public class TensorParallelWorker implements AutoCloseable {
         List<TensorParallelRankEndpoint> endpoints = new ArrayList<>();
         try {
             for (AutoModelForCausaLm.Builder rankBuilder : rankBuilders) {
-                AbstractModel model = rankBuilder.build();
+                AbstractModel model = rankBuilder.buildLocalTransformerModel();
                 InProcessTensorParallelRankService service = new InProcessTensorParallelRankService(model);
                 HttpTensorParallelRankServer server = new HttpTensorParallelRankServer(new InetSocketAddress(bindHost, 0), service);
                 server.start();

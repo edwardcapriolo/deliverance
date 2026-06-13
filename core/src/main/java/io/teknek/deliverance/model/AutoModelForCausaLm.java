@@ -41,7 +41,7 @@ public class AutoModelForCausaLm {
         }
     }
 
-    public static AbstractModel fromPretrained(ModelFetcher fetcher){
+    public static CausalLanguageModel fromPretrained(ModelFetcher fetcher){
         Builder b = new Builder(fetcher);
         applyTuning(fetcher, b);
         return b.build();
@@ -118,6 +118,14 @@ public class AutoModelForCausaLm {
             this.tensorParallelCollectives = Objects.requireNonNull(tensorParallelCollectives, "tensorParallelCollectives");
             return this;
         }
+        /**
+         * Enables gossip-coordinated tensor-parallel runtime construction for {@link #build()}.
+         *
+         * <p>The returned {@link CausalLanguageModel} keeps the same public generation API, but it is not behaviorally
+         * identical to a single local model in every respect. Current tensor-parallel generation uses rank-local KV state
+         * for each request and does not expose local prefix-cache reuse; numerical output equivalence is model-family and
+         * tensor-provider dependent. Gemma2 is the primary tested tensor-parallel family.</p>
+         */
         public Builder withParallelSettings(GossipParallelSettings parallelSettings) {
             this.parallelSettings = Optional.of(Objects.requireNonNull(parallelSettings, "parallelSettings"));
             return this;
@@ -161,7 +169,7 @@ public class AutoModelForCausaLm {
                 Function<TensorParallelContext, TensorParallelCollectives> collectivesFactory) {
             List<AbstractModel> models = new ArrayList<>();
             for (Builder builder : localAssignedRankBuilders(membership, collectivesFactory)) {
-                models.add(builder.build());
+                models.add(builder.buildLocalTransformerModel());
             }
             return List.copyOf(models);
         }
@@ -187,7 +195,39 @@ public class AutoModelForCausaLm {
             return this;
         }
 
-        public AbstractModel build(){
+        public CausalLanguageModel build(){
+            AbstractModel model = loadLocalTransformerModel();
+            if (parallelSettings.isPresent()) {
+                GossipParallelMembership membership = GossipParallelMembership.start(parallelSettings.get());
+                model.setGossipParallelMembership(membership);
+                membership.startWorkerWhenReady(this);
+            }
+            return DefaultCausalLanguageModel.local(model);
+        }
+
+        /**
+         * Builds the local transformer executor used by tests, tensor-parallel rank workers, and migration code.
+         * Prefer {@link #build()} for user-facing causal language model loading.
+         */
+        public AbstractModel buildLocalTransformerModel(){
+            return loadLocalTransformerModel();
+        }
+
+        /**
+         * Legacy compatibility path for callers that still need the old concrete executor plus old lifecycle behavior.
+         */
+        @Deprecated
+        public AbstractModel buildAbstractModel(){
+            AbstractModel model = loadLocalTransformerModel();
+            if (parallelSettings.isPresent()) {
+                GossipParallelMembership membership = GossipParallelMembership.start(parallelSettings.get());
+                model.setGossipParallelMembership(membership);
+                membership.startWorkerWhenReady(this);
+            }
+            return model;
+        }
+
+        private AbstractModel loadLocalTransformerModel(){
             System.setProperty("jdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK", this.oobCheck);
             File modelRoot = fetch.maybeDownload();
             if (pool == null){
@@ -200,11 +240,6 @@ public class AutoModelForCausaLm {
             }
             AbstractModel model = ModelSupport.loadModel(modelRoot, workingMem, workingQuant, provider,
                     mr, allocator, settings, fetch, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives);
-            if (parallelSettings.isPresent()) {
-                GossipParallelMembership membership = GossipParallelMembership.start(parallelSettings.get());
-                model.setGossipParallelMembership(membership);
-                membership.startWorkerWhenReady(this);
-            }
             return model;
         }
 

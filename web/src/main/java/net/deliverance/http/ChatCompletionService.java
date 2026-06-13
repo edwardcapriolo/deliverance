@@ -13,8 +13,8 @@ import org.springframework.http.HttpStatus;
 import java.util.*;
 
 public class ChatCompletionService {
-    public static Either<Error, PreparedRequest> mapRequest(Map<String, String> headers, AbstractModel model,
-                                                            CreateChatCompletionRequest request) {
+    public static Either<Error, PreparedRequest> mapRequest(Map<String, String> headers, CausalLanguageModel model,
+                                                             CreateChatCompletionRequest request) {
         Optional<PromptSupport> ps = model.promptSupport();
         if (ps.isEmpty()) {
             return Either.Left(new Error().code(HttpStatus.BAD_REQUEST.value() + "")

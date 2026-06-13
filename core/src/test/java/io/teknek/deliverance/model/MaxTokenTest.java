@@ -34,7 +34,7 @@ public class MaxTokenTest {
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
              AbstractModel m = AutoModelForCausaLm.newBuilder(fetch)
                 .withMetricRegistry(registry)
-                .withTensorProvider(new ConfigurableTensorProvider(new ArrayQueueTensorAllocator(registry), pool)).build()) {
+                .withTensorProvider(new ConfigurableTensorProvider(new ArrayQueueTensorAllocator(registry), pool)).buildLocalTransformerModel()) {
             String prompt = "Construct a short story about a Java developer who takes on all of python and rust community";
             PromptContext ctx = m.promptSupport().get().builder()
                     .addUserMessage(prompt)
