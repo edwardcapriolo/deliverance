@@ -12,6 +12,7 @@ import io.teknek.deliverance.model.DefaultCausalLanguageModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.CausalLanguageModel;
 import io.teknek.deliverance.model.DoNothingGenerateEvent;
+import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.model.tensorparallel.GossipParallelMembership;
 import io.teknek.deliverance.model.tensorparallel.GossipParallelSettings;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelDeploymentSpec;
@@ -113,6 +114,7 @@ public final class InferenceBenchmark {
                 System.out.println("writing benchmark transcripts to " + options.jsonlOutput.toAbsolutePath());
             }
             if (options.engine == Engine.DELIVERANCE || options.engine == Engine.BOTH) {
+                InferenceProfiler.setEnabled(options.profileStages);
                 runDeliverance(options, cases, writer, jsonlWriter);
             }
             if (options.engine == Engine.OLLAMA || options.engine == Engine.BOTH) {
@@ -191,6 +193,7 @@ public final class InferenceBenchmark {
             PromptContext promptContext = promptContext(promptSupport, messages);
             printStart("deliverance", runner.modelName(), benchmarkCase, turn + 1, warmup,
                     promptContext.getPrompt().length());
+            InferenceProfiler.reset();
             GeneratorParameters parameters = new GeneratorParameters()
                     .withTemperature(options.temperature)
                     .withMaxTokens(options.maxTokens);
@@ -226,6 +229,9 @@ public final class InferenceBenchmark {
                 printProgress("deliverance", runner.modelName(), benchmarkCase, turn + 1,
                         response.promptTokens, response.generatedTokens.size(), response.totalTimeMs, tokensPerSecond,
                         response.finishReason == null ? "" : response.finishReason.name());
+                InferenceProfiler.printSummary("case=" + benchmarkCase.id + " turn=" + (turn + 1), 20);
+                runner.printProfileCounters();
+                runner.printAllocatorMetrics();
             } else {
                 System.out.printf(Locale.ROOT,
                         "[deliverance] warmup complete case=%s category=%s turn=%d generated=%d total_ms=%.1f%n",
@@ -234,6 +240,9 @@ public final class InferenceBenchmark {
                         turn + 1,
                         response.generatedTokens.size(),
                         response.totalTimeMs);
+                InferenceProfiler.printSummary("warmup case=" + benchmarkCase.id + " turn=" + (turn + 1), 20);
+                runner.printProfileCounters();
+                runner.printAllocatorMetrics();
             }
         }
     }
@@ -247,6 +256,10 @@ public final class InferenceBenchmark {
         Response generate(UUID sessionId, PromptContext promptContext, GeneratorParameters parameters);
 
         void printRuntime();
+
+        void printProfileCounters();
+
+        void printAllocatorMetrics();
 
         @Override
         void close();
@@ -280,6 +293,20 @@ public final class InferenceBenchmark {
         @Override
         public void printRuntime() {
             printDeliveranceRuntime(model);
+        }
+
+        @Override
+        public void printProfileCounters() {
+            if (model instanceof DefaultCausalLanguageModel defaultModel) {
+                InferenceBenchmark.printProfileCounters(defaultModel.localTransformerModel());
+            }
+        }
+
+        @Override
+        public void printAllocatorMetrics() {
+            if (model instanceof DefaultCausalLanguageModel defaultModel) {
+                InferenceBenchmark.printAllocatorMetrics(defaultModel.localTransformerModel());
+            }
         }
 
         @Override
@@ -427,6 +454,22 @@ public final class InferenceBenchmark {
         }
 
         @Override
+        public void printProfileCounters() {
+            InferenceBenchmark.printProfileCounters(coordinatorModel);
+            for (BenchmarkNode node : nodes) {
+                InferenceBenchmark.printProfileCounters(node.model());
+            }
+        }
+
+        @Override
+        public void printAllocatorMetrics() {
+            InferenceBenchmark.printAllocatorMetrics(coordinatorModel);
+            for (BenchmarkNode node : nodes) {
+                InferenceBenchmark.printAllocatorMetrics(node.model());
+            }
+        }
+
+        @Override
         public void close() {
             group.close();
             coordinatorModel.close();
@@ -439,6 +482,45 @@ public final class InferenceBenchmark {
         public void close() {
             model.close();
         }
+    }
+
+    private static void printProfileCounters(AbstractModel model) {
+        if (!InferenceProfiler.isEnabled()) {
+            return;
+        }
+        model.getMetricRegistry().getCounters().entrySet().stream()
+                .filter(entry -> InferenceProfiler.shouldPrintCounter(entry.getKey()))
+                .forEach(entry -> System.out.println("[profile-counter] " + entry.getKey()
+                        + " count=" + entry.getValue().getCount()));
+    }
+
+    private static void printAllocatorMetrics(AbstractModel model) {
+        var meters = model.getMetricRegistry().getMeters();
+        long dirtyGets = meterCount(meters, "tensorcache.dirtyget");
+        long dirtyHits = meterCount(meters, "tensorcache.getdirty.hit");
+        long gets = meterCount(meters, "tensorcache.get");
+        long getHits = meterCount(meters, "tensorcache.get.hit");
+        long full = meterCount(meters, "tensorcache.full");
+        System.out.printf(Locale.ROOT,
+                "[allocator] rank=%d/%d dirty_get=%d dirty_hit=%d dirty_hit_rate=%.4f get=%d get_hit=%d get_hit_rate=%.4f full=%d%n",
+                model.getTensorParallelContext().rank(),
+                model.getTensorParallelContext().size(),
+                dirtyGets,
+                dirtyHits,
+                hitRate(dirtyHits, dirtyGets),
+                gets,
+                getHits,
+                hitRate(getHits, gets),
+                full);
+    }
+
+    private static long meterCount(java.util.SortedMap<String, com.codahale.metrics.Meter> meters, String name) {
+        com.codahale.metrics.Meter meter = meters.get(name);
+        return meter == null ? 0 : meter.getCount();
+    }
+
+    private static double hitRate(long hits, long requests) {
+        return requests == 0 ? 0.0 : (double) hits / requests;
     }
 
     /**
@@ -732,6 +814,7 @@ public final class InferenceBenchmark {
         private int maxCases = 0;
         private int tensorParallelSize = 1;
         private int tensorParallelMaxRanksPerWorker = 2;
+        private boolean profileStages = false;
         private Path suiteFile;
         private Path output = Path.of("target/inference-benchmark.csv");
         private Path jsonlOutput;
@@ -756,6 +839,7 @@ public final class InferenceBenchmark {
                     case "--tensor-parallel-size" -> options.tensorParallelSize = Integer.parseInt(args[++i]);
                     case "--tensor-parallel-max-ranks-per-worker" ->
                             options.tensorParallelMaxRanksPerWorker = Integer.parseInt(args[++i]);
+                    case "--profile-stages" -> options.profileStages = true;
                     case "--suite-file" -> options.suiteFile = Path.of(args[++i]);
                     case "--output" -> options.output = Path.of(args[++i]);
                     case "--jsonl-output" -> options.jsonlOutput = Path.of(args[++i]);
@@ -788,6 +872,7 @@ public final class InferenceBenchmark {
                       --max-cases N                      Limit cases, default all
                       --tensor-parallel-size N           Local in-process tensor parallel ranks, default 1
                       --tensor-parallel-max-ranks-per-worker N Max ranks per local worker, default 2
+                      --profile-stages                   Print accumulated broad-stage timing after each Deliverance turn
                       --suite-file PATH                  FastChat MT-Bench question.jsonl; default built-in subset
                       --output PATH                      CSV output path, default target/inference-benchmark.csv
                       --jsonl-output PATH                Optional JSONL transcript output path

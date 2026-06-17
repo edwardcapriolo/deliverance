@@ -51,6 +51,10 @@ class DeliveranceLegacySampler extends AbstractGeneratorSampler {
 
     @Override
     public SamplerReturn sample() {
+        return InferenceProfiler.time("sampler.sample", this::sampleTimed);
+    }
+
+    private SamplerReturn sampleTimed() {
         boolean logProbs = this.parameters.logProbs.orElse(false);
         int topLogProbs = this.parameters.topLogProbs.orElse(0);
         float temperature = this.parameters.temperature.orElse(0f);
@@ -58,11 +62,14 @@ class DeliveranceLegacySampler extends AbstractGeneratorSampler {
         float xtcThreshold = this.parameters.xtcThreshold.orElse(0f);
 
         try (AbstractTensor embedding = layerNorm.forward(output)) {
-            VectorMath.pchunk(0, model.config.vocabularySize, (chunkStart, chunkSize) -> {
+            InferenceProfiler.time("sampler.output_projection", () -> {
+                VectorMath.pchunk(0, model.config.vocabularySize, (chunkStart, chunkSize) -> {
                 model.configurableTensorProvider.get()
                         .dotProductChunk(logits, embedding, model.sampleOutput.getOutputLogitsWeights(), 0,
                                 model.config.embeddingLength, chunkStart, chunkSize);
-            }, model.configurableTensorProvider.get().parallelSplitSize(), model.getPool());
+                }, model.configurableTensorProvider.get().parallelSplitSize(), model.getPool());
+                return null;
+            });
 
             if (model.config.logitMultiplier != null) {
                 LOGGER.debug("scaling logits logitMultiplier: {}", model.config.logitMultiplier);

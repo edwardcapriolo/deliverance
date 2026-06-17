@@ -2,22 +2,25 @@ package io.teknek.deliverance.generator;
 
 import com.codahale.metrics.Histogram;
 import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.Timer;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import net.jafama.FastMath;
 
+import java.time.Duration;
+
 public class RmsNorm extends LayerNorm {
     private final float weightAdjustment;
-    protected Histogram totalTime;
+    protected Timer totalTime;
 
     public RmsNorm(AbstractModel m, AbstractTensor weights, MetricRegistry metricRegistry) {
         this(m, weights, 0.0f, metricRegistry);
-        totalTime = metricReigstry.histogram("rms_norm");
+        totalTime = metricReigstry.timer("rms_norm");
     }
 
     public RmsNorm(AbstractModel m, AbstractTensor weights, float weightAdjustment, MetricRegistry metricRegistry) {
         super(m, null, weights, metricRegistry);
-        totalTime = metricReigstry.histogram("rms_norm");
+        totalTime = metricReigstry.timer("rms_norm");
         this.weightAdjustment = weightAdjustment;
     }
 
@@ -43,7 +46,7 @@ public class RmsNorm extends LayerNorm {
             }
         }
         long end = System.currentTimeMillis();
-        totalTime.update(end-start);
+        totalTime.update(Duration.ofMillis(end-start));
         return output;
     }
 }

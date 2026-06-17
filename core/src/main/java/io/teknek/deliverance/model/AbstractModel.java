@@ -418,6 +418,31 @@ public abstract class AbstractModel implements Generator, Classifier {
         return workingQType;
     }
 
+    /**
+     * Returns whether a tensor is already in this model's working quantized dtype.
+     *
+     * <p>This method exists to keep tensor ownership explicit at call sites. Older code used {@code maybeQuantize(...)},
+     * which can return different temporary/copy forms depending on dtype and makes close behavior hard to reason about.
+     * New code should branch on this predicate: use the original tensor directly when it is already in the desired dtype,
+     * or call {@link #quantizeToWorkingQuantizedType(AbstractTensor)} when a new temporary tensor is required.</p>
+     */
+    public boolean isInWorkingQuantizedType(AbstractTensor tensor) {
+        return tensor.dType() == workingQType;
+    }
+
+    /**
+     * Quantizes a tensor to this model's working quantized dtype and always returns a new caller-owned tensor.
+     *
+     * <p>This method deliberately does not return the input tensor even if it already has the target dtype. Callers that
+     * want to avoid an unnecessary temporary must first check {@link #isInWorkingQuantizedType(AbstractTensor)} and use the
+     * original tensor in that branch. This keeps resource ownership visible: tensors returned by this method must be
+     * closed by the caller.</p>
+     */
+    public AbstractTensor quantizeToWorkingQuantizedType(AbstractTensor tensor) {
+        return configurableTensorProvider.get().quantize(tensor, workingQType, 0,
+                Math.toIntExact(tensor.shape().last()));
+    }
+
     public DType getModelDType() {
         return modelDType;
     }

@@ -3,6 +3,7 @@ package io.teknek.deliverance.generator;
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 import org.slf4j.Logger;
@@ -20,6 +21,10 @@ public abstract class EmbedInput {
     public abstract AbstractTensor inputTokenToEmbedding(int inputToken, int position);
 
     public AbstractTensor batchInputsToEmbeddings(int[] inputTokens, int startPos) {
+        return InferenceProfiler.time("embedding.batch_inputs", () -> batchInputsToEmbeddingsTimed(inputTokens, startPos));
+    }
+
+    private AbstractTensor batchInputsToEmbeddingsTimed(int[] inputTokens, int startPos) {
         Preconditions.checkArgument(inputTokens.length > 0);
         AbstractTensor zeroTokenEmbedding = inputTokenToEmbedding(inputTokens[0], startPos);
 
@@ -39,4 +44,3 @@ public abstract class EmbedInput {
         return tb;
     }
 }
-
