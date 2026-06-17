@@ -5,6 +5,7 @@ import com.codahale.metrics.Timer;
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
@@ -126,6 +127,11 @@ public class CausalSelfAttention {
 
     public AbstractTensor forward(AbstractTensor input, int startPosition, KvBufferCache.KvBuffer kvMem,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
+        return InferenceProfiler.time("attention.forward", () -> forwardTimed(input, startPosition, kvMem, tensorReducer));
+    }
+
+    private AbstractTensor forwardTimed(AbstractTensor input, int startPosition, KvBufferCache.KvBuffer kvMem,
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
         Preconditions.checkArgument(input.dims() == 2 && input.shape().last() == config.embeddingLength);
         int batchSize = input.shape().first();
         int splitSize = configurableTensorProvider.get().parallelSplitSize();
@@ -135,11 +141,12 @@ public class CausalSelfAttention {
                 AbstractTensor valueBatch = m.makeDenseTensor(batchSize, attentionLength)) {
             if (config.isGQA) {
                 Timer tm = metricRegistry.timer("causualselfattention.forward_gqa_querybatch_1");
-                VectorMath.pchunkMetrics(0, attentionLength, (chunkStart, chunkLength) -> {
+                InferenceProfiler.time("attention.qkv_projection", () -> {
+                    VectorMath.pchunkMetrics(0, attentionLength, (chunkStart, chunkLength) -> {
                     configurableTensorProvider.get()
                                 .dotProductChunk(queryBatch, input, queryAttnWeights, 0, config.embeddingLength, chunkStart, chunkLength);
-                }, splitSize, tm, m.getPool());
-                VectorMath.pchunk(0, kvLength, (chunkStart, chunkLength) -> {
+                    }, splitSize, tm, m.getPool());
+                    VectorMath.pchunk(0, kvLength, (chunkStart, chunkLength) -> {
                     Timer t = metricRegistry.timer("causualselfattention.forward_gqa_key_2");
                     try (Timer.Context context = t.time()) {
                         configurableTensorProvider.get()
@@ -152,17 +159,22 @@ public class CausalSelfAttention {
                                 .dotProductChunk(tmpValBatch, input, valueAttnWeights, 0, config.embeddingLength, chunkStart, chunkLength);
                         context.stop();
                     }
-                }, splitSize, m.getPool());
+                    }, splitSize, m.getPool());
+                    return null;
+                });
             } else {
                 qkvResults[0] = queryBatch;
                 qkvResults[1] = tmpKeyBatch;
                 qkvResults[2] = tmpValBatch;
-                VectorMath.pchunk(0, attentionLength, (chunkStart, chunkLength) -> {
+                InferenceProfiler.time("attention.qkv_projection", () -> {
+                    VectorMath.pchunk(0, attentionLength, (chunkStart, chunkLength) -> {
                     long start = System.nanoTime();
                     configurableTensorProvider.get()
                             .dotProductBatchChunk(qkvResults, input, qkvWeights, 0, config.embeddingLength, chunkStart, chunkLength);
                     metricRegistry.histogram("causualselfattention.forward_qkv_1").update(System.nanoTime() - start);
-                }, splitSize, m.getPool());
+                    }, splitSize, m.getPool());
+                    return null;
+                });
             }
 
             queryAttnBias.ifPresent(
@@ -206,20 +218,24 @@ public class CausalSelfAttention {
                 AbstractTensor query = querySlices[bi];
                 AbstractTensor value = valueSlices[bi];
 
-                if (key.dType() != tmpKey.dType()) {
-                    try (AbstractTensor tmpKey2 = configurableTensorProvider.get().quantize(tmpKey, key.dType(), 0, kvLength);
-                         AbstractTensor tmpVal2 = configurableTensorProvider.get().quantize(tmpVal, val.dType(), 0, kvLength)) {
-                        key.copyFrom(tmpKey2, 0, 0, kvLength);
-                        val.copyFrom(tmpVal2, 0, 0, kvLength);
+                InferenceProfiler.time("attention.kv_cache_write", () -> {
+                    if (key.dType() != tmpKey.dType()) {
+                        try (AbstractTensor tmpKey2 = configurableTensorProvider.get().quantize(tmpKey, key.dType(), 0, kvLength);
+                             AbstractTensor tmpVal2 = configurableTensorProvider.get().quantize(tmpVal, val.dType(), 0, kvLength)) {
+                            key.copyFrom(tmpKey2, 0, 0, kvLength);
+                            val.copyFrom(tmpVal2, 0, 0, kvLength);
+                        }
+                    } else {
+                        key.copyFrom(tmpKey, 0, 0, kvLength);
+                        val.copyFrom(tmpVal, 0, 0, kvLength);
                     }
-                } else {
-                    key.copyFrom(tmpKey, 0, 0, kvLength);
-                    val.copyFrom(tmpVal, 0, 0, kvLength);
-                }
+                    return null;
+                });
 
                 // apply RoPE if present (accounting for huggingface permutation)
                 // https://github.com/huggingface/transformers/blob/d533465150532b0c5de167b574e59f64c68b1154/src/transformers/models/llama/convert_llama_weights_to_hf.py#L114
-                config.ropeFreqs.ifPresent(rf -> {
+                InferenceProfiler.time("attention.rope", () -> {
+                    config.ropeFreqs.ifPresent(rf -> {
                     int headPiece = config.headSize / 2;
                     int poffset = finalPosition * headPiece;
 
@@ -286,10 +302,13 @@ public class CausalSelfAttention {
                     }
                     debug("query+rope", query, finalPosition);
                     debug("key+rope", key, finalPosition);
+                    });
+                    return null;
                 });
 
                 // Attention
-                VectorMath.pfor(0, numberOfHeads, h -> {
+                InferenceProfiler.time("attention.score_value", () -> {
+                    VectorMath.pfor(0, numberOfHeads, h -> {
                     int xoffset = Math.floorDiv(h, headGroupSize) * config.headSize;
                     int yoffset = h * config.headSize;
 
@@ -331,7 +350,9 @@ public class CausalSelfAttention {
                             configurableTensorProvider.get().saxpy(attn, vvp[i], value, xoffset, yoffset, config.headSize, offset, 0, size);
                         }
                     }
-                }, m.getPool());
+                    }, m.getPool());
+                    return null;
+                });
             }
 
             // matmul the projection and sum into input
@@ -339,7 +360,8 @@ public class CausalSelfAttention {
             m.emitLayerDebug(layerIndex, "attention_value", valueBatch);
             AbstractTensor result = m.makeDenseTensor(batchSize, config.embeddingLength);
             try (AbstractTensor vq = m.maybeQuantize(valueBatch)) {
-                VectorMath.pchunk(0, config.embeddingLength, (chunkStart, chunkSize) -> {
+                InferenceProfiler.time("attention.output_projection", () -> {
+                    VectorMath.pchunk(0, config.embeddingLength, (chunkStart, chunkSize) -> {
                     configurableTensorProvider.get()
                             .dotProductChunk(
                                     result,
@@ -350,9 +372,12 @@ public class CausalSelfAttention {
                                     chunkStart,
                                     chunkSize
                             );
-                }, splitSize, m.getPool());
+                    }, splitSize, m.getPool());
+                    return null;
+                });
                 AbstractTensor reduced = m.getTensorParallelContext().enabled()
-                        ? m.getTensorParallelCollectives().allReduceSum("layer." + layerIndex + ".self_attn.o_proj", result)
+                        ? InferenceProfiler.time("attention.all_reduce", () ->
+                                m.getTensorParallelCollectives().allReduceSum("layer." + layerIndex + ".self_attn.o_proj", result))
                         : result;
                 m.emitLayerDebug(layerIndex, "attention_output", reduced);
                 tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(reduced)));

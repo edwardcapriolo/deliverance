@@ -5,6 +5,7 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
@@ -141,6 +142,15 @@ public class TransformerBlock {
     }
 
     public AbstractTensor forward(
+            AbstractTensor embedding,
+            int position,
+            KvBufferCache.KvBuffer kvBuffer,
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer
+    ) {
+        return InferenceProfiler.time("transformer_block.forward", () -> forwardTimed(embedding, position, kvBuffer, tensorReducer));
+    }
+
+    private AbstractTensor forwardTimed(
             AbstractTensor embedding,
             int position,
             KvBufferCache.KvBuffer kvBuffer,
