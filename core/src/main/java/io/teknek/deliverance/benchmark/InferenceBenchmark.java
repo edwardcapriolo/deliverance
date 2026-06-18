@@ -362,11 +362,13 @@ public final class InferenceBenchmark {
                 throw new IllegalArgumentException("tensorParallelSize must be >= 2");
             }
             String cluster = "deliverance-benchmark-tp-" + UUID.randomUUID();
-            int basePort = 42_000 + Math.floorMod(cluster.hashCode(), 1_000);
+            int basePort = options.tensorParallelBasePort > 0
+                    ? options.tensorParallelBasePort
+                    : options.tensorParallelPortStart + Math.floorMod(cluster.hashCode(), options.tensorParallelPortRange);
             String node0 = "node-0";
             String node1 = "node-1";
-            URI node0Uri = URI.create("udp://127.0.0.1:" + basePort);
-            URI node1Uri = URI.create("udp://127.0.0.1:" + (basePort + 1));
+            URI node0Uri = URI.create("udp://" + options.tensorParallelHost + ":" + basePort);
+            URI node1Uri = URI.create("udp://" + options.tensorParallelHost + ":" + (basePort + 1));
             List<Member> seedMembers = List.of(new RemoteMember(cluster, node0Uri, node0),
                     new RemoteMember(cluster, node1Uri, node1));
             GossipSettings settings = new GossipSettings();
@@ -376,16 +378,28 @@ public final class InferenceBenchmark {
             settings.setCleanupInterval(2_000);
             TensorParallelDeploymentSpec deploymentSpec = new TensorParallelDeploymentSpec("benchmark",
                     options.tensorParallelSize, options.tensorParallelMaxRanksPerWorker);
+            System.out.println("[deliverance-tp] cluster=" + cluster
+                    + " node0=" + node0Uri
+                    + " node1=" + node1Uri
+                    + " tensor_parallel_size=" + options.tensorParallelSize
+                    + " max_ranks_per_worker=" + options.tensorParallelMaxRanksPerWorker
+                    + " host=" + options.tensorParallelHost
+                    + " base_port=" + basePort
+                    + " port_start=" + options.tensorParallelPortStart
+                    + " port_range=" + options.tensorParallelPortRange);
             List<BenchmarkNode> nodes = new ArrayList<>();
             try {
                 nodes.add(createNode(options, fetcher, cluster, node0, node0Uri, seedMembers, settings, deploymentSpec));
                 nodes.add(createNode(options, fetcher, cluster, node1, node1Uri, seedMembers, settings, deploymentSpec));
-                eventually(() -> allMembersVisible(nodes), Duration.ofSeconds(10));
-                eventually(() -> allCandidatesVisible(nodes, deploymentSpec.minimumPhysicalNodes()), Duration.ofSeconds(10));
-                eventually(() -> allNodesSeeLeader(nodes, node0), Duration.ofSeconds(10));
-                eventually(() -> allNodesSeeAssignment(nodes), Duration.ofSeconds(10));
-                eventually(() -> allNodesSeeCollectiveUri(nodes), Duration.ofSeconds(10));
-                eventually(() -> allNodesSeeRankEndpoints(nodes), Duration.ofSeconds(10));
+                eventually("members visible", () -> allMembersVisible(nodes), Duration.ofSeconds(10));
+                eventually("candidates visible", () -> allCandidatesVisible(nodes, deploymentSpec.minimumPhysicalNodes()), Duration.ofSeconds(10));
+                eventually("leader elected", () -> allNodesSeeLeader(nodes, node0), Duration.ofSeconds(10));
+                eventually("assignment visible", () -> allNodesSeeAssignment(nodes), Duration.ofSeconds(10));
+                printTpAssignment(nodes);
+                eventually("collective uri visible", () -> allNodesSeeCollectiveUri(nodes), Duration.ofSeconds(10));
+                printTpCollectiveUri(nodes);
+                eventually("rank endpoints visible", () -> allNodesSeeRankEndpoints(nodes), Duration.ofSeconds(10));
+                printTpRankEndpoints(nodes);
                 TensorParallelGenerationGroup group = nodes.getFirst().membership().openGenerationGroup();
                 AbstractModel coordinator = applyOutputHeadQuantization(options, AutoModelForCausaLm.newBuilder(fetcher))
                         .withWorkingMemoryType(options.workingDType)
@@ -410,7 +424,36 @@ public final class InferenceBenchmark {
                     .withParallelSettings(new GossipParallelSettings(cluster, nodeId, nodeUri, seedMembers, settings,
                             deploymentSpec))
                     .buildAbstractModel();
+            System.out.println("[deliverance-tp] started node=" + nodeId
+                    + " gossip_uri=" + nodeUri
+                    + " local_ranks=" + model.gossipParallelMembership().orElseThrow().localRanks());
             return new BenchmarkNode(nodeId, model, model.gossipParallelMembership().orElseThrow());
+        }
+
+        private static void printTpAssignment(List<BenchmarkNode> nodes) {
+            for (BenchmarkNode node : nodes) {
+                System.out.println("[deliverance-tp] node=" + node.id()
+                        + " leader=" + node.membership().electedLeader()
+                        + " assignment=" + node.membership().findAssignment()
+                        + " local_ranks=" + node.membership().localRanks());
+            }
+        }
+
+        private static void printTpCollectiveUri(List<BenchmarkNode> nodes) {
+            for (BenchmarkNode node : nodes) {
+                System.out.println("[deliverance-tp] node=" + node.id()
+                        + " collective_uri=" + node.membership().findCollectiveUri());
+            }
+        }
+
+        private static void printTpRankEndpoints(List<BenchmarkNode> nodes) {
+            for (BenchmarkNode observer : nodes) {
+                for (BenchmarkNode owner : nodes) {
+                    System.out.println("[deliverance-tp] observer=" + observer.id()
+                            + " owner=" + owner.id()
+                            + " rank_endpoints=" + observer.membership().findRankEndpoints(owner.id()));
+                }
+            }
         }
 
         private static boolean allMembersVisible(List<BenchmarkNode> nodes) {
@@ -439,10 +482,12 @@ public final class InferenceBenchmark {
                             == owner.membership().localRanks().size()));
         }
 
-        private static void eventually(BooleanSupplier condition, Duration timeout) {
+        private static void eventually(String label, BooleanSupplier condition, Duration timeout) {
+            System.out.println("[deliverance-tp] waiting " + label + " timeout=" + timeout);
             long deadline = System.nanoTime() + timeout.toNanos();
             while (System.nanoTime() < deadline) {
                 if (condition.getAsBoolean()) {
+                    System.out.println("[deliverance-tp] ready " + label);
                     return;
                 }
                 try {
@@ -452,7 +497,8 @@ public final class InferenceBenchmark {
                     throw new IllegalStateException("interrupted waiting for tensor-parallel benchmark setup", e);
                 }
             }
-            throw new IllegalStateException("tensor-parallel benchmark setup did not become ready within " + timeout);
+            throw new IllegalStateException("tensor-parallel benchmark setup did not become ready for " + label
+                    + " within " + timeout);
         }
 
         @Override
@@ -846,6 +892,10 @@ public final class InferenceBenchmark {
         private int maxCases = 0;
         private int tensorParallelSize = 1;
         private int tensorParallelMaxRanksPerWorker = 2;
+        private String tensorParallelHost = "127.0.0.1";
+        private int tensorParallelBasePort = 0;
+        private int tensorParallelPortStart = 42_000;
+        private int tensorParallelPortRange = 1_000;
         private boolean profileStages = false;
         private Path suiteFile;
         private Path output = Path.of("target/inference-benchmark.csv");
@@ -873,6 +923,10 @@ public final class InferenceBenchmark {
                     case "--tensor-parallel-size" -> options.tensorParallelSize = Integer.parseInt(args[++i]);
                     case "--tensor-parallel-max-ranks-per-worker" ->
                             options.tensorParallelMaxRanksPerWorker = Integer.parseInt(args[++i]);
+                    case "--tensor-parallel-host" -> options.tensorParallelHost = args[++i];
+                    case "--tensor-parallel-base-port" -> options.tensorParallelBasePort = Integer.parseInt(args[++i]);
+                    case "--tensor-parallel-port-start" -> options.tensorParallelPortStart = Integer.parseInt(args[++i]);
+                    case "--tensor-parallel-port-range" -> options.tensorParallelPortRange = Integer.parseInt(args[++i]);
                     case "--profile-stages" -> options.profileStages = true;
                     case "--suite-file" -> options.suiteFile = Path.of(args[++i]);
                     case "--output" -> options.output = Path.of(args[++i]);
@@ -882,6 +936,9 @@ public final class InferenceBenchmark {
                     }
                     default -> throw new IllegalArgumentException("Unknown argument " + args[i]);
                 }
+            }
+            if (options.tensorParallelPortRange < 2) {
+                throw new IllegalArgumentException("--tensor-parallel-port-range must be >= 2");
             }
             return options;
         }
@@ -910,6 +967,10 @@ public final class InferenceBenchmark {
                       --max-cases N                      Limit cases, default all
                       --tensor-parallel-size N           Local in-process tensor parallel ranks, default 1
                       --tensor-parallel-max-ranks-per-worker N Max ranks per local worker, default 2
+                      --tensor-parallel-host HOST        Gossip/rank bind host for benchmark TP nodes, default 127.0.0.1
+                      --tensor-parallel-base-port N      Exact gossip base port; node-1 uses N+1, default derived from range
+                      --tensor-parallel-port-start N     Start of derived gossip port range, default 42000
+                      --tensor-parallel-port-range N     Size of derived gossip port range, default 1000
                       --profile-stages                   Print accumulated broad-stage timing after each Deliverance turn
                       --suite-file PATH                  FastChat MT-Bench question.jsonl; default built-in subset
                       --output PATH                      CSV output path, default target/inference-benchmark.csv

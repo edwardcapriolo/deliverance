@@ -9,11 +9,14 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.function.Function;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Starts local rank models assigned to one physical node and exposes them as HTTP rank endpoints.
  */
 public class TensorParallelWorker implements AutoCloseable {
+    private static final Logger LOGGER = LoggerFactory.getLogger(TensorParallelWorker.class);
     private final List<HttpTensorParallelRankServer> servers;
     private final List<TensorParallelRankEndpoint> endpoints;
 
@@ -39,10 +42,14 @@ public class TensorParallelWorker implements AutoCloseable {
                 servers.add(server);
                 endpoints.add(new TensorParallelRankEndpoint(model.getTensorParallelContext().rank(), membership.localNodeId(),
                         server.uri().toString()));
+                LOGGER.info("Started tensor-parallel rank server node={} rank={} size={} uri={} provider={}",
+                        membership.localNodeId(), model.getTensorParallelContext().rank(),
+                        model.getTensorParallelContext().size(), server.uri(), model.getTensorProviderName());
             }
             endpoints.sort(Comparator.comparingInt(TensorParallelRankEndpoint::rank));
             TensorParallelWorker worker = new TensorParallelWorker(List.copyOf(servers), List.copyOf(endpoints));
             membership.publishRankEndpoints(worker.endpoints());
+            LOGGER.info("Started tensor-parallel worker node={} endpoints={}", membership.localNodeId(), worker.endpoints());
             return worker;
         } catch (RuntimeException e) {
             for (HttpTensorParallelRankServer server : servers) {
@@ -59,6 +66,7 @@ public class TensorParallelWorker implements AutoCloseable {
     @Override
     public void close() {
         for (HttpTensorParallelRankServer server : servers) {
+            LOGGER.info("Closing tensor-parallel rank server uri={}", server.uri());
             server.close();
         }
     }

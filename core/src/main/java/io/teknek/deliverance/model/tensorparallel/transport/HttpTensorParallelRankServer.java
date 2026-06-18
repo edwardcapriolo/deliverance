@@ -11,11 +11,14 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Minimal JDK HTTP server for tensor-parallel rank forward operations.
  */
 public class HttpTensorParallelRankServer implements AutoCloseable {
+    private static final Logger LOGGER = LoggerFactory.getLogger(HttpTensorParallelRankServer.class);
     private final HttpServer server;
     private final ExecutorService executor;
     private final TensorParallelRankService service;
@@ -37,6 +40,7 @@ public class HttpTensorParallelRankServer implements AutoCloseable {
 
     public void start() {
         server.start();
+        LOGGER.info("Started HTTP tensor-parallel rank server uri={}", uri());
     }
 
     public URI uri() {
@@ -46,6 +50,7 @@ public class HttpTensorParallelRankServer implements AutoCloseable {
 
     @Override
     public void close() {
+        LOGGER.info("Closing HTTP tensor-parallel rank server uri={}", uri());
         server.stop(0);
         executor.shutdownNow();
         if (service instanceof AutoCloseable closeable) {

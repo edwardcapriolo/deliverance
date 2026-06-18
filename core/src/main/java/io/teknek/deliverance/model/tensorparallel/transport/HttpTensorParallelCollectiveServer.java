@@ -21,11 +21,14 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Coordinator-hosted HTTP collectives server for tensor-parallel all-reduce operations.
  */
 public class HttpTensorParallelCollectiveServer implements AutoCloseable {
+    private static final Logger LOGGER = LoggerFactory.getLogger(HttpTensorParallelCollectiveServer.class);
     private static final MetricRegistry METRICS = new MetricRegistry();
     private final HttpServer server;
     private final ExecutorService executor;
@@ -46,6 +49,7 @@ public class HttpTensorParallelCollectiveServer implements AutoCloseable {
 
     public void start() {
         server.start();
+        LOGGER.info("Started HTTP tensor-parallel collective server uri={}", uri());
     }
 
     public URI uri() {
@@ -55,6 +59,7 @@ public class HttpTensorParallelCollectiveServer implements AutoCloseable {
 
     @Override
     public void close() {
+        LOGGER.info("Closing HTTP tensor-parallel collective server uri={}", uri());
         server.stop(0);
         executor.shutdownNow();
     }

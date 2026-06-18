@@ -50,6 +50,9 @@ public class GossipParallelMembership implements AutoCloseable {
     }
 
     public static GossipParallelMembership start(GossipParallelSettings settings) {
+        LOGGER.info("Starting tensor-parallel gossip membership cluster={} node={} uri={} deployment={} requestedRanks={} maxRanksPerNode={}",
+                settings.cluster(), settings.nodeId(), settings.uri(), settings.deploymentSpec().deploymentId(),
+                settings.deploymentSpec().requestedNodes(), settings.deploymentSpec().maxRanksPerNode());
         GossipManager manager = GossipManagerBuilder.newBuilder()
                 .cluster(settings.cluster())
                 .id(settings.nodeId())
@@ -63,11 +66,14 @@ public class GossipParallelMembership implements AutoCloseable {
         membership.publishDeploymentSpec();
         membership.publishCandidate();
         membership.startAssignmentCoordinator();
+        LOGGER.info("Started tensor-parallel gossip membership cluster={} node={} uri={}",
+                settings.cluster(), settings.nodeId(), settings.uri());
         return membership;
     }
 
     public synchronized void startWorkerWhenReady(AutoModelForCausaLm.Builder rankBuilder) {
         this.rankBuilder = rankBuilder;
+        LOGGER.info("Tensor-parallel worker requested node={} deployment={}", localNodeId(), deploymentSpec.deploymentId());
         notifyAll();
     }
 
@@ -86,10 +92,13 @@ public class GossipParallelMembership implements AutoCloseable {
 
     public void publishDeploymentSpec() {
         publishSharedData(deploymentSpec.sharedDataKey(), deploymentSpec);
+        LOGGER.info("Published tensor-parallel deployment spec node={} deployment={} requestedRanks={} maxRanksPerNode={}",
+                localNodeId(), deploymentSpec.deploymentId(), deploymentSpec.requestedNodes(), deploymentSpec.maxRanksPerNode());
     }
 
     public void publishCandidate() {
         mergeSharedData(deploymentSpec.candidatesKey(), new OrSet<>(gossipManager.getMyself().getId()));
+        LOGGER.info("Published tensor-parallel candidate node={} deployment={}", localNodeId(), deploymentSpec.deploymentId());
     }
 
     public TensorParallelDeploymentSpec findDeploymentSpec() {
@@ -138,6 +147,8 @@ public class GossipParallelMembership implements AutoCloseable {
             return;
         }
         String leaderCandidate = activeNodes.get(0);
+        LOGGER.info("Voting for tensor-parallel leader node={} deployment={} leaderCandidate={} activeNodes={} standbyNodes={}",
+                localNodeId(), deploymentSpec.deploymentId(), leaderCandidate, activeNodes, topology.standbyNodeIds());
         VoteCandidate candidate = new VoteCandidate(leaderCandidate, deploymentSpec.leaderVoteKey(), new ConcurrentHashMap<>());
         candidate.addVote(new Vote(gossipManager.getMyself().getId(), true, false, activeNodes, topology.standbyNodeIds()));
         Map<String, VoteCandidate> candidates = new LinkedHashMap<>();
@@ -204,6 +215,8 @@ public class GossipParallelMembership implements AutoCloseable {
                 Duration.ofSeconds(30));
         collectiveServer.start();
         publishSharedData(deploymentSpec.collectiveUriKey(), collectiveServer.uri().toString());
+        LOGGER.info("Started tensor-parallel collective server node={} deployment={} uri={}",
+                localNodeId(), deploymentSpec.deploymentId(), collectiveServer.uri());
     }
 
     private synchronized void startWorkerIfReady() throws InterruptedException {
@@ -213,7 +226,11 @@ public class GossipParallelMembership implements AutoCloseable {
         if (closed || worker != null || rankBuilder == null) {
             return;
         }
+        LOGGER.info("Starting tensor-parallel worker node={} deployment={} localRanks={} bindHost={}",
+                localNodeId(), deploymentSpec.deploymentId(), localRanks(), rankBindHost);
         worker = TensorParallelWorker.start(rankBuilder, this, tensorParallelCollectivesFactory(), rankBindHost);
+        LOGGER.info("Started tensor-parallel worker node={} deployment={} endpoints={}",
+                localNodeId(), deploymentSpec.deploymentId(), worker.endpoints());
     }
 
     public String electedLeader() {
@@ -241,6 +258,8 @@ public class GossipParallelMembership implements AutoCloseable {
         TensorParallelAssignment assignment = new TensorParallelAssignment(deploymentSpec.deploymentId(), leader,
                 topology.tensorParallelSize(), topology.assignmentHash(), topology.rankAssignments());
         publishSharedData(deploymentSpec.assignmentKey(), assignment);
+        LOGGER.info("Published tensor-parallel assignment node={} deployment={} leader={} tensorParallelSize={} ranks={}",
+                localNodeId, deploymentSpec.deploymentId(), leader, assignment.tensorParallelSize(), assignment.ranks());
     }
 
     public TensorParallelAssignment findAssignment() {
@@ -279,6 +298,8 @@ public class GossipParallelMembership implements AutoCloseable {
     public TensorParallelGenerationGroup openGenerationGroup() {
         TensorParallelAssignment assignment = requireAssignment();
         List<TensorParallelRankEndpoint> endpoints = rankEndpointsForAssignment();
+        LOGGER.info("Opening tensor-parallel generation group node={} deployment={} tensorParallelSize={} endpoints={}",
+                localNodeId(), deploymentSpec.deploymentId(), assignment.tensorParallelSize(), endpoints);
         return TensorParallelGenerationGroup.fromEndpoints(endpoints.stream()
                 .map(endpoint -> new TensorParallelGenerationGroup.RankEndpoint(endpoint.rank(),
                         assignment.tensorParallelSize(), new HttpTensorParallelRankClient(URI.create(endpoint.uri())),
@@ -301,6 +322,8 @@ public class GossipParallelMembership implements AutoCloseable {
         message.setTimestamp(System.currentTimeMillis());
         message.setExpireAt(Long.MAX_VALUE);
         gossipManager.gossipPerNodeData(message);
+        LOGGER.info("Published tensor-parallel rank endpoints node={} deployment={} endpoints={}",
+                localNodeId(), deploymentSpec.deploymentId(), endpoints);
     }
 
     @SuppressWarnings("unchecked")

@@ -150,17 +150,17 @@
         <dependency>
             <groupId>io.teknek.gossip</groupId>
             <artifactId>gossip-base</artifactId>
-            <version>0.1.3-SNAPSHOT</version>
+            <version>0.1.3</version>
         </dependency>
         <dependency>
             <groupId>io.teknek.gossip</groupId>
             <artifactId>gossip-protocol-jackson</artifactId>
-            <version>0.1.3-SNAPSHOT</version>
+            <version>0.1.3</version>
         </dependency>
         <dependency>
             <groupId>io.teknek.gossip</groupId>
             <artifactId>gossip-transport-udp</artifactId>
-            <version>0.1.3-SNAPSHOT</version>
+            <version>0.1.3</version>
         </dependency>
     </dependencies>
 
