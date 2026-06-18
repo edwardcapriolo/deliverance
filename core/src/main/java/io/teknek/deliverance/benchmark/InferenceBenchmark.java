@@ -7,6 +7,7 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.DefaultCausalLanguageModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
@@ -41,6 +42,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ForkJoinPool;
 import java.util.function.BooleanSupplier;
 
 /**
@@ -156,6 +158,7 @@ public final class InferenceBenchmark {
                     applyOutputHeadQuantization(options, AutoModelForCausaLm.newBuilder(fetcher))
                     .withWorkingMemoryType(options.workingDType)
                     .withWorkingQuantType(options.workingQType)
+                    .withWrappedForkJoinPool(newPool(options))
                     .build());
         }
         return GossipTensorParallelDeliveranceRunner.open(options, fetcher);
@@ -165,6 +168,13 @@ public final class InferenceBenchmark {
             AutoModelForCausaLm.Builder builder) {
         options.outputHeadQuantization.ifPresent(builder::withOutputHeadQuantization);
         return builder;
+    }
+
+    private static WrappedForkJoinPool newPool(Options options) {
+        return options.poolSize > 0
+                ? new WrappedForkJoinPool(new ForkJoinPool(options.poolSize, ForkJoinPool.defaultForkJoinWorkerThreadFactory,
+                null, true))
+                : new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
     }
 
     /** Prints runtime details that are otherwise only visible through SLF4J logs. */
@@ -380,6 +390,7 @@ public final class InferenceBenchmark {
                 AbstractModel coordinator = applyOutputHeadQuantization(options, AutoModelForCausaLm.newBuilder(fetcher))
                         .withWorkingMemoryType(options.workingDType)
                         .withWorkingQuantType(options.workingQType)
+                        .withWrappedForkJoinPool(newPool(options))
                         .buildLocalTransformerModel();
                 return new GossipTensorParallelDeliveranceRunner(options.owner + "/" + options.model
                         + ":tp" + options.tensorParallelSize + "x" + nodes.size(), coordinator, group, List.copyOf(nodes));
@@ -395,6 +406,7 @@ public final class InferenceBenchmark {
             AbstractModel model = applyOutputHeadQuantization(options, AutoModelForCausaLm.newBuilder(fetcher))
                     .withWorkingMemoryType(options.workingDType)
                     .withWorkingQuantType(options.workingQType)
+                    .withWrappedForkJoinPool(newPool(options))
                     .withParallelSettings(new GossipParallelSettings(cluster, nodeId, nodeUri, seedMembers, settings,
                             deploymentSpec))
                     .buildAbstractModel();
@@ -826,6 +838,7 @@ public final class InferenceBenchmark {
         private DType workingDType = DType.F32;
         private DType workingQType = DType.I8;
         private Optional<DType> outputHeadQuantization = Optional.empty();
+        private int poolSize = 0;
         private int maxTokens = 256;
         private float temperature = 0.0f;
         private Integer seed = 42;
@@ -851,6 +864,7 @@ public final class InferenceBenchmark {
                     case "--working-dtype" -> options.workingDType = DType.valueOf(args[++i]);
                     case "--working-qtype" -> options.workingQType = DType.valueOf(args[++i]);
                     case "--output-head-quantization" -> options.outputHeadQuantization = Optional.of(DType.valueOf(args[++i]));
+                    case "--pool-size" -> options.poolSize = Integer.parseInt(args[++i]);
                     case "--max-tokens" -> options.maxTokens = Integer.parseInt(args[++i]);
                     case "--temperature" -> options.temperature = Float.parseFloat(args[++i]);
                     case "--seed" -> options.seed = "none".equalsIgnoreCase(args[++i]) ? null : Integer.parseInt(args[i]);
@@ -888,6 +902,7 @@ public final class InferenceBenchmark {
                       --working-dtype DTYPE              Working dtype, default F32
                       --working-qtype DTYPE              Working quantized dtype, default I8
                       --output-head-quantization DTYPE    Optional output head dtype, e.g. Q4
+                      --pool-size N                      ForkJoin pool parallelism; default auto half cores
                       --max-tokens N                     Max generated tokens per turn, default 256
                       --temperature F                    Temperature, default 0.0
                       --seed N|none                      Seed, default 42
