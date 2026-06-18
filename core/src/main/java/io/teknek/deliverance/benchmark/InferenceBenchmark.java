@@ -426,7 +426,7 @@ public final class InferenceBenchmark {
                     .buildAbstractModel();
             System.out.println("[deliverance-tp] started node=" + nodeId
                     + " gossip_uri=" + nodeUri
-                    + " local_ranks=" + model.gossipParallelMembership().orElseThrow().localRanks());
+                    + " assignment=pending");
             return new BenchmarkNode(nodeId, model, model.gossipParallelMembership().orElseThrow());
         }
 
