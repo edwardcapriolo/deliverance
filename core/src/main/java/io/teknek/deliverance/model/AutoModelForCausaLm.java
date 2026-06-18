@@ -70,6 +70,7 @@ public class AutoModelForCausaLm {
         private TensorParallelContext tensorParallelContext = new StaticTensorParallelContext(0, 1);
         private TensorParallelCollectives tensorParallelCollectives = new SingleRankTensorParallelCollectives();
         private Optional<GossipParallelSettings> parallelSettings = Optional.empty();
+        private Optional<DType> outputHeadQuantization = Optional.empty();
 
         public Builder(ModelFetcher fetch){
             this.fetch = fetch;
@@ -130,6 +131,22 @@ public class AutoModelForCausaLm {
             this.parallelSettings = Optional.of(Objects.requireNonNull(parallelSettings, "parallelSettings"));
             return this;
         }
+
+        /**
+         * Requests a specific dtype for causal-LM output head weights.
+         *
+         * <p>The output head projects the final hidden state to vocabulary logits on every generated token, so its dtype
+         * can materially affect generation throughput. Some quantized models keep embedding/lm-head tensors dense for
+         * quality; this option lets callers explicitly test or choose a quantized output head, for example {@code Q4},
+         * without changing the rest of the model loading policy.</p>
+         *
+         * <p>This is opt-in because it directly changes logits and can change generated tokens. Callers should validate
+         * first-token/top-k parity or run model-specific golden prompts before using it as a default.</p>
+         */
+        public Builder withOutputHeadQuantization(DType outputHeadQuantization) {
+            this.outputHeadQuantization = Optional.of(Objects.requireNonNull(outputHeadQuantization, "outputHeadQuantization"));
+            return this;
+        }
         public GossipParallelMembership startParallelMembership() {
             return GossipParallelMembership.start(parallelSettings.orElseThrow(() ->
                     new IllegalStateException("parallelSettings must be configured before starting membership")));
@@ -187,6 +204,7 @@ public class AutoModelForCausaLm {
             copy.oobCheck = this.oobCheck;
             copy.tensorParallelContext = context;
             copy.tensorParallelCollectives = Objects.requireNonNull(collectives, "collectives");
+            copy.outputHeadQuantization = this.outputHeadQuantization;
             return copy;
         }
         /** This is a JVM wide property! **/
@@ -239,7 +257,8 @@ public class AutoModelForCausaLm {
                 provider = maybe.map(ConfigurableTensorProvider::new).orElse(base);
             }
             AbstractModel model = ModelSupport.loadModel(modelRoot, workingMem, workingQuant, provider,
-                    mr, allocator, settings, fetch, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives);
+                    mr, allocator, settings, fetch, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives,
+                    outputHeadQuantization);
             return model;
         }
 

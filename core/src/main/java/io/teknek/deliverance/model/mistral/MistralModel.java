@@ -24,9 +24,9 @@ public class MistralModel extends LlamaModel {
                         ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
                         TensorAllocator arrayQueueTensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
                         ToolCallParser toolCallParser, WrappedForkJoinPool pool, TensorParallelContext tensorParallelContext,
-                        TensorParallelCollectives tensorParallelCollectives) {
+                        TensorParallelCollectives tensorParallelCollectives, Optional<DType> outputHeadQuantization) {
         super(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType, configurableTensorProvider,
                 metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, toolCallParser, pool, tensorParallelContext,
-                tensorParallelCollectives);
+                tensorParallelCollectives, outputHeadQuantization);
     }
 }

@@ -30,14 +30,14 @@ public class BertModel extends AbstractModel {
     private static final String[] prefixes = new String[] { "", "bert." };
 
     public BertModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer tokenizer, DType workingDType, DType workingQType,
-                       Optional<DType> modelQType, ConfigurableTensorProvider configurableTensorProvider,
-                       MetricRegistry metricRegistry, TensorAllocator arrayQueueTensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
-                       ToolCallParser toolCallParser, WrappedForkJoinPool pool, TensorParallelContext tensorParallelContext,
-                       TensorParallelCollectives tensorParallelCollectives) {
+                        Optional<DType> modelQType, ConfigurableTensorProvider configurableTensorProvider,
+                        MetricRegistry metricRegistry, TensorAllocator arrayQueueTensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
+                        ToolCallParser toolCallParser, WrappedForkJoinPool pool, TensorParallelContext tensorParallelContext,
+                        TensorParallelCollectives tensorParallelCollectives, Optional<DType> outputHeadQuantization) {
         //note: jLAMA uses FOrward_passs
         super(inferenceType, c, w, tokenizer, workingDType, workingQType, modelQType,
                 configurableTensorProvider, metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, toolCallParser, pool,
-                tensorParallelContext, tensorParallelCollectives);
+                tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
     }
 
     protected AbstractTensor loadWeight(String name) {

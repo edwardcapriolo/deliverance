@@ -5,6 +5,8 @@ import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelContext;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.Timer;
 
 import java.io.IOException;
 import java.net.URI;
@@ -19,6 +21,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * HTTP client implementation of tensor-parallel collectives.
  */
 public class HttpTensorParallelCollectives implements TensorParallelCollectives {
+    private static final MetricRegistry METRICS = new MetricRegistry();
     private final HttpClient client = HttpClient.newHttpClient();
     private final TensorParallelContext context;
     private final URI baseUri;
@@ -33,11 +36,12 @@ public class HttpTensorParallelCollectives implements TensorParallelCollectives 
     @Override
     public AbstractTensor allReduceSum(String key, AbstractTensor local) {
         String wireKey = collectiveSequence.getAndIncrement() + ":" + key;
-        byte[] body = InferenceProfiler.time("collective.client.serialize", () -> {
+        byte[] body;
+        try (Timer.Context ignored = InferenceProfiler.timer(METRICS, "collective.client.serialize").time()) {
             try {
                 byte[] header = JsonUtils.om.writeValueAsBytes(new AllReduceSumRequest(wireKey, context.rank(), context.size()));
                 byte[] tensor = codec.encode(local);
-                return ByteBuffer.allocate(Integer.BYTES + header.length + tensor.length)
+                body = ByteBuffer.allocate(Integer.BYTES + header.length + tensor.length)
                         .order(ByteOrder.LITTLE_ENDIAN)
                         .putInt(header.length)
                         .put(header)
@@ -46,24 +50,27 @@ public class HttpTensorParallelCollectives implements TensorParallelCollectives 
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
-        });
+        }
         HttpRequest request = HttpRequest.newBuilder(baseUri.resolve("/allReduceSum"))
                 .header("Content-Type", "application/octet-stream")
                 .POST(HttpRequest.BodyPublishers.ofByteArray(body))
                 .build();
-        HttpResponse<byte[]> response = InferenceProfiler.time("collective.client.http", () -> {
+        HttpResponse<byte[]> response;
+        try (Timer.Context ignored = InferenceProfiler.timer(METRICS, "collective.client.http").time()) {
             try {
-                return client.send(request, HttpResponse.BodyHandlers.ofByteArray());
+                response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
             } catch (IOException e) {
                 throw new RuntimeException(e);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new RuntimeException(e);
             }
-        });
+        }
         if (response.statusCode() != 200) {
             throw new IllegalStateException("Collective server returned HTTP " + response.statusCode());
         }
-        return InferenceProfiler.time("collective.client.deserialize", () -> codec.decode(response.body()));
+        try (Timer.Context ignored = InferenceProfiler.timer(METRICS, "collective.client.deserialize").time()) {
+            return codec.decode(response.body());
+        }
     }
 }

@@ -7,6 +7,8 @@ import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
+import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.Timer;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -24,6 +26,7 @@ import java.util.concurrent.Executors;
  * Coordinator-hosted HTTP collectives server for tensor-parallel all-reduce operations.
  */
 public class HttpTensorParallelCollectiveServer implements AutoCloseable {
+    private static final MetricRegistry METRICS = new MetricRegistry();
     private final HttpServer server;
     private final ExecutorService executor;
     private final Group group;
@@ -57,7 +60,8 @@ public class HttpTensorParallelCollectiveServer implements AutoCloseable {
     }
 
     private void handleAllReduceSum(HttpExchange exchange) throws IOException {
-        DecodedRequest decoded = InferenceProfiler.time("collective.server.decode", () -> {
+        DecodedRequest decoded;
+        try (Timer.Context ignored = InferenceProfiler.timer(METRICS, "collective.server.decode").time()) {
             try {
                 byte[] body = exchange.getRequestBody().readAllBytes();
                 ByteBuffer bodyBuffer = ByteBuffer.wrap(body).order(ByteOrder.LITTLE_ENDIAN);
@@ -70,14 +74,17 @@ public class HttpTensorParallelCollectiveServer implements AutoCloseable {
                 byte[] tensorBytes = new byte[bodyBuffer.remaining()];
                 bodyBuffer.get(tensorBytes);
                 AllReduceSumRequest request = JsonUtils.om.readValue(header, AllReduceSumRequest.class);
-                return new DecodedRequest(request, codec.decode(tensorBytes));
+                decoded = new DecodedRequest(request, codec.decode(tensorBytes));
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
-        });
+        }
         try (AbstractTensor local = decoded.local();
              AbstractTensor reduced = group.allReduceSum(decoded.request().key(), decoded.request().rank(), decoded.request().size(), local)) {
-            byte[] response = InferenceProfiler.time("collective.server.encode", () -> codec.encode(reduced));
+            byte[] response;
+            try (Timer.Context ignored = InferenceProfiler.timer(METRICS, "collective.server.encode").time()) {
+                response = codec.encode(reduced);
+            }
             exchange.getResponseHeaders().add("Content-Type", codec.contentType());
             exchange.sendResponseHeaders(200, response.length);
             exchange.getResponseBody().write(response);
@@ -101,16 +108,14 @@ public class HttpTensorParallelCollectiveServer implements AutoCloseable {
             Round round = rounds.computeIfAbsent(key, ignored -> new Round(size, local));
             round.add(rank, local);
             if (round.arrived == size) {
-                InferenceProfiler.time("collective.server.reduce", () -> {
+                try (Timer.Context ignored = InferenceProfiler.timer(METRICS, "collective.server.reduce").time()) {
                     round.reduce();
-                    return null;
-                });
+                }
                 notifyAll();
             }
-            InferenceProfiler.time("collective.server.wait", () -> {
+            try (Timer.Context ignored = InferenceProfiler.timer(METRICS, "collective.server.wait").time()) {
                 waitForReduction(key, round);
-                return null;
-            });
+            }
             AbstractTensor result = round.copyReduced();
             round.returned++;
             if (round.returned == size) {
