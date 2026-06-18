@@ -398,7 +398,8 @@ public final class InferenceBenchmark {
                 printTpAssignment(nodes);
                 eventually("collective uri visible", () -> allNodesSeeCollectiveUri(nodes), Duration.ofSeconds(10));
                 printTpCollectiveUri(nodes);
-                eventually("rank endpoints visible", () -> allNodesSeeRankEndpoints(nodes), Duration.ofSeconds(10));
+                eventually("rank endpoints visible", () -> allNodesSeeRankEndpoints(nodes),
+                        Duration.ofSeconds(options.tensorParallelRankEndpointTimeoutSeconds));
                 printTpRankEndpoints(nodes);
                 TensorParallelGenerationGroup group = nodes.getFirst().membership().openGenerationGroup();
                 AbstractModel coordinator = applyOutputHeadQuantization(options, AutoModelForCausaLm.newBuilder(fetcher))
@@ -896,6 +897,7 @@ public final class InferenceBenchmark {
         private int tensorParallelBasePort = 0;
         private int tensorParallelPortStart = 42_000;
         private int tensorParallelPortRange = 1_000;
+        private int tensorParallelRankEndpointTimeoutSeconds = 120;
         private boolean profileStages = false;
         private Path suiteFile;
         private Path output = Path.of("target/inference-benchmark.csv");
@@ -927,6 +929,8 @@ public final class InferenceBenchmark {
                     case "--tensor-parallel-base-port" -> options.tensorParallelBasePort = Integer.parseInt(args[++i]);
                     case "--tensor-parallel-port-start" -> options.tensorParallelPortStart = Integer.parseInt(args[++i]);
                     case "--tensor-parallel-port-range" -> options.tensorParallelPortRange = Integer.parseInt(args[++i]);
+                    case "--tensor-parallel-rank-endpoint-timeout-seconds" ->
+                            options.tensorParallelRankEndpointTimeoutSeconds = Integer.parseInt(args[++i]);
                     case "--profile-stages" -> options.profileStages = true;
                     case "--suite-file" -> options.suiteFile = Path.of(args[++i]);
                     case "--output" -> options.output = Path.of(args[++i]);
@@ -971,6 +975,7 @@ public final class InferenceBenchmark {
                       --tensor-parallel-base-port N      Exact gossip base port; node-1 uses N+1, default derived from range
                       --tensor-parallel-port-start N     Start of derived gossip port range, default 42000
                       --tensor-parallel-port-range N     Size of derived gossip port range, default 1000
+                      --tensor-parallel-rank-endpoint-timeout-seconds N Timeout for worker rank endpoint publication, default 120
                       --profile-stages                   Print accumulated broad-stage timing after each Deliverance turn
                       --suite-file PATH                  FastChat MT-Bench question.jsonl; default built-in subset
                       --output PATH                      CSV output path, default target/inference-benchmark.csv
