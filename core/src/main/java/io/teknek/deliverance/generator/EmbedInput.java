@@ -1,6 +1,7 @@
 package io.teknek.deliverance.generator;
 
 import com.google.common.base.Preconditions;
+import com.codahale.metrics.Timer;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.InferenceProfiler;
@@ -21,10 +22,7 @@ public abstract class EmbedInput {
     public abstract AbstractTensor inputTokenToEmbedding(int inputToken, int position);
 
     public AbstractTensor batchInputsToEmbeddings(int[] inputTokens, int startPos) {
-        return InferenceProfiler.time("embedding.batch_inputs", () -> batchInputsToEmbeddingsTimed(inputTokens, startPos));
-    }
-
-    private AbstractTensor batchInputsToEmbeddingsTimed(int[] inputTokens, int startPos) {
+        try (Timer.Context ignored = InferenceProfiler.timer(parent.getMetricRegistry(), "embedinput.batch_inputs").time()) {
         Preconditions.checkArgument(inputTokens.length > 0);
         AbstractTensor zeroTokenEmbedding = inputTokenToEmbedding(inputTokens[0], startPos);
 
@@ -42,5 +40,6 @@ public abstract class EmbedInput {
             ti.close();
         }, parent.getPool());
         return tb;
+        }
     }
 }

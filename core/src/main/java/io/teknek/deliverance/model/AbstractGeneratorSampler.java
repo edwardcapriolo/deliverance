@@ -2,6 +2,7 @@ package io.teknek.deliverance.model;
 
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.LayerNorm;
+import com.codahale.metrics.Timer;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.tensor.*;
 import io.teknek.deliverance.tensorlib.ReadOnlyTensorMap;
@@ -51,10 +52,7 @@ class DeliveranceLegacySampler extends AbstractGeneratorSampler {
 
     @Override
     public SamplerReturn sample() {
-        return InferenceProfiler.time("sampler.sample", this::sampleTimed);
-    }
-
-    private SamplerReturn sampleTimed() {
+        try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), "sampler.sample").time()) {
         boolean logProbs = this.parameters.logProbs.orElse(false);
         int topLogProbs = this.parameters.topLogProbs.orElse(0);
         float temperature = this.parameters.temperature.orElse(0f);
@@ -62,14 +60,19 @@ class DeliveranceLegacySampler extends AbstractGeneratorSampler {
         float xtcThreshold = this.parameters.xtcThreshold.orElse(0f);
 
         try (AbstractTensor embedding = layerNorm.forward(output)) {
-            InferenceProfiler.time("sampler.output_projection", () -> {
+            if (InferenceProfiler.isEnabled()) {
+                InferenceProfiler.counter(model.getMetricRegistry(),
+                        "sampler.output_projection.input_dtype." + embedding.dType()).inc();
+                InferenceProfiler.counter(model.getMetricRegistry(),
+                        "sampler.output_projection.weight_dtype." + model.sampleOutput.getOutputLogitsWeights().dType()).inc();
+            }
+            try (Timer.Context ignoredOutput = InferenceProfiler.timer(model.getMetricRegistry(), "sampler.output_projection").time()) {
                 VectorMath.pchunk(0, model.config.vocabularySize, (chunkStart, chunkSize) -> {
                 model.configurableTensorProvider.get()
                         .dotProductChunk(logits, embedding, model.sampleOutput.getOutputLogitsWeights(), 0,
                                 model.config.embeddingLength, chunkStart, chunkSize);
                 }, model.configurableTensorProvider.get().parallelSplitSize(), model.getPool());
-                return null;
-            });
+            }
 
             if (model.config.logitMultiplier != null) {
                 LOGGER.debug("scaling logits logitMultiplier: {}", model.config.logitMultiplier);
@@ -144,6 +147,7 @@ class DeliveranceLegacySampler extends AbstractGeneratorSampler {
                     : new SamplerReturn(model.config.vocabularySize - 1);
 
         }
+        }
     }
 }
 
@@ -157,6 +161,7 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
 
     @Override
     public SamplerReturn sample() {
+        try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), "sampler.sample").time()) {
         boolean logProbs = this.parameters.logProbs.orElse(false);
         int topLogProbs = this.parameters.topLogProbs.orElse(0);
         float temperature = this.parameters.temperature.orElse(0f);
@@ -167,11 +172,19 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
         }
 
         try (AbstractTensor embedding = layerNorm.forward(output)) {
-            VectorMath.pchunk(0, model.config.vocabularySize, (chunkStart, chunkSize) -> {
+            if (InferenceProfiler.isEnabled()) {
+                InferenceProfiler.counter(model.getMetricRegistry(),
+                        "sampler.output_projection.input_dtype." + embedding.dType()).inc();
+                InferenceProfiler.counter(model.getMetricRegistry(),
+                        "sampler.output_projection.weight_dtype." + model.sampleOutput.getOutputLogitsWeights().dType()).inc();
+            }
+            try (Timer.Context ignoredOutput = InferenceProfiler.timer(model.getMetricRegistry(), "sampler.output_projection").time()) {
+                VectorMath.pchunk(0, model.config.vocabularySize, (chunkStart, chunkSize) -> {
                 model.configurableTensorProvider.get()
                         .dotProductChunk(logits, embedding, model.sampleOutput.getOutputLogitsWeights(), 0,
                                 model.config.embeddingLength, chunkStart, chunkSize);
-            }, model.configurableTensorProvider.get().parallelSplitSize(), model.getPool());
+                }, model.configurableTensorProvider.get().parallelSplitSize(), model.getPool());
+            }
 
             if (model.config.logitMultiplier != null) {
                 LOGGER.debug("scaling logits logitMultiplier: {}", model.config.logitMultiplier);
@@ -347,6 +360,8 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
 
     }
 
+    }
+
     class TopPSummary{
         double sum = 0.0;
         int count = 0;
@@ -452,4 +467,5 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
         model.configurableTensorProvider.get().scale(((float) (1.0/sum)), logits, (int) offset, (int) length );
 
     }
-}
+
+    }

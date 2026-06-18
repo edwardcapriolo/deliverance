@@ -57,7 +57,8 @@ public class Gemma4Model extends LlamaModel {
             ToolCallParser toolCallParser,
             WrappedForkJoinPool pool,
             TensorParallelContext tensorParallelContext,
-            TensorParallelCollectives tensorParallelCollectives
+            TensorParallelCollectives tensorParallelCollectives,
+            Optional<DType> outputHeadQuantization
     ) {
         super(
                 inferenceType,
@@ -74,7 +75,8 @@ public class Gemma4Model extends LlamaModel {
                 toolCallParser,
                 pool,
                 tensorParallelContext,
-                tensorParallelCollectives
+                tensorParallelCollectives,
+                outputHeadQuantization
         );
     }
 

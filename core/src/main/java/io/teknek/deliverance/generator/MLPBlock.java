@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.stream.IntStream;
+import com.codahale.metrics.Timer;
 
 /**
  * A standard Multi Layer Perceptron block for Transformer models
@@ -105,21 +106,21 @@ public class MLPBlock implements FeedForward {
     // For FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
     @Override
     public AbstractTensor forward(AbstractTensor lnemb, Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
-        return InferenceProfiler.time("mlp.forward", () -> forwardTimed(lnemb, tensorReducer));
-    }
-
-    private AbstractTensor forwardTimed(AbstractTensor lnemb, Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
+        try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), "mlpblock.forward").time()) {
         int hiddenLength = model.getConfig().hiddenLength;
         int batchSize = lnemb.shape().first();
         if (usesLocalTensorParallelShard(hiddenLength)) {
             if (tensorParallelCollectiveKey == null) {
                 throw new IllegalStateException("Tensor-parallel MLP requires a collective key");
             }
-            AbstractTensor reduced = InferenceProfiler.time("mlp.tensor_parallel_forward", () -> TensorParallelMlp.forward(lnemb, fullyConnectedWeights, upProjectionWeights,
+            AbstractTensor reduced;
+            try (Timer.Context ignoredTp = InferenceProfiler.timer(model.getMetricRegistry(), "mlpblock.tensor_parallel_forward").time()) {
+                reduced = TensorParallelMlp.forward(lnemb, fullyConnectedWeights, upProjectionWeights,
                     projectionWeights, activationFunction, configurableTensorProvider,
                     model,
                     shape -> model.getTensorAllocator().getDirty(model.getWorkingDType(), shape),
-                    model.getTensorParallelCollectives(), tensorParallelCollectiveKey));
+                    model.getTensorParallelCollectives(), tensorParallelCollectiveKey);
+            }
             projectionBias.ifPresent(bias -> configurableTensorProvider.get().accumulate(reduced, bias, 0,
                     model.getConfig().embeddingLength));
             return reduced;
@@ -133,7 +134,7 @@ public class MLPBlock implements FeedForward {
             batchResults[0] = buf;
             batchResults[1] = buf2;
 
-            InferenceProfiler.time("mlp.gate_up_projection", () -> {
+            try (Timer.Context ignoredGate = InferenceProfiler.timer(model.getMetricRegistry(), "mlpblock.gate_up_projection").time()) {
                 VectorMath.pchunk(0, hiddenLength, (chunkStart, chunkSize) -> {
                 if (upProjectionWeights != null) {
                     configurableTensorProvider.get()
@@ -151,15 +152,14 @@ public class MLPBlock implements FeedForward {
                             .dotProductChunk(buf, lnemb, fullyConnectedWeights, 0, model.getConfig().embeddingLength, chunkStart, chunkSize);
                 }
                 }, configurableTensorProvider.get().parallelSplitSize(), model.getPool());
-                return null;
-            });
+            }
 
             fullyConnectedBias.ifPresent(
                     bias -> configurableTensorProvider.get().accumulate(buf, bias, 0, hiddenLength)
             );
 
             // Not using pfor because we can use all cores
-            InferenceProfiler.time("mlp.activation", () -> {
+            try (Timer.Context ignoredActivation = InferenceProfiler.timer(model.getMetricRegistry(), "mlpblock.activation").time()) {
                 IntStream.range(0, hiddenLength).parallel().forEach(i -> {
                 for (int j = 0; j < batchSize; j++) {
                     float w1 = buf.get(j, i);
@@ -167,23 +167,21 @@ public class MLPBlock implements FeedForward {
                     buf.set(w1a, j, i);
                 }
                 });
-                return null;
-            });
+            }
 
             if (upProjectionWeights != null) {
-                InferenceProfiler.time("mlp.multiply", () -> {
+                try (Timer.Context ignoredMultiply = InferenceProfiler.timer(model.getMetricRegistry(), "mlpblock.multiply").time()) {
                     configurableTensorProvider.get().maccumulate(buf, buf2, 0, hiddenLength);
-                    return null;
-                });
+                }
             }
 
             if (InferenceProfiler.isEnabled()) {
-                model.getMetricRegistry().counter("mlp.down_quantize.input_dtype." + buf.dType()).inc();
+                InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock.down_quantize.input_dtype." + buf.dType()).inc();
             }
-            try (AbstractTensor bufq = InferenceProfiler.time("mlp.down_quantize", () -> model.maybeQuantize(buf))) {
+            try (AbstractTensor bufq = downQuantize(buf)) {
                 // matmul the projection and sum into input
                 AbstractTensor result = model.makeTensor(batchSize, model.getConfig().embeddingLength);
-                InferenceProfiler.time("mlp.down_projection", () -> {
+                try (Timer.Context ignoredDown = InferenceProfiler.timer(model.getMetricRegistry(), "mlpblock.down_projection").time()) {
                     VectorMath.pchunk(0, model.getConfig().embeddingLength, (chunkStart, chunkSize) -> {
                     configurableTensorProvider.get()
                             .dotProductChunk(
@@ -196,14 +194,20 @@ public class MLPBlock implements FeedForward {
                                     chunkSize
                             );
                     }, configurableTensorProvider.get().parallelSplitSize(), model.getPool());
-                    return null;
-                });
+                }
 
                 tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(result)));
 
                 projectionBias.ifPresent(bias -> configurableTensorProvider.get().accumulate(result, bias, 0, model.getConfig().embeddingLength));
                 return result;
             }
+        }
+        }
+    }
+
+    private AbstractTensor downQuantize(AbstractTensor buf) {
+        try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), "mlpblock.down_quantize").time()) {
+            return model.maybeQuantize(buf);
         }
     }
 

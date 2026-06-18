@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
 
+import com.codahale.metrics.Timer;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
@@ -147,15 +148,8 @@ public class TransformerBlock {
             KvBufferCache.KvBuffer kvBuffer,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer
     ) {
-        return InferenceProfiler.time("transformer_block.forward", () -> forwardTimed(embedding, position, kvBuffer, tensorReducer));
-    }
-
-    private AbstractTensor forwardTimed(
-            AbstractTensor embedding,
-            int position,
-            KvBufferCache.KvBuffer kvBuffer,
-            Optional<Consumer<List<AbstractTensor>>> tensorReducer
-    ) {
+        Timer timer = InferenceProfiler.timer(model.getMetricRegistry(), "transformerblock.forward");
+        try (Timer.Context ignored = timer.time()) {
         AbstractTensor lnemb = preAttentionNorm.map(ln -> ln.forward(embedding)).orElse(embedding);
         AbstractTensor postAttention;
         try (AbstractTensor qlnemb = model.maybeQuantize(lnemb)) {
@@ -192,6 +186,7 @@ public class TransformerBlock {
         else lnattn.close();
 
         return maybeApplyNorm(lnpostFF, preResponseNorm);
+        }
     }
 
     /**

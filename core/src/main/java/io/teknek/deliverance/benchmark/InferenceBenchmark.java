@@ -153,12 +153,18 @@ public final class InferenceBenchmark {
     private static DeliveranceRunner openDeliveranceRunner(Options options, ModelFetcher fetcher) {
         if (options.tensorParallelSize <= 1) {
             return new LocalDeliveranceRunner(options.owner + "/" + options.model,
-                    AutoModelForCausaLm.newBuilder(fetcher)
+                    applyOutputHeadQuantization(options, AutoModelForCausaLm.newBuilder(fetcher))
                     .withWorkingMemoryType(options.workingDType)
                     .withWorkingQuantType(options.workingQType)
                     .build());
         }
         return GossipTensorParallelDeliveranceRunner.open(options, fetcher);
+    }
+
+    private static AutoModelForCausaLm.Builder applyOutputHeadQuantization(Options options,
+            AutoModelForCausaLm.Builder builder) {
+        options.outputHeadQuantization.ifPresent(builder::withOutputHeadQuantization);
+        return builder;
     }
 
     /** Prints runtime details that are otherwise only visible through SLF4J logs. */
@@ -229,7 +235,7 @@ public final class InferenceBenchmark {
                 printProgress("deliverance", runner.modelName(), benchmarkCase, turn + 1,
                         response.promptTokens, response.generatedTokens.size(), response.totalTimeMs, tokensPerSecond,
                         response.finishReason == null ? "" : response.finishReason.name());
-                InferenceProfiler.printSummary("case=" + benchmarkCase.id + " turn=" + (turn + 1), 20);
+                runner.printProfileSummary("case=" + benchmarkCase.id + " turn=" + (turn + 1), 20);
                 runner.printProfileCounters();
                 runner.printAllocatorMetrics();
             } else {
@@ -240,7 +246,7 @@ public final class InferenceBenchmark {
                         turn + 1,
                         response.generatedTokens.size(),
                         response.totalTimeMs);
-                InferenceProfiler.printSummary("warmup case=" + benchmarkCase.id + " turn=" + (turn + 1), 20);
+                runner.printProfileSummary("warmup case=" + benchmarkCase.id + " turn=" + (turn + 1), 20);
                 runner.printProfileCounters();
                 runner.printAllocatorMetrics();
             }
@@ -256,6 +262,8 @@ public final class InferenceBenchmark {
         Response generate(UUID sessionId, PromptContext promptContext, GeneratorParameters parameters);
 
         void printRuntime();
+
+        void printProfileSummary(String label, int maxRows);
 
         void printProfileCounters();
 
@@ -293,6 +301,11 @@ public final class InferenceBenchmark {
         @Override
         public void printRuntime() {
             printDeliveranceRuntime(model);
+        }
+
+        @Override
+        public void printProfileSummary(String label, int maxRows) {
+            InferenceProfiler.printSummary(label, maxRows);
         }
 
         @Override
@@ -364,7 +377,7 @@ public final class InferenceBenchmark {
                 eventually(() -> allNodesSeeCollectiveUri(nodes), Duration.ofSeconds(10));
                 eventually(() -> allNodesSeeRankEndpoints(nodes), Duration.ofSeconds(10));
                 TensorParallelGenerationGroup group = nodes.getFirst().membership().openGenerationGroup();
-                AbstractModel coordinator = AutoModelForCausaLm.newBuilder(fetcher)
+                AbstractModel coordinator = applyOutputHeadQuantization(options, AutoModelForCausaLm.newBuilder(fetcher))
                         .withWorkingMemoryType(options.workingDType)
                         .withWorkingQuantType(options.workingQType)
                         .buildLocalTransformerModel();
@@ -379,7 +392,7 @@ public final class InferenceBenchmark {
         private static BenchmarkNode createNode(Options options, ModelFetcher fetcher, String cluster, String nodeId,
                 URI nodeUri, List<Member> seedMembers, GossipSettings settings,
                 TensorParallelDeploymentSpec deploymentSpec) {
-            AbstractModel model = AutoModelForCausaLm.newBuilder(fetcher)
+            AbstractModel model = applyOutputHeadQuantization(options, AutoModelForCausaLm.newBuilder(fetcher))
                     .withWorkingMemoryType(options.workingDType)
                     .withWorkingQuantType(options.workingQType)
                     .withParallelSettings(new GossipParallelSettings(cluster, nodeId, nodeUri, seedMembers, settings,
@@ -454,6 +467,11 @@ public final class InferenceBenchmark {
         }
 
         @Override
+        public void printProfileSummary(String label, int maxRows) {
+            InferenceProfiler.printSummary(label, maxRows);
+        }
+
+        @Override
         public void printProfileCounters() {
             InferenceBenchmark.printProfileCounters(coordinatorModel);
             for (BenchmarkNode node : nodes) {
@@ -491,7 +509,7 @@ public final class InferenceBenchmark {
         model.getMetricRegistry().getCounters().entrySet().stream()
                 .filter(entry -> InferenceProfiler.shouldPrintCounter(entry.getKey()))
                 .forEach(entry -> System.out.println("[profile-counter] " + entry.getKey()
-                        + " count=" + entry.getValue().getCount()));
+                        + " count=" + InferenceProfiler.counterValue(entry.getKey())));
     }
 
     private static void printAllocatorMetrics(AbstractModel model) {
@@ -807,6 +825,7 @@ public final class InferenceBenchmark {
         private URI ollamaBaseUrl = URI.create("http://localhost:11434");
         private DType workingDType = DType.F32;
         private DType workingQType = DType.I8;
+        private Optional<DType> outputHeadQuantization = Optional.empty();
         private int maxTokens = 256;
         private float temperature = 0.0f;
         private Integer seed = 42;
@@ -831,6 +850,7 @@ public final class InferenceBenchmark {
                     case "--ollama-url" -> options.ollamaBaseUrl = URI.create(stripTrailingSlash(args[++i]));
                     case "--working-dtype" -> options.workingDType = DType.valueOf(args[++i]);
                     case "--working-qtype" -> options.workingQType = DType.valueOf(args[++i]);
+                    case "--output-head-quantization" -> options.outputHeadQuantization = Optional.of(DType.valueOf(args[++i]));
                     case "--max-tokens" -> options.maxTokens = Integer.parseInt(args[++i]);
                     case "--temperature" -> options.temperature = Float.parseFloat(args[++i]);
                     case "--seed" -> options.seed = "none".equalsIgnoreCase(args[++i]) ? null : Integer.parseInt(args[i]);
@@ -865,6 +885,9 @@ public final class InferenceBenchmark {
                       --model MODEL                      Deliverance model, default gemma-2-2b-it-JQ4
                       --ollama-model MODEL               Ollama model name, default llama3.2
                       --ollama-url URL                   Ollama base URL, default http://localhost:11434
+                      --working-dtype DTYPE              Working dtype, default F32
+                      --working-qtype DTYPE              Working quantized dtype, default I8
+                      --output-head-quantization DTYPE    Optional output head dtype, e.g. Q4
                       --max-tokens N                     Max generated tokens per turn, default 256
                       --temperature F                    Temperature, default 0.0
                       --seed N|none                      Seed, default 42

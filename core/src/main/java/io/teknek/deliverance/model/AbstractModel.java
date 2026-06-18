@@ -138,6 +138,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     protected final DType workingDType;
     protected final DType workingQType;
     protected final Optional<DType> modelQType;
+    protected final Optional<DType> outputHeadQuantization;
     protected EmbedInput embedInput;
     protected SampleOutput sampleOutput;
     protected TransformerBlock[] transformerBlocks;
@@ -185,12 +186,25 @@ public abstract class AbstractModel implements Generator, Classifier {
                             ToolCallParser toolCallParser, WrappedForkJoinPool pool,
                             TensorParallelContext tensorParallelContext,
                             TensorParallelCollectives tensorParallelCollectives) {
+        this(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType, provider, metricRegistry,
+                tensorAllocator, kvBufferCacheSettings, toolCallParser, pool, tensorParallelContext,
+                tensorParallelCollectives, Optional.empty());
+    }
+
+    protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer t, DType workingMemoryDType,
+                            DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider provider,
+                            MetricRegistry metricRegistry, TensorAllocator tensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
+                            ToolCallParser toolCallParser, WrappedForkJoinPool pool,
+                            TensorParallelContext tensorParallelContext,
+                            TensorParallelCollectives tensorParallelCollectives,
+                            Optional<DType> outputHeadQuantization) {
         this.inferenceType = inferenceType;
         this.config = c;
         this.weights = w;
         this.tokenizer = t;
         this.tensorParallelContext = Objects.requireNonNull(tensorParallelContext, "tensorParallelContext");
         this.tensorParallelCollectives = Objects.requireNonNull(tensorParallelCollectives, "tensorParallelCollectives");
+        this.outputHeadQuantization = Objects.requireNonNull(outputHeadQuantization, "outputHeadQuantization");
         TensorParallelPlanner.validate(c, tensorParallelContext);
 
         this.modelDType = w.getModelDType();

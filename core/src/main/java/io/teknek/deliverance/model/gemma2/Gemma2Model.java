@@ -36,6 +36,7 @@ public class Gemma2Model extends LlamaModel {
 
     private final float embeddingScalingFactor;
     private AbstractTensor wte;
+    private AbstractTensor outputLogitsWeights;
 
     public Gemma2Model(
             InferenceType inferenceType,
@@ -47,11 +48,12 @@ public class Gemma2Model extends LlamaModel {
             Optional<DType> modelQType, ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
             TensorAllocator arrayQueueTensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
             ToolCallParser toolCallParser, WrappedForkJoinPool pool, TensorParallelContext tensorParallelContext,
-            TensorParallelCollectives tensorParallelCollectives
+            TensorParallelCollectives tensorParallelCollectives,
+            Optional<DType> outputHeadQuantization
     ) {
         super(inferenceType, config, weights, tokenizer, workingDType, workingQType, modelQType,
                 configurableTensorProvider, metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, toolCallParser, pool,
-                tensorParallelContext, tensorParallelCollectives);
+                tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
         // https://github.com/huggingface/transformers/blob/1082361a1978d30db5c3932d1ee08914d74d9697/src/transformers/models/gemma/modeling_gemma.py#L898
         // This is the scaling factor for the embedding layer but google's implementation is a is rounded to 16 bits
         this.embeddingScalingFactor = FloatConversions.bFloat16ToFloat32(
@@ -130,8 +132,9 @@ public class Gemma2Model extends LlamaModel {
     @Override
     protected SampleOutput loadOutputWeights() {
         DType qType = modelQType.orElse(this.modelDType);
-        if (wte == null) {
-            wte = quantize( weights.load("model.embed_tokens.weight"), workingDType);
+        if (outputLogitsWeights == null) {
+            outputLogitsWeights = loadOutputLogitsWeights(outputHeadQuantization.orElse(workingDType),
+                    outputHeadQuantization.isPresent());
         }
         final LayerNorm layerNorm = new RmsNorm(this, quantize( weights.load("model.norm.weight"), qType),
                 1.0f, metricRegistry);
@@ -143,8 +146,19 @@ public class Gemma2Model extends LlamaModel {
 
             @Override
             public AbstractTensor getOutputLogitsWeights() {
-                return wte;
+                return outputLogitsWeights;
             }
         };
+    }
+
+    private AbstractTensor loadOutputLogitsWeights(DType outputHeadDType, boolean force) {
+        AbstractTensor original = weights.load("model.embed_tokens.weight");
+        AbstractTensor result = force
+                ? io.teknek.deliverance.tensor.AbstractTensorUtils.quantize(original, outputHeadDType, true)
+                : quantize(original, outputHeadDType);
+        if (result != original) {
+            original.close();
+        }
+        return result;
     }
 }
