@@ -4,6 +4,7 @@ import com.codahale.metrics.Histogram;
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.Timer;
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import net.jafama.FastMath;
 
@@ -26,6 +27,7 @@ public class RmsNorm extends LayerNorm {
 
     @Override
     public AbstractTensor forward(AbstractTensor input, int offset, int length) {
+        try (Timer.Context ignored = InferenceProfiler.timer(metricReigstry, "rmsnorm.forward").time()) {
         long start = System.currentTimeMillis();
         int batchSize = input.shape().first();
         AbstractTensor output = model.makeDenseTensor(input.shape());
@@ -48,5 +50,6 @@ public class RmsNorm extends LayerNorm {
         long end = System.currentTimeMillis();
         totalTime.update(Duration.ofMillis(end-start));
         return output;
+        }
     }
 }

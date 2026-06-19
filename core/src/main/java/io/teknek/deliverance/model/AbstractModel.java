@@ -783,6 +783,7 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public AbstractTensor batchForward(int[] token_ids, int startPos, KvBufferCache.KvBuffer kvbuf,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
+        try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "abstractmodel.batch_forward").time()) {
         AbstractTensor embedding = null;
 
         CausualWhisperer.LOGGER.debug("batchForward from 0 to token_ids.length {} max_batch_size {} per iteration",
@@ -793,6 +794,7 @@ public abstract class AbstractModel implements Generator, Classifier {
             embedding = forward(embedding, startPos + i, kvbuf, tensorReducer);
         }
         return embedding;
+        }
     }
 
     protected AbstractTensor forward(int token_id, int pos, KvBufferCache.KvBuffer kvbuf) {
@@ -811,13 +813,16 @@ public abstract class AbstractModel implements Generator, Classifier {
      */
     public AbstractTensor forward(int token_id, int pos, KvBufferCache.KvBuffer kvbuf,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
+        try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "abstractmodel.forward_token").time()) {
         AbstractTensor embedding = embedInput.inputTokenToEmbedding(token_id, pos);
         return forward(embedding, pos, kvbuf, tensorReducer);
+        }
     }
 
 
     public AbstractTensor forward(AbstractTensor embedding, int startPos, KvBufferCache.KvBuffer kvbuf,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
+        try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "abstractmodel.forward_layers").time()) {
         emitLayerDebug(-1, "input", embedding);
         for (int i = 0; i < config.numberOfLayers; i++) {
             int relativeLayer = i;
@@ -827,6 +832,7 @@ public abstract class AbstractModel implements Generator, Classifier {
             ref.close();
         }
         return embedding;
+        }
     }
 
     /** This is a hook method that does nothing here but can be overridden by subclasses */
