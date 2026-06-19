@@ -1,5 +1,6 @@
 package io.teknek.deliverance.model;
 
+import com.codahale.metrics.Timer;
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.generator.FeedForward;
 import io.teknek.deliverance.math.ActivationFunction;
@@ -63,6 +64,7 @@ public class MixtureOfExpertsBlock implements FeedForward {
 
     @Override
     public AbstractTensor forward(AbstractTensor lnemb, Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
+        try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), "mixtureofexpertsblock.forward").time()) {
         int batchSize = lnemb.shape().first();
         int hiddenLength = model.config.hiddenLength;
         AbstractTensor result = model.makeTensor(batchSize, model.config.embeddingLength);
@@ -73,17 +75,23 @@ public class MixtureOfExpertsBlock implements FeedForward {
 
             for (int b = 0; b < batchSize; b++) {
                 AbstractTensor lnembSlice = lnemb.slice(true, b);
-                // Apply each experts gate to the input
-                VectorMath.pfor(0, numberOfExperts, i -> {
-                    expertResults.set(
-                            model.configurableTensorProvider.get().dotProduct(lnembSlice,
-                                    moeGateWeight.slice(true, i), 0, 0, model.config.embeddingLength),
-                            0, i);
-                }, model.getPool());
+                try (Timer.Context ignoredRouter = InferenceProfiler.timer(model.getMetricRegistry(), "mixtureofexpertsblock.router_projection").time()) {
+                    // Apply each experts gate to the input.
+                    VectorMath.pfor(0, numberOfExperts, i -> {
+                        expertResults.set(
+                                model.configurableTensorProvider.get().dotProduct(lnembSlice,
+                                        moeGateWeight.slice(true, i), 0, 0, model.config.embeddingLength),
+                                0, i);
+                    }, model.getPool());
+                }
 
-                VectorTensorMathUtils.softMax(expertResults,0, numberOfExperts);
+                try (Timer.Context ignoredSoftmax = InferenceProfiler.timer(model.getMetricRegistry(), "mixtureofexpertsblock.router_softmax").time()) {
+                    VectorTensorMathUtils.softMax(expertResults,0, numberOfExperts);
+                }
 
-                topk(expertResults);
+                try (Timer.Context ignoredTopk = InferenceProfiler.timer(model.getMetricRegistry(), "mixtureofexpertsblock.router_topk").time()) {
+                    topk(expertResults);
+                }
                 if (LOG.isDebugEnabled()) {
                     LOG.debug("Experts after softmax: {} selected: {}", TensorDisplayUtil.pretty2dDisplayAll(expertResults),
                             Arrays.toString(selectedExperts));
@@ -96,6 +104,11 @@ public class MixtureOfExpertsBlock implements FeedForward {
                 }
 
                 for (int i = 0; i < numberOfExpertsPerToken; i++) {
+                    if (InferenceProfiler.isEnabled()) {
+                        InferenceProfiler.counter(model.getMetricRegistry(),
+                                "mixtureofexpertsblock.selected_expert." + selectedExperts[i]).inc();
+                    }
+                    try (Timer.Context ignoredExpert = InferenceProfiler.timer(model.getMetricRegistry(), "mixtureofexpertsblock.expert_forward").time()) {
                     float gateWeight = expertResults.get(0, selectedExperts[i]) / gateWeightSum;
                     batchWeights[0] = fullyConnectedWeights[selectedExperts[i]];
                     batchWeights[1] = upProjectionWeights[selectedExperts[i]];
@@ -103,24 +116,28 @@ public class MixtureOfExpertsBlock implements FeedForward {
                     batchResults[0] = buf;
                     batchResults[1] = buf2;
 
-                    VectorMath.pchunk(0, hiddenLength, (chunkStart, chunkSize) -> {
-                        model.configurableTensorProvider.get()
-                                .dotProductBatchChunk(
-                                        batchResults,
-                                        lnembSlice,
-                                        batchWeights,
-                                        0,
-                                        model.config.embeddingLength,
-                                        chunkStart,
-                                        chunkSize);
-                    }, model.configurableTensorProvider.get().parallelSplitSize(), model.getPool());
+                    try (Timer.Context ignoredGateUp = InferenceProfiler.timer(model.getMetricRegistry(), "mixtureofexpertsblock.expert_gate_up_projection").time()) {
+                        VectorMath.pchunk(0, hiddenLength, (chunkStart, chunkSize) -> {
+                            model.configurableTensorProvider.get()
+                                    .dotProductBatchChunk(
+                                            batchResults,
+                                            lnembSlice,
+                                            batchWeights,
+                                            0,
+                                            model.config.embeddingLength,
+                                            chunkStart,
+                                            chunkSize);
+                        }, model.configurableTensorProvider.get().parallelSplitSize(), model.getPool());
+                    }
 
-                    VectorMath.pfor(0, hiddenLength, iv -> {
-                        float w1 = buf.get(0, iv);
-                        float w1a = ActivationFunction.eval(activationFunction, w1);
-                        //buf.set(w1a, 0, iv);
-                        buf.set(w1a * buf2.get(0, iv),0, iv);
-                    }, model.getPool());
+                    try (Timer.Context ignoredActivation = InferenceProfiler.timer(model.getMetricRegistry(), "mixtureofexpertsblock.expert_activation_multiply").time()) {
+                        VectorMath.pfor(0, hiddenLength, iv -> {
+                            float w1 = buf.get(0, iv);
+                            float w1a = ActivationFunction.eval(activationFunction, w1);
+                            //buf.set(w1a, 0, iv);
+                            buf.set(w1a * buf2.get(0, iv),0, iv);
+                        }, model.getPool());
+                    }
 
                     //model.configurableTensorProvider.get().maccumulate(buf, buf2, dctx.hiddenSegmentStart, dctx.hiddenSegmentLength);
 
@@ -129,24 +146,39 @@ public class MixtureOfExpertsBlock implements FeedForward {
                     // matmul the projection and scale by gate weight
 
                     //model.configurableTensorProvider.get().scale(0.0f, moeResult, 0 , model.config.embeddingLength);
-                    try (AbstractTensor bufq = model.maybeQuantize(buf)) {
+                    if (InferenceProfiler.isEnabled()) {
+                        InferenceProfiler.counter(model.getMetricRegistry(), "mixtureofexpertsblock.down_quantize.input_dtype." + buf.dType()).inc();
+                    }
+                    try (AbstractTensor bufq = downQuantize(buf)) {
+                        try (Timer.Context ignoredDown = InferenceProfiler.timer(model.getMetricRegistry(), "mixtureofexpertsblock.expert_down_projection").time()) {
                         VectorMath.pchunk(0, model.config.embeddingLength, (chunkStart, chunkSize) -> {
                             model.configurableTensorProvider.get()
                                     .dotProductChunk(moeResult, bufq, projectionWeight, 0, hiddenLength, chunkStart, chunkSize);
                         }, model.configurableTensorProvider.get().parallelSplitSize(), model.getPool());
+                        }
                     }
 
-                    model.configurableTensorProvider.get().scale(gateWeight, moeResult, 0, model.config.embeddingLength);
+                    try (Timer.Context ignoredScale = InferenceProfiler.timer(model.getMetricRegistry(), "mixtureofexpertsblock.expert_scale_accumulate").time()) {
+                        model.configurableTensorProvider.get().scale(gateWeight, moeResult, 0, model.config.embeddingLength);
 
-                    if (i == 0) {
-                        result.slice(b).copyFrom(moeResult, 0,0, model.config.embeddingLength);
-                    } else {
-                        model.configurableTensorProvider.get().accumulate(result.slice(b), moeResult, 0, model.config.embeddingLength);
+                        if (i == 0) {
+                            result.slice(b).copyFrom(moeResult, 0,0, model.config.embeddingLength);
+                        } else {
+                            model.configurableTensorProvider.get().accumulate(result.slice(b), moeResult, 0, model.config.embeddingLength);
+                        }
+                    }
                     }
                 }
             }
 
             return result;
+        }
+        }
+    }
+
+    private AbstractTensor downQuantize(AbstractTensor buf) {
+        try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), "mixtureofexpertsblock.down_quantize").time()) {
+            return model.maybeQuantize(buf);
         }
     }
 

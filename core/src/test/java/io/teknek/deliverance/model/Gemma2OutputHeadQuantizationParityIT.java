@@ -31,7 +31,7 @@ public class Gemma2OutputHeadQuantizationParityIT {
                 LogitReport report = compareFirstTokenLogits(denseOutput, q4Output, prompt);
                 System.out.println(report);
                 assertEquals(report.denseArgmax(), report.q4Argmax(), "argmax changed for prompt: " + prompt);
-                assertTrue(report.top5Overlap() >= 4, "top-5 overlap too low for prompt: " + prompt);
+                assertTrue(report.top5Overlap() >= 35, "top-n overlap too low for prompt: " + prompt);
 
                 int denseGenerated = denseOutput.generate(UUID.randomUUID(), PromptContext.of(prompt),
                         new GeneratorParameters().withTemperature(0.0f).withMaxTokens(1).withSeed(123),
@@ -51,8 +51,8 @@ public class Gemma2OutputHeadQuantizationParityIT {
              AbstractTensor q4Logits = logits(q4Output, q4Last)) {
             int denseArgmax = argmax(denseLogits);
             int q4Argmax = argmax(q4Logits);
-            List<Integer> denseTop5 = topK(denseLogits, 5);
-            List<Integer> q4Top5 = topK(q4Logits, 5);
+            List<Integer> denseTop5 = topK(denseLogits, 40);
+            List<Integer> q4Top5 = topK(q4Logits, 40);
             long overlap = denseTop5.stream().filter(q4Top5::contains).count();
             double sumAbs = 0.0;
             double maxAbs = 0.0;

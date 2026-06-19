@@ -50,6 +50,20 @@ public class GossipParallelMembership implements AutoCloseable {
     }
 
     public static GossipParallelMembership start(GossipParallelSettings settings) {
+        return start(settings, true);
+    }
+
+    /**
+     * Joins the gossip cluster as a read-only observer for coordinator/debug tooling.
+     *
+     * <p>Observers can discover assignments, collectives, and rank endpoints, but they do not publish themselves as rank
+     * candidates and therefore do not affect leader election or tensor-parallel rank placement.</p>
+     */
+    public static GossipParallelMembership startObserver(GossipParallelSettings settings) {
+        return start(settings, false);
+    }
+
+    private static GossipParallelMembership start(GossipParallelSettings settings, boolean candidate) {
         LOGGER.info("Starting tensor-parallel gossip membership cluster={} node={} uri={} deployment={} requestedRanks={} maxRanksPerNode={}",
                 settings.cluster(), settings.nodeId(), settings.uri(), settings.deploymentSpec().deploymentId(),
                 settings.deploymentSpec().requestedNodes(), settings.deploymentSpec().maxRanksPerNode());
@@ -63,9 +77,11 @@ public class GossipParallelMembership implements AutoCloseable {
         manager.init();
         GossipParallelMembership membership = new GossipParallelMembership(manager, settings.deploymentSpec(),
                 settings.uri().getHost());
-        membership.publishDeploymentSpec();
-        membership.publishCandidate();
-        membership.startAssignmentCoordinator();
+        if (candidate) {
+            membership.publishDeploymentSpec();
+            membership.publishCandidate();
+            membership.startAssignmentCoordinator();
+        }
         LOGGER.info("Started tensor-parallel gossip membership cluster={} node={} uri={}",
                 settings.cluster(), settings.nodeId(), settings.uri());
         return membership;

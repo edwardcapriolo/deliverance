@@ -1,5 +1,6 @@
 package io.teknek.deliverance.model;
 
+import com.codahale.metrics.Timer;
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.generator.FinishReason;
 import io.teknek.deliverance.generator.GeneratorParameters;
@@ -32,6 +33,7 @@ final class GenerationEngine {
      */
     Response generate(AbstractModel model, GenerationBackend backend, UUID sessionId, PromptContext promptContext,
             GeneratorParameters generatorParameters, GenerateEvent eventFired) {
+        try (Timer.Context ignoredRequest = InferenceProfiler.timer(model.getMetricRegistry(), "generation.request").time()) {
         long generationStartNanos = System.nanoTime();
         long timeToFirstTokenNanos = 0L;
 
@@ -53,11 +55,21 @@ final class GenerationEngine {
         int[] promptTokens = model.constructPromptTokens(encoded);
         int promptTokenCount = promptTokens.length;
         try (AbstractTensor logits = model.makeDenseTensor(model.config.vocabularySize)) {
-            try (GenerationBackend.GenerationSession session = backend.open(sessionId, promptTokens, generatorParameters)) {
+            GenerationBackend.GenerationSession openedSession;
+            try (Timer.Context ignoredOpen = InferenceProfiler.timer(model.getMetricRegistry(), "generation.open_session").time()) {
+                openedSession = backend.open(sessionId, promptTokens, generatorParameters);
+            }
+            try (GenerationBackend.GenerationSession session = openedSession) {
                 GenerationCursor cursor = GenerationCursor.from(promptTokens, session.prefixLength());
-                AbstractTensor last = session.prefill(cursor);
-                SamplerReturn nextSamplerRet = model.createNextToken(generatorParameters, logits, last, responseContext,
-                        random, temperature);
+                AbstractTensor last;
+                try (Timer.Context ignoredPrefill = InferenceProfiler.timer(model.getMetricRegistry(), "generation.prefill").time()) {
+                    last = session.prefill(cursor);
+                }
+                SamplerReturn nextSamplerRet;
+                try (Timer.Context ignoredSample = InferenceProfiler.timer(model.getMetricRegistry(), "generation.first_sample").time()) {
+                    nextSamplerRet = model.createNextToken(generatorParameters, logits, last, responseContext,
+                            random, temperature);
+                }
                 int next = nextSamplerRet.token;
                 last.close();
                 responseContext.add(nextSamplerRet, eventFired);
@@ -72,9 +84,15 @@ final class GenerationEngine {
                     return withGenerationTiming(model, firstStop.get(), generationStartNanos, timeToFirstTokenNanos);
                 }
                 for (int i = cursor.decodeStartPosition(); i < ntokens; i++) {
-                    AbstractTensor output = session.decode(next, i);
-                    SamplerReturn nextSample = model.createNextTokenLoop(generatorParameters, output, logits,
-                            responseContext, random, temperature);
+                    AbstractTensor output;
+                    try (Timer.Context ignoredDecode = InferenceProfiler.timer(model.getMetricRegistry(), "generation.decode").time()) {
+                        output = session.decode(next, i);
+                    }
+                    SamplerReturn nextSample;
+                    try (Timer.Context ignoredDecodeSample = InferenceProfiler.timer(model.getMetricRegistry(), "generation.decode_sample").time()) {
+                        nextSample = model.createNextTokenLoop(generatorParameters, output, logits,
+                                responseContext, random, temperature);
+                    }
                     next = nextSample.token;
                     output.close();
                     session.afterDecode();
@@ -100,6 +118,7 @@ final class GenerationEngine {
                         responseContext.samplerReturnList)),
                 generationStartNanos,
                 timeToFirstTokenNanos);
+        }
     }
 
     /**
