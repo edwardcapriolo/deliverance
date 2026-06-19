@@ -1,0 +1,6 @@
+timestamp,engine,model,case_id,category,turn,prompt_chars,prompt_tokens,generated_tokens,total_ms,generation_ms,tokens_per_second,response_chars,finish_reason
+"2026-06-19T00:28:10.430822603Z","deliverance","tjake/Mixtral-8x7B-Instruct-v0.1-JQ4","builtin-reasoning-1","reasoning",1,558,130,128,60112.659805,31651.198607000002,4.012486275066771,512,"MAX_TOKENS"
+"2026-06-19T00:29:15.255744718Z","deliverance","tjake/Mixtral-8x7B-Instruct-v0.1-JQ4","builtin-reasoning-1","reasoning",2,1155,281,128,64701.615661,32634.886640000004,3.891541018694342,552,"MAX_TOKENS"
+"2026-06-19T00:30:03.863953543Z","deliverance","tjake/Mixtral-8x7B-Instruct-v0.1-JQ4","builtin-math-1","math",1,348,89,128,48482.423841,30397.722995000004,4.177944513175862,415,"MAX_TOKENS"
+"2026-06-19T00:31:17.643141014Z","deliverance","tjake/Mixtral-8x7B-Instruct-v0.1-JQ4","builtin-math-1","math",2,927,261,128,73697.702613,32771.124999,3.8753628385926744,481,"MAX_TOKENS"
+"2026-06-19T00:31:44.195294189Z","deliverance","tjake/Mixtral-8x7B-Instruct-v0.1-JQ4","builtin-coding-1","coding",1,284,69,53,26440.205416,12353.360610000002,4.209380883603947,205,"STOP_TOKEN"

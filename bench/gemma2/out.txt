@@ -1,0 +1,136 @@
+[deliverance] model=tjake/gemma-2-2b-it-JQ4 case=builtin-reasoning-1 category=reasoning turn=1 prompt_tokens=126 generated=256 total_ms=29146.7 tok_s=10.25 finish=MAX_TOKENS
+[profile] case=builtin-reasoning-1 turn=1
+[profile] generation.request                            count=       1 total_ms= 29147.332 mean_us=29147332.402
+[profile] abstractmodel.forward_layers                  count=     256 total_ms= 24223.404 mean_us= 94622.671
+[profile] transformerblock.forward                      count=    6656 total_ms= 22406.904 mean_us=  3366.422
+[profile] generation.decode                             count=     255 total_ms= 21206.486 mean_us= 83162.689
+[profile] abstractmodel.forward_token                   count=     255 total_ms= 21204.128 mean_us= 83153.441
+[profile] causalselfattention.forward                   count=    6656 total_ms= 11007.422 mean_us=  1653.759
+[profile] mlpblock.forward                              count=    6656 total_ms= 10980.022 mean_us=  1649.643
+[profile] mlpblock.gate_up_projection                   count=    6656 total_ms=  6101.785 mean_us=   916.735
+[profile] causalselfattention.score_value               count=    9906 total_ms=  4957.016 mean_us=   500.405
+[profile] generation.prefill                            count=       1 total_ms=  4131.553 mean_us=4131552.956
+[profile] abstractmodel.batch_forward                   count=       1 total_ms=  4054.533 mean_us=4054532.807
+[profile] causalselfattention.qkv_projection            count=    6656 total_ms=  3946.503 mean_us=   592.924
+[profile] sampler.sample                                count=     256 total_ms=  3679.037 mean_us= 14371.236
+[profile] mlpblock.down_projection                      count=    6656 total_ms=  3670.936 mean_us=   551.523
+[profile] generation.decode_sample                      count=     255 total_ms=  3637.592 mean_us= 14265.067
+[profile] sampler.output_projection                     count=     256 total_ms=  2681.123 mean_us= 10473.138
+[profile] causalselfattention.output_projection         count=    6656 total_ms=  1542.376 mean_us=   231.727
+[profile] mlpblock.activation                           count=    6656 total_ms=  1403.854 mean_us=   210.916
+[profile] rmsnorm.forward                               count=   26880 total_ms=   402.626 mean_us=    14.979
+[profile] embedinput.batch_inputs                       count=       1 total_ms=   383.032 mean_us=383031.633
+[profile-counter] mlpblock.down_quantize.input_dtype.F32 count=6656
+[profile-counter] sampler.output_projection.input_dtype.F32 count=256
+[profile-counter] sampler.output_projection.weight_dtype.Q4 count=256
+[allocator] rank=0/1 dirty_get=40318 dirty_hit=40186 dirty_hit_rate=0.9967 get=146680 get_hit=145552 get_hit_rate=0.9923 full=0
+[deliverance] start model=tjake/gemma-2-2b-it-JQ4 case=builtin-reasoning-1 category=reasoning turn=2 prompt_chars=1610
+[deliverance] model=tjake/gemma-2-2b-it-JQ4 case=builtin-reasoning-1 category=reasoning turn=2 prompt_tokens=403 generated=256 total_ms=37703.7 tok_s=9.10 finish=MAX_TOKENS
+[profile] case=builtin-reasoning-1 turn=2
+[profile] generation.request                            count=       2 total_ms= 69225.941 mean_us=34612970.331
+[profile] abstractmodel.forward_layers                  count=     513 total_ms= 57553.934 mean_us=112190.905
+[profile] transformerblock.forward                      count=   13338 total_ms= 55459.082 mean_us=  4157.976
+[profile] generation.decode                             count=     510 total_ms= 46696.057 mean_us= 91560.895
+[profile] abstractmodel.forward_token                   count=     510 total_ms= 46689.042 mean_us= 91547.141
+[profile] causalselfattention.forward                   count=   13338 total_ms= 28630.291 mean_us=  2146.521
+[profile] mlpblock.forward                              count=   13338 total_ms= 27514.805 mean_us=  2062.888
+[profile] causalselfattention.score_value               count=   24518 total_ms= 18384.519 mean_us=   749.838
+[profile] generation.prefill                            count=       2 total_ms= 15146.250 mean_us=7573125.218
+[profile] mlpblock.gate_up_projection                   count=   13338 total_ms= 14841.155 mean_us=  1112.697
+[profile] abstractmodel.batch_forward                   count=       2 total_ms= 14011.851 mean_us=7005925.593
+[profile] causalselfattention.qkv_projection            count=   13338 total_ms=  7804.633 mean_us=   585.143
+[profile] mlpblock.down_projection                      count=   13338 total_ms=  7747.081 mean_us=   580.828
+[profile] sampler.sample                                count=     512 total_ms=  7110.724 mean_us= 13888.133
+[profile] generation.decode_sample                      count=     510 total_ms=  7068.971 mean_us= 13860.728
+[profile] sampler.output_projection                     count=     512 total_ms=  5174.170 mean_us= 10105.802
+[profile] causalselfattention.output_projection         count=   13338 total_ms=  3310.530 mean_us=   248.203
+[profile] mlpblock.activation                           count=   13338 total_ms=  2959.681 mean_us=   221.898
+[profile] rmsnorm.forward                               count=   53864 total_ms=  1352.320 mean_us=    25.106
+[profile] mlpblock.multiply                             count=   13338 total_ms=   344.781 mean_us=    25.850
+[profile-counter] mlpblock.down_quantize.input_dtype.F32 count=13338
+[profile-counter] sampler.output_projection.input_dtype.F32 count=512
+[profile-counter] sampler.output_projection.weight_dtype.Q4 count=512
+[allocator] rank=0/1 dirty_get=80974 dirty_hit=70284 dirty_hit_rate=0.8680 get=332487 get_hit=264720 get_hit_rate=0.7962 full=76590
+[deliverance] start model=tjake/gemma-2-2b-it-JQ4 case=builtin-math-1 category=math turn=1 prompt_chars=387
+[deliverance] model=tjake/gemma-2-2b-it-JQ4 case=builtin-math-1 category=math turn=1 prompt_tokens=88 generated=256 total_ms=26055.0 tok_s=10.64 finish=MAX_TOKENS
+[profile] case=builtin-math-1 turn=1
+[profile] generation.request                            count=       3 total_ms= 91375.862 mean_us=30458620.734
+[profile] abstractmodel.forward_layers                  count=     769 total_ms= 76816.798 mean_us= 99891.805
+[profile] transformerblock.forward                      count=   19994 total_ms= 71349.325 mean_us=  3568.537
+[profile] generation.decode                             count=     765 total_ms= 66000.251 mean_us= 86274.838
+[profile] abstractmodel.forward_token                   count=     765 total_ms= 65988.323 mean_us= 86259.245
+[profile] mlpblock.forward                              count=   19994 total_ms= 35307.606 mean_us=  1765.910
+[profile] causalselfattention.forward                   count=   19994 total_ms= 34944.652 mean_us=  1747.757
+[profile] mlpblock.gate_up_projection                   count=   19994 total_ms= 18742.665 mean_us=   937.414
+[profile] causalselfattention.score_value               count=   33436 total_ms= 18180.549 mean_us=   543.742
+[profile] generation.prefill                            count=       3 total_ms= 14508.463 mean_us=4836154.463
+[profile] abstractmodel.batch_forward                   count=       3 total_ms= 13584.026 mean_us=4528008.819
+[profile] causalselfattention.qkv_projection            count=   19994 total_ms= 11405.077 mean_us=   570.425
+[profile] sampler.sample                                count=     768 total_ms= 10554.488 mean_us= 13742.822
+[profile] generation.decode_sample                      count=     765 total_ms= 10507.789 mean_us= 13735.672
+[profile] mlpblock.down_projection                      count=   19994 total_ms= 10116.133 mean_us=   505.958
+[profile] sampler.output_projection                     count=     768 total_ms=  7688.238 mean_us= 10010.726
+[profile] causalselfattention.output_projection         count=   19994 total_ms=  4723.109 mean_us=   236.226
+[profile] mlpblock.activation                           count=   19994 total_ms=  3949.543 mean_us=   197.536
+[profile] rmsnorm.forward                               count=   80744 total_ms=  2097.197 mean_us=    25.973
+[profile] causalselfattention.rope                      count=   33436 total_ms=   307.528 mean_us=     9.198
+[profile-counter] mlpblock.down_quantize.input_dtype.F32 count=19994
+[profile-counter] sampler.output_projection.input_dtype.F32 count=768
+[profile-counter] sampler.output_projection.weight_dtype.Q4 count=768
+[allocator] rank=0/1 dirty_get=121254 dirty_hit=96805 dirty_hit_rate=0.7984 get=471169 get_hit=362758 get_hit_rate=0.7699 full=130993
+[deliverance] start model=tjake/gemma-2-2b-it-JQ4 case=builtin-math-1 category=math turn=2 prompt_chars=1452
+[deliverance] model=tjake/gemma-2-2b-it-JQ4 case=builtin-math-1 category=math turn=2 prompt_tokens=386 generated=256 total_ms=36335.7 tok_s=9.47 finish=MAX_TOKENS
+[profile] case=builtin-math-1 turn=2
+[profile] generation.request                            count=       4 total_ms=132518.308 mean_us=33129577.082
+[profile] abstractmodel.forward_layers                  count=    1026 total_ms=110772.020 mean_us=107964.931
+[profile] transformerblock.forward                      count=   26676 total_ms=104310.936 mean_us=  3910.292
+[profile] generation.decode                             count=    1020 total_ms= 90782.621 mean_us= 89002.570
+[profile] abstractmodel.forward_token                   count=    1020 total_ms= 90766.010 mean_us= 88986.284
+[profile] causalselfattention.forward                   count=   26676 total_ms= 50570.434 mean_us=  1895.728
+[profile] mlpblock.forward                              count=   26676 total_ms= 44346.298 mean_us=  1662.404
+[profile] causalselfattention.score_value               count=   48438 total_ms= 28760.774 mean_us=   593.765
+[profile] generation.prefill                            count=       4 total_ms= 27452.011 mean_us=6863002.712
+[profile] abstractmodel.batch_forward                   count=       4 total_ms= 25358.376 mean_us=6339593.896
+[profile] mlpblock.gate_up_projection                   count=   26676 total_ms= 25156.339 mean_us=   943.033
+[profile] mlpblock.down_projection                      count=   26676 total_ms= 18254.335 mean_us=   684.298
+[profile] causalselfattention.qkv_projection            count=   26676 total_ms= 16107.792 mean_us=   603.831
+[profile] sampler.sample                                count=    1024 total_ms= 13898.509 mean_us= 13572.763
+[profile] generation.decode_sample                      count=    1020 total_ms= 13846.467 mean_us= 13574.968
+[profile] sampler.output_projection                     count=    1024 total_ms= 10137.947 mean_us=  9900.338
+[profile] causalselfattention.output_projection         count=   26676 total_ms=  7090.794 mean_us=   265.812
+[profile] mlpblock.activation                           count=   26676 total_ms=  7058.693 mean_us=   264.608
+[profile] rmsnorm.forward                               count=  107728 total_ms=  2582.738 mean_us=    23.975
+[profile] causalselfattention.rope                      count=   48438 total_ms=   394.150 mean_us=     8.137
+[profile-counter] mlpblock.down_quantize.input_dtype.F32 count=26676
+[profile-counter] sampler.output_projection.input_dtype.F32 count=1024
+[profile-counter] sampler.output_projection.weight_dtype.Q4 count=1024
+[allocator] rank=0/1 dirty_get=161925 dirty_hit=123482 dirty_hit_rate=0.7626 get=660105 get_hit=473438 get_hit_rate=0.7172 full=223243
+[deliverance] start model=tjake/gemma-2-2b-it-JQ4 case=builtin-coding-1 category=coding turn=1 prompt_chars=323
+[deliverance] model=tjake/gemma-2-2b-it-JQ4 case=builtin-coding-1 category=coding turn=1 prompt_tokens=64 generated=256 total_ms=24510.1 tok_s=11.09 finish=MAX_TOKENS
+[profile] case=builtin-coding-1 turn=1
+[profile] generation.request                            count=       5 total_ms=148493.841 mean_us=29698768.292
+[profile] abstractmodel.forward_layers                  count=    1282 total_ms=120286.658 mean_us= 93827.346
+[profile] transformerblock.forward                      count=   33332 total_ms=113604.527 mean_us=  3408.272
+[profile] generation.decode                             count=    1275 total_ms=106917.598 mean_us= 83856.940
+[profile] abstractmodel.forward_token                   count=    1275 total_ms=106826.272 mean_us= 83785.312
+[profile] mlpblock.forward                              count=   33332 total_ms= 55020.682 mean_us=  1650.686
+[profile] causalselfattention.forward                   count=   33332 total_ms= 53972.111 mean_us=  1619.228
+[profile] mlpblock.gate_up_projection                   count=   33332 total_ms= 29484.465 mean_us=   884.569
+[profile] causalselfattention.score_value               count=   56732 total_ms= 27958.195 mean_us=   492.812
+[profile] generation.prefill                            count=       5 total_ms= 23330.550 mean_us=4666109.968
+[profile] abstractmodel.batch_forward                   count=       5 total_ms= 21729.360 mean_us=4345871.947
+[profile] causalselfattention.qkv_projection            count=   33332 total_ms= 19284.528 mean_us=   578.559
+[profile] mlpblock.down_projection                      count=   33332 total_ms= 18108.164 mean_us=   543.267
+[profile] sampler.sample                                count=    1280 total_ms= 17246.365 mean_us= 13473.723
+[profile] generation.decode_sample                      count=    1275 total_ms= 17197.256 mean_us= 13488.044
+[profile] sampler.output_projection                     count=    1280 total_ms= 12477.800 mean_us=  9748.281
+[profile] causalselfattention.output_projection         count=   33332 total_ms=  8213.658 mean_us=   246.420
+[profile] mlpblock.activation                           count=   33332 total_ms=  6169.504 mean_us=   185.093
+[profile] rmsnorm.forward                               count=  134608 total_ms=  3089.287 mean_us=    22.950
+[profile] causalselfattention.rope                      count=   56732 total_ms=   505.274 mean_us=     8.906
+[profile-counter] mlpblock.down_quantize.input_dtype.F32 count=33332
+[profile-counter] sampler.output_projection.input_dtype.F32 count=1280
+[profile-counter] sampler.output_projection.weight_dtype.Q4 count=1280
+[allocator] rank=0/1 dirty_get=202181 dirty_hit=150002 dirty_hit_rate=0.7419 get=793761 get_hit=566433 get_hit_rate=0.7136 full=277640
+[deliverance] start model=tjake/gemma-2-2b-it-JQ4 case=builtin-coding-1 category=coding turn=2 prompt_chars=1521
+

@@ -1,0 +1,6 @@
+timestamp,engine,model,case_id,category,turn,prompt_chars,prompt_tokens,generated_tokens,total_ms,generation_ms,tokens_per_second,response_chars,finish_reason
+"2026-06-19T00:35:56.447099494Z","deliverance","tjake/gemma-2-2b-it-JQ4","builtin-reasoning-1","reasoning",1,597,126,256,29146.662908,24879.730408,10.249307199808143,880,"MAX_TOKENS"
+"2026-06-19T00:36:34.240285652Z","deliverance","tjake/gemma-2-2b-it-JQ4","builtin-reasoning-1","reasoning",2,1610,403,256,37703.722208,28015.538612999997,9.102091647157296,1057,"MAX_TOKENS"
+"2026-06-19T00:37:00.423178597Z","deliverance","tjake/gemma-2-2b-it-JQ4","builtin-math-1","math",1,387,88,256,26055.018107,23971.334445,10.637705655689457,853,"MAX_TOKENS"
+"2026-06-19T00:37:36.828838073Z","deliverance","tjake/gemma-2-2b-it-JQ4","builtin-math-1","math",2,1452,386,256,36335.71545,26929.922998000002,9.469020762478156,855,"MAX_TOKENS"
+"2026-06-19T00:38:01.394736398Z","deliverance","tjake/gemma-2-2b-it-JQ4","builtin-coding-1","coding",1,323,64,256,24510.141637,22993.275578,11.090198920765529,1022,"MAX_TOKENS"

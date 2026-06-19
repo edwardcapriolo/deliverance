@@ -1,0 +1,197 @@
+alpine-builder0:/data/alpine/deliverence$ sh run-deliverance-mixtral-benchmark.sh 
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.fusesource.jansi.internal.JansiLoader in an unnamed module (file:/usr/share/java/maven-3/lib/jansi-2.4.1.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by com.google.common.util.concurrent.AbstractFuture$UnsafeAtomicHelper (file:/usr/share/java/maven-3/lib/guava-33.2.1-jre.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.common.util.concurrent.AbstractFuture$UnsafeAtomicHelper
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+WARNING: Using incubator modules: jdk.incubator.vector
+writing benchmark results to /data/alpine/deliverence/core/target/deliverance-mixtral-benchmark.csv
+writing benchmark transcripts to /data/alpine/deliverence/core/target/deliverance-mixtral-benchmark.jsonl
+[deliverance] loading model tjake/Mixtral-8x7B-Instruct-v0.1-JQ4 tensor_parallel_size=1
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.jctools.util.UnsafeAccess (file:/data/alpine/.m2/repository/org/jctools/jctools-core/4.0.1/jctools-core-4.0.1.jar)
+WARNING: Please consider reporting this to the maintainers of class org.jctools.util.UnsafeAccess
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+[deliverance] loaded model tjake/Mixtral-8x7B-Instruct-v0.1-JQ4; cases=8; warmup_cases=0
+[deliverance] coordinator tensor_provider=Native SIMD Operations parallel_split_size=128 model_dtype=Q4 working_dtype=F32 working_qtype=I8 tp_rank=0 tp_size=1
+[deliverance] start model=tjake/Mixtral-8x7B-Instruct-v0.1-JQ4 case=builtin-reasoning-1 category=reasoning turn=1 prompt_chars=558
+[deliverance] model=tjake/Mixtral-8x7B-Instruct-v0.1-JQ4 case=builtin-reasoning-1 category=reasoning turn=1 prompt_tokens=130 generated=128 total_ms=60112.7 tok_s=4.01 finish=MAX_TOKENS
+[profile] case=builtin-reasoning-1 turn=1
+[profile] generation.request                            count=       1 total_ms= 60113.014 mean_us=60113014.347
+[profile] abstractmodel.forward_layers                  count=     128 total_ms= 53353.202 mean_us=416821.887
+[profile] mixtureofexpertsblock.expert_forward          count=   16448 total_ms= 47696.306 mean_us=  2899.824
+[profile] transformerblock.forward                      count=    4096 total_ms= 43879.287 mean_us= 10712.717
+[profile] mixtureofexpertsblock.forward                 count=    4096 total_ms= 36405.419 mean_us=  8888.042
+[profile] generation.decode                             count=     127 total_ms= 31339.555 mean_us=246768.148
+[profile] abstractmodel.forward_token                   count=     127 total_ms= 31338.339 mean_us=246758.572
+[profile] mixtureofexpertsblock.expert_gate_up_projection count=   16448 total_ms= 28868.407 mean_us=  1755.132
+[profile] generation.prefill                            count=       1 total_ms= 28378.108 mean_us=28378108.199
+[profile] abstractmodel.batch_forward                   count=       1 total_ms= 28276.353 mean_us=28276352.605
+[profile] mixtureofexpertsblock.expert_down_projection  count=   16448 total_ms= 15225.883 mean_us=   925.698
+[profile] causalselfattention.forward                   count=    4096 total_ms=  7522.176 mean_us=  1836.469
+[profile] causalselfattention.qkv_projection            count=    4096 total_ms=  3294.135 mean_us=   804.232
+[profile] mixtureofexpertsblock.expert_activation_multiply count=   16448 total_ms=  2724.368 mean_us=   165.635
+[profile] causalselfattention.score_value               count=    8224 total_ms=  2600.831 mean_us=   316.249
+[profile] causalselfattention.output_projection         count=    4096 total_ms=  1766.233 mean_us=   431.209
+[profile] mixtureofexpertsblock.router_projection       count=    8224 total_ms=   791.071 mean_us=    96.190
+[profile] mixtureofexpertsblock.down_quantize           count=   16448 total_ms=   463.299 mean_us=    28.167
+[profile] sampler.sample                                count=     128 total_ms=   301.954 mean_us=  2359.013
+[profile] generation.decode_sample                      count=     127 total_ms=   290.435 mean_us=  2286.890
+[profile-counter] mixtureofexpertsblock.down_quantize.input_dtype.F32 count=16448
+[profile-counter] mixtureofexpertsblock.selected_expert.0 count=2223
+[profile-counter] mixtureofexpertsblock.selected_expert.1 count=2227
+[profile-counter] mixtureofexpertsblock.selected_expert.2 count=2009
+[profile-counter] mixtureofexpertsblock.selected_expert.3 count=1941
+[profile-counter] mixtureofexpertsblock.selected_expert.4 count=1996
+[profile-counter] mixtureofexpertsblock.selected_expert.5 count=2011
+[profile-counter] mixtureofexpertsblock.selected_expert.6 count=1976
+[profile-counter] mixtureofexpertsblock.selected_expert.7 count=2065
+[profile-counter] sampler.output_projection.input_dtype.F32 count=128
+[profile-counter] sampler.output_projection.weight_dtype.Q4 count=128
+[allocator] rank=0/1 dirty_get=28995 dirty_hit=28974 dirty_hit_rate=0.9993 get=308499 get_hit=307295 get_hit_rate=0.9961 full=0
+[deliverance] start model=tjake/Mixtral-8x7B-Instruct-v0.1-JQ4 case=builtin-reasoning-1 category=reasoning turn=2 prompt_chars=1155
+[deliverance] model=tjake/Mixtral-8x7B-Instruct-v0.1-JQ4 case=builtin-reasoning-1 category=reasoning turn=2 prompt_tokens=281 generated=128 total_ms=64701.6 tok_s=3.89 finish=MAX_TOKENS
+[profile] case=builtin-reasoning-1 turn=2
+[profile] generation.request                            count=       2 total_ms=126890.094 mean_us=63445046.910
+[profile] abstractmodel.forward_layers                  count=     256 total_ms=111852.945 mean_us=436925.567
+[profile] mixtureofexpertsblock.expert_forward          count=   34368 total_ms= 99771.892 mean_us=  2903.046
+[profile] transformerblock.forward                      count=    8192 total_ms= 88167.753 mean_us= 10762.665
+[profile] mixtureofexpertsblock.forward                 count=    8192 total_ms= 65344.588 mean_us=  7976.634
+[profile] generation.decode                             count=     254 total_ms= 64143.685 mean_us=252534.192
+[profile] abstractmodel.forward_token                   count=     254 total_ms= 64141.119 mean_us=252524.091
+[profile] generation.prefill                            count=       2 total_ms= 61946.262 mean_us=30973130.824
+[profile] abstractmodel.batch_forward                   count=       2 total_ms= 61417.138 mean_us=30708568.754
+[profile] mixtureofexpertsblock.expert_gate_up_projection count=   34368 total_ms= 59900.892 mean_us=  1742.926
+[profile] mixtureofexpertsblock.expert_down_projection  count=   34368 total_ms= 31703.836 mean_us=   922.481
+[profile] causalselfattention.forward                   count=    8192 total_ms= 17845.428 mean_us=  2178.397
+[profile] causalselfattention.score_value               count=   17184 total_ms=  8484.707 mean_us=   493.756
+[profile] causalselfattention.qkv_projection            count=    8192 total_ms=  6127.617 mean_us=   748.000
+[profile] mixtureofexpertsblock.expert_activation_multiply count=   34368 total_ms=  5573.939 mean_us=   162.184
+[profile] causalselfattention.output_projection         count=    8192 total_ms=  3316.224 mean_us=   404.812
+[profile] mixtureofexpertsblock.router_projection       count=   17184 total_ms=  1525.935 mean_us=    88.800
+[profile] mixtureofexpertsblock.down_quantize           count=   34368 total_ms=   883.958 mean_us=    25.720
+[profile] sampler.sample                                count=     256 total_ms=   578.948 mean_us=  2261.514
+[profile] generation.decode_sample                      count=     254 total_ms=   573.665 mean_us=  2258.522
+[profile-counter] mixtureofexpertsblock.down_quantize.input_dtype.F32 count=34368
+[profile-counter] mixtureofexpertsblock.selected_expert.0 count=4510
+[profile-counter] mixtureofexpertsblock.selected_expert.1 count=4519
+[profile-counter] mixtureofexpertsblock.selected_expert.2 count=4270
+[profile-counter] mixtureofexpertsblock.selected_expert.3 count=4038
+[profile-counter] mixtureofexpertsblock.selected_expert.4 count=4163
+[profile-counter] mixtureofexpertsblock.selected_expert.5 count=4287
+[profile-counter] mixtureofexpertsblock.selected_expert.6 count=4227
+[profile-counter] mixtureofexpertsblock.selected_expert.7 count=4354
+[profile-counter] sampler.output_projection.input_dtype.F32 count=256
+[profile-counter] sampler.output_projection.weight_dtype.Q4 count=256
+[allocator] rank=0/1 dirty_get=59484 dirty_hit=59460 dirty_hit_rate=0.9996 get=640794 get_hit=545843 get_hit_rate=0.8518 full=93297
+[deliverance] start model=tjake/Mixtral-8x7B-Instruct-v0.1-JQ4 case=builtin-math-1 category=math turn=1 prompt_chars=348
+[deliverance] model=tjake/Mixtral-8x7B-Instruct-v0.1-JQ4 case=builtin-math-1 category=math turn=1 prompt_tokens=89 generated=128 total_ms=48482.4 tok_s=4.18 finish=MAX_TOKENS
+[profile] case=builtin-math-1 turn=1
+[profile] generation.request                            count=       3 total_ms=163462.073 mean_us=54487357.754
+[profile] abstractmodel.forward_layers                  count=     384 total_ms=146977.821 mean_us=382754.743
+[profile] mixtureofexpertsblock.expert_forward          count=   48192 total_ms=137815.686 mean_us=  2859.721
+[profile] transformerblock.forward                      count=   12288 total_ms=113182.702 mean_us=  9210.832
+[profile] mixtureofexpertsblock.forward                 count=   12288 total_ms=111544.891 mean_us=  9077.546
+[profile] generation.decode                             count=     381 total_ms= 92694.255 mean_us=243292.008
+[profile] abstractmodel.forward_token                   count=     381 total_ms= 92690.265 mean_us=243281.536
+[profile] mixtureofexpertsblock.expert_gate_up_projection count=   48192 total_ms= 83361.200 mean_us=  1729.773
+[profile] generation.prefill                            count=       3 total_ms= 69374.919 mean_us=23124972.864
+[profile] abstractmodel.batch_forward                   count=       3 total_ms= 69026.526 mean_us=23008842.021
+[profile] mixtureofexpertsblock.expert_down_projection  count=   48192 total_ms= 44467.267 mean_us=   922.711
+[profile] causalselfattention.forward                   count=   12288 total_ms= 22405.560 mean_us=  1823.369
+[profile] causalselfattention.qkv_projection            count=   12288 total_ms=  9100.093 mean_us=   740.567
+[profile] mixtureofexpertsblock.expert_activation_multiply count=   48192 total_ms=  7733.333 mean_us=   160.469
+[profile] causalselfattention.score_value               count=   24096 total_ms=  7297.517 mean_us=   302.852
+[profile] causalselfattention.output_projection         count=   12288 total_ms=  4741.385 mean_us=   385.855
+[profile] mixtureofexpertsblock.router_projection       count=   24096 total_ms=  2157.822 mean_us=    89.551
+[profile] mixtureofexpertsblock.down_quantize           count=   48192 total_ms=  1207.280 mean_us=    25.051
+[profile] sampler.sample                                count=     384 total_ms=   857.085 mean_us=  2231.993
+[profile] generation.decode_sample                      count=     381 total_ms=   852.202 mean_us=  2236.751
+[profile-counter] mixtureofexpertsblock.down_quantize.input_dtype.F32 count=48192
+[profile-counter] mixtureofexpertsblock.selected_expert.0 count=6238
+[profile-counter] mixtureofexpertsblock.selected_expert.1 count=6234
+[profile-counter] mixtureofexpertsblock.selected_expert.2 count=6059
+[profile-counter] mixtureofexpertsblock.selected_expert.3 count=5681
+[profile-counter] mixtureofexpertsblock.selected_expert.4 count=5966
+[profile-counter] mixtureofexpertsblock.selected_expert.5 count=5941
+[profile-counter] mixtureofexpertsblock.selected_expert.6 count=5974
+[profile-counter] mixtureofexpertsblock.selected_expert.7 count=6099
+[profile-counter] sampler.output_projection.input_dtype.F32 count=384
+[profile-counter] sampler.output_projection.weight_dtype.Q4 count=384
+[allocator] rank=0/1 dirty_get=85813 dirty_hit=85692 dirty_hit_rate=0.9986 get=907241 get_hit=812027 get_hit_rate=0.8951 full=93657
+[deliverance] start model=tjake/Mixtral-8x7B-Instruct-v0.1-JQ4 case=builtin-math-1 category=math turn=2 prompt_chars=927
+[deliverance] model=tjake/Mixtral-8x7B-Instruct-v0.1-JQ4 case=builtin-math-1 category=math turn=2 prompt_tokens=261 generated=128 total_ms=73697.7 tok_s=3.88 finish=MAX_TOKENS
+[profile] case=builtin-math-1 turn=2
+[profile] generation.request                            count=       4 total_ms=267509.780 mean_us=66877444.953
+[profile] abstractmodel.forward_layers                  count=     512 total_ms=234042.843 mean_us=457114.927
+[profile] mixtureofexpertsblock.expert_forward          count=   68928 total_ms=198973.659 mean_us=  2886.688
+[profile] transformerblock.forward                      count=   16384 total_ms=193322.482 mean_us= 11799.468
+[profile] generation.prefill                            count=       4 total_ms=137852.277 mean_us=34463069.357
+[profile] abstractmodel.batch_forward                   count=       4 total_ms=136809.565 mean_us=34202391.330
+[profile] generation.decode                             count=     508 total_ms=127722.167 mean_us=251421.588
+[profile] abstractmodel.forward_token                   count=     508 total_ms=127716.025 mean_us=251409.497
+[profile] mixtureofexpertsblock.expert_gate_up_projection count=   68928 total_ms=120389.436 mean_us=  1746.597
+[profile] mixtureofexpertsblock.forward                 count=   16384 total_ms=114152.352 mean_us=  6967.307
+[profile] mixtureofexpertsblock.expert_down_projection  count=   68928 total_ms= 63944.134 mean_us=   927.695
+[profile] causalselfattention.forward                   count=   16384 total_ms= 36361.876 mean_us=  2219.353
+[profile] causalselfattention.score_value               count=   34464 total_ms= 16276.597 mean_us=   472.278
+[profile] causalselfattention.qkv_projection            count=   16384 total_ms= 13109.801 mean_us=   800.159
+[profile] mixtureofexpertsblock.expert_activation_multiply count=   68928 total_ms= 11337.798 mean_us=   164.488
+[profile] causalselfattention.output_projection         count=   16384 total_ms=  6842.581 mean_us=   417.638
+[profile] mixtureofexpertsblock.router_projection       count=   34464 total_ms=  3076.217 mean_us=    89.259
+[profile] mixtureofexpertsblock.down_quantize           count=   68928 total_ms=  1762.336 mean_us=    25.568
+[profile] sampler.sample                                count=     512 total_ms=  1156.168 mean_us=  2258.140
+[profile] generation.decode_sample                      count=     508 total_ms=  1151.454 mean_us=  2266.642
+[profile-counter] mixtureofexpertsblock.down_quantize.input_dtype.F32 count=68928
+[profile-counter] mixtureofexpertsblock.selected_expert.0 count=8839
+[profile-counter] mixtureofexpertsblock.selected_expert.1 count=8878
+[profile-counter] mixtureofexpertsblock.selected_expert.2 count=8755
+[profile-counter] mixtureofexpertsblock.selected_expert.3 count=8099
+[profile-counter] mixtureofexpertsblock.selected_expert.4 count=8621
+[profile-counter] mixtureofexpertsblock.selected_expert.5 count=8590
+[profile-counter] mixtureofexpertsblock.selected_expert.6 count=8465
+[profile-counter] mixtureofexpertsblock.selected_expert.7 count=8681
+[profile-counter] sampler.output_projection.input_dtype.F32 count=512
+[profile-counter] sampler.output_projection.weight_dtype.Q4 count=512
+[allocator] rank=0/1 dirty_get=119162 dirty_hit=118942 dirty_hit_rate=0.9982 get=1284587 get_hit=1116072 get_hit_rate=0.8688 full=167057
+[deliverance] start model=tjake/Mixtral-8x7B-Instruct-v0.1-JQ4 case=builtin-coding-1 category=coding turn=1 prompt_chars=284
+[deliverance] model=tjake/Mixtral-8x7B-Instruct-v0.1-JQ4 case=builtin-coding-1 category=coding turn=1 prompt_tokens=69 generated=53 total_ms=26440.2 tok_s=4.21 finish=STOP_TOKEN
+[profile] case=builtin-coding-1 turn=1
+[profile] abstractmodel.forward_layers                  count=     565 total_ms=260808.505 mean_us=461607.973
+[profile] generation.request                            count=       5 total_ms=234990.904 mean_us=46998180.877
+[profile] mixtureofexpertsblock.expert_forward          count=   76672 total_ms=220356.779 mean_us=  2874.019
+[profile] transformerblock.forward                      count=   18080 total_ms=206399.941 mean_us= 11415.926
+[profile] mixtureofexpertsblock.forward                 count=   18080 total_ms=164629.310 mean_us=  9105.603
+[profile] generation.decode                             count=     560 total_ms=137973.572 mean_us=246381.378
+[profile] abstractmodel.forward_token                   count=     560 total_ms=137966.496 mean_us=246368.742
+[profile] mixtureofexpertsblock.expert_gate_up_projection count=   76672 total_ms=132864.712 mean_us=  1732.897
+[profile] generation.prefill                            count=       5 total_ms=114850.801 mean_us=22970160.290
+[profile] abstractmodel.batch_forward                   count=       5 total_ms=114230.811 mean_us=22846162.131
+[profile] mixtureofexpertsblock.expert_down_projection  count=   76672 total_ms= 70232.747 mean_us=   916.016
+[profile] causalselfattention.forward                   count=   18080 total_ms= 34605.370 mean_us=  1914.014
+[profile] causalselfattention.qkv_projection            count=   18080 total_ms= 14861.652 mean_us=   821.994
+[profile] mixtureofexpertsblock.expert_activation_multiply count=   76672 total_ms= 12618.807 mean_us=   164.582
+[profile] causalselfattention.score_value               count=   38336 total_ms= 11348.954 mean_us=   296.039
+[profile] causalselfattention.output_projection         count=   18080 total_ms=  8104.016 mean_us=   448.231
+[profile] mixtureofexpertsblock.router_projection       count=   38336 total_ms=  3502.823 mean_us=    91.372
+[profile] mixtureofexpertsblock.down_quantize           count=   76672 total_ms=  1945.821 mean_us=    25.379
+[profile] sampler.sample                                count=     565 total_ms=  1270.804 mean_us=  2249.211
+[profile] generation.decode_sample                      count=     560 total_ms=  1264.083 mean_us=  2257.291
+[profile-counter] mixtureofexpertsblock.down_quantize.input_dtype.F32 count=76672
+[profile-counter] mixtureofexpertsblock.selected_expert.0 count=9812
+[profile-counter] mixtureofexpertsblock.selected_expert.1 count=9808
+[profile-counter] mixtureofexpertsblock.selected_expert.2 count=9761
+[profile-counter] mixtureofexpertsblock.selected_expert.3 count=9070
+[profile-counter] mixtureofexpertsblock.selected_expert.4 count=9677
+[profile-counter] mixtureofexpertsblock.selected_expert.5 count=9539
+[profile-counter] mixtureofexpertsblock.selected_expert.6 count=9421
+[profile-counter] mixtureofexpertsblock.selected_expert.7 count=9584
+[profile-counter] sampler.output_projection.input_dtype.F32 count=565
+[profile-counter] sampler.output_projection.weight_dtype.Q4 count=565
+[allocator] rank=0/1 dirty_get=132116 dirty_hit=131799 dirty_hit_rate=0.9976 get=1427256 get_hit=1258477 get_hit_rate=0.8817 full=167418
+[deliverance] start model=tjake/Mixtral-8x7B-Instruct-v0.1-JQ4 case=builtin-coding-1 category=coding turn=2 prompt_chars=618
+
