@@ -144,6 +144,7 @@ public class Gemma4Model extends LlamaModel {
             String layerType = gemma4Config.layerTypes.get(i);
             int sharedSource = gemma4Config.getSharedKvSourceLayer(i);
             boolean kvSharedLayer = sharedSource >= 0 && !Gemma4CausalSelfAttention.isSharedKvDisabled();
+            boolean usesKeyAsValue = gemma4Config.attentionKEqV && "full_attention".equals(layerType);
 
             Gemma4CausalSelfAttention attention = new Gemma4CausalSelfAttention(
                     this,
@@ -154,7 +155,7 @@ public class Gemma4Model extends LlamaModel {
                     quantize(weights.load(base + "self_attn.q_proj.weight"), qType),
                     quantize(weights.load(base + "self_attn.q_norm.weight"), qType),
                     kvSharedLayer ? Optional.empty() : Optional.of(quantize(weights.load(base + "self_attn.k_proj.weight"), qType)),
-                    kvSharedLayer ? Optional.empty() : Optional.of(quantize(weights.load(base + "self_attn.v_proj.weight"), qType)),
+                    (kvSharedLayer || usesKeyAsValue) ? Optional.empty() : Optional.of(quantize(weights.load(base + "self_attn.v_proj.weight"), qType)),
                     kvSharedLayer ? Optional.empty() : Optional.of(quantize(weights.load(base + "self_attn.k_norm.weight"), qType)),
                     quantize(weights.load(base + "self_attn.o_proj.weight"), qType),
                     configurableTensorProvider,
@@ -181,6 +182,34 @@ public class Gemma4Model extends LlamaModel {
                         quantize(weights.load(base + "post_per_layer_input_norm.weight"), qType), 0.0f, metricRegistry));
             }
 
+            Optional<LayerNorm> postFeedForwardNorm1 = Optional.empty();
+            Optional<LayerNorm> preFeedForwardNorm2 = Optional.empty();
+            Optional<LayerNorm> postFeedForwardNorm2 = Optional.empty();
+            Optional<AbstractTensor> routerProjectionWeights = Optional.empty();
+            Optional<AbstractTensor> routerScaleWeights = Optional.empty();
+            Optional<AbstractTensor> routerPerExpertScaleWeights = Optional.empty();
+            Optional<AbstractTensor> expertGateUpWeights = Optional.empty();
+            Optional<AbstractTensor> expertDownWeights = Optional.empty();
+            int numberOfExperts = 0;
+            int topKExperts = 0;
+            int moeIntermediateLength = 0;
+            if (gemma4Config.enableMoeBlock) {
+                postFeedForwardNorm1 = Optional.of(new RmsNorm(this,
+                        quantize(weights.load(base + "post_feedforward_layernorm_1.weight"), qType), 0.0f, metricRegistry));
+                preFeedForwardNorm2 = Optional.of(new RmsNorm(this,
+                        quantize(weights.load(base + "pre_feedforward_layernorm_2.weight"), qType), 0.0f, metricRegistry));
+                postFeedForwardNorm2 = Optional.of(new RmsNorm(this,
+                        quantize(weights.load(base + "post_feedforward_layernorm_2.weight"), qType), 0.0f, metricRegistry));
+                routerProjectionWeights = Optional.of(quantize(weights.load(base + "router.proj.weight"), qType));
+                routerScaleWeights = Optional.of(quantize(weights.load(base + "router.scale"), qType));
+                routerPerExpertScaleWeights = Optional.of(quantize(weights.load(base + "router.per_expert_scale"), qType));
+                expertGateUpWeights = Optional.of(quantize(weights.load(base + "experts.gate_up_proj"), qType));
+                expertDownWeights = Optional.of(quantize(weights.load(base + "experts.down_proj"), qType));
+                numberOfExperts = gemma4Config.numExperts;
+                topKExperts = gemma4Config.topKExperts;
+                moeIntermediateLength = gemma4Config.moeIntermediateSize;
+            }
+
             blocks[relativeLayer] = new Gemma4TransformerBlock(
                     this,
                     i,
@@ -196,7 +225,18 @@ public class Gemma4Model extends LlamaModel {
                     postPerLayerInputNorm,
                     gemma4Config.hiddenSizePerLayerInput == null ? 0 : gemma4Config.hiddenSizePerLayerInput,
                     loadScalar(base + "layer_scalar"),
-                    gemma4Config.activationFunction
+                    gemma4Config.activationFunction,
+                    postFeedForwardNorm1,
+                    preFeedForwardNorm2,
+                    postFeedForwardNorm2,
+                    routerProjectionWeights,
+                    routerScaleWeights,
+                    routerPerExpertScaleWeights,
+                    expertGateUpWeights,
+                    expertDownWeights,
+                    numberOfExperts,
+                    topKExperts,
+                    moeIntermediateLength
             );
         }
         return blocks;
@@ -251,6 +291,9 @@ public class Gemma4Model extends LlamaModel {
     @Override
     public AbstractTensor forward(AbstractTensor embedding, int startPos, KvBufferCache.KvBuffer kvbuf,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
+        if (gemma4Config().hiddenSizePerLayerInput != null) {
+            throw new UnsupportedOperationException("Gemma4 inputs_embeds forward requires per-layer inputs derived from token ids");
+        }
         return withSharedKeyValues(() -> forwardGemma4(embedding, null, startPos, kvbuf, tensorReducer));
     }
 
@@ -480,12 +523,6 @@ public class Gemma4Model extends LlamaModel {
             return name;
         }
         throw new IllegalArgumentException("Missing Gemma4 text weight " + name);
-    }
-
-    private boolean isTextModelWeightPresent(String suffix) {
-        String root = resolveTextModelRoot();
-        String name = root + suffix;
-        return weights.isWeightPresent(name) || weights.isWeightPresent(name + "-part-0");
     }
 
     private String resolveTextOutputWeight(String suffix) {

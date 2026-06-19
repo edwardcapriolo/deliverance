@@ -22,7 +22,7 @@ public class TransformerBlock {
     private final AbstractModel model;
     final int layerIndex;
     final Optional<LayerNorm> preAttentionNorm;
-    final CausalSelfAttention attention;
+    final SelfAttention attention;
     final Optional<LayerNorm> postAttentionNorm; // After attention, before the residual connection
     final Optional<LayerNorm> preFFNorm; // After residual connection, before the FF
     final FeedForward ffBlock;
@@ -31,7 +31,7 @@ public class TransformerBlock {
     final ConfigurableTensorProvider configurableTensorProvider;
 
     public TransformerBlock(AbstractModel model, int layerIndex, LayerNorm preAttentionNorm,
-            CausalSelfAttention attention, LayerNorm postAttentionNorm, FeedForward ffBlock,
+            SelfAttention attention, LayerNorm postAttentionNorm, FeedForward ffBlock,
             ConfigurableTensorProvider configurableTensorProvider) {
         this(model, layerIndex, Optional.of(preAttentionNorm), attention, Optional.empty(),
                 Optional.of(postAttentionNorm), ffBlock, Optional.empty(), Optional.empty(),
@@ -42,7 +42,7 @@ public class TransformerBlock {
     public TransformerBlock(
             AbstractModel model,
             int layerIndex,
-            CausalSelfAttention attention,
+            SelfAttention attention,
             LayerNorm postAttentionNorm,
             FeedForward ffBlock,
             LayerNorm postFFNorm,
@@ -67,7 +67,7 @@ public class TransformerBlock {
             AbstractModel model,
             int layerIndex,
             LayerNorm preAttentionNorm,
-            CausalSelfAttention attention,
+            SelfAttention attention,
             LayerNorm postAttentionNorm,
             FeedForward ffBlock,
             LayerNorm postFFNorm
@@ -92,7 +92,7 @@ public class TransformerBlock {
             AbstractModel model,
             int layerIndex,
             LayerNorm preAttentionNorm,
-            CausalSelfAttention attention,
+            SelfAttention attention,
             LayerNorm postAttentionNorm,
             LayerNorm preFFNorm,
             FeedForward ffBlock,
@@ -117,7 +117,7 @@ public class TransformerBlock {
             AbstractModel model,
             int layerIndex,
             Optional<LayerNorm> preAttentionNorm,
-            CausalSelfAttention attention,
+            SelfAttention attention,
             Optional<LayerNorm> postAttentionNorm,
             Optional<LayerNorm> preFFNorm,
             FeedForward ffBlock,

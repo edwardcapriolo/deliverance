@@ -8,7 +8,6 @@ import io.teknek.deliverance.model.gemma4.Gemma4Model;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.TensorShape;
-import io.teknek.deliverance.tensor.VectorTensorMathUtils;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import net.jafama.FastMath;
 import org.slf4j.Logger;
@@ -19,7 +18,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
 
-public class Gemma4CausalSelfAttention extends CausalSelfAttention {
+public class Gemma4CausalSelfAttention extends BaseCausalSelfAttention {
     private static final Logger logger = LoggerFactory.getLogger(Gemma4CausalSelfAttention.class);
     private static final boolean DEBUG_SHARED_KV = false;
     private static final boolean DISABLE_SHARED_KV = false;
@@ -28,6 +27,7 @@ public class Gemma4CausalSelfAttention extends CausalSelfAttention {
     private final int layerIndex;
     private final String layerType;
     private final boolean slidingAttention;
+    private final boolean bidirectionalAttention;
     private final boolean kvSharedLayer;
     private final boolean storeSharedKv;
     private final int headDim;
@@ -68,13 +68,12 @@ public class Gemma4CausalSelfAttention extends CausalSelfAttention {
             ConfigurableTensorProvider configurableTensorProvider,
             MetricRegistry metricRegistry
     ) {
-        super(model, layerIndex, queryWeights, keyWeights.orElse(queryWeights), valueWeights.orElse(queryWeights),
-                outputProjectionWeights, configurableTensorProvider, metricRegistry);
         this.model = model;
         this.config = (Gemma4Config) model.getConfig();
         this.layerIndex = layerIndex;
         this.layerType = layerType;
         this.slidingAttention = "sliding_attention".equals(layerType);
+        this.bidirectionalAttention = config.useAllBidirectionalAttention();
         this.kvSharedLayer = kvSharedLayer && !DISABLE_SHARED_KV;
         this.storeSharedKv = storeSharedKv && !DISABLE_SHARED_KV;
         this.headDim = config.getLayerHeadDim(layerType);
@@ -144,7 +143,9 @@ public class Gemma4CausalSelfAttention extends CausalSelfAttention {
 
             Timer.Context scoreTimer = metricRegistry.timer("gemma4.attn.layer." + layerIndex + ".score_value").time();
             try {
-                int maxVisibleLength = slidingAttention
+                int maxVisibleLength = bidirectionalAttention
+                        ? batchSize
+                        : slidingAttention
                         ? Math.min(slidingWindow, startPosition + batchSize)
                         : startPosition + batchSize;
                 try (AbstractTensor packedKeys = model.getTensorAllocator().getDirty(keyBatch.dType(), TensorShape.of(maxVisibleLength, kvLength));
@@ -180,11 +181,12 @@ public class Gemma4CausalSelfAttention extends CausalSelfAttention {
                             keyPages = kvMem.getKeyTensorsUptoPosition(layerIndex, position);
                             valuePages = kvMem.getValTensorsUptoPosition(layerIndex, position);
                         }
-                        int windowStart = slidingAttention ? Math.max(0, position - slidingWindow + 1) : 0;
+                        int windowStart = bidirectionalAttention ? startPosition
+                                : slidingAttention ? Math.max(0, position - slidingWindow + 1) : 0;
 
                         try (AbstractTensor queryRow = queryBatch.slice(batchIndex);
                              AbstractTensor valueRow = valueOutput.slice(batchIndex)) {
-                            int visibleLength = position - windowStart + 1;
+                            int visibleLength = bidirectionalAttention ? batchSize : position - windowStart + 1;
                             if (kvSharedLayer) {
                                 fillVisibleRowsFromDense(packedKeys, shared.key(), windowStart, visibleLength, kvLength);
                                 fillVisibleRowsFromDense(packedValues, shared.value(), windowStart, visibleLength, kvLength);
@@ -221,19 +223,11 @@ public class Gemma4CausalSelfAttention extends CausalSelfAttention {
                                 if (batchIndex == 0 && head == 0) {
                                     logFullAttentionSummary("attn_presoftcap", attn, visibleLength);
                                 }
-                                if (config.attnLogitSoftCapping != null) {
-                                    for (int i = 0; i < visibleLength; i++) {
-                                        float v = attn.get(0, i);
-                                        v /= config.attnLogitSoftCapping;
-                                        v = (float) FastMath.tanh(v);
-                                        v *= config.attnLogitSoftCapping;
-                                        attn.set(v, 0, i);
-                                    }
-                                }
+                                applyAttentionSoftcap(attn, visibleLength, config.attnLogitSoftCapping);
                                 if (batchIndex == 0 && head == 0) {
                                     logFullAttentionSummary("attn_postsoftcap", attn, visibleLength);
                                 }
-                                VectorTensorMathUtils.softMax(attn, 0, visibleLength);
+                                softmax(attn, visibleLength);
                                 if (batchIndex == 0 && head == 0) {
                                     logFullAttentionSummary("attn_postsoftmax", attn, visibleLength);
                                 }
@@ -286,19 +280,11 @@ public class Gemma4CausalSelfAttention extends CausalSelfAttention {
                 scoreTimer.stop();
             }
 
-            AbstractTensor result = model.makeDenseTensor(batchSize, config.embeddingLength);
-            Timer.Context outProjTimer = metricRegistry.timer("gemma4.attn.layer." + layerIndex + ".out_proj").time();
-            try (AbstractTensor valueQ = model.maybeQuantize(valueOutput)) {
-                try {
-                    configurableTensorProvider.get().dotProductChunk(result, valueQ, outputProjectionWeights, 0, queryLength, 0,
-                            config.embeddingLength);
-                    logFullAttentionSummary("o_proj", result);
-                    tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(result)));
-                } finally {
-                    outProjTimer.stop();
-                }
-            } finally {
-            }
+            AbstractTensor result = projectAttentionOutput(model, configurableTensorProvider, metricRegistry,
+                    "gemma4.attn.layer." + layerIndex + ".out_proj", valueOutput, outputProjectionWeights,
+                    queryLength, config.embeddingLength);
+            logFullAttentionSummary("o_proj", result);
+            tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(result)));
             return result;
         } finally {
             totalTimer.stop();
@@ -309,62 +295,9 @@ public class Gemma4CausalSelfAttention extends CausalSelfAttention {
         configurableTensorProvider.get().dotProductChunk(output, input, weights, 0, config.embeddingLength, 0, outputLength);
     }
 
-    /**
-     * Packs the visible KV rows for one position into the front of a reusable dense tensor.
-     *
-     * This trades one copy per position for substantially fewer fragmented page walks per head,
-     * which gives the tensor backend contiguous memory for dot products and SAXPY accumulation.
-     * The destination tensor may be larger than the current visible window; only the first
-     * `position - windowStart + 1` rows are populated.
-     *
-     * @return the number of rows written into {@code packed}
-     */
-    int fillVisibleRows(AbstractTensor packed, AbstractTensor[] pages, int position, int windowStart, int rowWidth) {
-        int packedRow = 0;
-        int globalOffset = 0;
-        for (AbstractTensor page : pages) {
-            int pageRows = Math.min(page.shape().first(), (position + 1) - globalOffset);
-            int overlapStart = Math.max(windowStart, globalOffset);
-            int overlapEnd = Math.min(position + 1, globalOffset + pageRows);
-            if (overlapStart < overlapEnd) {
-                int rowOffset = overlapStart - globalOffset;
-                int size = overlapEnd - overlapStart;
-                // Temporary debugging fallback: copy row-by-row until we prove the page-slice layout
-                // matches the bulk copy assumptions here. If this fixes Gemma4 shared-KV reuse, this
-                // should be revisited and removed in favor of a faster bulk path.
-                for (int row = 0; row < size; row++) {
-                    packed.copyFrom(page, page.getOffset(rowOffset + row, 0), packed.getOffset(packedRow, 0), rowWidth);
-                    packedRow++;
-                }
-            }
-            globalOffset += page.shape().first();
-        }
-        return packedRow;
-    }
-
-    /**
-     * Shared-KV layers consume full-length same-type K/V states directly, so the visible window is
-     * just a contiguous slice from the dense stored tensor.
-     */
-    int fillVisibleRowsFromDense(AbstractTensor packed, AbstractTensor dense, int windowStart, int visibleLength, int rowWidth) {
-        packed.copyFrom(dense, dense.getOffset(windowStart, 0), packed.getOffset(0, 0), visibleLength * rowWidth);
-        return visibleLength;
-    }
-
     private void copyKvRow(AbstractTensor keyBatch, AbstractTensor valueBatch, int batchIndex, AbstractTensor keyTensor,
             AbstractTensor valueTensor) {
-        try (AbstractTensor keyRow = keyBatch.slice(batchIndex); AbstractTensor valueRow = valueBatch.slice(batchIndex)) {
-            if (keyTensor.dType() != keyBatch.dType()) {
-                try (AbstractTensor keyQ = configurableTensorProvider.get().quantize(keyRow, keyTensor.dType(), 0, kvLength);
-                     AbstractTensor valueQ = configurableTensorProvider.get().quantize(valueRow, valueTensor.dType(), 0, kvLength)) {
-                    keyTensor.copyFrom(keyQ, 0, 0, kvLength);
-                    valueTensor.copyFrom(valueQ, 0, 0, kvLength);
-                }
-            } else {
-                keyTensor.copyFrom(keyRow, 0, 0, kvLength);
-                valueTensor.copyFrom(valueRow, 0, 0, kvLength);
-            }
-        }
+        copyKvRow(keyBatch, valueBatch, batchIndex, keyTensor, valueTensor, configurableTensorProvider, kvLength);
     }
 
     private void applyRope(AbstractTensor tensor, int headCount, int startPosition) {
@@ -411,12 +344,6 @@ public class Gemma4CausalSelfAttention extends CausalSelfAttention {
         }
         for (int i = 0; i < scores.length; i++) {
             scores[i] /= sum;
-        }
-    }
-
-    private void closeAll(AbstractTensor[] tensors) {
-        for (AbstractTensor tensor : tensors) {
-            tensor.close();
         }
     }
 

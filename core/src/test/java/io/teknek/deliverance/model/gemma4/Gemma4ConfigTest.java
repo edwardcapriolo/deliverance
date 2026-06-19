@@ -101,6 +101,36 @@ public class Gemma4ConfigTest {
         assertEquals(64, config.getLayerHiddenLength(15));
     }
 
+    @Test
+    public void defaultsLayerTypesAndForcesLastLayerFullAttention() {
+        Map<String, Object> textConfig = e2bLikeTextConfig();
+        textConfig.remove("layer_types");
+        Gemma4Config config = new Gemma4Config(textConfig, List.of("Gemma4ForConditionalGeneration"), List.of(1));
+
+        assertEquals("sliding_attention", config.layerTypes.get(0));
+        assertEquals("full_attention", config.layerTypes.get(5));
+        assertEquals("full_attention", config.layerTypes.getLast());
+    }
+
+    @Test
+    public void defaultsRopeParametersByLayerType() {
+        Map<String, Object> textConfig = e2bLikeTextConfig();
+        textConfig.remove("rope_parameters");
+        Gemma4Config config = new Gemma4Config(textConfig, List.of("Gemma4ForConditionalGeneration"), List.of(1));
+
+        assertEquals("default", config.ropeParametersByLayerType.get("sliding_attention").get("rope_type"));
+        assertEquals("proportional", config.ropeParametersByLayerType.get("full_attention").get("rope_type"));
+    }
+
+    @Test
+    public void parsesExpertIntermediateSizeAlias() {
+        Map<String, Object> textConfig = e2bLikeTextConfig();
+        textConfig.put("expert_intermediate_size", 1234);
+        Gemma4Config config = new Gemma4Config(textConfig, List.of("Gemma4ForConditionalGeneration"), List.of(1));
+
+        assertEquals(1234, config.moeIntermediateSize);
+    }
+
     private static Gemma4Config config(boolean attentionKEqV) {
         return new Gemma4Config(baseConfig(attentionKEqV), List.of("Gemma4ForConditionalGeneration"), List.of(1));
     }

@@ -17,6 +17,7 @@ import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
@@ -176,6 +177,45 @@ public class Gemma4PromptIT {
         }
     }
 
+    @Test
+    public void traceKnownBadContinuation() throws Exception {
+        Assumptions.assumeTrue(Boolean.getBoolean("deliverance.gemma4.badtrace"),
+                "Set -Ddeliverance.gemma4.badtrace=true to trace the known bad continuation");
+        AbstractModel model = Gemma4Suite.getOrCreate();
+        int[] promptTokens = promptTokens(model);
+        int[] knownBadContinuation = new int[] {
+                2094, 563, 496, 9760, 236772, 23461, 62557, 16613, 236764, 6111,
+                872, 684, 506, 9639, 66752, 64121, 2921, 532, 26806, 203902,
+                495, 236786, 47496, 25055, 65006, 1072, 124336, 236754, 8218,
+                206425, 532, 3415, 121762, 109236, 149180, 147839, 13897,
+                34081, 532, 26806, 501, 15595, 22100, 13994, 743, 15823,
+                7086, 79005, 115743, 11960, 502, 527, 61315, 236747, 236772,
+                150693, 19995, 21294, 28660, 16012, 236747, 23141, 43174,
+                34054, 79492, 14930, 508, 1499
+        };
+
+        try (KvBufferCache.KvBuffer kv = model.newKvBuffer();
+             AbstractTensor promptOutput = model.batchForward(promptTokens, 0, kv)) {
+            promptOutput.close();
+            for (int i = 0; i < knownBadContinuation.length; i++) {
+                int expectedToken = knownBadContinuation[i];
+                int position = promptTokens.length + i;
+                try (AbstractTensor previous = i == 0
+                        ? coldReplay(model, promptTokens, new int[0], 0)
+                        : model.forward(knownBadContinuation[i - 1], position - 1, kv);
+                     AbstractTensor stepLogits = logits(model, previous)) {
+                    int argmax = argmax(stepLogits);
+                    int expectedRank = rank(stepLogits, expectedToken);
+                    List<Integer> top10 = topK(stepLogits, 10);
+                    System.out.printf(java.util.Locale.ROOT,
+                            "gemma4 known_bad_trace step=%d expected=%d argmax=%d expected_rank=%d expected_logit=%.6f argmax_logit=%.6f top10=%s%n",
+                            i, expectedToken, argmax, expectedRank, stepLogits.get(0, expectedToken),
+                            stepLogits.get(0, argmax), top10);
+                }
+            }
+        }
+    }
+
     @Disabled
     public void chatWithReasoning() {
         AbstractModel model = Gemma4Suite.getOrCreate();
@@ -292,6 +332,17 @@ public class Gemma4PromptIT {
                 .sorted(Comparator.comparingDouble((Integer i) -> logits.get(0, i)).reversed())
                 .limit(k)
                 .toList();
+    }
+
+    private static int rank(AbstractTensor logits, int token) {
+        float value = logits.get(0, token);
+        int rank = 1;
+        for (int i = 0; i < logits.shape().last(); i++) {
+            if (logits.get(0, i) > value) {
+                rank++;
+            }
+        }
+        return rank;
     }
 
     private static SampleOutput sampleOutput(AbstractModel model) throws Exception {

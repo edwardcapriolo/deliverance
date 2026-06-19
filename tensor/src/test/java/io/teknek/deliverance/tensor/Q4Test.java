@@ -92,6 +92,94 @@ public class Q4Test {
         }
     }
 
+    @Test
+    public void q4LargeOffsetBoundaryFuzzUsesIntegerBlockIndex() {
+        int columns = 2304;
+        int[] logicalOffsets = new int[] {
+                16_777_216 - 33,
+                16_777_216 - 17,
+                16_777_216 - 1,
+                16_777_216,
+                16_777_216 + 1,
+                16_777_216 + 15,
+                16_777_216 + 16,
+                16_777_216 + 31,
+                16_777_216 + 32,
+                16_777_216 + 63
+        };
+        int maxOffset = Arrays.stream(logicalOffsets).max().orElseThrow();
+        int rows = maxOffset / columns + 1;
+        ByteBuffer bytes = ByteBuffer.allocateDirect((rows * columns) / 2).order(ByteOrder.LITTLE_ENDIAN);
+        FloatBufferTensor blockScales = new FloatBufferTensor(rows, columns / Q4ByteBufferTensor.BLOCK_SIZE);
+
+        for (int i = 0; i < logicalOffsets.length; i++) {
+            int logicalOffset = logicalOffsets[i];
+            int row = logicalOffset / columns;
+            int column = logicalOffset % columns;
+            float scale = q4FuzzScale(row, column);
+            blockScales.set(scale, row, column / Q4ByteBufferTensor.BLOCK_SIZE);
+            bytes.put(q4ByteOffset(logicalOffset), (byte) 0xBB); // both nibbles decode to +3.
+        }
+
+        try (AbstractTensor q4 = new Q4ByteBufferTensor("large-q4-fuzz", bytes, blockScales,
+                TensorShape.of(rows, columns), true)) {
+            for (int i = 0; i < logicalOffsets.length; i++) {
+                int logicalOffset = logicalOffsets[i];
+                int row = logicalOffset / columns;
+                int column = logicalOffset % columns;
+                float expected = 3.0f * q4FuzzScale(row, column);
+                assertEquals(expected, q4.get(row, column), 0.0f, "row=" + row + " column=" + column);
+                assertEquals(expected, q4.get(new int[] { row, column }), 0.0f,
+                        "varargs row=" + row + " column=" + column);
+            }
+        }
+    }
+
+    @Test
+    public void q8LargeOffsetBoundaryFuzzUsesIntegerBlockIndex() {
+        int[] logicalOffsets = new int[] {
+                16_777_216 - 33,
+                16_777_216 - 17,
+                16_777_216 - 1,
+                16_777_216,
+                16_777_216 + 1,
+                16_777_216 + 15,
+                16_777_216 + 16,
+                16_777_216 + 31,
+                16_777_216 + 32,
+                16_777_216 + 63
+        };
+        int maxOffset = Arrays.stream(logicalOffsets).max().orElseThrow();
+        int columns = ((maxOffset / Q8ByteBufferTensor.BLOCK_SIZE) + 1) * Q8ByteBufferTensor.BLOCK_SIZE;
+        ByteBuffer bytes = ByteBuffer.allocateDirect(columns).order(ByteOrder.LITTLE_ENDIAN);
+        FloatBufferTensor blockScales = new FloatBufferTensor(1, columns / Q8ByteBufferTensor.BLOCK_SIZE);
+
+        for (int i = 0; i < logicalOffsets.length; i++) {
+            int logicalOffset = logicalOffsets[i];
+            float scale = q8FuzzScale(logicalOffset);
+            blockScales.set(scale, 0, logicalOffset / Q8ByteBufferTensor.BLOCK_SIZE);
+            bytes.put(logicalOffset, (byte) (i + 1));
+        }
+
+        try (Q8ByteBufferTensor q8 = new Q8ByteBufferTensor("large-q8-fuzz", bytes, blockScales,
+                TensorShape.of(1, columns), true)) {
+            for (int i = 0; i < logicalOffsets.length; i++) {
+                int logicalOffset = logicalOffsets[i];
+                float scale = q8FuzzScale(logicalOffset);
+                assertEquals(scale, q8.getFactorForIndex(0, logicalOffset), 0.0f, "offset=" + logicalOffset);
+                assertEquals((i + 1) * scale, q8.get(0, logicalOffset), 0.0f, "offset=" + logicalOffset);
+            }
+        }
+    }
+
+    private static float q4FuzzScale(int row, int column) {
+        return 0.125f + (row % 13) + ((column / Q4ByteBufferTensor.BLOCK_SIZE) % 7);
+    }
+
+    private static float q8FuzzScale(int logicalOffset) {
+        return 0.25f + ((logicalOffset / Q8ByteBufferTensor.BLOCK_SIZE) % 17);
+    }
+
     private static int q4ByteOffset(int logicalOffset) {
         int offsetInBlock = logicalOffset % Q4ByteBufferTensor.BLOCK_SIZE;
         int byteOffset = (logicalOffset / Q4ByteBufferTensor.BLOCK_SIZE) * Q4ByteBufferTensor.HALF_BLOCK
