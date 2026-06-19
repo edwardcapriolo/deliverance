@@ -136,7 +136,8 @@ class MultiModelConfiguration {
         TensorParallelDeploymentSpec deploymentSpec = new TensorParallelDeploymentSpec(tp.getDeployment(),
                 tp.getSize(), tp.getMaxRanksPerWorker());
         GossipParallelMembership membership = GossipParallelMembership.startObserver(new GossipParallelSettings(
-                tp.getCluster(), tp.getNodeId(), URI.create(tp.getUri()), seedMembers(tp), gossipSettings(), deploymentSpec));
+                tp.getCluster(), tp.getNodeId(), URI.create(tp.getUri()), seedMembers(tp), gossipSettings(), deploymentSpec,
+                tp.getCollectiveTransport()));
         eventually("tensor-parallel candidates visible", () -> membership.candidateNodeIds().size() >= deploymentSpec.minimumPhysicalNodes(),
                 Duration.ofSeconds(tp.getReadyTimeoutSeconds()));
         eventually("tensor-parallel leader elected", () -> membership.electedLeader() != null,

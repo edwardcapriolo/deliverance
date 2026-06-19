@@ -383,6 +383,7 @@ public final class InferenceBenchmark {
                     + " node1=" + node1Uri
                     + " tensor_parallel_size=" + options.tensorParallelSize
                     + " max_ranks_per_worker=" + options.tensorParallelMaxRanksPerWorker
+                    + " collective_transport=" + options.tensorParallelCollectiveTransport
                     + " host=" + options.tensorParallelHost
                     + " base_port=" + basePort
                     + " port_start=" + options.tensorParallelPortStart
@@ -423,7 +424,7 @@ public final class InferenceBenchmark {
                     .withWorkingQuantType(options.workingQType)
                     .withWrappedForkJoinPool(newPool(options))
                     .withParallelSettings(new GossipParallelSettings(cluster, nodeId, nodeUri, seedMembers, settings,
-                            deploymentSpec))
+                            deploymentSpec, options.tensorParallelCollectiveTransport))
                     .buildAbstractModel();
             System.out.println("[deliverance-tp] started node=" + nodeId
                     + " gossip_uri=" + nodeUri
@@ -893,6 +894,7 @@ public final class InferenceBenchmark {
         private int maxCases = 0;
         private int tensorParallelSize = 1;
         private int tensorParallelMaxRanksPerWorker = 2;
+        private String tensorParallelCollectiveTransport = "http";
         private String tensorParallelHost = "127.0.0.1";
         private int tensorParallelBasePort = 0;
         private int tensorParallelPortStart = 42_000;
@@ -925,6 +927,8 @@ public final class InferenceBenchmark {
                     case "--tensor-parallel-size" -> options.tensorParallelSize = Integer.parseInt(args[++i]);
                     case "--tensor-parallel-max-ranks-per-worker" ->
                             options.tensorParallelMaxRanksPerWorker = Integer.parseInt(args[++i]);
+                    case "--tensor-parallel-collective-transport" ->
+                            options.tensorParallelCollectiveTransport = args[++i].toLowerCase(Locale.ROOT);
                     case "--tensor-parallel-host" -> options.tensorParallelHost = args[++i];
                     case "--tensor-parallel-base-port" -> options.tensorParallelBasePort = Integer.parseInt(args[++i]);
                     case "--tensor-parallel-port-start" -> options.tensorParallelPortStart = Integer.parseInt(args[++i]);
@@ -943,6 +947,10 @@ public final class InferenceBenchmark {
             }
             if (options.tensorParallelPortRange < 2) {
                 throw new IllegalArgumentException("--tensor-parallel-port-range must be >= 2");
+            }
+            if (!options.tensorParallelCollectiveTransport.equals("http")
+                    && !options.tensorParallelCollectiveTransport.equals("netty")) {
+                throw new IllegalArgumentException("--tensor-parallel-collective-transport must be http or netty");
             }
             return options;
         }
@@ -971,6 +979,7 @@ public final class InferenceBenchmark {
                       --max-cases N                      Limit cases, default all
                       --tensor-parallel-size N           Local in-process tensor parallel ranks, default 1
                       --tensor-parallel-max-ranks-per-worker N Max ranks per local worker, default 2
+                      --tensor-parallel-collective-transport http|netty Collective transport, default http
                       --tensor-parallel-host HOST        Gossip/rank bind host for benchmark TP nodes, default 127.0.0.1
                       --tensor-parallel-base-port N      Exact gossip base port; node-1 uses N+1, default derived from range
                       --tensor-parallel-port-start N     Start of derived gossip port range, default 42000

@@ -53,6 +53,7 @@ public class MultiModelConfig {
         private String uri = "udp://127.0.0.1:42606";
         private List<String> seeds = new ArrayList<>();
         private String deployment = "benchmark";
+        private String collectiveTransport = "http";
         private int size = 4;
         private int maxRanksPerWorker = 2;
         private int readyTimeoutSeconds = 120;
@@ -105,6 +106,14 @@ public class MultiModelConfig {
 
         public void setDeployment(String deployment) {
             this.deployment = deployment;
+        }
+
+        public String getCollectiveTransport() {
+            return collectiveTransport;
+        }
+
+        public void setCollectiveTransport(String collectiveTransport) {
+            this.collectiveTransport = collectiveTransport;
         }
 
         public int getSize() {

@@ -6,6 +6,7 @@
 : "${TP_NODE1_PORT:=42605}"
 : "${TP_COORDINATOR_PORT:=42606}"
 : "${TP_DEPLOYMENT:=benchmark}"
+: "${TP_COLLECTIVE_TRANSPORT:=netty}"
 : "${TP_OWNER:=tjake}"
 : "${TP_MODEL:=gemma-2-2b-it-JQ4}"
 : "${TP_SIZE:=4}"
@@ -34,7 +35,7 @@ tp_seed_args() {
 }
 
 tp_common_args() {
-  printf '%s' "--cluster $TP_CLUSTER --deployment $TP_DEPLOYMENT --owner $TP_OWNER --model $TP_MODEL --tensor-parallel-size $TP_SIZE --max-ranks-per-worker $TP_MAX_RANKS_PER_WORKER --pool-size $TP_POOL_SIZE --working-dtype $TP_WORKING_DTYPE --working-qtype $TP_WORKING_QTYPE --output-head-quantization $TP_OUTPUT_HEAD_QUANTIZATION --max-tokens $TP_MAX_TOKENS --temperature $TP_TEMPERATURE --ready-timeout-seconds $TP_READY_TIMEOUT_SECONDS --rank-endpoint-timeout-seconds $TP_RANK_ENDPOINT_TIMEOUT_SECONDS"
+  printf '%s' "--cluster $TP_CLUSTER --deployment $TP_DEPLOYMENT --collective-transport $TP_COLLECTIVE_TRANSPORT --owner $TP_OWNER --model $TP_MODEL --tensor-parallel-size $TP_SIZE --max-ranks-per-worker $TP_MAX_RANKS_PER_WORKER --pool-size $TP_POOL_SIZE --working-dtype $TP_WORKING_DTYPE --working-qtype $TP_WORKING_QTYPE --output-head-quantization $TP_OUTPUT_HEAD_QUANTIZATION --max-tokens $TP_MAX_TOKENS --temperature $TP_TEMPERATURE --ready-timeout-seconds $TP_READY_TIMEOUT_SECONDS --rank-endpoint-timeout-seconds $TP_RANK_ENDPOINT_TIMEOUT_SECONDS"
 }
 
 tp_classpath() {

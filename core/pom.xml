@@ -13,6 +13,7 @@
         <jafama.version>2.3.2</jafama.version>
         <jcttools.version>4.0.1</jcttools.version>
         <jemojie.version>1.7.6</jemojie.version>
+        <netty.version>4.1.115.Final</netty.version>
     </properties>
 
     <dependencies>
@@ -106,6 +107,11 @@
             <groupId>io.dropwizard.metrics</groupId>
             <artifactId>metrics-core</artifactId>
             <version>${metrics.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-all</artifactId>
+            <version>${netty.version}</version>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>

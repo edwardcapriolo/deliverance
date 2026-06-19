@@ -16,8 +16,14 @@ public record GossipParallelSettings(
         URI uri,
         List<Member> seedMembers,
         GossipSettings gossipSettings,
-        TensorParallelDeploymentSpec deploymentSpec
+        TensorParallelDeploymentSpec deploymentSpec,
+        String collectiveTransport
 ) {
+    public GossipParallelSettings(String cluster, String nodeId, URI uri, List<Member> seedMembers,
+            GossipSettings gossipSettings, TensorParallelDeploymentSpec deploymentSpec) {
+        this(cluster, nodeId, uri, seedMembers, gossipSettings, deploymentSpec, "http");
+    }
+
     public GossipParallelSettings {
         Objects.requireNonNull(cluster, "cluster");
         Objects.requireNonNull(nodeId, "nodeId");
@@ -25,5 +31,9 @@ public record GossipParallelSettings(
         seedMembers = List.copyOf(Objects.requireNonNull(seedMembers, "seedMembers"));
         gossipSettings = Objects.requireNonNull(gossipSettings, "gossipSettings");
         Objects.requireNonNull(deploymentSpec, "deploymentSpec");
+        collectiveTransport = Objects.requireNonNull(collectiveTransport, "collectiveTransport").toLowerCase(java.util.Locale.ROOT);
+        if (!collectiveTransport.equals("http") && !collectiveTransport.equals("netty")) {
+            throw new IllegalArgumentException("collectiveTransport must be http or netty");
+        }
     }
 }

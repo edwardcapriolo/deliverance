@@ -14,6 +14,8 @@ import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.tensorparallel.transport.HttpTensorParallelCollectiveServer;
 import io.teknek.deliverance.model.tensorparallel.transport.HttpTensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.transport.HttpTensorParallelRankClient;
+import io.teknek.deliverance.model.tensorparallel.transport.NettyTensorParallelCollectiveServer;
+import io.teknek.deliverance.model.tensorparallel.transport.NettyTensorParallelCollectives;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,18 +37,21 @@ public class GossipParallelMembership implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(GossipParallelMembership.class);
     private final GossipManager gossipManager;
     private final TensorParallelDeploymentSpec deploymentSpec;
+    private final String collectiveTransport;
     private volatile boolean closed;
     private Thread assignmentCoordinator;
-    private HttpTensorParallelCollectiveServer collectiveServer;
+    private AutoCloseable collectiveServer;
+    private URI collectiveServerUri;
     private AutoModelForCausaLm.Builder rankBuilder;
     private TensorParallelWorker worker;
     private final String rankBindHost;
 
     private GossipParallelMembership(GossipManager gossipManager, TensorParallelDeploymentSpec deploymentSpec,
-            String rankBindHost) {
+            String rankBindHost, String collectiveTransport) {
         this.gossipManager = gossipManager;
         this.deploymentSpec = deploymentSpec;
         this.rankBindHost = rankBindHost;
+        this.collectiveTransport = collectiveTransport;
     }
 
     public static GossipParallelMembership start(GossipParallelSettings settings) {
@@ -76,7 +81,7 @@ public class GossipParallelMembership implements AutoCloseable {
                 .build();
         manager.init();
         GossipParallelMembership membership = new GossipParallelMembership(manager, settings.deploymentSpec(),
-                settings.uri().getHost());
+                settings.uri().getHost(), settings.collectiveTransport());
         if (candidate) {
             membership.publishDeploymentSpec();
             membership.publishCandidate();
@@ -227,12 +232,22 @@ public class GossipParallelMembership implements AutoCloseable {
         if (closed || collectiveServer != null || !localNodeId().equals(electedLeader())) {
             return;
         }
-        collectiveServer = new HttpTensorParallelCollectiveServer(new InetSocketAddress("127.0.0.1", 0),
-                Duration.ofSeconds(30));
-        collectiveServer.start();
-        publishSharedData(deploymentSpec.collectiveUriKey(), collectiveServer.uri().toString());
+        if (collectiveTransport.equals("netty")) {
+            NettyTensorParallelCollectiveServer server = new NettyTensorParallelCollectiveServer(
+                    new InetSocketAddress(rankBindHost, 0), Duration.ofSeconds(30));
+            server.start();
+            collectiveServer = server;
+            collectiveServerUri = server.uri();
+        } else {
+            HttpTensorParallelCollectiveServer server = new HttpTensorParallelCollectiveServer(
+                    new InetSocketAddress(rankBindHost, 0), Duration.ofSeconds(30));
+            server.start();
+            collectiveServer = server;
+            collectiveServerUri = server.uri();
+        }
+        publishSharedData(deploymentSpec.collectiveUriKey(), collectiveServerUri.toString());
         LOGGER.info("Started tensor-parallel collective server node={} deployment={} uri={}",
-                localNodeId(), deploymentSpec.deploymentId(), collectiveServer.uri());
+                localNodeId(), deploymentSpec.deploymentId(), collectiveServerUri);
     }
 
     private synchronized void startWorkerIfReady() throws InterruptedException {
@@ -308,6 +323,9 @@ public class GossipParallelMembership implements AutoCloseable {
 
     public Function<TensorParallelContext, TensorParallelCollectives> tensorParallelCollectivesFactory() {
         URI uri = requireCollectiveUri();
+        if ("netty".equalsIgnoreCase(uri.getScheme())) {
+            return context -> new NettyTensorParallelCollectives(context, uri);
+        }
         return context -> new HttpTensorParallelCollectives(context, uri);
     }
 
@@ -408,7 +426,11 @@ public class GossipParallelMembership implements AutoCloseable {
             assignmentCoordinator.interrupt();
         }
         if (collectiveServer != null) {
-            collectiveServer.close();
+            try {
+                collectiveServer.close();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
             collectiveServer = null;
         }
         if (worker != null) {
