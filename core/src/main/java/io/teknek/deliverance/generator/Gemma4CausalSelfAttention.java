@@ -50,6 +50,7 @@ public class Gemma4CausalSelfAttention extends CausalSelfAttention {
 
     public static boolean isSharedKvDisabled() {
         return DISABLE_SHARED_KV;
+        //return true;
     }
 
     public Gemma4CausalSelfAttention(
@@ -296,6 +297,7 @@ public class Gemma4CausalSelfAttention extends CausalSelfAttention {
                 } finally {
                     outProjTimer.stop();
                 }
+            } finally {
             }
             return result;
         } finally {

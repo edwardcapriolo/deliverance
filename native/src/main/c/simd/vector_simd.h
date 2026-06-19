@@ -30,6 +30,10 @@ void gemm_f32_batch(int flags, int batch_num, const float *a, int aoffset, const
 void gemm_f32_q4(int flags, const float *a, int aoffset, const float *bf, const char* b, int boffset, float *r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf, int ldc);
 void gemm_f32_q4_batch(int flags, int batch_num, const float *a, int aoffset, const float **bf, const char **b, int boffset, float **r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf, int ldc);
 
+//GEMM BF16 Q4
+void gemm_bf16_q4(int flags, const short *a, int aoffset, const float *bf, const char* b, int boffset, float *r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf, int ldc);
+void gemm_bf16_q4_batch(int flags, int batch_num, const short *a, int aoffset, const float **bf, const char **b, int boffset, float **r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf, int ldc);
+
 //GEMM BF16
 void gemm_bf16(int flags, const short *a, int aoffset, const short *b, int boffset, short *cr, float *r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldc);
 void gemm_bf16_batch(int flags, int batch_num, const short *a, int aoffset, const short **b, int boffset, short **cr, float **r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldc);

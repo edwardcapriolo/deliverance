@@ -482,6 +482,12 @@ public class Gemma4Model extends LlamaModel {
         throw new IllegalArgumentException("Missing Gemma4 text weight " + name);
     }
 
+    private boolean isTextModelWeightPresent(String suffix) {
+        String root = resolveTextModelRoot();
+        String name = root + suffix;
+        return weights.isWeightPresent(name) || weights.isWeightPresent(name + "-part-0");
+    }
+
     private String resolveTextOutputWeight(String suffix) {
         List<String> candidates = List.of(suffix, "language_model." + suffix, resolveTextModelRoot() + suffix);
         for (String candidate : candidates) {

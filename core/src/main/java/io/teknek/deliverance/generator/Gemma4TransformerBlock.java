@@ -140,6 +140,8 @@ public class Gemma4TransformerBlock extends TransformerBlock {
         }).orElse(tensor);
     }
 
+
+
     private void logIfInteresting(String stage, AbstractTensor tensor) {
         if (!DEBUG_BLOCK_SUMMARIES || (layerIndex != 4 && layerIndex != 34)) {
             return;

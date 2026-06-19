@@ -804,7 +804,7 @@ public abstract class AbstractModel implements Generator, Classifier {
         }
     }
 
-    protected AbstractTensor forward(int token_id, int pos, KvBufferCache.KvBuffer kvbuf) {
+    public AbstractTensor forward(int token_id, int pos, KvBufferCache.KvBuffer kvbuf) {
         return forward(token_id, pos, kvbuf, Optional.empty());
     }
 

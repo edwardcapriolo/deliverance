@@ -52,6 +52,7 @@ public class GuidedChoiceSampler {
             long afterForward = System.nanoTime();
             forward1.update(Math.abs(afterForward - start));
 
+            logits.clear();
             VectorMath.pchunk(0, abstractModel.config.vocabularySize, (chunkStart, chunkSize) -> {
                 abstractModel.configurableTensorProvider.get()
                         .dotProductChunk(logits, embedding, abstractModel.sampleOutput.getOutputLogitsWeights(), 0,

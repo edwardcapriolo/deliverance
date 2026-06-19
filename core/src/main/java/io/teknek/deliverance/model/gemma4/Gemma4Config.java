@@ -138,15 +138,13 @@ public class Gemma4Config extends Config {
 
         if (Objects.equals(ropeType, "proportional")) {
             double partialRotaryFactor = doubleValue(ropeParams, "partial_rotary_factor", 1.0);
-            int ropeAngles = Math.min(halfDim, Math.max(1, (int) ((partialRotaryFactor * headDim) / 2.0)));
-            float step = 0.0f;
-            for (int i = 0; i < ropeAngles; i++, step += 2.0f) {
-                freqs[i] = (float) ((1.0 / FastMath.pow(theta, step / headDim)) / factor);
+            int ropeAngles = Math.min(halfDim, (int) Math.floor(partialRotaryFactor * headDim / 2.0));
+            for (int i = 0; i < ropeAngles; i++) {
+                freqs[i] = (float) ((1.0 / FastMath.pow(theta, (2.0 * i) / headDim)) / factor);
             }
         } else {
-            float step = 0.0f;
-            for (int i = 0; i < freqs.length; i++, step += 2.0f) {
-                freqs[i] = (float) ((1.0 / FastMath.pow(theta, step / headDim)) / factor);
+            for (int i = 0; i < freqs.length; i++) {
+                freqs[i] = (float) ((1.0 / FastMath.pow(theta, (2.0 * i) / headDim)) / factor);
             }
         }
 
@@ -250,6 +248,7 @@ public class Gemma4Config extends Config {
     private static int evenFloor(int value) {
         return (value & 1) == 0 ? value : value - 1;
     }
+
 
     @SuppressWarnings("unchecked")
     private static List<Integer> toIntList(Object eosTokens) {

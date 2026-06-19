@@ -67,6 +67,7 @@ class DeliveranceLegacySampler extends AbstractGeneratorSampler {
                         "sampler.output_projection.weight_dtype." + model.sampleOutput.getOutputLogitsWeights().dType()).inc();
             }
             try (Timer.Context ignoredOutput = InferenceProfiler.timer(model.getMetricRegistry(), "sampler.output_projection").time()) {
+                logits.clear();
                 VectorMath.pchunk(0, model.config.vocabularySize, (chunkStart, chunkSize) -> {
                 model.configurableTensorProvider.get()
                         .dotProductChunk(logits, embedding, model.sampleOutput.getOutputLogitsWeights(), 0,
@@ -179,6 +180,7 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
                         "sampler.output_projection.weight_dtype." + model.sampleOutput.getOutputLogitsWeights().dType()).inc();
             }
             try (Timer.Context ignoredOutput = InferenceProfiler.timer(model.getMetricRegistry(), "sampler.output_projection").time()) {
+                logits.clear();
                 VectorMath.pchunk(0, model.config.vocabularySize, (chunkStart, chunkSize) -> {
                 model.configurableTensorProvider.get()
                         .dotProductChunk(logits, embedding, model.sampleOutput.getOutputLogitsWeights(), 0,
