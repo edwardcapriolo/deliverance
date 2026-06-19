@@ -57,7 +57,7 @@ public final class TpLocalCluster {
         TensorParallelDeploymentSpec deploymentSpec = deploymentSpec(options);
         AutoModelForCausaLm.Builder builder = configuredBuilder(options, fetcher)
                 .withParallelSettings(new GossipParallelSettings(options.cluster, options.nodeId, options.uri,
-                        seedMembers(options), gossipSettings(), deploymentSpec));
+                        seedMembers(options), gossipSettings(), deploymentSpec, options.collectiveTransport));
         AbstractModel model = builder.buildAbstractModel();
         Runtime.getRuntime().addShutdownHook(new Thread(model::close, "tp-local-worker-shutdown-" + options.nodeId));
         LOGGER.info("Worker started node={} provider={} splitSize={} dtype={} workingDtype={} workingQtype={}",
@@ -69,7 +69,8 @@ public final class TpLocalCluster {
     private static void runCoordinator(Options options) throws Exception {
         TensorParallelDeploymentSpec deploymentSpec = deploymentSpec(options);
         GossipParallelMembership membership = GossipParallelMembership.startObserver(new GossipParallelSettings(
-                options.cluster, options.nodeId, options.uri, seedMembers(options), gossipSettings(), deploymentSpec));
+                options.cluster, options.nodeId, options.uri, seedMembers(options), gossipSettings(), deploymentSpec,
+                options.collectiveTransport));
         Runtime.getRuntime().addShutdownHook(new Thread(membership::close,
                 "tp-local-coordinator-membership-shutdown-" + options.nodeId));
 
@@ -188,6 +189,7 @@ public final class TpLocalCluster {
         private URI uri;
         private final List<Seed> seeds = new ArrayList<>();
         private String deploymentId = "benchmark";
+        private String collectiveTransport = "http";
         private int tensorParallelSize = 4;
         private int maxRanksPerWorker = 2;
         private String owner = "tjake";
@@ -213,6 +215,7 @@ public final class TpLocalCluster {
                     case "--uri" -> options.uri = URI.create(args[++i]);
                     case "--seed" -> options.seeds.add(parseSeed(args[++i]));
                     case "--deployment" -> options.deploymentId = args[++i];
+                    case "--collective-transport" -> options.collectiveTransport = args[++i].toLowerCase(Locale.ROOT);
                     case "--tensor-parallel-size" -> options.tensorParallelSize = Integer.parseInt(args[++i]);
                     case "--max-ranks-per-worker" -> options.maxRanksPerWorker = Integer.parseInt(args[++i]);
                     case "--owner" -> options.owner = args[++i];
@@ -236,6 +239,9 @@ public final class TpLocalCluster {
             Objects.requireNonNull(options.uri, "--uri is required");
             if (options.seeds.isEmpty()) {
                 throw new IllegalArgumentException("At least one --seed node=udp://host:port is required");
+            }
+            if (!options.collectiveTransport.equals("http") && !options.collectiveTransport.equals("netty")) {
+                throw new IllegalArgumentException("--collective-transport must be http or netty");
             }
             return options;
         }

@@ -396,6 +396,13 @@ public abstract class AbstractModel implements Generator, Classifier {
             gossipParallelMembership.close();
             gossipParallelMembership = null;
         }
+        if (tensorParallelCollectives instanceof AutoCloseable closeable) {
+            try {
+                closeable.close();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
         kvBufferCache.close();
     }
 

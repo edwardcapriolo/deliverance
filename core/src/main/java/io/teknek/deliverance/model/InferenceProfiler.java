@@ -2,26 +2,30 @@ package io.teknek.deliverance.model;
 
 import com.codahale.metrics.Counter;
 import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.Snapshot;
 import com.codahale.metrics.Timer;
+import com.codahale.metrics.ExponentiallyDecayingReservoir;
 
 import java.util.Comparator;
 import java.util.Collections;
+import java.util.concurrent.TimeUnit;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.LongAdder;
 
 /**
  * Registry for Dropwizard metrics that should appear in benchmark profile summaries.
  *
- * <p>This class does not time code itself. Hot paths should use the returned Dropwizard {@link Timer} or {@link Counter}
- * directly. The helper only records which metric names are part of the focused inference profile so benchmark output does
- * not have to dump every metric in the registry.</p>
+ * <p>Hot paths should use the returned Dropwizard-compatible {@link Timer} or {@link Counter} directly. Timers are also
+ * recorded into exact cumulative count/nanosecond totals so benchmark profile summaries can print per-reset deltas without
+ * trying to reset Dropwizard process-lifetime metrics.</p>
  */
 public final class InferenceProfiler {
     private static final Set<String> TIMER_NAMES = ConcurrentHashMap.newKeySet();
     private static final Set<String> COUNTER_NAMES = ConcurrentHashMap.newKeySet();
-    private static final ConcurrentMap<String, Set<Timer>> TIMERS = new ConcurrentHashMap<>();
     private static final ConcurrentMap<String, Set<Counter>> COUNTERS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<String, TimingTotals> TIMER_TOTALS = new ConcurrentHashMap<>();
     private static final ConcurrentMap<String, TimerBaseline> TIMER_BASELINES = new ConcurrentHashMap<>();
     private static final ConcurrentMap<String, Long> COUNTER_BASELINES = new ConcurrentHashMap<>();
     private static volatile boolean enabled = Boolean.getBoolean("deliverance.profile.stages");
@@ -38,17 +42,15 @@ public final class InferenceProfiler {
     }
 
     public static void reset() {
-        TIMER_NAMES.forEach(name -> TIMER_BASELINES.put(name,
-                TimerBaseline.fromTimers(TIMERS.getOrDefault(name, Set.of()))));
+        TIMER_NAMES.forEach(name -> TIMER_BASELINES.put(name, baseline(name)));
         COUNTER_NAMES.forEach(name -> COUNTER_BASELINES.put(name,
                 COUNTERS.getOrDefault(name, Set.of()).stream().mapToLong(Counter::getCount).sum()));
     }
 
     public static Timer timer(MetricRegistry metricRegistry, String name) {
-        Timer timer = metricRegistry.timer(name);
         TIMER_NAMES.add(name);
-        TIMERS.computeIfAbsent(name, ignored -> Collections.newSetFromMap(new ConcurrentHashMap<>())).add(timer);
-        return timer;
+        TimingTotals totals = TIMER_TOTALS.computeIfAbsent(name, ignored -> new TimingTotals());
+        return new ProfilingTimer(metricRegistry.timer(name), totals);
     }
 
     public static Counter counter(MetricRegistry metricRegistry, String name) {
@@ -64,8 +66,7 @@ public final class InferenceProfiler {
         }
         System.out.println("[profile] " + label);
         TIMER_NAMES.stream()
-                .map(name -> new TimerSnapshot(name, TIMERS.getOrDefault(name, Set.of())))
-                .map(snapshot -> snapshot.minus(TIMER_BASELINES.getOrDefault(snapshot.name(), TimerBaseline.ZERO)))
+                .map(name -> timerDelta(name, TIMER_BASELINES.getOrDefault(name, TimerBaseline.ZERO)))
                 .filter(snapshot -> snapshot.count() > 0)
                 .sorted(Comparator.comparingDouble(TimerDelta::estimatedTotalNanos).reversed())
                 .limit(maxRows)
@@ -89,27 +90,6 @@ public final class InferenceProfiler {
         return COUNTER_NAMES.contains(name);
     }
 
-    private record TimerSnapshot(String name, Set<Timer> timers) {
-        private TimerDelta minus(TimerBaseline baseline) {
-            long count = Math.max(0, count() - baseline.count());
-            double totalNanos = Math.max(0.0, estimatedTotalNanos() - baseline.estimatedTotalNanos());
-            return new TimerDelta(name, count, totalNanos);
-        }
-
-        private double estimatedTotalNanos() {
-            return timers.stream().mapToDouble(timer -> timer.getCount() * timer.getSnapshot().getMean()).sum();
-        }
-
-        private long count() {
-            return timers.stream().mapToLong(Timer::getCount).sum();
-        }
-
-        private double meanNanos() {
-            long count = count();
-            return count == 0 ? 0.0 : estimatedTotalNanos() / count;
-        }
-    }
-
     private record TimerDelta(String name, long count, double estimatedTotalNanos) {
         private double meanNanos() {
             return count == 0 ? 0.0 : estimatedTotalNanos / count;
@@ -118,11 +98,64 @@ public final class InferenceProfiler {
 
     private record TimerBaseline(long count, double estimatedTotalNanos) {
         private static final TimerBaseline ZERO = new TimerBaseline(0, 0.0);
+    }
 
-        private static TimerBaseline fromTimers(Set<Timer> timers) {
-            long count = timers.stream().mapToLong(Timer::getCount).sum();
-            double totalNanos = timers.stream().mapToDouble(timer -> timer.getCount() * timer.getSnapshot().getMean()).sum();
-            return new TimerBaseline(count, totalNanos);
+    private static TimerBaseline baseline(String name) {
+        TimingTotals totals = TIMER_TOTALS.get(name);
+        return totals == null ? TimerBaseline.ZERO : new TimerBaseline(totals.count(), totals.totalNanos());
+    }
+
+    private static TimerDelta timerDelta(String name, TimerBaseline baseline) {
+        TimingTotals totals = TIMER_TOTALS.get(name);
+        if (totals == null) {
+            return new TimerDelta(name, 0, 0.0);
+        }
+        return new TimerDelta(name, Math.max(0, totals.count() - baseline.count()),
+                Math.max(0.0, totals.totalNanos() - baseline.estimatedTotalNanos()));
+    }
+
+    private static final class TimingTotals {
+        private final LongAdder count = new LongAdder();
+        private final LongAdder totalNanos = new LongAdder();
+
+        private void update(long duration, TimeUnit unit) {
+            count.increment();
+            totalNanos.add(unit.toNanos(duration));
+        }
+
+        private long count() {
+            return count.sum();
+        }
+
+        private long totalNanos() {
+            return totalNanos.sum();
+        }
+    }
+
+    private static final class ProfilingTimer extends Timer {
+        private final Timer delegate;
+        private final TimingTotals totals;
+
+        private ProfilingTimer(Timer delegate, TimingTotals totals) {
+            super(new ExponentiallyDecayingReservoir());
+            this.delegate = delegate;
+            this.totals = totals;
+        }
+
+        @Override
+        public void update(long duration, TimeUnit unit) {
+            delegate.update(duration, unit);
+            totals.update(duration, unit);
+        }
+
+        @Override
+        public long getCount() {
+            return delegate.getCount();
+        }
+
+        @Override
+        public Snapshot getSnapshot() {
+            return delegate.getSnapshot();
         }
     }
 }
