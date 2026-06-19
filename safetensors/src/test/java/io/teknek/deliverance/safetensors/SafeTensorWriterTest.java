@@ -46,10 +46,10 @@ public class SafeTensorWriterTest {
     @Test
     public void writesDenseVectorAsRowVector() throws Exception {
         FloatBufferTensor vector = new FloatBufferTensor(4);
-        vector.set(1.0f, 0);
-        vector.set(2.0f, 1);
-        vector.set(3.0f, 2);
-        vector.set(4.0f, 3);
+        vector.set(1.0f, 0, 0);
+        vector.set(2.0f, 0, 1);
+        vector.set(3.0f, 0, 2);
+        vector.set(4.0f, 0, 3);
 
         Path output = tempDir.resolve("model.safetensors");
         SafeTensorWriter.write(output, Map.of(), Map.of("norm.weight", vector));
