@@ -2,7 +2,17 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-NATIVE_LIB_DIR="$SCRIPT_DIR/native/target/native-lib-only"
+OS_NAME=$(uname -s)
+OS_ARCH=$(uname -m)
+case "$OS_NAME:$OS_ARCH" in
+  Darwin:arm64|Darwin:aarch64) NATIVE_CLASSIFIER=osx-aarch_64 ;;
+  Darwin:x86_64) NATIVE_CLASSIFIER=osx-x86_64 ;;
+  Linux:aarch64|Linux:arm64) NATIVE_CLASSIFIER=linux-aarch_64 ;;
+  Linux:x86_64|Linux:amd64) NATIVE_CLASSIFIER=linux-x86_64 ;;
+  *) printf '%s\n' "Unsupported native platform: $OS_NAME $OS_ARCH" >&2; exit 1 ;;
+esac
+NATIVE_CLASSIFIER=${DELIVERANCE_NATIVE_CLASSIFIER:-$NATIVE_CLASSIFIER}
+NATIVE_LIB_DIR="$SCRIPT_DIR/native/target/native-lib-only/$NATIVE_CLASSIFIER"
 
 if [ ! -d "$NATIVE_LIB_DIR" ]; then
   printf '%s\n' "Native library directory not found: $NATIVE_LIB_DIR" >&2

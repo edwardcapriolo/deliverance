@@ -28,7 +28,17 @@ TP_RUN_DIR="$TP_LOCAL_DIR/run"
 TP_LOG_DIR="$TP_LOCAL_DIR/logs"
 TP_MAIN_CLASS="io.teknek.deliverance.benchmark.TpLocalCluster"
 TP_COORDINATOR_CONFIG="$TP_LOCAL_DIR/coordinator.properties"
-TP_NATIVE_LIB_DIR="$DELIVERANCE_ROOT/native/target/native-lib-only"
+OS_NAME=$(uname -s)
+OS_ARCH=$(uname -m)
+case "$OS_NAME:$OS_ARCH" in
+  Darwin:arm64|Darwin:aarch64) TP_NATIVE_CLASSIFIER=osx-aarch_64 ;;
+  Darwin:x86_64) TP_NATIVE_CLASSIFIER=osx-x86_64 ;;
+  Linux:aarch64|Linux:arm64) TP_NATIVE_CLASSIFIER=linux-aarch_64 ;;
+  Linux:x86_64|Linux:amd64) TP_NATIVE_CLASSIFIER=linux-x86_64 ;;
+  *) printf '%s\n' "Unsupported native platform: $OS_NAME $OS_ARCH" >&2; exit 1 ;;
+esac
+TP_NATIVE_CLASSIFIER=${DELIVERANCE_NATIVE_CLASSIFIER:-$TP_NATIVE_CLASSIFIER}
+TP_NATIVE_LIB_DIR="$DELIVERANCE_ROOT/native/target/native-lib-only/$TP_NATIVE_CLASSIFIER"
 
 tp_seed_args() {
   printf '%s' "--seed node-0=udp://$TP_HOST:$TP_NODE0_PORT --seed node-1=udp://$TP_HOST:$TP_NODE1_PORT"
