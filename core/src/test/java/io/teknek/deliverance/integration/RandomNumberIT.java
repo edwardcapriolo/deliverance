@@ -17,11 +17,9 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
-import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class RandomNumberIT {
 
@@ -54,103 +52,6 @@ public class RandomNumberIT {
         }
     }
 
-
-    @Test
-    public void calc() {
-        String modelName = "Llama-3.2-3B-Instruct-JQ4";
-        String modelOwner = "tjake";
-        ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
-        var uuid = UUID.randomUUID();
-
-        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
-                .withMaxPrefixTokensPerPrompt(512)
-                .withMaxEntries(10_000)
-                .withBlockSize(8);
-        try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).withWorkingQuantType(DType.I8)
-                .withKvBufferCacheSettings(settings)
-                .buildLocalTransformerModel()){
-            String prompt = "Generate a java interface named Shape with a method name calculateArea.";
-            PromptContext ctx = m.promptSupport().get().builder()
-                    .addSystemMessage("You are an assistant that produces concise, production-grade software.")
-                    .addSystemMessage("Output java code.")
-                    .addSystemMessage("Refrain from editorializing your reply.")
-                    .addSystemMessage("Generate java code into the package 'io.teknek.shape' .")
-                    .addSystemMessage("Do not import java.awt")
-                    //.addSystemMessage("You are a direct, concise AI. Do not provide explanations, justifications, or conversational filler. Only output the final answer.")
-                    .addUserMessage("Generate a java interface named Shape with a method named area that returns a double.")
-                    .addUserMessage("Generate a java class named Circle that extends the Shape interface.")
-                    .build();
-
-
-            Response k = m.generate(uuid, ctx, new GeneratorParameters()
-                    .withNtokens(512)
-                            .withIncludeStopStrInOutput(false)
-                    .withStopWords(List.of("<|eot_id|>"))
-                    .withTemperature(0.2f).withSeed(99998), new DoNothingGenerateEvent());
-/*
-            assertEquals("""
-```java
-package io.teknek.shape;
-
-public class Circle extends Shape {
-    private double radius;
-
-    public Circle(double radius) {
-        this.radius = radius;
-    }
-
-    @Override
-    public double area() {
-        return Math.PI * Math.pow(radius, 2);
-    }
-}
-```
-
-Note: The `Shape` interface is assumed to be defined elsewhere in the codebase. If not, it can be defined as follows:
-
-```java
-package io.teknek.shape;
-
-public interface Shape {
-    double area();
-}
-```
-""".trim(), k.responseText);
-
- */
-            //assertTrue(k.responseText.contains("public interface Shape"));
-        }
-    }
-
-
-
-    @Test
-    public void nanocodeRootPromptHiNoTools() {
-        String modelName = "Llama-3.2-3B-Instruct-JQ4";
-        String modelOwner = "tjake";
-        ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
-        var uuid = UUID.randomUUID();
-
-        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
-                .withMaxPrefixTokensPerPrompt(512)
-                .withMaxEntries(10_000)
-                .withBlockSize(8);
-        try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).withWorkingQuantType(DType.I8)
-                .withKvBufferCacheSettings(settings)
-                .buildLocalTransformerModel()) {
-            PromptContext ctx = m.promptSupport().get().builder()
-                    .addSystemMessage("You are a concise coding assistant. cwd: /tmp. Use tools when needed. Prefer small, direct changes.")
-                    .addUserMessage("hi")
-                    .build();
-
-            Response response = m.generate(uuid, ctx, new GeneratorParameters()
-                    .withNtokens(1024)
-                    .withMaxTokens(200)
-                    .withTemperature(0.0f)
-                    .withSeed(99999), new DoNothingGenerateEvent());
-            System.out.println(response);
-        }
-    }
 
     @Test
     public void mdCleanup(){
