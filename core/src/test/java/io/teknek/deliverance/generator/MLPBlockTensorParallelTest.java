@@ -106,6 +106,10 @@ public class MLPBlockTensorParallelTest {
                         (Integer) invocation.getArgument(1)));
         when(model.makeDenseTensor(Mockito.any(TensorShape.class)))
                 .thenAnswer(invocation -> new FloatBufferTensor((TensorShape) invocation.getArgument(0)));
+        when(model.isInWorkingQuantizedType(Mockito.any(AbstractTensor.class)))
+                .thenAnswer(invocation -> ((AbstractTensor) invocation.getArgument(0)).dType() == DType.F32);
+        when(model.quantizeToWorkingQuantizedType(Mockito.any(AbstractTensor.class)))
+                .thenAnswer(invocation -> new FloatBufferTensor((AbstractTensor) invocation.getArgument(0)));
         when(model.maybeQuantize(Mockito.any(AbstractTensor.class)))
                 .thenAnswer(invocation -> new FloatBufferTensor((AbstractTensor) invocation.getArgument(0)));
         return model;

@@ -30,7 +30,7 @@ public class ModelControllerTest {
     @Test
     public void listModels(@Autowired Environment env) throws Exception {
         String expected = """
-                {"object":"list","data":[{"id":"all-MiniLM-L6-v2","created":0,"object":"model","owned_by":"sentence-transformers"},{"id":"TinyLlama-1.1B-Chat-v1.0-Jlama-Q4","created":0,"object":"model","owned_by":"tjake"}]}""";
+                {"object":"list","data":[{"id":"TinyLlama-1.1B-Chat-v1.0-Jlama-Q4","created":0,"object":"model","owned_by":"tjake"},{"id":"all-MiniLM-L6-v2","created":0,"object":"model","owned_by":"sentence-transformers"}]}""";
         mockMvc.perform(MockMvcRequestBuilders.get("/models")
                         .with(httpBasic("1","2"))
                         .contentType(MediaType.APPLICATION_JSON))

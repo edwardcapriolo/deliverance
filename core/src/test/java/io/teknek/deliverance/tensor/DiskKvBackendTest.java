@@ -187,6 +187,7 @@ public class DiskKvBackendTest {
                 List.of(1), ActivationFunction.Type.GELU_PYTORCH_TANH, null, null);
         AbstractModel model = mock(AbstractModel.class);
         when(model.getConfig()).thenReturn(config);
+        when(model.getLocalKvLength()).thenReturn(config.kvLength);
         when(model.getWorkingDType()).thenReturn(DType.F32);
         when(model.getTensorAllocator()).thenReturn(new ArrayQueueTensorAllocator(new MetricRegistry()));
         when(model.getMetricRegistry()).thenReturn(new MetricRegistry());

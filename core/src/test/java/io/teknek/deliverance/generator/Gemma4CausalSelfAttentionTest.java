@@ -131,7 +131,7 @@ public class Gemma4CausalSelfAttentionTest {
             entries.put("intermediate_size", 16);
             entries.put("num_attention_heads", 2);
             entries.put("num_key_value_heads", 1);
-            entries.put("num_hidden_layers", 1);
+            entries.put("num_hidden_layers", 2);
             entries.put("rms_norm_eps", 1.0e-6);
             entries.put("vocab_size", 32);
             entries.put("bos_token_id", 2);
@@ -139,8 +139,11 @@ public class Gemma4CausalSelfAttentionTest {
             entries.put("hidden_activation", "gelu_pytorch_tanh");
             entries.put("head_dim", 4);
             entries.put("sliding_window", 8);
-            entries.put("layer_types", List.of("sliding_attention"));
-            entries.put("rope_parameters", Map.of("sliding_attention", Map.of("rope_theta", 10000.0)));
+            entries.put("layer_types", List.of("sliding_attention", "full_attention"));
+            entries.put("rope_parameters", Map.of(
+                    "sliding_attention", Map.of("rope_theta", 10000.0),
+                    "full_attention", Map.of("rope_theta", 1000000.0)
+            ));
             if (attnLogitSoftCapping != null) {
                 entries.put("attn_logit_softcapping", attnLogitSoftCapping);
             }

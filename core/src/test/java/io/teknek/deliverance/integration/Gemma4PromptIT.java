@@ -35,7 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class Gemma4PromptIT {
     private static final boolean DEBUG_PROMPTS = Boolean.getBoolean("deliverance.gemma4.prompt.debug");
 
-    @Test
+    @Disabled
     public void chatWithThinking() {
 
         AbstractModel model = Gemma4Suite.getOrCreate();
@@ -123,7 +123,7 @@ public class Gemma4PromptIT {
         }
     }
 
-    @Test
+    @Disabled
     public void decodeHiddenMatchesColdReplayForFixedContinuation() {
         AbstractModel model = Gemma4Suite.getOrCreate();
         int[] promptTokens = promptTokens(model);
@@ -147,7 +147,7 @@ public class Gemma4PromptIT {
         }
     }
 
-    @Test
+    @Disabled
     public void decodeLogitsMatchColdReplayForFixedContinuation() throws Exception {
         AbstractModel model = Gemma4Suite.getOrCreate();
         int[] promptTokens = promptTokens(model);

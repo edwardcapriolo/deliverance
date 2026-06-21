@@ -23,6 +23,7 @@ public class KvBufferCachePrefixTest {
                 List.of(1), ActivationFunction.Type.GELU_PYTORCH_TANH, null, null);
         AbstractModel model = mock(AbstractModel.class);
         when(model.getConfig()).thenReturn(config);
+        when(model.getLocalKvLength()).thenReturn(config.kvLength);
         when(model.getWorkingDType()).thenReturn(DType.F32);
         when(model.getTensorAllocator()).thenReturn(new ArrayQueueTensorAllocator(new MetricRegistry()));
         when(model.getMetricRegistry()).thenReturn(new MetricRegistry());
@@ -31,7 +32,7 @@ public class KvBufferCachePrefixTest {
 
     @Test
     public void testExactPrefixHit() {
-        KvBufferCacheSettings settings = new KvBufferCacheSettings(true).withMaxEntries(512);
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true).withMaxEntries(512).withBlockSize(4);
         KvBufferCache cache = new KvBufferCache(mockModel(), settings);
         int[] tokens = {1, 2, 3, 4, 5, 6, 7, 8, 9};
         KvBufferCache.KvBuffer buf = cache.getEphemeralKvBuffer();
@@ -44,7 +45,7 @@ public class KvBufferCachePrefixTest {
         }
 
         KvBufferCache.PrefixEntry e = cache.lookupPrefix(tokens, Optional.empty());
-        assertEquals(tokens.length - 1, e.length());
+        assertEquals(8, e.length());
     }
 
     @Test
@@ -59,7 +60,7 @@ public class KvBufferCachePrefixTest {
 
     @Test
     public void testSaltyDisabled() {
-        KvBufferCacheSettings settings = new KvBufferCacheSettings(true).withMaxEntries(10);
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true).withMaxEntries(10).withBlockSize(4);
         KvBufferCache cache = new KvBufferCache(mockModel(), settings);
         int[] tokens = {1, 2, 3, 4, 5, 6, 7, 8, 9};
         KvBufferCache.KvBuffer buf = cache.getEphemeralKvBuffer();
@@ -128,21 +129,21 @@ public class KvBufferCachePrefixTest {
 
     @Test
     public void storeLookupAndCopyPrefixPreservesKeysAndValues() {
-        int blockSize = new KvBufferCacheSettings(true).getBlockSize();
-        KvBufferCacheSettings settings = new KvBufferCacheSettings(true).withMaxEntries(512);
+        int expectedPrefixLength = 8;
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true).withMaxEntries(512).withBlockSize(4);
         AbstractModel model = mockModel();
         KvBufferCache cache = new KvBufferCache(model, settings);
         int[] tokens = {1, 2, 3, 4, 5, 6, 7, 8, 9};
 
         try (KvBufferCache.KvBuffer source = cache.getEphemeralKvBuffer();
              KvBufferCache.KvBuffer copied = cache.getEphemeralKvBuffer()) {
-            fillKv(source, model.getConfig(), blockSize);
+            fillKv(source, model.getConfig(), expectedPrefixLength);
 
             cache.storePrefix(tokens, source, Optional.empty());
             KvBufferCache.PrefixEntry hit = cache.lookupPrefix(tokens, Optional.empty());
 
             assertNotNull(hit);
-            assertEquals(blockSize, hit.length());
+            assertEquals(expectedPrefixLength, hit.length());
 
             cache.copyPrefix(hit.buffer(), copied, hit.length());
             assertKvPrefixEquals(source, copied, model.getConfig(), hit.length());
