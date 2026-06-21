@@ -110,6 +110,27 @@ public class NativeSimdTensorOperations implements TensorOperations {
                             result.getStride()
                         );
                         break;
+                    case Q4:
+                        Q4ByteBufferTensor b = (Q4ByteBufferTensor) bt;
+                        NativeSimd.gemm_bf16_q4(
+                            flags,
+                            at.getMemorySegment(),
+                            aOffset,
+                            b.getBlockF().getMemorySegment(),
+                            b.getMemorySegment(),
+                            b.getMemorySegmentOffset(bOffset),
+                            result.getMemorySegment(),
+                            rOffset,
+                            M,
+                            adjBRowOffset,
+                            N,
+                            K,
+                            at.getStride(),
+                            b.getMemorySegmentOffset(b.getStride()),
+                            b.getBlockF().getStride(),
+                            result.getStride()
+                        );
+                        break;
                     default:
                         throw new UnsupportedOperationException(at.dType().name() + " " + bt.dType().name());
                 }
@@ -266,6 +287,28 @@ public class NativeSimdTensorOperations implements TensorOperations {
                             K,
                             a.getStride(),
                             b[0].getStride(),
+                            r[0].getStride()
+                        );
+                        break;
+                    case Q4:
+                        Q4ByteBufferTensor bt = (Q4ByteBufferTensor) b[0];
+                        NativeSimd.gemm_bf16_q4_batch(
+                            flags,
+                            r.length,
+                            a.getMemorySegment(),
+                            aOffset,
+                            rc,
+                            rb,
+                            bt.getMemorySegmentOffset(bOffset),
+                            ra,
+                            rOffset,
+                            M,
+                            bRowOffset,
+                            N,
+                            K,
+                            a.getStride(),
+                            b[0].getMemorySegmentOffset(b[0].getStride()),
+                            bt.getBlockF().getStride(),
                             r[0].getStride()
                         );
                         break;

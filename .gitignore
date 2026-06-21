@@ -27,6 +27,7 @@ release-staging/
 venv/
 .sdkmanrc
 pom.xml.versionsBackup
+hs_err*
 
 
 # For python setup.py, which pollutes the source dirs.

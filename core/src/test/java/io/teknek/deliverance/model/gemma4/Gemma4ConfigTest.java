@@ -53,6 +53,24 @@ public class Gemma4ConfigTest {
     }
 
     @Test
+    public void proportionalRopeDoesNotForceRotatedPairWhenPartialFactorIsZero() {
+        Map<String, Object> textConfig = baseConfig(false);
+        textConfig.put("rope_parameters", Map.of(
+                "sliding_attention", Map.of("rope_theta", 10000.0),
+                "full_attention", Map.of("rope_theta", 1000000.0, "rope_type", "proportional", "partial_rotary_factor", 0.0)
+        ));
+        Gemma4Config config = new Gemma4Config(textConfig, List.of("Gemma4ForConditionalGeneration"), List.of(1));
+        float[][] freqs = config.ropeFreqsByLayerType.get("full_attention");
+        int halfDim = config.getLayerHeadDim("full_attention") / 2;
+        int pos1 = halfDim;
+
+        for (int i = 0; i < halfDim; i++) {
+            assertEquals(1.0f, freqs[pos1 + i][0], 1.0e-6f);
+            assertEquals(0.0f, freqs[pos1 + i][1], 1.0e-6f);
+        }
+    }
+
+    @Test
     public void defaultRopeRotatesAcrossAllPairs() {
         Gemma4Config config = config(false);
         float[][] freqs = config.ropeFreqsByLayerType.get("sliding_attention");
@@ -73,7 +91,51 @@ public class Gemma4ConfigTest {
         assertEquals(14, config.getSharedKvSourceLayer(34));
     }
 
+    @Test
+    public void scalarIntermediateSizePreservesDoubleWideSharedLayerRule() {
+        Map<String, Object> textConfig = e2bLikeTextConfig();
+        textConfig.put("use_double_wide_mlp", true);
+        Gemma4Config config = new Gemma4Config(textConfig, List.of("Gemma4ForConditionalGeneration"), List.of(1));
+
+        assertEquals(32, config.getLayerHiddenLength(0));
+        assertEquals(64, config.getLayerHiddenLength(15));
+    }
+
+    @Test
+    public void defaultsLayerTypesAndForcesLastLayerFullAttention() {
+        Map<String, Object> textConfig = e2bLikeTextConfig();
+        textConfig.remove("layer_types");
+        Gemma4Config config = new Gemma4Config(textConfig, List.of("Gemma4ForConditionalGeneration"), List.of(1));
+
+        assertEquals("sliding_attention", config.layerTypes.get(0));
+        assertEquals("full_attention", config.layerTypes.get(5));
+        assertEquals("full_attention", config.layerTypes.getLast());
+    }
+
+    @Test
+    public void defaultsRopeParametersByLayerType() {
+        Map<String, Object> textConfig = e2bLikeTextConfig();
+        textConfig.remove("rope_parameters");
+        Gemma4Config config = new Gemma4Config(textConfig, List.of("Gemma4ForConditionalGeneration"), List.of(1));
+
+        assertEquals("default", config.ropeParametersByLayerType.get("sliding_attention").get("rope_type"));
+        assertEquals("proportional", config.ropeParametersByLayerType.get("full_attention").get("rope_type"));
+    }
+
+    @Test
+    public void parsesExpertIntermediateSizeAlias() {
+        Map<String, Object> textConfig = e2bLikeTextConfig();
+        textConfig.put("expert_intermediate_size", 1234);
+        Gemma4Config config = new Gemma4Config(textConfig, List.of("Gemma4ForConditionalGeneration"), List.of(1));
+
+        assertEquals(1234, config.moeIntermediateSize);
+    }
+
     private static Gemma4Config config(boolean attentionKEqV) {
+        return new Gemma4Config(baseConfig(attentionKEqV), List.of("Gemma4ForConditionalGeneration"), List.of(1));
+    }
+
+    private static Map<String, Object> baseConfig(boolean attentionKEqV) {
         Map<String, Object> textConfig = new LinkedHashMap<>();
         textConfig.put("max_position_embeddings", 32);
         textConfig.put("hidden_size", 16);
@@ -96,10 +158,14 @@ public class Gemma4ConfigTest {
                 "sliding_attention", Map.of("rope_theta", 10000.0),
                 "full_attention", Map.of("rope_theta", 1000000.0)
         ));
-        return new Gemma4Config(textConfig, List.of("Gemma4ForConditionalGeneration"), List.of(1));
+        return textConfig;
     }
 
     private static Gemma4Config e2bLikeConfig() {
+        return new Gemma4Config(e2bLikeTextConfig(), List.of("Gemma4ForConditionalGeneration"), List.of(1));
+    }
+
+    private static Map<String, Object> e2bLikeTextConfig() {
         Map<String, Object> textConfig = new LinkedHashMap<>();
         textConfig.put("max_position_embeddings", 32);
         textConfig.put("hidden_size", 16);
@@ -128,6 +194,6 @@ public class Gemma4ConfigTest {
                 "sliding_attention", Map.of("rope_theta", 10000.0),
                 "full_attention", Map.of("rope_theta", 1000000.0, "rope_type", "proportional", "partial_rotary_factor", 0.25)
         ));
-        return new Gemma4Config(textConfig, List.of("Gemma4ForConditionalGeneration"), List.of(1));
+        return textConfig;
     }
 }

@@ -186,7 +186,7 @@ public class AutoTokenizer {
 
     private static BytePairEncodingModel parseBytePairEncodingModel(File path, JsonNode tokenizerDocument, Map<String, Integer> vocab) throws IOException {
         JsonNode modelNode = tokenizerDocument.path("model");
-        if (!"BPE".equals(modelNode.path("type").asText())) {
+        if (!isBpeModel(modelNode)) {
             return null;
         }
 
@@ -205,6 +205,13 @@ public class AutoTokenizer {
                 BytePairEncodingModel.fromMerges(merges),
                 parsePreTokenizer(tokenizerDocument.path("pre_tokenizer")),
                 readText(modelNode, "unk_token"));
+    }
+
+    private static boolean isBpeModel(JsonNode modelNode) {
+        if ("BPE".equals(modelNode.path("type").asText())) {
+            return true;
+        }
+        return modelNode.path("vocab").isObject() && modelNode.path("merges").isArray();
     }
 
     private static boolean isGemmaLikeTokenizer(String tokenizerClass, JsonNode tokenizerDocument) {

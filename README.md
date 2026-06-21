@@ -263,13 +263,13 @@ can be used to customize the tests as they run.
 
 ```
 -DskipTests
--DskipUnitTests
--DskipIntegrationTests
+-DskipITs
+-Dmaven.test.skip=true
 ```
 
-To skip the long running tests named *IT:
+By default, integration tests tagged `large-model` are excluded. To skip all integration tests named `*IT`:
 ```
-mvn test -DskipIntegrationTests
+mvn verify -DskipITs
 ```
 
 Build the tests but do not execute them

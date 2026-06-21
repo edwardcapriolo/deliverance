@@ -18,6 +18,7 @@ public class Gemma4Config extends Config {
     public final int numKvSharedLayers;
     public final boolean enableMoeBlock;
     public final boolean useDoubleWideMlp;
+    public final String useBidirectionalAttention;
     public final Integer numExperts;
     public final Integer topKExperts;
     public final Integer moeIntermediateSize;
@@ -37,23 +38,23 @@ public class Gemma4Config extends Config {
             @JsonProperty("eos_token_id") Object rootEosTokens
     ) {
         super(
-                intValue(textConfig, "max_position_embeddings"),
-                intValue(textConfig, "hidden_size"),
-                intValue(textConfig, "intermediate_size"),
-                intValue(textConfig, "num_attention_heads"),
-                Math.max(intValue(textConfig, "num_key_value_heads"), intValue(textConfig, "num_global_key_value_heads", intValue(textConfig, "num_key_value_heads"))),
-                intValue(textConfig, "num_hidden_layers"),
-                floatValue(textConfig, "rms_norm_eps"),
-                intValue(textConfig, "vocab_size"),
-                intValue(textConfig, "bos_token_id"),
-                toIntList(rootEosTokens != null ? rootEosTokens : textConfig.get("eos_token_id")),
-                activation(textConfig),
-                ropeTheta((Map<String, Object>) mapValue(mapValue(textConfig, "rope_parameters"), "sliding_attention"), 10000.0),
+                intValue(normalizeTextConfig(textConfig), "max_position_embeddings"),
+                intValue(normalizeTextConfig(textConfig), "hidden_size"),
+                intValue(normalizeTextConfig(textConfig), "intermediate_size"),
+                intValue(normalizeTextConfig(textConfig), "num_attention_heads"),
+                Math.max(intValue(normalizeTextConfig(textConfig), "num_key_value_heads"), intValue(normalizeTextConfig(textConfig), "num_global_key_value_heads", intValue(normalizeTextConfig(textConfig), "num_key_value_heads"))),
+                intValue(normalizeTextConfig(textConfig), "num_hidden_layers"),
+                floatValue(normalizeTextConfig(textConfig), "rms_norm_eps"),
+                intValue(normalizeTextConfig(textConfig), "vocab_size"),
+                intValue(normalizeTextConfig(textConfig), "bos_token_id"),
+                toIntList(rootEosTokens != null ? rootEosTokens : normalizeTextConfig(textConfig).get("eos_token_id")),
+                activation(normalizeTextConfig(textConfig)),
+                ropeTheta((Map<String, Object>) mapValue(mapValue(normalizeTextConfig(textConfig), "rope_parameters"), "sliding_attention"), 10000.0),
                 null,
                 null,
-                Math.max(intValue(textConfig, "head_dim"), intValue(textConfig, "global_head_dim", intValue(textConfig, "head_dim"))),
-                floatValueObject(textConfig, "final_logit_softcapping"),
-                floatValueObject(textConfig, "attn_logit_softcapping"),
+                Math.max(intValue(normalizeTextConfig(textConfig), "head_dim"), intValue(normalizeTextConfig(textConfig), "global_head_dim", intValue(normalizeTextConfig(textConfig), "head_dim"))),
+                floatValueObject(normalizeTextConfig(textConfig), "final_logit_softcapping"),
+                floatValueObject(normalizeTextConfig(textConfig), "attn_logit_softcapping"),
                 null,
                 null,
                 null,
@@ -61,23 +62,25 @@ public class Gemma4Config extends Config {
                 architectures
         );
 
-        this.slidingWindow = intValueObject(textConfig, "sliding_window");
-        this.layerTypes = Collections.unmodifiableList(new ArrayList<>((List<String>) textConfig.get("layer_types")));
-        this.defaultHeadDim = intValue(textConfig, "head_dim");
-        this.defaultKeyValueHeads = intValue(textConfig, "num_key_value_heads");
-        this.numGlobalKeyValueHeads = intValueObject(textConfig, "num_global_key_value_heads");
-        this.globalHeadDim = intValueObject(textConfig, "global_head_dim");
-        this.attentionKEqV = booleanValue(textConfig, "attention_k_eq_v");
-        this.numKvSharedLayers = intValue(textConfig, "num_kv_shared_layers", 0);
-        this.enableMoeBlock = booleanValue(textConfig, "enable_moe_block");
-        this.useDoubleWideMlp = booleanValue(textConfig, "use_double_wide_mlp");
-        this.numExperts = intValueObject(textConfig, "num_experts");
-        this.topKExperts = intValueObject(textConfig, "top_k_experts");
-        this.moeIntermediateSize = intValueObject(textConfig, "moe_intermediate_size");
-        this.vocabSizePerLayerInput = intValueObject(textConfig, "vocab_size_per_layer_input");
-        this.hiddenSizePerLayerInput = intValueObject(textConfig, "hidden_size_per_layer_input");
+        Map<String, Object> normalizedTextConfig = normalizeTextConfig(textConfig);
+        this.slidingWindow = intValueObject(normalizedTextConfig, "sliding_window");
+        this.layerTypes = Collections.unmodifiableList(new ArrayList<>((List<String>) normalizedTextConfig.get("layer_types")));
+        this.defaultHeadDim = intValue(normalizedTextConfig, "head_dim");
+        this.defaultKeyValueHeads = intValue(normalizedTextConfig, "num_key_value_heads");
+        this.numGlobalKeyValueHeads = intValueObject(normalizedTextConfig, "num_global_key_value_heads");
+        this.globalHeadDim = intValueObject(normalizedTextConfig, "global_head_dim");
+        this.attentionKEqV = booleanValue(normalizedTextConfig, "attention_k_eq_v");
+        this.numKvSharedLayers = intValue(normalizedTextConfig, "num_kv_shared_layers", 0);
+        this.enableMoeBlock = booleanValue(normalizedTextConfig, "enable_moe_block");
+        this.useDoubleWideMlp = booleanValue(normalizedTextConfig, "use_double_wide_mlp");
+        this.useBidirectionalAttention = stringValueObject(normalizedTextConfig, "use_bidirectional_attention");
+        this.numExperts = intValueObject(normalizedTextConfig, "num_experts");
+        this.topKExperts = intValueObject(normalizedTextConfig, "top_k_experts");
+        this.moeIntermediateSize = firstNonNullInt(normalizedTextConfig, "moe_intermediate_size", "expert_intermediate_size");
+        this.vocabSizePerLayerInput = intValueObject(normalizedTextConfig, "vocab_size_per_layer_input");
+        this.hiddenSizePerLayerInput = intValueObject(normalizedTextConfig, "hidden_size_per_layer_input");
 
-        Map<String, Object> ropeParameters = mapValue(textConfig, "rope_parameters");
+        Map<String, Object> ropeParameters = mapValue(normalizedTextConfig, "rope_parameters");
         Map<String, Map<String, Object>> typedRopeParams = new LinkedHashMap<>();
         Map<String, float[][]> typedFreqs = new LinkedHashMap<>();
         Map<String, Integer> typedRotaryDims = new LinkedHashMap<>();
@@ -91,6 +94,30 @@ public class Gemma4Config extends Config {
         this.ropeParametersByLayerType = Collections.unmodifiableMap(typedRopeParams);
         this.ropeFreqsByLayerType = Collections.unmodifiableMap(typedFreqs);
         this.rotaryDimensionsByLayerType = Collections.unmodifiableMap(typedRotaryDims);
+    }
+
+    private static Map<String, Object> normalizeTextConfig(Map<String, Object> source) {
+        Map<String, Object> config = new LinkedHashMap<>(source);
+        int layers = intValue(config, "num_hidden_layers");
+        if (config.get("layer_types") == null) {
+            List<String> layerTypes = new ArrayList<>();
+            for (int i = 0; i < layers; i++) {
+                layerTypes.add(((i + 1) % 6) == 0 ? "full_attention" : "sliding_attention");
+            }
+            config.put("layer_types", layerTypes);
+        }
+        List<String> layerTypes = new ArrayList<>((List<String>) config.get("layer_types"));
+        if (!layerTypes.isEmpty() && !Objects.equals(layerTypes.getLast(), "full_attention")) {
+            layerTypes.set(layerTypes.size() - 1, "full_attention");
+            config.put("layer_types", layerTypes);
+        }
+        if (config.get("rope_parameters") == null) {
+            config.put("rope_parameters", Map.of(
+                    "sliding_attention", Map.of("rope_type", "default", "rope_theta", 10_000.0),
+                    "full_attention", Map.of("rope_type", "proportional", "partial_rotary_factor", 0.25, "rope_theta", 1_000_000.0)
+            ));
+        }
+        return config;
     }
 
     public int getLayerHeadDim(String layerType) {
@@ -138,15 +165,13 @@ public class Gemma4Config extends Config {
 
         if (Objects.equals(ropeType, "proportional")) {
             double partialRotaryFactor = doubleValue(ropeParams, "partial_rotary_factor", 1.0);
-            int ropeAngles = Math.min(halfDim, Math.max(1, (int) ((partialRotaryFactor * headDim) / 2.0)));
-            float step = 0.0f;
-            for (int i = 0; i < ropeAngles; i++, step += 2.0f) {
-                freqs[i] = (float) ((1.0 / FastMath.pow(theta, step / headDim)) / factor);
+            int ropeAngles = Math.min(halfDim, (int) Math.floor(partialRotaryFactor * headDim / 2.0));
+            for (int i = 0; i < ropeAngles; i++) {
+                freqs[i] = (float) ((1.0 / FastMath.pow(theta, (2.0 * i) / headDim)) / factor);
             }
         } else {
-            float step = 0.0f;
-            for (int i = 0; i < freqs.length; i++, step += 2.0f) {
-                freqs[i] = (float) ((1.0 / FastMath.pow(theta, step / headDim)) / factor);
+            for (int i = 0; i < freqs.length; i++) {
+                freqs[i] = (float) ((1.0 / FastMath.pow(theta, (2.0 * i) / headDim)) / factor);
             }
         }
 
@@ -165,6 +190,10 @@ public class Gemma4Config extends Config {
     public int getLayerHiddenLength(int layerIndex) {
         boolean isKvSharedLayer = layerIndex >= (numberOfLayers - numKvSharedLayers) && numKvSharedLayers > 0;
         return useDoubleWideMlp && isKvSharedLayer ? hiddenLength * 2 : hiddenLength;
+    }
+
+    public boolean useAllBidirectionalAttention() {
+        return Objects.equals(useBidirectionalAttention, "all");
     }
 
     public int getSharedKvSourceLayer(int layerIndex) {
@@ -209,6 +238,11 @@ public class Gemma4Config extends Config {
         return String.valueOf(source.get(key));
     }
 
+    private static String stringValueObject(Map<String, Object> source, String key) {
+        Object value = source.get(key);
+        return value == null ? null : String.valueOf(value);
+    }
+
     private static int intValue(Map<String, Object> source, String key) {
         return ((Number) source.get(key)).intValue();
     }
@@ -221,6 +255,11 @@ public class Gemma4Config extends Config {
     private static Integer intValueObject(Map<String, Object> source, String key) {
         Object value = source.get(key);
         return value == null ? null : ((Number) value).intValue();
+    }
+
+    private static Integer firstNonNullInt(Map<String, Object> source, String firstKey, String secondKey) {
+        Integer first = intValueObject(source, firstKey);
+        return first != null ? first : intValueObject(source, secondKey);
     }
 
     private static boolean booleanValue(Map<String, Object> source, String key) {
@@ -250,6 +289,7 @@ public class Gemma4Config extends Config {
     private static int evenFloor(int value) {
         return (value & 1) == 0 ? value : value - 1;
     }
+
 
     @SuppressWarnings("unchecked")
     private static List<Integer> toIntList(Object eosTokens) {

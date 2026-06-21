@@ -7,6 +7,7 @@
  *  Available: https://justine.lol/matmul/. [Accessed: 29-Mar-2024].
  */
 #include <stdio.h>
+#include <stddef.h>
 #if defined(__ARM_NEON__)
 #include <arm_neon.h>
 #else
@@ -14,6 +15,7 @@
 #endif
 #include <inttypes.h>
 #include <math.h>
+#include <stdlib.h>
 #include "vector_simd.h"
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
@@ -37,6 +39,37 @@ static inline short fp32_to_bf16(float s) {
     bf = (u.i + (0x7fff + ((u.i >> 16) & 1))) >> 16;
     return bf;
 }
+
+static inline float bf16_to_fp32(short s) {
+    union {
+        uint32_t i;
+        float f;
+    } u;
+    u.i = ((uint32_t) (uint16_t) s) << 16;
+    return u.f;
+}
+
+#if defined(__ARM_NEON__)
+static inline float32x4_t load_bf16x4_as_f32(const short *p) {
+    uint16x4_t bf16 = vld1_u16((const uint16_t *) p);
+    uint32x4_t f32_bits = vshll_n_u16(bf16, 16);
+    return vreinterpretq_f32_u32(f32_bits);
+}
+#else
+static inline __m256 load_bf16x8_as_f32(const short *p) {
+    __m128i bf16 = _mm_loadu_si128((const __m128i *) p);
+    __m256i f32_bits = _mm256_slli_epi32(_mm256_cvtepu16_epi32(bf16), 16);
+    return _mm256_castsi256_ps(f32_bits);
+}
+
+#if defined(__AVX512F__)
+static inline __m512 load_bf16x16_as_f32(const short *p) {
+    __m256i bf16 = _mm256_loadu_si256((const __m256i *) p);
+    __m512i f32_bits = _mm512_slli_epi32(_mm512_cvtepu16_epi32(bf16), 16);
+    return _mm512_castsi512_ps(f32_bits);
+}
+#endif
+#endif
 
 //All params
 struct gemm_params {
@@ -1001,6 +1034,230 @@ void gemm_f32_q4_batch(int flags, int batch_num, const float *a, int aoffset, co
 {
     for (int i = 0; i < batch_num; i++) {
         gemm_f32_q4(flags, a, aoffset, bf[i], b[i], boffset, r[i], roffset, m, n0, n, k, lda, ldb, ldbf, ldc);
+    }
+}
+
+static void gemm_bf16_q4_scalar(const short *a, int aoffset, const float *bf, const char* b, int boffset, float *r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf, int ldc) {
+    for (int row = 0; row < m; row++) {
+        for (int out_col = 0; out_col < n; out_col++) {
+            int weight_row = n0 + out_col;
+            float sum = 0.0f;
+            for (int col = 0; col < k; col++) {
+                int logical_col = (boffset * 2) + col;
+                int within_block = logical_col % Q4_BLOCK_SIZE;
+                size_t byte_index = ((size_t) weight_row * (size_t) ldb)
+                        + ((size_t) logical_col / Q4_BLOCK_SIZE) * (Q4_BLOCK_SIZE / 2)
+                        + (within_block % (Q4_BLOCK_SIZE / 2));
+                unsigned char packed = (unsigned char) b[byte_index];
+                int nibble = within_block < (Q4_BLOCK_SIZE / 2) ? (packed & 0x0f) : ((packed >> 4) & 0x0f);
+                int q = nibble - 8;
+                float scale = bf[(size_t) weight_row * (size_t) ldbf + ((size_t) logical_col / Q4_BLOCK_SIZE)];
+                sum += bf16_to_fp32(a[row * lda + aoffset + col]) * q * scale;
+            }
+            ptrdiff_t r_index = (ptrdiff_t) row * (ptrdiff_t) ldc + (ptrdiff_t) weight_row - (ptrdiff_t) roffset;
+            r[r_index] = sum;
+        }
+    }
+}
+
+#if defined(__ARM_NEON__)
+void __attribute__((noinline)) gemm_bf16_q4_128_arm(int m0, int m, int n0, int n, int RM, int RN, struct gemm_params params) {
+    int ytiles = (m - m0) / RM;
+    int xtiles = (n - n0) / RN;
+    int tiles = xtiles * ytiles;
+    int8x16_t mask_first_4bits = vdupq_n_u8(0x0f);
+    int8x16_t eight = vdupq_n_s8(0x8);
+    __attribute__((aligned(16))) float scalef[4];
+
+    for (int job = 0; job < tiles; ++job) {
+        int ii = m0 + job / xtiles * RM;
+        int jj = n0 + job % xtiles * RN;
+        float32x4_t sums[RM][RN];
+        for (int i = 0; i < RM; i++) for (int j = 0; j < RN; j++) sums[i][j] = vdupq_n_f32(0.0f);
+
+        for (int ni = 0; ni < RN; ++ni) {
+            int ao = params.aoffset;
+            int bo = params.boffset;
+            for (int i = 0; i < params.k / Q4_BLOCK_SIZE; i += 4) {
+                int aoo = ao;
+                int boo = bo;
+                for (int mi = 0; mi < RM; ++mi) {
+                    ao = aoo;
+                    bo = boo;
+                    float32x4_t bblock = vld1q_f32(params.bf + (params.ldbf * (jj + ni) + ((bo*2) / Q4_BLOCK_SIZE)));
+                    vst1q_f32(scalef, bblock);
+                    for(int j = 0; j < 4; j++, ao += 32, bo += 16) {
+                        float32x4_t vb_f32 = vdupq_n_f32(scalef[j]);
+                        float32x4_t f_va0 = load_bf16x4_as_f32(params.as + params.lda * (ii + mi) + ao);
+                        float32x4_t f_va1 = load_bf16x4_as_f32(params.as + params.lda * (ii + mi) + ao + 4);
+                        float32x4_t f_va2 = load_bf16x4_as_f32(params.as + params.lda * (ii + mi) + ao + 8);
+                        float32x4_t f_va3 = load_bf16x4_as_f32(params.as + params.lda * (ii + mi) + ao + 12);
+                        float32x4_t f_va4 = load_bf16x4_as_f32(params.as + params.lda * (ii + mi) + ao + 16);
+                        float32x4_t f_va5 = load_bf16x4_as_f32(params.as + params.lda * (ii + mi) + ao + 20);
+                        float32x4_t f_va6 = load_bf16x4_as_f32(params.as + params.lda * (ii + mi) + ao + 24);
+                        float32x4_t f_va7 = load_bf16x4_as_f32(params.as + params.lda * (ii + mi) + ao + 28);
+
+                        int8x16_t int_vb0 = vsubq_s8(vreinterpretq_s8_u8(vandq_u8(vld1q_u8((const unsigned char *)(params.b + params.ldb * (jj + ni) + bo)), mask_first_4bits)), eight);
+                        int8x16_t int_vb1 = vsubq_s8(vreinterpretq_s8_u8(vshrq_n_u8(vld1q_u8((const unsigned char *)(params.b + params.ldb * (jj + ni) + bo)), 4)), eight);
+                        int16x8_t int_vb0_low = vmovl_s8(vget_low_s8(int_vb0));
+                        int16x8_t int_vb0_high = vmovl_s8(vget_high_s8(int_vb0));
+                        int16x8_t int_vb1_low = vmovl_s8(vget_low_s8(int_vb1));
+                        int16x8_t int_vb1_high = vmovl_s8(vget_high_s8(int_vb1));
+                        float32x4_t f_vb0_0 = vmulq_f32(vb_f32, vcvtq_f32_s32(vmovl_s16(vget_low_s16(int_vb0_low))));
+                        float32x4_t f_vb0_1 = vmulq_f32(vb_f32, vcvtq_f32_s32(vmovl_s16(vget_high_s16(int_vb0_low))));
+                        float32x4_t f_vb0_2 = vmulq_f32(vb_f32, vcvtq_f32_s32(vmovl_s16(vget_low_s16(int_vb0_high))));
+                        float32x4_t f_vb0_3 = vmulq_f32(vb_f32, vcvtq_f32_s32(vmovl_s16(vget_high_s16(int_vb0_high))));
+                        float32x4_t f_vb1_0 = vmulq_f32(vb_f32, vcvtq_f32_s32(vmovl_s16(vget_low_s16(int_vb1_low))));
+                        float32x4_t f_vb1_1 = vmulq_f32(vb_f32, vcvtq_f32_s32(vmovl_s16(vget_high_s16(int_vb1_low))));
+                        float32x4_t f_vb1_2 = vmulq_f32(vb_f32, vcvtq_f32_s32(vmovl_s16(vget_low_s16(int_vb1_high))));
+                        float32x4_t f_vb1_3 = vmulq_f32(vb_f32, vcvtq_f32_s32(vmovl_s16(vget_high_s16(int_vb1_high))));
+                        sums[mi][ni] = vmlaq_f32(sums[mi][ni], f_va0, f_vb0_0);
+                        sums[mi][ni] = vmlaq_f32(sums[mi][ni], f_va1, f_vb0_1);
+                        sums[mi][ni] = vmlaq_f32(sums[mi][ni], f_va2, f_vb0_2);
+                        sums[mi][ni] = vmlaq_f32(sums[mi][ni], f_va3, f_vb0_3);
+                        sums[mi][ni] = vmlaq_f32(sums[mi][ni], f_va4, f_vb1_0);
+                        sums[mi][ni] = vmlaq_f32(sums[mi][ni], f_va5, f_vb1_1);
+                        sums[mi][ni] = vmlaq_f32(sums[mi][ni], f_va6, f_vb1_2);
+                        sums[mi][ni] = vmlaq_f32(sums[mi][ni], f_va7, f_vb1_3);
+                    }
+                }
+            }
+        }
+        for (int mi = 0; mi < RM; ++mi) for (int ni = 0; ni < RN; ++ni) params.r[(params.ldc * (ii + mi)) + (jj + ni) - params.roffset] = vaddvq_f32(sums[mi][ni]);
+    }
+}
+#else
+void gemm_bf16_q4_256(int m0, int m, int n0, int n, int RM, int RN, struct gemm_params params) {
+    int ytiles = (m - m0) / RM;
+    int xtiles = (n - n0) / RN;
+    int tiles = xtiles * ytiles;
+    __m128i mask_first_4bits = _mm_set1_epi8(0xF);
+    __m128i eight = _mm_set1_epi8(8);
+    __m256 sums[RM][RN];
+
+    for (int job = 0; job < tiles; ++job) {
+        int ii = m0 + job / xtiles * RM;
+        int jj = n0 + job % xtiles * RN;
+        for (int i = 0; i < RM; i++) for (int j = 0; j < RN; j++) sums[i][j] = _mm256_setzero_ps();
+        for(int ni = 0; ni < RN; ++ni) {
+            int ao = params.aoffset;
+            int bo = params.boffset;
+            for(int j = 0; j < params.k; j += 32, ao += 32, bo += 16) {
+                for (int mi = 0; mi < RM; ++mi) {
+                    __m256 va0 = load_bf16x8_as_f32(params.as + params.lda * (ii + mi) + ao);
+                    __m256 va1 = load_bf16x8_as_f32(params.as + params.lda * (ii + mi) + ao + 8);
+                    __m256 va2 = load_bf16x8_as_f32(params.as + params.lda * (ii + mi) + ao + 16);
+                    __m256 va3 = load_bf16x8_as_f32(params.as + params.lda * (ii + mi) + ao + 24);
+                    float bfactor = params.bf[params.ldbf * (jj + ni) + ((bo*2) / Q4_BLOCK_SIZE)];
+                    __m256 vb_f32 = _mm256_set1_ps(bfactor);
+                    __m128i int_vb0 = _mm_loadl_epi64((__m128i const*)(params.b + params.ldb * (jj + ni) + bo));
+                    __m128i int_vb1 = _mm_loadl_epi64((__m128i const*)(params.b + params.ldb * (jj + ni) + bo + 8));
+                    __m128i first_4bits0 = _mm_sub_epi8(_mm_and_si128(int_vb0, mask_first_4bits), eight);
+                    __m128i first_4bits1 = _mm_sub_epi8(_mm_and_si128(int_vb1, mask_first_4bits), eight);
+                    __m128i last_4bits0 = _mm_sub_epi8(_mm_and_si128(_mm_srli_epi16(int_vb0, 4), mask_first_4bits), eight);
+                    __m128i last_4bits1 = _mm_sub_epi8(_mm_and_si128(_mm_srli_epi16(int_vb1, 4), mask_first_4bits), eight);
+                    __m256 float_vb_lo0 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(first_4bits0));
+                    __m256 float_vb_lo1 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(first_4bits1));
+                    __m256 float_vb_hi0 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(last_4bits0));
+                    __m256 float_vb_hi1 = _mm256_cvtepi32_ps(_mm256_cvtepi8_epi32(last_4bits1));
+                    sums[mi][ni] = _mm256_fmadd_ps(va0, _mm256_mul_ps(vb_f32, float_vb_lo0), sums[mi][ni]);
+                    sums[mi][ni] = _mm256_fmadd_ps(va1, _mm256_mul_ps(vb_f32, float_vb_lo1), sums[mi][ni]);
+                    sums[mi][ni] = _mm256_fmadd_ps(va2, _mm256_mul_ps(vb_f32, float_vb_hi0), sums[mi][ni]);
+                    sums[mi][ni] = _mm256_fmadd_ps(va3, _mm256_mul_ps(vb_f32, float_vb_hi1), sums[mi][ni]);
+                }
+            }
+        }
+        for (int mi = 0; mi < RM; ++mi) {
+            for (int ni = 0; ni < RN; ++ni) {
+                __attribute__((aligned(16))) float result[8];
+                _mm256_store_ps(result, sums[mi][ni]);
+                float dot = 0.0;
+                for(int i = 0; i < 8; ++i) dot += result[i];
+                params.r[(params.ldc * (ii + mi)) + (jj + ni) - params.roffset] = dot;
+            }
+        }
+    }
+}
+
+void gemm_bf16_q4_512(int m0, int m, int n0, int n, int RM, int RN, struct gemm_params params) {
+#if defined(__AVX512F__)
+    int ytiles = (m - m0) / RM;
+    int xtiles = (n - n0) / RN;
+    int tiles = xtiles * ytiles;
+    __m128i mask_first_4bits = _mm_set1_epi8(0xF);
+    __m128i eight = _mm_set1_epi8(8);
+    __m512 sums[RM][RN];
+
+    for (int job = 0; job < tiles; ++job) {
+        int ii = m0 + job / xtiles * RM;
+        int jj = n0 + job % xtiles * RN;
+        for (int i = 0; i < RM; i++) for (int j = 0; j < RN; j++) sums[i][j] = _mm512_setzero_ps();
+        for(int ni = 0; ni < RN; ++ni) {
+            int ao = params.aoffset;
+            int bo = params.boffset;
+            for(int j = 0; j < params.k; j += 32, ao += 32, bo += 16) {
+                for (int mi = 0; mi < RM; ++mi) {
+                    __m512 va0 = load_bf16x16_as_f32(params.as + params.lda * (ii + mi) + ao);
+                    __m512 va1 = load_bf16x16_as_f32(params.as + params.lda * (ii + mi) + ao + 16);
+                    float bfactor = params.bf[params.ldbf * (jj + ni) + ((bo*2) / Q4_BLOCK_SIZE)];
+                    __m512 vb_f32 = _mm512_set1_ps(bfactor);
+                    __m128i int_vb0 = _mm_loadu_si128((__m128i const*)(params.b + params.ldb * (jj + ni) + bo));
+                    __m128i first_4bits0 = _mm_sub_epi8(_mm_and_si128(int_vb0, mask_first_4bits), eight);
+                    __m128i last_4bits0 = _mm_sub_epi8(_mm_and_si128(_mm_srli_epi16(int_vb0, 4), mask_first_4bits), eight);
+                    __m512 float_vb_lo0 = _mm512_cvtepi32_ps(_mm512_cvtepi8_epi32(first_4bits0));
+                    __m512 float_vb_hi0 = _mm512_cvtepi32_ps(_mm512_cvtepi8_epi32(last_4bits0));
+                    sums[mi][ni] = _mm512_fmadd_ps(va0, _mm512_mul_ps(vb_f32, float_vb_lo0), sums[mi][ni]);
+                    sums[mi][ni] = _mm512_fmadd_ps(va1, _mm512_mul_ps(vb_f32, float_vb_hi0), sums[mi][ni]);
+                }
+            }
+        }
+        for (int mi = 0; mi < RM; ++mi) for (int ni = 0; ni < RN; ++ni) params.r[(params.ldc * (ii + mi)) + (jj + ni) - params.roffset] = _mm512_reduce_add_ps(sums[mi][ni]);
+   }
+#else
+    gemm_bf16_q4_256(m0, m, n0, n, RM, RN, params);
+#endif
+}
+#endif
+
+void gemm_bf16_q4(int flags, const short *a, int aoffset, const float *bf, const char* b, int boffset, float *r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf, int ldc)
+{
+    if (m < 2 || n < 2 || ((aoffset | (boffset * 2) | k) & (Q4_BLOCK_SIZE - 1)) != 0) {
+        gemm_bf16_q4_scalar(a, aoffset, bf, b, boffset, r, roffset, m, n0, n, k, lda, ldb, ldbf, ldc);
+        return;
+    }
+
+    struct gemm_params p = {
+                        .flags = flags,
+                        .as = a,
+                        .aoffset = aoffset,
+                        .bf = bf,
+                        .b = b,
+                        .boffset = boffset,
+                        .r = r,
+                        .roffset = roffset,
+                        .m = m,
+                        .n = n,
+                        .k = k,
+                        .ldaf = 0,
+                        .ldbf = ldbf,
+                        .lda = lda,
+                        .ldb = ldb,
+                        .ldc = ldc
+    };
+
+#if !defined(__ARM_NEON__)
+    ((flags & HAS_AVX2) != 0)
+           ? gemm(0, m, n0, n0 + n, gemm_bf16_q4_512, p)
+           : gemm(0, m, n0, n0 + n, gemm_bf16_q4_256, p);
+#else
+    gemm(0, m, n0, n0 + n, gemm_bf16_q4_128_arm, p);
+#endif
+}
+
+void gemm_bf16_q4_batch(int flags, int batch_num, const short *a, int aoffset, const float **bf, const char **b, int boffset, float **r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf, int ldc)
+{
+    for (int i = 0; i < batch_num; i++) {
+        gemm_bf16_q4(flags, a, aoffset, bf[i], b[i], boffset, r[i], roffset, m, n0, n, k, lda, ldb, ldbf, ldc);
     }
 }
 

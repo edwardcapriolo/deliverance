@@ -11,18 +11,19 @@ import org.junit.platform.suite.api.SelectClasses;
 import org.junit.platform.suite.api.Suite;
 
 @Suite
-@SelectClasses({Gemma4PromptIT.class})
+@SelectClasses({Gemma4PromptIT.class, Gemma4PromptTemplateIT.class, Gemma4WeightLayoutIT.class})
 public class Gemma4Suite {
     private static volatile AbstractModel model;
     private static volatile AutoModelForCausaLm.Builder builder;
 
     public static AbstractModel getOrCreate() {
         if (model == null) {
-            ModelFetcher fetch = new ModelFetcher("google", "gemma-4-E2B-it");
-            //ModelFetcher fetch = new ModelFetcher("edward", "gemma-4-E2B-it-JQ4");
+            //ModelFetcher fetch = new ModelFetcher("google", "gemma-4-E2B-it");
+            ModelFetcher fetch = new ModelFetcher("edward", "gemma-4-E2B-it-JQ4");
+
             builder = AutoModelForCausaLm.newBuilder(fetch);
-            builder.withTensorProvider(new ConfigurableTensorProvider(builder.getAllocator(),
-                  new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())));
+            //builder.withTensorProvider(new ConfigurableTensorProvider(builder.getAllocator(),
+            //      new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())));
             model = builder.buildLocalTransformerModel();
         }
         return model;

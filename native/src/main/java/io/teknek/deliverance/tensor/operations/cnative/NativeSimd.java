@@ -473,6 +473,151 @@ public class NativeSimd {
         }
     }
 
+    private static class gemm_bf16_q4 {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT
+        );
+
+        public static final MemorySegment ADDR = NativeSimd.findOrThrow("gemm_bf16_q4");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /**
+     * Function descriptor for:
+     * {@snippet lang=c :
+     * void gemm_bf16_q4(int flags, const short *a, int aoffset, const float *bf, const char *b, int boffset, float *r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf, int ldc)
+     * }
+     */
+    public static FunctionDescriptor gemm_bf16_q4$descriptor() {
+        return gemm_bf16_q4.DESC;
+    }
+
+    /**
+     * Downcall method handle for:
+     * {@snippet lang=c :
+     * void gemm_bf16_q4(int flags, const short *a, int aoffset, const float *bf, const char *b, int boffset, float *r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf, int ldc)
+     * }
+     */
+    public static MethodHandle gemm_bf16_q4$handle() {
+        return gemm_bf16_q4.HANDLE;
+    }
+
+    /**
+     * Address for:
+     * {@snippet lang=c :
+     * void gemm_bf16_q4(int flags, const short *a, int aoffset, const float *bf, const char *b, int boffset, float *r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf, int ldc)
+     * }
+     */
+    public static MemorySegment gemm_bf16_q4$address() {
+        return gemm_bf16_q4.ADDR;
+    }
+
+    /**
+     * {@snippet lang=c :
+     * void gemm_bf16_q4(int flags, const short *a, int aoffset, const float *bf, const char *b, int boffset, float *r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf, int ldc)
+     * }
+     */
+    public static void gemm_bf16_q4(int flags, MemorySegment a, int aoffset, MemorySegment bf, MemorySegment b, int boffset, MemorySegment r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf, int ldc) {
+        var mh$ = gemm_bf16_q4.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("gemm_bf16_q4", flags, a, aoffset, bf, b, boffset, r, roffset, m, n0, n, k, lda, ldb, ldbf, ldc);
+            }
+            mh$.invokeExact(flags, a, aoffset, bf, b, boffset, r, roffset, m, n0, n, k, lda, ldb, ldbf, ldc);
+        } catch (Throwable ex$) {
+            throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
+    private static class gemm_bf16_q4_batch {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_POINTER,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT,
+                NativeSimd.C_INT
+        );
+
+        public static final MemorySegment ADDR = NativeSimd.findOrThrow("gemm_bf16_q4_batch");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /**
+     * Function descriptor for:
+     * {@snippet lang=c :
+     * void gemm_bf16_q4_batch(int flags, int batch_num, const short *a, int aoffset, const float **bf, const char **b, int boffset, float **r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf, int ldc)
+     * }
+     */
+    public static FunctionDescriptor gemm_bf16_q4_batch$descriptor() {
+        return gemm_bf16_q4_batch.DESC;
+    }
+
+    /**
+     * Downcall method handle for:
+     * {@snippet lang=c :
+     * void gemm_bf16_q4_batch(int flags, int batch_num, const short *a, int aoffset, const float **bf, const char **b, int boffset, float **r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf, int ldc)
+     * }
+     */
+    public static MethodHandle gemm_bf16_q4_batch$handle() {
+        return gemm_bf16_q4_batch.HANDLE;
+    }
+
+    /**
+     * Address for:
+     * {@snippet lang=c :
+     * void gemm_bf16_q4_batch(int flags, int batch_num, const short *a, int aoffset, const float **bf, const char **b, int boffset, float **r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf, int ldc)
+     * }
+     */
+    public static MemorySegment gemm_bf16_q4_batch$address() {
+        return gemm_bf16_q4_batch.ADDR;
+    }
+
+    /**
+     * {@snippet lang=c :
+     * void gemm_bf16_q4_batch(int flags, int batch_num, const short *a, int aoffset, const float **bf, const char **b, int boffset, float **r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf, int ldc)
+     * }
+     */
+    public static void gemm_bf16_q4_batch(int flags, int batch_num, MemorySegment a, int aoffset, MemorySegment bf, MemorySegment b, int boffset, MemorySegment r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf, int ldc) {
+        var mh$ = gemm_bf16_q4_batch.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("gemm_bf16_q4_batch", flags, batch_num, a, aoffset, bf, b, boffset, r, roffset, m, n0, n, k, lda, ldb, ldbf, ldc);
+            }
+            mh$.invokeExact(flags, batch_num, a, aoffset, bf, b, boffset, r, roffset, m, n0, n, k, lda, ldb, ldbf, ldc);
+        } catch (Throwable ex$) {
+            throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
     private static class gemm_f32_q4_batch {
         public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
                 NativeSimd.C_INT,

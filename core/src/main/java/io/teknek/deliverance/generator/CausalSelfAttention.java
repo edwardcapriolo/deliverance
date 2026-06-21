@@ -9,10 +9,8 @@ import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
-import io.teknek.deliverance.tensor.VectorTensorMathUtils;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 
-import net.jafama.FastMath;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,7 +19,7 @@ import java.util.function.Consumer;
 
 import static io.teknek.deliverance.tensor.DebugSupport.debug;
 
-public class CausalSelfAttention {
+public class CausalSelfAttention extends BaseCausalSelfAttention {
     private static final Logger logger = LoggerFactory.getLogger(CausalSelfAttention.class);
 
     private final AbstractModel m;
@@ -321,18 +319,10 @@ public class CausalSelfAttention {
 
                         configurableTensorProvider.get().scale(attentionScale, attn, 0, finalPosition + 1);
 
-                        if (config.attnLogitSoftCapping != null) {
-                            for (int i = 0; i < finalPosition + 1; i++) {
-                                float v = attn.get(0, i);
-                                v /= config.attnLogitSoftCapping;
-                                v = (float) FastMath.tanh(v);
-                                v *= config.attnLogitSoftCapping;
-                                attn.set(v, 0, i);
-                            }
-                        }
+                        applyAttentionSoftcap(attn, finalPosition + 1, config.attnLogitSoftCapping);
 
                         // softmax the scores to get attention weights, from 0..pos inclusively
-                        VectorTensorMathUtils.softMax(attn, 0, finalPosition + 1);
+                        softmax(attn, finalPosition + 1);
 
                         // apply adjusted attention weights to value vectors
                         // do this for each position since the pages are not contiguous

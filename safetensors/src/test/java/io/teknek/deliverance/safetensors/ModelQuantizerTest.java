@@ -188,6 +188,7 @@ public class ModelQuantizerTest {
     }
 
     @Disabled
+    //@Test
     void fullModelQuantizerTest(){
         //google_gemma-4-E2B-it
         new ModelQuantizer().quantizeCachedModel("google", "gemma-4-E2B-it",

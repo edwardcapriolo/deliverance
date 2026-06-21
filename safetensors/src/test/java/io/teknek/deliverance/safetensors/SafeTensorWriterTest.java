@@ -62,6 +62,30 @@ public class SafeTensorWriterTest {
     }
 
     @Test
+    public void writesAndLoadsDense3dTensor() throws Exception {
+        FloatBufferTensor tensor3d = new FloatBufferTensor(2, 3, 4);
+        for (int i = 0; i < 2; i++) {
+            for (int j = 0; j < 3; j++) {
+                for (int k = 0; k < 4; k++) {
+                    tensor3d.set(i * 100 + j * 10 + k, i, j, k);
+                }
+            }
+        }
+
+        Path output = tempDir.resolve("model.safetensors");
+        SafeTensorWriter.write(output, Map.of(), Map.of("experts.gate_up_proj", tensor3d));
+
+        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile());
+             AbstractTensor loaded = loader.load("experts.gate_up_proj")) {
+            assertEquals(3, loader.tensorInfoMap().get("experts.gate_up_proj").shape.length);
+            assertEquals(2, loader.tensorInfoMap().get("experts.gate_up_proj").shape[0]);
+            assertEquals(3, loader.tensorInfoMap().get("experts.gate_up_proj").shape[1]);
+            assertEquals(4, loader.tensorInfoMap().get("experts.gate_up_proj").shape[2]);
+            assertEquals(123.0f, loaded.get(1, 2, 3), 0.0f);
+        }
+    }
+
+    @Test
     public void writesShardedModelWithIndex() throws Exception {
         FloatBufferTensor first = new FloatBufferTensor(1, 32);
         FloatBufferTensor second = new FloatBufferTensor(1, 32);
