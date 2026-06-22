@@ -40,7 +40,7 @@ public class Gemma4PromptTemplateIT {
 
         assertTrue(promptContext.getPrompt().contains("<|think|>"), promptContext.getPrompt());
         assertTrue(promptContext.getPrompt().contains("<|turn>system\n<|think|>\n<turn|>"), promptContext.getPrompt());
-        assertTrue(promptContext.getPrompt().endsWith("<|turn>model\n"), promptContext.getPrompt());
+        assertTrue(promptContext.getPrompt().endsWith("<|turn>model\n<|channel>thought\n"), promptContext.getPrompt());
     }
 
     @Test

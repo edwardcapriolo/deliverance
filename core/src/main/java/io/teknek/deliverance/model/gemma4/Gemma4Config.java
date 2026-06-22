@@ -3,7 +3,6 @@ package io.teknek.deliverance.model.gemma4;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.teknek.deliverance.math.ActivationFunction;
-import io.teknek.deliverance.math.VectorMathUtils;
 import io.teknek.deliverance.safetensors.Config;
 import net.jafama.FastMath;
 
@@ -27,7 +26,7 @@ public class Gemma4Config extends Config {
     public final int defaultHeadDim;
     public final int defaultKeyValueHeads;
     public final Map<String, Map<String, Object>> ropeParametersByLayerType;
-    public final Map<String, float[][]> ropeFreqsByLayerType;
+    public final Map<String, float[]> ropeInvFreqsByLayerType;
     public final Map<String, Integer> rotaryDimensionsByLayerType;
 
     @JsonCreator
@@ -82,7 +81,7 @@ public class Gemma4Config extends Config {
 
         Map<String, Object> ropeParameters = mapValue(normalizedTextConfig, "rope_parameters");
         Map<String, Map<String, Object>> typedRopeParams = new LinkedHashMap<>();
-        Map<String, float[][]> typedFreqs = new LinkedHashMap<>();
+        Map<String, float[]> typedFreqs = new LinkedHashMap<>();
         Map<String, Integer> typedRotaryDims = new LinkedHashMap<>();
         for (String layerType : this.layerTypes.stream().distinct().toList()) {
             Map<String, Object> params = mapValue(ropeParameters, layerType);
@@ -92,7 +91,7 @@ public class Gemma4Config extends Config {
             typedFreqs.put(layerType, precomputeRopeFreqs(layerType, params));
         }
         this.ropeParametersByLayerType = Collections.unmodifiableMap(typedRopeParams);
-        this.ropeFreqsByLayerType = Collections.unmodifiableMap(typedFreqs);
+        this.ropeInvFreqsByLayerType = Collections.unmodifiableMap(typedFreqs);
         this.rotaryDimensionsByLayerType = Collections.unmodifiableMap(typedRotaryDims);
     }
 
@@ -155,7 +154,7 @@ public class Gemma4Config extends Config {
      * Gemma4 proportional RoPE keeps the full head width but zero-fills the non-rotary inverse
      * frequencies, which yields identity rotation (`cos=1`, `sin=0`) for the remaining pairs.
      */
-    float[][] precomputeRopeFreqs(String layerType, Map<String, Object> ropeParams) {
+    float[] precomputeRopeFreqs(String layerType, Map<String, Object> ropeParams) {
         int headDim = evenFloor(getLayerHeadDim(layerType));
         int halfDim = headDim / 2;
         float[] freqs = new float[halfDim];
@@ -175,16 +174,7 @@ public class Gemma4Config extends Config {
             }
         }
 
-        float[] t = new float[contextLength];
-        for (int i = 0; i < contextLength; i++) {
-            t[i] = i;
-        }
-        float[] freqsCis = VectorMathUtils.outerProduct(t, freqs);
-        float[][] result = new float[freqsCis.length][];
-        for (int i = 0; i < freqsCis.length; i++) {
-            result[i] = new float[]{(float) FastMath.cos(freqsCis[i]), (float) FastMath.sin(freqsCis[i])};
-        }
-        return result;
+        return freqs;
     }
 
     public int getLayerHiddenLength(int layerIndex) {

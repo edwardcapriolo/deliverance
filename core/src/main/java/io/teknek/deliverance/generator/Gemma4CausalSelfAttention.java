@@ -38,7 +38,7 @@ public class Gemma4CausalSelfAttention extends BaseCausalSelfAttention {
     private final int queryLength;
     private final int kvLength;
     private final int slidingWindow;
-    private final float[][] ropeFreqs;
+    private final float[] ropeInvFreqs;
     private final AbstractTensor queryWeights;
     private final AbstractTensor queryNormWeights;
     private final AbstractTensor outputProjectionWeights;
@@ -84,7 +84,7 @@ public class Gemma4CausalSelfAttention extends BaseCausalSelfAttention {
         this.queryLength = config.getLayerQueryProjectionLength(layerType);
         this.kvLength = config.getLayerKeyValueProjectionLength(layerType);
         this.slidingWindow = config.slidingWindow == null ? config.contextLength : config.slidingWindow;
-        this.ropeFreqs = config.ropeFreqsByLayerType.get(layerType);
+        this.ropeInvFreqs = config.ropeInvFreqsByLayerType.get(layerType);
         this.queryWeights = queryWeights;
         this.queryNormWeights = queryNormWeights;
         this.keyWeights = keyWeights;
@@ -304,15 +304,16 @@ public class Gemma4CausalSelfAttention extends BaseCausalSelfAttention {
         int halfRotaryDim = rotaryDim / 2;
         for (int batchIndex = 0; batchIndex < tensor.shape().first(); batchIndex++) {
             int position = startPosition + batchIndex;
-            int freqOffset = position * halfRotaryDim;
             for (int head = 0; head < headCount; head++) {
                 int offset = head * headDim;
                 for (int i = 0; i < halfRotaryDim; i++) {
                     float first = tensor.get(batchIndex, offset + i);
                     float second = tensor.get(batchIndex, offset + i + halfRotaryDim);
-                    float[] freq = ropeFreqs[freqOffset + i];
-                    tensor.set(first * freq[0] - second * freq[1], batchIndex, offset + i);
-                    tensor.set(first * freq[1] + second * freq[0], batchIndex, offset + i + halfRotaryDim);
+                    float angle = position * ropeInvFreqs[i];
+                    float cos = (float) FastMath.cos(angle);
+                    float sin = (float) FastMath.sin(angle);
+                    tensor.set(first * cos - second * sin, batchIndex, offset + i);
+                    tensor.set(first * sin + second * cos, batchIndex, offset + i + halfRotaryDim);
                 }
             }
         }

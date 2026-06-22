@@ -240,13 +240,11 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
                             // skip if we are out of bounds
                             if (offset >= query.shape().last()) break;
 
-                            int globalHead = m.getTensorParallelContext().rank() * numberOfHeads + h;
-                            int goffset = Math.floorDiv(globalHead, headGroupSize) * config.headSize;
                             // rotate q by the freq theta and freq r
-                            for (int i = offset, g = goffset; i < (offset + headPiece); i++, g++) {
+                            for (int i = offset, freqIndex = 0; i < (offset + headPiece); i++, freqIndex++) {
                                 float q0 = query.get(0, i);
                                 float q1 = query.get(0, i + headPiece); // hf permutation is 0,64,1,65 etc...
-                                float[] f = rf[poffset + g];
+                                float[] f = rf[poffset + freqIndex];
                                 float fcr = f[0];
                                 float fci = f[1];
                                 query.set(q0 * fcr - q1 * fci, 0, i);
@@ -258,13 +256,11 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
                             // get the k vectors for this head
                             int offset = h * config.headSize;
                             if (offset >= key.shape().last()) break;
-                            int globalOffset = (m.getTensorParallelContext().rank() * numberOfKeyValueHeads + h)
-                                    * config.headSize;
                             // rotate k by the freq theta and freq r
-                            for (int i = offset, g = globalOffset; i < (offset + headPiece); i++, g++) {
+                            for (int i = offset, freqIndex = 0; i < (offset + headPiece); i++, freqIndex++) {
                                 float k00 = key.get(0, i);
                                 float k1 = key.get(0, i + headPiece); // hf permutation is 0,64,1,65 etc...
-                                float[] f = rf[poffset + g];
+                                float[] f = rf[poffset + freqIndex];
                                 float fcr = f[0];
                                 float fci = f[1];
                                 key.set(k00 * fcr - k1 * fci, 0, i);
@@ -277,12 +273,12 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
                             // get the q and k vectors for this head
                             int offset = h * config.headSize;
                             // rotate q and k by the freq theta and freq r
-                            for (int i = offset; i < (offset + headPiece); i++) {
+                            for (int i = offset, freqIndex = 0; i < (offset + headPiece); i++, freqIndex++) {
                                 float q0 = query.get(0, i);
                                 float q1 = query.get(0, i + headPiece); // hf permutation is 0,64,1,65 etc...
                                 float k00 = key.get(0, i);
                                 float k1 = key.get(0, i + headPiece);
-                                float[] f = rf[poffset + i];
+                                float[] f = rf[poffset + freqIndex];
                                 float fcr = f[0];
                                 float fci = f[1];
                                 query.set(q0 * fcr - q1 * fci, 0, i);

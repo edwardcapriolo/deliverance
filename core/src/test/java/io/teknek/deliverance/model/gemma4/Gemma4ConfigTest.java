@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class Gemma4ConfigTest {
@@ -28,28 +29,19 @@ public class Gemma4ConfigTest {
 
     @Test
     public void proportionalRopeLeavesNonRotaryTailAsIdentity() {
-        Gemma4Config config = config(false);
-        float[][] freqs = config.ropeFreqsByLayerType.get("full_attention");
+        Map<String, Object> textConfig = baseConfig(false);
+        textConfig.put("rope_parameters", Map.of(
+                "sliding_attention", Map.of("rope_theta", 10000.0),
+                "full_attention", Map.of("rope_theta", 1000000.0, "rope_type", "proportional", "partial_rotary_factor", 0.25)
+        ));
+        Gemma4Config config = new Gemma4Config(textConfig, List.of("Gemma4ForConditionalGeneration"), List.of(1));
+        float[] freqs = config.ropeInvFreqsByLayerType.get("full_attention");
         int halfDim = config.getLayerHeadDim("full_attention") / 2;
-        int pos1 = halfDim;
-        /*
-        original asserts ARM
-                assertTrue(Math.abs(freqs[pos1][1]) > 0.0f || Math.abs(freqs[pos1][0] - 1.0f) > 0.0f);
-        assertEquals(1.0f, freqs[pos1 + 1][0], 1.0e-6f);
-        assertEquals(0.0f, freqs[pos1 + 1][1], 1.0e-6f);
-        assertEquals(1.0f, freqs[pos1 + 2][0], 1.0e-6f);
-        assertEquals(0.0f, freqs[pos1 + 2][1], 1.0e-6f);
-        assertEquals(1.0f, freqs[pos1 + 3][0], 1.0e-6f);
-        assertEquals(0.0f, freqs[pos1 + 3][1], 1.0e-6f);
-         */
         // headDim=8, partial_rotary_factor=0.25 -> only first pair rotates, remaining pairs stay identity
-        assertTrue(Math.abs(freqs[pos1][1]) > 0.0f || Math.abs(freqs[pos1][0] - 1.0f) > 0.0f);
-        assertEquals(1.0f, freqs[pos1 + 1][0], 1.0e-3f);
-        assertEquals(0.0f, freqs[pos1 + 1][1], .04);
-        assertEquals(1.0f, freqs[pos1 + 2][0], 1.0e-3f);
-        assertEquals(0.0f, freqs[pos1 + 2][1], 1.0e-3f);
-        assertEquals(1.0f, freqs[pos1 + 3][0], 1.0e-3f);
-        assertEquals(0.0f, freqs[pos1 + 3][1], 1.0e-3f);
+        assertTrue(freqs[0] > 0.0f);
+        for (int i = 1; i < halfDim; i++) {
+            assertEquals(0.0f, freqs[i], 1.0e-6f);
+        }
     }
 
     @Test
@@ -60,24 +52,22 @@ public class Gemma4ConfigTest {
                 "full_attention", Map.of("rope_theta", 1000000.0, "rope_type", "proportional", "partial_rotary_factor", 0.0)
         ));
         Gemma4Config config = new Gemma4Config(textConfig, List.of("Gemma4ForConditionalGeneration"), List.of(1));
-        float[][] freqs = config.ropeFreqsByLayerType.get("full_attention");
+        float[] freqs = config.ropeInvFreqsByLayerType.get("full_attention");
         int halfDim = config.getLayerHeadDim("full_attention") / 2;
-        int pos1 = halfDim;
 
         for (int i = 0; i < halfDim; i++) {
-            assertEquals(1.0f, freqs[pos1 + i][0], 1.0e-6f);
-            assertEquals(0.0f, freqs[pos1 + i][1], 1.0e-6f);
+            assertEquals(0.0f, freqs[i], 1.0e-6f);
         }
     }
 
     @Test
     public void defaultRopeRotatesAcrossAllPairs() {
         Gemma4Config config = config(false);
-        float[][] freqs = config.ropeFreqsByLayerType.get("sliding_attention");
+        float[] freqs = config.ropeInvFreqsByLayerType.get("sliding_attention");
         int halfDim = config.getLayerHeadDim("sliding_attention") / 2;
-        int pos1SecondPair = halfDim + 1;
-        // position=1, second pair should also rotate for default rope
-        assertTrue(Math.abs(freqs[pos1SecondPair][1]) > 0.0f || Math.abs(freqs[pos1SecondPair][0] - 1.0f) > 0.0f);
+        for (int i = 0; i < halfDim; i++) {
+            assertTrue(freqs[i] > 0.0f);
+        }
     }
 
     @Test
@@ -129,6 +119,16 @@ public class Gemma4ConfigTest {
         Gemma4Config config = new Gemma4Config(textConfig, List.of("Gemma4ForConditionalGeneration"), List.of(1));
 
         assertEquals(1234, config.moeIntermediateSize);
+    }
+
+    @Test
+    public void finalSoftcapDoesNotBecomeAttentionSoftcap() {
+        Map<String, Object> textConfig = e2bLikeTextConfig();
+        textConfig.put("final_logit_softcapping", 30.0);
+        Gemma4Config config = new Gemma4Config(textConfig, List.of("Gemma4ForConditionalGeneration"), List.of(1));
+
+        assertEquals(30.0f, config.finalLogitSoftCapping);
+        assertNull(config.attnLogitSoftCapping);
     }
 
     private static Gemma4Config config(boolean attentionKEqV) {
