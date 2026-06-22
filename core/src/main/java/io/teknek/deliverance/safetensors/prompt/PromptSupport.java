@@ -181,6 +181,9 @@ public class PromptSupport {
             if (!renderTools.isEmpty() && !hasToolSupport) {
                 throw new RuntimeException("This model does not support tools, but tools are specified");
             }
+            if (template.contains("messages[::-1]") && template.contains("<think>")) {
+                return new PromptContext(renderQwen3TemplateFallback(renderTools));
+            }
             String preamble = "";
             if (stripPreamble) {
                 Map<String, Object> args = new HashMap<>();
@@ -210,6 +213,72 @@ public class PromptSupport {
                 output = output + "<|channel>thought\n";
             }
             return new PromptContext(output.substring(preamble.length()));
+        }
+
+        private String renderQwen3TemplateFallback(List<Tool> renderTools) {
+            StringBuilder output = new StringBuilder();
+            List<Map> maps = messages.stream().map(Message::toMap).toList();
+            if (!renderTools.isEmpty()) {
+                output.append("<|im_start|>system\n");
+                if (!maps.isEmpty() && "system".equals(maps.getFirst().get("role"))) {
+                    output.append(maps.getFirst().get("content")).append("\n\n");
+                }
+                output.append("# Tools\n\nYou may call one or more functions to assist with the user query.\n\n")
+                        .append("You are provided with function signatures within <tools></tools> XML tags:\n<tools>");
+                for (Tool tool : renderTools) {
+                    try {
+                        output.append('\n').append(JsonUtils.om.writeValueAsString(tool));
+                    } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+                output.append("\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n")
+                        .append("<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call><|im_end|>\n");
+            } else if (!maps.isEmpty() && "system".equals(maps.getFirst().get("role"))) {
+                output.append("<|im_start|>system\n").append(maps.getFirst().get("content")).append("<|im_end|>\n");
+            }
+
+            for (int i = 0; i < maps.size(); i++) {
+                Map message = maps.get(i);
+                String role = String.valueOf(message.get("role"));
+                String content = String.valueOf(message.getOrDefault("content", ""));
+                if ("system".equals(role) && i == 0) {
+                    continue;
+                }
+                if ("user".equals(role) || "system".equals(role)) {
+                    output.append("<|im_start|>").append(role).append('\n').append(content).append("<|im_end|>\n");
+                    continue;
+                }
+                if ("assistant".equals(role)) {
+                    output.append("<|im_start|>assistant\n").append(content == null ? "" : content);
+                    Object toolCalls = message.get("tool_calls");
+                    if (toolCalls instanceof List<?> list) {
+                        for (Object tc : list) {
+                            output.append("\n<tool_call>\n");
+                            try {
+                                output.append(JsonUtils.om.writeValueAsString(((Map<?, ?>) tc).get("function")));
+                            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                                throw new RuntimeException(e);
+                            }
+                            output.append("\n</tool_call>");
+                        }
+                    }
+                    output.append("<|im_end|>\n");
+                    continue;
+                }
+                if ("tool".equals(role)) {
+                    output.append("<|im_start|>user\n<tool_response>\n")
+                            .append(content)
+                            .append("\n</tool_response><|im_end|>\n");
+                }
+            }
+            if (addGenerationPrompt) {
+                output.append("<|im_start|>assistant\n");
+                if (Boolean.FALSE.equals(templateArgs.get("enable_thinking"))) {
+                    output.append("<think>\n\n</think>\n\n");
+                }
+            }
+            return output.toString();
         }
     }
 

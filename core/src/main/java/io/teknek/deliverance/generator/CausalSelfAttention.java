@@ -182,6 +182,7 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
                     bias -> configurableTensorProvider.get().accumulate(tmpValBatch, bias,
                             0, kvLength)
             );
+            normalizeQueryKey(queryBatch, tmpKeyBatch);
             m.emitLayerDebug(layerIndex, "query_projection", queryBatch);
             m.emitLayerDebug(layerIndex, "key_projection", tmpKeyBatch);
             m.emitLayerDebug(layerIndex, "value_projection", tmpValBatch);
@@ -371,5 +372,25 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "causalselfattention.all_reduce").time()) {
             return m.getTensorParallelCollectives().allReduceSum("layer." + layerIndex + ".self_attn.o_proj", result);
         }
+    }
+
+    /**
+     * Optional family-specific hook applied after Q/K/V projection and bias, before RoPE and KV-cache writes.
+     *
+     * <p>Most older decoder families handled by {@link CausalSelfAttention} do not apply a separate normalization to
+     * projected query/key heads, so the default implementation is intentionally a no-op. Newer families such as Qwen3
+     * apply RMSNorm independently to each query and key head after projection:</p>
+     *
+     * <pre>{@code
+     * query = q_norm(q_proj(hidden_states).view(...))
+     * key   = k_norm(k_proj(hidden_states).view(...))
+     * query, key = apply_rope(query, key)
+     * }</pre>
+     *
+     * <p>Subclasses should override this method when the upstream architecture specifies Q/K normalization at this
+     * point in the attention pipeline. Implementations must mutate {@code queryBatch} and {@code keyBatch} in place,
+     * preserve their shapes, and must not close either tensor because ownership remains with the caller.</p>
+     */
+    protected void normalizeQueryKey(AbstractTensor queryBatch, AbstractTensor keyBatch) {
     }
 }
