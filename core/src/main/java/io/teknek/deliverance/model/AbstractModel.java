@@ -483,6 +483,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     public Optional<PromptSupport> promptSupport() {
         return tokenizer.chatTemplate().map(template -> new PromptSupport(
                 Map.of("default", template),
+                tokenizer.bosToken().orElse(""),
                 tokenizer.eosToken().orElse(""),
                 template.toLowerCase(Locale.ROOT).contains("tools")));
     }
