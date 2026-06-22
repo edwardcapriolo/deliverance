@@ -16,12 +16,18 @@ import static io.teknek.deliverance.safetensors.fetch.HttpSupport.logger;
 public class PromptSupport {
 
     private final Map<String, String> promptTemplates;
+    private final String bosToken;
     private final String eosToken;
     private final boolean hasToolSupport;
     private final Jinjava jinjava;
 
     public PromptSupport(Map<String, String> promptTemplates, String eosToken, boolean hasToolSupport){
+        this(promptTemplates, "", eosToken, hasToolSupport);
+    }
+
+    public PromptSupport(Map<String, String> promptTemplates, String bosToken, String eosToken, boolean hasToolSupport){
         this.promptTemplates = Map.copyOf(promptTemplates == null ? Map.of() : promptTemplates);
+        this.bosToken = bosToken == null ? "" : bosToken;
         this.eosToken = eosToken == null ? "" : eosToken;
         this.hasToolSupport = hasToolSupport;
         jinjava = new Jinjava(
@@ -54,11 +60,12 @@ public class PromptSupport {
     }
 
     public Builder builder(){
-        return new Builder(this.promptTemplates, this.eosToken, this.hasToolSupport, this.jinjava);
+        return new Builder(this.promptTemplates, this.bosToken, this.eosToken, this.hasToolSupport, this.jinjava);
     }
 
     public static class Builder {
         private final Map<String, String> promptTemplates;
+        private final String bosToken;
         private final String eosToken;
         private final boolean hasToolSupport;
         private final Jinjava jinJava;
@@ -72,8 +79,9 @@ public class PromptSupport {
 
         private boolean stripPreamble = false;
 
-        private Builder(Map<String, String> promptTemplates, String eosToken, boolean hasToolSupport, Jinjava jinJava) {
+        private Builder(Map<String, String> promptTemplates, String bosToken, String eosToken, boolean hasToolSupport, Jinjava jinJava) {
             this.promptTemplates = promptTemplates;
+            this.bosToken = bosToken;
             this.eosToken = eosToken;
             this.hasToolSupport = hasToolSupport;
             this.jinJava = jinJava;
@@ -177,7 +185,7 @@ public class PromptSupport {
             if (stripPreamble) {
                 Map<String, Object> args = new HashMap<>();
                 args.putAll(Map.of("messages", Map.of(), "add_generation_prompt", false, "eos_token",
-                        eosToken, "bos_token", ""));
+                        eosToken, "bos_token", bosToken));
                 args.putAll(templateArgs);
                 RenderResult r = jinJava.renderForResult(template, args);
                 preamble = r.getOutput();
@@ -186,7 +194,7 @@ public class PromptSupport {
             Map<String, Object> args = new HashMap<>();
             args.putAll(
                     Map.of( "messages", messages.stream().map(Message::toMap).toList(), "add_generation_prompt",
-                            addGenerationPrompt, "eos_token", eosToken, "bos_token", "")
+                            addGenerationPrompt, "eos_token", eosToken, "bos_token", bosToken)
             );
             args.putAll(templateArgs);
             if (!renderTools.isEmpty()){

@@ -145,6 +145,9 @@ public class LlamaTokenizer extends GemmaTokenizer {
     @Override
     protected String decodeRegularTokens(String encoded) {
         String decoded = decodeByteFallback(super.decodeRegularTokens(encoded));
+        if (" ".equals(decoded)) {
+            return decoded;
+        }
         return decoded.startsWith(" ") ? decoded.substring(1) : decoded;
     }
 
