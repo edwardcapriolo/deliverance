@@ -119,11 +119,16 @@ public class LlamaModel extends AbstractModel {
     protected SampleOutput loadOutputWeights() {
         DType qType = modelQType.orElse(this.modelDType);
         final LayerNorm outputLayerNorm = new RmsNorm(this, quantize(weights.load("model.norm.weight"), qType), metricRegistry);
+        DType outputHeadDType = outputHeadQuantization.orElse(workingDType);
+        boolean forceOutputHeadQuantization = outputHeadQuantization.isPresent();
         // Some llama models don't have a classification head
         AbstractTensor classificationWeights = weights.isWeightPresent("lm_head.weight")
-                ? quantize(weights.load("lm_head.weight"), workingDType)
-                : embedTokenWeights == null ? embedTokenWeights = weights.load("model.embed_tokens.weight")
-                : embedTokenWeights;
+                ? io.teknek.deliverance.tensor.AbstractTensorUtils.quantize(weights.load("lm_head.weight"), outputHeadDType,
+                forceOutputHeadQuantization)
+                : io.teknek.deliverance.tensor.AbstractTensorUtils.quantize(
+                        embedTokenWeights == null ? weights.load("model.embed_tokens.weight") : embedTokenWeights,
+                        outputHeadDType,
+                        forceOutputHeadQuantization);
         configurableTensorProvider.get().registerModelTensor(classificationWeights);
         return new SampleOutput() {
             @Override
