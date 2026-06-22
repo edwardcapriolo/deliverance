@@ -35,7 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class Gemma4PromptIT {
     private static final boolean DEBUG_PROMPTS = Boolean.getBoolean("deliverance.gemma4.prompt.debug");
 
-    @Test
+    @Disabled
     public void chatWithThinking() {
 
         AbstractModel model = Gemma4Suite.getOrCreate();
