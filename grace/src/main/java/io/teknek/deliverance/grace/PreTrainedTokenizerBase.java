@@ -415,7 +415,7 @@ public abstract class PreTrainedTokenizerBase {
         return remainder == 0 ? value : value + multiple - remainder;
     }
 
-    private List<String> splitByAddedTokens(String text) {
+    protected List<String> splitByAddedTokens(String text) {
         if (splitSpecialTokens || addedVocab.isEmpty() || text.isEmpty()) {
             return List.of(text);
         }

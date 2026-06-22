@@ -34,6 +34,46 @@ public class Gemma4ToolCallParserTest {
     }
 
     @Test
+    void extractHfGemma4ToolCallExample() {
+        String responseText = "<|channel>thought\nThe user is asking for the current temperature in Paris. I should check the available tools to see if there's a function that can provide this information.<channel|><|tool_call>call:get_current_temperature{detail_level:0,location:<|\"|>Paris, France<|\"|>,unit:<|\"|>celsius<|\"|>}<tool_call|><|tool_response>";
+        Response response = new Response("", responseText, FinishReason.TOOL_CALLS, 0, null,
+                0, 0, List.of(new SamplerReturn(0)));
+
+        Gemma4ToolCallParser parser = new Gemma4ToolCallParser();
+        List<ToolCall> toolCalls = parser.extract(response);
+
+        assertEquals(1, toolCalls.size());
+        ToolCall toolCall = toolCalls.get(0);
+        assertEquals("get_current_temperature", toolCall.getName());
+        assertEquals(0, toolCall.getParameters().get("detail_level"));
+        assertEquals("Paris, France", toolCall.getParameters().get("location"));
+        assertEquals("celsius", toolCall.getParameters().get("unit"));
+    }
+
+    @Test
+    void extractHfGemma4ComplexToolCallExample() {
+        String responseText = "<|channel>thought\nLet me call the tool.<channel|>"
+                + "<|tool_call>call:foo{bool_value:true,list_value:[<|\"|>foo<|\"|>,<|\"|>bar<|\"|>],"
+                + "null_value:null,number_value:1,string_value:<|\"|>foo<|\"|>,"
+                + "struct_value:{foo:<|\"|>bar<|\"|>}}<tool_call|>";
+        Response response = new Response("", responseText, FinishReason.TOOL_CALLS, 0, null,
+                0, 0, List.of(new SamplerReturn(0)));
+
+        Gemma4ToolCallParser parser = new Gemma4ToolCallParser();
+        List<ToolCall> toolCalls = parser.extract(response);
+
+        assertEquals(1, toolCalls.size());
+        ToolCall toolCall = toolCalls.get(0);
+        assertEquals("foo", toolCall.getName());
+        assertEquals(true, toolCall.getParameters().get("bool_value"));
+        assertEquals(List.of("foo", "bar"), toolCall.getParameters().get("list_value"));
+        assertEquals(null, toolCall.getParameters().get("null_value"));
+        assertEquals(1, toolCall.getParameters().get("number_value"));
+        assertEquals("foo", toolCall.getParameters().get("string_value"));
+        assertEquals(java.util.Map.of("foo", "bar"), toolCall.getParameters().get("struct_value"));
+    }
+
+    @Test
     void extractGemma4ToolCallWithDottedName() {
         String responseText = "<|tool_call>call:flight_searcher.get_weather{\"location\":\"Albany, NY\"}<tool_call|>";
         Response response = new Response("", responseText, FinishReason.TOOL_CALLS, 0, null,
