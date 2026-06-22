@@ -80,6 +80,10 @@ public class GeneratorParameters {
         this.xtcProbability = Optional.of(prob);
         return this;
     }
+    /**
+     * Sets top-k sampling. Values below 1.0 use the legacy fractional cutoff mode; values greater than or equal to
+     * 1.0 are interpreted as an absolute candidate count, e.g. 64 keeps the top 64 tokens.
+     */
     public GeneratorParameters withTopK(float topK){
         this.topK = Optional.of(topK);
         return this;

@@ -35,7 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class Gemma4PromptIT {
     private static final boolean DEBUG_PROMPTS = Boolean.getBoolean("deliverance.gemma4.prompt.debug");
 
-    @Disabled
+    @Test
     public void chatWithThinking() {
 
         AbstractModel model = Gemma4Suite.getOrCreate();
@@ -216,7 +216,7 @@ public class Gemma4PromptIT {
         }
     }
 
-    @Disabled
+    @Test
     public void chatWithReasoning() {
         AbstractModel model = Gemma4Suite.getOrCreate();
         PromptSupport.Builder builder = model.promptSupport().get().builder()
@@ -225,7 +225,6 @@ public class Gemma4PromptIT {
                 .addUserMessage("""
                         You MUST perform reasoning before writing the reply.\s
                         Your internal thought process MUST be generated BEFORE any final answer.\s
-                        Show your reasoning in <think> tags, then provide the final, concise answer.\s
                         Take your time and evaluate multiple alternative explanations.
                         You have to chose between buying gold or buying silver. What do you buy?
                         """);

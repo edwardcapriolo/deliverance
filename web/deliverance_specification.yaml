@@ -683,14 +683,17 @@ components:
       type: object
       properties:
         top_k:
-          description: pick token at this percentile, very high values like .9999 are suggested. top_p or xtc is a better option only applicable for non 0 temperature.
+          description: |
+            Limits sampling candidates before top_p is applied. Values less than 1.0 use the legacy fractional cutoff mode.
+            Values greater than or equal to 1.0 are treated as an absolute number of candidates, so 64 means sample from
+            at most the top 64 tokens. When both top_k and top_p are supplied, Deliverance applies top_k first and then
+            applies nucleus sampling within those candidates. Only applies when temperature is non-zero.
           type: number
           minimum: 0
-          maximum: 1
           default: null
           nullable: true
         top_p:
-          description: nucleus sampling, sort by probability, pick top_p highest choose random token from sample, only apply to temperature 0
+          description: nucleus sampling, sort by probability, keep candidates until top_p probability mass is reached, then choose a random token from that sample. Only applies when temperature is non-zero.
           type: number
           minimum: 0
           maximum: 1

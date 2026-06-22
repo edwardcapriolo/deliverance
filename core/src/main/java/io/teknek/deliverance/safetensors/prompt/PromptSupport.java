@@ -198,6 +198,9 @@ public class PromptSupport {
                 throw new RuntimeException("Prompt template errors: " + renderResult.getErrors());
             }
             String output = renderResult.getOutput();
+            if (Boolean.TRUE.equals(templateArgs.get("enable_thinking")) && output.endsWith("<|turn>model\n")) {
+                output = output + "<|channel>thought\n";
+            }
             return new PromptContext(output.substring(preamble.length()));
         }
     }

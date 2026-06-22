@@ -238,50 +238,7 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
             if (parameters.topK.isPresent() && parameters.xtcThreshold.isPresent()) {
                 throw new IllegalArgumentException("can not enable topk and xtc");
             }
-            if (parameters.topK.isPresent()) {
-                float topK = parameters.topK.get();
-                LOGGER.debug("max maxv {} maxi {} decoded {}", maxi, maxv, model.decodeToken(maxi));
-                try (AbstractTensor scaledLogits = model.getTensorAllocator().getDirty(logits.dType(), logits.shape())) {
-                    for (int i = 0; i < model.config.vocabularySize; i++) {
-                        float v = logits.get(0, i) / temperature;
-                        scaledLogits.set(v, 0, i);
-                    }
-                    tensorMrSoftMax(scaledLogits, 0, scaledLogits.size());
-                    SortedMap<Float, List<Integer>> buck = VectorTensorMathUtils.valueBuckets(scaledLogits);
-                    int rePick = (int) scaledLogits.size() - ((int) (topK * scaledLogits.size()));
-                    SortedMap<Float, List<Integer>> bucketsHighFirst = buck.reversed();
-
-                    //consider forcing dtype 32
-                    try (AbstractTensor inProb = model.getTensorAllocator().getDirty(logits.dType(), TensorShape.of(rePick));
-                         AbstractTensor inLogits = model.getTensorAllocator().getDirty(logits.dType(), TensorShape.of(rePick))) {
-                        List<String> inToks = new ArrayList<>();
-                        int topPick = 0;
-                        Iterator<Map.Entry<Float, List<Integer>>> jj = bucketsHighFirst.entrySet().iterator();
-                        while (jj.hasNext() && topPick < rePick) {
-                            Map.Entry<Float, List<Integer>> zz = jj.next();
-                            for (int i = 0; i < zz.getValue().size(); i++) {
-                                if (topPick >= rePick) {
-                                    break;
-                                } else {
-                                    inProb.set(zz.getKey(), 0, topPick);
-                                    inLogits.set(zz.getValue().get(i), 0, topPick);
-                                    //tokens can have funky space
-                                    inToks.add(zz.getValue().get(i) + " " + model.decodeToken(zz.getValue().get(i)));
-                                    topPick++;
-                                }
-                            }
-                        }
-                        topPick--;
-                        LOGGER.debug("topk {} logit {} token {} prob {}", topK, inLogits.get(0, topPick),
-                                model.decodeToken((int) inLogits.get(0, topPick)), inProb.get(0, topPick));
-                        //System.out.println(TensorDisplayUtil.pretty2dDisplayAll(inProb));
-                        //System.out.println(TensorDisplayUtil.pretty2dDisplayAll(inLogits));
-                        //System.out.println(inToks);
-                        return logProbs ? new SamplerReturn((int) inLogits.get(0, topPick), topNLogProbs) :
-                                new SamplerReturn((int) inLogits.get(0, topPick));
-                    }
-                }
-            } else if (xtcThreshold != 0){
+            if (xtcThreshold != 0){
                 //topk is similar to xtc not allowing a stack
                 PriorityQueue<IndexValueToken> topXLogProbs = new PriorityQueue<>();
                 try (AbstractTensor scaledLogits = model.getTensorAllocator().getDirty(logits.dType(), logits.shape())) {
@@ -311,52 +268,9 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
                         return logProbs ? new SamplerReturn(maxi, topXLogProbs) : new SamplerReturn(maxi);
                     }
                 }
-            } else if (parameters.topP.isPresent()){
-                float topP = parameters.topP.get();
-                if (topP < 0 || topP > 1 ) {
-                    throw new IllegalArgumentException("topP must be between 0 and 1");
-                }
-                try (AbstractTensor scaledLogits = model.getTensorAllocator().getDirty(logits.dType(), logits.shape())) {
-                    for (int i = 0; i < model.config.vocabularySize; i++) {
-                        float v = logits.get(0, i) / temperature;
-                        scaledLogits.set(v, 0, i);
-                    }
-                    tensorMrSoftMax(scaledLogits, 0, scaledLogits.size());
-                    SortedMap<Float, List<Integer>> buck = VectorTensorMathUtils.valueBuckets(scaledLogits);
-                    SortedMap<Float, List<Integer>> bucketsHighFirst = buck.reversed();
-                    Iterator<Map.Entry<Float, List<Integer>>> jj = bucketsHighFirst.entrySet().iterator();
-                    TopPSummary topPSummary = new TopPSummary(jj, topP);
-
-                    try (AbstractTensor inProb = model.getTensorAllocator().getDirty(logits.dType(), TensorShape.of(topPSummary.count));
-                         AbstractTensor inLogits = model.getTensorAllocator().getDirty(logits.dType(), TensorShape.of(topPSummary.count))) {
-                        List<String> inToks = new ArrayList<>();
-                    for (int i = 0; i < topPSummary.count; i++) {
-                        inLogits.set(topPSummary.underCutoffLogits.get(i), 0, i);
-                        inProb.set(topPSummary.underCutoffProb.get(i), 0, i);
-                        inToks.add(model.decodeToken((long) topPSummary.underCutoffLogits.get(i)));
-                    }
-                        //System.out.println(TensorDisplayUtil.pretty2dDisplayAll(inProb));
-                        //System.out.println(TensorDisplayUtil.pretty2dDisplayAll(inLogits));
-                        //System.out.println(inToks);
-                        VectorTensorMathUtils.normalize(inProb);
-                        //System.out.println(TensorDisplayUtil.pretty2dDisplayAll(inProb));
-                        float pick = random.nextFloat();
-                        //System.out.println("random pick "+ pick);
-                        int chosenScan = 0;
-                        //Linear Scan (O(N)): For small lists, a simple loop that subtracts weights from a random value until reaching zero is also effective.
-                        for (int i = 0; i < inProb.size(); i++) {
-                            pick = pick - inProb.get(0, i);
-                            if (pick <= 0){
-                                chosenScan = (int) inLogits.get(0, i);
-                                break;
-                            }
-                        }
-                        return new SamplerReturn(chosenScan);
-                    }
-                }
-
             } else {
-                throw new UnreachableException("There should be no way to get here");
+                int chosenToken = sampleTopKTopP(logits, temperature, parameters.topK, parameters.topP, random.nextFloat());
+                return logProbs ? new SamplerReturn(chosenToken, topNLogProbs) : new SamplerReturn(chosenToken);
             }
         }
 
@@ -392,6 +306,73 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
                 token.logProb = logSum.get(0, token.index);
             }
         }
+    }
+
+    static int topKCandidateCount(float topK, int vocabularySize) {
+        if (topK <= 0) {
+            throw new IllegalArgumentException("topK must be > 0");
+        }
+        if (topK < 1.0f) {
+            return Math.max(1, vocabularySize - (int) (topK * vocabularySize));
+        }
+        return Math.min(vocabularySize, Math.round(topK));
+    }
+
+    static int sampleTopKTopP(AbstractTensor logits, float temperature, Optional<Float> topK, Optional<Float> topP,
+            float uniformSample) {
+        if (temperature <= 0.0f) {
+            throw new IllegalArgumentException("temperature must be > 0 for sampling");
+        }
+        if (topP.isPresent() && (topP.get() <= 0.0f || topP.get() > 1.0f)) {
+            throw new IllegalArgumentException("topP must be in (0, 1]");
+        }
+        int vocabularySize = Math.toIntExact(logits.size());
+        int candidateLimit = topK.map(k -> topKCandidateCount(k, vocabularySize)).orElse(vocabularySize);
+        List<IndexValueToken> candidates = new ArrayList<>(vocabularySize);
+        float max = Float.NEGATIVE_INFINITY;
+        for (int i = 0; i < vocabularySize; i++) {
+            float value = logits.get(0, i) / temperature;
+            candidates.add(new IndexValueToken(i, value, null));
+            if (value > max) {
+                max = value;
+            }
+        }
+        candidates.sort(Comparator.comparingDouble((IndexValueToken token) -> token.value).reversed());
+        candidateLimit = Math.min(candidateLimit, candidates.size());
+        List<IndexValueToken> filtered = new ArrayList<>(candidateLimit);
+        for (int i = 0; i < candidateLimit; i++) {
+            filtered.add(candidates.get(i));
+        }
+        double total = probabilitySum(filtered, max);
+        if (topP.isPresent()) {
+            double normalized = 0.0d;
+            List<IndexValueToken> nucleus = new ArrayList<>();
+            for (IndexValueToken token : filtered) {
+                nucleus.add(token);
+                normalized += FastMath.exp(token.value - max) / total;
+                if (normalized >= topP.get()) {
+                    break;
+                }
+            }
+            filtered = nucleus;
+            total = probabilitySum(filtered, max);
+        }
+        double pick = uniformSample * total;
+        for (IndexValueToken token : filtered) {
+            pick -= FastMath.exp(token.value - max);
+            if (pick <= 0.0d) {
+                return token.index;
+            }
+        }
+        return filtered.getLast().index;
+    }
+
+    private static double probabilitySum(List<IndexValueToken> tokens, float max) {
+        double total = 0.0d;
+        for (IndexValueToken token : tokens) {
+            total += FastMath.exp(token.value - max);
+        }
+        return total;
     }
 
 
