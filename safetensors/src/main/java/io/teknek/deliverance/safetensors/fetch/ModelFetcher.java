@@ -34,6 +34,7 @@ public class ModelFetcher {
     protected String name;
     protected String token;
     protected String modelUriBase = "https://huggingface.co/api/models/";
+    protected boolean download = true;
 
     protected ModelFetcher(){
 
@@ -71,6 +72,9 @@ public class ModelFetcher {
         Path modelDir = pathForModel();
         if (isLocallyComplete(fetchPolicy, modelDir)) {
             return modelDir.toFile();
+        }
+        if (!download) {
+            throw new IllegalStateException("Model is not available locally and downloads are disabled: " + modelDir);
         }
         try {
             return maybeDownloadModel(Optional.of(this.owner), this.name,
@@ -297,5 +301,18 @@ public class ModelFetcher {
 
     public void setBaseDir(Path baseDir) {
         this.baseDir = baseDir;
+    }
+
+    public boolean isDownload() {
+        return download;
+    }
+
+    public void setDownload(boolean download) {
+        this.download = download;
+    }
+
+    public ModelFetcher withDownload(boolean download) {
+        this.download = download;
+        return this;
     }
 }
