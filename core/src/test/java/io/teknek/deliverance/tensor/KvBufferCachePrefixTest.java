@@ -21,6 +21,10 @@ public class KvBufferCachePrefixTest {
         Config config = new Config(128, 64, 128, 4,
                 4, 2, 1e-5f, 1000, 0,
                 List.of(1), ActivationFunction.Type.GELU_PYTORCH_TANH, null, null);
+        return mockModel(config);
+    }
+
+    private AbstractModel mockModel(Config config) {
         AbstractModel model = mock(AbstractModel.class);
         when(model.getConfig()).thenReturn(config);
         when(model.getLocalKvLength()).thenReturn(config.kvLength);
@@ -28,6 +32,21 @@ public class KvBufferCachePrefixTest {
         when(model.getTensorAllocator()).thenReturn(new ArrayQueueTensorAllocator(new MetricRegistry()));
         when(model.getMetricRegistry()).thenReturn(new MetricRegistry());
         return model;
+    }
+
+    @Test
+    public void computePageSizeUsesContextRowsTargetForAttentionLocality() {
+        Config qwen3FourBShape = new Config(40960, 2560, 9728, 32,
+                8, 36, 1e-6f, 151936, 151643,
+                List.of(151645), ActivationFunction.Type.SILU, null, null,
+                128, null, null);
+        KvBufferCache cache = new KvBufferCache(mockModel(qwen3FourBShape), new KvBufferCacheSettings(true));
+        KvBufferCache.KvBuffer buffer = cache.new KvBuffer("qwen3-4b-shape", 1 << 20);
+
+        KvBufferCache.KvPageContext page = buffer.computePageSize(1 << 20);
+
+        assertEquals(4, page.layersPerPage());
+        assertEquals(32, page.contextLengthPerPage());
     }
 
     @Test
@@ -160,7 +179,11 @@ public class KvBufferCachePrefixTest {
             if (overlapStart < overlapEnd) {
                 int rowOffset = overlapStart - globalOffset;
                 int size = overlapEnd - overlapStart;
-                packed.copyFrom(page, page.getOffset(rowOffset, 0), packed.getOffset(packedRow, 0), size * rowWidth);
+                for (int row = 0; row < size; row++) {
+                    for (int col = 0; col < rowWidth; col++) {
+                        packed.set(page.get(rowOffset + row, col), packedRow + row, col);
+                    }
+                }
                 packedRow += size;
             }
             globalOffset += page.shape().first();
