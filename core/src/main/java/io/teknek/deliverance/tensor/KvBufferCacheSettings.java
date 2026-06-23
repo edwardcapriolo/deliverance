@@ -22,6 +22,19 @@ public class KvBufferCacheSettings {
     The block size of the kvcache. Cache hits will only happen at block boundaries, smaller blockize uses more memory
      */
     private int blockSize = 32;
+    /**
+     * Preferred active KV page length in context-token rows.
+     *
+     * <p>During attention, Deliverance reads one layer's KV history across the context axis. If pages hold only a few
+     * context rows, each token has to loop over many small key/value page slices. That increases Java loop overhead and
+     * makes the score/value kernels work on tiny fragments. This target asks the KV cache to prefer pages with this many
+     * adjacent context rows, then fit as many layers as possible into the configured page byte budget.</p>
+     *
+     * <p>The value is a target, not a guarantee. Large models with wide KV rows may fit fewer rows. Smaller models may fit
+     * more layers per page while still using this row target. The default of {@code 32} was chosen because it materially
+     * reduced Qwen3-4B page fan-out without the locality regression observed with larger 128-row pages.</p>
+     */
+    private int contextRowsPerPageTarget = 32;
 
     public enum KvFormat {
         BF16,
@@ -109,6 +122,28 @@ public class KvBufferCacheSettings {
 
     public KvBufferCacheSettings withBlockSize(int blockSize) {
         setBlockSize(blockSize);
+        return this;
+    }
+
+    public int getContextRowsPerPageTarget() {
+        return contextRowsPerPageTarget;
+    }
+
+    /**
+     * Sets the preferred number of adjacent context-token rows per active KV page.
+     *
+     * <p>Increasing this can reduce attention page fan-out for long contexts. Setting it too high can hurt locality or
+     * allocator behavior for some model shapes, so benchmark representative prompts before changing it globally.</p>
+     */
+    public void setContextRowsPerPageTarget(int contextRowsPerPageTarget) {
+        if (contextRowsPerPageTarget <= 0) {
+            throw new IllegalArgumentException("contextRowsPerPageTarget must be > 0");
+        }
+        this.contextRowsPerPageTarget = contextRowsPerPageTarget;
+    }
+
+    public KvBufferCacheSettings withContextRowsPerPageTarget(int contextRowsPerPageTarget) {
+        setContextRowsPerPageTarget(contextRowsPerPageTarget);
         return this;
     }
 

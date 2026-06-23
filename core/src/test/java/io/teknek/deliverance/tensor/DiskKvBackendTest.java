@@ -32,7 +32,8 @@ public class DiskKvBackendTest {
     public void rangeReadCreatesDistinctFilesForEachContextPage() throws IOException {
         AbstractModel model = mockModel();
         KvBufferCacheSettings settings = new KvBufferCacheSettings(tempDir.toFile())
-                .withDiskPageSweeperEnabled(false);
+                .withDiskPageSweeperEnabled(false)
+                .withContextRowsPerPageTarget(1);
         KvBufferCache cache = new KvBufferCache(model, settings);
         KvBufferCache.KvBuffer buffer = cache.new KvBuffer("test", 1024);
 

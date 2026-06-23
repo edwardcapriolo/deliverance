@@ -307,6 +307,14 @@ public class KvBufferCache implements Closeable {
             s = TensorShape.of(rawShape);
             this.pageShape = s;
         }
+
+        int layersPerPage() {
+            return layersPerPage;
+        }
+
+        int contextLengthPerPage() {
+            return contextLengthPerPage;
+        }
     }
 
     /**
@@ -458,6 +466,25 @@ public class KvBufferCache implements Closeable {
             currentContextPosition.incrementAndGet();
         }
 
+        /**
+         * Chooses the active KV page shape under a maximum page byte budget.
+         *
+         * <p>Each KV page stores both key and value tensors for some number of layers and some number of context-token
+         * rows. The cost of one layer at one context position is:</p>
+         *
+         * <pre>{@code
+         * bytesPerLayerToken = 2 * workingDType.bytes * localKvLength
+         * }</pre>
+         *
+         * <p>The factor of {@code 2} is key plus value. {@code localKvLength} is the per-rank KV width, normally
+         * {@code numKeyValueHeads * headDim} divided by tensor-parallel rank count when tensor parallelism is active.</p>
+         *
+         * <p>Attention reads one layer across many context positions, so this method first tries to honor
+         * {@link KvBufferCacheSettings#getContextRowsPerPageTarget()} for context locality. It then packs as many layers
+         * as possible into the same page without exceeding {@code maxPageSizeInBytes}. For example, Qwen3-4B with F32 KV
+         * has {@code localKvLength=1024}, so one layer-token pair is {@code 8192} bytes. With a 1 MiB page budget and the
+         * default 32-row target, the selected layout is {@code 4 layers x 32 context rows}.</p>
+         */
         public KvPageContext computePageSize(long maxPageSizeInBytes) {
             Config c = model.getConfig();
             DType workingDType = model.getWorkingDType();
@@ -468,28 +495,11 @@ public class KvBufferCache implements Closeable {
             int N = c.numberOfLayers;
             int C = c.contextLength;
 
-            int optimalLayersPerPage = 1;
-            int optimalContextLengthPerPage = 1;
-            long maxProduct = 0;
-
-            // Try partitioning by layers
-            for (int x = N; x >= 1; x--) {
-                long y = maxPageSizeInBytes / (x * s);
-
-                if (y >= 1 && y <= C) {
-                    long product = x * y;
-
-                    if (product > maxProduct) {
-                        optimalLayersPerPage = x;
-                        optimalContextLengthPerPage = (int) y;
-                        maxProduct = product;
-                    }
-                    // Break if product starts decreasing
-                    if (product < maxProduct) {
-                        break;
-                    }
-                }
-            }
+            long maxContextRowsForSingleLayer = Math.max(1, maxPageSizeInBytes / s);
+            int optimalContextLengthPerPage = (int) Math.min(C,
+                    Math.min(kvBufferCacheSettings.getContextRowsPerPageTarget(), maxContextRowsForSingleLayer));
+            int optimalLayersPerPage = (int) Math.max(1,
+                    Math.min(N, maxPageSizeInBytes / (optimalContextLengthPerPage * s)));
 
             // Calculate the number of pages needed
             int numberOfLayerPages = (int) Math.ceil((double) N / optimalLayersPerPage);

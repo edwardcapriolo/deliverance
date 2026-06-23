@@ -39,6 +39,9 @@ Generation:
 - [Tool call parser](core/tool_parser.md) Explains how the tool call parser is implemented in the stack
 - [Quantize On Demand](core/quantize_on_demand.md) Explains local Q4 model generation, cache reuse, and provenance files
 - [Benchmarking](core/benchmarking.md) Explains benchmark scripts, profile output, CSV/JSONL artifacts, and QOD benchmark workflow
+- [Tensor engines and JQ4](core/tensor_engines_and_jq4.md) Explains why tensor kernels, safetensors, and Q4 layout matter for local inference
+- [JQ4 tensor format](core/jq4_tensor_format.md) Documents Deliverance's Q4 tensor representation and sidecar scale tensors
+- [Native SIMD kernels](core/native_simd_kernels.md) Explains native GEMM/SAXPY support and the dtype combinations currently accelerated
 - [Vibrant Maven plugin](https://www.youtube.com/watch?v=Glp_hAieOq8) Watch a video on Vibrant Maven plugin generate code from XML based spec inside pom
 - [Generator sampling](core/generator_sampling.md) Explains how temperature, top_p, top_k, and exclude top choice work
 - [Prefix cache](core/PrefixCache.md) Describes how to get the most benefits from the prefix cache
@@ -171,43 +174,17 @@ Open your browser to http://localhost:8080
 </p>
 
 
-### Project Panama (Foreign Memory, Vector operations)
+### Tensor Engines, Panama, Native SIMD, And JQ4
 
-Deliverance supports multiple tensor engines. They are not as general purpose as a DataFrame API
-but offer methods for computing data. 
+Deliverance's performance story is the combination of safetensors loading, memory-mapped tensor storage, Project Panama vector operations, native SIMD kernels, and JQ4 quantized weights. This is not a DataFrame API; it is a small set of inference-focused tensor operations that execute tens of thousands of times per request.
 
-```java
-public void batchDotProduct(AbstractTensor result, AbstractTensor a, AbstractTensor b, ...) 
-public void maccumulate(AbstractTensor aBatch, AbstractTensor bBatch, int offset, int limit) 
-```
-There are multiple provided implementations:
-- NaiveTensorOperations: Uses Foreign Memory API, processing as standard arrays
-- PanamaTensorOperations: Uses Foreign Memory API, Project Panama to process datasets using lanewise hardware acceleration
-- NativeSimdTensorOperation: Uses Foreign Memory API, Native code written in c for SIMD
+For example, a Qwen3-4B Q4 benchmark can execute attention and MLP kernels more than 9,000 times in a single 256-token turn, with `causalselfattention.score_value`, `mlpblock.forward`, and `sampler.output_projection` dominating latency. That is where memory layout, Q4 scale blocks, and native/Panama kernels matter.
 
-The class `AutoModelForCausaLm` will attempt to load an appropriate implementation, starting with the NativeSimd support. 
+Read more:
 
-```java
-ModelFetcher fetch = new ModelFetcher("deliverance-private-repo", "Mistral-7B-Instruct-v0.3-JQ4");
-try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch).build()) 
-```
-
-If you wish to use only the PanamaSupport (because you want to keep it 100% pure java, or unable to build/leveage native code)
-```java
-try (AbstractModel model = builder.withTensorProvider(new ConfigurableTensorProvider(builder.getCache())).build() ) {
-```
-
-The starrup logging will confirm what is chosen
-```
-[main] INFO io.teknek.deliverance.model.ModelSupport - Machine Vector Spec: 256 Byte Order: LITTLE_ENDIAN
-[main] INFO io.teknek.deliverance.model.ModelSupport - Seeking a model of type MISTRAL from the registry. 
-[main] INFO io.teknek.deliverance.model.AbstractModel - Tensor provider = Panama Vector Operations, parallelSplitSize = 4 
-[main] INFO io.teknek.deliverance.model.AbstractModel - Model type = Q4, Working memory type = F32, Quantized memory type = I8
-```
-#### Vector Spec and lane size
-
-The above Vector spec is what the JVM has detected the capabilities of the system are. A wider lane like 526 
-allow Project Panama and to stuff more data in a single lane and achieve more hardware parallelism.
+- [Tensor engines and JQ4](core/tensor_engines_and_jq4.md) explains the problem, the tensor engine stack, and benchmark-profile examples.
+- [JQ4 tensor format](core/jq4_tensor_format.md) describes how Deliverance stores Q4 weights and `.qb` scale sidecars.
+- [Native SIMD kernels](core/native_simd_kernels.md) explains the native GEMM paths and where Native SIMD still delegates to Panama.
 
 ### Building
 

@@ -25,5 +25,5 @@ cd "$SCRIPT_DIR"
 mvn -q -pl core \
   -Dexec.classpathScope=test \
   -Dexec.executable=java \
-  -Dexec.args="-Djava.library.path=$NATIVE_LIB_DIR --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.deliverance.benchmark.InferenceBenchmark --engine deliverance --owner Qwen --model Qwen3-0.6B ${DELIVERANCE_BENCHMARK_ARGS:---output-head-quantization Q4 --pool-size 16 --max-tokens 256 --warmup-cases 0 --profile-stages --output target/deliverance-single-benchmark.csv --jsonl-output target/deliverance-single-benchmark.jsonl}" \
+  -Dexec.args="-Djava.library.path=$NATIVE_LIB_DIR --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.deliverance.benchmark.InferenceBenchmark --engine deliverance --owner Qwen --model Qwen3-4B-JQ4 ${DELIVERANCE_BENCHMARK_ARGS:---output-head-quantization Q4 --pool-size 16 --max-tokens 256 --warmup-cases 0 --profile-stages --output target/deliverance-single-benchmark.csv --jsonl-output target/deliverance-single-benchmark.jsonl}" \
   org.codehaus.mojo:exec-maven-plugin:3.5.0:exec
