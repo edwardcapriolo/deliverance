@@ -88,4 +88,31 @@ public class ModelFetcherTest {
 
         Assertions.assertTrue(fetch.isLocallyComplete(ModelFetcher.FetchPolicy.TOKENIZER_ONLY, temp));
     }
+
+    @Test
+    void downloadDisabledThrowsWhenModelIsNotLocal() throws Exception {
+        ModelFetcher fetch = new ModelFetcher("missing", "model").withDownload(false);
+        Path temp = Files.createTempDirectory("fetcher-no-download");
+        fetch.setBaseDir(temp);
+
+        IllegalStateException ex = Assertions.assertThrows(IllegalStateException.class, fetch::maybeDownload);
+
+        Assertions.assertTrue(ex.getMessage().contains("downloads are disabled"));
+    }
+
+    @Test
+    void downloadDisabledStillAllowsCompleteLocalModel() throws Exception {
+        ModelFetcher fetch = new ModelFetcher("local", "model").withDownload(false);
+        Path temp = Files.createTempDirectory("fetcher-no-download-local");
+        fetch.setBaseDir(temp);
+        Path modelDir = temp.resolve("local_model");
+        Files.createDirectories(modelDir);
+        Files.writeString(modelDir.resolve("config.json"), "{}");
+        Files.writeString(modelDir.resolve("tokenizer.json"), "{}");
+        Files.writeString(modelDir.resolve("model.safetensors.index.json"), "{}");
+
+        File local = fetch.maybeDownload();
+
+        Assertions.assertEquals(modelDir.toFile(), local);
+    }
 }

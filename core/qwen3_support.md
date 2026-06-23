@@ -29,6 +29,32 @@ QWEN3_06B_THINKING=<think>\nOkay, so the question is 1 plus 1. Hmm,
 
 The `0.6B` model is a bring-up target, not the final quality bar for thinking or tool use.
 
+## Sampling Settings
+
+The Qwen3 model card explicitly recommends different sampling settings for thinking and non-thinking modes and warns
+against greedy decoding for thinking mode.
+
+Use these settings for Qwen3 tests and examples unless a test is intentionally checking deterministic greedy behavior:
+
+```text
+thinking mode:
+  temperature = 0.6
+  top_p       = 0.95
+  top_k       = 20
+
+non-thinking mode:
+  temperature = 0.7
+  top_p       = 0.8
+  top_k       = 20
+```
+
+In Deliverance, greedy decoding means `temperature=0.0`: each step picks the highest-logit token directly, without
+sampling from a probability distribution. Do not use `temperature=0.0` as the default thinking-mode check. The upstream
+model card says greedy decoding can lead to degraded performance and endless repetitions in thinking mode.
+
+Deliverance's `top_k` supports the Qwen model-card form: values greater than or equal to `1.0` are interpreted as an
+absolute candidate count, so `top_k=20` means keep the top 20 candidates before applying `top_p`.
+
 ## Architecture Notes
 
 The implementation was compared against Hugging Face:

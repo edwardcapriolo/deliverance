@@ -1,5 +1,6 @@
 package io.teknek.deliverance.safetensors;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
@@ -40,12 +41,46 @@ public class ModelQuantizerTest {
         new ModelQuantizer(64).quantizeModelDirectory(sourceDir, outputDir);
 
         assertTrue(Files.exists(outputDir.resolve("config.json")));
+        assertTrue(Files.exists(outputDir.resolve(".finished")));
         assertTrue(Files.exists(outputDir.resolve(SafeTensorIndexPojo.MODEL_INDEX_JSON)));
         try (DefaultWeightLoader loader = new DefaultWeightLoader(outputDir.toFile())) {
             assertEquals(DType.F32, loader.tensorInfoMap().get("model.embed_tokens.weight").dType);
             assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.self_attn.q_proj.weight").dType);
             assertTrue(loader.isWeightPresent("model.layers.0.self_attn.q_proj.weight.qb"));
         }
+    }
+
+    @Test
+    public void writesQuantizationReadmeAndManifest() throws Exception {
+        Path sourceDir = tempDir.resolve("source-manifest");
+        Path outputDir = tempDir.resolve("output-manifest");
+        Files.createDirectories(sourceDir);
+        Files.writeString(sourceDir.resolve("config.json"), "{\"model_type\":\"llama\"}");
+        Files.writeString(sourceDir.resolve("README.md"), "# Original Model\n");
+
+        FloatBufferTensor proj = new FloatBufferTensor(1, 32);
+        for (int i = 0; i < 32; i++) {
+            proj.set(i - 8, 0, i);
+        }
+        SafeTensorWriter.write(sourceDir.resolve("model.safetensors"), Map.of(),
+                Map.of("model.layers.0.self_attn.q_proj.weight", proj));
+
+        new ModelQuantizer(64).quantizeModelDirectory(sourceDir, outputDir);
+
+        String readme = Files.readString(outputDir.resolve("README.md"));
+        assertTrue(readme.startsWith("# Deliverance Quantization"));
+        assertTrue(readme.contains("# Original Model"));
+        JsonNode manifest = JsonUtils.om.readTree(outputDir.resolve(ModelQuantizer.QUANTIZATION_MANIFEST).toFile());
+        assertEquals(1, manifest.get("schemaVersion").asInt());
+        assertEquals("Q4", manifest.get("targetType").asText());
+        assertTrue(manifest.get("sourceSizeBytes").asLong() > 0);
+        assertTrue(manifest.get("outputSizeBytes").asLong() > 0);
+        JsonNode transform = manifest.get("tensorTransforms").get(0);
+        assertEquals("model.layers.0.self_attn.q_proj.weight", transform.get("name").asText());
+        assertEquals("F32", transform.get("sourceDType").asText());
+        assertEquals("Q4", transform.get("outputDType").asText());
+        assertTrue(transform.get("quantized").asBoolean());
+        assertEquals("model.layers.0.self_attn.q_proj.weight.qb", transform.get("sidecars").get(0).asText());
     }
 
     @Test

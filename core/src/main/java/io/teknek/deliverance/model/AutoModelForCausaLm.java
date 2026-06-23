@@ -9,6 +9,7 @@ import io.teknek.deliverance.model.tensorparallel.GossipParallelMembership;
 import io.teknek.deliverance.model.tensorparallel.GossipParallelSettings;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelContext;
+import io.teknek.deliverance.safetensors.ModelQuantizer;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.TensorAllocator;
@@ -24,10 +25,15 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.lang.reflect.InvocationTargetException;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Function;
 
 public class AutoModelForCausaLm {
@@ -71,6 +77,19 @@ public class AutoModelForCausaLm {
         private TensorParallelCollectives tensorParallelCollectives = new SingleRankTensorParallelCollectives();
         private Optional<GossipParallelSettings> parallelSettings = Optional.empty();
         private Optional<DType> outputHeadQuantization = Optional.empty();
+        private Optional<QuantizeOnDemand> quantizeOnDemand = Optional.empty();
+        private boolean download = true;
+
+        record QuantizeOnDemand(DType targetType, String outputOwner, String outputModel) {
+            QuantizeOnDemand {
+                Objects.requireNonNull(targetType, "targetType");
+                Objects.requireNonNull(outputOwner, "outputOwner");
+                Objects.requireNonNull(outputModel, "outputModel");
+                if (outputOwner.isBlank() || outputModel.isBlank()) {
+                    throw new IllegalArgumentException("outputOwner and outputModel must not be blank");
+                }
+            }
+        }
 
         public Builder(ModelFetcher fetch){
             this.fetch = fetch;
@@ -147,6 +166,25 @@ public class AutoModelForCausaLm {
             this.outputHeadQuantization = Optional.of(Objects.requireNonNull(outputHeadQuantization, "outputHeadQuantization"));
             return this;
         }
+
+        /**
+         * Controls whether missing or incomplete model files may be downloaded. Defaults to {@code true}.
+         * Set to {@code false} to require the model to already exist in the local Deliverance cache.
+         */
+        public Builder withDownload(boolean download) {
+            this.download = download;
+            return this;
+        }
+
+        /**
+         * Loads a cached quantized target when it exists, otherwise quantizes the source model into
+         * the local Deliverance cache and loads that generated target. Source download behavior is
+         * still controlled by {@link #withDownload(boolean)}.
+         */
+        public Builder withQuantizeOnDemand(DType targetType, String outputOwner, String outputModel) {
+            this.quantizeOnDemand = Optional.of(new QuantizeOnDemand(targetType, outputOwner, outputModel));
+            return this;
+        }
         public GossipParallelMembership startParallelMembership() {
             return GossipParallelMembership.start(parallelSettings.orElseThrow(() ->
                     new IllegalStateException("parallelSettings must be configured before starting membership")));
@@ -205,6 +243,8 @@ public class AutoModelForCausaLm {
             copy.tensorParallelContext = context;
             copy.tensorParallelCollectives = Objects.requireNonNull(collectives, "collectives");
             copy.outputHeadQuantization = this.outputHeadQuantization;
+            copy.quantizeOnDemand = this.quantizeOnDemand;
+            copy.download = this.download;
             return copy;
         }
         /** This is a JVM wide property! **/
@@ -247,7 +287,8 @@ public class AutoModelForCausaLm {
 
         private AbstractModel loadLocalTransformerModel(){
             System.setProperty("jdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK", this.oobCheck);
-            File modelRoot = fetch.maybeDownload();
+            ModelFetcher fetcherForLoad = resolveModelFetcherForLoad();
+            File modelRoot = fetcherForLoad.maybeDownload();
             if (pool == null){
                 pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
             }
@@ -257,9 +298,78 @@ public class AutoModelForCausaLm {
                 provider = maybe.map(ConfigurableTensorProvider::new).orElse(base);
             }
             AbstractModel model = ModelSupport.loadModel(modelRoot, workingMem, workingQuant, provider,
-                    mr, allocator, settings, fetch, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives,
+                    mr, allocator, settings, fetcherForLoad, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives,
                     outputHeadQuantization);
             return model;
+        }
+
+        ModelFetcher resolveModelFetcherForLoad() {
+            fetch.setDownload(download);
+            if (quantizeOnDemand.isEmpty()) {
+                return fetch;
+            }
+            QuantizeOnDemand quantize = quantizeOnDemand.get();
+            ModelFetcher target = cachePeerFetcher(quantize.outputOwner(), quantize.outputModel()).withDownload(false);
+            if (isLocallyComplete(target)) {
+                LOGGER.info("Using existing quantized model target {}", target.pathForModel());
+                return target;
+            }
+            if (Files.exists(target.pathForModel())) {
+                throw new IllegalStateException("Quantized target exists but is incomplete: " + target.pathForModel());
+            }
+
+            LOGGER.info("Quantized model target {} is missing; resolving source {}", target.pathForModel(), fetch.pathForModel());
+            Path sourceDir = fetch.maybeDownload().toPath();
+            Path targetDir = target.pathForModel();
+            Path stagingDir = targetDir.resolveSibling(targetDir.getFileName() + ".tmp-" + UUID.randomUUID());
+            try {
+                Files.createDirectories(targetDir.getParent());
+                LOGGER.info("Creating quantized model target {} via staging directory {}", targetDir, stagingDir);
+                new ModelQuantizer().quantizeModelDirectory(sourceDir, stagingDir, quantize.targetType(),
+                        ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER);
+                Files.move(stagingDir, targetDir);
+                LOGGER.info("Installed quantized model target {}", targetDir);
+            } catch (IOException e) {
+                deleteQuietly(stagingDir);
+                throw new RuntimeException("Unable to install quantized model at " + targetDir, e);
+            } catch (RuntimeException e) {
+                deleteQuietly(stagingDir);
+                throw e;
+            }
+            return target;
+        }
+
+        private boolean isLocallyComplete(ModelFetcher fetcher) {
+            try {
+                fetcher.maybeDownload();
+                return true;
+            } catch (IllegalStateException e) {
+                return false;
+            }
+        }
+
+        private ModelFetcher cachePeerFetcher(String owner, String name) {
+            ModelFetcher peer = new ModelFetcher(owner, name);
+            peer.setBaseDir(fetch.getBaseDir());
+            return peer;
+        }
+
+        private void deleteQuietly(Path directory) {
+            if (directory == null || !Files.exists(directory)) {
+                return;
+            }
+            try (var paths = Files.walk(directory)) {
+                paths.sorted(Comparator.reverseOrder())
+                        .forEach(path -> {
+                            try {
+                                Files.deleteIfExists(path);
+                            } catch (IOException ignored) {
+                                LOGGER.warn("unable to delete staging path {}", path);
+                            }
+                        });
+            } catch (IOException e) {
+                LOGGER.warn("unable to clean quantized-model staging directory {}", directory, e);
+            }
         }
 
         public ModelFetcher getFetch() {
