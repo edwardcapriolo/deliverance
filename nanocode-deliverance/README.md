@@ -2,6 +2,8 @@
 
 Tiny terminal coding agent inspired by `nanocode.java`, backed by a running Deliverance HTTP server.
 
+![nanocode-deliverance terminal screenshot](nanocode_large.png)
+
 This module intentionally stays small:
 
 * Java 17.

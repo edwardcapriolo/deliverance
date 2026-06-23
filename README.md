@@ -20,6 +20,32 @@ especially : an `opinion` or `decision` (such as the verdict of a jury) expresse
 
 We aren't `inferencing`, we are `delivering`
 
+### Models supported
+Generation:
+- gemma2
+- llama
+- mistral
+- mixtral
+- qwen2
+- qwen3
+- gpt2
+
+### Learning and Developer docs
+
+- [Qwen3 support](core/qwen3_support.md) Documents Qwen3 integration status, tests, and limitations
+- [Gemma4 support](core/gemma4_support.md) High-level status, usage, and notes for Gemma 4 support in Deliverance
+- [Grace tokenizer module](grace/README.md) Explains Deliverance's fuller-featured tokenizer path and how to use it
+- [Inference engine flow](core/inference_flow.md) Explains the transformations and flows http/prompt/jinja/ etc.
+- [Tool call parser](core/tool_parser.md) Explains how the tool call parser is implemented in the stack
+- [Quantize On Demand](core/quantize_on_demand.md) Explains local Q4 model generation, cache reuse, and provenance files
+- [Benchmarking](core/benchmarking.md) Explains benchmark scripts, profile output, CSV/JSONL artifacts, and QOD benchmark workflow
+- [Vibrant Maven plugin](https://www.youtube.com/watch?v=Glp_hAieOq8) Watch a video on Vibrant Maven plugin generate code from XML based spec inside pom
+- [Generator sampling](core/generator_sampling.md) Explains how temperature, top_p, top_k, and exclude top choice work
+- [Prefix cache](core/PrefixCache.md) Describes how to get the most benefits from the prefix cache
+- [Tensor parallel guide](core/TensorParallelGuide.md) Explains how to enable tensor-parallel generation for Gemma2
+- [Tensor parallel developer notes](core/TensorParallelDeveloper.md) Details the implementation changes behind tensor parallelism
+
+
 ### Lightning quick start 
 #### Inference Types supported
 
@@ -77,42 +103,14 @@ try (AbstractModel model = AutoModelForSequenceClassification
 
 #### Coding assistant (chat-bot, vibrant-maven-plugin, rag-chat)
 
-You can use deliverance to do spec-driven-development including the vibrant-maven-plugin in your projects POM file!  
+Deliverance can back local coding-assistant experiments and spec-driven generation workflows.
 
-```xml
-<plugin>
-    <groupId>io.teknek.deliverance</groupId>
-    <artifactId>vibrant-maven-plugin</artifactId>
-    <!--<version>0.0.4</version> -->
-    <configuration>
-        <vibeSpecs>
-            <vibeSpec>
-                <id>shape</id>
-                <enabled>true</enabled>
-                <overwrite>true</overwrite>
-                <systemMessages>
-                    <systemMessage>You are an assistant that produces concise, production-grade software.</systemMessage>
-                    <systemMessage>Output java code.</systemMessage>
-                    <systemMessage>Generate java code into the package 'io.teknek.shape' .</systemMessage>
-                </systemMessages>
-                <userMessages>
-                    <userMessage>Generate a java interface named Shape with a method named area that returns a double.</userMessage>
-                    <userMessage>Generate a java class named Circle that implements the Shape interface.</userMessage>
-                </userMessages>
-                <generateTo>generated-source</generateTo>
-            </vibeSpec>
-        </vibeSpecs>
-    </configuration>
-</plugin>
+![nanocode-deliverance terminal screenshot](nanocode-deliverance/nanocode.png)
 
-```
-Then you trigger a run of the plugin to generate code based on your spec!
+- [`vibrant-maven-plugin`](vibrant-maven-plugin/README.md) generates code from Maven-managed prompt/spec definitions. It is useful when you want repeatable, checked-in generation steps instead of one-off chat output. See also the [vibrant-maven-plugin video](https://www.youtube.com/watch?v=Glp_hAieOq8).
+- [`nanocode-deliverance`](nanocode-deliverance/README.md) is a tiny terminal coding agent inspired by `nanocode.java`, backed by a running Deliverance HTTP server.
 
-```sh 
-export MAVEN_OPTS="--add-opens java.base/java.nio=ALL-UNNAMED --add-modules jdk.incubator.vector --enable-native-access=ALL-UNNAMED -Djava.library.path=/home/edward/deliverence/native/target/native-lib-only"
-mvn io.teknek.deliverance:vibrant-maven-plugin:0.0.4-SNAPSHOT:generate
-
-```
+These projects are intentionally small integration surfaces: start a Deliverance HTTP server with the model you want, then point the assistant/plugin at that local endpoint.
 
 #### HTTP enabled inference engine (inference as a service)
 
@@ -172,29 +170,6 @@ Open your browser to http://localhost:8080
   <img src="deliv.png"  alt="Deliver me">
 </p>
 
-
-### Learning and Developer docs
-
-- [Gemma4 support](core/gemma4_support.md) High-level status, usage, and notes for Gemma 4 support in Deliverance
-- [grace tokenizer module](grace/README.md) Explains Deliverance's fuller-featured tokenizer path and how to use it
-- [inference engine flow](core/inference_flow.md) Explains the transformations and flows http/prompt/jinja/ etc.
-- [tool call parser](core/tool_parser.md) Explains how the tool call parser is implemented in the stack
-- [Qwen3 support](core/qwen3_support.md) Documents Qwen3 integration status, tests, and limitations
-- [Vibrant-maven-plugin](https://www.youtube.com/watch?v=Glp_hAieOq8) Watch a video on Vibrant-maven-plugin generate code from XML based spec inside pom
-- [Generator_sampling](core/generator_sampling.md) Explains how temperature, top_p, top_k, and exclude top choice work
-- [Prefix_cache](core/PrefixCache.md) Describes how to get the most benefits from the prefix cache
-- [Tensor parallel guide](core/TensorParallelGuide.md) Explains how to enable tensor-parallel generation for Gemma2
-- [Tensor parallel developer notes](core/TensorParallelDeveloper.md) Details the implementation changes behind tensor parallelism
-
-### Models supported
-Generation:
-- gemma2
-- llama 
-- mistral
-- mixtral
-- qwen2
-- qwen3
-- gpt2
 
 ### Project Panama (Foreign Memory, Vector operations)
 
@@ -281,80 +256,8 @@ mvn install -Dmaven.test.skip.exec=true
 
 ### 🔍 Semantic Search & Embeddings
 
-Deliverance supports embedding models for semantic search, information retrieval, and code understanding. The [LEAF model](https://huggingface.co/MongoDB/mdbr-leaf-ir) is a compact, efficient embedding model optimized for information retrieval tasks - perfect for semantic code search, RAG applications, and understanding codebases semantically.
-
-**Use Cases:**
-- **Semantic Code Search**: Find code by meaning, not just keywords (e.g., "find all database connection methods")
-- **Code Understanding**: Understand relationships between classes, methods, and concepts in large codebases
-- **RAG Applications**: Build retrieval-augmented generation systems for code documentation and knowledge bases
-- **Information Retrieval**: Semantic search across documentation, code comments, and technical content
-
-```java
-import com.codahale.metrics.MetricRegistry;
-import io.teknek.deliverance.DType;
-import io.teknek.deliverance.embedding.PoolingType;
-import io.teknek.deliverance.math.VectorMathUtils;
-import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.model.ModelSupport;
-import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
-import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import java.io.File;
-
-public void semanticCodeSearch() {
-    String modelOwner = "MongoDB";
-    String modelName = "mdbr-leaf-ir";
-
-    // Download and load the LEAF embedding model
-    ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
-    File localModelPath = fetch.maybeDownload();
-    MetricRegistry mr = new MetricRegistry();
-    TensorCache arrayQueueTensorAllocator = new TensorCache(mr);
-    AbstractModel embeddingModel = ModelSupport.loadEmbeddingModel(localModelPath, DType.F32, DType.F32,
-            new ConfigurableTensorProvider(arrayQueueTensorAllocator), mr, arrayQueueTensorAllocator, new KvBufferCacheSettings(true));
-
-    // Embed code snippets or documentation
-    String query = "database connection initialization";
-    String[] codeSnippets = {
-        "public class DatabaseConnection { private Connection conn; ... }",
-        "public void connectToDatabase(String url) { ... }",
-        "public class UserService { public void authenticate() { ... } }",
-        "Connection conn = DriverManager.getConnection(url, user, pass);"
-    };
-
-    // Generate embeddings
-    float[] queryEmbedding = embeddingModel.embed(query, PoolingType.AVG);
-
-    // Find most similar code snippet
-    float maxSimilarity = -1.0f;
-    String bestMatch = "";
-    for (String snippet : codeSnippets) {
-        float[] snippetEmbedding = embeddingModel.embed(snippet, PoolingType.AVG);
-        float similarity = VectorMathUtils.cosineSimilarity(queryEmbedding, snippetEmbedding);
-        if (similarity > maxSimilarity) {
-            maxSimilarity = similarity;
-            bestMatch = snippet;
-        }
-    }
-
-    System.out.println("Best match: " + bestMatch + " (similarity: " + maxSimilarity + ")");
-    embeddingModel.close();
-}
-```
-
-**Example: Building a Semantic Code Index**
-
-For tools that need to understand code semantically, you can use LEAF embeddings to:
-
-1. **Index codebase**: Generate embeddings for classes, methods, and documentation
-2. **Semantic search**: Find relevant code by meaning, not just text matching
-3. **Context retrieval**: Retrieve semantically similar code for LLM context
-4. **Code understanding**: Understand relationships and patterns across large codebases
-
-The LEAF model's compact size (23M parameters, 384 dimensions) makes it ideal for production use in IDEs and code analysis tools where low latency and memory efficiency are critical.
-
-See `core/src/main/java/io/teknek/deliverance/examples/LeafModelExample.java` for a complete example with CLI flags for normalization, batch size, and parallel processing.
+Deliverance supports embedding models for semantic search, information retrieval, RAG, and code understanding. 
+See [Semantic Search & Embeddings](core/semantic_search.md) for LEAF model notes and a full Java example.
 
 ### Performance
 
