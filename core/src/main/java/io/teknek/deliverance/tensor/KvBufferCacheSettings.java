@@ -32,7 +32,8 @@ public class KvBufferCacheSettings {
      *
      * <p>The value is a target, not a guarantee. Large models with wide KV rows may fit fewer rows. Smaller models may fit
      * more layers per page while still using this row target. The default of {@code 32} was chosen because it materially
-     * reduced Qwen3-4B page fan-out without the locality regression observed with larger 128-row pages.</p>
+     * reduced Qwen3-4B page fan-out; larger 64-row and 128-row pages reduced page count further but did not improve the
+     * representative benchmark.</p>
      */
     private int contextRowsPerPageTarget = 32;
 

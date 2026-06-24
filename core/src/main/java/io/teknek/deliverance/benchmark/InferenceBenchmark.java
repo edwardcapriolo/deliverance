@@ -21,6 +21,7 @@ import io.teknek.deliverance.model.tensorparallel.TensorParallelGenerationGroup;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
+import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.gossip.GossipSettings;
 import io.teknek.gossip.Member;
 import io.teknek.gossip.RemoteMember;
@@ -158,6 +159,7 @@ public final class InferenceBenchmark {
                     applyOutputHeadQuantization(options, AutoModelForCausaLm.newBuilder(fetcher))
                     .withWorkingMemoryType(options.workingDType)
                     .withWorkingQuantType(options.workingQType)
+                    .withKvBufferCacheSettings(kvBufferCacheSettings(options))
                     .withWrappedForkJoinPool(newPool(options))
                     .build());
         }
@@ -175,6 +177,14 @@ public final class InferenceBenchmark {
                 ? new WrappedForkJoinPool(new ForkJoinPool(options.poolSize, ForkJoinPool.defaultForkJoinWorkerThreadFactory,
                 null, true))
                 : new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+    }
+
+    private static KvBufferCacheSettings kvBufferCacheSettings(Options options) {
+        return new KvBufferCacheSettings(true)
+                .withMaxEntries(options.prefixCacheMaxEntries)
+                .withBlockSize(options.prefixCacheBlockSize)
+                .withMaxPrefixTokensPerPrompt(options.prefixCacheMaxPrefixTokens)
+                .withContextRowsPerPageTarget(options.kvContextRowsPerPageTarget);
     }
 
     /** Prints runtime details that are otherwise only visible through SLF4J logs. */
@@ -590,6 +600,19 @@ public final class InferenceBenchmark {
                 getHits,
                 hitRate(getHits, gets),
                 full);
+        long prefixLookups = meterCount(meters, "kvbuffercache.lookup");
+        long prefixHits = meterCount(meters, "kvbuffercache.hits");
+        long prefixMisses = meterCount(meters, "kvbuffercache.misses");
+        if (prefixLookups > 0 || prefixHits > 0 || prefixMisses > 0) {
+            System.out.printf(Locale.ROOT,
+                    "[prefix-cache] rank=%d/%d lookups=%d hits=%d misses=%d hit_rate=%.4f%n",
+                    model.getTensorParallelContext().rank(),
+                    model.getTensorParallelContext().size(),
+                    prefixLookups,
+                    prefixHits,
+                    prefixMisses,
+                    hitRate(prefixHits, prefixLookups));
+        }
     }
 
     private static long meterCount(java.util.SortedMap<String, com.codahale.metrics.Meter> meters, String name) {
@@ -900,6 +923,10 @@ public final class InferenceBenchmark {
         private int tensorParallelPortStart = 42_000;
         private int tensorParallelPortRange = 1_000;
         private int tensorParallelRankEndpointTimeoutSeconds = 120;
+        private int prefixCacheMaxEntries = 10_000;
+        private int prefixCacheBlockSize = 32;
+        private int prefixCacheMaxPrefixTokens = 512;
+        private int kvContextRowsPerPageTarget = 32;
         private boolean profileStages = false;
         private Path suiteFile;
         private Path output = Path.of("target/inference-benchmark.csv");
@@ -935,6 +962,10 @@ public final class InferenceBenchmark {
                     case "--tensor-parallel-port-range" -> options.tensorParallelPortRange = Integer.parseInt(args[++i]);
                     case "--tensor-parallel-rank-endpoint-timeout-seconds" ->
                             options.tensorParallelRankEndpointTimeoutSeconds = Integer.parseInt(args[++i]);
+                    case "--prefix-cache-max-entries" -> options.prefixCacheMaxEntries = Integer.parseInt(args[++i]);
+                    case "--prefix-cache-block-size" -> options.prefixCacheBlockSize = Integer.parseInt(args[++i]);
+                    case "--prefix-cache-max-prefix-tokens" -> options.prefixCacheMaxPrefixTokens = Integer.parseInt(args[++i]);
+                    case "--kv-context-rows-per-page" -> options.kvContextRowsPerPageTarget = Integer.parseInt(args[++i]);
                     case "--profile-stages" -> options.profileStages = true;
                     case "--suite-file" -> options.suiteFile = Path.of(args[++i]);
                     case "--output" -> options.output = Path.of(args[++i]);
@@ -947,6 +978,15 @@ public final class InferenceBenchmark {
             }
             if (options.tensorParallelPortRange < 2) {
                 throw new IllegalArgumentException("--tensor-parallel-port-range must be >= 2");
+            }
+            if (options.prefixCacheBlockSize < 1) {
+                throw new IllegalArgumentException("--prefix-cache-block-size must be >= 1; use --prefix-cache-max-entries 0 to disable prefix caching");
+            }
+            if (options.prefixCacheMaxPrefixTokens < 1) {
+                throw new IllegalArgumentException("--prefix-cache-max-prefix-tokens must be >= 1");
+            }
+            if (options.kvContextRowsPerPageTarget < 1) {
+                throw new IllegalArgumentException("--kv-context-rows-per-page must be >= 1");
             }
             if (!options.tensorParallelCollectiveTransport.equals("http")
                     && !options.tensorParallelCollectiveTransport.equals("netty")) {
@@ -985,6 +1025,10 @@ public final class InferenceBenchmark {
                       --tensor-parallel-port-start N     Start of derived gossip port range, default 42000
                       --tensor-parallel-port-range N     Size of derived gossip port range, default 1000
                       --tensor-parallel-rank-endpoint-timeout-seconds N Timeout for worker rank endpoint publication, default 120
+                      --prefix-cache-max-entries N       Prefix cache entries; use 0 to disable, default 10000
+                      --prefix-cache-block-size N         Prefix cache block alignment, default 32
+                      --prefix-cache-max-prefix-tokens N  Max prompt prefix tokens cached, default 512
+                      --kv-context-rows-per-page N        Active KV page context-row target, default 32
                       --profile-stages                   Print accumulated broad-stage timing after each Deliverance turn
                       --suite-file PATH                  FastChat MT-Bench question.jsonl; default built-in subset
                       --output PATH                      CSV output path, default target/inference-benchmark.csv

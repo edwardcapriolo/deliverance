@@ -157,6 +157,52 @@ static void test_f32_q4_tail_corner_is_written(void) {
     assert_close(out[12 * n + 15], 128.0f, 0.001f);
 }
 
+static void test_saxpy_f32(void) {
+    float x[64];
+    float y[64];
+    for (int i = 0; i < 64; i++) {
+        x[i] = (float) (i + 1);
+        y[i] = 1.0f;
+    }
+
+    saxpy_f32(2.0f, x, y, 3, 5, 7);
+
+    assert_close(y[4], 1.0f, 0.001f);
+    assert_close(y[5], 9.0f, 0.001f);
+    assert_close(y[11], 21.0f, 0.001f);
+    assert_close(y[12], 1.0f, 0.001f);
+}
+
+static void test_saxpy_f32_batch(void) {
+    enum { rows = 7, stride = 12, limit = 9 };
+    float alpha[16];
+    float x[rows * stride];
+    float expected[32];
+    float actual[32];
+
+    for (int i = 0; i < 16; i++) {
+        alpha[i] = 0.25f + (float) i;
+    }
+    for (int i = 0; i < rows * stride; i++) {
+        x[i] = ((float) ((i * 13) % 17)) - 8.0f;
+    }
+    for (int i = 0; i < 32; i++) {
+        expected[i] = 10.0f + (float) i;
+        actual[i] = expected[i];
+    }
+
+    for (int row = 0; row < 5; row++) {
+        saxpy_f32(alpha[2 + row], x, expected, 2 + ((1 + row) * stride), 4, limit);
+    }
+    saxpy_f32_batch(alpha, x, actual, 2, 4, limit, 2, 1, 5, stride);
+
+    assert_close(actual[3], expected[3], 0.001f);
+    for (int i = 4; i < 4 + limit; i++) {
+        assert_close(actual[i], expected[i], 0.001f);
+    }
+    assert_close(actual[4 + limit], expected[4 + limit], 0.001f);
+}
+
 int main(void) {
     /* Small explicit BF16 samples for correctness smoke tests. */
     uint16_t a_bf16[32] = {
@@ -214,10 +260,12 @@ test_fp32_to_bf16(0.0f), test_fp32_to_bf16(0.0f), test_fp32_to_bf16(0.0f), test_
     assert_close(out_f32_bf16[0], 70.0f, 0.5f);
     test_f32_q4_tail_corner_is_written();
     test_bf16_q4_fuzz_cases();
+    test_saxpy_f32();
+    test_saxpy_f32_batch();
 
 
 
-    //Move to separate test file once better infra arrives
+    // Move to separate test file once better infra arrives.
     float sax_in[32] = {1.0f, 2.0f, 3.0f, 4.0f,
         0.0f, 0.0f, 0.0f, 0.0f,
         0.0f, 0.0f, 0.0f, 0.0f,

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="420" viewBox="0 0 920 420" role="img" aria-labelledby="title desc">
+  <title id="title">Grace Java vs Hugging Face tokenizers throughput</title>
+  <desc id="desc">A bar chart showing Grace Java at 1,696,105 tokens per second and Hugging Face tokenizers at 1,024,464 tokens per second.</desc>
+  <rect width="920" height="420" rx="28" fill="#10151f"/>
+  <text x="46" y="62" fill="#f6f0df" font-family="Inter, Arial, sans-serif" font-size="34" font-weight="800">Tokenizer Showdown</text>
+  <text x="46" y="94" fill="#aab6c5" font-family="Inter, Arial, sans-serif" font-size="17">Same tokenizer.json, same UTF-8 input, identical token IDs</text>
+
+  <line x1="210" y1="330" x2="850" y2="330" stroke="#3b4658" stroke-width="2"/>
+  <line x1="210" y1="260" x2="850" y2="260" stroke="#202938" stroke-width="1"/>
+  <line x1="210" y1="190" x2="850" y2="190" stroke="#202938" stroke-width="1"/>
+  <line x1="210" y1="120" x2="850" y2="120" stroke="#202938" stroke-width="1"/>
+
+  <text x="46" y="174" fill="#f6f0df" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700">Grace Java</text>
+  <text x="46" y="252" fill="#f6f0df" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700">HF tokenizers</text>
+  <text x="46" y="276" fill="#aab6c5" font-family="Inter, Arial, sans-serif" font-size="14">Rust core via Python</text>
+
+  <rect x="210" y="140" width="604" height="48" rx="14" fill="#f59e0b"/>
+  <rect x="210" y="218" width="365" height="48" rx="14" fill="#7c3aed"/>
+
+  <text x="828" y="172" fill="#f6f0df" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="800" text-anchor="end">1.70M tok/s</text>
+  <text x="589" y="250" fill="#f6f0df" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="800" text-anchor="end">1.02M tok/s</text>
+
+  <rect x="46" y="326" width="326" height="46" rx="16" fill="#172033" stroke="#2f3a50"/>
+  <text x="66" y="356" fill="#f6f0df" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="800">Grace wins this run by 1.66x</text>
+  <text x="830" y="356" fill="#aab6c5" font-family="Inter, Arial, sans-serif" font-size="14" text-anchor="end">tokens/sec, higher is better</text>
+</svg>

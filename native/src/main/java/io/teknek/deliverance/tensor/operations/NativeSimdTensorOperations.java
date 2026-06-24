@@ -457,6 +457,21 @@ public class NativeSimdTensorOperations implements TensorOperations {
         int xOffset,
         int batchSize
     ) {
+        if (alpha.dType() == DType.F32 && x.dType() == DType.F32 && y.dType() == DType.F32) {
+            NativeSimd.saxpy_f32_batch(
+                    alpha.getMemorySegment(),
+                    x.getMemorySegment(),
+                    y.getMemorySegment(),
+                    xoffset,
+                    yoffset,
+                    limit,
+                    rOffset,
+                    xOffset,
+                    batchSize,
+                    x.getStride()
+            );
+            return;
+        }
 
         delegate.saxpy(alpha, x, y, xoffset, yoffset, limit, rOffset, xOffset, batchSize);
     }
