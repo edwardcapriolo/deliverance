@@ -118,9 +118,9 @@ Qwen/Qwen3-0.6B-JQ4
 Example profile counters from a Qwen3-4B JQ4 run:
 
 ```text
-[profile-counter] sampler.output_projection.input_dtype.F32 count=256
-[profile-counter] sampler.output_projection.weight_dtype.Q4 count=256
-[profile-counter] mlpblock.down_quantize.input_dtype.F32 count=9216
+[profile-counter] sampler.output_input_F32 count=256
+[profile-counter] sampler.output_weight_Q4 count=256
+[profile-counter] mlpblock.down_input_F32 count=9216
 ```
 
 These counters show that hidden states are still computed in F32 while output-projection weights are Q4. That is the main local-inference tradeoff: keep compute stable enough for quality, but reduce bandwidth and storage for the large weight matrices.
@@ -138,7 +138,7 @@ That is the sales pitch for JQ4: same model family, local safetensors, smaller p
 The profile also confirmed the hot output projection was using Q4 weights:
 
 ```text
-[profile-counter] sampler.output_projection.weight_dtype.Q4 count=256
+[profile-counter] sampler.output_weight_Q4 count=256
 ```
 
 The exact number will move with hardware, prompt length, and native/Panama path, but this is the kind of win Deliverance is trying to make easy: download a safetensors model, generate a JQ4 copy locally, then run it faster without leaving the Java stack.

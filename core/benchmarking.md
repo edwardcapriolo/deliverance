@@ -199,7 +199,7 @@ With `--profile-stages`, the runner prints stage timing after each turn:
 ```text
 [profile] causalselfattention.forward count=7196 total_ms=7779.666 mean_us=1081.110
 [profile] sampler.output_projection   count=256  total_ms=1808.581 mean_us=7064.769
-[profile-counter] sampler.output_projection.weight_dtype.Q4 count=256
+[profile-counter] sampler.output_weight_Q4 count=256
 ```
 
 These profiles are useful for identifying whether time is going into attention, MLP, output projection, sampling, prefill, or decode. Counters also confirm dtype paths, for example whether the output projection actually used Q4 weights.

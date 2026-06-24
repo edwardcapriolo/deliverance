@@ -62,9 +62,9 @@ class DeliveranceLegacySampler extends AbstractGeneratorSampler {
         try (AbstractTensor embedding = layerNorm.forward(output)) {
             if (InferenceProfiler.isEnabled()) {
                 InferenceProfiler.counter(model.getMetricRegistry(),
-                        "sampler.output_projection.input_dtype." + embedding.dType()).inc();
+                        "sampler.output_input_" + embedding.dType()).inc();
                 InferenceProfiler.counter(model.getMetricRegistry(),
-                        "sampler.output_projection.weight_dtype." + model.sampleOutput.getOutputLogitsWeights().dType()).inc();
+                        "sampler.output_weight_" + model.sampleOutput.getOutputLogitsWeights().dType()).inc();
             }
             try (Timer.Context ignoredOutput = InferenceProfiler.timer(model.getMetricRegistry(), "sampler.output_projection").time()) {
                 logits.clear();
@@ -83,24 +83,26 @@ class DeliveranceLegacySampler extends AbstractGeneratorSampler {
             int maxi = Integer.MIN_VALUE;
             double maxv = Double.NEGATIVE_INFINITY;
             PriorityQueue<IndexValueToken> topNLogProbs = new PriorityQueue<>();
-            for (int i = 0; i < model.config.vocabularySize; i++) {
-                float v = logits.get(0, i);
-                if (model.config.finalLogitSoftCapping != null) {
-                    v /= model.config.finalLogitSoftCapping;
-                    v = (float) FastMath.tanh(v);
-                    v = v * model.config.finalLogitSoftCapping;
-                    logits.set(v, 0, i);
-                }
-                if (logProbs) {
-                    IndexValueToken token = new IndexValueToken(i, v, model.decodeToken(i));
-                    topNLogProbs.offer(token);
-                    if (topNLogProbs.size() > topLogProbs) {
-                        topNLogProbs.poll();
+            try (Timer.Context ignoredScan = InferenceProfiler.timer(model.getMetricRegistry(), "sampler.logit_scan").time()) {
+                for (int i = 0; i < model.config.vocabularySize; i++) {
+                    float v = logits.get(0, i);
+                    if (model.config.finalLogitSoftCapping != null) {
+                        v /= model.config.finalLogitSoftCapping;
+                        v = (float) FastMath.tanh(v);
+                        v = v * model.config.finalLogitSoftCapping;
+                        logits.set(v, 0, i);
                     }
-                }
-                if (v > maxv) {
-                    maxi = i;
-                    maxv = v;
+                    if (logProbs) {
+                        IndexValueToken token = new IndexValueToken(i, v, model.decodeToken(i));
+                        topNLogProbs.offer(token);
+                        if (topNLogProbs.size() > topLogProbs) {
+                            topNLogProbs.poll();
+                        }
+                    }
+                    if (v > maxv) {
+                        maxi = i;
+                        maxv = v;
+                    }
                 }
             }
             if (logProbs) {
@@ -175,9 +177,9 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
         try (AbstractTensor embedding = layerNorm.forward(output)) {
             if (InferenceProfiler.isEnabled()) {
                 InferenceProfiler.counter(model.getMetricRegistry(),
-                        "sampler.output_projection.input_dtype." + embedding.dType()).inc();
+                        "sampler.output_input_" + embedding.dType()).inc();
                 InferenceProfiler.counter(model.getMetricRegistry(),
-                        "sampler.output_projection.weight_dtype." + model.sampleOutput.getOutputLogitsWeights().dType()).inc();
+                        "sampler.output_weight_" + model.sampleOutput.getOutputLogitsWeights().dType()).inc();
             }
             try (Timer.Context ignoredOutput = InferenceProfiler.timer(model.getMetricRegistry(), "sampler.output_projection").time()) {
                 logits.clear();
@@ -269,7 +271,10 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
                     }
                 }
             } else {
-                int chosenToken = sampleTopKTopP(logits, temperature, parameters.topK, parameters.topP, random.nextFloat());
+                int chosenToken;
+                try (Timer.Context ignoredTopKTopP = InferenceProfiler.timer(model.getMetricRegistry(), "sampler.topk_topp").time()) {
+                    chosenToken = sampleTopKTopP(logits, temperature, parameters.topK, parameters.topP, random.nextFloat());
+                }
                 return logProbs ? new SamplerReturn(chosenToken, topNLogProbs) : new SamplerReturn(chosenToken);
             }
         }

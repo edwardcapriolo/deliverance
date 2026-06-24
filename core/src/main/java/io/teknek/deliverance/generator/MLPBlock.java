@@ -135,6 +135,13 @@ public class MLPBlock implements FeedForward {
             batchResults[1] = buf2;
 
             try (Timer.Context ignoredGate = InferenceProfiler.timer(model.getMetricRegistry(), "mlpblock.gate_up_projection").time()) {
+                if (InferenceProfiler.isEnabled()) {
+                    InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock.gate_input_" + lnemb.dType()).inc();
+                    InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock.gate_weight_" + fullyConnectedWeights.dType()).inc();
+                    if (upProjectionWeights != null) {
+                        InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock.up_weight_" + upProjectionWeights.dType()).inc();
+                    }
+                }
                 VectorMath.pchunk(0, hiddenLength, (chunkStart, chunkSize) -> {
                 if (upProjectionWeights != null) {
                     configurableTensorProvider.get()
@@ -176,7 +183,8 @@ public class MLPBlock implements FeedForward {
             }
 
             if (InferenceProfiler.isEnabled()) {
-                InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock.down_quantize.input_dtype." + buf.dType()).inc();
+                InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock.down_input_" + buf.dType()).inc();
+                InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock.down_weight_" + projectionWeights.dType()).inc();
             }
             try (AbstractTensor bufq = downQuantize(buf)) {
                 // matmul the projection and sum into input

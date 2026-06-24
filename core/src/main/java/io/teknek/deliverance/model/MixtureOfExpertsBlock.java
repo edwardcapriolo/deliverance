@@ -106,7 +106,7 @@ public class MixtureOfExpertsBlock implements FeedForward {
                 for (int i = 0; i < numberOfExpertsPerToken; i++) {
                     if (InferenceProfiler.isEnabled()) {
                         InferenceProfiler.counter(model.getMetricRegistry(),
-                                "mixtureofexpertsblock.selected_expert." + selectedExperts[i]).inc();
+                                "mixtureofexpertsblock.selected_" + selectedExperts[i]).inc();
                     }
                     try (Timer.Context ignoredExpert = InferenceProfiler.timer(model.getMetricRegistry(), "mixtureofexpertsblock.expert_forward").time()) {
                     float gateWeight = expertResults.get(0, selectedExperts[i]) / gateWeightSum;
@@ -147,7 +147,7 @@ public class MixtureOfExpertsBlock implements FeedForward {
 
                     //model.configurableTensorProvider.get().scale(0.0f, moeResult, 0 , model.config.embeddingLength);
                     if (InferenceProfiler.isEnabled()) {
-                        InferenceProfiler.counter(model.getMetricRegistry(), "mixtureofexpertsblock.down_quantize.input_dtype." + buf.dType()).inc();
+                        InferenceProfiler.counter(model.getMetricRegistry(), "mixtureofexpertsblock.down_input_" + buf.dType()).inc();
                     }
                     try (AbstractTensor bufq = downQuantize(buf)) {
                         try (Timer.Context ignoredDown = InferenceProfiler.timer(model.getMetricRegistry(), "mixtureofexpertsblock.expert_down_projection").time()) {

@@ -101,7 +101,7 @@ public final class TensorParallelMlp {
             try (Timer.Context ignoredDown = InferenceProfiler.timer(model.getMetricRegistry(), "tensorparallelmlp.down_projection").time()) {
                 if (model.isInWorkingQuantizedType(gate)) {
                     if (InferenceProfiler.isEnabled()) {
-                        InferenceProfiler.counter(model.getMetricRegistry(), "tensorparallelmlp.down_quantize.input_dtype." + gate.dType()).inc();
+                        InferenceProfiler.counter(model.getMetricRegistry(), "tensorparallelmlp.down_input_" + gate.dType()).inc();
                     }
                     VectorMath.pchunk(0, embeddingLength, (chunkStart, chunkSize) ->
                             tensorProvider.get().dotProductChunk(partial, gate, downProjectionWeights, 0,
@@ -109,7 +109,7 @@ public final class TensorParallelMlp {
                             model.getPool());
                 } else {
                     if (InferenceProfiler.isEnabled()) {
-                        InferenceProfiler.counter(model.getMetricRegistry(), "tensorparallelmlp.down_quantize.input_dtype." + gate.dType()).inc();
+                        InferenceProfiler.counter(model.getMetricRegistry(), "tensorparallelmlp.down_input_" + gate.dType()).inc();
                     }
                     try (AbstractTensor gateq = downQuantize(model, gate)) {
                         VectorMath.pchunk(0, embeddingLength, (chunkStart, chunkSize) ->
