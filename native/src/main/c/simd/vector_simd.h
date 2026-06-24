@@ -42,4 +42,7 @@ void gemm_bf16_batch(int flags, int batch_num, const short *a, int aoffset, cons
 void gemm_f32_bf16(int flags, const float *a, int aoffset, const short *b, int boffset, short *cr, float *r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldc);
 void gemm_f32_bf16_batch(int flags, int batch_num, const float *a, int aoffset, const short **b, int boffset, short **cr, float **r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldc);
 
+
+void saxpy_f32(float alpha, const float *x, float *y, int xoffset, int yoffset, int limit);
+
 #endif

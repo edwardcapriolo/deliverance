@@ -379,17 +379,17 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
         if (!InferenceProfiler.isEnabled() || kvp.length == 0) {
             return;
         }
-        InferenceProfiler.counter(metricRegistry, "causalselfattention.kv_pages.total").inc(kvp.length);
-        InferenceProfiler.counter(metricRegistry, "causalselfattention.kv_pages.calls").inc();
-        InferenceProfiler.counter(metricRegistry, "causalselfattention.kv_pages.bucket." + bucket(kvp.length)).inc();
-        InferenceProfiler.counter(metricRegistry, "causalselfattention.kv_rows.visible_total").inc(visibleRows);
-        InferenceProfiler.counter(metricRegistry, "causalselfattention.kv_rows.visible_bucket." + bucket(visibleRows)).inc();
+        InferenceProfiler.counter(metricRegistry, "causalselfattention.kvpages_total").inc(kvp.length);
+        InferenceProfiler.counter(metricRegistry, "causalselfattention.kvpages_calls").inc();
+        InferenceProfiler.counter(metricRegistry, "causalselfattention.kvpages_" + bucket(kvp.length)).inc();
+        InferenceProfiler.counter(metricRegistry, "causalselfattention.kvrows_visible_total").inc(visibleRows);
+        InferenceProfiler.counter(metricRegistry, "causalselfattention.kvrows_visible_" + bucket(visibleRows)).inc();
 
         int fullPageRows = kvp[0].shape().first();
         int finalPageRows = visibleRows - (fullPageRows * (kvp.length - 1));
-        InferenceProfiler.counter(metricRegistry, "causalselfattention.kv_rows.page_capacity_total").inc(fullPageRows);
-        InferenceProfiler.counter(metricRegistry, "causalselfattention.kv_rows.final_page_total").inc(finalPageRows);
-        InferenceProfiler.counter(metricRegistry, "causalselfattention.kv_rows.final_page_bucket." + bucket(finalPageRows)).inc();
+        InferenceProfiler.counter(metricRegistry, "causalselfattention.kvrows_capacity_total").inc(fullPageRows);
+        InferenceProfiler.counter(metricRegistry, "causalselfattention.kvrows_final_total").inc(finalPageRows);
+        InferenceProfiler.counter(metricRegistry, "causalselfattention.kvrows_final_" + bucket(finalPageRows)).inc();
     }
 
     private String bucket(int value) {

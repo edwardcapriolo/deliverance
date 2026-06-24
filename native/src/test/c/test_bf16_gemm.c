@@ -214,5 +214,33 @@ test_fp32_to_bf16(0.0f), test_fp32_to_bf16(0.0f), test_fp32_to_bf16(0.0f), test_
     assert_close(out_f32_bf16[0], 70.0f, 0.5f);
     test_f32_q4_tail_corner_is_written();
     test_bf16_q4_fuzz_cases();
+
+
+
+    //Move to separate test file once better infra arrives
+    float sax_in[32] = {1.0f, 2.0f, 3.0f, 4.0f,
+        0.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 0.0f
+     };
+
+     float sax_out[32] = {0.0f, 0.0f, 0.0f, 0.0f,
+             0.0f, 0.0f, 0.0f, 0.0f,
+             0.0f, 0.0f, 0.0f, 0.0f,
+             0.0f, 0.0f, 0.0f, 0.0f,
+             0.0f, 0.0f, 0.0f, 0.0f,
+             0.0f, 0.0f, 0.0f, 0.0f,
+             0.0f, 0.0f, 0.0f, 0.0f,
+             0.0f, 0.0f, 0.0f, 0.0f
+     };
+
+
+    saxpy_f32(10.0f, sax_in, sax_out, 0, 0, 32);
+    assert_close(sax_out[1], 20.0f, 0.5f);
+
     return 0;
 }

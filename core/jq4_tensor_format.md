@@ -75,9 +75,9 @@ This policy is intentionally conservative: get most of the speed and size win fr
 Benchmark profile counters show which dtype path was actually used:
 
 ```text
-[profile-counter] sampler.output_projection.input_dtype.F32 count=256
-[profile-counter] sampler.output_projection.weight_dtype.Q4 count=256
-[profile-counter] mlpblock.down_quantize.input_dtype.F32 count=9216
+[profile-counter] sampler.output_input_F32 count=256
+[profile-counter] sampler.output_weight_Q4 count=256
+[profile-counter] mlpblock.down_input_F32 count=9216
 ```
 
 Use these counters when comparing dense, QOD, JQ4, and output-head-Q4 runs.

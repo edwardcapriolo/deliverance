@@ -95,7 +95,45 @@ struct gemm_params {
     int ldc;
 } gemm_params;
 
-void __attribute__((noinline)) gemm(int m0, int m, int n0, int n, void (*gemmPtr)(int, int, int, int, int, int, struct gemm_params), struct gemm_params params) {
+
+static void saxpy_f32_scalar(float alpha, const float *x, float *y, int xoffset, int yoffset, int limit) {
+    for (int i = 0; i < limit; i++) {
+        y[yoffset + i] += alpha * x[xoffset + i];
+    }
+}
+
+#if defined(__ARM_NEON__)
+static void saxpy_f32_128_arm(float alpha, const float *x, float *y, int xoffset, int yoffset, int limit) {
+    float32x4_t alpha_vec = vdupq_n_f32(alpha);
+    int i = 0;
+    for ( ; i + 4 <= limit; i += 4) {
+        //load 4 float32 values from memory into one 128-bit NEON vector
+        float32x4_t acc = vld1q_f32(y + yoffset + i);
+        //load 4 float32 values from memory into one 128-bit NEON vector
+        float32x4_t xv = vld1q_f32(x + xoffset + i);
+        //is ARM NEON multiply-accumulate for 4 float32 values.
+        float32x4_t yv = vmlaq_f32(acc, xv, alpha_vec);
+        //store 4 float32 values from yv into memory at y[yoffset + i ... yoffset + i + 3]
+        vst1q_f32(y + yoffset + i, yv);
+    }
+    for (; i < limit; i++) {
+        y[yoffset + i] += alpha * x[xoffset + i];
+    }
+}
+#endif
+
+// public void saxpy(float alpha, AbstractTensor x, AbstractTensor y, int xoffset, int yoffset, int limit)
+void saxpy_f32(float alpha, const float *x, float *y, int xoffset, int yoffset, int limit) {
+#if defined(__ARM_NEON__)
+    saxpy_f32_128_arm(alpha, x, y, xoffset, yoffset, limit);
+#else
+    saxpy_f32_scalar(alpha, x, y, xoffset, yoffset, limit);
+#endif
+}
+
+void __attribute__((noinline)) gemm(int m0, int m, int n0, int n,
+  void (*gemmPtr)(int, int, int, int, int, int, struct gemm_params),
+  struct gemm_params params) {
     int mc, nc, mp, np;
     switch ((MIN(m - m0, 5) << 4) | MIN(n - n0, 5)) {
             case 0x55:
@@ -1253,6 +1291,11 @@ void gemm_bf16_q4(int flags, const short *a, int aoffset, const float *bf, const
     gemm(0, m, n0, n0 + n, gemm_bf16_q4_128_arm, p);
 #endif
 }
+
+#if !defined(__ARM_NEON__)
+  gemm()
+#else
+#endif
 
 void gemm_bf16_q4_batch(int flags, int batch_num, const short *a, int aoffset, const float **bf, const char **b, int boffset, float **r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf, int ldc)
 {

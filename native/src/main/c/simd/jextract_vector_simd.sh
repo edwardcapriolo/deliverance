@@ -1,28 +1,24 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-gcc -fPIC -O3 -march=native -shared -o libjlama.so vector_simd.c
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+NATIVE_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/../../../.." && pwd)
+OUT_DIR="$NATIVE_DIR/src/main/java"
+PACKAGE="io.teknek.deliverance.tensor.operations.cnative"
+JEXTRACT=${JEXTRACT:-/Users/edward.capriolo/Downloads/jextract-22/bin/jextract}
 
-# Generate Java source code
-/usr/local/jextract-20/bin/jextract --source \
-  --output ../java20 \
-  -t com.github.tjake.jlama.tensor.operations.cnative \
-  -I . \
-  -l jlama \
-  --header-class-name NativeSimd \
-  vector_simd.h
+if [ ! -x "$JEXTRACT" ]; then
+  printf '%s\n' "jextract not found or not executable: $JEXTRACT" >&2
+  printf '%s\n' "Set JEXTRACT=/path/to/jextract and rerun." >&2
+  exit 1
+fi
 
-/usr/local/jextract-21/bin/jextract --source \
-  --output ../java21 \
-  -t com.github.tjake.jlama.tensor.operations.cnative \
-  -I . \
-  -l jlama \
-  --header-class-name NativeSimd \
-  vector_simd.h
+cd "$SCRIPT_DIR"
 
-/usr/local/jextract-22/bin/jextract \
-  --output ../java22 \
-  -t com.github.tjake.jlama.tensor.operations.cnative \
-  -I . \
-  -l jlama \
+"$JEXTRACT" \
+  --output "$OUT_DIR" \
+  -t "$PACKAGE" \
+  -I "$SCRIPT_DIR" \
+  -l deliverance \
   --header-class-name NativeSimd \
   vector_simd.h
