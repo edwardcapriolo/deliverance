@@ -69,6 +69,12 @@ class DeliveranceLegacySampler extends AbstractGeneratorSampler {
             try (Timer.Context ignoredOutput = InferenceProfiler.timer(model.getMetricRegistry(), "sampler.output_projection").time()) {
                 logits.clear();
                 VectorMath.pchunk(0, model.config.vocabularySize, (chunkStart, chunkSize) -> {
+                if (InferenceProfiler.isEnabled()) {
+                    InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_chunks").inc();
+                    InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_chunk_rows").inc(chunkSize);
+                    InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_m_" + embedding.shape().first()).inc();
+                    InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_k_" + model.config.embeddingLength).inc();
+                }
                 model.configurableTensorProvider.get()
                         .dotProductChunk(logits, embedding, model.sampleOutput.getOutputLogitsWeights(), 0,
                                 model.config.embeddingLength, chunkStart, chunkSize);
@@ -184,6 +190,12 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
             try (Timer.Context ignoredOutput = InferenceProfiler.timer(model.getMetricRegistry(), "sampler.output_projection").time()) {
                 logits.clear();
                 VectorMath.pchunk(0, model.config.vocabularySize, (chunkStart, chunkSize) -> {
+                if (InferenceProfiler.isEnabled()) {
+                    InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_chunks").inc();
+                    InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_chunk_rows").inc(chunkSize);
+                    InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_m_" + embedding.shape().first()).inc();
+                    InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_k_" + model.config.embeddingLength).inc();
+                }
                 model.configurableTensorProvider.get()
                         .dotProductChunk(logits, embedding, model.sampleOutput.getOutputLogitsWeights(), 0,
                                 model.config.embeddingLength, chunkStart, chunkSize);

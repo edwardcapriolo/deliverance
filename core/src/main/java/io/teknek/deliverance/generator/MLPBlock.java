@@ -145,15 +145,8 @@ public class MLPBlock implements FeedForward {
                 VectorMath.pchunk(0, hiddenLength, (chunkStart, chunkSize) -> {
                 if (upProjectionWeights != null) {
                     configurableTensorProvider.get()
-                            .dotProductBatchChunk(batchResults, lnemb, batchWeights, 0, model.getConfig().embeddingLength, chunkStart, chunkSize);
-                    // Experiment: two separate dotProductChunk calls were neutral/slightly slower for Gemma2 JQ4 on
-                    // native SIMD, but may be worth re-testing for other model/provider shapes.
-                    // configurableTensorProvider.get()
-                    //         .dotProductChunk(buf, lnemb, fullyConnectedWeights, 0,
-                    //                 model.getConfig().embeddingLength, chunkStart, chunkSize);
-                    // configurableTensorProvider.get()
-                    //         .dotProductChunk(buf2, lnemb, upProjectionWeights, 0,
-                    //                 model.getConfig().embeddingLength, chunkStart, chunkSize);
+                            .dotProductBatchChunk(batchResults, lnemb, batchWeights, 0,
+                                    model.getConfig().embeddingLength, chunkStart, chunkSize);
                 } else {
                     configurableTensorProvider.get()
                             .dotProductChunk(buf, lnemb, fullyConnectedWeights, 0, model.getConfig().embeddingLength, chunkStart, chunkSize);

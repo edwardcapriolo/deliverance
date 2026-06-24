@@ -55,8 +55,7 @@ public class NativeSimd {
         };
     }
 
-    static final SymbolLookup SYMBOL_LOOKUP = SymbolLookup.libraryLookup(System.mapLibraryName("deliverance"), LIBRARY_ARENA)
-            .or(SymbolLookup.loaderLookup())
+    static final SymbolLookup SYMBOL_LOOKUP = SymbolLookup.loaderLookup()
             .or(Linker.nativeLinker().defaultLookup());
 
     public static final ValueLayout.OfBoolean C_BOOL = ValueLayout.JAVA_BOOLEAN;
@@ -1042,5 +1041,70 @@ public class NativeSimd {
            throw new AssertionError("should not reach here", ex$);
         }
     }
-}
 
+    private static class saxpy_f32_batch {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
+            NativeSimd.C_POINTER,
+            NativeSimd.C_POINTER,
+            NativeSimd.C_POINTER,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT
+        );
+
+        public static final MemorySegment ADDR = NativeSimd.findOrThrow("saxpy_f32_batch");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /**
+     * Function descriptor for:
+     * {@snippet lang=c :
+     * void saxpy_f32_batch(const float *alpha, const float *x, float *y, int xoffset, int yoffset, int limit, int aoffset, int xrowoffset, int batch_size, int xstride)
+     * }
+     */
+    public static FunctionDescriptor saxpy_f32_batch$descriptor() {
+        return saxpy_f32_batch.DESC;
+    }
+
+    /**
+     * Downcall method handle for:
+     * {@snippet lang=c :
+     * void saxpy_f32_batch(const float *alpha, const float *x, float *y, int xoffset, int yoffset, int limit, int aoffset, int xrowoffset, int batch_size, int xstride)
+     * }
+     */
+    public static MethodHandle saxpy_f32_batch$handle() {
+        return saxpy_f32_batch.HANDLE;
+    }
+
+    /**
+     * Address for:
+     * {@snippet lang=c :
+     * void saxpy_f32_batch(const float *alpha, const float *x, float *y, int xoffset, int yoffset, int limit, int aoffset, int xrowoffset, int batch_size, int xstride)
+     * }
+     */
+    public static MemorySegment saxpy_f32_batch$address() {
+        return saxpy_f32_batch.ADDR;
+    }
+
+    /**
+     * {@snippet lang=c :
+     * void saxpy_f32_batch(const float *alpha, const float *x, float *y, int xoffset, int yoffset, int limit, int aoffset, int xrowoffset, int batch_size, int xstride)
+     * }
+     */
+    public static void saxpy_f32_batch(MemorySegment alpha, MemorySegment x, MemorySegment y, int xoffset, int yoffset, int limit, int aoffset, int xrowoffset, int batch_size, int xstride) {
+        var mh$ = saxpy_f32_batch.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("saxpy_f32_batch", alpha, x, y, xoffset, yoffset, limit, aoffset, xrowoffset, batch_size, xstride);
+            }
+            mh$.invokeExact(alpha, x, y, xoffset, yoffset, limit, aoffset, xrowoffset, batch_size, xstride);
+        } catch (Throwable ex$) {
+           throw new AssertionError("should not reach here", ex$);
+        }
+    }
+}

@@ -35,6 +35,7 @@ Generation:
 - [Qwen3 support](core/qwen3_support.md) Documents Qwen3 integration status, tests, and limitations
 - [Gemma4 support](core/gemma4_support.md) High-level status, usage, and notes for Gemma 4 support in Deliverance
 - [Grace tokenizer module](grace/README.md) Explains Deliverance's fuller-featured tokenizer path and how to use it
+- [Tokenizer showdown](grace/tokenizer_showdown.md) Compares Grace Java tokenization against Hugging Face's Rust-backed tokenizers
 - [Inference engine flow](core/inference_flow.md) Explains the transformations and flows http/prompt/jinja/ etc.
 - [Tool call parser](core/tool_parser.md) Explains how the tool call parser is implemented in the stack
 - [Quantize On Demand](core/quantize_on_demand.md) Explains local Q4 model generation, cache reuse, and provenance files

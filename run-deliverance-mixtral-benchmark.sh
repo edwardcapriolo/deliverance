@@ -22,8 +22,28 @@ fi
 
 cd "$SCRIPT_DIR"
 
+DEFAULT_BENCHMARK_ARGS="\
+--pool-size 16 \
+--max-tokens 128 \
+--warmup-cases 0 \
+--profile-stages \
+--output target/deliverance-mixtral-benchmark.csv \
+--jsonl-output target/deliverance-mixtral-benchmark.jsonl"
+
+EXEC_ARGS="\
+-Djava.library.path=$NATIVE_LIB_DIR \
+--add-modules jdk.incubator.vector,jdk.httpserver,java.net.http \
+--add-opens java.base/java.nio=ALL-UNNAMED \
+--enable-native-access=ALL-UNNAMED \
+-cp %classpath \
+io.teknek.deliverance.benchmark.InferenceBenchmark \
+--engine deliverance \
+--owner tjake \
+--model Mixtral-8x7B-Instruct-v0.1-JQ4 \
+${DELIVERANCE_BENCHMARK_ARGS:-$DEFAULT_BENCHMARK_ARGS}"
+
 mvn -q -pl core \
   -Dexec.classpathScope=test \
   -Dexec.executable=java \
-  -Dexec.args="-Djava.library.path=$NATIVE_LIB_DIR --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.deliverance.benchmark.InferenceBenchmark --engine deliverance --owner tjake --model Mixtral-8x7B-Instruct-v0.1-JQ4 ${DELIVERANCE_BENCHMARK_ARGS:---pool-size 16 --max-tokens 128 --warmup-cases 0 --profile-stages --output target/deliverance-mixtral-benchmark.csv --jsonl-output target/deliverance-mixtral-benchmark.jsonl}" \
+  -Dexec.args="$EXEC_ARGS" \
   org.codehaus.mojo:exec-maven-plugin:3.5.0:exec

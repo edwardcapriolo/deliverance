@@ -1,0 +1,30 @@
+Deliverance tokenizer showdown corpus.
+
+This document intentionally mixes plain English, code, punctuation, whitespace, numbers, and Unicode so tokenizer behavior has to handle more than simple ASCII prose.
+
+Question: If John has $10.00 and Ed has double what John has, how much money does Edward have?
+
+Short answer: Edward has $20.00.
+
+Java snippet:
+
+```java
+public final class PriceMath {
+    public static BigDecimal doubleAmount(BigDecimal amount) {
+        return amount.multiply(BigDecimal.valueOf(2));
+    }
+}
+```
+
+JSON sample:
+
+```json
+{"model":"Qwen3-4B-JQ4","temperature":0.6,"top_p":0.95,"tags":["thinking","q4","java"]}
+```
+
+Unicode: café, naïve, 東京, مرحبا, Привет, שלום, 👋, math symbols: ∑, π, λ, →, ≤, ≥.
+
+Spacing and punctuation: tabs	are	here, multiple    spaces, newlines,
+quotes "double" and apostrophes don't break things.
+
+Repeatable line for bulk input: local inference needs tokenizer throughput, predictable IDs, and stable decode behavior.

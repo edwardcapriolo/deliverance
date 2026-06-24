@@ -131,6 +131,57 @@ void saxpy_f32(float alpha, const float *x, float *y, int xoffset, int yoffset, 
 #endif
 }
 
+static void saxpy_f32_batch_scalar(const float *alpha, const float *x, float *y, int xoffset, int yoffset, int limit,
+                                   int aoffset, int xrowoffset, int batch_size, int xstride) {
+    for (int row = 0; row < batch_size; row++) {
+        saxpy_f32_scalar(alpha[aoffset + row], x, y, ((xrowoffset + row) * xstride) + xoffset, yoffset, limit);
+    }
+}
+
+#if defined(__ARM_NEON__)
+static void saxpy_f32_batch_128_arm(const float *alpha, const float *x, float *y, int xoffset, int yoffset, int limit,
+                                    int aoffset, int xrowoffset, int batch_size, int xstride) {
+    int row = 0;
+    for (; row + 4 <= batch_size; row += 4) {
+        float32x4_t a0 = vdupq_n_f32(alpha[aoffset + row]);
+        float32x4_t a1 = vdupq_n_f32(alpha[aoffset + row + 1]);
+        float32x4_t a2 = vdupq_n_f32(alpha[aoffset + row + 2]);
+        float32x4_t a3 = vdupq_n_f32(alpha[aoffset + row + 3]);
+        const float *x0p = x + ((xrowoffset + row) * xstride) + xoffset;
+        const float *x1p = x + ((xrowoffset + row + 1) * xstride) + xoffset;
+        const float *x2p = x + ((xrowoffset + row + 2) * xstride) + xoffset;
+        const float *x3p = x + ((xrowoffset + row + 3) * xstride) + xoffset;
+        int i = 0;
+        for (; i + 4 <= limit; i += 4) {
+            float32x4_t acc = vld1q_f32(y + yoffset + i);
+            acc = vmlaq_f32(acc, vld1q_f32(x0p + i), a0);
+            acc = vmlaq_f32(acc, vld1q_f32(x1p + i), a1);
+            acc = vmlaq_f32(acc, vld1q_f32(x2p + i), a2);
+            acc = vmlaq_f32(acc, vld1q_f32(x3p + i), a3);
+            vst1q_f32(y + yoffset + i, acc);
+        }
+        for (; i < limit; i++) {
+            y[yoffset + i] += alpha[aoffset + row] * x0p[i]
+                    + alpha[aoffset + row + 1] * x1p[i]
+                    + alpha[aoffset + row + 2] * x2p[i]
+                    + alpha[aoffset + row + 3] * x3p[i];
+        }
+    }
+    for (; row < batch_size; row++) {
+        saxpy_f32_128_arm(alpha[aoffset + row], x, y, ((xrowoffset + row) * xstride) + xoffset, yoffset, limit);
+    }
+}
+#endif
+
+void saxpy_f32_batch(const float *alpha, const float *x, float *y, int xoffset, int yoffset, int limit,
+                     int aoffset, int xrowoffset, int batch_size, int xstride) {
+#if defined(__ARM_NEON__)
+    saxpy_f32_batch_128_arm(alpha, x, y, xoffset, yoffset, limit, aoffset, xrowoffset, batch_size, xstride);
+#else
+    saxpy_f32_batch_scalar(alpha, x, y, xoffset, yoffset, limit, aoffset, xrowoffset, batch_size, xstride);
+#endif
+}
+
 void __attribute__((noinline)) gemm(int m0, int m, int n0, int n,
   void (*gemmPtr)(int, int, int, int, int, int, struct gemm_params),
   struct gemm_params params) {
