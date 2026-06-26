@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 OS_NAME=$(uname -s)
 OS_ARCH=$(uname -m)
 case "$OS_NAME:$OS_ARCH" in
@@ -23,16 +23,12 @@ fi
 cd "$SCRIPT_DIR"
 
 DEFAULT_BENCHMARK_ARGS="\
---tensor-parallel-size 4 \
---tensor-parallel-max-ranks-per-worker 2 \
---tensor-parallel-collective-transport netty \
---output-head-quantization Q4 \
 --pool-size 16 \
---max-tokens 256 \
+--max-tokens 128 \
 --warmup-cases 0 \
 --profile-stages \
---output target/deliverance-tp-netty-benchmark.csv \
---jsonl-output target/deliverance-tp-netty-benchmark.jsonl"
+--output target/deliverance-mixtral-benchmark.csv \
+--jsonl-output target/deliverance-mixtral-benchmark.jsonl"
 
 EXEC_ARGS="\
 -Djava.library.path=$NATIVE_LIB_DIR \
@@ -43,7 +39,7 @@ EXEC_ARGS="\
 io.teknek.deliverance.benchmark.InferenceBenchmark \
 --engine deliverance \
 --owner tjake \
---model gemma-2-2b-it-JQ4 \
+--model Mixtral-8x7B-Instruct-v0.1-JQ4 \
 ${DELIVERANCE_BENCHMARK_ARGS:-$DEFAULT_BENCHMARK_ARGS}"
 
 mvn -q -pl core \

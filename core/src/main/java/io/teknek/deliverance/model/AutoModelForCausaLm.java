@@ -185,6 +185,18 @@ public class AutoModelForCausaLm {
             this.quantizeOnDemand = Optional.of(new QuantizeOnDemand(targetType, outputOwner, outputModel));
             return this;
         }
+
+        /** Applies a JSON-friendly builder configuration object. Explicit method calls made after this one can override it. */
+        public Builder withConfig(AutoModelConfig config) {
+            Objects.requireNonNull(config, "config");
+            config.workingMemoryType().ifPresent(this::withWorkingMemoryType);
+            config.workingQuantType().ifPresent(this::withWorkingQuantType);
+            config.outputHeadQuantization().ifPresent(this::withOutputHeadQuantization);
+            config.download().ifPresent(this::withDownload);
+            config.kvBufferCache().map(AutoModelConfig.KvBufferCache::toSettings).ifPresent(this::withKvBufferCacheSettings);
+            config.quantizeOnDemand().ifPresent(q -> withQuantizeOnDemand(q.targetType(), q.outputOwner(), q.outputModel()));
+            return this;
+        }
         public GossipParallelMembership startParallelMembership() {
             return GossipParallelMembership.start(parallelSettings.orElseThrow(() ->
                     new IllegalStateException("parallelSettings must be configured before starting membership")));
@@ -394,6 +406,14 @@ public class AutoModelForCausaLm {
 
         public KvBufferCacheSettings getSettings() {
             return settings;
+        }
+
+        public Optional<DType> getOutputHeadQuantization() {
+            return outputHeadQuantization;
+        }
+
+        public boolean isDownload() {
+            return download;
         }
 
         public ConfigurableTensorProvider getProvider() {

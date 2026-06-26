@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 OS_NAME=$(uname -s)
 OS_ARCH=$(uname -m)
 case "$OS_NAME:$OS_ARCH" in
@@ -23,12 +23,13 @@ fi
 cd "$SCRIPT_DIR"
 
 DEFAULT_BENCHMARK_ARGS="\
+--output-head-quantization Q4 \
 --pool-size 16 \
---max-tokens 128 \
+--max-tokens 256 \
 --warmup-cases 0 \
 --profile-stages \
---output target/deliverance-mixtral-benchmark.csv \
---jsonl-output target/deliverance-mixtral-benchmark.jsonl"
+--output target/deliverance-single-benchmark.csv \
+--jsonl-output target/deliverance-single-benchmark.jsonl"
 
 EXEC_ARGS="\
 -Djava.library.path=$NATIVE_LIB_DIR \
@@ -39,7 +40,7 @@ EXEC_ARGS="\
 io.teknek.deliverance.benchmark.InferenceBenchmark \
 --engine deliverance \
 --owner tjake \
---model Mixtral-8x7B-Instruct-v0.1-JQ4 \
+--model gemma-2-2b-it-JQ4 \
 ${DELIVERANCE_BENCHMARK_ARGS:-$DEFAULT_BENCHMARK_ARGS}"
 
 mvn -q -pl core \
