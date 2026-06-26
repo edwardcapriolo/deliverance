@@ -22,7 +22,7 @@ native/target/native-lib-only/linux-aarch_64
 You can override classifier detection with:
 
 ```sh
-DELIVERANCE_NATIVE_CLASSIFIER=osx-aarch_64 ./run-qwen-single-benchmark.sh
+DELIVERANCE_NATIVE_CLASSIFIER=osx-aarch_64 ./benchmarks/run-qwen-single-benchmark.sh
 ```
 
 Most scripts accept extra benchmark arguments through `DELIVERANCE_BENCHMARK_ARGS`. Setting this variable replaces the script's default benchmark argument block.
@@ -32,7 +32,7 @@ Most scripts accept extra benchmark arguments through `DELIVERANCE_BENCHMARK_ARG
 ### Qwen Single-Model Benchmark
 
 ```sh
-./run-qwen-single-benchmark.sh
+./benchmarks/run-qwen-single-benchmark.sh
 ```
 
 Default model:
@@ -57,7 +57,7 @@ Use this script for quick Qwen3 smoke/performance checks. For QOD-generated mode
 
 ```sh
 DELIVERANCE_BENCHMARK_ARGS="--output-head-quantization Q4 --pool-size 16 --max-tokens 256 --warmup-cases 0 --profile-stages --output target/qwen4b-qod.csv --jsonl-output target/qwen4b-qod.jsonl" \
-./run-qwen-single-benchmark.sh
+./benchmarks/run-qwen-single-benchmark.sh
 ```
 
 If you need to change owner/model, run `InferenceBenchmark` directly or adjust the script; the script currently hard-codes `--owner Qwen --model Qwen3-0.6B` before `DELIVERANCE_BENCHMARK_ARGS`.
@@ -65,7 +65,7 @@ If you need to change owner/model, run `InferenceBenchmark` directly or adjust t
 ### Gemma2 Single-Model Benchmark
 
 ```sh
-./run-deliverance-single-benchmark.sh
+./benchmarks/run-deliverance-single-benchmark.sh
 ```
 
 Default model:
@@ -79,7 +79,7 @@ This is the baseline single-process native SIMD benchmark. It writes CSV and JSO
 ### Gemma2 Tensor-Parallel Benchmark
 
 ```sh
-./run-deliverance-benchmark.sh
+./benchmarks/run-deliverance-benchmark.sh
 ```
 
 Default tensor-parallel options include:
@@ -102,7 +102,7 @@ This runs the local in-process tensor-parallel path with HTTP collectives. It is
 ./run-deliverance-netty-benchmark.sh
 ```
 
-This is the same broad shape as `run-deliverance-benchmark.sh`, but uses:
+This is the same broad shape as `benchmarks/run-deliverance-benchmark.sh`, but uses:
 
 ```text
 --tensor-parallel-collective-transport netty

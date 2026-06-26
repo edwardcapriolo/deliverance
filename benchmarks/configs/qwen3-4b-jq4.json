@@ -1,0 +1,9 @@
+{
+  "outputHeadQuantization": "Q4",
+  "kvBufferCache": {
+    "maxEntries": 10000,
+    "blockSize": 32,
+    "maxPrefixTokensPerPrompt": 512,
+    "contextRowsPerPageTarget": 32
+  }
+}

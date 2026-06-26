@@ -9,6 +9,7 @@ import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.AutoModelConfig;
 import io.teknek.deliverance.model.DefaultCausalLanguageModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.CausalLanguageModel;
@@ -155,15 +156,20 @@ public final class InferenceBenchmark {
     /** Opens either a single-model or local in-process tensor-parallel Deliverance runner. */
     private static DeliveranceRunner openDeliveranceRunner(Options options, ModelFetcher fetcher) {
         if (options.tensorParallelSize <= 1) {
-            return new LocalDeliveranceRunner(options.owner + "/" + options.model,
-                    applyOutputHeadQuantization(options, AutoModelForCausaLm.newBuilder(fetcher))
+            AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(fetcher)
                     .withWorkingMemoryType(options.workingDType)
                     .withWorkingQuantType(options.workingQType)
                     .withKvBufferCacheSettings(kvBufferCacheSettings(options))
-                    .withWrappedForkJoinPool(newPool(options))
-                    .build());
+                    .withWrappedForkJoinPool(newPool(options));
+            builder = applyOutputHeadQuantization(options, applyModelConfig(options, builder));
+            return new LocalDeliveranceRunner(options.owner + "/" + options.model,
+                    builder.build());
         }
         return GossipTensorParallelDeliveranceRunner.open(options, fetcher);
+    }
+
+    private static AutoModelForCausaLm.Builder applyModelConfig(Options options, AutoModelForCausaLm.Builder builder) {
+        return options.modelConfig == null ? builder : builder.withConfig(AutoModelConfig.fromJson(options.modelConfig));
     }
 
     private static AutoModelForCausaLm.Builder applyOutputHeadQuantization(Options options,
@@ -928,6 +934,7 @@ public final class InferenceBenchmark {
         private int prefixCacheMaxPrefixTokens = 512;
         private int kvContextRowsPerPageTarget = 32;
         private boolean profileStages = false;
+        private Path modelConfig;
         private Path suiteFile;
         private Path output = Path.of("target/inference-benchmark.csv");
         private Path jsonlOutput;
@@ -966,6 +973,7 @@ public final class InferenceBenchmark {
                     case "--prefix-cache-block-size" -> options.prefixCacheBlockSize = Integer.parseInt(args[++i]);
                     case "--prefix-cache-max-prefix-tokens" -> options.prefixCacheMaxPrefixTokens = Integer.parseInt(args[++i]);
                     case "--kv-context-rows-per-page" -> options.kvContextRowsPerPageTarget = Integer.parseInt(args[++i]);
+                    case "--model-config" -> options.modelConfig = Path.of(args[++i]);
                     case "--profile-stages" -> options.profileStages = true;
                     case "--suite-file" -> options.suiteFile = Path.of(args[++i]);
                     case "--output" -> options.output = Path.of(args[++i]);
@@ -1029,6 +1037,7 @@ public final class InferenceBenchmark {
                       --prefix-cache-block-size N         Prefix cache block alignment, default 32
                       --prefix-cache-max-prefix-tokens N  Max prompt prefix tokens cached, default 512
                       --kv-context-rows-per-page N        Active KV page context-row target, default 32
+                      --model-config PATH                 AutoModelForCausaLm JSON builder config
                       --profile-stages                   Print accumulated broad-stage timing after each Deliverance turn
                       --suite-file PATH                  FastChat MT-Bench question.jsonl; default built-in subset
                       --output PATH                      CSV output path, default target/inference-benchmark.csv

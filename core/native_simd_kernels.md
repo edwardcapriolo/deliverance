@@ -76,7 +76,7 @@ native/target/native-lib-only/linux-x86_64
 The benchmark scripts detect the classifier and pass the correct library path. You can override detection with:
 
 ```sh
-DELIVERANCE_NATIVE_CLASSIFIER=osx-aarch_64 ./run-qwen-single-benchmark.sh
+DELIVERANCE_NATIVE_CLASSIFIER=osx-aarch_64 ./benchmarks/run-qwen-single-benchmark.sh
 ```
 
 ## Related Pages
