@@ -8,7 +8,7 @@ This module intentionally stays small:
 
 * Java 17.
 * Depends on `deliverance-client`.
-* Provides minimal local tools: `read`, `write`, `edit`, `glob`, `grep`.
+* Provides minimal local tools: `read`, `write`, `edit`, `glob`, `grep`, `java_sandbox`.
 * Risky/eval-prone `bash` is disabled unless explicitly enabled.
 
 ## Build
@@ -65,6 +65,8 @@ Environment variables:
 * `NANOCODE_MAX_TOOL_RESULT_CHARS`, default `2000`
 * `NANOCODE_TEMPERATURE`, default `0.0`
 * `NANOCODE_TOOLS`, default `true`
+* `NANOCODE_STREAM`, default `true`
+* `NANOCODE_JAVA_SANDBOX_IMAGE`, default `eclipse-temurin:25-jdk`
 
 Flags:
 
@@ -75,10 +77,29 @@ Flags:
 --max-tool-result-chars 2000
 --temperature 0.0
 --no-tools
+--stream
+--no-stream
 --allow-risky-tools
 ```
 
 `--allow-risky-tools` enables `bash`. Without it, shell execution is not advertised to the model and direct calls are rejected.
+
+## Java Sandbox Tool
+
+`java_sandbox` runs one-shot Java commands in a Testcontainers container with network disabled by default. It accepts files, copies them into `/workspace`, runs either a single Java file or Maven tests, and returns structured JSON with `exitCode`, `stdout`, `stderr`, `timedOut`, and `durationMs`.
+
+Example tool arguments:
+
+```json
+{
+  "mode": "single-file",
+  "mainClass": "Main",
+  "files": {
+    "Main.java": "public class Main { public static void main(String[] args) { System.out.println(1 + 1); } }"
+  },
+  "timeoutSeconds": 10
+}
+```
 
 ## Notes
 

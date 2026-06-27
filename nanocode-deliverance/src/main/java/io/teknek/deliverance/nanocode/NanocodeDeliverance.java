@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.teknek.deliverance.client.api.ChatApi;
 import io.teknek.deliverance.client.core.ApiClient;
 import io.teknek.deliverance.client.model.ChatCompletionMessageToolCall;
+import io.teknek.deliverance.client.model.ChatCompletionMessageToolCallFunction;
 import io.teknek.deliverance.client.model.ChatCompletionRequestMessage;
 import io.teknek.deliverance.client.model.ChatCompletionResponseMessage;
 import io.teknek.deliverance.client.model.ChatCompletionTool;
@@ -16,6 +17,10 @@ import io.teknek.deliverance.client.model.CreateChatCompletionRequest;
 import io.teknek.deliverance.client.model.CreateChatCompletionResponse;
 import io.teknek.deliverance.client.model.CreateChatCompletionResponseChoicesInner;
 import io.teknek.deliverance.client.model.FunctionObject;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
 import retrofit2.Retrofit;
 import retrofit2.Response;
 import retrofit2.converter.jackson.JacksonConverterFactory;
@@ -53,9 +58,16 @@ public final class NanocodeDeliverance {
 
     private final Config config;
     private final ChatApi chatApi;
+    private final OkHttpClient httpClient;
+    private final ToolExecutor toolExecutor;
 
-    NanocodeDeliverance(Config config) {
+    public NanocodeDeliverance(Config config) {
+        this(config, NanocodeDeliverance::executeTool);
+    }
+
+    public NanocodeDeliverance(Config config, ToolExecutor toolExecutor) {
         this.config = config;
+        this.toolExecutor = toolExecutor;
         ApiClient apiClient = new ApiClient();
         apiClient.setAdapterBuilder(new Retrofit.Builder()
                 .baseUrl(config.baseUrl + "/")
@@ -63,6 +75,7 @@ public final class NanocodeDeliverance {
                 .addConverterFactory(JacksonConverterFactory.create(clientMapper())));
         apiClient.getOkBuilder().connectTimeout(Duration.ofSeconds(10));
         apiClient.getOkBuilder().readTimeout(Duration.ofMinutes(5));
+        this.httpClient = apiClient.getOkBuilder().build();
         this.chatApi = apiClient.createService(ChatApi.class);
     }
 
@@ -131,7 +144,7 @@ public final class NanocodeDeliverance {
         }
     }
 
-    private void runConversationTurn(List<Map<String, Object>> messages, String cwd) throws Exception {
+    public void runConversationTurn(List<Map<String, Object>> messages, String cwd) throws Exception {
         while (true) {
             CreateChatCompletionResponse response = chat(messages, cwd);
             if (response.getChoices() == null || response.getChoices().isEmpty()) {
@@ -143,7 +156,7 @@ public final class NanocodeDeliverance {
                 throw new IOException("Deliverance response choice contained no message");
             }
             String content = Optional.ofNullable(responseMessage.getContent()).orElse("");
-            if (!content.isBlank()) {
+            if (!content.isBlank() && !config.streamEnabled) {
                 System.out.println(CYAN + "assistant" + RESET + " " + content);
             }
             messages.add(assistantMessage(responseMessage));
@@ -157,15 +170,23 @@ public final class NanocodeDeliverance {
                 String name = toolCall.getFunction().getName();
                 JsonNode arguments = parseJsonObject(toolCall.getFunction().getArguments());
                 System.out.println(GREEN + "tool " + name + RESET + " " + preview(arguments.toString(), 80));
-                String result = truncateToolResult(runTool(name, arguments));
+                String result = truncateToolResult(toolExecutor.run(name, arguments));
                 System.out.println(DIM + preview(result, 120) + RESET);
                 messages.add(toolMessage(id, result));
             }
         }
     }
 
+    @FunctionalInterface
+    public interface ToolExecutor {
+        String run(String name, JsonNode args);
+    }
+
     @SuppressWarnings({"rawtypes", "unchecked"})
     private CreateChatCompletionResponse chat(List<Map<String, Object>> messages, String cwd) throws IOException {
+        if (config.streamEnabled) {
+            return streamingChat(messages, cwd);
+        }
         CreateChatCompletionRequest request = new CreateChatCompletionRequest()
                 .model(config.model)
                 .maxTokens(config.maxTokens)
@@ -186,15 +207,143 @@ public final class NanocodeDeliverance {
         return response.body();
     }
 
+    private CreateChatCompletionResponse streamingChat(List<Map<String, Object>> messages, String cwd) throws IOException {
+        ObjectNode request = JSON.createObjectNode();
+        request.put("model", config.model);
+        request.put("max_tokens", config.maxTokens);
+        request.put("temperature", config.temperature);
+        request.put("parallel_tool_calls", false);
+        request.put("stream", true);
+        if (config.ntokens != null) {
+            request.put("ntokens", config.ntokens);
+        }
+        request.set("messages", JSON.valueToTree(withSystemMessage(messages, cwd)));
+        if (config.toolsEnabled) {
+            request.set("tools", JSON.valueToTree(toolSchema()));
+        }
+        Request httpRequest = new Request.Builder()
+                .url(config.baseUrl + "/chat/completions")
+                .post(RequestBody.create(JSON.writeValueAsBytes(request), MediaType.get("application/json")))
+                .build();
+        StringBuilder content = new StringBuilder();
+        String finishReason = "stop";
+        List<ToolCallAccumulator> toolCalls = new ArrayList<>();
+        System.out.print(CYAN + "assistant" + RESET + " ");
+        try (okhttp3.Response response = httpClient.newCall(httpRequest).execute()) {
+            if (!response.isSuccessful() || response.body() == null) {
+                String error = response.body() == null ? "" : response.body().string();
+                throw new IOException("Deliverance HTTP " + response.code() + ": " + error);
+            }
+            try (BufferedReader reader = new BufferedReader(response.body().charStream())) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (!line.startsWith("data:")) {
+                        continue;
+                    }
+                    String data = line.substring("data:".length()).trim();
+                    if ("[DONE]".equals(data)) {
+                        break;
+                    }
+                    JsonNode chunk = JSON.readTree(data);
+                    JsonNode choice = chunk.path("choices").path(0);
+                    JsonNode finish = choice.path("finish_reason");
+                    if (!finish.isMissingNode() && !finish.isNull()) {
+                        finishReason = finish.asText();
+                    }
+                    String delta = choice.path("delta").path("content").asText("");
+                    if (!delta.isEmpty()) {
+                        content.append(delta);
+                        System.out.print(delta);
+                    }
+                    accumulateToolCalls(choice.path("delta").path("tool_calls"), toolCalls);
+                }
+            }
+        }
+        System.out.println();
+        ChatCompletionResponseMessage message = new ChatCompletionResponseMessage()
+                .role(ChatCompletionResponseMessage.RoleEnum.ASSISTANT)
+                .content(content.toString());
+        if (!toolCalls.isEmpty()) {
+            message.content(null);
+            for (ToolCallAccumulator toolCall : toolCalls) {
+                message.addToolCallsItem(toolCall.toToolCall());
+            }
+        } else if ("tool_calls".equals(finishReason)) {
+            throw new IOException("Deliverance stream ended with finish_reason=tool_calls but sent no delta.tool_calls");
+        }
+        CreateChatCompletionResponseChoicesInner choice = new CreateChatCompletionResponseChoicesInner()
+                .index(0)
+                .message(message)
+                .finishReason(toFinishReason(finishReason));
+        return new CreateChatCompletionResponse().choices(List.of(choice));
+    }
+
+    private static void accumulateToolCalls(JsonNode deltas, List<ToolCallAccumulator> toolCalls) {
+        if (!deltas.isArray()) {
+            return;
+        }
+        for (JsonNode delta : deltas) {
+            int index = delta.path("index").asInt();
+            while (toolCalls.size() <= index) {
+                toolCalls.add(new ToolCallAccumulator());
+            }
+            ToolCallAccumulator accumulator = toolCalls.get(index);
+            if (delta.hasNonNull("id")) {
+                accumulator.id = delta.get("id").asText();
+            }
+            JsonNode function = delta.path("function");
+            if (function.hasNonNull("name")) {
+                accumulator.name = function.get("name").asText();
+            }
+            if (function.hasNonNull("arguments")) {
+                accumulator.arguments.append(function.get("arguments").asText());
+            }
+        }
+    }
+
+    private static final class ToolCallAccumulator {
+        private String id;
+        private String name;
+        private final StringBuilder arguments = new StringBuilder();
+
+        private ChatCompletionMessageToolCall toToolCall() {
+            ChatCompletionMessageToolCall toolCall = new ChatCompletionMessageToolCall();
+            toolCall.id(id);
+            toolCall.function(new ChatCompletionMessageToolCallFunction()
+                    .name(name)
+                    .arguments(arguments.toString()));
+            return toolCall;
+        }
+    }
+
+    private static CreateChatCompletionResponseChoicesInner.FinishReasonEnum toFinishReason(String finishReason) {
+        return switch (finishReason == null ? "stop" : finishReason) {
+            case "length" -> CreateChatCompletionResponseChoicesInner.FinishReasonEnum.LENGTH;
+            case "tool_calls" -> CreateChatCompletionResponseChoicesInner.FinishReasonEnum.TOOL_CALLS;
+            default -> CreateChatCompletionResponseChoicesInner.FinishReasonEnum.STOP;
+        };
+    }
+
     private List<Map<String, Object>> withSystemMessage(List<Map<String, Object>> messages, String cwd) {
         List<Map<String, Object>> result = new ArrayList<>();
-        result.add(message("system", "You are a concise coding assistant. cwd: " + cwd
-                + ". Use tools when needed. Prefer small, direct changes."));
+        result.add(message("system", systemPrompt(cwd)));
         result.addAll(messages);
         return result;
     }
 
+    static String systemPrompt(String cwd) {
+        return "You are a concise coding assistant. cwd: " + cwd
+                + ". Use tools when needed. Prefer small, direct changes. "
+                + "For file reads, grep/searches, globbing, edits, writes, or Java execution, call the matching tool; "
+                + "do not describe the tool call or print JSON in prose. "
+                + "After any thinking, emit the tool call immediately in the required tool-call format.";
+    }
+
     List<ChatCompletionTool> toolSchema() {
+        return defaultToolSchema(config.allowRiskyTools);
+    }
+
+    public static List<ChatCompletionTool> defaultToolSchema(boolean allowRiskyTools) {
         List<ChatCompletionTool> tools = new ArrayList<>();
         tools.add(tool("read", "Read a text file with line numbers.", schema(
                 props(prop("path", "string"), prop("offset", "integer"), prop("limit", "integer")),
@@ -208,10 +357,14 @@ public final class NanocodeDeliverance {
         tools.add(tool("glob", "Find files by glob pattern, sorted by modified time.", schema(
                 props(prop("path", "string"), prop("pattern", "string")),
                 array("pattern"))));
-        tools.add(tool("grep", "Search text files with a Java regular expression. Returns at most limit matches, default 10.", schema(
+        tools.add(tool("grep", "Search text files with a Java regular expression. Use for grep/search requests. Returns at most limit matches, default 10.", schema(
                 props(prop("path", "string"), prop("pattern", "string"), prop("limit", "integer")),
                 array("pattern"))));
-        if (config.allowRiskyTools) {
+        tools.add(tool("java_sandbox", "Run Java code or Maven tests in a one-shot isolated container with no network access by default.", schema(
+                props(prop("mode", "string"), prop("files", "object"), prop("mainClass", "string"),
+                        prop("timeoutSeconds", "integer"), prop("maxOutputChars", "integer")),
+                array("files"))));
+        if (allowRiskyTools) {
             tools.add(tool("bash", "Risky/eval tool. Run a shell command with a 30 second timeout.", schema(
                     props(prop("command", "string")),
                     array("command"))));
@@ -225,7 +378,11 @@ public final class NanocodeDeliverance {
                 .function(new FunctionObject().name(name).description(description).parameters(parameterMap));
     }
 
-    private String runTool(String name, JsonNode args) {
+    public static String executeTool(String name, JsonNode args) {
+        return runTool(name, args, false);
+    }
+
+    private static String runTool(String name, JsonNode args, boolean allowRiskyTools) {
         try {
             return switch (name) {
                 case "read" -> toolRead(args);
@@ -233,7 +390,8 @@ public final class NanocodeDeliverance {
                 case "edit" -> toolEdit(args);
                 case "glob" -> toolGlob(args);
                 case "grep" -> toolGrep(args);
-                case "bash" -> config.allowRiskyTools ? toolBash(args) : "error: bash disabled; restart with --allow-risky-tools";
+                case "java_sandbox" -> JavaSandboxTool.run(args);
+                case "bash" -> allowRiskyTools ? toolBash(args) : "error: bash disabled; restart with --allow-risky-tools";
                 default -> "error: unknown tool " + name;
             };
         } catch (Exception e) {
@@ -343,7 +501,7 @@ public final class NanocodeDeliverance {
         return node.isObject() ? node : JSON.createObjectNode();
     }
 
-    static Map<String, Object> message(String role, String content) {
+    public static Map<String, Object> message(String role, String content) {
         Map<String, Object> message = new HashMap<>();
         message.put("role", role);
         message.put("content", content);
@@ -428,8 +586,8 @@ public final class NanocodeDeliverance {
                 + " turn_ms=" + elapsedMillis + RESET);
     }
 
-    record Config(String baseUrl, String model, Integer ntokens, int maxTokens, int maxToolResultChars,
-            double temperature, boolean toolsEnabled, boolean allowRiskyTools, boolean help) {
+    public record Config(String baseUrl, String model, Integer ntokens, int maxTokens, int maxToolResultChars,
+            double temperature, boolean toolsEnabled, boolean allowRiskyTools, boolean streamEnabled, boolean help) {
         static Config parse(String[] args) {
             String baseUrl = env("DELIVERANCE_BASE_URL", "http://localhost:8080");
             String model = env("DELIVERANCE_MODEL", "default");
@@ -439,6 +597,7 @@ public final class NanocodeDeliverance {
             double temperature = Double.parseDouble(env("NANOCODE_TEMPERATURE", "0.0"));
             boolean toolsEnabled = Boolean.parseBoolean(env("NANOCODE_TOOLS", "true"));
             boolean allowRiskyTools = Boolean.parseBoolean(env("NANOCODE_ALLOW_RISKY_TOOLS", "false"));
+            boolean streamEnabled = Boolean.parseBoolean(env("NANOCODE_STREAM", "true"));
             boolean help = false;
             for (int i = 0; i < args.length; i++) {
                 switch (args[i]) {
@@ -451,12 +610,14 @@ public final class NanocodeDeliverance {
                     case "--no-tools" -> toolsEnabled = false;
                     case "--tools" -> toolsEnabled = true;
                     case "--allow-risky-tools" -> allowRiskyTools = true;
+                    case "--stream" -> streamEnabled = true;
+                    case "--no-stream" -> streamEnabled = false;
                     case "--help", "-h" -> help = true;
                     default -> throw new IllegalArgumentException("unknown argument: " + args[i]);
                 }
             }
             return new Config(stripTrailingSlash(baseUrl), model, ntokens, maxTokens, maxToolResultChars,
-                    temperature, toolsEnabled, allowRiskyTools, help);
+                    temperature, toolsEnabled, allowRiskyTools, streamEnabled, help);
         }
 
         private static String env(String name, String defaultValue) {
@@ -489,6 +650,8 @@ public final class NanocodeDeliverance {
                       --no-tools              Do not send tool definitions
                       --tools                 Send tool definitions
                       --allow-risky-tools     Enable risky/eval-prone bash tool
+                      --stream                Stream assistant text deltas, default
+                      --no-stream             Use non-streaming JSON response path
                       --help                  Print this help
                     """);
         }
