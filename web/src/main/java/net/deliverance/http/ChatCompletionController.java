@@ -1,6 +1,8 @@
 package net.deliverance.http;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
@@ -25,8 +27,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.*;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 
 @RestController
@@ -49,9 +52,10 @@ public class ChatCompletionController {
     private final boolean debugChatRequest;
 
     public ChatCompletionController(Optional<PreGenerateSlot> slot,
-            @Value("${deliverance.debug.chat-request:false}") boolean debugChatRequest){
+            @Value("${deliverance.debug.chat-request:false}") boolean debugChatRequest,
+            @Value("${debug:false}") boolean springDebug){
         this.slot = slot.orElse((x,y) -> Either.Right(y));
-        this.debugChatRequest = debugChatRequest;
+        this.debugChatRequest = debugChatRequest || springDebug;
     }
 
     @RequestMapping(method = RequestMethod.POST, value = "/chat/completions", produces = { "application/json",
@@ -139,68 +143,209 @@ public class ChatCompletionController {
             }
         }
 
-        //This is the older stuff lets clean it out
-        //its here to support streaming which needs to be considered separately
-        List<ChatCompletionRequestMessage> messages = request.getMessages();
-        UUID id = UUID.randomUUID();
+        return streamChatCompletion(headers, request, model);
+    }
+
+    private Object streamChatCompletion(Map<String, String> headers, CreateChatCompletionRequest request,
+            CausalLanguageModel model) {
+        UUID sessionId = UUID.randomUUID();
         if (headers.containsKey(DELIVERANCE_SESSION_HEADER)) {
             try {
-                id = UUID.fromString(headers.get(DELIVERANCE_SESSION_HEADER));
+                sessionId = UUID.fromString(headers.get(DELIVERANCE_SESSION_HEADER));
             } catch (IllegalArgumentException e) {
-                return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+                return badRequest("invalid " + DELIVERANCE_SESSION_HEADER);
             }
         }
-        UUID sessionId = id;
-        PromptSupport.Builder builder = model.promptSupport().get().builder();
-        ResponseEntity<Object> result = messagesToBuilder(builder, messages);
-        if (result != null){
-            return result;
+        Either<Error, PreparedRequest> mapped = ChatCompletionService.mapRequest(headers, model, request);
+        if (mapped.isLeft()) {
+            Left<Error, ?> left = (Left<Error, ?>) mapped;
+            return new ResponseEntity<>(new ErrorResponse().error((Error) left.productIterator().next()), HttpStatus.BAD_REQUEST);
         }
-        GeneratorParameters params = new GeneratorParameters().withTemperature(0.1f);
-        AtomicInteger index = new AtomicInteger(0);
-        LOGGER.info("submitted prompt {}", builder.build());
-        if (request.getStream() != null && request.getStream()) {
-            SseEmitter emitter = new SseEmitter(-1L);
-            CompletableFuture<Response> generate = CompletableFuture.supplyAsync( () -> {
-                return model.generate(sessionId, builder.build(), params, (int next, String tok, String token, float f) -> {
-                            try {
-                                emitter.send( messageDelta(sessionId, token, index));
-                            } catch (IOException  | RuntimeException e) {
-                                LOGGER.error("emitter issue", e);
-                                emitter.completeWithError(e);
+        PreparedRequest ready = (PreparedRequest) mapped.productIterator().next();
+        Either<Error, PreparedRequest> afterSlot = slot.handle(request, ready);
+        switch (afterSlot) {
+            case Left<Error, PreparedRequest> e -> {
+                return new ResponseEntity<>(new ErrorResponse().error(e.get()), HttpStatus.BAD_REQUEST);
+            }
+            case Right<Error, PreparedRequest> r -> ready = r.get();
+        }
+
+        SseEmitter emitter = newSseEmitter();
+        AtomicBoolean closed = new AtomicBoolean(false);
+        emitter.onCompletion(() -> closed.set(true));
+        emitter.onTimeout(() -> closed.set(true));
+        emitter.onError(ignored -> closed.set(true));
+        UUID finalSessionId = sessionId;
+        PreparedRequest finalReady = ready;
+        boolean toolsPresent = request.getTools() != null && !request.getTools().isEmpty();
+        CompletableFuture.runAsync(() -> {
+            try {
+                var promptContext = finalReady.promptSupportBuilder().build();
+                debugPrompt(promptContext.getPrompt());
+                StringBuilder streamedText = new StringBuilder();
+                StringBuilder pendingContent = new StringBuilder();
+                AtomicBoolean suppressContent = new AtomicBoolean(false);
+                Response response = model.generate(finalSessionId, promptContext, finalReady.generatorParameters(),
+                        (int next, String tok, String token, float f) -> {
+                            streamedText.append(token == null ? "" : token);
+                            if (toolsPresent && !suppressContent.get()) {
+                                pendingContent.append(token == null ? "" : token);
+                                String flush = streamableToolAwareContent(pendingContent);
+                                if (!flush.isEmpty()) {
+                                    sendStreamToken(emitter, closed, finalSessionId, flush);
+                                    throwIfStreamClosed(closed);
+                                }
                             }
+                            if (toolsPresent && (streamedText.indexOf("<tools>") >= 0
+                                    || streamedText.indexOf("<tool_call>") >= 0)) {
+                                suppressContent.set(true);
+                                pendingContent.setLength(0);
+                            }
+                            if (!toolsPresent && !suppressContent.get()) {
+                                sendStreamToken(emitter, closed, finalSessionId, token);
+                                throwIfStreamClosed(closed);
+                            }
+                        });
+                if (!closed.get()) {
+                    List<ToolCall> toolCalls = extractToolCalls(model, response, streamedText.toString());
+                    if (!toolCalls.isEmpty()) {
+                        for (int i = 0; i < toolCalls.size(); i++) {
+                            sendStreamEvent(emitter, closed, streamToolCallDelta(finalSessionId, i, toolCalls.get(i)));
                         }
-                );
-            }).handle((result2, throwable) -> {
-                if (throwable == null){
-                    try {
-                        emitter.send(sendComplete(sessionId, index));
-                    } catch (IOException | RuntimeException e) {
-                        LOGGER.error("emitter issue", e);
-                        throw new RuntimeException(e);
+                        sendStreamEvent(emitter, closed, streamComplete(finalSessionId, io.teknek.deliverance.generator.FinishReason.TOOL_CALLS));
+                    } else {
+                        if (toolsPresent && pendingContent.length() > 0) {
+                            sendStreamToken(emitter, closed, finalSessionId, pendingContent.toString());
+                        }
+                        sendStreamEvent(emitter, closed, streamComplete(finalSessionId, response.finishReason));
                     }
-                    emitter.complete();
-                } else {
-                    emitter.completeWithError(throwable);
+                    if (!closed.get()) {
+                        sendStreamEvent(emitter, closed, SseEmitter.event().data("[DONE]"));
+                    }
+                    if (!closed.get()) {
+                        closed.set(true);
+                        emitter.complete();
+                    }
                 }
-                return result2;
-            });
-            return emitter;
+            } catch (Throwable t) {
+                if (!closed.get()) {
+                    closed.set(true);
+                    emitter.completeWithError(t);
+                }
+            }
+        });
+        return emitter;
+    }
+
+    protected SseEmitter newSseEmitter() {
+        return new SseEmitter(-1L);
+    }
+
+    private static void throwIfStreamClosed(AtomicBoolean closed) {
+        if (closed.get()) {
+            throw new CancellationException("stream closed");
         }
-        /*
-        else {
-            Response resp = model.generate(UUID.randomUUID(), builder.build(), params, (int next, String rok, String s, float aFloat) -> {});
-            CreateChatCompletionResponse out = new CreateChatCompletionResponse().id(sessionId.toString())
-                    .choices(
-                            List.of(
-                                    new CreateChatCompletionResponseChoicesInner().finishReason(
-                                            CreateChatCompletionResponseChoicesInner.FinishReasonEnum.STOP
-                                    ).message(new ChatCompletionResponseMessage().content(resp.responseText))
-                            )
-                    );
-            return new ResponseEntity<>(out, HttpStatus.OK);
-        }*/
-        throw new UnsupportedOperationException("Hit bottom");
+    }
+
+    private static List<ToolCall> extractToolCalls(CausalLanguageModel model, Response response, String streamedText) {
+        List<ToolCall> toolCalls = model.getToolCallParser().extract(response);
+        if (!toolCalls.isEmpty() || streamedText == null || streamedText.isBlank()
+                || streamedText.equals(response.responseTextWithSpecialTokens)) {
+            return toolCalls;
+        }
+        Response streamedResponse = new Response(response.responseText, streamedText, response.finishReason,
+                response.promptTokens, response.generatedTokens, response.promptTimeMs, response.generateTimeMs,
+                response.samplerReturns);
+        return model.getToolCallParser().extract(streamedResponse);
+    }
+
+    private static String streamableToolAwareContent(StringBuilder pendingContent) {
+        int tagStart = firstToolTagIndex(pendingContent);
+        if (tagStart >= 0) {
+            String flush = pendingContent.substring(0, tagStart);
+            pendingContent.setLength(0);
+            return flush;
+        }
+        int keep = longestToolTagPrefixSuffix(pendingContent);
+        int flushLength = pendingContent.length() - keep;
+        if (flushLength <= 0) {
+            return "";
+        }
+        String flush = pendingContent.substring(0, flushLength);
+        pendingContent.delete(0, flushLength);
+        return flush;
+    }
+
+    private static int firstToolTagIndex(CharSequence text) {
+        int tools = indexOf(text, "<tools>");
+        int toolCall = indexOf(text, "<tool_call>");
+        if (tools == -1) {
+            return toolCall;
+        }
+        if (toolCall == -1) {
+            return tools;
+        }
+        return Math.min(tools, toolCall);
+    }
+
+    private static int longestToolTagPrefixSuffix(CharSequence text) {
+        return Math.max(longestPrefixSuffix(text, "<tools>"), longestPrefixSuffix(text, "<tool_call>"));
+    }
+
+    private static int longestPrefixSuffix(CharSequence text, String prefix) {
+        int max = Math.min(text.length(), prefix.length() - 1);
+        for (int length = max; length > 0; length--) {
+            boolean matches = true;
+            for (int i = 0; i < length; i++) {
+                if (text.charAt(text.length() - length + i) != prefix.charAt(i)) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) {
+                return length;
+            }
+        }
+        return 0;
+    }
+
+    private static int indexOf(CharSequence text, String needle) {
+        for (int i = 0; i <= text.length() - needle.length(); i++) {
+            boolean matches = true;
+            for (int j = 0; j < needle.length(); j++) {
+                if (text.charAt(i + j) != needle.charAt(j)) {
+                    matches = false;
+                    break;
+                }
+            }
+            if (matches) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private void sendStreamToken(SseEmitter emitter, AtomicBoolean closed, UUID sessionId, String token) {
+        if (closed.get() || token == null || token.isEmpty()) {
+            return;
+        }
+        sendStreamEvent(emitter, closed, streamDelta(sessionId, token));
+    }
+
+    private void sendStreamEvent(SseEmitter emitter, AtomicBoolean closed, Object event) {
+        if (closed.get()) {
+            return;
+        }
+        try {
+            if (event instanceof SseEmitter.SseEventBuilder builder) {
+                emitter.send(builder);
+            } else {
+                emitter.send(event);
+            }
+        } catch (IOException | RuntimeException e) {
+            closed.set(true);
+            LOGGER.debug("stream emitter closed before send completed", e);
+        }
     }
 
     /**
@@ -257,23 +402,55 @@ public class ChatCompletionController {
                 .orElse(-9999.0d);
     }
 
-    private CreateChatCompletionStreamResponse sendComplete(UUID sessionId, AtomicInteger index){
-        return new CreateChatCompletionStreamResponse().id(sessionId.toString())
-                .choices(
-                        List.of(
-                                new CreateChatCompletionStreamResponseChoicesInner().finishReason(
-                                        CreateChatCompletionStreamResponseChoicesInner.FinishReasonEnum.STOP
-                                ).delta(new ChatCompletionStreamResponseDelta().content(""))
-                        )
-                );
-
+    private ObjectNode streamComplete(UUID sessionId, io.teknek.deliverance.generator.FinishReason finishReason){
+        ObjectNode response = JsonUtils.om.createObjectNode();
+        response.put("id", sessionId.toString());
+        ArrayNode choices = response.putArray("choices");
+        ObjectNode choice = choices.addObject();
+        choice.put("index", 0);
+        choice.set("delta", JsonUtils.om.createObjectNode());
+        choice.put("finish_reason", streamFinishReason(finishReason));
+        return response;
     }
-    private CreateChatCompletionStreamResponse messageDelta(UUID sessionId, String t, AtomicInteger index){
-        return new CreateChatCompletionStreamResponse().id(sessionId.toString())
-                .choices(
-                        List.of(
-                                new CreateChatCompletionStreamResponseChoicesInner().index(index.getAndIncrement())
-                                        .delta(new ChatCompletionStreamResponseDelta().content(t))));
+
+    private ObjectNode streamDelta(UUID sessionId, String t){
+        ObjectNode response = JsonUtils.om.createObjectNode();
+        response.put("id", sessionId.toString());
+        ArrayNode choices = response.putArray("choices");
+        ObjectNode choice = choices.addObject();
+        choice.put("index", 0);
+        ObjectNode delta = choice.putObject("delta");
+        delta.put("content", t);
+        return response;
+    }
+
+    private ObjectNode streamToolCallDelta(UUID sessionId, int index, ToolCall toolCall) throws JsonProcessingException {
+        ObjectNode response = JsonUtils.om.createObjectNode();
+        response.put("id", sessionId.toString());
+        ArrayNode choices = response.putArray("choices");
+        ObjectNode choice = choices.addObject();
+        choice.put("index", 0);
+        ObjectNode delta = choice.putObject("delta");
+        ArrayNode toolCalls = delta.putArray("tool_calls");
+        ObjectNode call = toolCalls.addObject();
+        call.put("index", index);
+        call.put("id", toolCall.getId());
+        call.put("type", "function");
+        ObjectNode function = call.putObject("function");
+        function.put("name", toolCall.getName());
+        function.put("arguments", JsonUtils.om.writeValueAsString(toolCall.getParameters()));
+        return response;
+    }
+
+    private String streamFinishReason(
+            io.teknek.deliverance.generator.FinishReason finishReason) {
+        return switch (finishReason) {
+            case MAX_TOKENS -> "length";
+            case TOOL_CALLS -> "tool_calls";
+            case STOP_TOKEN -> "stop";
+            case CONTENT_FILTER, FUNCTION_CALL -> throw new UnreachableException("not implemented");
+            case null -> "stop";
+        };
     }
 
     private ResponseEntity<ErrorResponse> badRequest(String message) {

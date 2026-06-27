@@ -118,6 +118,12 @@ class MultiModelConfiguration {
                 .withTensorProvider(provider)
                 .withWrappedForkJoinPool(pool)
                 .withKvBufferCacheSettings(kvBufferCacheSettings());
+        if (config.getOutputHeadQuantization() != null
+                && !config.getOutputHeadQuantization().isBlank()
+                && !"none".equalsIgnoreCase(config.getOutputHeadQuantization())
+                && !"off".equalsIgnoreCase(config.getOutputHeadQuantization())) {
+            builder.withOutputHeadQuantization(DType.valueOf(config.getOutputHeadQuantization()));
+        }
         if (config.getTensorParallel() != null && config.getTensorParallel().isEnabled()) {
             return tensorParallelCausalLanguageModel(config, builder);
         }

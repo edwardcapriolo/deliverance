@@ -41,6 +41,26 @@ public class QuenToolParserTest {
     }
 
     @Test
+    public void testParseQwenToolCallTag() {
+        String toolCall = """
+                <tool_call>
+                {"name": "java_sandbox", "arguments": {"files": {"main.java": "class HelloWorld {}"}, "mainClass": "HelloWorld"}}
+                </tool_call>
+                """;
+        Response r = new Response("", toolCall, FinishReason.TOOL_CALLS, 0, null,
+                0, 0, List.of(new SamplerReturn(0)));
+        QwenToolCallParser c = new QwenToolCallParser();
+
+        List<ToolCall> resp = c.extract(r);
+
+        assertEquals(1, resp.size());
+        ToolCall expectedTool = resp.get(0);
+        assertEquals("101", expectedTool.getId());
+        assertEquals("java_sandbox", expectedTool.getName());
+        assertEquals("HelloWorld", expectedTool.getParameters().get("mainClass"));
+    }
+
+    @Test
     public void jsonStringsTest(){
         QwenToolCallParser  c = new QwenToolCallParser ();
         String s = """

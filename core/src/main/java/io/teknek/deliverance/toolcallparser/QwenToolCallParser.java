@@ -32,18 +32,26 @@ public class QwenToolCallParser implements ToolCallParser {
 
     @Override
     public List<ToolCall> extract(Response response) {
-        int index = response.responseTextWithSpecialTokens.indexOf("<tools>");
-        if (index == -1) {
-            return Collections.emptyList();
-        }
         List<ToolCall> result = new ArrayList<>();
+        extractTagged(response.responseTextWithSpecialTokens, "<tools>", "</tools>", result);
+        extractTagged(response.responseTextWithSpecialTokens, "<tool_call>", "</tool_call>", result);
+        AtomicInteger id = new AtomicInteger(101);
+        List<ToolCall> distinct = result.stream().distinct().toList();
+        distinct.forEach(x -> x.setId((id.getAndIncrement()) + ""));
+        return distinct;
+    }
 
+    private void extractTagged(String text, String startTag, String endTag, List<ToolCall> result) {
+        int index = text.indexOf(startTag);
         do {
-            int end = response.responseTextWithSpecialTokens.indexOf("</tools>", index);
+            if (index == -1) {
+                return;
+            }
+            int end = text.indexOf(endTag, index);
             if (end == -1) {
                 break;
             }
-            String section = response.responseTextWithSpecialTokens.substring(index + 7, end);
+            String section = text.substring(index + startTag.length(), end);
             List<String> jsons = jsonStrings(section);
 
             for (String json:jsons){
@@ -57,12 +65,8 @@ public class QwenToolCallParser implements ToolCallParser {
                     LOG.warn("Attempting to parse function: ", e);
                 }
             }
-            index += end + 8;
-        } while (index < response.responseTextWithSpecialTokens.length());
-        AtomicInteger id = new AtomicInteger(101);
-        List<ToolCall> distinct = result.stream().distinct().toList();
-        distinct.forEach(x -> x.setId((id.getAndIncrement()) + ""));
-        return distinct;
+            index = text.indexOf(startTag, end + endTag.length());
+        } while (index < text.length());
     }
 
     @Override

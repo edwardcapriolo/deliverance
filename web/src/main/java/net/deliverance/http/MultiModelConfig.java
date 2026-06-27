@@ -8,6 +8,7 @@ public class MultiModelConfig {
     private String modelName;
     private String modelOwner;
     private String inferenceType;
+    private String outputHeadQuantization;
     private TensorParallelConfig tensorParallel = new TensorParallelConfig();
 
     public MultiModelConfig() {
@@ -36,6 +37,14 @@ public class MultiModelConfig {
 
     public void setInferenceType(String inferenceType) {
         this.inferenceType = inferenceType;
+    }
+
+    public String getOutputHeadQuantization() {
+        return outputHeadQuantization;
+    }
+
+    public void setOutputHeadQuantization(String outputHeadQuantization) {
+        this.outputHeadQuantization = outputHeadQuantization;
     }
 
     public TensorParallelConfig getTensorParallel() {
