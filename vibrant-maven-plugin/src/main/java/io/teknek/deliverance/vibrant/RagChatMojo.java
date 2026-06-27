@@ -114,11 +114,11 @@ public class RagChatMojo  extends AbstractMojo {
         WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(
                 new ConfigurableTensorProvider(builder.getAllocator(), pool).get());
-        builder.withWorkingQuantType(working);
+        builder.withWorkingMemoryType(working);
         builder.withWorkingQuantType(quantized);
         builder.withTensorProvider(new ConfigurableTensorProvider(operation));
 
-        try (AbstractModel model = builder.build()) {
+        try (AbstractModel model = builder.buildLocalTransformerModel()) {
             System.out.println("Chat with deliverance! Type 'undeliver' to quit.");
             System.out.println("Type 'indexjava /path/to/source' to add a path to the vector store ");
             System.out.print(">> ");

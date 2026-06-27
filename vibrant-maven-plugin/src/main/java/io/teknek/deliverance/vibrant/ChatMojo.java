@@ -38,11 +38,11 @@ public class ChatMojo extends AbstractMojo {
         AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(fetch);
         WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(builder.getAllocator(), pool).get());
-        builder.withWorkingQuantType(working);
+        builder.withWorkingMemoryType(working);
         builder.withWorkingQuantType(quantized);
         builder.withTensorProvider(new ConfigurableTensorProvider(operation));
 
-        try (AbstractModel model = builder.build()) {
+        try (AbstractModel model = builder.buildLocalTransformerModel()) {
             System.out.println("Chat with deliverance! Type 'undeliver' to quit.");
             System.out.print(">> ");
             BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
