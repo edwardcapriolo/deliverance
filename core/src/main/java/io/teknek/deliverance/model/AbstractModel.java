@@ -39,6 +39,7 @@ import io.teknek.deliverance.tensor.*;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import jdk.incubator.vector.FloatVector;
 import org.slf4j.Logger;
@@ -148,6 +149,8 @@ public abstract class AbstractModel implements Generator, Classifier {
     protected final TensorAllocator tensorAllocator;
     protected final TensorParallelContext tensorParallelContext;
     protected final TensorParallelCollectives tensorParallelCollectives;
+    private final EnumMap<TensorProviderKind, TensorOperations> tensorOperations = new EnumMap<>(TensorProviderKind.class);
+    private boolean tensorProviderExplicit;
     private GossipParallelMembership gossipParallelMembership;
 
     //embedding
@@ -212,6 +215,7 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.modelQType = modelQType;
         this.kvBufferCache = new KvBufferCache(this, kvBufferCacheSettings);
         this.configurableTensorProvider = provider;
+        this.tensorOperations.put(TensorProviderKind.SIMD, provider.get());
         this.metricRegistry = metricRegistry;
         this.tensorAllocator = tensorAllocator;
         this.toolCallParser = toolCallParser;
@@ -282,6 +286,26 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.classifyOutput = inferenceType.isClassify ? loadClassifierWeights() : null;
         this.poolingLayer = inferenceType.isPooling ? Optional.ofNullable(loadPoolingWeights()) : Optional.empty();
         this.pool = pool;
+    }
+
+    void addTensorOperations(Map<TensorProviderKind, TensorOperations> additionalTensorOperations) {
+        this.tensorOperations.putAll(additionalTensorOperations);
+    }
+
+    void setTensorProviderExplicit(boolean tensorProviderExplicit) {
+        this.tensorProviderExplicit = tensorProviderExplicit;
+    }
+
+    public boolean isTensorProviderExplicit() {
+        return tensorProviderExplicit;
+    }
+
+    public Optional<TensorOperations> tensorOperations(TensorProviderKind kind) {
+        return Optional.ofNullable(tensorOperations.get(kind));
+    }
+
+    public TensorOperations primaryTensorOperations() {
+        return configurableTensorProvider.get();
     }
 
     public TensorParallelContext getTensorParallelContext() {

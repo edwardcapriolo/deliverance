@@ -56,7 +56,7 @@ fn main(
         for (var k = 0u; k < params.k; k = k + 1u) {
             let aIdx = (params.lda * ii) + k;
             let bIdx = (params.ldb * jj) + k;
-            sum = sum + (A[aIdx] * get_bf16_as_f32(&B, params.boffset + bIdx));
+            sum = sum + (A[aIdx] * get_bf16_as_f32(&B, (params.boffset / 4u) + bIdx));
         }
 
         // Store the result in C

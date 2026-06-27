@@ -529,7 +529,7 @@ void gpu_gemm(int64_t scratch_id, int64_t shader, const void *a, const void *a2,
      alignedB2Size = (alignedB2Size + 3) & ~3u;
 
      // Create uniform buffer for parameters
-     Params params = {m, n + n0, k, lda, ldb, ldc, b2Sub/sizeof(float), b2Sub,};
+      Params params = {m, n, k, lda, ldb, ldc, bSub, b2Sub,};
      size_t params_size = sizeof(Params);
 
      WGPUBuffer params_buffer = s.params_buffer;
@@ -615,9 +615,9 @@ void gpu_gemm(int64_t scratch_id, int64_t shader, const void *a, const void *a2,
 
     // Copy the result back to the host
     for (int rm = 0; rm < m; ++rm) {
-        for (int rn = n0, rn2 = 0; rn < params.n; ++rn, ++rn2) {
-            int idx = (rm * ldc) + rn - roffset;
-            int idx2 = (rm * ldc) + (n0 + rn2);
+        for (int rn2 = 0; rn2 < n; ++rn2) {
+            int idx = (rm * ldc) + n0 + rn2 - roffset;
+            int idx2 = (rm * ldc) + rn2;
 
             r[idx] = buf[idx2];
         }

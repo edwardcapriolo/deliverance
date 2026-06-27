@@ -93,7 +93,7 @@ fn main(
     var nib: vec4<u32>;
 
     for (var k = 0u; k < k_actual; k = k + BLOCK_SIZE) {
-        let bIdx = (ldbn * jj) + (k / 32u) + (params.boffset);
+        let bIdx = (ldbn * jj) + (k / 32u) + (params.boffset / 16u);
         let bIdx2 = (ldbs * jj) + (k / BLOCK_SIZE) + (params.b2offset / 4u);
         let abase = k / 4u;
         if ((abase + 7u) >= WG_A_U32_SIZE) { continue; }

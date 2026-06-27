@@ -1874,6 +1874,7 @@ public final class PanamaTensorOperations implements TensorOperations {
             np = n0 + (n - n0) / nc * nc;
             mnpack(mp, m, n0, np);
             mnpack(m0, mp, np, n);
+            mnpack(mp, m, np, n);
         }
 
         /**

@@ -43,6 +43,7 @@ Generation:
 - [Tensor engines and JQ4](core/tensor_engines_and_jq4.md) Explains why tensor kernels, safetensors, and Q4 layout matter for local inference
 - [JQ4 tensor format](core/jq4_tensor_format.md) Documents Deliverance's Q4 tensor representation and sidecar scale tensors
 - [Native SIMD kernels](core/native_simd_kernels.md) Explains native GEMM/SAXPY support and the dtype combinations currently accelerated
+- [GPU output projection](core/gpu_output_projection.md) Shows how Deliverance uses WebGPU/Dawn for targeted Q4 output-head acceleration
 - [Vibrant Maven plugin](https://www.youtube.com/watch?v=Glp_hAieOq8) Watch a video on Vibrant Maven plugin generate code from XML based spec inside pom
 - [Generator sampling](core/generator_sampling.md) Explains how temperature, top_p, top_k, and exclude top choice work
 - [Prefix cache](core/PrefixCache.md) Describes how to get the most benefits from the prefix cache
