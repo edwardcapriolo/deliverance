@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="420" viewBox="0 0 920 420" role="img" aria-labelledby="title desc">
+  <title id="title">Deliverance output projection CPU versus WebGPU</title>
+  <desc id="desc">A bar chart showing CPU SIMD output projection around 4.8 seconds and hybrid WebGPU output projection around 3.1 seconds per 256 generated tokens.</desc>
+  <rect width="920" height="420" rx="28" fill="#10151f"/>
+  <text x="46" y="62" fill="#f6f0df" font-family="Inter, Arial, sans-serif" font-size="33" font-weight="800">GPU Output Projection</text>
+  <text x="46" y="94" fill="#aab6c5" font-family="Inter, Arial, sans-serif" font-size="17">Qwen3-4B-JQ4, sampler output projection per 256 generated tokens</text>
+
+  <line x1="240" y1="330" x2="850" y2="330" stroke="#3b4658" stroke-width="2"/>
+  <line x1="240" y1="270" x2="850" y2="270" stroke="#202938" stroke-width="1"/>
+  <line x1="240" y1="210" x2="850" y2="210" stroke="#202938" stroke-width="1"/>
+  <line x1="240" y1="150" x2="850" y2="150" stroke="#202938" stroke-width="1"/>
+
+  <text x="46" y="174" fill="#f6f0df" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700">CPU SIMD</text>
+  <text x="46" y="198" fill="#aab6c5" font-family="Inter, Arial, sans-serif" font-size="14">Native SIMD provider</text>
+  <text x="46" y="262" fill="#f6f0df" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700">Hybrid WebGPU</text>
+  <text x="46" y="286" fill="#aab6c5" font-family="Inter, Arial, sans-serif" font-size="14">CPU model, GPU output head</text>
+
+  <rect x="240" y="140" width="576" height="48" rx="14" fill="#ef4444"/>
+  <rect x="240" y="228" width="372" height="48" rx="14" fill="#22c55e"/>
+
+  <text x="830" y="172" fill="#f6f0df" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="800" text-anchor="end">~4.8s</text>
+  <text x="626" y="260" fill="#f6f0df" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="800" text-anchor="end">~3.1s</text>
+
+  <rect x="46" y="326" width="356" height="46" rx="16" fill="#172033" stroke="#2f3a50"/>
+  <text x="66" y="356" fill="#f6f0df" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="800">~35% less output-projection time</text>
+  <text x="830" y="356" fill="#aab6c5" font-family="Inter, Arial, sans-serif" font-size="14" text-anchor="end">seconds, lower is better</text>
+</svg>

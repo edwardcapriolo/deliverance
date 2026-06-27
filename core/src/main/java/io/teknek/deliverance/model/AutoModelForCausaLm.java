@@ -15,6 +15,9 @@ import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor.operations.MachineSpec;
+import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
+import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
 import io.teknek.deliverance.toolcallparser.LlamaToolCallParser;
@@ -30,7 +33,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -71,6 +76,7 @@ public class AutoModelForCausaLm {
 
         private KvBufferCacheSettings settings = new KvBufferCacheSettings(true);
         private ConfigurableTensorProvider provider;
+        private boolean tensorProviderExplicit;
         private WrappedForkJoinPool pool;
         private String oobCheck = "2";
         private TensorParallelContext tensorParallelContext = new StaticTensorParallelContext(0, 1);
@@ -78,6 +84,7 @@ public class AutoModelForCausaLm {
         private Optional<GossipParallelSettings> parallelSettings = Optional.empty();
         private Optional<DType> outputHeadQuantization = Optional.empty();
         private Optional<QuantizeOnDemand> quantizeOnDemand = Optional.empty();
+        private final EnumMap<TensorProviderKind, TensorOperations> additionalTensorOperations = new EnumMap<>(TensorProviderKind.class);
         private boolean download = true;
 
         record QuantizeOnDemand(DType targetType, String outputOwner, String outputModel) {
@@ -117,6 +124,16 @@ public class AutoModelForCausaLm {
         }
         public Builder withTensorProvider(ConfigurableTensorProvider provider){
             this.provider = provider;
+            this.tensorProviderExplicit = true;
+            return this;
+        }
+        public Builder withAdditionalTensorOperations(TensorProviderKind kind, TensorOperations operations) {
+            this.additionalTensorOperations.put(Objects.requireNonNull(kind, "kind"),
+                    Objects.requireNonNull(operations, "operations"));
+            return this;
+        }
+        public Builder withoutAdditionalTensorOperations(TensorProviderKind kind) {
+            this.additionalTensorOperations.remove(Objects.requireNonNull(kind, "kind"));
             return this;
         }
         public Builder withToolCallParser(ToolCallParser toolCallParser){
@@ -250,12 +267,14 @@ public class AutoModelForCausaLm {
             copy.toolCallParser = this.toolCallParser;
             copy.settings = this.settings;
             copy.provider = this.provider;
+            copy.tensorProviderExplicit = this.tensorProviderExplicit;
             copy.pool = this.pool;
             copy.oobCheck = this.oobCheck;
             copy.tensorParallelContext = context;
             copy.tensorParallelCollectives = Objects.requireNonNull(collectives, "collectives");
             copy.outputHeadQuantization = this.outputHeadQuantization;
             copy.quantizeOnDemand = this.quantizeOnDemand;
+            copy.additionalTensorOperations.putAll(this.additionalTensorOperations);
             copy.download = this.download;
             return copy;
         }
@@ -312,7 +331,47 @@ public class AutoModelForCausaLm {
             AbstractModel model = ModelSupport.loadModel(modelRoot, workingMem, workingQuant, provider,
                     mr, allocator, settings, fetcherForLoad, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives,
                     outputHeadQuantization);
+            model.setTensorProviderExplicit(tensorProviderExplicit);
+            if (!tensorProviderExplicit) {
+                model.addTensorOperations(hydrateTensorOperations());
+            }
             return model;
+        }
+
+        private Map<TensorProviderKind, TensorOperations> hydrateTensorOperations() {
+            EnumMap<TensorProviderKind, TensorOperations> operations = new EnumMap<>(TensorProviderKind.class);
+
+            TensorOperations naive = additionalTensorOperations.getOrDefault(TensorProviderKind.NAIVE, new NaiveTensorOperations());
+            operations.put(TensorProviderKind.NAIVE, naive);
+
+            TensorOperations panama = additionalTensorOperations.getOrDefault(TensorProviderKind.PANAMA,
+                    new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, allocator, pool));
+            operations.put(TensorProviderKind.PANAMA, panama);
+
+            TensorOperations simd = additionalTensorOperations.get(TensorProviderKind.SIMD);
+            if (simd == null) {
+                simd = getNative(panama).orElse(panama);
+            }
+            operations.put(TensorProviderKind.SIMD, simd);
+
+            TensorOperations gpu = additionalTensorOperations.get(TensorProviderKind.GPU);
+            if (gpu == null) {
+                tryLoadTensorOperations("io.teknek.deliverance.tensor.operations.NativeGPUTensorOperations")
+                        .ifPresent(value -> operations.put(TensorProviderKind.GPU, value));
+            } else {
+                operations.put(TensorProviderKind.GPU, gpu);
+            }
+
+            return Map.copyOf(operations);
+        }
+
+        private Optional<TensorOperations> tryLoadTensorOperations(String className) {
+            try {
+                return Optional.of((TensorOperations) Class.forName(className).getConstructor().newInstance());
+            } catch (Throwable t) {
+                LOGGER.debug("tensor operations provider {} is not available", className, t);
+                return Optional.empty();
+            }
         }
 
         ModelFetcher resolveModelFetcherForLoad() {

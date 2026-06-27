@@ -1,10 +1,12 @@
 package io.teknek.deliverance.model;
 
+import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.LayerNorm;
 import com.codahale.metrics.Timer;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.tensor.*;
+import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.tensorlib.ReadOnlyTensorMap;
 import io.teknek.deliverance.tensorlib.Reduce;
 import io.teknek.deliverance.tensorlib.TensorLib;
@@ -41,6 +43,42 @@ public abstract class AbstractGeneratorSampler {
         this.uniformSample = uniformSample;
     }
     public abstract SamplerReturn sample();
+
+    protected void outputProjection(AbstractTensor embedding) {
+        if (InferenceProfiler.isEnabled()) {
+            InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_input_" + embedding.dType()).inc();
+            InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_weight_" + model.sampleOutput.getOutputLogitsWeights().dType()).inc();
+        }
+        logits.clear();
+        TensorOperations operations = outputProjectionOperations(embedding);
+        VectorMath.pchunk(0, model.config.vocabularySize, (chunkStart, chunkSize) -> {
+            if (InferenceProfiler.isEnabled()) {
+                InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_chunks").inc();
+                InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_chunk_rows").inc(chunkSize);
+                InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_m_" + embedding.shape().first()).inc();
+                InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_k_" + model.config.embeddingLength).inc();
+            }
+            operations.dotProductChunk(logits, embedding, model.sampleOutput.getOutputLogitsWeights(), 0,
+                    model.config.embeddingLength, chunkStart, chunkSize);
+        }, operations.parallelSplitSize(), model.getPool());
+    }
+
+    private TensorOperations outputProjectionOperations(AbstractTensor embedding) {
+        if (!model.isTensorProviderExplicit()
+                && embedding.dType() == DType.F32
+                && model.sampleOutput.getOutputLogitsWeights().dType() == DType.Q4) {
+            Optional<TensorOperations> gpu = model.tensorOperations(TensorProviderKind.GPU);
+            if (gpu.isPresent()) {
+                TensorOperations operations = gpu.get();
+                operations.registerModelTensor(model.sampleOutput.getOutputLogitsWeights());
+                if (InferenceProfiler.isEnabled()) {
+                    InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_provider_gpu").inc();
+                }
+                return operations;
+            }
+        }
+        return model.primaryTensorOperations();
+    }
 }
 
 class DeliveranceLegacySampler extends AbstractGeneratorSampler {
@@ -60,25 +98,8 @@ class DeliveranceLegacySampler extends AbstractGeneratorSampler {
         float xtcThreshold = this.parameters.xtcThreshold.orElse(0f);
 
         try (AbstractTensor embedding = layerNorm.forward(output)) {
-            if (InferenceProfiler.isEnabled()) {
-                InferenceProfiler.counter(model.getMetricRegistry(),
-                        "sampler.output_input_" + embedding.dType()).inc();
-                InferenceProfiler.counter(model.getMetricRegistry(),
-                        "sampler.output_weight_" + model.sampleOutput.getOutputLogitsWeights().dType()).inc();
-            }
             try (Timer.Context ignoredOutput = InferenceProfiler.timer(model.getMetricRegistry(), "sampler.output_projection").time()) {
-                logits.clear();
-                VectorMath.pchunk(0, model.config.vocabularySize, (chunkStart, chunkSize) -> {
-                if (InferenceProfiler.isEnabled()) {
-                    InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_chunks").inc();
-                    InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_chunk_rows").inc(chunkSize);
-                    InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_m_" + embedding.shape().first()).inc();
-                    InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_k_" + model.config.embeddingLength).inc();
-                }
-                model.configurableTensorProvider.get()
-                        .dotProductChunk(logits, embedding, model.sampleOutput.getOutputLogitsWeights(), 0,
-                                model.config.embeddingLength, chunkStart, chunkSize);
-                }, model.configurableTensorProvider.get().parallelSplitSize(), model.getPool());
+                outputProjection(embedding);
             }
 
             if (model.config.logitMultiplier != null) {
@@ -181,25 +202,8 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
         }
 
         try (AbstractTensor embedding = layerNorm.forward(output)) {
-            if (InferenceProfiler.isEnabled()) {
-                InferenceProfiler.counter(model.getMetricRegistry(),
-                        "sampler.output_input_" + embedding.dType()).inc();
-                InferenceProfiler.counter(model.getMetricRegistry(),
-                        "sampler.output_weight_" + model.sampleOutput.getOutputLogitsWeights().dType()).inc();
-            }
             try (Timer.Context ignoredOutput = InferenceProfiler.timer(model.getMetricRegistry(), "sampler.output_projection").time()) {
-                logits.clear();
-                VectorMath.pchunk(0, model.config.vocabularySize, (chunkStart, chunkSize) -> {
-                if (InferenceProfiler.isEnabled()) {
-                    InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_chunks").inc();
-                    InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_chunk_rows").inc(chunkSize);
-                    InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_m_" + embedding.shape().first()).inc();
-                    InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_k_" + model.config.embeddingLength).inc();
-                }
-                model.configurableTensorProvider.get()
-                        .dotProductChunk(logits, embedding, model.sampleOutput.getOutputLogitsWeights(), 0,
-                                model.config.embeddingLength, chunkStart, chunkSize);
-                }, model.configurableTensorProvider.get().parallelSplitSize(), model.getPool());
+                outputProjection(embedding);
             }
 
             if (model.config.logitMultiplier != null) {

@@ -40,7 +40,7 @@ fn main(
         for (var k = 0u; k < params.k; k = k + BLOCK_SIZE) {
 
             let aIdx = (params.lda * ii) + k;
-            let bIdx = (ldbn * jj) + (k / 8u) + params.boffset;
+            let bIdx = (ldbn * jj) + (k / 8u) + (params.boffset / 4u);
             let bIdx2 = (ldbs * jj) + (k / BLOCK_SIZE) + (params.b2offset / 4u);
 
             let scale = B2[bIdx2];

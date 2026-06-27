@@ -127,7 +127,7 @@ public class GemmaPromptIT {
         String prompt = "What is the capital of New York, USA?";
         PromptSupport.Builder g = m.promptSupport().get().builder()
                 .addUserMessage(prompt);
-        assertEquals("<start_of_turn>user\n" +
+        assertEquals("<bos><start_of_turn>user\n" +
                 "What is the capital of New York, USA?<end_of_turn>\n" +
                 "<start_of_turn>model\n", g.build().getPrompt());
         var uuid = UUID.randomUUID();
@@ -252,7 +252,7 @@ public class GemmaPromptIT {
         String prompt = "Who is the better NFL football team?";
         PromptSupport.Builder g = m.promptSupport().get().builder()
                 .addUserMessage(prompt);
-        assertEquals("<start_of_turn>user\n" +
+        assertEquals("<bos><start_of_turn>user\n" +
                 "Who is the better NFL football team?<end_of_turn>\n" +
                 "<start_of_turn>model\n", g.build().getPrompt());
         var uuid = UUID.randomUUID();

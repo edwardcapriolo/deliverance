@@ -62,7 +62,7 @@ fn main(
 
             let aIdx = (ldan * ii) + (k / 16u);
             let aIdx2 = (ldas * ii) + (k / BLOCK_SIZE);
-            let bIdx = (ldbn * jj) + (k / 32u) + (params.boffset);
+            let bIdx = (ldbn * jj) + (k / 32u) + (params.boffset / 16u);
             let bIdx2 = (ldbs * jj) + (k / BLOCK_SIZE) + (params.b2offset / 4u);
 
             let scale = B2[bIdx2] * A2[aIdx2];

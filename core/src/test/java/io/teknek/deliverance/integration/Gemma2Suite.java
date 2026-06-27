@@ -1,9 +1,11 @@
 package io.teknek.deliverance.integration;
 
+import io.teknek.deliverance.DType;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
+import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import org.junit.platform.suite.api.AfterSuite;
 import org.junit.platform.suite.api.BeforeSuite;
 import org.junit.platform.suite.api.SelectClasses;
@@ -20,8 +22,9 @@ public class Gemma2Suite {
         if (model == null){
             ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
             //ModelFetcher fetch = new ModelFetcher("google", "gemma-2-2b-it" );
-            builder = AutoModelForCausaLm.newBuilder(fetch);
-            model = builder.withKvBufferCacheSettings(new KvBufferCacheSettings(true).withBlockSize(8))
+            builder = AutoModelForCausaLm.newBuilder(fetch).withOutputHeadQuantization(DType.Q4);
+            model = builder.withKvBufferCacheSettings(new KvBufferCacheSettings(true)
+                            .withBlockSize(8))
                     .buildLocalTransformerModel();
         }
         return model;

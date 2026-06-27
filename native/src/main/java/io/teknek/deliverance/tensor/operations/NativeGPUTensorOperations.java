@@ -61,6 +61,8 @@ public class NativeGPUTensorOperations implements TensorOperations {
 
     private int params_size;
 
+    private static volatile GpuRuntime gpuRuntime;
+
     private final AtomicLong totalBytesAllocated = new AtomicLong(0);
     private final AtomicBoolean limitReached = new AtomicBoolean(false);
 
@@ -85,7 +87,13 @@ public class NativeGPUTensorOperations implements TensorOperations {
     }
 
     public NativeGPUTensorOperations() {
-        checkLib();
+        GpuRuntime runtime = gpuRuntime();
+        this.gemm_f32_id = runtime.gemmF32Id;
+        this.gemm_bf16_id = runtime.gemmBf16Id;
+        this.gemm_q4_id = runtime.gemmQ4Id;
+        this.gemm_i8q4_m1_id = runtime.gemmI8Q4M1Id;
+        this.gemm_i8q4_id = runtime.gemmI8Q4Id;
+        this.params_size = runtime.paramsSize;
     }
 
     /**
@@ -190,8 +198,22 @@ public class NativeGPUTensorOperations implements TensorOperations {
         return id;
     }
 
-    private void checkLib() {
-        // Check if the native library is loaded
+    private static GpuRuntime gpuRuntime() {
+        GpuRuntime local = gpuRuntime;
+        if (local != null) {
+            return local;
+        }
+        synchronized (NativeGPUTensorOperations.class) {
+            local = gpuRuntime;
+            if (local != null) {
+                return local;
+            }
+            gpuRuntime = initializeGpuRuntime();
+            return gpuRuntime;
+        }
+    }
+
+    private static GpuRuntime initializeGpuRuntime() {
         try {
             LongBuffer lb = ByteBuffer.allocateDirect(Long.BYTES * 3).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer();
             NativeGPU.init_gpu(MemorySegment.ofBuffer(lb));
@@ -200,25 +222,36 @@ public class NativeGPUTensorOperations implements TensorOperations {
             }
 
             logger.info("Native GPU Operations loaded with {} memory and {} groups", lb.get(0), lb.get(1));
-            params_size = Ints.checkedCast(lb.get(2));
+            int paramsSize = Ints.checkedCast(lb.get(2));
 
 
-            gemm_f32_id = RuntimeSupport.isMac() ? registerShader("gemm_f32.wgsl")
+            long gemmF32Id = RuntimeSupport.isMac() ? registerShader("gemm_f32.wgsl")
                     : registerShader("gemm_f32_v4.wgsl");
 
-            gemm_f32_id = registerShader("gemm_f32_v4.wgsl");
-            if (gemm_f32_id == -1) {
+            gemmF32Id = registerShader("gemm_f32_v4.wgsl");
+            if (gemmF32Id == -1) {
                 throw new RuntimeException("Error creating shader");
             }
-            gemm_bf16_id = registerShader("gemm_bf16_v4.wgsl");
-            gemm_q4_id = registerShader("gemm_q4.wgsl");
-            gemm_i8q4_id = registerShader("gemm_i8q4.wgsl");
-            gemm_i8q4_m1_id = registerShader("gemm_i8q4_v5.wgsl");
+            long gemmBf16Id = registerShader("gemm_bf16_v4.wgsl");
+            long gemmQ4Id = registerShader("gemm_q4.wgsl");
+            long gemmI8Q4Id = registerShader("gemm_i8q4.wgsl");
+            long gemmI8Q4M1Id = registerShader("gemm_i8q4_v5.wgsl");
+
+            return new GpuRuntime(paramsSize, gemmF32Id, gemmBf16Id, gemmQ4Id, gemmI8Q4Id, gemmI8Q4M1Id);
 
         } catch (Throwable t) {
             logger.error("Failed to load native GPU operations", t);
             throw new RuntimeException(t);
         }
+    }
+
+    private record GpuRuntime(
+            int paramsSize,
+            long gemmF32Id,
+            long gemmBf16Id,
+            long gemmQ4Id,
+            long gemmI8Q4Id,
+            long gemmI8Q4M1Id) {
     }
 
     private boolean gpuSupported(Long btId, DType atype, DType btype, DType rtype) {
@@ -243,7 +276,7 @@ public class NativeGPUTensorOperations implements TensorOperations {
     ) {
         Long btId = tensorCache.get(bt.getUid());
 
-        if (gpuSupported(btId, at.dType(), bt.dType(), result.dType())) {
+        if (rRowOffset == 0 && bRowOffset == 0 && gpuSupported(btId, at.dType(), bt.dType(), result.dType())) {
             long scratchId = gpuBuffers();
 
             int M = at.shape().dim(0);
@@ -331,7 +364,7 @@ public class NativeGPUTensorOperations implements TensorOperations {
             // I REALLY need to redo this terrible API.
             // rRowOffset > 0 effectively means we are decoupling the result from the bRowOffset
             // This happens when doing attention because the b weights are not contiguous
-            if (rRowOffset > 0 || rowChunkSize < 1024) {
+            if (rRowOffset > 0 || bRowOffset > 0 || rowChunkSize < 1024) {
                 delegate.batchDotProduct(result, at, bt, aColumnOffset, bColumnOffset, columnLength, rRowOffset, bRowOffset, rowChunkSize);
             } else {
                 // We know we have split size of 1 so we can just re-process this using the delegate's split size
