@@ -2,7 +2,7 @@
     <parent>
         <groupId>io.teknek.deliverance</groupId>
         <artifactId>deliverance-parent</artifactId>
-        <version>0.0.7</version>
+        <version>0.0.10-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
     <artifactId>vibrant-maven-plugin</artifactId>
@@ -17,6 +17,7 @@
         <maven-project.version>2.2.1</maven-project.version>
         <maven-plugin-annotation.verion>3.15.2</maven-plugin-annotation.verion>
         <langchain4j.version>1.11.0</langchain4j.version>
+        <groovy.version>5.0.6</groovy.version>
     </properties>
 
     <dependencyManagement>
@@ -121,14 +122,38 @@
     <build>
         <plugins>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.sonatype.central</groupId>
+                <artifactId>central-publishing-maven-plugin</artifactId>
+                <configuration>
+                    <skipPublishing>true</skipPublishing>
+                </configuration>
+            </plugin>
+            <plugin>
                 <groupId>org.codehaus.gmavenplus</groupId>
                 <artifactId>gmavenplus-plugin</artifactId>
-                <version>4.3.1</version>
+                <version>5.0.0</version>
                <dependencies>
                     <dependency>
                         <groupId>org.apache.groovy</groupId>
+                        <artifactId>groovy-groovysh</artifactId>
+                        <version>${groovy.version}</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.apache.groovy</groupId>
+                        <artifactId>groovy-console</artifactId>
+                        <version>${groovy.version}</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.apache.groovy</groupId>
                         <artifactId>groovy-all</artifactId>
-                        <version>4.0.30</version>
+                        <version>${groovy.version}</version>
                         <type>pom</type>
                         <scope>runtime</scope>
                     </dependency>

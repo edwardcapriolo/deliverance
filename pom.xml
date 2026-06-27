@@ -61,7 +61,7 @@
         <module>grace</module>
         <module>client</module>
         <module>nanocode-deliverance</module>
-        <!-- <module>vibrant-maven-plugin</module> -->
+        <module>vibrant-maven-plugin</module>
     </modules>
     <build>
         <extensions>
@@ -142,6 +142,9 @@
                 <extensions>true</extensions>
                 <configuration>
                     <publishingServerId>central</publishingServerId>
+                    <excludeArtifacts>
+                        <excludeArtifact>vibrant-maven-plugin</excludeArtifact>
+                    </excludeArtifacts>
                 </configuration>
             </plugin>
 

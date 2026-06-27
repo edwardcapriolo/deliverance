@@ -128,11 +128,11 @@ public class VibrantMojo extends AbstractMojo {
         WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(
                 new ConfigurableTensorProvider(builder.getAllocator(), pool).get());
-        builder.withWorkingQuantType(working);
+        builder.withWorkingMemoryType(working);
         builder.withWorkingQuantType(quantized);
         builder.withTensorProvider(new ConfigurableTensorProvider(operation));
 
-        try (AbstractModel m = builder.build()) {
+        try (AbstractModel m = builder.buildLocalTransformerModel()) {
             for (VibeSpec spec : vibeSpecs) {
                 runSingleSpec(m, spec);
             }
