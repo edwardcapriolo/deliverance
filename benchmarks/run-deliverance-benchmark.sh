@@ -1,6 +1,13 @@
 #!/usr/bin/env sh
 set -eu
 
+if [ -n "${JAVA_HOME:-}" ]; then
+  PATH="$JAVA_HOME/bin:$PATH"
+  JAVA_BIN="$JAVA_HOME/bin/java"
+else
+  JAVA_BIN="java"
+fi
+
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 OS_NAME=$(uname -s)
 OS_ARCH=$(uname -m)
@@ -47,6 +54,6 @@ ${DELIVERANCE_BENCHMARK_ARGS:-$DEFAULT_BENCHMARK_ARGS}"
 
 mvn -q -pl core \
   -Dexec.classpathScope=test \
-  -Dexec.executable=java \
+  -Dexec.executable="$JAVA_BIN" \
   -Dexec.args="$EXEC_ARGS" \
   org.codehaus.mojo:exec-maven-plugin:3.5.0:exec

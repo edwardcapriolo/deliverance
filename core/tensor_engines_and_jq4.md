@@ -112,7 +112,7 @@ AutoModelForCausaLm.newBuilder(new ModelFetcher("Qwen", "Qwen3-0.6B"))
 Then benchmark the generated model as a normal local model:
 
 ```text
-Qwen/Qwen3-0.6B-JQ4
+edwardcapriolo/Qwen3-0.6B-JQ4
 ```
 
 Example profile counters from a Qwen3-4B JQ4 run:
@@ -130,7 +130,7 @@ These counters show that hidden states are still computed in F32 while output-pr
 In a Qwen3-0.6B benchmark, the JQ4 model was the clear winner. The dense model was around the low-to-mid teens in tokens/sec, while the local JQ4 model hit about `24 tok/s` on the same style of reasoning workload:
 
 ```text
-[deliverance] model=Qwen/Qwen3-0.6B-JQ4 case=builtin-reasoning-1 category=reasoning turn=2 prompt_tokens=405 generated=256 total_ms=13460.8 tok_s=24.62 finish=MAX_TOKENS
+[deliverance] model=edwardcapriolo/Qwen3-0.6B-JQ4 case=builtin-reasoning-1 category=reasoning turn=2 prompt_tokens=405 generated=256 total_ms=13460.8 tok_s=24.62 finish=MAX_TOKENS
 ```
 
 That is the sales pitch for JQ4: same model family, local safetensors, smaller projection weights, and a visible tokens/sec jump.

@@ -1,6 +1,13 @@
 #!/usr/bin/env sh
 set -eu
 
+if [ -n "${JAVA_HOME:-}" ]; then
+  PATH="$JAVA_HOME/bin:$PATH"
+  JAVA_BIN="$JAVA_HOME/bin/java"
+else
+  JAVA_BIN="java"
+fi
+
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 OS_NAME=$(uname -s)
@@ -22,6 +29,6 @@ cd "$ROOT_DIR"
 
 mvn -q -pl core \
   -Dexec.classpathScope=test \
-  -Dexec.executable=java \
-  -Dexec.args="-Djava.library.path=$NATIVE_LIB_DIR --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.deliverance.benchmark.ThinkingSmokeBenchmark --owner Qwen --model Qwen3-4B-JQ4 --model-config $MODEL_CONFIG --output $OUTPUT --max-tokens 768 --thinking true" \
+  -Dexec.executable="$JAVA_BIN" \
+  -Dexec.args="-Djava.library.path=$NATIVE_LIB_DIR --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.deliverance.benchmark.ThinkingSmokeBenchmark --owner edwardcapriolo --model Qwen3-4B-JQ4 --model-config $MODEL_CONFIG --output $OUTPUT --max-tokens 768 --thinking true" \
   org.codehaus.mojo:exec-maven-plugin:3.5.0:exec

@@ -278,7 +278,7 @@ public final class ThinkingSmokeBenchmark {
     private record Options(String owner, String model, Path modelConfig, Path output, int maxTokens,
                            float temperature, boolean enableThinking) {
         private static Options parse(String[] args) {
-            String owner = "Qwen";
+            String owner = "edwardcapriolo";
             String model = "Qwen3-4B-JQ4";
             Path modelConfig = Path.of("benchmarks/configs/qwen3-4b-jq4.json");
             Path output = Path.of("core/target/thinking-smoke.jsonl");

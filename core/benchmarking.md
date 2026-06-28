@@ -35,7 +35,7 @@ Most scripts accept extra benchmark arguments through `DELIVERANCE_BENCHMARK_ARG
 ./benchmarks/run-qwen-thinking-smoke-benchmark.sh
 ```
 
-This is a qualitative smoke benchmark, not a throughput benchmark. It runs eight bounded, human-readable thinking/tool-choice prompts against `Qwen/Qwen3-4B-JQ4` and writes JSONL rows with only:
+This is a qualitative smoke benchmark, not a throughput benchmark. It runs bounded, human-readable thinking/tool-choice prompts against `edwardcapriolo/Qwen3-4B-JQ4` and writes JSONL rows with only:
 
 - `pass`
 - `finish_reason`
@@ -76,7 +76,7 @@ DELIVERANCE_BENCHMARK_ARGS="--output-head-quantization Q4 --pool-size 16 --max-t
 ./benchmarks/run-qwen-single-benchmark.sh
 ```
 
-If you need to change owner/model, run `InferenceBenchmark` directly or adjust the script; the script currently hard-codes `--owner Qwen --model Qwen3-0.6B` before `DELIVERANCE_BENCHMARK_ARGS`.
+If you need to change owner/model, run `InferenceBenchmark` directly or adjust the script; the Qwen JQ4 scripts now default to the uploaded `edwardcapriolo/Qwen3-*-JQ4` repositories before `DELIVERANCE_BENCHMARK_ARGS`.
 
 ### Gemma2 Single-Model Benchmark
 
@@ -156,7 +156,7 @@ For anything beyond the script defaults, call the benchmark runner directly. Exa
 mvn -q -pl core \
   -Dexec.classpathScope=test \
   -Dexec.executable=java \
-  -Dexec.args="-Djava.library.path=native/target/native-lib-only/osx-aarch_64 --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.deliverance.benchmark.InferenceBenchmark --engine deliverance --owner Qwen --model Qwen3-4B-JQ4 --output-head-quantization Q4 --pool-size 16 --max-tokens 256 --warmup-cases 0 --profile-stages --output target/qwen3-4b-jq4.csv --jsonl-output target/qwen3-4b-jq4.jsonl" \
+  -Dexec.args="-Djava.library.path=native/target/native-lib-only/osx-aarch_64 --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.deliverance.benchmark.InferenceBenchmark --engine deliverance --owner edwardcapriolo --model Qwen3-4B-JQ4 --output-head-quantization Q4 --pool-size 16 --max-tokens 256 --warmup-cases 0 --profile-stages --output target/qwen3-4b-jq4.csv --jsonl-output target/qwen3-4b-jq4.jsonl" \
   org.codehaus.mojo:exec-maven-plugin:3.5.0:exec
 ```
 
@@ -169,8 +169,8 @@ The benchmark runner loads model names from the Deliverance cache. It does not c
 The practical QOD benchmark workflow is:
 
 1. Generate the QOD target once through a test or small harness using `withQuantizeOnDemand(...)`.
-2. Verify the generated cache directory exists, such as `~/.deliverance/Qwen_Qwen3-4B-JQ4`.
-3. Benchmark the generated model by passing `--owner Qwen --model Qwen3-4B-JQ4`.
+2. Verify the generated cache directory exists, such as `~/.deliverance/Qwen_Qwen3-4B-JQ4`, or use the uploaded `edwardcapriolo/Qwen3-4B-JQ4` repository.
+3. Benchmark the uploaded model by passing `--owner edwardcapriolo --model Qwen3-4B-JQ4`.
 4. Use `--output-head-quantization Q4` if you want load-time output-head Q4 too.
 5. Compare against dense or non-output-head runs with the same prompt suite and token limits.
 
@@ -199,7 +199,7 @@ JSONL output is for qualitative review. Each line records the prompt/request, re
 Each recorded turn prints a compact progress line like:
 
 ```text
-[deliverance] model=Qwen/Qwen3-0.6B-JQ4 case=builtin-reasoning-1 category=reasoning turn=2 prompt_tokens=405 generated=256 total_ms=13460.8 tok_s=24.62 finish=MAX_TOKENS
+[deliverance] model=edwardcapriolo/Qwen3-0.6B-JQ4 case=builtin-reasoning-1 category=reasoning turn=2 prompt_tokens=405 generated=256 total_ms=13460.8 tok_s=24.62 finish=MAX_TOKENS
 ```
 
 Read this as:
