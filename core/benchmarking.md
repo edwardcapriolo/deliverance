@@ -29,6 +29,22 @@ Most scripts accept extra benchmark arguments through `DELIVERANCE_BENCHMARK_ARG
 
 ## Main Scripts
 
+### Qwen Thinking Smoke Benchmark
+
+```sh
+./benchmarks/run-qwen-thinking-smoke-benchmark.sh
+```
+
+This is a qualitative smoke benchmark, not a throughput benchmark. It runs eight bounded, human-readable thinking/tool-choice prompts against `Qwen/Qwen3-4B-JQ4` and writes JSONL rows with only:
+
+- `pass`
+- `finish_reason`
+- `generated_tokens`
+- `time_ms`
+- `response`
+
+Use it after Qwen model/runtime changes to catch obvious regressions without hand-checking every prompt. Default output is `core/target/thinking-smoke-qwen3-4b-jq4.jsonl`.
+
 ### Qwen Single-Model Benchmark
 
 ```sh
