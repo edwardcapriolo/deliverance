@@ -1343,11 +1343,6 @@ void gemm_bf16_q4(int flags, const short *a, int aoffset, const float *bf, const
 #endif
 }
 
-#if !defined(__ARM_NEON__)
-  gemm()
-#else
-#endif
-
 void gemm_bf16_q4_batch(int flags, int batch_num, const short *a, int aoffset, const float **bf, const char **b, int boffset, float **r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf, int ldc)
 {
     for (int i = 0; i < batch_num; i++) {
