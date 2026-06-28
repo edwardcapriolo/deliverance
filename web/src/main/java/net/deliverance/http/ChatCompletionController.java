@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.teknek.deliverance.JsonUtils;
-import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.model.Error;
@@ -74,7 +73,9 @@ public class ChatCompletionController {
                 long mapStart = System.nanoTime();
                 Either<Error, PreparedRequest> bla = ChatCompletionService.mapRequest(headers, model, request);
                 debugElapsed("chat.map_request", mapStart);
+
                 if (bla.isLeft()) {
+
                     Left<Error, ?> l = (Left<Error, ?>) bla;
                     Error r = (Error) l.productIterator().next();
                     return new ResponseEntity<>(new ErrorResponse().error(r), HttpStatus.BAD_REQUEST);

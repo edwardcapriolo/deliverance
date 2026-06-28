@@ -1,0 +1,13 @@
+{
+  "baseUrl": "http://localhost:8085",
+  "model": "Qwen3-4B-JQ4",
+  "maxTokens": 512,
+  "maxToolResultChars": 2000,
+  "maxToolRounds": 3,
+  "temperature": 0.0,
+  "toolsEnabled": true,
+  "allowRiskyTools": false,
+  "streamEnabled": true,
+  "javaSandboxImage": "eclipse-temurin:25-jdk",
+  "enableThinking": true
+}
