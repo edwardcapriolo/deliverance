@@ -38,7 +38,7 @@ sh run-server-tinyllama-chat.sh
 ```
 
 Both scripts run the web jar from `../web/target` and default to `DELIVERANCE_PORT=8085`.
-The client scripts also default to `http://localhost:${DELIVERANCE_PORT:-8085}` unless `DELIVERANCE_BASE_URL` is set.
+The client scripts read their server URL and model settings from their JSON config files.
 
 ## Run The Client
 
@@ -56,33 +56,70 @@ sh run_tiny_llama_client.sh
 
 ## Configuration
 
-Environment variables:
-
-* `DELIVERANCE_BASE_URL`, default `http://localhost:8080`
-* `DELIVERANCE_MODEL`, default `default`
-* `NANOCODE_NTOKENS`, optional total prompt+generation token budget
-* `NANOCODE_MAX_TOKENS`, default `2048`
-* `NANOCODE_MAX_TOOL_RESULT_CHARS`, default `2000`
-* `NANOCODE_TEMPERATURE`, default `0.0`
-* `NANOCODE_TOOLS`, default `true`
-* `NANOCODE_STREAM`, default `true`
-* `NANOCODE_JAVA_SANDBOX_IMAGE`, default `eclipse-temurin:25-jdk`
-
-Flags:
+Nanocode uses one runtime switch:
 
 ```sh
---base-url http://localhost:8080
---model tjake/gemma-2-2b-it-JQ4
---max-tokens 4096
---max-tool-result-chars 2000
---temperature 0.0
---no-tools
---stream
---no-stream
---allow-risky-tools
+--config FILE
 ```
 
-`--allow-risky-tools` enables `bash`. Without it, shell execution is not advertised to the model and direct calls are rejected.
+Example:
+
+```sh
+java -jar target/nanocode-deliverance-0.0.10-SNAPSHOT-all.jar --config config-qwen3-4b-jq4.json
+```
+
+Config files are plain JSON:
+
+```json
+{
+  "baseUrl": "http://localhost:8085",
+  "model": "Qwen3-4B-JQ4",
+  "ntokens": null,
+  "maxTokens": 512,
+  "maxToolResultChars": 2000,
+  "maxToolRounds": 3,
+  "temperature": 0.0,
+  "toolsEnabled": true,
+  "allowRiskyTools": false,
+  "streamEnabled": true,
+  "javaSandboxImage": "eclipse-temurin:25-jdk",
+  "enableThinking": true
+}
+```
+
+Fields:
+
+* `baseUrl`: Deliverance server base URL.
+* `model`: model name to send to `/chat/completions`.
+* `ntokens`: optional total prompt+generation token budget; use `null` to omit.
+* `maxTokens`: max response tokens.
+* `maxToolResultChars`: max tool result chars kept in context.
+* `maxToolRounds`: max assistant tool-use rounds per user turn, default `3` in the sample configs.
+* `temperature`: sampling temperature.
+* `toolsEnabled`: whether to send tool definitions.
+* `allowRiskyTools`: enables `bash`; without it, shell execution is not advertised to the model and direct calls are rejected.
+* `streamEnabled`: use streaming chat completions.
+* `javaSandboxImage`: Testcontainers image for `java_sandbox`.
+* `enableThinking`: send `chat_template_kwargs.enable_thinking` to the server.
+
+During a REPL session, change mutable settings with `/config`:
+
+```text
+/config get rounds
+/config set rounds 3
+/config get thinking
+/config set thinking off
+```
+
+Checked-in client configs:
+
+```sh
+config-qwen3-4b-jq4.json
+config-llama32.json
+config-tinyllama.json
+```
+
+Each assistant response with one or more tool calls counts as one tool round. Nanocode stops the current user turn after `maxToolRounds` rounds and prints a warning, so small models can retry tool use but cannot loop forever.
 
 ## Java Sandbox Tool
 

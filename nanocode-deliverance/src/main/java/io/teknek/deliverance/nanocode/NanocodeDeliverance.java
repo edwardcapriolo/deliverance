@@ -60,14 +60,16 @@ public final class NanocodeDeliverance {
     private final ChatApi chatApi;
     private final OkHttpClient httpClient;
     private final ToolExecutor toolExecutor;
+    private final SessionConfig sessionConfig;
 
     public NanocodeDeliverance(Config config) {
-        this(config, NanocodeDeliverance::executeTool);
+        this(config, (name, args) -> runTool(name, args, config.allowRiskyTools, config.javaSandboxImage));
     }
 
     public NanocodeDeliverance(Config config, ToolExecutor toolExecutor) {
         this.config = config;
         this.toolExecutor = toolExecutor;
+        this.sessionConfig = new SessionConfig(config.maxToolRounds, config.enableThinking);
         ApiClient apiClient = new ApiClient();
         apiClient.setAdapterBuilder(new Retrofit.Builder()
                 .baseUrl(config.baseUrl + "/")
@@ -108,6 +110,9 @@ public final class NanocodeDeliverance {
         }
         if (!config.toolsEnabled) {
             System.out.println(DIM + "tools disabled" + RESET);
+        } else {
+            System.out.println(DIM + "config: { thinking=" + (sessionConfig.enableThinking ? "on" : "off")
+                    + ", rounds=" + sessionConfig.maxToolRounds + " } /config help" + RESET);
         }
 
         List<Map<String, Object>> messages = new ArrayList<>();
@@ -131,6 +136,9 @@ public final class NanocodeDeliverance {
                     System.out.println(GREEN + "cleared" + RESET);
                     continue;
                 }
+                if (handleConfigCommand(input)) {
+                    continue;
+                }
                 messages.add(message("user", input));
                 long turnStart = System.nanoTime();
                 try {
@@ -144,7 +152,83 @@ public final class NanocodeDeliverance {
         }
     }
 
+    boolean handleConfigCommand(String input) {
+        if (!input.startsWith("/config")) {
+            return false;
+        }
+        String[] parts = input.split("\\s+");
+        if (parts.length == 1 || (parts.length == 2 && "help".equals(parts[1]))) {
+            printConfigHelp();
+            return true;
+        }
+        if (parts.length == 3 && "get".equals(parts[1])) {
+            printConfigValue(parts[2]);
+            return true;
+        }
+        if (parts.length == 4 && "set".equals(parts[1])) {
+            setConfigValue(parts[2], parts[3]);
+            return true;
+        }
+        System.out.println(RED + "usage: /config get <rounds|thinking> or /config set <rounds|thinking> <value>" + RESET);
+        return true;
+    }
+
+    private void printConfigValue(String key) {
+        switch (key) {
+            case "rounds" -> System.out.println(GREEN + "rounds=" + sessionConfig.maxToolRounds + RESET);
+            case "thinking" -> System.out.println(GREEN + "thinking=" + (sessionConfig.enableThinking ? "on" : "off") + RESET);
+            default -> System.out.println(RED + "unknown config key: " + key + RESET);
+        }
+    }
+
+    private void setConfigValue(String key, String value) {
+        switch (key) {
+            case "rounds" -> {
+                int rounds;
+                try {
+                    rounds = Integer.parseInt(value);
+                } catch (NumberFormatException e) {
+                    System.out.println(RED + "rounds must be an integer" + RESET);
+                    return;
+                }
+                if (rounds < 1) {
+                    System.out.println(RED + "rounds must be >= 1" + RESET);
+                    return;
+                }
+                sessionConfig.maxToolRounds = rounds;
+                System.out.println(GREEN + "rounds=" + rounds + RESET);
+            }
+            case "thinking" -> {
+                Boolean parsed = parseOnOff(value);
+                if (parsed == null) {
+                    System.out.println(RED + "thinking must be on/off or true/false" + RESET);
+                    return;
+                }
+                sessionConfig.enableThinking = parsed;
+                System.out.println(GREEN + "thinking=" + (parsed ? "on" : "off") + RESET);
+            }
+            default -> System.out.println(RED + "unknown config key: " + key + RESET);
+        }
+    }
+
+    private static Boolean parseOnOff(String value) {
+        return switch (value.toLowerCase(Locale.ROOT)) {
+            case "on", "true", "yes", "1" -> true;
+            case "off", "false", "no", "0" -> false;
+            default -> null;
+        };
+    }
+
+    private static void printConfigHelp() {
+        System.out.println(DIM + "config commands:" + RESET);
+        System.out.println(DIM + "  /config get rounds" + RESET);
+        System.out.println(DIM + "  /config set rounds 3" + RESET);
+        System.out.println(DIM + "  /config get thinking" + RESET);
+        System.out.println(DIM + "  /config set thinking off" + RESET);
+    }
+
     public void runConversationTurn(List<Map<String, Object>> messages, String cwd) throws Exception {
+        int toolRound = 0;
         while (true) {
             CreateChatCompletionResponse response = chat(messages, cwd);
             if (response.getChoices() == null || response.getChoices().isEmpty()) {
@@ -165,6 +249,13 @@ public final class NanocodeDeliverance {
             if (toolCalls == null || toolCalls.isEmpty()) {
                 return;
             }
+            toolRound++;
+            if (toolRound > sessionConfig.maxToolRounds) {
+                System.out.println(RED + "stopped: reached max tool rounds " + sessionConfig.maxToolRounds
+                        + ". The model may be stuck; rephrase, give a more specific path, or /c to clear context." + RESET);
+                return;
+            }
+            System.out.println(DIM + "tool round " + toolRound + "/" + sessionConfig.maxToolRounds + RESET);
             for (ChatCompletionMessageToolCall toolCall : toolCalls) {
                 String id = toolCall.getId();
                 String name = toolCall.getFunction().getName();
@@ -192,6 +283,7 @@ public final class NanocodeDeliverance {
                 .maxTokens(config.maxTokens)
                 .temperature(BigDecimal.valueOf(config.temperature))
                 .messages((List) withSystemMessage(messages, cwd))
+                .chatTemplateKwargs(Map.of("enable_thinking", sessionConfig.enableThinking))
                 .parallelToolCalls(false);
         if (config.ntokens != null) {
             request.ntokens(config.ntokens);
@@ -214,6 +306,8 @@ public final class NanocodeDeliverance {
         request.put("temperature", config.temperature);
         request.put("parallel_tool_calls", false);
         request.put("stream", true);
+        ObjectNode chatTemplateKwargs = request.putObject("chat_template_kwargs");
+        chatTemplateKwargs.put("enable_thinking", sessionConfig.enableThinking);
         if (config.ntokens != null) {
             request.put("ntokens", config.ntokens);
         }
@@ -379,10 +473,10 @@ public final class NanocodeDeliverance {
     }
 
     public static String executeTool(String name, JsonNode args) {
-        return runTool(name, args, false);
+        return runTool(name, args, false, null);
     }
 
-    private static String runTool(String name, JsonNode args, boolean allowRiskyTools) {
+    private static String runTool(String name, JsonNode args, boolean allowRiskyTools, String javaSandboxImage) {
         try {
             return switch (name) {
                 case "read" -> toolRead(args);
@@ -390,8 +484,8 @@ public final class NanocodeDeliverance {
                 case "edit" -> toolEdit(args);
                 case "glob" -> toolGlob(args);
                 case "grep" -> toolGrep(args);
-                case "java_sandbox" -> JavaSandboxTool.run(args);
-                case "bash" -> allowRiskyTools ? toolBash(args) : "error: bash disabled; restart with --allow-risky-tools";
+                case "java_sandbox" -> JavaSandboxTool.run(args, javaSandboxImage);
+                case "bash" -> allowRiskyTools ? toolBash(args) : "error: bash disabled; set allowRiskyTools=true in the config file";
                 default -> "error: unknown tool " + name;
             };
         } catch (Exception e) {
@@ -587,46 +681,30 @@ public final class NanocodeDeliverance {
     }
 
     public record Config(String baseUrl, String model, Integer ntokens, int maxTokens, int maxToolResultChars,
-            double temperature, boolean toolsEnabled, boolean allowRiskyTools, boolean streamEnabled, boolean help) {
+            int maxToolRounds, double temperature, boolean toolsEnabled, boolean allowRiskyTools, boolean streamEnabled,
+            String javaSandboxImage, boolean enableThinking, boolean help) {
         static Config parse(String[] args) {
-            String baseUrl = env("DELIVERANCE_BASE_URL", "http://localhost:8080");
-            String model = env("DELIVERANCE_MODEL", "default");
-            Integer ntokens = optionalIntEnv("NANOCODE_NTOKENS");
-            int maxTokens = Integer.parseInt(env("NANOCODE_MAX_TOKENS", "2048"));
-            int maxToolResultChars = Integer.parseInt(env("NANOCODE_MAX_TOOL_RESULT_CHARS", "2000"));
-            double temperature = Double.parseDouble(env("NANOCODE_TEMPERATURE", "0.0"));
-            boolean toolsEnabled = Boolean.parseBoolean(env("NANOCODE_TOOLS", "true"));
-            boolean allowRiskyTools = Boolean.parseBoolean(env("NANOCODE_ALLOW_RISKY_TOOLS", "false"));
-            boolean streamEnabled = Boolean.parseBoolean(env("NANOCODE_STREAM", "true"));
-            boolean help = false;
-            for (int i = 0; i < args.length; i++) {
-                switch (args[i]) {
-                    case "--base-url" -> baseUrl = args[++i];
-                    case "--model" -> model = args[++i];
-                    case "--ntokens" -> ntokens = Integer.parseInt(args[++i]);
-                    case "--max-tokens" -> maxTokens = Integer.parseInt(args[++i]);
-                    case "--max-tool-result-chars" -> maxToolResultChars = Integer.parseInt(args[++i]);
-                    case "--temperature" -> temperature = Double.parseDouble(args[++i]);
-                    case "--no-tools" -> toolsEnabled = false;
-                    case "--tools" -> toolsEnabled = true;
-                    case "--allow-risky-tools" -> allowRiskyTools = true;
-                    case "--stream" -> streamEnabled = true;
-                    case "--no-stream" -> streamEnabled = false;
-                    case "--help", "-h" -> help = true;
-                    default -> throw new IllegalArgumentException("unknown argument: " + args[i]);
-                }
+            if (args.length == 1 && ("--help".equals(args[0]) || "-h".equals(args[0]))) {
+                return new Config("", "", null, 0, 0, 1, 0.0d, true, false, true, null, true, true);
             }
-            return new Config(stripTrailingSlash(baseUrl), model, ntokens, maxTokens, maxToolResultChars,
-                    temperature, toolsEnabled, allowRiskyTools, streamEnabled, help);
+            if (args.length != 2 || !"--config".equals(args[0])) {
+                throw new IllegalArgumentException("expected: --config <file>");
+            }
+            return fromJson(Path.of(args[1]));
         }
 
-        private static String env(String name, String defaultValue) {
-            return Optional.ofNullable(System.getenv(name)).orElse(defaultValue);
-        }
-
-        private static Integer optionalIntEnv(String name) {
-            String value = System.getenv(name);
-            return value == null || value.isBlank() ? null : Integer.parseInt(value);
+        public static Config fromJson(Path path) {
+            try {
+                ConfigFile file = JSON.readValue(path.toFile(), ConfigFile.class);
+                if (file.maxToolRounds < 1) {
+                    throw new IllegalArgumentException("maxToolRounds must be >= 1");
+                }
+                return new Config(stripTrailingSlash(file.baseUrl), file.model, file.ntokens, file.maxTokens,
+                        file.maxToolResultChars, file.maxToolRounds, file.temperature, file.toolsEnabled,
+                        file.allowRiskyTools, file.streamEnabled, file.javaSandboxImage, file.enableThinking, false);
+            } catch (IOException e) {
+                throw new IllegalArgumentException("could not read nanocode config " + path + ": " + e.getMessage(), e);
+            }
         }
 
         private static String stripTrailingSlash(String value) {
@@ -641,19 +719,39 @@ public final class NanocodeDeliverance {
                     nanocode-deliverance
 
                     Options:
-                      --base-url URL          Deliverance base URL, default http://localhost:8080
-                      --model MODEL           Model name, default DELIVERANCE_MODEL or default
-                      --ntokens N             Optional total prompt+generation token budget; defaults to model context
-                      --max-tokens N          Max response tokens, default 2048
-                      --max-tool-result-chars N Max tool result chars kept in context, default 2000
-                      --temperature VALUE     Temperature, default 0.0
-                      --no-tools              Do not send tool definitions
-                      --tools                 Send tool definitions
-                      --allow-risky-tools     Enable risky/eval-prone bash tool
-                      --stream                Stream assistant text deltas, default
-                      --no-stream             Use non-streaming JSON response path
+                      --config FILE           JSON config file
                       --help                  Print this help
+
+                    Config fields:
+                      baseUrl, model, ntokens, maxTokens, maxToolResultChars,
+                      maxToolRounds, temperature, toolsEnabled, allowRiskyTools,
+                      streamEnabled, javaSandboxImage, enableThinking
                     """);
+        }
+
+        private static class ConfigFile {
+            public String baseUrl = "http://localhost:8080";
+            public String model = "default";
+            public Integer ntokens;
+            public int maxTokens = 2048;
+            public int maxToolResultChars = 2000;
+            public int maxToolRounds = 3;
+            public double temperature = 0.0d;
+            public boolean toolsEnabled = true;
+            public boolean allowRiskyTools = false;
+            public boolean streamEnabled = true;
+            public String javaSandboxImage = "eclipse-temurin:25-jdk";
+            public boolean enableThinking = true;
+        }
+    }
+
+    private static final class SessionConfig {
+        private int maxToolRounds;
+        private boolean enableThinking;
+
+        private SessionConfig(int maxToolRounds, boolean enableThinking) {
+            this.maxToolRounds = maxToolRounds;
+            this.enableThinking = enableThinking;
         }
     }
 }

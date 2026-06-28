@@ -1,0 +1,13 @@
+{
+  "baseUrl": "http://localhost:8085",
+  "model": "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4",
+  "maxTokens": 200,
+  "maxToolResultChars": 2000,
+  "maxToolRounds": 3,
+  "temperature": 0.0,
+  "toolsEnabled": false,
+  "allowRiskyTools": false,
+  "streamEnabled": true,
+  "javaSandboxImage": "eclipse-temurin:25-jdk",
+  "enableThinking": true
+}

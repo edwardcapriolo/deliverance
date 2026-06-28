@@ -70,9 +70,12 @@ class NanocodeStreamingE2ETest {
                 null,
                 256,
                 2000,
+                3,
                 0.0d,
                 true,
                 false,
+                true,
+                "eclipse-temurin:25-jdk",
                 true,
                 false), toolExecutor);
         List<Map<String, Object>> messages = new ArrayList<>();

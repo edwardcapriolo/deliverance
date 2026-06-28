@@ -24,7 +24,11 @@ final class JavaSandboxTool {
     }
 
     static String run(JsonNode args) throws Exception {
-        String image = env("NANOCODE_JAVA_SANDBOX_IMAGE", DEFAULT_IMAGE);
+        return run(args, DEFAULT_IMAGE);
+    }
+
+    static String run(JsonNode args, String image) throws Exception {
+        image = image == null || image.isBlank() ? DEFAULT_IMAGE : image;
         int timeoutSeconds = clamp(args.path("timeoutSeconds").asInt(DEFAULT_TIMEOUT_SECONDS), 1, MAX_TIMEOUT_SECONDS);
         int maxOutputChars = Math.max(1, args.path("maxOutputChars").asInt(DEFAULT_MAX_OUTPUT_CHARS));
         String mode = args.path("mode").asText("single-file");
@@ -109,11 +113,6 @@ final class JavaSandboxTool {
             return value == null ? "" : value;
         }
         return value.substring(0, max) + "\n... (truncated, " + (value.length() - max) + " chars omitted)";
-    }
-
-    private static String env(String name, String defaultValue) {
-        String value = System.getenv(name);
-        return value == null || value.isBlank() ? defaultValue : value;
     }
 
     record Command(String value) {
