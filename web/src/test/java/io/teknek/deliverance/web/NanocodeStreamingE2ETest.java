@@ -1,4 +1,4 @@
-package net.deliverance.http;
+package io.teknek.deliverance.web;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.teknek.deliverance.JsonUtils;
@@ -10,6 +10,8 @@ import io.teknek.deliverance.nanocode.NanocodeDeliverance;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.toolcallparser.QwenToolCallParser;
+import net.deliverance.http.DeliveranceApplication;
+import net.deliverance.http.MultiModelConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
