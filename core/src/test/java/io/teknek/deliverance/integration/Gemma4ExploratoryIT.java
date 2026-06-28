@@ -43,7 +43,10 @@ public class Gemma4ExploratoryIT {
 
     @Test
     public void checkpointQuantizationLayout() throws Exception {
-        File modelRoot = new ModelFetcher("edward", "gemma-4-E2B-it-JQ4").maybeDownload();
+        ModelFetcher fetch = new ModelFetcher("edward", "gemma-4-E2B-it-JQ4");
+        Assumptions.assumeTrue(fetch.pathForModel().toFile().isDirectory(),
+                "Quantized Gemma4 cache is not present: " + fetch.pathForModel());
+        File modelRoot = fetch.pathForModel().toFile();
         EnumMap<DType, Integer> counts = new EnumMap<>(DType.class);
         List<String> q4Samples = new ArrayList<>();
         for (File file : modelRoot.listFiles((dir, name) -> name.endsWith(".safetensors"))) {
@@ -409,6 +412,8 @@ public class Gemma4ExploratoryIT {
     @Test
     public void panamaF32GenerationShortOutput() {
         ModelFetcher fetch = new ModelFetcher("edward", "gemma-4-E2B-it-JQ4");
+        Assumptions.assumeTrue(fetch.pathForModel().toFile().isDirectory(),
+                "Quantized Gemma4 cache is not present: " + fetch.pathForModel());
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
              AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
                      .withWorkingQuantType(DType.F32)

@@ -71,7 +71,7 @@ public class ModelFetcherTest {
 
     @Test
     void localFullModelDirectoryCanBeUsedOffline() throws Exception {
-        ModelFetcher fetch = new ModelFetcher("edward", "gemma-4-E2B-it-JQ4");
+        ModelFetcher fetch = new ModelFetcher("local", "full-model-JQ4");
         Path temp = Files.createTempDirectory("fetcher-local-model");
         Files.writeString(temp.resolve("config.json"), "{}");
         Files.writeString(temp.resolve("tokenizer.json"), "{}");

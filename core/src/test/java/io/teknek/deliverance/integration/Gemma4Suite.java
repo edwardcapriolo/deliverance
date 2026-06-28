@@ -5,6 +5,7 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.platform.suite.api.AfterSuite;
 import org.junit.platform.suite.api.BeforeSuite;
 import org.junit.platform.suite.api.SelectClasses;
@@ -20,6 +21,8 @@ public class Gemma4Suite {
         if (model == null) {
             //ModelFetcher fetch = new ModelFetcher("google", "gemma-4-E2B-it");
             ModelFetcher fetch = new ModelFetcher("edward", "gemma-4-E2B-it-JQ4");
+            Assumptions.assumeTrue(fetch.pathForModel().toFile().isDirectory(),
+                    "Quantized Gemma4 cache is not present: " + fetch.pathForModel());
 
             builder = AutoModelForCausaLm.newBuilder(fetch);
             //builder.withTensorProvider(new ConfigurableTensorProvider(builder.getAllocator(),
