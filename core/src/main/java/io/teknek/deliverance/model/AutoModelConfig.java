@@ -7,6 +7,7 @@ import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -48,12 +49,18 @@ public record AutoModelConfig(
             Optional<Integer> maxEntries,
             Optional<Integer> blockSize,
             Optional<Integer> maxPrefixTokensPerPrompt,
+            Optional<KvBufferCacheSettings.PrefixCheckpointPolicy> prefixCheckpointPolicy,
+            Optional<Integer> maxPrefixCheckpointsPerPrompt,
+            Optional<List<Integer>> prefixCheckpointAnchors,
             Optional<Integer> contextRowsPerPageTarget) {
 
         public KvBufferCache {
             maxEntries = maxEntries == null ? Optional.empty() : maxEntries;
             blockSize = blockSize == null ? Optional.empty() : blockSize;
             maxPrefixTokensPerPrompt = maxPrefixTokensPerPrompt == null ? Optional.empty() : maxPrefixTokensPerPrompt;
+            prefixCheckpointPolicy = prefixCheckpointPolicy == null ? Optional.empty() : prefixCheckpointPolicy;
+            maxPrefixCheckpointsPerPrompt = maxPrefixCheckpointsPerPrompt == null ? Optional.empty() : maxPrefixCheckpointsPerPrompt;
+            prefixCheckpointAnchors = prefixCheckpointAnchors == null ? Optional.empty() : prefixCheckpointAnchors;
             contextRowsPerPageTarget = contextRowsPerPageTarget == null ? Optional.empty() : contextRowsPerPageTarget;
         }
 
@@ -62,6 +69,9 @@ public record AutoModelConfig(
             maxEntries.ifPresent(settings::setMaxEntries);
             blockSize.ifPresent(settings::setBlockSize);
             maxPrefixTokensPerPrompt.ifPresent(settings::setMaxPrefixTokensPerPrompt);
+            prefixCheckpointPolicy.ifPresent(settings::setPrefixCheckpointPolicy);
+            maxPrefixCheckpointsPerPrompt.ifPresent(settings::setMaxPrefixCheckpointsPerPrompt);
+            prefixCheckpointAnchors.ifPresent(settings::setPrefixCheckpointAnchors);
             contextRowsPerPageTarget.ifPresent(settings::setContextRowsPerPageTarget);
             return settings;
         }

@@ -40,7 +40,7 @@ java \
   -Djava.library.path="$NATIVE_LIB_DIR" \
   -Dserver.port=${DELIVERANCE_PORT:-8085} \
   ${DELIVERANCE_KV_DISK_DIR:+-Ddeliverance.kv.disk-dir=$DELIVERANCE_KV_DISK_DIR} \
-  -Ddeliverance.debug.chat-request=${DELIVERANCE_DEBUG_CHAT_REQUEST:-false} \
+  -Ddeliverance.debug.chat-request=${DELIVERANCE_DEBUG_CHAT_REQUEST:-true} \
   -Ddebug=${DELIVERANCE_SPRING_DEBUG:-false} \
   -Dlogging.level.root=${DELIVERANCE_ROOT_LOG_LEVEL:-INFO} \
   -Dlogging.level.net.deliverance.http=${DELIVERANCE_HTTP_LOG_LEVEL:-INFO} \

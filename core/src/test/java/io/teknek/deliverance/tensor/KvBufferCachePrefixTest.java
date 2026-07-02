@@ -51,7 +51,10 @@ public class KvBufferCachePrefixTest {
 
     @Test
     public void testExactPrefixHit() {
-        KvBufferCacheSettings settings = new KvBufferCacheSettings(true).withMaxEntries(512).withBlockSize(4);
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withMaxEntries(512)
+                .withBlockSize(4)
+                .withPrefixCheckpointPolicy(KvBufferCacheSettings.PrefixCheckpointPolicy.FIXED_BLOCKS);
         KvBufferCache cache = new KvBufferCache(mockModel(), settings);
         int[] tokens = {1, 2, 3, 4, 5, 6, 7, 8, 9};
         KvBufferCache.KvBuffer buf = cache.getEphemeralKvBuffer();
@@ -79,7 +82,10 @@ public class KvBufferCachePrefixTest {
 
     @Test
     public void testSaltyDisabled() {
-        KvBufferCacheSettings settings = new KvBufferCacheSettings(true).withMaxEntries(10).withBlockSize(4);
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withMaxEntries(10)
+                .withBlockSize(4)
+                .withPrefixCheckpointPolicy(KvBufferCacheSettings.PrefixCheckpointPolicy.FIXED_BLOCKS);
         KvBufferCache cache = new KvBufferCache(mockModel(), settings);
         int[] tokens = {1, 2, 3, 4, 5, 6, 7, 8, 9};
         KvBufferCache.KvBuffer buf = cache.getEphemeralKvBuffer();
@@ -149,7 +155,10 @@ public class KvBufferCachePrefixTest {
     @Test
     public void storeLookupAndCopyPrefixPreservesKeysAndValues() {
         int expectedPrefixLength = 8;
-        KvBufferCacheSettings settings = new KvBufferCacheSettings(true).withMaxEntries(512).withBlockSize(4);
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withMaxEntries(512)
+                .withBlockSize(4)
+                .withPrefixCheckpointPolicy(KvBufferCacheSettings.PrefixCheckpointPolicy.FIXED_BLOCKS);
         AbstractModel model = mockModel();
         KvBufferCache cache = new KvBufferCache(model, settings);
         int[] tokens = {1, 2, 3, 4, 5, 6, 7, 8, 9};
@@ -167,6 +176,66 @@ public class KvBufferCachePrefixTest {
             cache.copyPrefix(hit.buffer(), copied, hit.length());
             assertKvPrefixEquals(source, copied, model.getConfig(), hit.length());
         }
+    }
+
+    @Test
+    public void anchorsAndLargestPolicyKeepsSmallAnchorsAndLargestAlignedPrefix() {
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withBlockSize(4)
+                .withMaxPrefixTokensPerPrompt(1000)
+                .withMaxPrefixCheckpointsPerPrompt(4)
+                .withPrefixCheckpointAnchors(List.of(4, 8, 12));
+        KvBufferCache cache = new KvBufferCache(mockModel(), settings);
+
+        assertEquals(List.of(4, 8, 12, 32), cache.checkpointLengths(35));
+    }
+
+    @Test
+    public void anchorsAndLargestPolicyKeepsLargestWhenAnchorsExceedLimit() {
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withBlockSize(4)
+                .withMaxPrefixCheckpointsPerPrompt(3)
+                .withPrefixCheckpointAnchors(List.of(4, 8, 12, 16));
+        KvBufferCache cache = new KvBufferCache(mockModel(), settings);
+
+        assertEquals(List.of(4, 8, 32), cache.checkpointLengths(35));
+    }
+
+    @Test
+    public void defaultPolicyStoresLargestInsteadOfEveryBlock() {
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withMaxEntries(512)
+                .withBlockSize(4)
+                .withPrefixCheckpointAnchors(List.of(4, 8, 12))
+                .withMaxPrefixCheckpointsPerPrompt(4);
+        KvBufferCache cache = new KvBufferCache(mockModel(), settings);
+        int[] tokens = {1, 2, 3, 4, 5, 6, 7, 8, 9};
+        KvBufferCache.KvBuffer buf = cache.getEphemeralKvBuffer();
+
+        cache.storePrefix(tokens, buf, Optional.empty());
+
+        assertEquals(2, cache.prefixCache.size());
+        assertEquals(8, cache.lookupPrefix(tokens, Optional.empty()).length());
+    }
+
+    @Test
+    public void lookupUsesSameMaxPrefixCapAsStore() {
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withMaxEntries(512)
+                .withBlockSize(4)
+                .withMaxPrefixTokensPerPrompt(16)
+                .withPrefixCheckpointAnchors(List.of(4, 8));
+        KvBufferCache cache = new KvBufferCache(mockModel(), settings);
+        int[] tokens = new int[40];
+        for (int i = 0; i < tokens.length; i++) {
+            tokens[i] = i + 1;
+        }
+        KvBufferCache.KvBuffer buf = cache.getEphemeralKvBuffer();
+
+        cache.storePrefix(tokens, buf, Optional.empty());
+
+        assertEquals(List.of(4, 8, 16), cache.checkpointLengths(16));
+        assertEquals(16, cache.lookupPrefix(tokens, Optional.empty()).length());
     }
 
     private static int fillVisibleRows(AbstractTensor packed, AbstractTensor[] pages, int position, int windowStart, int rowWidth) {
