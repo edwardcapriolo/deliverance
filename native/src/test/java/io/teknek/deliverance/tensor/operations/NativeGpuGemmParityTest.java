@@ -38,6 +38,37 @@ public class NativeGpuGemmParityTest {
         }
     }
 
+    @ParameterizedTest(name = "{0} offset {1} batch={2} rows={3} k={4} aOffset={5} bOffset={6} rOffset={7} bRowOffset={8} chunk={9}")
+    @MethodSource("providerOffsetGemmCases")
+    public void gemmOffsetAndTailPathsMatchPanamaBaseline(String providerName, TensorOperations ops,
+            String name, int batchSize, int rows, int k, int aColumnOffset, int bColumnOffset,
+            int rRowOffset, int bRowOffset, int rowChunkSize, DType inputType, DType weightType, float tolerance) {
+        int inputCols = alignToBlock(aColumnOffset + k);
+        int weightCols = alignToBlock(bColumnOffset + k);
+        int resultCols = bRowOffset + rowChunkSize + rRowOffset;
+        TensorOperations panama = panama();
+        try (FloatBufferTensor denseInput = deterministicInput(batchSize, inputCols);
+             FloatBufferTensor denseWeight = deterministicWeight(rows, weightCols);
+             AbstractTensor input = convertInput(denseInput, inputType);
+             AbstractTensor weight = convertWeight(denseWeight, weightType);
+             FloatBufferTensor reference = new FloatBufferTensor(batchSize, resultCols);
+             FloatBufferTensor expected = new FloatBufferTensor(batchSize, resultCols);
+             FloatBufferTensor actual = new FloatBufferTensor(batchSize, resultCols)) {
+
+            new NaiveTensorOperations().batchDotProduct(reference, input, weight, aColumnOffset, bColumnOffset, k,
+                    rRowOffset, bRowOffset, rowChunkSize);
+            panama.registerModelTensor(weight);
+            panama.batchDotProduct(expected, input, weight, aColumnOffset, bColumnOffset, k,
+                    rRowOffset, bRowOffset, rowChunkSize);
+            assertTensorClose(reference, expected, tolerance, "panama baseline " + name);
+
+            ops.registerModelTensor(weight);
+            ops.batchDotProduct(actual, input, weight, aColumnOffset, bColumnOffset, k,
+                    rRowOffset, bRowOffset, rowChunkSize);
+            assertTensorClose(expected, actual, tolerance, providerName + " " + name);
+        }
+    }
+
     private static Stream<Arguments> providerGemmCases() {
         return providers().flatMap(provider -> Stream.of(
                 Arguments.of("f32xf32", 3, 1_024, 128, DType.F32, DType.F32, 0.0001f),
@@ -45,6 +76,15 @@ public class NativeGpuGemmParityTest {
                 Arguments.of("f32xq4", 3, 1_024, 128, DType.F32, DType.Q4, 0.08f),
                 Arguments.of("i8xq4-m1", 1, 1_024, 128, DType.I8, DType.Q4, 0.20f),
                 Arguments.of("i8xq4", 3, 1_024, 128, DType.I8, DType.Q4, 0.20f)
+        ).map(testCase -> prependProvider(provider, testCase)));
+    }
+
+    private static Stream<Arguments> providerOffsetGemmCases() {
+        return providers().flatMap(provider -> Stream.of(
+                Arguments.of("f32xf32-offset-tail", 3, 37, 127, 3, 5, 11, 7, 19, DType.F32, DType.F32, 0.0001f),
+                Arguments.of("f32xbf16-offset-tail", 2, 41, 95, 1, 9, 17, 13, 17, DType.F32, DType.BF16, 0.04f),
+                Arguments.of("f32xq4-offset-tail", 3, 43, 127, 5, 3, 12, 9, 23, DType.F32, DType.Q4, 0.08f),
+                Arguments.of("i8xq4-offset-tail", 2, 39, 96, 7, 11, 14, 8, 21, DType.I8, DType.Q4, 0.20f)
         ).map(testCase -> prependProvider(provider, testCase)));
     }
 
@@ -59,6 +99,12 @@ public class NativeGpuGemmParityTest {
                 simd(panama).map(ops -> Arguments.of("simd", ops)),
                 gpu().map(ops -> Arguments.of("gpu", ops))
         ).flatMap(Optional::stream);
+    }
+
+    private static TensorOperations panama() {
+        return new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
+                new ArrayQueueTensorAllocator(new MetricRegistry()),
+                new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores()));
     }
 
     private static Optional<TensorOperations> simd(TensorOperations fallback) {
@@ -101,6 +147,11 @@ public class NativeGpuGemmParityTest {
             return new BFloat16BufferTensor(weight);
         }
         return AbstractTensorUtils.quantize(weight, weightType, true);
+    }
+
+    private static int alignToBlock(int value) {
+        int block = 32;
+        return ((value + block - 1) / block) * block;
     }
 
     private static FloatBufferTensor deterministicInput(int rows, int cols) {

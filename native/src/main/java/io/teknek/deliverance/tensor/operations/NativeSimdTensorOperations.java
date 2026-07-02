@@ -88,6 +88,14 @@ public class NativeSimdTensorOperations implements TensorOperations {
 
         int adjBRowOffset = bRowOffset - bt.shape().sparseRowOffset();
 
+        // Native kernels are fast only for shapes they can cover without reading past a vector/quantization block.
+        // Delegate valid tail/offset cases to the Java provider so correctness does not depend on caller alignment.
+        if (!optimizedBatchDotProductSupports(at, bt, aColumnOffset, bColumnOffset, columnLength)) {
+            delegate.batchDotProduct(result, at, bt, aColumnOffset, bColumnOffset, columnLength,
+                    rRowOffset, bRowOffset, rowChunkSize);
+            return;
+        }
+
         switch (at.dType()) {
             case BF16:
                 switch (bt.dType()) {
@@ -232,6 +240,16 @@ public class NativeSimdTensorOperations implements TensorOperations {
             default:
                 throw new UnsupportedOperationException(at.dType().name());
         }
+    }
+
+    private boolean optimizedBatchDotProductSupports(AbstractTensor a, AbstractTensor b,
+            int aColumnOffset, int bColumnOffset, int columnLength) {
+        if (a.dType() == DType.I8 || a.dType() == DType.Q4 || b.dType() == DType.I8 || b.dType() == DType.Q4) {
+            return aColumnOffset % Q8ByteBufferTensor.BLOCK_SIZE == 0
+                    && bColumnOffset % Q8ByteBufferTensor.BLOCK_SIZE == 0
+                    && columnLength % Q8ByteBufferTensor.BLOCK_SIZE == 0;
+        }
+        return columnLength % 4 == 0;
     }
 
     @Override
