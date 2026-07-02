@@ -69,6 +69,48 @@ public class NativeGpuGemmParityTest {
         }
     }
 
+    @ParameterizedTest(name = "{0} batchChunk {1} batch={2} rows={3} k={4} offset={5} chunkStart={6} chunk={7}")
+    @MethodSource("providerBatchChunkCases")
+    public void dotProductBatchChunkOffsetAndTailPathsMatchPanamaBaseline(String providerName, TensorOperations ops,
+            String name, int batchSize, int rows, int k, int columnOffset, int chunkStart, int chunkSize,
+            DType inputType, DType weightType, float tolerance) {
+        int cols = alignToBlock(columnOffset + k);
+        int resultCols = chunkStart + chunkSize;
+        TensorOperations panama = panama();
+        try (FloatBufferTensor denseInput = deterministicInput(batchSize, cols);
+             FloatBufferTensor denseWeight0 = deterministicWeight(rows, cols);
+             FloatBufferTensor denseWeight1 = deterministicWeightVariant(rows, cols);
+             AbstractTensor input = convertInput(denseInput, inputType);
+             AbstractTensor weight0 = convertWeight(denseWeight0, weightType);
+             AbstractTensor weight1 = convertWeight(denseWeight1, weightType);
+             FloatBufferTensor reference0 = new FloatBufferTensor(batchSize, resultCols);
+             FloatBufferTensor reference1 = new FloatBufferTensor(batchSize, resultCols);
+             FloatBufferTensor expected0 = new FloatBufferTensor(batchSize, resultCols);
+             FloatBufferTensor expected1 = new FloatBufferTensor(batchSize, resultCols);
+             FloatBufferTensor actual0 = new FloatBufferTensor(batchSize, resultCols);
+             FloatBufferTensor actual1 = new FloatBufferTensor(batchSize, resultCols)) {
+
+            new NaiveTensorOperations().batchDotProduct(reference0, input, weight0, columnOffset, columnOffset, k,
+                    0, chunkStart, chunkSize);
+            new NaiveTensorOperations().batchDotProduct(reference1, input, weight1, columnOffset, columnOffset, k,
+                    0, chunkStart, chunkSize);
+
+            panama.registerModelTensor(weight0);
+            panama.registerModelTensor(weight1);
+            panama.dotProductBatchChunk(new AbstractTensor[]{expected0, expected1}, input,
+                    new AbstractTensor[]{weight0, weight1}, columnOffset, k, chunkStart, chunkSize);
+            assertTensorClose(reference0, expected0, tolerance, "panama batchChunk " + name + " weight0");
+            assertTensorClose(reference1, expected1, tolerance, "panama batchChunk " + name + " weight1");
+
+            ops.registerModelTensor(weight0);
+            ops.registerModelTensor(weight1);
+            ops.dotProductBatchChunk(new AbstractTensor[]{actual0, actual1}, input,
+                    new AbstractTensor[]{weight0, weight1}, columnOffset, k, chunkStart, chunkSize);
+            assertTensorClose(expected0, actual0, tolerance, providerName + " batchChunk " + name + " weight0");
+            assertTensorClose(expected1, actual1, tolerance, providerName + " batchChunk " + name + " weight1");
+        }
+    }
+
     private static Stream<Arguments> providerGemmCases() {
         return providers().flatMap(provider -> Stream.of(
                 Arguments.of("f32xf32", 3, 1_024, 128, DType.F32, DType.F32, 0.0001f),
@@ -85,6 +127,14 @@ public class NativeGpuGemmParityTest {
                 Arguments.of("f32xbf16-offset-tail", 2, 41, 95, 1, 9, 17, 13, 17, DType.F32, DType.BF16, 0.04f),
                 Arguments.of("f32xq4-offset-tail", 3, 43, 127, 5, 3, 12, 9, 23, DType.F32, DType.Q4, 0.08f),
                 Arguments.of("i8xq4-offset-tail", 2, 39, 96, 7, 11, 14, 8, 21, DType.I8, DType.Q4, 0.20f)
+        ).map(testCase -> prependProvider(provider, testCase)));
+    }
+
+    private static Stream<Arguments> providerBatchChunkCases() {
+        return providers().flatMap(provider -> Stream.of(
+                Arguments.of("f32xf32-batchchunk-offset-tail", 3, 47, 127, 3, 11, 19, DType.F32, DType.F32, 0.0001f),
+                Arguments.of("f32xq4-batchchunk-offset-tail", 3, 53, 127, 5, 9, 23, DType.F32, DType.Q4, 0.08f),
+                Arguments.of("i8xq4-batchchunk-offset-tail", 2, 43, 96, 7, 8, 21, DType.I8, DType.Q4, 0.20f)
         ).map(testCase -> prependProvider(provider, testCase)));
     }
 
@@ -169,6 +219,16 @@ public class NativeGpuGemmParityTest {
         for (int row = 0; row < rows; row++) {
             for (int col = 0; col < cols; col++) {
                 tensor.set(((row * 43 + col * 19) % 251 - 125) / 80.0f, row, col);
+            }
+        }
+        return tensor;
+    }
+
+    private static FloatBufferTensor deterministicWeightVariant(int rows, int cols) {
+        FloatBufferTensor tensor = new FloatBufferTensor(rows, cols);
+        for (int row = 0; row < rows; row++) {
+            for (int col = 0; col < cols; col++) {
+                tensor.set(((row * 29 + col * 37) % 241 - 120) / 72.0f, row, col);
             }
         }
         return tensor;
