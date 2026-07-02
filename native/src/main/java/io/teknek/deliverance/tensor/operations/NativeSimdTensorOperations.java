@@ -285,6 +285,11 @@ public class NativeSimdTensorOperations implements TensorOperations {
         // Adjusts for both sparse columns and rows
         int rOffset = r[0].shape().sparseColumnOffset() - b[0].shape().sparseRowOffset();
 
+        if (!optimizedBatchDotProductSupports(a, b[0], columnOffset, columnOffset, columnLength)) {
+            delegate.dotProductBatchChunk(r, a, b, columnOffset, columnLength, bRowOffset, rowChunkSize);
+            return;
+        }
+
         switch (a.dType()) {
             case BF16:
                 switch (b[0].dType()) {
