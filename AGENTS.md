@@ -27,6 +27,16 @@
 - Focused single test examples: `mvn -pl tensor -Dtest=TensorCopyFromTest test`, `mvn -pl core -Dtest=GenerationCursorTest test`, `mvn -pl core -Dtest=KvBufferCachePrefixTest test`.
 - Many integration tests download HuggingFace models and can take seconds to minutes depending on cache state. Avoid broad IT runs unless requested.
 
+## Testing Discipline
+
+- When asked to add a test, add the test and run it, then report the result. If the test exposes a bug, stop and let the user review/confirm the failure before changing production code.
+- Do not mix feature/improvement test work with bug fixes unless the user explicitly approves fixing the discovered bug in the same pass.
+- For tensor-operation parameterized tests, cover Panama and native SIMD when available. Naive operations are acceptable as an oracle/reference, but they are test-only and too slow for normal user paths.
+- Real users usually run either the optimal native path or the Java Panama fallback path, so provider parity tests should exercise those providers directly instead of only comparing native against naive.
+- Panama is the production Java baseline and must be correct first. Use small naive/reference calculations to prove Panama math on edge cases, then compare native SIMD and GPU accelerators against Panama on realistic shapes.
+- Tensor tests must cover tails, offsets, row chunks, block boundaries, odd dimensions, and non-divisible batch sizes. A tensor library that cannot reliably do math on edge cases is not a usable foundation.
+- Where possible, exercise all Panama machine-spec branches (`AVX_128`, `AVX_256`, `AVX_512`, `ARM_128`) from tests. The Java Vector API paths are selectable even when the current CPU is not that exact architecture; they may not be optimal, but they should still compute correctly.
+
 ## Module Boundaries
 
 - `math`: vector/math helpers.

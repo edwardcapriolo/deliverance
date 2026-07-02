@@ -241,6 +241,21 @@ public class KvBufferCache implements Closeable {
             }
             return fixed;
         }
+        if (kvBufferCacheSettings.getPrefixCheckpointPolicy() == KvBufferCacheSettings.PrefixCheckpointPolicy.START_AND_END) {
+            int max = kvBufferCacheSettings.getMaxPrefixCheckpointsPerPrompt();
+            int startCount = (max + 1) / 2;
+            int endCount = max - startCount;
+            LinkedHashSet<Integer> selected = new LinkedHashSet<>();
+            for (int prefixLen = blockSize; prefixLen <= largest && selected.size() < startCount; prefixLen += blockSize) {
+                selected.add(prefixLen);
+            }
+            for (int prefixLen = largest - ((endCount - 1) * blockSize); prefixLen <= largest; prefixLen += blockSize) {
+                if (prefixLen >= blockSize) {
+                    selected.add(prefixLen);
+                }
+            }
+            return selected.stream().sorted().toList();
+        }
         int max = kvBufferCacheSettings.getMaxPrefixCheckpointsPerPrompt();
         LinkedHashSet<Integer> selected = new LinkedHashSet<>();
         for (Integer anchor : kvBufferCacheSettings.getPrefixCheckpointAnchors()) {
