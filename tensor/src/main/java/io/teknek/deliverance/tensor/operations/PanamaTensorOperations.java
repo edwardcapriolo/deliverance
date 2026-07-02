@@ -112,6 +112,13 @@ public final class PanamaTensorOperations implements TensorOperations {
             return;
         }
 
+        // Some optimized kernels assume full vector/quantization blocks. Valid tensor math with tails or unaligned
+        // quantized windows must still be correct, so use the scalar Panama fallback instead of risking an over-read.
+        if (!optimizedBatchDotProductSupports(a, b, aColumnOffset, bColumnOffset, columnLength)) {
+            scalarBatchDotProduct(result, a, b, aColumnOffset, bColumnOffset, columnLength, rOffset, bStart, bEnd);
+            return;
+        }
+
         Gemmer gemm = switch (a.dType()) {
             case F32 -> switch (b.dType()) {
                 case F32 -> new GemmerF32(K, a, b, result, aColumnOffset, bColumnOffset, rOffset);
@@ -142,6 +149,29 @@ public final class PanamaTensorOperations implements TensorOperations {
         };
 
         gemm.matmul(0, M, bStart, bEnd);
+    }
+
+    private boolean optimizedBatchDotProductSupports(AbstractTensor a, AbstractTensor b,
+            int aColumnOffset, int bColumnOffset, int columnLength) {
+        if (a.dType() == DType.I8 || a.dType() == DType.Q4 || b.dType() == DType.I8 || b.dType() == DType.Q4) {
+            return aColumnOffset % Q8ByteBufferTensor.BLOCK_SIZE == 0
+                    && bColumnOffset % Q8ByteBufferTensor.BLOCK_SIZE == 0
+                    && columnLength % Q8ByteBufferTensor.BLOCK_SIZE == 0;
+        }
+        return columnLength % FloatVector.SPECIES_PREFERRED.length() == 0;
+    }
+
+    private void scalarBatchDotProduct(AbstractTensor result, AbstractTensor a, AbstractTensor b,
+            int aColumnOffset, int bColumnOffset, int columnLength, int rOffset, int bStart, int bEnd) {
+        for (int i = 0; i < a.shape().first(); i++) {
+            for (int j = bStart; j < bEnd; j++) {
+                float sum = 0.0f;
+                for (int k = 0; k < columnLength; k++) {
+                    sum += a.get(i, aColumnOffset + k) * b.get(j, bColumnOffset + k);
+                }
+                result.set(sum, i, j + rOffset);
+            }
+        }
     }
 
     private class GemmerBF16Q4 extends Gemmer {
