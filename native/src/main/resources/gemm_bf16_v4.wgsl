@@ -92,6 +92,8 @@ fn main(
                 }
             }
         }
+
+        workgroupBarrier();
     }
 
     // Synchronize all threads before summing
