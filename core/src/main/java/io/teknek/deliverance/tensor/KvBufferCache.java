@@ -193,14 +193,10 @@ public class KvBufferCache implements Closeable {
     }
 
     public PrefixEntry lookupPrefix(int[] tokens, Optional<String> salt) {
-        int limit = kvBufferCacheSettings.getMaxPrefixTokensPerPrompt();
-        int len = Math.min(tokens.length, limit);
-        List<Integer> soFar = new ArrayList<>();
         PrefixEntry best = null;
-        int tokenLimit = Math.min(tokens.length, len);
-        for (int i = 0; i < tokenLimit; i++) {
-            soFar.add(tokens[i]);
-            PrefixEntry e = prefixCache.get(new CacheKey(salt, soFar));
+        int limit = kvBufferCacheSettings.getMaxPrefixTokensPerPrompt();
+        for (int prefixLen : checkpointLengths(Math.min(tokens.length, limit))) {
+            PrefixEntry e = prefixCache.get(new CacheKey(salt, prefixTokens(tokens, prefixLen)));
             if (e != null) {
                 best = e;
             }
@@ -223,18 +219,56 @@ public class KvBufferCache implements Closeable {
             return;
         }
         int limit = kvBufferCacheSettings.getMaxPrefixTokensPerPrompt();
-        int tokenLen = Math.min(tokens.length, limit);
-        List<Integer> soFar = new ArrayList<>();
-        for (int i = 0; i < tokenLen; i++) {
-            soFar.add(tokens[i]);
-            int prefixLen = i + 1;
-            if (prefixLen < blockSize || prefixLen % blockSize != 0) {
-                continue;
-            }
+        for (int prefixLen : checkpointLengths(Math.min(tokens.length, limit))) {
             KvBuffer snapshot = getEphemeralKvBuffer();
             copyPrefix(buffer, snapshot, prefixLen);
-            prefixCache.putIfAbsent(new CacheKey(salt, new ArrayList<>(soFar)), new PrefixEntry(snapshot, prefixLen));
+            prefixCache.putIfAbsent(new CacheKey(salt, prefixTokens(tokens, prefixLen)), new PrefixEntry(snapshot, prefixLen));
         }
+    }
+
+    List<Integer> checkpointLengths(int tokenLength) {
+        if (tokenLength < blockSize) {
+            return List.of();
+        }
+        int largest = (tokenLength / blockSize) * blockSize;
+        if (largest < blockSize) {
+            return List.of();
+        }
+        if (kvBufferCacheSettings.getPrefixCheckpointPolicy() == KvBufferCacheSettings.PrefixCheckpointPolicy.FIXED_BLOCKS) {
+            ArrayList<Integer> fixed = new ArrayList<>();
+            for (int prefixLen = blockSize; prefixLen <= largest; prefixLen += blockSize) {
+                fixed.add(prefixLen);
+            }
+            return fixed;
+        }
+        int max = kvBufferCacheSettings.getMaxPrefixCheckpointsPerPrompt();
+        LinkedHashSet<Integer> selected = new LinkedHashSet<>();
+        for (Integer anchor : kvBufferCacheSettings.getPrefixCheckpointAnchors()) {
+            int aligned = (anchor / blockSize) * blockSize;
+            if (aligned >= blockSize && aligned <= largest) {
+                selected.add(aligned);
+            }
+            if (selected.size() >= Math.max(0, max - 1)) {
+                break;
+            }
+        }
+        selected.add(largest);
+        ArrayList<Integer> result = new ArrayList<>(selected);
+        result.sort(Integer::compareTo);
+        if (result.size() > max) {
+            ArrayList<Integer> trimmed = new ArrayList<>(result.subList(0, max - 1));
+            trimmed.add(largest);
+            return trimmed.stream().distinct().sorted().toList();
+        }
+        return result;
+    }
+
+    private static List<Integer> prefixTokens(int[] tokens, int prefixLen) {
+        ArrayList<Integer> prefix = new ArrayList<>(prefixLen);
+        for (int i = 0; i < prefixLen; i++) {
+            prefix.add(tokens[i]);
+        }
+        return prefix;
     }
 
     public void copyPrefix(KvBuffer src, KvBuffer dest, int length) {

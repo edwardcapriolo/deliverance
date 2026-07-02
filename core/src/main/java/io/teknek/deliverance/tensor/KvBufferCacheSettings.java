@@ -3,6 +3,8 @@ package io.teknek.deliverance.tensor;
 import javax.annotation.Nullable;
 import java.io.File;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 
 public class KvBufferCacheSettings {
     private final Boolean useTensorAllocator;
@@ -16,6 +18,9 @@ public class KvBufferCacheSettings {
      * The longest possible kvcache
      */
     private int maxPrefixTokensPerPrompt = 512;
+    private PrefixCheckpointPolicy prefixCheckpointPolicy = PrefixCheckpointPolicy.ANCHORS_AND_LARGEST;
+    private int maxPrefixCheckpointsPerPrompt = 4;
+    private List<Integer> prefixCheckpointAnchors = List.of(32, 64, 128);
     /** the maximum size of the cache before evictions happen **/
     private int maxEntries = 10_000;
     /**
@@ -41,6 +46,11 @@ public class KvBufferCacheSettings {
         BF16,
         F32,
         QUANTIZED_INT8
+    }
+
+    public enum PrefixCheckpointPolicy {
+        FIXED_BLOCKS,
+        ANCHORS_AND_LARGEST
     }
 
     private KvFormat kvFormat = KvFormat.BF16;
@@ -94,6 +104,62 @@ public class KvBufferCacheSettings {
     }
     public KvBufferCacheSettings withMaxPrefixTokensPerPrompt(int maxEntries) {
         this.maxPrefixTokensPerPrompt = maxEntries;
+        return this;
+    }
+
+    public PrefixCheckpointPolicy getPrefixCheckpointPolicy() {
+        return prefixCheckpointPolicy;
+    }
+
+    public void setPrefixCheckpointPolicy(PrefixCheckpointPolicy prefixCheckpointPolicy) {
+        if (prefixCheckpointPolicy == null) {
+            throw new IllegalArgumentException("prefixCheckpointPolicy must not be null");
+        }
+        this.prefixCheckpointPolicy = prefixCheckpointPolicy;
+    }
+
+    public KvBufferCacheSettings withPrefixCheckpointPolicy(PrefixCheckpointPolicy prefixCheckpointPolicy) {
+        setPrefixCheckpointPolicy(prefixCheckpointPolicy);
+        return this;
+    }
+
+    public int getMaxPrefixCheckpointsPerPrompt() {
+        return maxPrefixCheckpointsPerPrompt;
+    }
+
+    public void setMaxPrefixCheckpointsPerPrompt(int maxPrefixCheckpointsPerPrompt) {
+        if (maxPrefixCheckpointsPerPrompt < 1) {
+            throw new IllegalArgumentException("maxPrefixCheckpointsPerPrompt must be >= 1");
+        }
+        this.maxPrefixCheckpointsPerPrompt = maxPrefixCheckpointsPerPrompt;
+    }
+
+    public KvBufferCacheSettings withMaxPrefixCheckpointsPerPrompt(int maxPrefixCheckpointsPerPrompt) {
+        setMaxPrefixCheckpointsPerPrompt(maxPrefixCheckpointsPerPrompt);
+        return this;
+    }
+
+    public List<Integer> getPrefixCheckpointAnchors() {
+        return prefixCheckpointAnchors;
+    }
+
+    public void setPrefixCheckpointAnchors(List<Integer> prefixCheckpointAnchors) {
+        if (prefixCheckpointAnchors == null || prefixCheckpointAnchors.isEmpty()) {
+            throw new IllegalArgumentException("prefixCheckpointAnchors must not be empty");
+        }
+        ArrayList<Integer> copy = new ArrayList<>();
+        for (Integer anchor : prefixCheckpointAnchors) {
+            if (anchor == null || anchor < 1) {
+                throw new IllegalArgumentException("prefixCheckpointAnchors must contain positive integers");
+            }
+            copy.add(anchor);
+        }
+        copy.sort(Integer::compareTo);
+        this.prefixCheckpointAnchors = List.copyOf(copy);
+    }
+
+    public KvBufferCacheSettings withPrefixCheckpointAnchors(List<Integer> prefixCheckpointAnchors) {
+        setPrefixCheckpointAnchors(prefixCheckpointAnchors);
         return this;
     }
 

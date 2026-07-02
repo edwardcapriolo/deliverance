@@ -131,6 +131,10 @@ public final class NanocodeDeliverance {
                 if (input.equals("/q") || input.equalsIgnoreCase("exit")) {
                     break;
                 }
+                if (input.equals("/help") || input.equals("help")) {
+                    printHelp();
+                    continue;
+                }
                 if (input.equals("/c")) {
                     messages = new ArrayList<>();
                     System.out.println(GREEN + "cleared" + RESET);
@@ -225,6 +229,14 @@ public final class NanocodeDeliverance {
         System.out.println(DIM + "  /config set rounds 3" + RESET);
         System.out.println(DIM + "  /config get thinking" + RESET);
         System.out.println(DIM + "  /config set thinking off" + RESET);
+        System.out.println(DIM + "session commands:" + RESET);
+        System.out.println(DIM + "  /c       clear session context" + RESET);
+        System.out.println(DIM + "  /q       quit" + RESET);
+        System.out.println(DIM + "  /help    show help" + RESET);
+    }
+
+    private static void printHelp() {
+        printConfigHelp();
     }
 
     public void runConversationTurn(List<Map<String, Object>> messages, String cwd) throws Exception {

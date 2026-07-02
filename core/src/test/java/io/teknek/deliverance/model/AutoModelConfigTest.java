@@ -28,6 +28,9 @@ public class AutoModelConfigTest {
                     "maxEntries": 0,
                     "blockSize": 16,
                     "maxPrefixTokensPerPrompt": 128,
+                    "prefixCheckpointPolicy": "FIXED_BLOCKS",
+                    "maxPrefixCheckpointsPerPrompt": 5,
+                    "prefixCheckpointAnchors": [16, 32, 64],
                     "contextRowsPerPageTarget": 64
                   }
                 }
@@ -44,6 +47,10 @@ public class AutoModelConfigTest {
         assertEquals(0, builder.getSettings().getMaxEntries());
         assertEquals(16, builder.getSettings().getBlockSize());
         assertEquals(128, builder.getSettings().getMaxPrefixTokensPerPrompt());
+        assertEquals(io.teknek.deliverance.tensor.KvBufferCacheSettings.PrefixCheckpointPolicy.FIXED_BLOCKS,
+                builder.getSettings().getPrefixCheckpointPolicy());
+        assertEquals(5, builder.getSettings().getMaxPrefixCheckpointsPerPrompt());
+        assertEquals(java.util.List.of(16, 32, 64), builder.getSettings().getPrefixCheckpointAnchors());
         assertEquals(64, builder.getSettings().getContextRowsPerPageTarget());
     }
 }

@@ -3,7 +3,10 @@
   "kvBufferCache": {
     "maxEntries": 10000,
     "blockSize": 32,
-    "maxPrefixTokensPerPrompt": 512,
+    "maxPrefixTokensPerPrompt": 8192,
+    "prefixCheckpointPolicy": "ANCHORS_AND_LARGEST",
+    "maxPrefixCheckpointsPerPrompt": 4,
+    "prefixCheckpointAnchors": [32, 64, 128],
     "contextRowsPerPageTarget": 32
   }
 }
