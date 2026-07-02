@@ -2889,7 +2889,6 @@ public final class PanamaTensorOperations implements TensorOperations {
     public void saxpy(float alpha, AbstractTensor x, AbstractTensor y, int xoffset, int yoffset, int limit) {
         Preconditions.checkArgument(y.shape().first() == 1);
         Preconditions.checkArgument(x.dType() == y.dType() || x.dType() == DType.BF16 && y.dType() == DType.F32);
-        Preconditions.checkArgument(limit % 2 == 0);
 
         switch (x.dType()) {
             case F32:
@@ -2944,8 +2943,6 @@ public final class PanamaTensorOperations implements TensorOperations {
             int xOffset,
             int batchSize
     ) {
-        Preconditions.checkArgument(limit % 2 == 0);
-
         switch (x.dType()) {
             case F32:
                 saxpyF32(alpha, (FloatBufferTensor) x, (FloatBufferTensor) y, xoffset, yoffset, limit, aOffset, xOffset, batchSize);
@@ -3010,6 +3007,15 @@ public final class PanamaTensorOperations implements TensorOperations {
                 r0 = x3.fma(a3, r0);
 
                 y.intoTensor(r0, 0, yo);
+            }
+
+            for (; xo < (xoffset + limit) && yo < (yoffset + limit); xo++, yo++) {
+                float v = y.get(0, yo)
+                        + alpha.get(0, a + 0) * x.get(xi + 0, xo)
+                        + alpha.get(0, a + 1) * x.get(xi + 1, xo)
+                        + alpha.get(0, a + 2) * x.get(xi + 2, xo)
+                        + alpha.get(0, a + 3) * x.get(xi + 3, xo);
+                y.set(v, 0, yo);
             }
         }
 

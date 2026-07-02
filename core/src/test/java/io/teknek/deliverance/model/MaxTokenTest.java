@@ -41,11 +41,11 @@ public class MaxTokenTest {
                     .build();
                 Response k = m.generate(uuid, ctx, new GeneratorParameters()
                     .withNtokens(2048)
-                    .withMaxTokens(17)
+                    .withMaxTokens(8)
                     .withIncludeStopStrInOutput(false)
                     .withStopWords(List.of("<|eot_id|>"))
                     .withTemperature(0.0f).withSeed(99998), new DoNothingGenerateEvent());
-            assertEquals(17, k.generatedTokens.size());
+            assertEquals(8, k.generatedTokens.size());
             /*
             assertEquals("**The Java Developer's Quest**\n" +
                     "\n" +

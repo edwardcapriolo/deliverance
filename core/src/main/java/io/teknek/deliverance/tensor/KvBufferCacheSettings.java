@@ -18,7 +18,7 @@ public class KvBufferCacheSettings {
      * The longest possible kvcache
      */
     private int maxPrefixTokensPerPrompt = 512;
-    private PrefixCheckpointPolicy prefixCheckpointPolicy = PrefixCheckpointPolicy.ANCHORS_AND_LARGEST;
+    private PrefixCheckpointPolicy prefixCheckpointPolicy = PrefixCheckpointPolicy.START_AND_END;
     private int maxPrefixCheckpointsPerPrompt = 4;
     private List<Integer> prefixCheckpointAnchors = List.of(32, 64, 128);
     /** the maximum size of the cache before evictions happen **/
@@ -50,7 +50,8 @@ public class KvBufferCacheSettings {
 
     public enum PrefixCheckpointPolicy {
         FIXED_BLOCKS,
-        ANCHORS_AND_LARGEST
+        ANCHORS_AND_LARGEST,
+        START_AND_END
     }
 
     private KvFormat kvFormat = KvFormat.BF16;

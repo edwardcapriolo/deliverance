@@ -179,11 +179,24 @@ public class KvBufferCachePrefixTest {
     }
 
     @Test
+    public void fixedBlocksPolicyHandlesSmallExactAndMultiBlockPrompts() {
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withBlockSize(4)
+                .withPrefixCheckpointPolicy(KvBufferCacheSettings.PrefixCheckpointPolicy.FIXED_BLOCKS);
+        KvBufferCache cache = new KvBufferCache(mockModel(), settings);
+
+        assertEquals(List.of(), cache.checkpointLengths(3));
+        assertEquals(List.of(4), cache.checkpointLengths(4));
+        assertEquals(List.of(4, 8, 12), cache.checkpointLengths(15));
+    }
+
+    @Test
     public void anchorsAndLargestPolicyKeepsSmallAnchorsAndLargestAlignedPrefix() {
         KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
                 .withBlockSize(4)
                 .withMaxPrefixTokensPerPrompt(1000)
                 .withMaxPrefixCheckpointsPerPrompt(4)
+                .withPrefixCheckpointPolicy(KvBufferCacheSettings.PrefixCheckpointPolicy.ANCHORS_AND_LARGEST)
                 .withPrefixCheckpointAnchors(List.of(4, 8, 12));
         KvBufferCache cache = new KvBufferCache(mockModel(), settings);
 
@@ -191,10 +204,25 @@ public class KvBufferCachePrefixTest {
     }
 
     @Test
+    public void anchorsAndLargestPolicyHandlesSmallExactAndOverlappingPrompts() {
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withBlockSize(4)
+                .withMaxPrefixCheckpointsPerPrompt(4)
+                .withPrefixCheckpointPolicy(KvBufferCacheSettings.PrefixCheckpointPolicy.ANCHORS_AND_LARGEST)
+                .withPrefixCheckpointAnchors(List.of(4, 8, 12));
+        KvBufferCache cache = new KvBufferCache(mockModel(), settings);
+
+        assertEquals(List.of(), cache.checkpointLengths(3));
+        assertEquals(List.of(4), cache.checkpointLengths(4));
+        assertEquals(List.of(4, 8, 12), cache.checkpointLengths(15));
+    }
+
+    @Test
     public void anchorsAndLargestPolicyKeepsLargestWhenAnchorsExceedLimit() {
         KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
                 .withBlockSize(4)
                 .withMaxPrefixCheckpointsPerPrompt(3)
+                .withPrefixCheckpointPolicy(KvBufferCacheSettings.PrefixCheckpointPolicy.ANCHORS_AND_LARGEST)
                 .withPrefixCheckpointAnchors(List.of(4, 8, 12, 16));
         KvBufferCache cache = new KvBufferCache(mockModel(), settings);
 
@@ -202,11 +230,77 @@ public class KvBufferCachePrefixTest {
     }
 
     @Test
-    public void defaultPolicyStoresLargestInsteadOfEveryBlock() {
+    public void anchorsAndLargestPolicyKeepsAnchorsAndCappedEndForLongPrompts() {
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withBlockSize(32)
+                .withMaxPrefixTokensPerPrompt(512)
+                .withMaxPrefixCheckpointsPerPrompt(4)
+                .withPrefixCheckpointPolicy(KvBufferCacheSettings.PrefixCheckpointPolicy.ANCHORS_AND_LARGEST)
+                .withPrefixCheckpointAnchors(List.of(32, 64, 128));
+        KvBufferCache cache = new KvBufferCache(mockModel(), settings);
+        int cappedTokenLength = Math.min(1000, settings.getMaxPrefixTokensPerPrompt());
+
+        assertEquals(List.of(32, 64, 128, 512), cache.checkpointLengths(cappedTokenLength));
+    }
+
+    @Test
+    public void startAndEndPolicyKeepsHalfFromStartAndHalfFromEnd() {
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withBlockSize(4)
+                .withMaxPrefixCheckpointsPerPrompt(6);
+        KvBufferCache cache = new KvBufferCache(mockModel(), settings);
+
+        assertEquals(List.of(4, 8, 12, 24, 28, 32), cache.checkpointLengths(35));
+    }
+
+    @Test
+    public void startAndEndPolicyHandlesSmallAndExactPrompts() {
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withBlockSize(4)
+                .withMaxPrefixCheckpointsPerPrompt(6);
+        KvBufferCache cache = new KvBufferCache(mockModel(), settings);
+
+        assertEquals(List.of(), cache.checkpointLengths(3));
+        assertEquals(List.of(4), cache.checkpointLengths(4));
+    }
+
+    @Test
+    public void startAndEndPolicyDeduplicatesOverlappingShortPrompts() {
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withBlockSize(4)
+                .withMaxPrefixCheckpointsPerPrompt(6);
+        KvBufferCache cache = new KvBufferCache(mockModel(), settings);
+
+        assertEquals(List.of(4, 8, 12), cache.checkpointLengths(15));
+    }
+
+    @Test
+    public void startAndEndPolicyKeepsStartAndCappedEndForLongPrompts() {
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withBlockSize(32)
+                .withMaxPrefixTokensPerPrompt(512)
+                .withMaxPrefixCheckpointsPerPrompt(4);
+        KvBufferCache cache = new KvBufferCache(mockModel(), settings);
+        int cappedTokenLength = Math.min(1000, settings.getMaxPrefixTokensPerPrompt());
+
+        assertEquals(List.of(32, 64, 480, 512), cache.checkpointLengths(cappedTokenLength));
+    }
+
+    @Test
+    public void startAndEndPolicyDeduplicatesWhenStartAndEndWindowsOverlap() {
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withBlockSize(32)
+                .withMaxPrefixCheckpointsPerPrompt(4);
+        KvBufferCache cache = new KvBufferCache(mockModel(), settings);
+
+        assertEquals(List.of(32, 64, 96), cache.checkpointLengths(100));
+    }
+
+    @Test
+    public void defaultPolicyStoresStartAndEndCheckpoints() {
         KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
                 .withMaxEntries(512)
                 .withBlockSize(4)
-                .withPrefixCheckpointAnchors(List.of(4, 8, 12))
                 .withMaxPrefixCheckpointsPerPrompt(4);
         KvBufferCache cache = new KvBufferCache(mockModel(), settings);
         int[] tokens = {1, 2, 3, 4, 5, 6, 7, 8, 9};
@@ -224,6 +318,7 @@ public class KvBufferCachePrefixTest {
                 .withMaxEntries(512)
                 .withBlockSize(4)
                 .withMaxPrefixTokensPerPrompt(16)
+                .withPrefixCheckpointPolicy(KvBufferCacheSettings.PrefixCheckpointPolicy.ANCHORS_AND_LARGEST)
                 .withPrefixCheckpointAnchors(List.of(4, 8));
         KvBufferCache cache = new KvBufferCache(mockModel(), settings);
         int[] tokens = new int[40];

@@ -1,6 +1,9 @@
 package io.teknek.deliverance.tensor.operations;
 
+import com.codahale.metrics.MetricRegistry;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -16,12 +19,15 @@ public class NativeSimdSaxpyTest {
     @MethodSource("scalarCases")
     public void scalarF32SaxpyMatchesNaiveReference(int xoffset, int yoffset, int limit) {
         try (FloatBufferTensor x = vector(1, xoffset + limit + 3);
-             FloatBufferTensor expected = vector(1, yoffset + limit + 3);
-             FloatBufferTensor actual = copy(expected)) {
+              FloatBufferTensor expected = vector(1, yoffset + limit + 3);
+              FloatBufferTensor actual = copy(expected);
+              FloatBufferTensor panama = copy(expected)) {
             new NaiveTensorOperations().saxpy(1.75f, x, expected, xoffset, yoffset, limit);
             new NativeSimdTensorOperations(new NaiveTensorOperations()).saxpy(1.75f, x, actual, xoffset, yoffset, limit);
 
             assertTensorClose(expected, actual);
+            panamaOps().saxpy(1.75f, x, panama, xoffset, yoffset, limit);
+            assertTensorClose(expected, panama);
         }
     }
 
@@ -30,14 +36,17 @@ public class NativeSimdSaxpyTest {
     public void batchedF32SaxpyMatchesNaiveReference(int xoffset, int yoffset, int limit, int aOffset,
             int xRowOffset, int batchSize) {
         try (FloatBufferTensor alpha = vector(1, aOffset + batchSize + 3);
-             FloatBufferTensor x = vector(xRowOffset + batchSize + 2, xoffset + limit + 3);
-             FloatBufferTensor expected = vector(1, yoffset + limit + 3);
-             FloatBufferTensor actual = copy(expected)) {
+              FloatBufferTensor x = vector(xRowOffset + batchSize + 2, xoffset + limit + 3);
+              FloatBufferTensor expected = vector(1, yoffset + limit + 3);
+              FloatBufferTensor actual = copy(expected);
+              FloatBufferTensor panama = copy(expected)) {
             new NaiveTensorOperations().saxpy(alpha, x, expected, xoffset, yoffset, limit, aOffset, xRowOffset, batchSize);
             new NativeSimdTensorOperations(new NaiveTensorOperations()).saxpy(alpha, x, actual,
                     xoffset, yoffset, limit, aOffset, xRowOffset, batchSize);
 
             assertTensorClose(expected, actual);
+            panamaOps().saxpy(alpha, x, panama, xoffset, yoffset, limit, aOffset, xRowOffset, batchSize);
+            assertTensorClose(expected, panama);
         }
     }
 
@@ -76,6 +85,14 @@ public class NativeSimdSaxpyTest {
             }
         }
         return copy;
+    }
+
+    private static PanamaTensorOperations panamaOps() {
+        return new PanamaTensorOperations(
+                MachineSpec.VECTOR_TYPE,
+                new ArrayQueueTensorAllocator(new MetricRegistry()),
+                new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())
+        );
     }
 
     private static void assertTensorClose(AbstractTensor expected, AbstractTensor actual) {
