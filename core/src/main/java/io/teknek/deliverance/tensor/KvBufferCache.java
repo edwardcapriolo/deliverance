@@ -4,13 +4,19 @@ import com.google.common.base.Preconditions;
 import io.teknek.deliverance.DType;
 
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.tensor.impl.BFloat16BufferTensor;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
+import net.jpountz.lz4.LZ4Compressor;
+import net.jpountz.lz4.LZ4Exception;
+import net.jpountz.lz4.LZ4Factory;
+import net.jpountz.lz4.LZ4FastDecompressor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.nio.ShortBuffer;
@@ -51,11 +57,68 @@ public class KvBufferCache implements Closeable {
 
     public record CacheKey (Optional<String> salt, List<Integer> prefixTokens){
     }
-    public record PrefixEntry(KvBuffer buffer, int length) {
+    public record PrefixEntry(KvBuffer buffer, int length, boolean temporary) {
+        public PrefixEntry(KvBuffer buffer, int length) {
+            this(buffer, length, false);
+        }
 
+        public void closeIfTemporary() {
+            if (temporary && buffer != null) {
+                buffer.close();
+            }
+        }
+    }
+
+    public interface StoredPrefixEntry extends AutoCloseable {
+        PrefixEntry toPrefixEntry();
+
+        int length();
+
+        @Override
+        void close();
+    }
+
+    private record RawStoredPrefixEntry(KvBuffer buffer, int length) implements StoredPrefixEntry {
+        @Override
+        public PrefixEntry toPrefixEntry() {
+            return new PrefixEntry(buffer, length, false);
+        }
+
+        @Override
+        public void close() {
+            buffer.close();
+        }
+    }
+
+    private record Lz4StoredPrefixEntry(byte[] compressed, int uncompressedBytes, int length) implements StoredPrefixEntry {
+        @Override
+        public PrefixEntry toPrefixEntry() {
+            throw new UnsupportedOperationException("LZ4 prefix entries require cache context to hydrate");
+        }
+
+        @Override
+        public void close() {
+            // compressed byte arrays are owned by the JVM GC
+        }
+    }
+
+    private record MseTurboQuantStoredPrefixEntry(byte[] packedCodes, float[] norms, int length, int bitWidth,
+            int kvLength, int rotatedDim) implements StoredPrefixEntry {
+        @Override
+        public PrefixEntry toPrefixEntry() {
+            throw new UnsupportedOperationException("MSE TurboQuant prefix entries require cache context to hydrate");
+        }
+
+        @Override
+        public void close() {
+            // packed code and norm arrays are owned by the JVM GC
+        }
     }
 
     private static final Logger logger = LoggerFactory.getLogger(KvBufferCache.class);
+    private static final LZ4Factory LZ4_FACTORY = LZ4Factory.fastestInstance();
+    private static final long TURBO_ROTATION_SEED = 0x6A09E667F3BCC909L;
+    private static final Map<Integer, float[]> TURBO_CODEBOOKS = Collections.synchronizedMap(new HashMap<>());
 
     private final AbstractModel model;
     private final KvBufferCacheSettings kvBufferCacheSettings;
@@ -65,14 +128,14 @@ public class KvBufferCache implements Closeable {
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private ScheduledExecutorService diskSweeperExecutor;
 
-    public final Map<CacheKey, PrefixEntry> prefixCache = Collections.synchronizedMap(
-            new LinkedHashMap<CacheKey, PrefixEntry>(16, 0.75f, true) {
-                public boolean removeEldestEntry(Map.Entry<CacheKey, PrefixEntry> eldest) {
+    public final Map<CacheKey, StoredPrefixEntry> prefixCache = Collections.synchronizedMap(
+            new LinkedHashMap<CacheKey, StoredPrefixEntry>(16, 0.75f, true) {
+                public boolean removeEldestEntry(Map.Entry<CacheKey, StoredPrefixEntry> eldest) {
                     boolean evict = size() > kvBufferCacheSettings.getMaxEntries();
                     if (evict && eldest != null && eldest.getValue() != null) {
                         model.getMetricRegistry().meter("kvbuffercache.evict").mark();
                         try {
-                            eldest.getValue().buffer.close();
+                            eldest.getValue().close();
                         } catch (RuntimeException e) {
                             logger.warn("could not close tensor in cache", e);
                         }
@@ -193,24 +256,25 @@ public class KvBufferCache implements Closeable {
     }
 
     public PrefixEntry lookupPrefix(int[] tokens, Optional<String> salt) {
-        PrefixEntry best = null;
+        StoredPrefixEntry best = null;
         int limit = kvBufferCacheSettings.getMaxPrefixTokensPerPrompt();
         for (int prefixLen : checkpointLengths(Math.min(tokens.length, limit))) {
-            PrefixEntry e = prefixCache.get(new CacheKey(salt, prefixTokens(tokens, prefixLen)));
+            StoredPrefixEntry e = prefixCache.get(new CacheKey(salt, prefixTokens(tokens, prefixLen)));
             if (e != null) {
                 best = e;
             }
         }
         model.getMetricRegistry().meter("kvbuffercache.lookup").mark();
-        if (best != null && best.length >= blockSize && best.length % blockSize == 0) {
+        if (best != null && best.length() >= blockSize && best.length() % blockSize == 0) {
             model.getMetricRegistry().meter("kvbuffercache.hits").mark();
-            return best;
+            return toPrefixEntry(best);
         }
         model.getMetricRegistry().meter("kvbuffercache.misses").mark();
         return null;
     }
 
     public void storePrefix(int[] tokens, KvBuffer buffer, Optional<String> salt) {
+        long storeStart = System.nanoTime();
         if (!kvBufferCacheSettings.isEphemeral()) {
             model.getMetricRegistry().meter("kvbuffercache.prefix.disk.skip").mark();
             return;
@@ -218,11 +282,333 @@ public class KvBufferCache implements Closeable {
         if (kvBufferCacheSettings.getMaxEntries() < 1){
             return;
         }
+        try {
         int limit = kvBufferCacheSettings.getMaxPrefixTokensPerPrompt();
         for (int prefixLen : checkpointLengths(Math.min(tokens.length, limit))) {
             KvBuffer snapshot = getEphemeralKvBuffer();
             copyPrefix(buffer, snapshot, prefixLen);
-            prefixCache.putIfAbsent(new CacheKey(salt, prefixTokens(tokens, prefixLen)), new PrefixEntry(snapshot, prefixLen));
+            StoredPrefixEntry entry = toStoredPrefixEntry(snapshot, prefixLen);
+            StoredPrefixEntry previous = prefixCache.putIfAbsent(new CacheKey(salt, prefixTokens(tokens, prefixLen)), entry);
+            if (previous != null) {
+                entry.close();
+            }
+        }
+        } finally {
+            InferenceProfiler.timer(model.getMetricRegistry(), "kvbuffercache.prefix.store")
+                    .update(System.nanoTime() - storeStart, TimeUnit.NANOSECONDS);
+        }
+    }
+
+    private PrefixEntry toPrefixEntry(StoredPrefixEntry stored) {
+        if (stored instanceof RawStoredPrefixEntry raw) {
+            return raw.toPrefixEntry();
+        }
+        if (stored instanceof Lz4StoredPrefixEntry lz4) {
+            return hydrateLz4PrefixEntry(lz4);
+        }
+        if (stored instanceof MseTurboQuantStoredPrefixEntry turboQuant) {
+            return hydrateMseTurboQuantPrefixEntry(turboQuant);
+        }
+        throw new IllegalStateException("unknown prefix entry type " + stored.getClass());
+    }
+
+    private StoredPrefixEntry toStoredPrefixEntry(KvBuffer snapshot, int prefixLen) {
+        if (kvBufferCacheSettings.getPrefixCompression() == KvBufferCacheSettings.PrefixCompression.NONE) {
+            return new RawStoredPrefixEntry(snapshot, prefixLen);
+        }
+        if (kvBufferCacheSettings.getPrefixCompression() == KvBufferCacheSettings.PrefixCompression.LZ4) {
+            try {
+                return compressPrefixEntry(snapshot, prefixLen);
+            } finally {
+                snapshot.close();
+            }
+        }
+        if (kvBufferCacheSettings.getPrefixCompression() == KvBufferCacheSettings.PrefixCompression.MSE_TURBOQUANT) {
+            try {
+                return encodeMseTurboQuantPrefixEntry(snapshot, prefixLen);
+            } finally {
+                snapshot.close();
+            }
+        }
+        throw new UnsupportedOperationException("Unsupported prefix compression " + kvBufferCacheSettings.getPrefixCompression());
+    }
+
+    private Lz4StoredPrefixEntry compressPrefixEntry(KvBuffer snapshot, int prefixLen) {
+        long start = System.nanoTime();
+        byte[] raw = serializePrefix(snapshot, prefixLen);
+        LZ4Compressor compressor = LZ4_FACTORY.fastCompressor();
+        byte[] compressed = compressor.compress(raw);
+        InferenceProfiler.timer(model.getMetricRegistry(), "kvbuffercache.prefix.lz4.compress")
+                .update(System.nanoTime() - start, TimeUnit.NANOSECONDS);
+        InferenceProfiler.counter(model.getMetricRegistry(), "kvbuffercache.prefix.lz4.uncompressed.bytes").inc(raw.length);
+        InferenceProfiler.counter(model.getMetricRegistry(), "kvbuffercache.prefix.lz4.compressed.bytes").inc(compressed.length);
+        return new Lz4StoredPrefixEntry(compressed, raw.length, prefixLen);
+    }
+
+    private PrefixEntry hydrateLz4PrefixEntry(Lz4StoredPrefixEntry stored) {
+        long start = System.nanoTime();
+        byte[] raw = new byte[stored.uncompressedBytes()];
+        try {
+            LZ4FastDecompressor decompressor = LZ4_FACTORY.fastDecompressor();
+            decompressor.decompress(stored.compressed(), 0, raw, 0, raw.length);
+        } catch (LZ4Exception e) {
+            model.getMetricRegistry().meter("kvbuffercache.prefix.lz4.decompress.error").mark();
+            throw new IllegalStateException("Unable to decompress prefix cache entry", e);
+        }
+        KvBuffer hydrated = getEphemeralKvBuffer();
+        deserializePrefix(raw, hydrated, stored.length());
+        InferenceProfiler.timer(model.getMetricRegistry(), "kvbuffercache.prefix.lz4.decompress")
+                .update(System.nanoTime() - start, TimeUnit.NANOSECONDS);
+        return new PrefixEntry(hydrated, stored.length(), true);
+    }
+
+    private MseTurboQuantStoredPrefixEntry encodeMseTurboQuantPrefixEntry(KvBuffer snapshot, int prefixLen) {
+        long start = System.nanoTime();
+        int bitWidth = kvBufferCacheSettings.getPrefixTurboQuantBits();
+        int kvLength = model.getLocalKvLength();
+        int rotatedDim = nextPowerOfTwo(kvLength);
+        int layers = model.getConfig().numberOfLayers;
+        int rows = Math.multiplyExact(Math.multiplyExact(layers, prefixLen), 2);
+        long totalCodes = Math.multiplyExact((long) rows, rotatedDim);
+        byte[] packedCodes = new byte[Math.toIntExact((totalCodes * bitWidth + 7) / 8)];
+        float[] norms = new float[rows];
+        float[] codebook = turboCodebook(bitWidth);
+        float invSqrtDim = (float) (1.0 / Math.sqrt(rotatedDim));
+        int rowIndex = 0;
+        for (int layer = 0; layer < layers; layer++) {
+            for (int pos = 0; pos < prefixLen; pos++) {
+                rowIndex = encodeMseTurboQuantRow(snapshot.getKeyTensorForPosition(layer, pos), packedCodes, norms,
+                        rowIndex, bitWidth, kvLength, rotatedDim, invSqrtDim, codebook);
+                rowIndex = encodeMseTurboQuantRow(snapshot.getValTensorForPosition(layer, pos), packedCodes, norms,
+                        rowIndex, bitWidth, kvLength, rotatedDim, invSqrtDim, codebook);
+            }
+        }
+        long rawBytes = (long) rows * kvLength * model.getWorkingDType().size();
+        long encodedBytes = packedCodes.length + (long) norms.length * Float.BYTES;
+        InferenceProfiler.timer(model.getMetricRegistry(), "kvbuffercache.prefix.turboquant.encode")
+                .update(System.nanoTime() - start, TimeUnit.NANOSECONDS);
+        InferenceProfiler.counter(model.getMetricRegistry(), "kvbuffercache.prefix.turboquant.raw.bytes").inc(rawBytes);
+        InferenceProfiler.counter(model.getMetricRegistry(), "kvbuffercache.prefix.turboquant.encoded.bytes").inc(encodedBytes);
+        return new MseTurboQuantStoredPrefixEntry(packedCodes, norms, prefixLen, bitWidth, kvLength, rotatedDim);
+    }
+
+    private int encodeMseTurboQuantRow(AbstractTensor row, byte[] packedCodes, float[] norms, int rowIndex,
+            int bitWidth, int kvLength, int rotatedDim, float invSqrtDim, float[] codebook) {
+        try (row) {
+            float normSquared = 0.0f;
+            for (int i = 0; i < kvLength; i++) {
+                float value = row.get(0, i);
+                normSquared += value * value;
+            }
+            float norm = (float) Math.sqrt(normSquared);
+            norms[rowIndex] = norm;
+            float[] rotated = new float[rotatedDim];
+            if (norm != 0.0f) {
+                float inverseNorm = 1.0f / norm;
+                for (int i = 0; i < kvLength; i++) {
+                    rotated[i] = row.get(0, i) * inverseNorm * turboSign(i);
+                }
+                fastWalshHadamard(rotated);
+                for (int i = 0; i < rotatedDim; i++) {
+                    rotated[i] *= invSqrtDim;
+                }
+            }
+            long baseCode = (long) rowIndex * rotatedDim;
+            float coordinateScale = (float) Math.sqrt(rotatedDim);
+            for (int i = 0; i < rotatedDim; i++) {
+                int code = nearestCodebookIndex(rotated[i] * coordinateScale, codebook);
+                packCode(packedCodes, baseCode + i, bitWidth, code);
+            }
+            return rowIndex + 1;
+        }
+    }
+
+    private PrefixEntry hydrateMseTurboQuantPrefixEntry(MseTurboQuantStoredPrefixEntry stored) {
+        long start = System.nanoTime();
+        KvBuffer hydrated = getEphemeralKvBuffer();
+        float[] codebook = turboCodebook(stored.bitWidth());
+        float invSqrtDim = (float) (1.0 / Math.sqrt(stored.rotatedDim()));
+        int layers = model.getConfig().numberOfLayers;
+        int rowIndex = 0;
+        for (int layer = 0; layer < layers; layer++) {
+            for (int pos = 0; pos < stored.length(); pos++) {
+                rowIndex = decodeMseTurboQuantRow(stored, hydrated.getKeyTensorForPosition(layer, pos), rowIndex,
+                        invSqrtDim, codebook);
+                rowIndex = decodeMseTurboQuantRow(stored, hydrated.getValTensorForPosition(layer, pos), rowIndex,
+                        invSqrtDim, codebook);
+            }
+        }
+        hydrated.setCurrentContextPosition(stored.length());
+        InferenceProfiler.timer(model.getMetricRegistry(), "kvbuffercache.prefix.turboquant.decode")
+                .update(System.nanoTime() - start, TimeUnit.NANOSECONDS);
+        return new PrefixEntry(hydrated, stored.length(), true);
+    }
+
+    private int decodeMseTurboQuantRow(MseTurboQuantStoredPrefixEntry stored, AbstractTensor row, int rowIndex,
+            float invSqrtDim, float[] codebook) {
+        try (row) {
+            float[] rotated = new float[stored.rotatedDim()];
+            long baseCode = (long) rowIndex * stored.rotatedDim();
+            for (int i = 0; i < stored.rotatedDim(); i++) {
+                int code = unpackCode(stored.packedCodes(), baseCode + i, stored.bitWidth());
+                rotated[i] = codebook[code] * invSqrtDim;
+            }
+            fastWalshHadamard(rotated);
+            float normScale = stored.norms()[rowIndex] * invSqrtDim;
+            for (int i = 0; i < stored.kvLength(); i++) {
+                row.set(rotated[i] * normScale * turboSign(i), 0, i);
+            }
+            return rowIndex + 1;
+        }
+    }
+
+    private static int nextPowerOfTwo(int value) {
+        if (value < 1) {
+            throw new IllegalArgumentException("value must be positive");
+        }
+        int highest = Integer.highestOneBit(value);
+        return highest == value ? value : highest << 1;
+    }
+
+    private static float turboSign(int index) {
+        long x = TURBO_ROTATION_SEED + 0x9E3779B97F4A7C15L * index;
+        x = (x ^ (x >>> 30)) * 0xBF58476D1CE4E5B9L;
+        x = (x ^ (x >>> 27)) * 0x94D049BB133111EBL;
+        x = x ^ (x >>> 31);
+        return (x & 1L) == 0L ? 1.0f : -1.0f;
+    }
+
+    private static void fastWalshHadamard(float[] values) {
+        for (int step = 1; step < values.length; step <<= 1) {
+            for (int base = 0; base < values.length; base += step << 1) {
+                for (int i = 0; i < step; i++) {
+                    float a = values[base + i];
+                    float b = values[base + i + step];
+                    values[base + i] = a + b;
+                    values[base + i + step] = a - b;
+                }
+            }
+        }
+    }
+
+    private static float[] turboCodebook(int bitWidth) {
+        return TURBO_CODEBOOKS.computeIfAbsent(bitWidth, KvBufferCache::buildNormalLloydMaxCodebook);
+    }
+
+    private static float[] buildNormalLloydMaxCodebook(int bitWidth) {
+        int levels = 1 << bitWidth;
+        float[] centroids = new float[levels];
+        float min = -6.0f;
+        float max = 6.0f;
+        for (int i = 0; i < levels; i++) {
+            centroids[i] = levels == 1 ? 0.0f : min + (max - min) * (i + 0.5f) / levels;
+        }
+        int samples = 20_001;
+        float[] sampleValues = new float[samples];
+        float[] sampleWeights = new float[samples];
+        float dx = (max - min) / (samples - 1);
+        for (int i = 0; i < samples; i++) {
+            float x = min + i * dx;
+            sampleValues[i] = x;
+            sampleWeights[i] = (float) Math.exp(-0.5f * x * x);
+        }
+        for (int iter = 0; iter < 80; iter++) {
+            float[] weightedSums = new float[levels];
+            float[] weights = new float[levels];
+            for (int i = 0; i < samples; i++) {
+                int nearest = nearestCodebookIndex(sampleValues[i], centroids);
+                weightedSums[nearest] += sampleValues[i] * sampleWeights[i];
+                weights[nearest] += sampleWeights[i];
+            }
+            for (int i = 0; i < levels; i++) {
+                if (weights[i] > 0.0f) {
+                    centroids[i] = weightedSums[i] / weights[i];
+                }
+            }
+            Arrays.sort(centroids);
+        }
+        return centroids;
+    }
+
+    private static int nearestCodebookIndex(float value, float[] codebook) {
+        int best = 0;
+        float bestDistance = Math.abs(value - codebook[0]);
+        for (int i = 1; i < codebook.length; i++) {
+            float distance = Math.abs(value - codebook[i]);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = i;
+            }
+        }
+        return best;
+    }
+
+    private static void packCode(byte[] packed, long codeIndex, int bitWidth, int code) {
+        long bitOffset = codeIndex * bitWidth;
+        for (int bit = 0; bit < bitWidth; bit++) {
+            if (((code >>> bit) & 1) != 0) {
+                long absoluteBit = bitOffset + bit;
+                int byteIndex = Math.toIntExact(absoluteBit >>> 3);
+                packed[byteIndex] = (byte) (packed[byteIndex] | (1 << (absoluteBit & 7)));
+            }
+        }
+    }
+
+    private static int unpackCode(byte[] packed, long codeIndex, int bitWidth) {
+        long bitOffset = codeIndex * bitWidth;
+        int code = 0;
+        for (int bit = 0; bit < bitWidth; bit++) {
+            long absoluteBit = bitOffset + bit;
+            int byteIndex = Math.toIntExact(absoluteBit >>> 3);
+            if (((packed[byteIndex] >>> (absoluteBit & 7)) & 1) != 0) {
+                code |= 1 << bit;
+            }
+        }
+        return code;
+    }
+
+    private byte[] serializePrefix(KvBuffer buffer, int prefixLen) {
+        int rowBytes = model.getLocalKvLength() * model.getWorkingDType().size();
+        int layers = model.getConfig().numberOfLayers;
+        byte[] bytes = new byte[Math.multiplyExact(Math.multiplyExact(layers, prefixLen), rowBytes * 2)];
+        MemorySegment destination = MemorySegment.ofArray(bytes);
+        int offset = 0;
+        for (int layer = 0; layer < layers; layer++) {
+            for (int pos = 0; pos < prefixLen; pos++) {
+                offset = copyRowBytes(buffer.getKeyTensorForPosition(layer, pos), destination, offset, rowBytes);
+                offset = copyRowBytes(buffer.getValTensorForPosition(layer, pos), destination, offset, rowBytes);
+            }
+        }
+        return bytes;
+    }
+
+    private int copyRowBytes(AbstractTensor row, MemorySegment destination, int offset, int rowBytes) {
+        try (row) {
+            destination.asSlice(offset, rowBytes)
+                    .copyFrom(row.getMemorySegment().asSlice(row.getMemorySegmentOffset(0), rowBytes));
+            return offset + rowBytes;
+        }
+    }
+
+    private void deserializePrefix(byte[] bytes, KvBuffer buffer, int prefixLen) {
+        int rowBytes = model.getLocalKvLength() * model.getWorkingDType().size();
+        int layers = model.getConfig().numberOfLayers;
+        MemorySegment source = MemorySegment.ofArray(bytes);
+        int offset = 0;
+        for (int layer = 0; layer < layers; layer++) {
+            for (int pos = 0; pos < prefixLen; pos++) {
+                offset = restoreRowBytes(source, offset, buffer.getKeyTensorForPosition(layer, pos), rowBytes);
+                offset = restoreRowBytes(source, offset, buffer.getValTensorForPosition(layer, pos), rowBytes);
+            }
+        }
+        buffer.setCurrentContextPosition(prefixLen);
+    }
+
+    private int restoreRowBytes(MemorySegment source, int offset, AbstractTensor row, int rowBytes) {
+        try (row) {
+            row.getMemorySegment().asSlice(row.getMemorySegmentOffset(0), rowBytes)
+                    .copyFrom(source.asSlice(offset, rowBytes));
+            return offset + rowBytes;
         }
     }
 
@@ -287,6 +673,8 @@ public class KvBufferCache implements Closeable {
     }
 
     public void copyPrefix(KvBuffer src, KvBuffer dest, int length) {
+        long copyStart = System.nanoTime();
+        long copiedBytes = 0;
         Config c = model.getConfig();
         int layers = c.numberOfLayers;
         for (int layer = 0; layer < layers; layer++) {
@@ -296,6 +684,8 @@ public class KvBufferCache implements Closeable {
 
                 AbstractTensor dstK = dest.getKeyTensorForPosition(layer, pos);
                 AbstractTensor dstV = dest.getValTensorForPosition(layer, pos);
+                copiedBytes += (long) srcK.size() * model.getWorkingDType().size();
+                copiedBytes += (long) srcV.size() * model.getWorkingDType().size();
                 dstK.copyFrom(srcK, 0, 0, (int) srcK.size());
                 dstV.copyFrom(srcV, 0, 0, (int) srcV.size());
                 srcK.close();
@@ -305,6 +695,9 @@ public class KvBufferCache implements Closeable {
             }
         }
         dest.setCurrentContextPosition(length);
+        InferenceProfiler.timer(model.getMetricRegistry(), "kvbuffercache.prefix.copy")
+                .update(System.nanoTime() - copyStart, TimeUnit.NANOSECONDS);
+        InferenceProfiler.counter(model.getMetricRegistry(), "kvbuffercache.prefix.copy.bytes").inc(copiedBytes);
     }
 
     public KvBuffer getEphemeralKvBuffer() {
@@ -317,7 +710,7 @@ public class KvBufferCache implements Closeable {
             if (diskSweeperExecutor != null) {
                 diskSweeperExecutor.shutdownNow();
             }
-            prefixCache.entrySet().iterator().forEachRemaining(e -> e.getValue().buffer().close());
+            prefixCache.entrySet().iterator().forEachRemaining(e -> e.getValue().close());
         }
     }
 

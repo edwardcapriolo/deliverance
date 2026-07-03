@@ -179,6 +179,104 @@ public class KvBufferCachePrefixTest {
     }
 
     @Test
+    public void lz4PrefixStoreLookupAndCopyPreservesKeysAndValues() {
+        int expectedPrefixLength = 8;
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withMaxEntries(512)
+                .withBlockSize(4)
+                .withPrefixCheckpointPolicy(KvBufferCacheSettings.PrefixCheckpointPolicy.FIXED_BLOCKS)
+                .withPrefixCompression(KvBufferCacheSettings.PrefixCompression.LZ4);
+        AbstractModel model = mockModel();
+        KvBufferCache cache = new KvBufferCache(model, settings);
+        int[] tokens = {1, 2, 3, 4, 5, 6, 7, 8, 9};
+
+        try (KvBufferCache.KvBuffer source = cache.getEphemeralKvBuffer();
+             KvBufferCache.KvBuffer copied = cache.getEphemeralKvBuffer()) {
+            fillKv(source, model.getConfig(), expectedPrefixLength);
+
+            cache.storePrefix(tokens, source, Optional.empty());
+            KvBufferCache.PrefixEntry hit = cache.lookupPrefix(tokens, Optional.empty());
+
+            assertNotNull(hit);
+            assertTrue(hit.temporary(), "LZ4 lookup hydrates a temporary KV buffer");
+            assertEquals(expectedPrefixLength, hit.length());
+
+            try {
+                cache.copyPrefix(hit.buffer(), copied, hit.length());
+            } finally {
+                hit.closeIfTemporary();
+            }
+            assertKvPrefixEquals(source, copied, model.getConfig(), hit.length());
+        }
+    }
+
+    @Test
+    public void lz4PrefixCompressionShrinksZeroKvSnapshots() {
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withMaxEntries(512)
+                .withBlockSize(4)
+                .withPrefixCheckpointPolicy(KvBufferCacheSettings.PrefixCheckpointPolicy.FIXED_BLOCKS)
+                .withPrefixCompression(KvBufferCacheSettings.PrefixCompression.LZ4);
+        AbstractModel model = mockModel();
+        KvBufferCache cache = new KvBufferCache(model, settings);
+        int[] tokens = {1, 2, 3, 4};
+
+        try (KvBufferCache.KvBuffer source = cache.getEphemeralKvBuffer()) {
+            cache.storePrefix(tokens, source, Optional.empty());
+
+            long uncompressedBytes = model.getMetricRegistry()
+                    .counter("kvbuffercache.prefix.lz4.uncompressed.bytes").getCount();
+            long compressedBytes = model.getMetricRegistry()
+                    .counter("kvbuffercache.prefix.lz4.compressed.bytes").getCount();
+
+            assertTrue(uncompressedBytes > 0);
+            assertTrue(compressedBytes < uncompressedBytes / 10,
+                    "expected zeros to compress well: compressed=" + compressedBytes
+                            + " uncompressed=" + uncompressedBytes);
+        }
+    }
+
+    @Test
+    public void mseTurboQuantPrefixStoreLookupAndCopyApproximatelyPreservesKeysAndValues() {
+        int expectedPrefixLength = 8;
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withMaxEntries(512)
+                .withBlockSize(4)
+                .withPrefixCheckpointPolicy(KvBufferCacheSettings.PrefixCheckpointPolicy.FIXED_BLOCKS)
+                .withPrefixCompression(KvBufferCacheSettings.PrefixCompression.MSE_TURBOQUANT)
+                .withPrefixTurboQuantBits(4);
+        AbstractModel model = mockModel();
+        KvBufferCache cache = new KvBufferCache(model, settings);
+        int[] tokens = {1, 2, 3, 4, 5, 6, 7, 8, 9};
+
+        try (KvBufferCache.KvBuffer source = cache.getEphemeralKvBuffer();
+             KvBufferCache.KvBuffer copied = cache.getEphemeralKvBuffer()) {
+            fillKv(source, model.getConfig(), expectedPrefixLength);
+
+            cache.storePrefix(tokens, source, Optional.empty());
+            KvBufferCache.PrefixEntry hit = cache.lookupPrefix(tokens, Optional.empty());
+
+            assertNotNull(hit);
+            assertTrue(hit.temporary(), "MSE TurboQuant lookup hydrates a temporary KV buffer");
+            assertEquals(expectedPrefixLength, hit.length());
+            try {
+                cache.copyPrefix(hit.buffer(), copied, hit.length());
+            } finally {
+                hit.closeIfTemporary();
+            }
+
+            assertKvPrefixRmseBelow(source, copied, model.getConfig(), hit.length(), 275.0f);
+            long rawBytes = model.getMetricRegistry()
+                    .counter("kvbuffercache.prefix.turboquant.raw.bytes").getCount();
+            long encodedBytes = model.getMetricRegistry()
+                    .counter("kvbuffercache.prefix.turboquant.encoded.bytes").getCount();
+            assertTrue(rawBytes > 0);
+            assertTrue(encodedBytes < rawBytes / 2,
+                    "expected TurboQuant payload to be much smaller: encoded=" + encodedBytes + " raw=" + rawBytes);
+        }
+    }
+
+    @Test
     public void fixedBlocksPolicyHandlesSmallExactAndMultiBlockPrompts() {
         KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
                 .withBlockSize(4)
@@ -386,6 +484,48 @@ public class KvBufferCachePrefixTest {
                 }
             }
         }
+    }
+
+    private static void assertKvPrefixClose(KvBufferCache.KvBuffer expected, KvBufferCache.KvBuffer actual,
+            Config config, int length, float tolerance) {
+        for (int layer = 0; layer < config.numberOfLayers; layer++) {
+            for (int pos = 0; pos < length; pos++) {
+                try (AbstractTensor expectedKey = expected.getKeyTensorForPosition(layer, pos);
+                     AbstractTensor actualKey = actual.getKeyTensorForPosition(layer, pos);
+                     AbstractTensor expectedValue = expected.getValTensorForPosition(layer, pos);
+                     AbstractTensor actualValue = actual.getValTensorForPosition(layer, pos)) {
+                    for (int i = 0; i < config.kvLength; i++) {
+                        assertEquals(expectedKey.get(0, i), actualKey.get(0, i), tolerance,
+                                "key layer=" + layer + " pos=" + pos + " index=" + i);
+                        assertEquals(expectedValue.get(0, i), actualValue.get(0, i), tolerance,
+                                "value layer=" + layer + " pos=" + pos + " index=" + i);
+                    }
+                }
+            }
+        }
+    }
+
+    private static void assertKvPrefixRmseBelow(KvBufferCache.KvBuffer expected, KvBufferCache.KvBuffer actual,
+            Config config, int length, float maxRmse) {
+        double squaredError = 0.0;
+        long count = 0;
+        for (int layer = 0; layer < config.numberOfLayers; layer++) {
+            for (int pos = 0; pos < length; pos++) {
+                try (AbstractTensor expectedKey = expected.getKeyTensorForPosition(layer, pos);
+                     AbstractTensor actualKey = actual.getKeyTensorForPosition(layer, pos);
+                     AbstractTensor expectedValue = expected.getValTensorForPosition(layer, pos);
+                     AbstractTensor actualValue = actual.getValTensorForPosition(layer, pos)) {
+                    for (int i = 0; i < config.kvLength; i++) {
+                        double keyDiff = expectedKey.get(0, i) - actualKey.get(0, i);
+                        double valueDiff = expectedValue.get(0, i) - actualValue.get(0, i);
+                        squaredError += keyDiff * keyDiff + valueDiff * valueDiff;
+                        count += 2;
+                    }
+                }
+            }
+        }
+        double rmse = Math.sqrt(squaredError / count);
+        assertTrue(rmse < maxRmse, "rmse=" + rmse + " max=" + maxRmse);
     }
 
     private static float kvValue(int layer, int pos, int index, int offset) {
