@@ -47,7 +47,11 @@ public final class LocalGenerationBackend implements GenerationBackend {
                 this.prefixLength = 0;
             } else {
                 this.prefixLength = prefixHit.length();
-                model.kvBufferCache.copyPrefix(prefixHit.buffer(), kvBuffer, prefixLength);
+                try {
+                    model.kvBufferCache.copyPrefix(prefixHit.buffer(), kvBuffer, prefixLength);
+                } finally {
+                    prefixHit.closeIfTemporary();
+                }
                 model.emitGenerationDebug(new AbstractModel.GenerationDebugEvent(
                         AbstractModel.GenerationDebugEventType.AFTER_PREFIX_COPY,
                         promptTokens,

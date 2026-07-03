@@ -1,0 +1,13 @@
+{
+  "outputHeadQuantization": "Q4",
+  "maxBatchSize": 512,
+  "kvBufferCache": {
+    "maxEntries": 10000,
+    "blockSize": 32,
+    "maxPrefixTokensPerPrompt": 8192,
+    "prefixCheckpointPolicy": "START_AND_END",
+    "prefixCompression": "LZ4",
+    "maxPrefixCheckpointsPerPrompt": 4,
+    "contextRowsPerPageTarget": 32
+  }
+}

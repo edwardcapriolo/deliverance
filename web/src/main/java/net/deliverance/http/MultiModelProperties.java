@@ -66,18 +66,42 @@ class MultiModelConfiguration {
     private final ConfigurableTensorProvider provider;
     private final WrappedForkJoinPool pool;
     private final String kvDiskDirectory;
+    private final int kvPrefixMaxEntries;
+    private final int kvPrefixBlockSize;
+    private final int kvPrefixMaxTokens;
+    private final int kvPrefixMaxCheckpoints;
+    private final String kvPrefixCheckpointPolicy;
+    private final String kvPrefixCompression;
+    private final int kvPrefixTurboQuantBits;
+    private final int kvContextRowsPerPageTarget;
 
     public MultiModelConfiguration(MultiModelProperties multiModelProperties, MetricRegistry metricRegistry,
-                                    TensorAllocator arrayQueueTensorAllocator,
-                                    ConfigurableTensorProvider provider,
-                                    WrappedForkJoinPool pool,
-                                    @Value("${deliverance.kv.disk-dir:}") String kvDiskDirectory){
+                                     TensorAllocator arrayQueueTensorAllocator,
+                                     ConfigurableTensorProvider provider,
+                                     WrappedForkJoinPool pool,
+                                     @Value("${deliverance.kv.disk-dir:}") String kvDiskDirectory,
+                                     @Value("${deliverance.kv.prefix.max-entries:10000}") int kvPrefixMaxEntries,
+                                     @Value("${deliverance.kv.prefix.block-size:32}") int kvPrefixBlockSize,
+                                     @Value("${deliverance.kv.prefix.max-tokens:512}") int kvPrefixMaxTokens,
+                                     @Value("${deliverance.kv.prefix.max-checkpoints:4}") int kvPrefixMaxCheckpoints,
+                                     @Value("${deliverance.kv.prefix.checkpoint-policy:START_AND_END}") String kvPrefixCheckpointPolicy,
+                                     @Value("${deliverance.kv.prefix.compression:NONE}") String kvPrefixCompression,
+                                     @Value("${deliverance.kv.prefix.turboquant.bits:4}") int kvPrefixTurboQuantBits,
+                                     @Value("${deliverance.kv.context-rows-per-page-target:32}") int kvContextRowsPerPageTarget){
         this.multiModelProperties = multiModelProperties;
         this.metricRegistry = metricRegistry;
         this.arrayQueueTensorAllocator = arrayQueueTensorAllocator;
         this.provider = provider;
         this.pool = pool;
         this.kvDiskDirectory = kvDiskDirectory;
+        this.kvPrefixMaxEntries = kvPrefixMaxEntries;
+        this.kvPrefixBlockSize = kvPrefixBlockSize;
+        this.kvPrefixMaxTokens = kvPrefixMaxTokens;
+        this.kvPrefixMaxCheckpoints = kvPrefixMaxCheckpoints;
+        this.kvPrefixCheckpointPolicy = kvPrefixCheckpointPolicy;
+        this.kvPrefixCompression = kvPrefixCompression;
+        this.kvPrefixTurboQuantBits = kvPrefixTurboQuantBits;
+        this.kvContextRowsPerPageTarget = kvContextRowsPerPageTarget;
     }
 
 
@@ -212,10 +236,21 @@ class MultiModelConfiguration {
     }
 
     private KvBufferCacheSettings kvBufferCacheSettings() {
+        KvBufferCacheSettings settings;
         if (kvDiskDirectory == null || kvDiskDirectory.isBlank()) {
-            return new KvBufferCacheSettings(true);
+            settings = new KvBufferCacheSettings(true);
+        } else {
+            settings = new KvBufferCacheSettings(new File(kvDiskDirectory));
         }
-        return new KvBufferCacheSettings(new File(kvDiskDirectory));
+        settings.setMaxEntries(kvPrefixMaxEntries);
+        settings.setBlockSize(kvPrefixBlockSize);
+        settings.setMaxPrefixTokensPerPrompt(kvPrefixMaxTokens);
+        settings.setMaxPrefixCheckpointsPerPrompt(kvPrefixMaxCheckpoints);
+        settings.setPrefixCheckpointPolicy(KvBufferCacheSettings.PrefixCheckpointPolicy.valueOf(kvPrefixCheckpointPolicy));
+        settings.setPrefixCompression(KvBufferCacheSettings.PrefixCompression.valueOf(kvPrefixCompression));
+        settings.setPrefixTurboQuantBits(kvPrefixTurboQuantBits);
+        settings.setContextRowsPerPageTarget(kvContextRowsPerPageTarget);
+        return settings;
     }
 }
 

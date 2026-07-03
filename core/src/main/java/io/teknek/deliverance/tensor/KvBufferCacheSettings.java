@@ -21,6 +21,8 @@ public class KvBufferCacheSettings {
     private PrefixCheckpointPolicy prefixCheckpointPolicy = PrefixCheckpointPolicy.START_AND_END;
     private int maxPrefixCheckpointsPerPrompt = 4;
     private List<Integer> prefixCheckpointAnchors = List.of(32, 64, 128);
+    private PrefixCompression prefixCompression = PrefixCompression.NONE;
+    private int prefixTurboQuantBits = 4;
     /** the maximum size of the cache before evictions happen **/
     private int maxEntries = 10_000;
     /**
@@ -52,6 +54,12 @@ public class KvBufferCacheSettings {
         FIXED_BLOCKS,
         ANCHORS_AND_LARGEST,
         START_AND_END
+    }
+
+    public enum PrefixCompression {
+        NONE,
+        LZ4,
+        MSE_TURBOQUANT
     }
 
     private KvFormat kvFormat = KvFormat.BF16;
@@ -142,6 +150,38 @@ public class KvBufferCacheSettings {
 
     public List<Integer> getPrefixCheckpointAnchors() {
         return prefixCheckpointAnchors;
+    }
+
+    public PrefixCompression getPrefixCompression() {
+        return prefixCompression;
+    }
+
+    public void setPrefixCompression(PrefixCompression prefixCompression) {
+        if (prefixCompression == null) {
+            throw new IllegalArgumentException("prefixCompression must not be null");
+        }
+        this.prefixCompression = prefixCompression;
+    }
+
+    public KvBufferCacheSettings withPrefixCompression(PrefixCompression prefixCompression) {
+        setPrefixCompression(prefixCompression);
+        return this;
+    }
+
+    public int getPrefixTurboQuantBits() {
+        return prefixTurboQuantBits;
+    }
+
+    public void setPrefixTurboQuantBits(int prefixTurboQuantBits) {
+        if (prefixTurboQuantBits < 1 || prefixTurboQuantBits > 8) {
+            throw new IllegalArgumentException("prefixTurboQuantBits must be between 1 and 8");
+        }
+        this.prefixTurboQuantBits = prefixTurboQuantBits;
+    }
+
+    public KvBufferCacheSettings withPrefixTurboQuantBits(int prefixTurboQuantBits) {
+        setPrefixTurboQuantBits(prefixTurboQuantBits);
+        return this;
     }
 
     public void setPrefixCheckpointAnchors(List<Integer> prefixCheckpointAnchors) {

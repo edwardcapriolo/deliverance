@@ -13,6 +13,7 @@
         <jafama.version>2.3.2</jafama.version>
         <jcttools.version>4.0.1</jcttools.version>
         <jemojie.version>1.7.6</jemojie.version>
+        <lz4.version>1.8.0</lz4.version>
         <netty.version>4.1.115.Final</netty.version>
     </properties>
 
@@ -107,6 +108,11 @@
             <groupId>io.dropwizard.metrics</groupId>
             <artifactId>metrics-core</artifactId>
             <version>${metrics.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.lz4</groupId>
+            <artifactId>lz4-java</artifactId>
+            <version>${lz4.version}</version>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
