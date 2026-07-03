@@ -15,7 +15,7 @@ import io.teknek.deliverance.tensor.UnsafeDirectByteBuffer;
 import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorSpecies;
 
-public class BFloat16BufferTensor extends AbstractTensor<ShortVector, Short> {
+public class BFloat16BufferTensor extends AbstractTensor {
 
     private final ShortBuffer b;
     private final String name;
@@ -91,19 +91,16 @@ public class BFloat16BufferTensor extends AbstractTensor<ShortVector, Short> {
         b.put(getOffset(dims), FloatConversions.float32ToBFloat16(v));
     }
 
-    @Override
     public ShortVector getVector(VectorSpecies<Short> species, int row, int column) {
         int offset = getOffset(row, column);
         return ShortVector.fromMemorySegment(species, segment, getMemorySegmentOffset(offset), ByteOrder.LITTLE_ENDIAN);
     }
 
-    @Override
     public ShortVector getVector(VectorSpecies<Short> species, int... voffset) {
         int offset = getOffset(voffset);
         return ShortVector.fromMemorySegment(species, segment, getMemorySegmentOffset(offset), ByteOrder.LITTLE_ENDIAN);
     }
 
-    @Override
     public void intoTensor(ShortVector vector, int... aoffset) {
         Preconditions.checkArgument(!b.isReadOnly());
         int offset = getOffset(aoffset);

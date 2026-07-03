@@ -101,7 +101,7 @@ public class FloatBufferTensorTest {
             }
             //b={  0.0000,   1.0000,   2.0000,   3.0000,   4.0000,   5.0000,   6.0000,   7.0000,   8.0000,   9.0000...}
             {
-                AbstractTensor<?, ?> p = f.slice(1);
+                AbstractTensor p = f.slice(1);
                 assertEquals(1, p.shape.dim(0));
                 assertEquals(16, p.shape.dim(1));
                 assertEquals(16f, p.get(0, 0));

@@ -7,15 +7,12 @@ import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
 import java.util.UUID;
 
-import jdk.incubator.vector.Vector;
-import jdk.incubator.vector.VectorMask;
-import jdk.incubator.vector.VectorSpecies;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.teknek.deliverance.DType;
 
-public abstract class AbstractTensor<V extends Vector<?>, T extends Number> implements AutoCloseable, ReadableTensor {
+public abstract class AbstractTensor implements AutoCloseable, ReadableTensor {
     private static final Logger logger = LoggerFactory.getLogger(AbstractTensor.class);
 
     protected volatile String uid;
@@ -105,20 +102,9 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
             return sliceCache[dims[0]];
         }
         TensorShape slicedShape = shape.slice(dims.length);
-        int totalOffset = 0;
-        if (dims.length == 1 && this.shape.dims() == 2) {
-            totalOffset = shape.sparseColumnLength() * dims[0];
-        } else {
-            for (int d = 0; d <= dims.length - 1; d++) {
-                int offset = shape.sparseColumnLength();
-                for (int i = shape.dims() - 2; i > d; i--) { // factor scaling of each dim shape
-                    offset *= shape.dim(i);
-                }
-                totalOffset += dims[d] * offset;
-            }
-        }
+        int totalOffset = sliceOffset(dims);
 
-        AbstractTensor<?,?> r = this.make(totalOffset, (int) slicedShape.size(), slicedShape, cacheInnerSlice);
+        AbstractTensor r = this.make(totalOffset, (int) slicedShape.size(), slicedShape, cacheInnerSlice);
         if (dims.length == 1 && sliceCache != null) {
             sliceCache[dims[0]] = r;
         }
@@ -126,17 +112,52 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
     }
 
     /**
+     * Copies a logical slice into a newly allocated tensor owned by the caller.
+     *
+     * <p>Unlike {@link #slice(int...)}, this method does not return a view into this tensor's backing storage and does
+     * not use the slice cache. Mutating or closing the returned tensor does not mutate or release this tensor. The caller
+     * owns the returned tensor and must close it when finished.</p>
+     *
+     * @param allocator allocator used to create the returned tensor
+     * @param dims dimensions identifying the slice, using the same coordinate convention as {@link #slice(int...)}
+     * @return a newly allocated tensor containing a copy of the requested slice
+     */
+    public AbstractTensor copySlice(TensorAllocator allocator, int... dims) {
+        Preconditions.checkArgument(allocator != null, "allocator must not be null");
+        TensorShape copiedShape = shape.slice(dims.length);
+        AbstractTensor copy = allocator.get(dType, copiedShape);
+        copy.copyFrom(this, sliceOffset(dims), 0, Ints.checkedCast(copiedShape.size()));
+        return copy;
+    }
+
+    private int sliceOffset(int... dims) {
+        int totalOffset = 0;
+        if (dims.length == 1 && this.shape.dims() == 2) {
+            totalOffset = shape.sparseColumnLength() * dims[0];
+        } else {
+            for (int d = 0; d <= dims.length - 1; d++) {
+                int offset = shape.sparseColumnLength();
+                for (int i = shape.dims() - 2; i > d; i--) {
+                    offset *= shape.dim(i);
+                }
+                totalOffset += dims[d] * offset;
+            }
+        }
+        return totalOffset;
+    }
+
+    /**
      * Creates a sparse tensor that acts like a dense one but is missing the data outside
      * the range of in last dimension.
      */
-    public AbstractTensor<V, T> sparsify(int offset, int length) {
+    public AbstractTensor sparsify(int offset, int length) {
         if (shape.isSparse()) {
             return this;
         }
         if (length == shape.last()) {
             return this;
         }
-        AbstractTensor<V, T> sparseT = this.make(shape.sparsifyColumns(offset, length));
+        AbstractTensor sparseT = this.make(shape.sparsifyColumns(offset, length));
         int originalLength = shape.last();
         int[] cursor = new int[shape.dims()];
         try {
@@ -234,17 +255,6 @@ public abstract class AbstractTensor<V extends Vector<?>, T extends Number> impl
 
     public final DType dType() {
         return dType;
-    }
-
-    public V getVector(VectorSpecies<T> species, int row, int column){
-        return getVector(species, new int[] { row, column });
-    }
-    public abstract V getVector(VectorSpecies<T> species, int... offset);
-
-    public abstract void intoTensor(V vector, int... offset);
-
-    public void intoTensor(V vector, VectorMask<T> mask, int... offset) {
-        throw new UnsupportedOperationException();
     }
 
     public abstract MemorySegment getMemorySegment();

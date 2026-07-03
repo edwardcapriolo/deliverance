@@ -249,9 +249,9 @@ public class Gemma4Model extends LlamaModel {
         metricRegistry.histogram("gemma4.batch.start_pos").update(startPos);
         return withSharedKeyValues(() -> {
             Timer.Context embedTimer = metricRegistry.timer("gemma4.batch_forward.embed").time();
-            AbstractTensor embedding;
+            AbstractTensor inputEmbeddings;
             try {
-                embedding = embedInput.batchInputsToEmbeddings(tokenIds, startPos);
+                inputEmbeddings = embedInput.batchInputsToEmbeddings(tokenIds, startPos);
             } finally {
                 embedTimer.stop();
             }
@@ -259,14 +259,14 @@ public class Gemma4Model extends LlamaModel {
             Timer.Context pleTimer = metricRegistry.timer("gemma4.batch_forward.ple").time();
             AbstractTensor[] perLayerInputs;
             try {
-                perLayerInputs = computePerLayerInputs(tokenIds, embedding);
+                perLayerInputs = computePerLayerInputs(tokenIds, inputEmbeddings);
             } finally {
                 pleTimer.stop();
             }
 
             Timer.Context forwardTimer = metricRegistry.timer("gemma4.batch_forward.forward").time();
             try {
-                return forwardGemma4(embedding, perLayerInputs, startPos, kvbuf, tensorReducer);
+                return forwardGemma4(inputEmbeddings, perLayerInputs, startPos, kvbuf, tensorReducer);
             } finally {
                 forwardTimer.stop();
             }

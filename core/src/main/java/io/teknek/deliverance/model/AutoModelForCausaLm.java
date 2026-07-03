@@ -86,6 +86,7 @@ public class AutoModelForCausaLm {
         private Optional<QuantizeOnDemand> quantizeOnDemand = Optional.empty();
         private final EnumMap<TensorProviderKind, TensorOperations> additionalTensorOperations = new EnumMap<>(TensorProviderKind.class);
         private boolean download = true;
+        private int maxBatchSize = AbstractModel.DEFAULT_MAX_BATCH_SIZE;
 
         record QuantizeOnDemand(DType targetType, String outputOwner, String outputModel) {
             QuantizeOnDemand {
@@ -193,6 +194,14 @@ public class AutoModelForCausaLm {
             return this;
         }
 
+        public Builder withMaxBatchSize(int maxBatchSize) {
+            if (maxBatchSize < 1) {
+                throw new IllegalArgumentException("maxBatchSize must be >= 1");
+            }
+            this.maxBatchSize = maxBatchSize;
+            return this;
+        }
+
         /**
          * Loads a cached quantized target when it exists, otherwise quantizes the source model into
          * the local Deliverance cache and loads that generated target. Source download behavior is
@@ -210,6 +219,7 @@ public class AutoModelForCausaLm {
             config.workingQuantType().ifPresent(this::withWorkingQuantType);
             config.outputHeadQuantization().ifPresent(this::withOutputHeadQuantization);
             config.download().ifPresent(this::withDownload);
+            config.maxBatchSize().ifPresent(this::withMaxBatchSize);
             config.kvBufferCache().map(AutoModelConfig.KvBufferCache::toSettings).ifPresent(this::withKvBufferCacheSettings);
             config.quantizeOnDemand().ifPresent(q -> withQuantizeOnDemand(q.targetType(), q.outputOwner(), q.outputModel()));
             return this;
@@ -276,6 +286,7 @@ public class AutoModelForCausaLm {
             copy.quantizeOnDemand = this.quantizeOnDemand;
             copy.additionalTensorOperations.putAll(this.additionalTensorOperations);
             copy.download = this.download;
+            copy.maxBatchSize = this.maxBatchSize;
             return copy;
         }
         /** This is a JVM wide property! **/
@@ -331,6 +342,7 @@ public class AutoModelForCausaLm {
             AbstractModel model = ModelSupport.loadModel(modelRoot, workingMem, workingQuant, provider,
                     mr, allocator, settings, fetcherForLoad, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives,
                     outputHeadQuantization);
+            model.setMaxBatchSize(maxBatchSize);
             model.setTensorProviderExplicit(tensorProviderExplicit);
             if (!tensorProviderExplicit) {
                 model.addTensorOperations(hydrateTensorOperations());
@@ -473,6 +485,10 @@ public class AutoModelForCausaLm {
 
         public boolean isDownload() {
             return download;
+        }
+
+        public int getMaxBatchSize() {
+            return maxBatchSize;
         }
 
         public ConfigurableTensorProvider getProvider() {

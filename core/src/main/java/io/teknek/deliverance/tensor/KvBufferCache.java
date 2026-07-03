@@ -412,7 +412,7 @@ public class KvBufferCache implements Closeable {
                         }
                     }
 
-                    AbstractTensor<?, ?> t;
+                    AbstractTensor t;
                     if (model.getWorkingDType() == DType.F32) {
                         FloatBuffer fb = raf.getChannel()
                                 .map(FileChannel.MapMode.READ_WRITE, 0, bytes)

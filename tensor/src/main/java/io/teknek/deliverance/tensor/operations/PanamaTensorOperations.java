@@ -577,11 +577,13 @@ public final class PanamaTensorOperations implements TensorOperations {
 
     private class GemmerF32Q4_128_arm extends Gemmer {
         final BiIntConsumer matmul1x1;
+        final FloatBufferTensor a;
         final Q4ByteBufferTensor b;
 
         GemmerF32Q4_128_arm(int k, AbstractTensor a, AbstractTensor b, AbstractTensor c, int aColumnOffset, int bColumnOffset, int rOffset) {
             super(k, a, b, c, aColumnOffset, bColumnOffset, rOffset);
             this.matmul1x1 = initMatmul1x1();
+            this.a = (FloatBufferTensor) a;
             this.b = (Q4ByteBufferTensor) b;
         }
 
@@ -1515,9 +1517,13 @@ public final class PanamaTensorOperations implements TensorOperations {
         final BiIntConsumer matmul1x4;
         final BiIntConsumer matmul3x4;
         final BiIntConsumer matmul4x1;
+        final FloatBufferTensor a;
+        final FloatBufferTensor b;
 
         GemmerF32(int k, AbstractTensor a, AbstractTensor b, AbstractTensor c, int ith, int nth, int rOffset) {
             super(k, a, b, c, ith, nth, rOffset);
+            this.a = (FloatBufferTensor) a;
+            this.b = (FloatBufferTensor) b;
 
             this.matmul1x1 = initMatmul1x1();
             this.matmul1x4 = initMatmul1x4();

@@ -24,6 +24,7 @@ public class AutoModelConfigTest {
                   "workingQuantType": "Q4",
                   "outputHeadQuantization": "Q4",
                   "download": false,
+                  "maxBatchSize": 17,
                   "kvBufferCache": {
                     "maxEntries": 0,
                     "blockSize": 16,
@@ -44,6 +45,7 @@ public class AutoModelConfigTest {
         assertEquals(DType.Q4, builder.getWorkingQuant());
         assertEquals(DType.Q4, builder.getOutputHeadQuantization().orElseThrow());
         assertFalse(builder.isDownload());
+        assertEquals(17, builder.getMaxBatchSize());
         assertEquals(0, builder.getSettings().getMaxEntries());
         assertEquals(16, builder.getSettings().getBlockSize());
         assertEquals(128, builder.getSettings().getMaxPrefixTokensPerPrompt());

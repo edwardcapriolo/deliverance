@@ -43,8 +43,8 @@ public class LayerNorm {
         return output;
     }
 
-    public static void performLayerNorm(AbstractTensor<?,?> input, AbstractTensor<?,?> output, AbstractTensor<?,?> weights,
-                                        AbstractTensor<?,?> bias, float eps, int offset, int length, int embeddingLength){
+    public static void performLayerNorm(AbstractTensor input, AbstractTensor output, AbstractTensor weights,
+                                        AbstractTensor bias, float eps, int offset, int length, int embeddingLength){
         int batchSize = input.shape().first();
         for (int b = 0; b < batchSize; b++) {
             float sum = 0;

@@ -21,6 +21,7 @@ public record AutoModelConfig(
         Optional<DType> workingQuantType,
         Optional<DType> outputHeadQuantization,
         Optional<Boolean> download,
+        Optional<Integer> maxBatchSize,
         Optional<KvBufferCache> kvBufferCache,
         Optional<QuantizeOnDemand> quantizeOnDemand) {
 
@@ -29,6 +30,7 @@ public record AutoModelConfig(
         workingQuantType = workingQuantType == null ? Optional.empty() : workingQuantType;
         outputHeadQuantization = outputHeadQuantization == null ? Optional.empty() : outputHeadQuantization;
         download = download == null ? Optional.empty() : download;
+        maxBatchSize = maxBatchSize == null ? Optional.empty() : maxBatchSize;
         kvBufferCache = kvBufferCache == null ? Optional.empty() : kvBufferCache;
         quantizeOnDemand = quantizeOnDemand == null ? Optional.empty() : quantizeOnDemand;
     }
