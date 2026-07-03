@@ -102,8 +102,8 @@ public class KvBufferCache implements Closeable {
         }
     }
 
-    private record MseTurboQuantStoredPrefixEntry(byte[] packedCodes, float[] norms, int length, int bitWidth,
-            int kvLength, int rotatedDim) implements StoredPrefixEntry {
+    private record MseTurboQuantStoredPrefixEntry(MseTurboQuantCodec.EncodedRows encoded, int length)
+            implements StoredPrefixEntry {
         @Override
         public PrefixEntry toPrefixEntry() {
             throw new UnsupportedOperationException("MSE TurboQuant prefix entries require cache context to hydrate");
@@ -117,8 +117,6 @@ public class KvBufferCache implements Closeable {
 
     private static final Logger logger = LoggerFactory.getLogger(KvBufferCache.class);
     private static final LZ4Factory LZ4_FACTORY = LZ4Factory.fastestInstance();
-    private static final long TURBO_ROTATION_SEED = 0x6A09E667F3BCC909L;
-    private static final Map<Integer, float[]> TURBO_CODEBOOKS = Collections.synchronizedMap(new HashMap<>());
 
     private final AbstractModel model;
     private final KvBufferCacheSettings kvBufferCacheSettings;
@@ -366,205 +364,49 @@ public class KvBufferCache implements Closeable {
         long start = System.nanoTime();
         int bitWidth = kvBufferCacheSettings.getPrefixTurboQuantBits();
         int kvLength = model.getLocalKvLength();
-        int rotatedDim = nextPowerOfTwo(kvLength);
         int layers = model.getConfig().numberOfLayers;
         int rows = Math.multiplyExact(Math.multiplyExact(layers, prefixLen), 2);
-        long totalCodes = Math.multiplyExact((long) rows, rotatedDim);
-        byte[] packedCodes = new byte[Math.toIntExact((totalCodes * bitWidth + 7) / 8)];
-        float[] norms = new float[rows];
-        float[] codebook = turboCodebook(bitWidth);
-        float invSqrtDim = (float) (1.0 / Math.sqrt(rotatedDim));
+        MseTurboQuantCodec.EncodedRows encoded = MseTurboQuantCodec.allocate(rows, kvLength, bitWidth);
+        MseTurboQuantCodec.Scratch scratch = new MseTurboQuantCodec.Scratch(encoded.rotatedDim());
         int rowIndex = 0;
         for (int layer = 0; layer < layers; layer++) {
             for (int pos = 0; pos < prefixLen; pos++) {
-                rowIndex = encodeMseTurboQuantRow(snapshot.getKeyTensorForPosition(layer, pos), packedCodes, norms,
-                        rowIndex, bitWidth, kvLength, rotatedDim, invSqrtDim, codebook);
-                rowIndex = encodeMseTurboQuantRow(snapshot.getValTensorForPosition(layer, pos), packedCodes, norms,
-                        rowIndex, bitWidth, kvLength, rotatedDim, invSqrtDim, codebook);
+                try (AbstractTensor key = snapshot.getKeyTensorForPosition(layer, pos)) {
+                    rowIndex = MseTurboQuantCodec.encodeRow(key, encoded, rowIndex, model.getMetricRegistry(), scratch);
+                }
+                try (AbstractTensor value = snapshot.getValTensorForPosition(layer, pos)) {
+                    rowIndex = MseTurboQuantCodec.encodeRow(value, encoded, rowIndex, model.getMetricRegistry(), scratch);
+                }
             }
         }
         long rawBytes = (long) rows * kvLength * model.getWorkingDType().size();
-        long encodedBytes = packedCodes.length + (long) norms.length * Float.BYTES;
         InferenceProfiler.timer(model.getMetricRegistry(), "kvbuffercache.prefix.turboquant.encode")
                 .update(System.nanoTime() - start, TimeUnit.NANOSECONDS);
         InferenceProfiler.counter(model.getMetricRegistry(), "kvbuffercache.prefix.turboquant.raw.bytes").inc(rawBytes);
-        InferenceProfiler.counter(model.getMetricRegistry(), "kvbuffercache.prefix.turboquant.encoded.bytes").inc(encodedBytes);
-        return new MseTurboQuantStoredPrefixEntry(packedCodes, norms, prefixLen, bitWidth, kvLength, rotatedDim);
-    }
-
-    private int encodeMseTurboQuantRow(AbstractTensor row, byte[] packedCodes, float[] norms, int rowIndex,
-            int bitWidth, int kvLength, int rotatedDim, float invSqrtDim, float[] codebook) {
-        try (row) {
-            float normSquared = 0.0f;
-            for (int i = 0; i < kvLength; i++) {
-                float value = row.get(0, i);
-                normSquared += value * value;
-            }
-            float norm = (float) Math.sqrt(normSquared);
-            norms[rowIndex] = norm;
-            float[] rotated = new float[rotatedDim];
-            if (norm != 0.0f) {
-                float inverseNorm = 1.0f / norm;
-                for (int i = 0; i < kvLength; i++) {
-                    rotated[i] = row.get(0, i) * inverseNorm * turboSign(i);
-                }
-                fastWalshHadamard(rotated);
-                for (int i = 0; i < rotatedDim; i++) {
-                    rotated[i] *= invSqrtDim;
-                }
-            }
-            long baseCode = (long) rowIndex * rotatedDim;
-            float coordinateScale = (float) Math.sqrt(rotatedDim);
-            for (int i = 0; i < rotatedDim; i++) {
-                int code = nearestCodebookIndex(rotated[i] * coordinateScale, codebook);
-                packCode(packedCodes, baseCode + i, bitWidth, code);
-            }
-            return rowIndex + 1;
-        }
+        InferenceProfiler.counter(model.getMetricRegistry(), "kvbuffercache.prefix.turboquant.encoded.bytes").inc(encoded.encodedBytes());
+        return new MseTurboQuantStoredPrefixEntry(encoded, prefixLen);
     }
 
     private PrefixEntry hydrateMseTurboQuantPrefixEntry(MseTurboQuantStoredPrefixEntry stored) {
         long start = System.nanoTime();
         KvBuffer hydrated = getEphemeralKvBuffer();
-        float[] codebook = turboCodebook(stored.bitWidth());
-        float invSqrtDim = (float) (1.0 / Math.sqrt(stored.rotatedDim()));
         int layers = model.getConfig().numberOfLayers;
+        MseTurboQuantCodec.Scratch scratch = new MseTurboQuantCodec.Scratch(stored.encoded().rotatedDim());
         int rowIndex = 0;
         for (int layer = 0; layer < layers; layer++) {
             for (int pos = 0; pos < stored.length(); pos++) {
-                rowIndex = decodeMseTurboQuantRow(stored, hydrated.getKeyTensorForPosition(layer, pos), rowIndex,
-                        invSqrtDim, codebook);
-                rowIndex = decodeMseTurboQuantRow(stored, hydrated.getValTensorForPosition(layer, pos), rowIndex,
-                        invSqrtDim, codebook);
+                try (AbstractTensor key = hydrated.getKeyTensorForPosition(layer, pos)) {
+                    rowIndex = MseTurboQuantCodec.decodeRow(stored.encoded(), key, rowIndex, model.getMetricRegistry(), scratch);
+                }
+                try (AbstractTensor value = hydrated.getValTensorForPosition(layer, pos)) {
+                    rowIndex = MseTurboQuantCodec.decodeRow(stored.encoded(), value, rowIndex, model.getMetricRegistry(), scratch);
+                }
             }
         }
         hydrated.setCurrentContextPosition(stored.length());
         InferenceProfiler.timer(model.getMetricRegistry(), "kvbuffercache.prefix.turboquant.decode")
                 .update(System.nanoTime() - start, TimeUnit.NANOSECONDS);
         return new PrefixEntry(hydrated, stored.length(), true);
-    }
-
-    private int decodeMseTurboQuantRow(MseTurboQuantStoredPrefixEntry stored, AbstractTensor row, int rowIndex,
-            float invSqrtDim, float[] codebook) {
-        try (row) {
-            float[] rotated = new float[stored.rotatedDim()];
-            long baseCode = (long) rowIndex * stored.rotatedDim();
-            for (int i = 0; i < stored.rotatedDim(); i++) {
-                int code = unpackCode(stored.packedCodes(), baseCode + i, stored.bitWidth());
-                rotated[i] = codebook[code] * invSqrtDim;
-            }
-            fastWalshHadamard(rotated);
-            float normScale = stored.norms()[rowIndex] * invSqrtDim;
-            for (int i = 0; i < stored.kvLength(); i++) {
-                row.set(rotated[i] * normScale * turboSign(i), 0, i);
-            }
-            return rowIndex + 1;
-        }
-    }
-
-    private static int nextPowerOfTwo(int value) {
-        if (value < 1) {
-            throw new IllegalArgumentException("value must be positive");
-        }
-        int highest = Integer.highestOneBit(value);
-        return highest == value ? value : highest << 1;
-    }
-
-    private static float turboSign(int index) {
-        long x = TURBO_ROTATION_SEED + 0x9E3779B97F4A7C15L * index;
-        x = (x ^ (x >>> 30)) * 0xBF58476D1CE4E5B9L;
-        x = (x ^ (x >>> 27)) * 0x94D049BB133111EBL;
-        x = x ^ (x >>> 31);
-        return (x & 1L) == 0L ? 1.0f : -1.0f;
-    }
-
-    private static void fastWalshHadamard(float[] values) {
-        for (int step = 1; step < values.length; step <<= 1) {
-            for (int base = 0; base < values.length; base += step << 1) {
-                for (int i = 0; i < step; i++) {
-                    float a = values[base + i];
-                    float b = values[base + i + step];
-                    values[base + i] = a + b;
-                    values[base + i + step] = a - b;
-                }
-            }
-        }
-    }
-
-    private static float[] turboCodebook(int bitWidth) {
-        return TURBO_CODEBOOKS.computeIfAbsent(bitWidth, KvBufferCache::buildNormalLloydMaxCodebook);
-    }
-
-    private static float[] buildNormalLloydMaxCodebook(int bitWidth) {
-        int levels = 1 << bitWidth;
-        float[] centroids = new float[levels];
-        float min = -6.0f;
-        float max = 6.0f;
-        for (int i = 0; i < levels; i++) {
-            centroids[i] = levels == 1 ? 0.0f : min + (max - min) * (i + 0.5f) / levels;
-        }
-        int samples = 20_001;
-        float[] sampleValues = new float[samples];
-        float[] sampleWeights = new float[samples];
-        float dx = (max - min) / (samples - 1);
-        for (int i = 0; i < samples; i++) {
-            float x = min + i * dx;
-            sampleValues[i] = x;
-            sampleWeights[i] = (float) Math.exp(-0.5f * x * x);
-        }
-        for (int iter = 0; iter < 80; iter++) {
-            float[] weightedSums = new float[levels];
-            float[] weights = new float[levels];
-            for (int i = 0; i < samples; i++) {
-                int nearest = nearestCodebookIndex(sampleValues[i], centroids);
-                weightedSums[nearest] += sampleValues[i] * sampleWeights[i];
-                weights[nearest] += sampleWeights[i];
-            }
-            for (int i = 0; i < levels; i++) {
-                if (weights[i] > 0.0f) {
-                    centroids[i] = weightedSums[i] / weights[i];
-                }
-            }
-            Arrays.sort(centroids);
-        }
-        return centroids;
-    }
-
-    private static int nearestCodebookIndex(float value, float[] codebook) {
-        int best = 0;
-        float bestDistance = Math.abs(value - codebook[0]);
-        for (int i = 1; i < codebook.length; i++) {
-            float distance = Math.abs(value - codebook[i]);
-            if (distance < bestDistance) {
-                bestDistance = distance;
-                best = i;
-            }
-        }
-        return best;
-    }
-
-    private static void packCode(byte[] packed, long codeIndex, int bitWidth, int code) {
-        long bitOffset = codeIndex * bitWidth;
-        for (int bit = 0; bit < bitWidth; bit++) {
-            if (((code >>> bit) & 1) != 0) {
-                long absoluteBit = bitOffset + bit;
-                int byteIndex = Math.toIntExact(absoluteBit >>> 3);
-                packed[byteIndex] = (byte) (packed[byteIndex] | (1 << (absoluteBit & 7)));
-            }
-        }
-    }
-
-    private static int unpackCode(byte[] packed, long codeIndex, int bitWidth) {
-        long bitOffset = codeIndex * bitWidth;
-        int code = 0;
-        for (int bit = 0; bit < bitWidth; bit++) {
-            long absoluteBit = bitOffset + bit;
-            int byteIndex = Math.toIntExact(absoluteBit >>> 3);
-            if (((packed[byteIndex] >>> (absoluteBit & 7)) & 1) != 0) {
-                code |= 1 << bit;
-            }
-        }
-        return code;
     }
 
     private byte[] serializePrefix(KvBuffer buffer, int prefixLen) {
