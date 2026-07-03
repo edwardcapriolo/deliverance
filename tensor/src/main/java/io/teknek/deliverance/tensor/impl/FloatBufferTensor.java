@@ -25,7 +25,7 @@ import org.slf4j.LoggerFactory;
  *
  * The Tensor is thread safe for read operations, but not for write operations.
  */
-public final class FloatBufferTensor extends AbstractTensor<FloatVector, Float> {
+public final class FloatBufferTensor extends AbstractTensor {
     private static final Logger logger = LoggerFactory.getLogger(FloatBufferTensor.class);
     private final FloatBuffer underlyingByteBuffer;
     private final String name;
@@ -129,19 +129,16 @@ public final class FloatBufferTensor extends AbstractTensor<FloatVector, Float> 
         return offset * Float.BYTES;
     }
 
-    @Override
     public FloatVector getVector(VectorSpecies<Float> species, int... voffset) {
         int offset = getOffset(voffset);
         return FloatVector.fromMemorySegment(species, segment, getMemorySegmentOffset(offset), ByteOrder.LITTLE_ENDIAN);
     }
 
-    @Override
     public FloatVector getVector(VectorSpecies<Float> species, int row, int column) {
         int offset = getOffset(row, column);
         return FloatVector.fromMemorySegment(species, segment, getMemorySegmentOffset(offset), ByteOrder.LITTLE_ENDIAN);
     }
 
-    @Override
     public void intoTensor(FloatVector vector, int... aoffset) {
         int offset = getOffset(aoffset);
         vector.intoMemorySegment(segment, getMemorySegmentOffset(offset), ByteOrder.LITTLE_ENDIAN);

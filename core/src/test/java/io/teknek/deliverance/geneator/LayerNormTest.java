@@ -68,10 +68,10 @@ public class LayerNormTest {
             }
         }
         ArrayQueueTensorAllocator tc = new ArrayQueueTensorAllocator(new MetricRegistry());
-        AbstractTensor<?,?> output = tc.get(inputTensor.getDType(), inputTensor.shape());
+        AbstractTensor output = tc.get(inputTensor.getDType(), inputTensor.shape());
 
-        AbstractTensor<?,?> weights = PanamaTensorOperationsTest.allOnes(7);
-        AbstractTensor<?,?> bias = PanamaTensorOperationsTest.allZeros(7);
+        AbstractTensor weights = PanamaTensorOperationsTest.allOnes(7);
+        AbstractTensor bias = PanamaTensorOperationsTest.allZeros(7);
         LayerNorm.performLayerNorm(inputTensor, output, weights, bias, Double.valueOf(1e-05).floatValue(), 0, 7, 7);
         System.out.println("out");
         for (int i = 0 ; i < goldInput.length; i++){
@@ -90,6 +90,5 @@ public class LayerNormTest {
         //[-0.2393,  0.5583, -0.2678, -1.7008,  1.6497, -0.6872,  0.6871]
     }
 }
-
 
 

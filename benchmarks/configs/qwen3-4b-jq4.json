@@ -1,5 +1,6 @@
 {
   "outputHeadQuantization": "Q4",
+  "maxBatchSize": 512,
   "kvBufferCache": {
     "maxEntries": 10000,
     "blockSize": 32,

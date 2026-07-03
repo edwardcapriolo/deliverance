@@ -22,7 +22,7 @@ import org.slf4j.LoggerFactory;
 
 import static io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor.makeBlockShape;
 
-public class Q8ByteBufferTensor extends AbstractTensor<ByteVector, Byte> {
+public class Q8ByteBufferTensor extends AbstractTensor {
     private static final Logger logger = LoggerFactory.getLogger(Q8ByteBufferTensor.class);;
     public static final int BLOCK_SIZE = 32;
     public static final float I_BLOCK_SIZE = 1.0f / BLOCK_SIZE;
@@ -165,20 +165,17 @@ public class Q8ByteBufferTensor extends AbstractTensor<ByteVector, Byte> {
         }
     }
 
-    @Override
     public ByteVector getVector(VectorSpecies<Byte> species, int... voffset) {
         int offset = getOffset(voffset);
         return ByteVector.fromMemorySegment(species, segment, getMemorySegmentOffset(offset), ByteOrder.LITTLE_ENDIAN);
     }
 
-    @Override
     public void intoTensor(ByteVector vector, int... aoffset) {
         Preconditions.checkArgument(!b.isReadOnly());
         int offset = getOffset(aoffset);
         vector.intoMemorySegment(segment, getMemorySegmentOffset(offset), ByteOrder.LITTLE_ENDIAN);
     }
 
-    @Override
     public void intoTensor(ByteVector vector, VectorMask<Byte> msk, int... aoffset) {
         Preconditions.checkArgument(!b.isReadOnly());
         int offset = getOffset(aoffset);

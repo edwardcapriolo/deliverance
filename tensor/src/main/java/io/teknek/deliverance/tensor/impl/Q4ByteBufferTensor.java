@@ -21,7 +21,7 @@ import jdk.incubator.vector.VectorSpecies;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public final class Q4ByteBufferTensor extends AbstractTensor<ByteVector, Byte> {
+public final class Q4ByteBufferTensor extends AbstractTensor {
     private static final Logger logger = LoggerFactory.getLogger(Q4ByteBufferTensor.class);;
     public static final int BLOCK_SIZE = 32;
     public static final int HALF_BLOCK = (BLOCK_SIZE / 2);
@@ -236,13 +236,11 @@ public final class Q4ByteBufferTensor extends AbstractTensor<ByteVector, Byte> {
         throw new UnsupportedOperationException();
     }
 
-    @Override
     public ByteVector getVector(VectorSpecies<Byte> species, int... voffset) {
         int offset = getOffset(voffset);
         return ByteVector.fromMemorySegment(species, segment, getMemorySegmentOffset(offset), ByteOrder.LITTLE_ENDIAN);
     }
 
-    @Override
     public void intoTensor(ByteVector vector, int... aoffset) {
         Preconditions.checkArgument(!b.isReadOnly());
         int offset = getOffset(aoffset);

@@ -74,13 +74,13 @@ public class ArrayQueueTensorAllocator implements TensorAllocator {
     }
 
 
-    public AbstractTensor<?,?> getDirty(DType dType, TensorShape shape){
+    public AbstractTensor getDirty(DType dType, TensorShape shape){
         dirtyGet.mark();
         MpmcUnboundedXaddArrayQueue<AbstractTensor> availableQueue = availableByShape.computeIfAbsent(
                 new ShapeKey(dType, shape),
                 queueFactory
         );
-        AbstractTensor<?,?> t = availableQueue.poll();
+        AbstractTensor t = availableQueue.poll();
         if (t != null) {
             dirtyGetHit.mark();
             return t;

@@ -7,7 +7,6 @@ import com.google.common.primitives.Ints;
 
 import java.nio.FloatBuffer;
 import java.util.*;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 
@@ -71,7 +70,7 @@ import static io.teknek.deliverance.tensor.DebugSupport.debug;
 public abstract class AbstractModel implements Generator, Classifier {
     static final Logger logger = LoggerFactory.getLogger(AbstractModel.class);
 
-    private static final Integer MAX_BATCH_SIZE = Integer.getInteger("jlama.max_batch_size", 256);
+    public static final int DEFAULT_MAX_BATCH_SIZE = 512;
 
     public enum GenerationDebugEventType {
         AFTER_PREFIX_COPY,
@@ -161,6 +160,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     protected ClassifyOutput classifyOutput;
     protected WrappedForkJoinPool pool;
     protected PreTrainedTokenizer preTrainedTokenizer;
+    protected int maxBatchSize = DEFAULT_MAX_BATCH_SIZE;
     private volatile Consumer<GenerationDebugEvent> generationDebugHook = event -> {};
     private volatile Consumer<LayerDebugEvent> layerDebugHook = event -> {};
 
@@ -434,6 +434,13 @@ public abstract class AbstractModel implements Generator, Classifier {
         return Optional.ofNullable(gossipParallelMembership);
     }
 
+    void setMaxBatchSize(int maxBatchSize) {
+        if (maxBatchSize < 1) {
+            throw new IllegalArgumentException("maxBatchSize must be >= 1");
+        }
+        this.maxBatchSize = maxBatchSize;
+    }
+
     void setGossipParallelMembership(GossipParallelMembership gossipParallelMembership) {
         this.gossipParallelMembership = Objects.requireNonNull(gossipParallelMembership, "gossipParallelMembership");
     }
@@ -560,16 +567,18 @@ public abstract class AbstractModel implements Generator, Classifier {
         return promptTokens;
     }
 
-    SamplerReturn createNextToken(GeneratorParameters generatorParameters, AbstractTensor logits, AbstractTensor last,
-                        ResponseContext responseContext, Random random, float temperature){
-        if (generatorParameters.guidedChoice.isPresent()) {
-            GuidedChoiceSampler sampler = new GuidedChoiceSampler(this, last.slice(last.shape().first() - 1),
-                    logits, sampleOutput.getOutputLayerNorm(), generatorParameters.guidedChoice.get(), responseContext);
-           return new SamplerReturn(sampler.sample());
-        } else {
-            DeliveranceSampler legacy = new DeliveranceSampler(this, generatorParameters,
-                    last.slice(last.shape().first() -1), logits, sampleOutput.getOutputLayerNorm(), random, random.nextFloat());
-            return legacy.sample();
+    SamplerReturn createNextToken(GeneratorParameters generatorParameters, GenerationEngine.Logits logits, GenerationEngine.PrefillOutput last,
+                                  ResponseContext responseContext, Random random, float temperature){
+        try (AbstractTensor lastTokenOutput = last.copyLastTokenOutput(tensorAllocator)) {
+            if (generatorParameters.guidedChoice.isPresent()) {
+                GuidedChoiceSampler sampler = new GuidedChoiceSampler(this, lastTokenOutput,
+                        logits.tensor(), sampleOutput.getOutputLayerNorm(), generatorParameters.guidedChoice.get(), responseContext);
+               return new SamplerReturn(sampler.sample());
+            } else {
+                DeliveranceSampler legacy = new DeliveranceSampler(this, generatorParameters,
+                        lastTokenOutput, logits.tensor(), sampleOutput.getOutputLayerNorm(), random, random.nextFloat());
+                return legacy.sample();
+            }
         }
     }
 
@@ -620,68 +629,6 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     protected Response postProcessResponse(Response response) {
         return response;
-    }
-
-    private static double nanosToMs(long nanos) {
-        return nanos / 1_000_000.0;
-    }
-
-    private Response withGenerationTiming(Response response, long generationStartNanos, long timeToFirstTokenNanos) {
-        double totalTimeMs = nanosToMs(System.nanoTime() - generationStartNanos);
-        double timeToFirstTokenMs = nanosToMs(timeToFirstTokenNanos);
-        int generatedTokenCount = response.generatedTokens == null ? 0 : response.generatedTokens.size();
-        double avgTimePerTokenMs = generatedTokenCount == 0 ? 0.0 : totalTimeMs / generatedTokenCount;
-        return response.copyWithTiming(timeToFirstTokenMs, avgTimePerTokenMs, totalTimeMs);
-    }
-
-    private Response buildTimedResponse(
-            FinishReason reason,
-            int promptLength,
-            ResponseContext responseContext,
-            long generationStartNanos,
-            long timeToFirstTokenNanos
-    ) {
-        return postProcessResponse(withGenerationTiming(new Response(
-                        responseContext.responseText.toString(),
-                        responseContext.responseTextWithSpecialTokens.toString(),
-                        reason,
-                        promptLength,
-                        responseContext.generatedTokens,
-                        0,
-                        0,
-                        responseContext.samplerReturnList),
-                generationStartNanos,
-                timeToFirstTokenNanos));
-    }
-
-    private Optional<Response> maybeStopAfterToken(GeneratorParameters generatorParameters, ResponseContext responseContext,
-                                                   long[] encoded, int promptLength, int next,
-                                                   long generationStartNanos, long timeToFirstTokenNanos) {
-        if (generatorParameters.maxTokens.isPresent()) {
-            if (responseContext.generatedTokens.size() >= generatorParameters.maxTokens.get()) {
-                FinishReason reason = FinishReason.MAX_TOKENS;
-                return Optional.of(buildTimedResponse(reason, promptLength, responseContext, generationStartNanos, timeToFirstTokenNanos));
-            }
-        }
-        if (generatorParameters.guidedChoice.isPresent()) {
-            if (generatorParameters.guidedChoice.get().contains(responseContext.responseText.toString())) {
-                FinishReason reason = FinishReason.STOP_TOKEN;
-                return Optional.of(buildTimedResponse(reason, promptLength, responseContext, generationStartNanos, timeToFirstTokenNanos));
-            }
-        }
-        Optional<Response> shouldEnd = stopWords(generatorParameters, responseContext, encoded.length);
-        if (shouldEnd.isPresent()) {
-            return Optional.of(postProcessResponse(withGenerationTiming(shouldEnd.get(), generationStartNanos, timeToFirstTokenNanos)));
-        }
-        Optional<Response> shouldEndTools = getToolCallParser().shouldEndTurn(responseContext, encoded.length);
-        if (shouldEndTools.isPresent()) {
-            return Optional.of(postProcessResponse(withGenerationTiming(shouldEndTools.get(), generationStartNanos, timeToFirstTokenNanos)));
-        }
-        if (config.eosTokens.contains(next)) {
-            FinishReason reason = FinishReason.STOP_TOKEN;
-            return Optional.of(buildTimedResponse(reason, promptLength, responseContext, generationStartNanos, timeToFirstTokenNanos));
-        }
-        return Optional.empty();
     }
 
     @Override
@@ -816,16 +763,16 @@ public abstract class AbstractModel implements Generator, Classifier {
     public AbstractTensor batchForward(int[] token_ids, int startPos, KvBufferCache.KvBuffer kvbuf,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "abstractmodel.batch_forward").time()) {
-        AbstractTensor embedding = null;
+            AbstractTensor lastBatchOutput = null;
 
-        CausualWhisperer.LOGGER.debug("batchForward from 0 to token_ids.length {} max_batch_size {} per iteration",
-                token_ids.length, MAX_BATCH_SIZE);
-        for (int i = 0; i < token_ids.length; i += MAX_BATCH_SIZE) {
-            int[] batch = Arrays.copyOfRange(token_ids, i, Math.min(token_ids.length, i + MAX_BATCH_SIZE));
-            embedding = embedInput.batchInputsToEmbeddings(batch, startPos + i);
-            embedding = forward(embedding, startPos + i, kvbuf, tensorReducer);
-        }
-        return embedding;
+            CausualWhisperer.LOGGER.debug("batchForward from 0 to token_ids.length {} max_batch_size {} per iteration",
+                    token_ids.length, maxBatchSize);
+            for (int i = 0; i < token_ids.length; i += maxBatchSize) {
+                int[] batch = Arrays.copyOfRange(token_ids, i, Math.min(token_ids.length, i + maxBatchSize));
+                AbstractTensor inputEmbeddings = embedInput.batchInputsToEmbeddings(batch, startPos + i);
+                lastBatchOutput = forward(inputEmbeddings, startPos + i, kvbuf, tensorReducer);
+            }
+            return lastBatchOutput;
         }
     }
 
