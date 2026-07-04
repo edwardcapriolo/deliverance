@@ -125,6 +125,12 @@
     </build>
 <profiles>
 <profile>
+  <id>native-java-only</id>
+  <properties>
+    <deliverance.native.skip>true</deliverance.native.skip>
+  </properties>
+</profile>
+<profile>
   <id>linux</id>
   <activation>
     <os>
@@ -149,7 +155,7 @@
               <goal>run</goal>
             </goals>
             <configuration>
-              <target>
+              <target unless="deliverance.native.skip">
                 <copy todir="${nativeJarWorkdir}">
                   <zipfileset src="${defaultJarFile}" />
                 </copy>
@@ -177,7 +183,9 @@
               <goal>run</goal>
             </goals>
             <configuration>
-              <target>
+              <target unless="deliverance.native.skip">
+                <echo message="Native build log: ${project.build.directory}/native-build.log" />
+                <record name="${project.build.directory}/native-build.log" action="start" append="false" />
                 <exec executable="./download_dawn.sh" failonerror="true" resolveexecutable="true">
                     <arg value="${dawnTag}" />
                     <arg value="linux" />
@@ -200,6 +208,7 @@
                   <env key="LIB_NAME" value="${nativeLibName}" />
                   <env KEY="LIB_EXT"  value="so" />
                 </exec>
+                <record name="${project.build.directory}/native-build.log" action="stop" />
               </target>
             </configuration>
           </execution>
@@ -210,7 +219,9 @@
               <goal>run</goal>
             </goals>
             <configuration>
-              <target>
+              <target unless="deliverance.native.skip">
+                <echo message="Native smoke test log: ${project.build.directory}/native-smoke-test.log" />
+                <record name="${project.build.directory}/native-smoke-test.log" action="start" append="false" />
                 <exec executable="${exe.make}" failonerror="true" resolveexecutable="true">
                   <arg value="test-bf16-gemm-run" />
                   <env key="CC" value="${exe.compiler}" />
@@ -222,6 +233,7 @@
                   <env key="LIB_NAME" value="${nativeLibName}" />
                   <env key="LIB_EXT" value="so" />
                 </exec>
+                <record name="${project.build.directory}/native-smoke-test.log" action="stop" />
               </target>
             </configuration>
           </execution>
@@ -255,7 +267,7 @@
               <goal>run</goal>
             </goals>
             <configuration>
-              <target>
+              <target unless="deliverance.native.skip">
                 <copy todir="${nativeJarWorkdir}">
                   <zipfileset src="${defaultJarFile}" />
                 </copy>
@@ -280,7 +292,9 @@
               <goal>run</goal>
             </goals>
             <configuration>
-              <target>
+              <target unless="deliverance.native.skip">
+                <echo message="Native build log: ${project.build.directory}/native-build.log" />
+                <record name="${project.build.directory}/native-build.log" action="start" append="false" />
                 <exec executable="${exe.make}" failonerror="true" resolveexecutable="true">
                   <env key="CC" value="${exe.compiler}" />
                   <env key="AR" value="${exe.archiver}" />
@@ -292,6 +306,7 @@
                   <env key="LIB_NAME" value="${nativeLibName}" />
                   <env KEY="LIB_EXT"  value="so" />
                 </exec>
+                <record name="${project.build.directory}/native-build.log" action="stop" />
               </target>
             </configuration>
           </execution>
@@ -302,7 +317,9 @@
               <goal>run</goal>
             </goals>
             <configuration>
-              <target>
+                <target unless="deliverance.native.skip">
+                <echo message="Native smoke test log: ${project.build.directory}/native-smoke-test.log" />
+                <record name="${project.build.directory}/native-smoke-test.log" action="start" append="false" />
                 <exec executable="${exe.make}" failonerror="true" resolveexecutable="true">
                   <arg value="test-bf16-gemm-run" />
                   <env key="CC" value="${exe.compiler}" />
@@ -314,6 +331,7 @@
                   <env key="LIB_NAME" value="${nativeLibName}" />
                   <env key="LIB_EXT" value="so" />
                 </exec>
+                <record name="${project.build.directory}/native-smoke-test.log" action="stop" />
               </target>
             </configuration>
           </execution>
@@ -345,7 +363,7 @@
                 <goal>run</goal>
               </goals>
               <configuration>
-                <target>
+                <target unless="deliverance.native.skip">
                   <copy todir="${nativeJarWorkdir}">
                     <zipfileset src="${defaultJarFile}" />
                   </copy>
@@ -373,7 +391,9 @@
                 <goal>run</goal>
               </goals>
               <configuration>
-                <target>
+                <target unless="deliverance.native.skip">
+                  <echo message="Native build log: ${project.build.directory}/native-build.log" />
+                  <record name="${project.build.directory}/native-build.log" action="start" append="false" />
                   <exec executable="C:\Program Files\Git\bin\bash.exe" failonerror="true" resolveexecutable="true">
                     <arg value="./download_dawn.sh" />
                     <arg value="${dawnTag}" />
@@ -394,6 +414,7 @@
                     <env key="LIB_NAME" value="${nativeLibName}" />
                     <env KEY="LIB_EXT"  value="dll" />
                   </exec>
+                  <record name="${project.build.directory}/native-build.log" action="stop" />
                 </target>
               </configuration>
             </execution>
@@ -404,7 +425,9 @@
                 <goal>run</goal>
               </goals>
               <configuration>
-                <target>
+                <target unless="deliverance.native.skip">
+                  <echo message="Native smoke test log: ${project.build.directory}/native-smoke-test.log" />
+                  <record name="${project.build.directory}/native-smoke-test.log" action="start" append="false" />
                   <exec executable="${exe.make}" failonerror="true" resolveexecutable="true">
                     <arg value="test-bf16-gemm-run" />
                     <env key="CC" value="${exe.compiler}" />
@@ -417,6 +440,7 @@
                     <env key="LIB_EXT" value="dylib" />
                     <env key="MACOSX_DEPLOYMENT_TARGET" value="11.0" />
                   </exec>
+                  <record name="${project.build.directory}/native-smoke-test.log" action="stop" />
                 </target>
               </configuration>
             </execution>
@@ -452,7 +476,7 @@
                 <goal>run</goal>
               </goals>
               <configuration>
-                <target>
+                <target unless="deliverance.native.skip">
                   <copy todir="${nativeJarWorkdir}">
                     <zipfileset src="${defaultJarFile}" />
                   </copy>
@@ -480,7 +504,9 @@
                 <goal>run</goal>
               </goals>
               <configuration>
-                <target>
+                <target unless="deliverance.native.skip">
+                  <echo message="Native build log: ${project.build.directory}/native-build.log" />
+                  <record name="${project.build.directory}/native-build.log" action="start" append="false" />
                   <exec executable="./download_dawn.sh" failonerror="true" resolveexecutable="true">
                     <arg value="${dawnTag}" />
                     <arg value="mac" />
@@ -501,6 +527,7 @@
                     <env key="LIB_EXT" value="dylib" />
                     <env key="MACOSX_DEPLOYMENT_TARGET" value="11.0" />
                   </exec>
+                  <record name="${project.build.directory}/native-build.log" action="stop" />
                 </target>
               </configuration>
             </execution>
@@ -511,7 +538,9 @@
                 <goal>run</goal>
               </goals>
               <configuration>
-                <target>
+                <target unless="deliverance.native.skip">
+                  <echo message="Native smoke test log: ${project.build.directory}/native-smoke-test.log" />
+                  <record name="${project.build.directory}/native-smoke-test.log" action="start" append="false" />
                   <exec executable="${exe.make}" failonerror="true" resolveexecutable="true">
                     <arg value="test-bf16-gemm-run" />
                     <env key="CC" value="${exe.compiler}" />
@@ -524,6 +553,7 @@
                     <env key="LIB_EXT" value="dylib" />
                     <env key="MACOSX_DEPLOYMENT_TARGET" value="11.0" />
                   </exec>
+                  <record name="${project.build.directory}/native-smoke-test.log" action="stop" />
                 </target>
               </configuration>
             </execution>
@@ -558,7 +588,7 @@
                 <goal>run</goal>
               </goals>
               <configuration>
-                <target>
+                <target unless="deliverance.native.skip">
                   <copy todir="${nativeJarWorkdir}">
                     <zipfileset src="${defaultJarFile}" />
                   </copy>
@@ -586,7 +616,9 @@
                 <goal>run</goal>
               </goals>
               <configuration>
-                <target>
+                <target unless="deliverance.native.skip">
+                  <echo message="Native build log: ${project.build.directory}/native-build.log" />
+                  <record name="${project.build.directory}/native-build.log" action="start" append="false" />
                   <exec executable="./download_dawn.sh" failonerror="true" resolveexecutable="true">
                     <arg value="${dawnTag}" />
                     <arg value="mac" />
@@ -607,6 +639,7 @@
                     <env key="LIB_EXT" value="dylib" />
                     <env key="MACOSX_DEPLOYMENT_TARGET" value="10.12" />
                   </exec>
+                  <record name="${project.build.directory}/native-build.log" action="stop" />
                 </target>
               </configuration>
             </execution>

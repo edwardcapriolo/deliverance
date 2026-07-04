@@ -5,5 +5,5 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 JAR=$(sh "$SCRIPT_DIR/resolve_nanocode_jar.sh")
 
 exec java -jar "$JAR" \
-  --config config-llama32.json \
+  --config config-qwen3-0.6b-jq4.json \
   "$@"

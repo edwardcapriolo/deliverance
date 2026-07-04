@@ -51,6 +51,7 @@ Generation:
 - [Prefix cache MSE TurboQuant](core/prefix_cache_turboquant.md) Documents experimental compressed prefix snapshots and tradeoffs
 - [Tensor parallel guide](core/TensorParallelGuide.md) Explains how to enable tensor-parallel generation for Gemma2
 - [Tensor parallel developer notes](core/TensorParallelDeveloper.md) Details the implementation changes behind tensor parallelism
+- [Build and test guide](build.md) Explains normal builds, Java-only native builds, native logs, and test flags
 
 
 ### Lightning quick start 
@@ -190,50 +191,9 @@ Read more:
 - [JQ4 tensor format](core/jq4_tensor_format.md) describes how Deliverance stores Q4 weights and `.qb` scale sidecars.
 - [Native SIMD kernels](core/native_simd_kernels.md) explains the native GEMM paths and where Native SIMD still delegates to Panama.
 
-### Building
+### Building And Testing
 
-The core build requires Java JDK 25 and maven (it technically is possible to build on Java 21 with preview features but very painful).
-
-```sh
-$export JAVA_HOME=/usr/lib/jvm/java-25-temurin-jdk/
-$git clone git@github.com:edwardcapriolo/deliverence.git
-$cd deliverence
-$mvn install -Dmaven.test.skip=true
-```
-The native SIMD operations can be build on linux, MAC, and probably windows(I dont have a windows build system right now).
-
-These are the requirements for an alpine build with lib-musl
-```
-doas apk add curl
-doas apk add openjdk25
-doas apk add gpg
-doas apk add bash
-doas apk add clang20-libclang-20.1.8-r0
-doas apk add llvm clang lld
-```
-You could also disable the native module during the build phase. As it is marked "optional" in the downstream components.
-
-#### Testing
-
-In general, we look to keep testing light and fast and favor unit style tests on specific functionality whenever possible.
-In particular LLMs are large files and at times we bring down the files for a full end-to-end type test. These options
-can be used to customize the tests as they run.
-
-```
--DskipTests
--DskipITs
--Dmaven.test.skip=true
-```
-
-By default, integration tests tagged `large-model` are excluded. To skip all integration tests named `*IT`:
-```
-mvn verify -DskipITs
-```
-
-Build the tests but do not execute them
-```
-mvn install -Dmaven.test.skip.exec=true
-```
+See [Build and test guide](build.md) for normal builds, Java-only native builds, native build logs, and test flags.
 
 ### 🔍 Semantic Search & Embeddings
 

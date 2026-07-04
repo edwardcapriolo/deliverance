@@ -1,6 +1,9 @@
 #!/usr/bin/env sh
 set -eu
 
-exec java -jar target/nanocode-deliverance-0.0.10-SNAPSHOT-all.jar \
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+JAR=$(sh "$SCRIPT_DIR/resolve_nanocode_jar.sh")
+
+exec java -jar "$JAR" \
   --config config-tinyllama.json \
   "$@"
