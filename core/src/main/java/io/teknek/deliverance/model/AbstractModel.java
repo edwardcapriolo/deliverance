@@ -7,6 +7,7 @@ import com.google.common.primitives.Ints;
 
 import java.nio.FloatBuffer;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 
@@ -71,6 +72,24 @@ public abstract class AbstractModel implements Generator, Classifier {
     static final Logger logger = LoggerFactory.getLogger(AbstractModel.class);
 
     public static final int DEFAULT_MAX_BATCH_SIZE = 512;
+    private static final long PREFILL_PROGRESS_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(3);
+    private static final ThreadLocal<PrefillProgress> PREFILL_PROGRESS = new ThreadLocal<>();
+
+    private static final class PrefillProgress {
+        private final int totalTokens;
+        private final int startPos;
+        private final long startNanos;
+        private int chunkStart;
+        private int chunkTokens;
+        private long nextLogNanos;
+
+        private PrefillProgress(int totalTokens, int startPos, long startNanos) {
+            this.totalTokens = totalTokens;
+            this.startPos = startPos;
+            this.startNanos = startNanos;
+            this.nextLogNanos = startNanos + PREFILL_PROGRESS_INTERVAL_NANOS;
+        }
+    }
 
     public enum GenerationDebugEventType {
         AFTER_PREFIX_COPY,
@@ -767,10 +786,29 @@ public abstract class AbstractModel implements Generator, Classifier {
 
             CausualWhisperer.LOGGER.debug("batchForward from 0 to token_ids.length {} max_batch_size {} per iteration",
                     token_ids.length, maxBatchSize);
-            for (int i = 0; i < token_ids.length; i += maxBatchSize) {
-                int[] batch = Arrays.copyOfRange(token_ids, i, Math.min(token_ids.length, i + maxBatchSize));
-                AbstractTensor inputEmbeddings = embedInput.batchInputsToEmbeddings(batch, startPos + i);
-                lastBatchOutput = forward(inputEmbeddings, startPos + i, kvbuf, tensorReducer);
+            PrefillProgress previousProgress = PREFILL_PROGRESS.get();
+            PrefillProgress progress = new PrefillProgress(token_ids.length, startPos, System.nanoTime());
+            PREFILL_PROGRESS.set(progress);
+            try {
+                for (int i = 0; i < token_ids.length; i += maxBatchSize) {
+                    int[] batch = Arrays.copyOfRange(token_ids, i, Math.min(token_ids.length, i + maxBatchSize));
+                    progress.chunkStart = i;
+                    progress.chunkTokens = batch.length;
+                    AbstractTensor inputEmbeddings = embedInput.batchInputsToEmbeddings(batch, startPos + i);
+                    lastBatchOutput = forward(inputEmbeddings, startPos + i, kvbuf, tensorReducer);
+                    int processed = Math.min(token_ids.length, i + batch.length);
+                    long now = System.nanoTime();
+                    if (processed < token_ids.length && now >= progress.nextLogNanos) {
+                        logPrefillProgress(progress, progress.chunkStart, config.numberOfLayers, config.numberOfLayers, now);
+                        progress.nextLogNanos = now + PREFILL_PROGRESS_INTERVAL_NANOS;
+                    }
+                }
+            } finally {
+                if (previousProgress == null) {
+                    PREFILL_PROGRESS.remove();
+                } else {
+                    PREFILL_PROGRESS.set(previousProgress);
+                }
             }
             return lastBatchOutput;
         }
@@ -803,15 +841,60 @@ public abstract class AbstractModel implements Generator, Classifier {
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "abstractmodel.forward_layers").time()) {
         emitLayerDebug(-1, "input", embedding);
+        int batchTokens = embedding.shape().first();
         for (int i = 0; i < config.numberOfLayers; i++) {
             int relativeLayer = i;
             AbstractTensor ref = embedding; // reference so we can free
             embedding = transformerBlocks[relativeLayer].forward(embedding, startPos, kvbuf, tensorReducer);
             emitLayerDebug(relativeLayer, "layer_output", embedding);
             ref.close();
+            long now = System.nanoTime();
+            PrefillProgress progress = PREFILL_PROGRESS.get();
+            if (progress != null && batchTokens > 1 && i + 1 < config.numberOfLayers && now >= progress.nextLogNanos) {
+                logPrefillProgress(progress, progress.chunkStart, i + 1, config.numberOfLayers, now);
+                progress.nextLogNanos = now + PREFILL_PROGRESS_INTERVAL_NANOS;
+            }
         }
         return embedding;
         }
+    }
+
+    private static void logPrefillProgress(PrefillProgress progress, int completedTokensBeforeCurrentChunk,
+            int processedLayers, int totalLayers, long now) {
+        int estimatedCurrentChunkTokens = totalLayers == 0 ? 0 : (progress.chunkTokens * processedLayers) / totalLayers;
+        int estimatedProcessedTokens = Math.min(progress.totalTokens,
+                completedTokensBeforeCurrentChunk + estimatedCurrentChunkTokens);
+        double elapsedSeconds = (now - progress.startNanos) / 1_000_000_000.0;
+        double tokensPerSecond = elapsedSeconds == 0.0 ? 0.0 : estimatedProcessedTokens / elapsedSeconds;
+        double remainingSeconds = tokensPerSecond == 0.0
+                ? Double.NaN
+                : (progress.totalTokens - estimatedProcessedTokens) / tokensPerSecond;
+        int chunkStartPosition = progress.startPos + progress.chunkStart;
+        int chunkEndPosition = chunkStartPosition + progress.chunkTokens - 1;
+        logger.info("prefill progress tokens={}/{} chunk={}-{} layers={}/{} elapsed={} eta={} rate={} tok/s",
+                estimatedProcessedTokens,
+                progress.totalTokens,
+                chunkStartPosition,
+                chunkEndPosition,
+                processedLayers,
+                totalLayers,
+                seconds(elapsedSeconds),
+                seconds(remainingSeconds),
+                rate(tokensPerSecond));
+    }
+
+    private static String seconds(double seconds) {
+        if (!Double.isFinite(seconds)) {
+            return "unknown";
+        }
+        return String.format(Locale.ROOT, "%.1fs", seconds);
+    }
+
+    private static String rate(double tokensPerSecond) {
+        if (!Double.isFinite(tokensPerSecond)) {
+            return "unknown";
+        }
+        return String.format(Locale.ROOT, "%.1f", tokensPerSecond);
     }
 
     /** This is a hook method that does nothing here but can be overridden by subclasses */
