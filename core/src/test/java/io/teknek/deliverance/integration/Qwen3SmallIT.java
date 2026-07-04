@@ -6,6 +6,7 @@ import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.DoNothingGenerateEvent;
+import io.teknek.deliverance.model.GenerateEvent;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import org.junit.jupiter.api.Disabled;
@@ -102,5 +103,31 @@ public class Qwen3SmallIT {
                     """.trim(), response.responseText);
             //QWEN3_06B_QOD_THINKING=<think>\nOkay, let's see. John has $10.00. Ed has double that. So, double of 10 is 20. So Ed has $20.00. That's straightforward. No need for complicated steps here. Just multiply 10 by 2.\n</think>\n\nEd has $20.00, as double John's $10.00 is 2 × $10.00 = $20.00.<|im_end|>
         }
+    }
+
+    @Disabled("Requires enough disk/RAM to quantize and run dense Qwen3-30B.")
+    public void qwen330BDenseQuantizeOnDemandToolCallingPromptProducesOutput() {
+        ModelFetcher fetch = new ModelFetcher("Qwen", "Qwen3-30B");
+        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
+                .withQuantizeOnDemand(DType.Q4, "Qwen", "Qwen3-30B-JQ4")
+                .buildLocalTransformerModel()) {
+            PromptContext prompt = model.promptSupport().orElseThrow().builder()
+                    .addTemplateArgs(Map.of("enable_thinking", false))
+                    .addUserMessage("List exactly three likely files in a small Java project. Answer as a plain bullet list.")
+                    .build();
+            Response response = model.generate(UUID.randomUUID(), prompt,
+                    new GeneratorParameters().withTemperature(0.0f).withMaxTokens(96),
+                    printTokens("QWEN3_30B_QOD_TOOLING"));
+            System.out.println("QWEN3_30B_QOD_TOOLING=" + response.responseTextWithSpecialTokens.replace("\n", "\\n"));
+            assertFalse(response.responseTextWithSpecialTokens.isBlank());
+        }
+    }
+
+    private static GenerateEvent printTokens(String label) {
+        return (next, nextRaw, nextCleaned, timing) -> {
+            System.out.print(nextRaw == null ? "" : nextRaw);
+            System.out.flush();
+            System.out.printf("%n[%s token=%d elapsed=%.3fs]%n", label, next, timing);
+        };
     }
 }
