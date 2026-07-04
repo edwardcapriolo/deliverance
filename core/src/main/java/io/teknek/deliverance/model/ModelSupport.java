@@ -16,6 +16,7 @@ import io.teknek.deliverance.model.mistral.MistralModelType;
 import io.teknek.deliverance.model.mixtral.MixtralModelType;
 import io.teknek.deliverance.model.qwen2.Qwen2ModelType;
 import io.teknek.deliverance.model.qwen3.Qwen3ModelType;
+import io.teknek.deliverance.model.qwen3.Qwen3MoeModelType;
 import io.teknek.deliverance.model.tensorparallel.StaticTensorParallelContext;
 import io.teknek.deliverance.model.tensorparallel.SingleRankTensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelCollectives;
@@ -56,6 +57,7 @@ public class ModelSupport {
         registry.putIfAbsent("LLAMA", new LlamaModelType());
         registry.putIfAbsent("QWEN2", new Qwen2ModelType());
         registry.putIfAbsent("QWEN3", new Qwen3ModelType());
+        registry.putIfAbsent("QWEN3_MOE", new Qwen3MoeModelType());
         registry.putIfAbsent("GEMMA2", new Gemma2ModelType());
         registry.putIfAbsent("GEMMA4", new Gemma4ModelType());
         registry.putIfAbsent("GEMMA3_TEXT", new Gemma3ModelType());
