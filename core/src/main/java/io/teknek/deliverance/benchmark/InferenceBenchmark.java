@@ -23,6 +23,8 @@ import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
+import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.gossip.GossipSettings;
 import io.teknek.gossip.Member;
 import io.teknek.gossip.RemoteMember;
@@ -161,7 +163,7 @@ public final class InferenceBenchmark {
                     .withWorkingQuantType(options.workingQType)
                     .withKvBufferCacheSettings(kvBufferCacheSettings(options))
                     .withWrappedForkJoinPool(newPool(options));
-            builder = applyOutputHeadQuantization(options, applyModelConfig(options, builder));
+            builder = applyOutputHeadQuantization(options, applyTensorProvider(options, applyModelConfig(options, builder)));
             return new LocalDeliveranceRunner(options.owner + "/" + options.model,
                     builder.build());
         }
@@ -170,6 +172,29 @@ public final class InferenceBenchmark {
 
     private static AutoModelForCausaLm.Builder applyModelConfig(Options options, AutoModelForCausaLm.Builder builder) {
         return options.modelConfig == null ? builder : builder.withConfig(AutoModelConfig.fromJson(options.modelConfig));
+    }
+
+    private static AutoModelForCausaLm.Builder applyTensorProvider(Options options,
+            AutoModelForCausaLm.Builder builder) {
+        if ("auto".equals(options.tensorProvider)) {
+            return builder;
+        }
+        if ("native-gpu".equals(options.tensorProvider)) {
+            return builder.withTensorProvider(new ConfigurableTensorProvider(loadTensorOperations(
+                    "io.teknek.deliverance.tensor.operations.NativeGPUTensorOperations")));
+        }
+        if ("native-simd".equals(options.tensorProvider)) {
+            return builder;
+        }
+        throw new IllegalArgumentException("--tensor-provider must be auto, native-simd, or native-gpu");
+    }
+
+    private static TensorOperations loadTensorOperations(String className) {
+        try {
+            return (TensorOperations) Class.forName(className).getConstructor().newInstance();
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Unable to load tensor provider " + className, e);
+        }
     }
 
     private static AutoModelForCausaLm.Builder applyOutputHeadQuantization(Options options,
@@ -933,6 +958,7 @@ public final class InferenceBenchmark {
         private int prefixCacheBlockSize = 32;
         private int prefixCacheMaxPrefixTokens = 512;
         private int kvContextRowsPerPageTarget = 32;
+        private String tensorProvider = "auto";
         private boolean profileStages = false;
         private Path modelConfig;
         private Path suiteFile;
@@ -974,6 +1000,7 @@ public final class InferenceBenchmark {
                     case "--prefix-cache-max-prefix-tokens" -> options.prefixCacheMaxPrefixTokens = Integer.parseInt(args[++i]);
                     case "--kv-context-rows-per-page" -> options.kvContextRowsPerPageTarget = Integer.parseInt(args[++i]);
                     case "--model-config" -> options.modelConfig = Path.of(args[++i]);
+                    case "--tensor-provider" -> options.tensorProvider = args[++i].toLowerCase(Locale.ROOT);
                     case "--profile-stages" -> options.profileStages = true;
                     case "--suite-file" -> options.suiteFile = Path.of(args[++i]);
                     case "--output" -> options.output = Path.of(args[++i]);
@@ -995,6 +1022,11 @@ public final class InferenceBenchmark {
             }
             if (options.kvContextRowsPerPageTarget < 1) {
                 throw new IllegalArgumentException("--kv-context-rows-per-page must be >= 1");
+            }
+            if (!options.tensorProvider.equals("auto")
+                    && !options.tensorProvider.equals("native-simd")
+                    && !options.tensorProvider.equals("native-gpu")) {
+                throw new IllegalArgumentException("--tensor-provider must be auto, native-simd, or native-gpu");
             }
             if (!options.tensorParallelCollectiveTransport.equals("http")
                     && !options.tensorParallelCollectiveTransport.equals("netty")) {
@@ -1038,6 +1070,8 @@ public final class InferenceBenchmark {
                       --prefix-cache-max-prefix-tokens N  Max prompt prefix tokens cached, default 512
                       --kv-context-rows-per-page N        Active KV page context-row target, default 32
                       --model-config PATH                 AutoModelForCausaLm JSON builder config
+                      --model-config PATH                 AutoModelForCausaLm JSON builder config
+                      --tensor-provider auto|native-simd|native-gpu Tensor provider for local Deliverance runner, default auto
                       --profile-stages                   Print accumulated broad-stage timing after each Deliverance turn
                       --suite-file PATH                  FastChat MT-Bench question.jsonl; default built-in subset
                       --output PATH                      CSV output path, default target/inference-benchmark.csv
