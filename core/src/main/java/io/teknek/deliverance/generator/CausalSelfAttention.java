@@ -21,6 +21,7 @@ import static io.teknek.deliverance.tensor.DebugSupport.debug;
 
 public class CausalSelfAttention extends BaseCausalSelfAttention {
     private static final Logger logger = LoggerFactory.getLogger(CausalSelfAttention.class);
+    private static final String PACKED_PREFILL_PROPERTY = "deliverance.attention.packed-prefill";
 
     private final AbstractModel m;
     private final Config config;
@@ -204,10 +205,6 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
                 AbstractTensor key = kvMem.getKeyTensorForPosition(layerIndex, position);
                 AbstractTensor val = kvMem.getValTensorForPosition(layerIndex, position);
 
-                AbstractTensor[] kvp = kvMem.getKeyTensorsUptoPosition(layerIndex, position);
-                AbstractTensor[] vvp = kvMem.getValTensorsUptoPosition(layerIndex, position);
-                recordKvLayout(kvp, finalPosition + 1);
-
                 AbstractTensor tmpKey = keySlices[bi];
                 AbstractTensor tmpVal = valSlices[bi];
                 AbstractTensor query = querySlices[bi];
@@ -295,44 +292,52 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
                     });
                 }
 
-                // Attention
-                try (Timer.Context ignoredScore = InferenceProfiler.timer(metricRegistry, "causalselfattention.score_value").time()) {
-                    VectorMath.pfor(0, numberOfHeads, h -> {
-                    int xoffset = Math.floorDiv(h, headGroupSize) * config.headSize;
-                    int yoffset = h * config.headSize;
+                if (!usePackedPrefill(batchSize)) {
+                    AbstractTensor[] kvp = kvMem.getKeyTensorsUptoPosition(layerIndex, position);
+                    AbstractTensor[] vvp = kvMem.getValTensorsUptoPosition(layerIndex, position);
+                    recordKvLayout(kvp, finalPosition + 1);
+                    // Attention
+                    try (Timer.Context ignoredScore = InferenceProfiler.timer(metricRegistry, "causalselfattention.score_value").time()) {
+                        VectorMath.pfor(0, numberOfHeads, h -> {
+                        int xoffset = Math.floorDiv(h, headGroupSize) * config.headSize;
+                        int yoffset = h * config.headSize;
 
-                    if (yoffset >= query.shape().last()) return;
+                        if (yoffset >= query.shape().last()) return;
 
-                    try (AbstractTensor attn = m.makeDenseTensor(1, kvp[0].shape().first() * kvp.length)) { // chunky so the cache isn't
-                        // thrashed
-                        // compute attention scores by multiplying query and key for every position
-                        // do this for each position since the pages are not contiguous
-                        for (int i = 0; i < kvp.length; i++) {
-                            int len = kvp[i].shape().first();
-                            int offset = i * len;
-                            int size = i == kvp.length - 1 ? (finalPosition + 1) - offset : len;
-                            configurableTensorProvider.get()
-                                    .batchDotProduct(attn, query, kvp[i], yoffset, xoffset, config.headSize, offset, 0, size);
+                        try (AbstractTensor attn = m.makeDenseTensor(1, kvp[0].shape().first() * kvp.length)) { // chunky so the cache isn't
+                            // thrashed
+                            // compute attention scores by multiplying query and key for every position
+                            // do this for each position since the pages are not contiguous
+                            for (int i = 0; i < kvp.length; i++) {
+                                int len = kvp[i].shape().first();
+                                int offset = i * len;
+                                int size = i == kvp.length - 1 ? (finalPosition + 1) - offset : len;
+                                configurableTensorProvider.get()
+                                        .batchDotProduct(attn, query, kvp[i], yoffset, xoffset, config.headSize, offset, 0, size);
+                            }
+
+                            configurableTensorProvider.get().scale(attentionScale, attn, 0, finalPosition + 1);
+
+                            applyAttentionSoftcap(attn, finalPosition + 1, config.attnLogitSoftCapping);
+
+                            // softmax the scores to get attention weights, from 0..pos inclusively
+                            softmax(attn, finalPosition + 1);
+
+                            // apply adjusted attention weights to value vectors
+                            // do this for each position since the pages are not contiguous
+                            for (int i = 0; i < vvp.length; i++) {
+                                int len = vvp[i].shape().first(); // batch size
+                                int offset = i * len;
+                                int size = i == vvp.length - 1 ? (finalPosition + 1) - offset : len;
+                                configurableTensorProvider.get().saxpy(attn, vvp[i], value, xoffset, yoffset, config.headSize, offset, 0, size);
+                            }
                         }
-
-                        configurableTensorProvider.get().scale(attentionScale, attn, 0, finalPosition + 1);
-
-                        applyAttentionSoftcap(attn, finalPosition + 1, config.attnLogitSoftCapping);
-
-                        // softmax the scores to get attention weights, from 0..pos inclusively
-                        softmax(attn, finalPosition + 1);
-
-                        // apply adjusted attention weights to value vectors
-                        // do this for each position since the pages are not contiguous
-                        for (int i = 0; i < vvp.length; i++) {
-                            int len = vvp[i].shape().first(); // batch size
-                            int offset = i * len;
-                            int size = i == vvp.length - 1 ? (finalPosition + 1) - offset : len;
-                            configurableTensorProvider.get().saxpy(attn, vvp[i], value, xoffset, yoffset, config.headSize, offset, 0, size);
-                        }
+                        }, m.getPool());
                     }
-                    }, m.getPool());
                 }
+            }
+            if (usePackedPrefill(batchSize)) {
+                prefillAttention(queryBatch, valueBatch, kvMem, startPosition, batchSize);
             }
 
             // matmul the projection and sum into input
@@ -372,6 +377,58 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
     private AbstractTensor allReduceAttention(AbstractTensor result) {
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "causalselfattention.all_reduce").time()) {
             return m.getTensorParallelCollectives().allReduceSum("layer." + layerIndex + ".self_attn.o_proj", result);
+        }
+    }
+
+    private boolean usePackedPrefill(int batchSize) {
+        return batchSize > 1 && Boolean.parseBoolean(System.getProperty(PACKED_PREFILL_PROPERTY, "true"));
+    }
+
+    private void prefillAttention(AbstractTensor queryBatch, AbstractTensor valueBatch, KvBufferCache.KvBuffer kvMem,
+            int startPosition, int batchSize) {
+        InferenceProfiler.counter(metricRegistry, "causalselfattention.prefill_packed.calls").inc();
+        InferenceProfiler.counter(metricRegistry, "causalselfattention.prefill_packed.batch_tokens").inc(batchSize);
+        int finalPosition = startPosition + batchSize - 1;
+        AbstractTensor[] keyPages = kvMem.getKeyTensorsUptoPosition(layerIndex, finalPosition);
+        AbstractTensor[] valuePages = kvMem.getValTensorsUptoPosition(layerIndex, finalPosition);
+        recordKvLayout(keyPages, finalPosition + 1);
+        try (AbstractTensor packedKeys = m.makeDenseTensor(finalPosition + 1, kvLength);
+             AbstractTensor packedValues = m.makeDenseTensor(finalPosition + 1, kvLength)) {
+            try (Timer.Context ignoredPack = InferenceProfiler.timer(metricRegistry, "causalselfattention.prefill_pack_kv").time()) {
+                fillVisibleRows(packedKeys, keyPages, finalPosition, 0, kvLength);
+                fillVisibleRows(packedValues, valuePages, finalPosition, 0, kvLength);
+            }
+            try (Timer.Context ignoredScore = InferenceProfiler.timer(metricRegistry, "causalselfattention.score_value").time();
+                 Timer.Context ignoredPackedScore = InferenceProfiler.timer(metricRegistry, "causalselfattention.prefill_packed.score_value").time()) {
+                int headGroupParallelism = Math.min(4, numberOfHeads);
+                for (int headStart = 0; headStart < numberOfHeads; headStart += headGroupParallelism) {
+                    int headEnd = Math.min(numberOfHeads, headStart + headGroupParallelism);
+                    VectorMath.pfor(headStart, headEnd, h -> {
+                        int xoffset = Math.floorDiv(h, headGroupSize) * config.headSize;
+                        int yoffset = h * config.headSize;
+                        if (yoffset >= queryBatch.shape().last()) return;
+                        try (AbstractTensor attn = m.makeDenseTensor(batchSize, finalPosition + 1)) {
+                            configurableTensorProvider.get()
+                                    .batchDotProduct(attn, queryBatch, packedKeys, yoffset, xoffset, config.headSize,
+                                            0, 0, finalPosition + 1);
+                            for (int bi = 0; bi < batchSize; bi++) {
+                                int visibleLength = startPosition + bi + 1;
+                                try (AbstractTensor attnRow = attn.slice(bi);
+                                     AbstractTensor valueRow = valueBatch.slice(bi)) {
+                                    configurableTensorProvider.get().scale(attentionScale, attnRow, 0, visibleLength);
+                                    applyAttentionSoftcap(attnRow, visibleLength, config.attnLogitSoftCapping);
+                                    softmax(attnRow, visibleLength);
+                                    configurableTensorProvider.get().saxpy(attnRow, packedValues, valueRow,
+                                            xoffset, yoffset, config.headSize, 0, 0, visibleLength);
+                                }
+                            }
+                        }
+                    }, m.getPool());
+                }
+            }
+        } finally {
+            closeAll(keyPages);
+            closeAll(valuePages);
         }
     }
 

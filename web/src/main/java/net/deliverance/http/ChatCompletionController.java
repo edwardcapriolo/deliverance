@@ -7,6 +7,7 @@ import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.model.Error;
+import io.teknek.deliverance.model.ReasoningFieldNames;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.safetensors.prompt.ToolCall;
 import io.teknek.dysfx.Either;
@@ -25,6 +26,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -49,12 +53,34 @@ public class ChatCompletionController {
 
     private PreGenerateSlot slot;
     private final boolean debugChatRequest;
+    private final String debugChatPromptDirectory;
+    private final ReasoningFieldMode reasoningFieldMode;
 
     public ChatCompletionController(Optional<PreGenerateSlot> slot,
             @Value("${deliverance.debug.chat-request:false}") boolean debugChatRequest,
+            @Value("${deliverance.debug.chat-prompt-dir:./logs/chat-prompts}") String debugChatPromptDirectory,
+            @Value("${deliverance.openai.reasoning-field:openai}") String reasoningField,
             @Value("${debug:false}") boolean springDebug){
         this.slot = slot.orElse((x,y) -> Either.Right(y));
         this.debugChatRequest = debugChatRequest || springDebug;
+        this.debugChatPromptDirectory = debugChatPromptDirectory;
+        this.reasoningFieldMode = ReasoningFieldMode.from(reasoningField);
+    }
+
+    enum ReasoningFieldMode {
+        OPENAI,
+        VLLM;
+
+        static ReasoningFieldMode from(String value) {
+            if (value == null || value.isBlank() || "openai".equalsIgnoreCase(value)
+                    || ReasoningFieldNames.OPENAI.equalsIgnoreCase(value)) {
+                return OPENAI;
+            }
+            if ("vllm".equalsIgnoreCase(value) || ReasoningFieldNames.VLLM.equalsIgnoreCase(value)) {
+                return VLLM;
+            }
+            throw new IllegalArgumentException("Unsupported reasoning field mode: " + value);
+        }
     }
 
     @RequestMapping(method = RequestMethod.POST, value = "/chat/completions", produces = { "application/json",
@@ -101,7 +127,7 @@ public class ChatCompletionController {
                     ChatCompletionResponseMessage message = new ChatCompletionResponseMessage()
                             .role(ChatCompletionResponseMessage.RoleEnum.ASSISTANT);
                     if (resp.reasoning != null) {
-                        message.reasoning(resp.reasoning);
+                        applyReasoning(message, resp.reasoning);
                     }
                     CreateChatCompletionResponseChoicesInner choice = new CreateChatCompletionResponseChoicesInner()
                             .message(message)
@@ -185,12 +211,21 @@ public class ChatCompletionController {
                 debugPrompt(promptContext.getPrompt());
                 StringBuilder streamedText = new StringBuilder();
                 StringBuilder pendingContent = new StringBuilder();
+                ReasoningStreamSplitter reasoningSplitter = new ReasoningStreamSplitter();
                 AtomicBoolean suppressContent = new AtomicBoolean(false);
                 Response response = model.generate(finalSessionId, promptContext, finalReady.generatorParameters(),
                         (int next, String tok, String token, float f) -> {
                             streamedText.append(token == null ? "" : token);
+                            ReasoningStreamPart split = reasoningSplitter.accept(token == null ? "" : token);
+                            if (!split.reasoning().isEmpty()) {
+                                sendStreamEvent(emitter, closed, streamReasoningDelta(finalSessionId, split.reasoning()));
+                                throwIfStreamClosed(closed);
+                            }
+                            if (split.content().isEmpty()) {
+                                return;
+                            }
                             if (toolsPresent && !suppressContent.get()) {
-                                pendingContent.append(token == null ? "" : token);
+                                pendingContent.append(split.content());
                                 String flush = streamableToolAwareContent(pendingContent);
                                 if (!flush.isEmpty()) {
                                     sendStreamToken(emitter, closed, finalSessionId, flush);
@@ -203,7 +238,7 @@ public class ChatCompletionController {
                                 pendingContent.setLength(0);
                             }
                             if (!toolsPresent && !suppressContent.get()) {
-                                sendStreamToken(emitter, closed, finalSessionId, token);
+                                sendStreamToken(emitter, closed, finalSessionId, split.content());
                                 throwIfStreamClosed(closed);
                             }
                         });
@@ -425,6 +460,17 @@ public class ChatCompletionController {
         return response;
     }
 
+    private ObjectNode streamReasoningDelta(UUID sessionId, String reasoning){
+        ObjectNode response = JsonUtils.om.createObjectNode();
+        response.put("id", sessionId.toString());
+        ArrayNode choices = response.putArray("choices");
+        ObjectNode choice = choices.addObject();
+        choice.put("index", 0);
+        ObjectNode delta = choice.putObject("delta");
+        applyReasoning(delta, reasoning);
+        return response;
+    }
+
     private ObjectNode streamToolCallDelta(UUID sessionId, int index, ToolCall toolCall) throws JsonProcessingException {
         ObjectNode response = JsonUtils.om.createObjectNode();
         response.put("id", sessionId.toString());
@@ -479,11 +525,43 @@ public class ChatCompletionController {
         }
     }
 
+    void applyReasoning(ChatCompletionResponseMessage message, String reasoning) {
+        if (reasoningFieldMode == ReasoningFieldMode.VLLM) {
+            message.reasoning(reasoning);
+        } else {
+            message.reasoningContent(reasoning);
+        }
+    }
+
+    void applyReasoning(ObjectNode node, String reasoning) {
+        node.put(reasoningFieldMode == ReasoningFieldMode.VLLM ? ReasoningFieldNames.VLLM : ReasoningFieldNames.OPENAI, reasoning);
+    }
+
     private void debugPrompt(String prompt) {
         if (!debugChatRequest) {
             return;
         }
-        LOGGER.info("chat.prompt chars={} preview={}", prompt.length(), preview(prompt, 1200));
+        Optional<Path> fullPromptPath = writeDebugPrompt(prompt);
+        LOGGER.info("chat.prompt chars={} preview={}{}", prompt.length(), preview(prompt, 1200),
+                fullPromptPath.map(path -> " full_prompt_file=" + path.toAbsolutePath()).orElse(""));
+    }
+
+    private Optional<Path> writeDebugPrompt(String prompt) {
+        if (debugChatPromptDirectory == null || debugChatPromptDirectory.isBlank()
+                || "off".equalsIgnoreCase(debugChatPromptDirectory)
+                || "false".equalsIgnoreCase(debugChatPromptDirectory)) {
+            return Optional.empty();
+        }
+        try {
+            Path directory = Path.of(debugChatPromptDirectory);
+            Files.createDirectories(directory);
+            Path path = directory.resolve("chat-prompt-" + System.currentTimeMillis() + "-" + UUID.randomUUID() + ".txt");
+            Files.writeString(path, prompt, StandardCharsets.UTF_8);
+            return Optional.of(path);
+        } catch (IOException | RuntimeException e) {
+            LOGGER.warn("unable to write full chat prompt debug file", e);
+            return Optional.empty();
+        }
     }
 
     private void debugElapsed(String label, long startNanos) {
@@ -496,6 +574,55 @@ public class ChatCompletionController {
     private static String preview(String value, int limit) {
         String sanitized = value.replace("\n", "\\n").replace("\r", "\\r");
         return sanitized.length() <= limit ? sanitized : sanitized.substring(0, limit) + "...";
+    }
+
+    record ReasoningStreamPart(String content, String reasoning) {
+    }
+
+    static final class ReasoningStreamSplitter {
+        private static final String THINK_START = "<think>";
+        private static final String THINK_END = "</think>";
+        private final StringBuilder pending = new StringBuilder();
+        private boolean inReasoning;
+
+        ReasoningStreamPart accept(String text) {
+            pending.append(text == null ? "" : text);
+            StringBuilder content = new StringBuilder();
+            StringBuilder reasoning = new StringBuilder();
+            while (pending.length() > 0) {
+                if (inReasoning) {
+                    int end = indexOf(pending, THINK_END);
+                    if (end >= 0) {
+                        reasoning.append(pending.substring(0, end));
+                        pending.delete(0, end + THINK_END.length());
+                        inReasoning = false;
+                        continue;
+                    }
+                    int keep = longestPrefixSuffix(pending, THINK_END);
+                    int flush = pending.length() - keep;
+                    if (flush > 0) {
+                        reasoning.append(pending.substring(0, flush));
+                        pending.delete(0, flush);
+                    }
+                    break;
+                }
+                int start = indexOf(pending, THINK_START);
+                if (start >= 0) {
+                    content.append(pending.substring(0, start));
+                    pending.delete(0, start + THINK_START.length());
+                    inReasoning = true;
+                    continue;
+                }
+                int keep = longestPrefixSuffix(pending, THINK_START);
+                int flush = pending.length() - keep;
+                if (flush > 0) {
+                    content.append(pending.substring(0, flush));
+                    pending.delete(0, flush);
+                }
+                break;
+            }
+            return new ReasoningStreamPart(content.toString(), reasoning.toString());
+        }
     }
 
     /**

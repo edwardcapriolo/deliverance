@@ -48,6 +48,8 @@ import java.util.regex.Pattern;
 
 public final class NanocodeDeliverance {
     private static final ObjectMapper JSON = new ObjectMapper();
+    static final String OPENAI_REASONING_FIELD = "reasoning_content";
+    static final String VLLM_REASONING_FIELD = "reasoning";
     private static final String RESET = "\033[0m";
     private static final String BOLD = "\033[1m";
     private static final String DIM = "\033[2m";
@@ -252,6 +254,10 @@ public final class NanocodeDeliverance {
                 throw new IOException("Deliverance response choice contained no message");
             }
             String content = Optional.ofNullable(responseMessage.getContent()).orElse("");
+            String reasoning = reasoning(responseMessage);
+            if (!reasoning.isBlank() && !config.streamEnabled) {
+                System.out.println(DIM + "reasoning " + reasoning + RESET);
+            }
             if (!content.isBlank() && !config.streamEnabled) {
                 System.out.println(CYAN + "assistant" + RESET + " " + content);
             }
@@ -332,6 +338,7 @@ public final class NanocodeDeliverance {
                 .post(RequestBody.create(JSON.writeValueAsBytes(request), MediaType.get("application/json")))
                 .build();
         StringBuilder content = new StringBuilder();
+        StringBuilder reasoning = new StringBuilder();
         String finishReason = "stop";
         List<ToolCallAccumulator> toolCalls = new ArrayList<>();
         System.out.print(CYAN + "assistant" + RESET + " ");
@@ -357,6 +364,11 @@ public final class NanocodeDeliverance {
                         finishReason = finish.asText();
                     }
                     String delta = choice.path("delta").path("content").asText("");
+                    String reasoningDelta = reasoningDelta(choice.path("delta"));
+                    if (!reasoningDelta.isEmpty()) {
+                        reasoning.append(reasoningDelta);
+                        System.out.print(DIM + reasoningDelta + RESET);
+                    }
                     if (!delta.isEmpty()) {
                         content.append(delta);
                         System.out.print(delta);
@@ -366,15 +378,8 @@ public final class NanocodeDeliverance {
             }
         }
         System.out.println();
-        ChatCompletionResponseMessage message = new ChatCompletionResponseMessage()
-                .role(ChatCompletionResponseMessage.RoleEnum.ASSISTANT)
-                .content(content.toString());
-        if (!toolCalls.isEmpty()) {
-            message.content(null);
-            for (ToolCallAccumulator toolCall : toolCalls) {
-                message.addToolCallsItem(toolCall.toToolCall());
-            }
-        } else if ("tool_calls".equals(finishReason)) {
+        ChatCompletionResponseMessage message = streamingMessage(content.toString(), reasoning.toString(), toolCalls);
+        if (message.getToolCalls() == null && "tool_calls".equals(finishReason)) {
             throw new IOException("Deliverance stream ended with finish_reason=tool_calls but sent no delta.tool_calls");
         }
         CreateChatCompletionResponseChoicesInner choice = new CreateChatCompletionResponseChoicesInner()
@@ -382,6 +387,23 @@ public final class NanocodeDeliverance {
                 .message(message)
                 .finishReason(toFinishReason(finishReason));
         return new CreateChatCompletionResponse().choices(List.of(choice));
+    }
+
+    static ChatCompletionResponseMessage streamingMessage(String content, String reasoning,
+            List<ToolCallAccumulator> toolCalls) {
+        ChatCompletionResponseMessage message = new ChatCompletionResponseMessage()
+                .role(ChatCompletionResponseMessage.RoleEnum.ASSISTANT)
+                .content(content);
+        if (reasoning != null && !reasoning.isEmpty()) {
+            message.reasoning(reasoning);
+        }
+        if (!toolCalls.isEmpty()) {
+            message.content(null);
+            for (ToolCallAccumulator toolCall : toolCalls) {
+                message.addToolCallsItem(toolCall.toToolCall());
+            }
+        }
+        return message;
     }
 
     private static void accumulateToolCalls(JsonNode deltas, List<ToolCallAccumulator> toolCalls) {
@@ -405,6 +427,29 @@ public final class NanocodeDeliverance {
                 accumulator.arguments.append(function.get("arguments").asText());
             }
         }
+    }
+
+    private static String reasoning(ChatCompletionResponseMessage responseMessage) {
+        String reasoning = responseMessage.getReasoning();
+        if (reasoning != null) {
+            return reasoning;
+        }
+        try {
+            Object value = responseMessage.getClass().getMethod("getReasoningContent").invoke(responseMessage);
+            return value instanceof String text ? text : "";
+        } catch (ReflectiveOperationException ignored) {
+            return "";
+        }
+    }
+
+    static String reasoningDelta(JsonNode delta) {
+        if (delta.hasNonNull(OPENAI_REASONING_FIELD)) {
+            return delta.get(OPENAI_REASONING_FIELD).asText("");
+        }
+        if (delta.hasNonNull(VLLM_REASONING_FIELD)) {
+            return delta.get(VLLM_REASONING_FIELD).asText("");
+        }
+        return "";
     }
 
     private static final class ToolCallAccumulator {
@@ -432,17 +477,24 @@ public final class NanocodeDeliverance {
 
     private List<Map<String, Object>> withSystemMessage(List<Map<String, Object>> messages, String cwd) {
         List<Map<String, Object>> result = new ArrayList<>();
-        result.add(message("system", systemPrompt(cwd)));
+        result.add(message("system", systemPrompt(cwd, config.systemPromptText())));
         result.addAll(messages);
         return result;
     }
 
     static String systemPrompt(String cwd) {
-        return "You are a concise coding assistant. cwd: " + cwd
-                + ". Use tools when needed. Prefer small, direct changes. "
-                + "For file reads, grep/searches, globbing, edits, writes, or Java execution, call the matching tool; "
-                + "do not describe the tool call or print JSON in prose. "
-                + "After any thinking, emit the tool call immediately in the required tool-call format.";
+        return systemPrompt(cwd, null);
+    }
+
+    static String systemPrompt(String cwd, String configuredSystemPrompt) {
+        String base = configuredSystemPrompt == null || configuredSystemPrompt.isBlank()
+                ? "You are a concise coding assistant."
+                : configuredSystemPrompt.strip();
+        return base + " cwd: " + cwd + ".";
+                //+ ". Use tools when needed. Prefer small, direct changes. "
+                //+ "For file reads, grep/searches, globbing, edits, writes, or Java execution, call the matching tool; "
+                //+ "do not describe the tool call or print JSON in prose. "
+                //+ "After any thinking, emit the tool call immediately in the required tool-call format.";
     }
 
     List<ChatCompletionTool> toolSchema() {
@@ -466,10 +518,12 @@ public final class NanocodeDeliverance {
         tools.add(tool("grep", "Search text files with a Java regular expression. Use for grep/search requests. Returns at most limit matches, default 10.", schema(
                 props(prop("path", "string"), prop("pattern", "string"), prop("limit", "integer")),
                 array("pattern"))));
-        tools.add(tool("java_sandbox", "Run Java code or Maven tests in a one-shot isolated container with no network access by default.", schema(
-                props(prop("mode", "string"), prop("files", "object"), prop("mainClass", "string"),
-                        prop("timeoutSeconds", "integer"), prop("maxOutputChars", "integer")),
-                array("files"))));
+        //tools.add(tool("java_sandbox", "Run Java code or Maven tests in a one-shot isolated container with no network access by default.", schema(
+        //        props(prop("mode", "string"), prop("files", "object"), prop("mainClass", "string"),
+        //                prop("timeoutSeconds", "integer"), prop("maxOutputChars", "integer")),
+        //       array("files")))
+
+        //);
         if (allowRiskyTools) {
             tools.add(tool("bash", "Risky/eval tool. Run a shell command with a 30 second timeout.", schema(
                     props(prop("command", "string")),
@@ -614,7 +668,7 @@ public final class NanocodeDeliverance {
         return message;
     }
 
-    private static Map<String, Object> assistantMessage(ChatCompletionResponseMessage responseMessage) {
+    static Map<String, Object> assistantMessage(ChatCompletionResponseMessage responseMessage) {
         Map<String, Object> message = message("assistant", Optional.ofNullable(responseMessage.getContent()).orElse(""));
         if (responseMessage.getToolCalls() != null && !responseMessage.getToolCalls().isEmpty()) {
             message.put("tool_calls", JSON.convertValue(responseMessage.getToolCalls(), List.class));
@@ -694,10 +748,13 @@ public final class NanocodeDeliverance {
 
     public record Config(String baseUrl, String model, Integer ntokens, int maxTokens, int maxToolResultChars,
             int maxToolRounds, double temperature, boolean toolsEnabled, boolean allowRiskyTools, boolean streamEnabled,
-            String javaSandboxImage, boolean enableThinking, boolean help) {
+            String javaSandboxImage, boolean enableThinking, String rootPrompt, String reasoningPrompt,
+            Map<String, String> reasoningPrompts,
+            boolean help) {
         static Config parse(String[] args) {
             if (args.length == 1 && ("--help".equals(args[0]) || "-h".equals(args[0]))) {
-                return new Config("", "", null, 0, 0, 1, 0.0d, true, false, true, null, true, true);
+                return new Config("", "", null, 0, 0, 1, 0.0d, true, false, true, null, true,
+                        "", "small", Map.of(), true);
             }
             if (args.length != 2 || !"--config".equals(args[0])) {
                 throw new IllegalArgumentException("expected: --config <file>");
@@ -711,12 +768,25 @@ public final class NanocodeDeliverance {
                 if (file.maxToolRounds < 1) {
                     throw new IllegalArgumentException("maxToolRounds must be >= 1");
                 }
+                Map<String, String> reasoningPrompts = Map.copyOf(file.reasoningPrompts);
+                if (!reasoningPrompts.containsKey(file.reasoningPrompt)) {
+                    throw new IllegalArgumentException("reasoningPrompt must match a key in reasoningPrompts: " + file.reasoningPrompt);
+                }
                 return new Config(stripTrailingSlash(file.baseUrl), file.model, file.ntokens, file.maxTokens,
                         file.maxToolResultChars, file.maxToolRounds, file.temperature, file.toolsEnabled,
-                        file.allowRiskyTools, file.streamEnabled, file.javaSandboxImage, file.enableThinking, false);
+                        file.allowRiskyTools, file.streamEnabled, file.javaSandboxImage, file.enableThinking,
+                        file.rootPrompt, file.reasoningPrompt, reasoningPrompts, false);
             } catch (IOException e) {
                 throw new IllegalArgumentException("could not read nanocode config " + path + ": " + e.getMessage(), e);
             }
+        }
+
+        String systemPromptText() {
+            String reasoning = reasoningPrompts.getOrDefault(reasoningPrompt, "");
+            if (reasoning.isBlank()) {
+                return rootPrompt;
+            }
+            return rootPrompt.strip() + " " + reasoning.strip();
         }
 
         private static String stripTrailingSlash(String value) {
@@ -737,7 +807,8 @@ public final class NanocodeDeliverance {
                     Config fields:
                       baseUrl, model, ntokens, maxTokens, maxToolResultChars,
                       maxToolRounds, temperature, toolsEnabled, allowRiskyTools,
-                      streamEnabled, javaSandboxImage, enableThinking
+                      streamEnabled, javaSandboxImage, enableThinking, rootPrompt,
+                      reasoningPrompt, reasoningPrompts
                     """);
         }
 
@@ -754,6 +825,13 @@ public final class NanocodeDeliverance {
             public boolean streamEnabled = true;
             public String javaSandboxImage = "eclipse-temurin:25-jdk";
             public boolean enableThinking = true;
+            public String rootPrompt = "You are a concise coding assistant.";
+            public String reasoningPrompt = "small";
+            public Map<String, String> reasoningPrompts = new HashMap<>(Map.of(
+                    "small", "Reason briefly. Keep reasoning under 2 sentences.",
+                    "medium", "Reason only as much as needed. Keep reasoning under 5 sentences.",
+                    "large", "For hard tasks, use compact reasoning. Stop reasoning when the next action is clear."
+            ));
         }
     }
 

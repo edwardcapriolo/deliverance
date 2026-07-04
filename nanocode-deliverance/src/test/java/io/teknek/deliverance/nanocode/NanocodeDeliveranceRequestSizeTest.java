@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -22,7 +23,8 @@ class NanocodeDeliveranceRequestSizeTest {
     void fiveDefaultToolsProduceSmallChatRequest() throws Exception {
         NanocodeDeliverance agent = new NanocodeDeliverance(new NanocodeDeliverance.Config(
                 "http://localhost:8085", "Llama-3.2-3B-Instruct-JQ4", null, 256, 2000, 3, 0.0d, true, false, true,
-                "eclipse-temurin:25-jdk", true, false));
+                "eclipse-temurin:25-jdk", true, "You are a concise coding assistant.", "small",
+                Map.of("small", "Reason briefly. Keep reasoning under 2 sentences."), false));
         CreateChatCompletionRequest request = new CreateChatCompletionRequest()
                 .model("Llama-3.2-3B-Instruct-JQ4")
                 .maxTokens(256)
@@ -45,9 +47,8 @@ class NanocodeDeliveranceRequestSizeTest {
     void systemPromptTellsModelToCallToolsInsteadOfDescribingJson() {
         String prompt = NanocodeDeliverance.systemPrompt("/tmp/work");
 
-        assertTrue(prompt.contains("call the matching tool"));
-        assertTrue(prompt.contains("do not describe the tool call or print JSON in prose"));
-        assertTrue(prompt.contains("emit the tool call immediately"));
+        assertTrue(prompt.contains("concise coding assistant"));
+        assertTrue(prompt.contains("cwd: /tmp/work"));
     }
 
     @Test
@@ -78,7 +79,8 @@ class NanocodeDeliveranceRequestSizeTest {
     void configCommandSetsRoundsAndThinking() {
         NanocodeDeliverance agent = new NanocodeDeliverance(new NanocodeDeliverance.Config(
                 "http://localhost:8085", "test", null, 256, 2000, 3, 0.0d, true, false, true,
-                "eclipse-temurin:25-jdk", true, false));
+                "eclipse-temurin:25-jdk", true, "You are a concise coding assistant.", "small",
+                Map.of("small", "Reason briefly. Keep reasoning under 2 sentences."), false));
 
         assertTrue(agent.handleConfigCommand("/config set rounds 5"));
         assertTrue(agent.handleConfigCommand("/config set thinking off"));
@@ -92,5 +94,39 @@ class NanocodeDeliveranceRequestSizeTest {
                 () -> NanocodeDeliverance.Config.parse(new String[] {"--model", "Qwen3-4B-JQ4"}));
 
         assertTrue(error.getMessage().contains("--config"));
+    }
+
+    @Test
+    void reasoningDeltaReadsOpenAiAndVllmFields() throws Exception {
+        assertEquals("openai", NanocodeDeliverance.reasoningDelta(JSON.readTree("{\"" + NanocodeDeliverance.OPENAI_REASONING_FIELD + "\":\"openai\"}")));
+        assertEquals("vllm", NanocodeDeliverance.reasoningDelta(JSON.readTree("{\"" + NanocodeDeliverance.VLLM_REASONING_FIELD + "\":\"vllm\"}")));
+    }
+
+    @Test
+    void assistantMessageForNextRoundDoesNotIncludeReasoning() {
+        var responseMessage = NanocodeDeliverance.streamingMessage("final answer", "hidden reasoning", List.of());
+
+        var nextRoundMessage = NanocodeDeliverance.assistantMessage(responseMessage);
+
+        assertEquals("assistant", nextRoundMessage.get("role"));
+        assertEquals("final answer", nextRoundMessage.get("content"));
+        assertTrue(!nextRoundMessage.containsKey("reasoning"));
+        assertTrue(!nextRoundMessage.containsKey(NanocodeDeliverance.OPENAI_REASONING_FIELD));
+        assertTrue(!nextRoundMessage.toString().contains("hidden reasoning"));
+    }
+
+    @Test
+    void configLoadsRootPromptAndReasoningPromptPresets() throws Exception {
+        Path config = Path.of("config-qwen3-4b-jq4.json");
+
+        NanocodeDeliverance.Config loaded = NanocodeDeliverance.Config.fromJson(config);
+
+        assertEquals("small", loaded.reasoningPrompt());
+        assertTrue(loaded.rootPrompt().contains("concise coding assistant"));
+        assertTrue(loaded.reasoningPrompts().containsKey("small"));
+        assertTrue(loaded.reasoningPrompts().containsKey("medium"));
+        assertTrue(loaded.reasoningPrompts().containsKey("large"));
+        assertTrue(loaded.reasoningPrompts().get("small").contains("under 2 sentences"));
+        assertTrue(NanocodeDeliverance.systemPrompt("/tmp", loaded.systemPromptText()).contains("under 2 sentences"));
     }
 }

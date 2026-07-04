@@ -3,6 +3,7 @@ package io.teknek.deliverance.safetensors.prompt.hf;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import org.junit.jupiter.api.Disabled;
+import io.teknek.deliverance.model.ReasoningFieldNames;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -74,7 +75,7 @@ public class HfPromptTemplateCommonPortTest {
     public void testContinueFinalMessageWithDecoyEarlierMessage() {
     }
 
-    @Disabled("Deliverance PromptSupport does not currently expose continue_final_message='reasoning_content'")
+    @Disabled("Deliverance PromptSupport does not currently expose continue_final_message='" + ReasoningFieldNames.OPENAI + "'")
     @Test
     public void testContinueFinalMessageStringAndReasoning() {
     }

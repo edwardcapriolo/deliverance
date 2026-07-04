@@ -129,6 +129,29 @@ public class CausalSelfAttentionTensorParallelTest {
         }
     }
 
+    @Test
+    public void batchedPrefillMatchesTokenByTokenAttentionOutput() {
+        Config config = config();
+        ConfigurableTensorProvider provider = new ConfigurableTensorProvider(new NaiveTensorOperations());
+        TensorAllocator tensorAllocator = new ArrayQueueTensorAllocator(new MetricRegistry());
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(new ForkJoinPool(1));
+             AbstractTensor input = input();
+             AbstractTensor q = identity(4);
+             AbstractTensor k = identity(4);
+             AbstractTensor v = identity(4);
+             AbstractTensor o = identity(4)) {
+
+            AbstractTensor batched = forward(config, provider, tensorAllocator, pool, new StaticTensorParallelContext(0, 1),
+                    new SingleRankTensorParallelCollectives(), input, q, k, v, o);
+            AbstractTensor tokenByToken = forwardTokenByToken(config, provider, tensorAllocator, pool,
+                    new StaticTensorParallelContext(0, 1), new SingleRankTensorParallelCollectives(), input, q, k, v, o);
+
+            try (batched; tokenByToken) {
+                assertTensorClose(batched, tokenByToken, 0.0001f);
+            }
+        }
+    }
+
     private static AbstractTensor forward(Config config, ConfigurableTensorProvider provider,
             TensorAllocator tensorAllocator, WrappedForkJoinPool pool, TensorParallelContext context,
             TensorParallelCollectives collectives, AbstractTensor input, AbstractTensor q, AbstractTensor k,
@@ -138,6 +161,28 @@ public class CausalSelfAttentionTensorParallelTest {
         KvBufferCache cache = new KvBufferCache(model, new KvBufferCacheSettings(true));
         try (KvBufferCache.KvBuffer kv = cache.getEphemeralKvBuffer()) {
             return attention.forward(new FloatBufferTensor(input), 0, kv, java.util.Optional.empty());
+        } finally {
+            cache.close();
+        }
+    }
+
+    private static AbstractTensor forwardTokenByToken(Config config, ConfigurableTensorProvider provider,
+            TensorAllocator tensorAllocator, WrappedForkJoinPool pool, TensorParallelContext context,
+            TensorParallelCollectives collectives, AbstractTensor input, AbstractTensor q, AbstractTensor k,
+            AbstractTensor v, AbstractTensor o) {
+        AbstractModel model = model(config, tensorAllocator, pool, context, collectives);
+        CausalSelfAttention attention = new CausalSelfAttention(model, 0, q, k, v, o, provider, new MetricRegistry());
+        KvBufferCache cache = new KvBufferCache(model, new KvBufferCacheSettings(true));
+        AbstractTensor result = new FloatBufferTensor(input.shape().first(), config.embeddingLength);
+        try (KvBufferCache.KvBuffer kv = cache.getEphemeralKvBuffer()) {
+            for (int position = 0; position < input.shape().first(); position++) {
+                try (AbstractTensor tokenInput = input.slice(position);
+                     AbstractTensor output = attention.forward(new FloatBufferTensor(tokenInput), position, kv,
+                             java.util.Optional.empty())) {
+                    result.copyFrom(output, 0, result.getOffset(position, 0), config.embeddingLength);
+                }
+            }
+            return result;
         } finally {
             cache.close();
         }

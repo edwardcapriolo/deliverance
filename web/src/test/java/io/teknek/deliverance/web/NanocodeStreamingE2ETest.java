@@ -77,6 +77,9 @@ class NanocodeStreamingE2ETest {
                 true,
                 "eclipse-temurin:25-jdk",
                 true,
+                "You are a concise coding assistant.",
+                "small",
+                Map.of("small", "Reason briefly. Keep reasoning under 2 sentences."),
                 false), toolExecutor);
         List<Map<String, Object>> messages = new ArrayList<>();
         messages.add(NanocodeDeliverance.message("user", "grep the file " + file + " for cat"));

@@ -12,6 +12,7 @@ import io.teknek.deliverance.model.ChatCompletionTool;
 import io.teknek.deliverance.model.CausalLanguageModel;
 import io.teknek.deliverance.model.CreateChatCompletionRequest;
 import io.teknek.deliverance.model.GenerateEvent;
+import io.teknek.deliverance.model.ReasoningFieldNames;
 import io.teknek.deliverance.nanocode.NanocodeDeliverance;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.toolcallparser.QwenToolCallParser;
@@ -209,6 +210,55 @@ class ChatCompletionStreamingToolCallTest {
         assertEquals(1, controller.emitter.sends.get());
     }
 
+    @Test
+    void streamingReasoningUsesReasoningContentAndDoesNotLeakIntoContent() throws Exception {
+        CausalLanguageModel model = Mockito.mock(CausalLanguageModel.class);
+        Mockito.when(model.promptSupport()).thenReturn(Optional.of(new PromptSupport(Map.of("default", "prompt"), "", true)));
+        Mockito.when(model.getToolCallParser()).thenReturn(new QwenToolCallParser());
+        Mockito.when(model.generate(any(UUID.class), any(), any(), any(GenerateEvent.class))).thenAnswer(invocation -> {
+            GenerateEvent event = invocation.getArgument(3);
+            for (String chunk : List.of("<", "think>", "reason", "</", "think>", "answer")) {
+                event.emit(0, chunk, chunk, 0.0f);
+            }
+            return new Response("answer", "<think>reason</think>answer", FinishReason.STOP_TOKEN, 0, List.of(), 0, 0, List.of())
+                    .copyWithText("answer", "<think>reason</think>answer", "reason");
+        });
+
+        CapturingController controller = new CapturingController();
+        MultiModelConfig config = new MultiModelConfig();
+        config.setModelName("test-model");
+        config.setModelOwner("test-owner");
+        ReflectionTestUtils.setField(controller, "models", Map.of(config, model));
+        CreateChatCompletionRequest request = new CreateChatCompletionRequest()
+                .model("test-model")
+                .stream(true)
+                .maxTokens(128)
+                .messages(List.of(new ChatCompletionRequestMessage(new ChatCompletionRequestUserMessage()
+                        .content(new ChatCompletionRequestUserMessageContent("hello")))));
+
+        Object response = controller.createChatCompletion(Map.of(), request);
+
+        assertTrue(response instanceof SseEmitter);
+        assertTrue(controller.emitter.awaitComplete(), "stream did not complete");
+        String streamText = controller.emitter.events.toString();
+        assertTrue(streamText.contains(ReasoningFieldNames.OPENAI));
+        assertTrue(streamText.contains("answer"));
+        assertFalse(streamText.contains("<think>"));
+    }
+
+    @Test
+    void reasoningStreamSplitterConsumesSplitClosingThinkTag() {
+        ChatCompletionController.ReasoningStreamSplitter splitter = new ChatCompletionController.ReasoningStreamSplitter();
+
+        assertEquals("", splitter.accept("<think>").content());
+        assertEquals("reason", splitter.accept("reason</").reasoning());
+        assertEquals("", splitter.accept("think").reasoning());
+        ChatCompletionController.ReasoningStreamPart afterClose = splitter.accept(">answer");
+
+        assertEquals("", afterClose.reasoning());
+        assertEquals("answer", afterClose.content());
+    }
+
     private static void emitChunks(GenerateEvent event, String generated) {
         int token = 0;
         for (String chunk : List.of(
@@ -229,7 +279,7 @@ class ChatCompletionStreamingToolCallTest {
         private final CapturingSseEmitter emitter = new CapturingSseEmitter();
 
         private CapturingController() {
-            super(Optional.empty(), false, false);
+            super(Optional.empty(), false, "off", "openai", false);
         }
 
         @Override
@@ -270,7 +320,7 @@ class ChatCompletionStreamingToolCallTest {
         private final DisconnectingSseEmitter emitter = new DisconnectingSseEmitter();
 
         private DisconnectingController() {
-            super(Optional.empty(), false, false);
+            super(Optional.empty(), false, "off", "openai", false);
         }
 
         @Override

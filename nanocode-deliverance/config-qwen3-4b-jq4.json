@@ -9,5 +9,12 @@
   "allowRiskyTools": false,
   "streamEnabled": true,
   "javaSandboxImage": "eclipse-temurin:25-jdk",
-  "enableThinking": true
+  "enableThinking": true,
+  "rootPrompt": "You are a concise coding assistant. Use tools when needed. Prefer small, direct changes.",
+  "reasoningPrompt": "small",
+  "reasoningPrompts": {
+    "small": "Reason briefly. Keep reasoning under 2 sentences.",
+    "medium": "Reason only as much as needed. Keep reasoning under 5 sentences.",
+    "large": "For hard tasks, use compact reasoning. Stop reasoning when the next action is clear."
+  }
 }

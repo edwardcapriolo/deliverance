@@ -1,10 +1,14 @@
 package net.deliverance.http;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import io.teknek.deliverance.JSON;
+import io.teknek.deliverance.JsonUtils;
+import io.teknek.deliverance.generator.FinishReason;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.model.Error;
+import io.teknek.deliverance.model.ReasoningFieldNames;
 import io.teknek.deliverance.safetensors.prompt.Tool;
 import io.teknek.dysfx.Either;
 import org.junit.jupiter.api.Test;

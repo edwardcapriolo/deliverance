@@ -627,6 +627,10 @@ components:
           type: string
           description: The extracted reasoning content for models that emit a separate thought channel.
           nullable: true
+        reasoning_content:
+          type: string
+          description: OpenAI-compatible alias for extracted reasoning content.
+          nullable: true
         tool_calls:
           $ref: "#/components/schemas/ChatCompletionMessageToolCalls"
         role:
@@ -658,6 +662,14 @@ components:
         content:
           type: string
           description: The contents of the chunk message.
+          nullable: true
+        reasoning:
+          type: string
+          description: The extracted reasoning delta for models that emit a separate thought channel.
+          nullable: true
+        reasoning_content:
+          type: string
+          description: OpenAI-compatible alias for extracted reasoning delta.
           nullable: true
         function_call:
           deprecated: true

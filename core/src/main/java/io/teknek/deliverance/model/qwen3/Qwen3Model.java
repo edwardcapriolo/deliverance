@@ -4,6 +4,7 @@ import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.MLPBlock;
 import io.teknek.deliverance.generator.Qwen3CausalSelfAttention;
+import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.generator.RmsNorm;
 import io.teknek.deliverance.generator.TransformerBlock;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
@@ -89,5 +90,12 @@ public class Qwen3Model extends LlamaModel {
             );
         });
         return blocks;
+    }
+
+    @Override
+    protected Response postProcessResponse(Response response) {
+        QwenReasoningParser.Parsed parsed = QwenReasoningParser.parse(response.responseTextWithSpecialTokens,
+                response.responseText);
+        return response.copyWithText(parsed.content(), response.responseTextWithSpecialTokens, parsed.reasoning());
     }
 }
