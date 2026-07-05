@@ -21,6 +21,7 @@ import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorAllocator;
+import io.teknek.deliverance.tensor.TensorInfo;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
@@ -49,6 +50,50 @@ public class Qwen3MoeHfTextModelPortedTest {
         Path modelDir = writeTinyCheckpoint(tempDir.resolve("qwen3-moe-detect"), tinyConfig(), 1234);
 
         assertEquals(Qwen3MoeConfig.class, ModelSupport.detectModel(modelDir.resolve("config.json").toFile()).getConfigClass());
+    }
+
+    @Test
+    public void realQwen3MoeConfigShapeFormulasMatchCheckpointKeyLayout() {
+        // These real-model dimensions and key names are copied from Qwen/Qwen3-30B-A3B-Base config.json and
+        // model.safetensors.index.json metadata. This test does not run Hugging Face; it guards our tiny fixture and
+        // loader naming against drifting away from the real checkpoint layout.
+        Qwen3MoeConfig real = realQwen3MoeConfig();
+
+        assertEquals(2048, real.embeddingLength);
+        assertEquals(6144, real.hiddenLength);
+        assertEquals(48, real.numberOfLayers);
+        assertEquals(32, real.numberOfHeads);
+        assertEquals(4, real.numberOfKeyValueHeads);
+        assertEquals(128, real.headSize);
+        assertEquals(4096, real.attentionLength);
+        assertEquals(512, real.kvLength);
+        assertEquals(128, real.numExperts);
+        assertEquals(8, real.numExpertsPerToken);
+        assertEquals(768, real.moeIntermediateSize);
+        assertEquals("model.layers.19.mlp.gate.weight", routerWeightName(19));
+        assertEquals("model.layers.19.mlp.experts.0.gate_proj.weight", expertWeightName(19, 0, "gate_proj.weight"));
+        assertEquals("model.layers.19.mlp.experts.127.up_proj.weight", expertWeightName(19, 127, "up_proj.weight"));
+        assertEquals("model.layers.19.mlp.experts.127.down_proj.weight", expertWeightName(19, 127, "down_proj.weight"));
+    }
+
+    @Test
+    public void tinyCheckpointWritesScaledQwen3MoeTensorShapes() throws Exception {
+        Qwen3MoeConfig config = tinyConfig();
+        Path modelDir = writeTinyCheckpoint(tempDir.resolve("qwen3-moe-shapes"), config, 1334);
+        try (DefaultWeightLoader loader = new DefaultWeightLoader(modelDir.toFile())) {
+            Map<String, TensorInfo> info = loader.tensorInfoMap();
+            assertShape(info, "model.embed_tokens.weight", config.vocabularySize, config.embeddingLength);
+            assertShape(info, "model.layers.0.self_attn.q_proj.weight", config.attentionLength, config.embeddingLength);
+            assertShape(info, "model.layers.0.self_attn.k_proj.weight", config.kvLength, config.embeddingLength);
+            assertShape(info, "model.layers.0.self_attn.v_proj.weight", config.kvLength, config.embeddingLength);
+            assertShape(info, "model.layers.0.self_attn.o_proj.weight", config.embeddingLength, config.attentionLength);
+            assertShape(info, routerWeightName(0), config.numExperts, config.embeddingLength);
+            assertShape(info, expertWeightName(0, 0, "gate_proj.weight"), config.moeIntermediateSize, config.embeddingLength);
+            assertShape(info, expertWeightName(0, 0, "up_proj.weight"), config.moeIntermediateSize, config.embeddingLength);
+            assertShape(info, expertWeightName(0, 0, "down_proj.weight"), config.embeddingLength, config.moeIntermediateSize);
+            assertTrue(!info.containsKey("model.layers.0.mlp.experts.gate_up_proj"));
+            assertTrue(!info.containsKey("model.layers.0.mlp.experts.down_proj"));
+        }
     }
 
     @Test
@@ -150,6 +195,20 @@ public class Qwen3MoeHfTextModelPortedTest {
                 1, 8, 2, 4, true, false, 0.001f, List.of());
     }
 
+    static Qwen3MoeConfig realQwen3MoeConfig() {
+        return new Qwen3MoeConfig(32768, 2048, 6144, 32, 4, 48, 1.0e-6f, 151936, 151643, 151643,
+                ActivationFunction.Type.SILU, 1_000_000.0, null, 128, false, null, 48, null, 0.0f,
+                List.of("Qwen3MoeForCausalLM"), 1, 768, 8, 128, true, false, 0.001f, List.of());
+    }
+
+    static String routerWeightName(int layer) {
+        return "model.layers." + layer + ".mlp.gate.weight";
+    }
+
+    static String expertWeightName(int layer, int expert, String suffix) {
+        return "model.layers." + layer + ".mlp.experts." + expert + "." + suffix;
+    }
+
     static Qwen3MoeConfig tinyConfigWithDenseLayer() {
         return new Qwen3MoeConfig(64, 16, 32, 2, 1, 3, 1.0e-6f, 32, null, 1,
                 ActivationFunction.Type.SILU, 10_000.0, Map.of("rope_type", "default", "rope_theta", 10_000.0),
@@ -186,14 +245,13 @@ public class Qwen3MoeHfTextModelPortedTest {
                 tensors.put(layer + "self_attn.q_norm.weight", ones(1, config.headSize));
                 tensors.put(layer + "self_attn.k_norm.weight", ones(1, config.headSize));
                 if (config.sparseLayer(i)) {
-                    tensors.put(layer + "mlp.gate.weight", matrix(config.numExperts, config.embeddingLength, seed++));
+                    tensors.put(routerWeightName(i), matrix(config.numExperts, config.embeddingLength, seed++));
                     for (int expert = 0; expert < config.numExperts; expert++) {
-                        String expertPrefix = layer + "mlp.experts." + expert + ".";
-                        tensors.put(expertPrefix + "gate_proj.weight",
+                        tensors.put(expertWeightName(i, expert, "gate_proj.weight"),
                                 matrix(config.moeIntermediateSize, config.embeddingLength, seed++));
-                        tensors.put(expertPrefix + "up_proj.weight",
+                        tensors.put(expertWeightName(i, expert, "up_proj.weight"),
                                 matrix(config.moeIntermediateSize, config.embeddingLength, seed++));
-                        tensors.put(expertPrefix + "down_proj.weight",
+                        tensors.put(expertWeightName(i, expert, "down_proj.weight"),
                                 matrix(config.embeddingLength, config.moeIntermediateSize, seed++));
                     }
                 } else {
@@ -279,6 +337,12 @@ public class Qwen3MoeHfTextModelPortedTest {
                 assertTrue(Float.isFinite(tensor.get(row, col)));
             }
         }
+    }
+
+    private static void assertShape(Map<String, TensorInfo> info, String name, int... expected) {
+        TensorInfo tensorInfo = info.get(name);
+        assertTrue(tensorInfo != null, "missing tensor " + name);
+        assertEquals(java.util.Arrays.toString(expected), java.util.Arrays.toString(tensorInfo.shape), name);
     }
 
     private static Drift driftLastBatchRow(AbstractTensor batchOutput, AbstractTensor singleRowOutput) {

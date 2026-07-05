@@ -37,6 +37,7 @@
 - Panama is the production Java baseline and must be correct first. Use small naive/reference calculations to prove Panama math on edge cases, then compare native SIMD and GPU accelerators against Panama on realistic shapes.
 - Tensor tests must cover tails, offsets, row chunks, block boundaries, odd dimensions, and non-divisible batch sizes. A tensor library that cannot reliably do math on edge cases is not a usable foundation.
 - Where possible, exercise all Panama machine-spec branches (`AVX_128`, `AVX_256`, `AVX_512`, `ARM_128`) from tests. The Java Vector API paths are selectable even when the current CPU is not that exact architecture; they may not be optimal, but they should still compute correctly.
+- When porting a Hugging Face model with tiny synthetic checkpoints, first inspect the local Transformers source/tests and the real model `config.json` plus `model.safetensors.index.json` metadata. Tiny checkpoints must use the real checkpoint tensor names and shape formulas scaled down from real config fields; do not invent packed tensors or alternate layouts just because they are convenient for tests. Add tests that assert representative real tensor keys and shape formulas, then assert the tiny checkpoint writes matching scaled shapes. If the real model is too large to run locally, say that explicitly; do not present tiny synthetic tests as proof of real-model viability or performance.
 
 ## Module Boundaries
 
