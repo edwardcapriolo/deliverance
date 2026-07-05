@@ -59,8 +59,9 @@ public class Qwen3MoeModel extends Qwen3Model {
             var mlp = moeConfig.sparseLayer(i)
                     ? new Qwen3MoeFeedForward(this, moeConfig,
                             quantize(weights.load(mlpPrefix + "gate.weight"), qType),
-                            quantize(weights.load(mlpPrefix + "experts.gate_up_proj"), qType),
-                            quantize(weights.load(mlpPrefix + "experts.down_proj"), qType),
+                            expertWeights(mlpPrefix, "gate_proj.weight", moeConfig.numExperts, qType),
+                            expertWeights(mlpPrefix, "up_proj.weight", moeConfig.numExperts, qType),
+                            expertWeights(mlpPrefix, "down_proj.weight", moeConfig.numExperts, qType),
                             configurableTensorProvider)
                     : new MLPBlock(
                             this,
@@ -82,5 +83,14 @@ public class Qwen3MoeModel extends Qwen3Model {
             );
         });
         return blocks;
+    }
+
+    private io.teknek.deliverance.tensor.AbstractTensor[] expertWeights(String mlpPrefix, String suffix,
+            int numberOfExperts, DType qType) {
+        io.teknek.deliverance.tensor.AbstractTensor[] tensors = new io.teknek.deliverance.tensor.AbstractTensor[numberOfExperts];
+        for (int expert = 0; expert < numberOfExperts; expert++) {
+            tensors[expert] = quantize(weights.load(mlpPrefix + "experts." + expert + "." + suffix), qType);
+        }
+        return tensors;
     }
 }

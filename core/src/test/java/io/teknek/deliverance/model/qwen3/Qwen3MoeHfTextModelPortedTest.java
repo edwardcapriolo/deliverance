@@ -187,10 +187,15 @@ public class Qwen3MoeHfTextModelPortedTest {
                 tensors.put(layer + "self_attn.k_norm.weight", ones(1, config.headSize));
                 if (config.sparseLayer(i)) {
                     tensors.put(layer + "mlp.gate.weight", matrix(config.numExperts, config.embeddingLength, seed++));
-                    tensors.put(layer + "mlp.experts.gate_up_proj",
-                            tensor3(config.numExperts, 2 * config.moeIntermediateSize, config.embeddingLength, seed++));
-                    tensors.put(layer + "mlp.experts.down_proj",
-                            tensor3(config.numExperts, config.embeddingLength, config.moeIntermediateSize, seed++));
+                    for (int expert = 0; expert < config.numExperts; expert++) {
+                        String expertPrefix = layer + "mlp.experts." + expert + ".";
+                        tensors.put(expertPrefix + "gate_proj.weight",
+                                matrix(config.moeIntermediateSize, config.embeddingLength, seed++));
+                        tensors.put(expertPrefix + "up_proj.weight",
+                                matrix(config.moeIntermediateSize, config.embeddingLength, seed++));
+                        tensors.put(expertPrefix + "down_proj.weight",
+                                matrix(config.embeddingLength, config.moeIntermediateSize, seed++));
+                    }
                 } else {
                     tensors.put(layer + "mlp.gate_proj.weight", matrix(config.hiddenLength, config.embeddingLength, seed++));
                     tensors.put(layer + "mlp.up_proj.weight", matrix(config.hiddenLength, config.embeddingLength, seed++));
@@ -247,18 +252,6 @@ public class Qwen3MoeHfTextModelPortedTest {
         for (int row = 0; row < rows; row++) {
             for (int col = 0; col < cols; col++) {
                 tensor.set(((row * 13 + col * 7 + seed) % 17 - 8) / 8.0f, row, col);
-            }
-        }
-        return tensor;
-    }
-
-    static FloatBufferTensor tensor3(int first, int second, int third, int seed) {
-        FloatBufferTensor tensor = new FloatBufferTensor(first, second, third);
-        for (int i = 0; i < first; i++) {
-            for (int j = 0; j < second; j++) {
-                for (int k = 0; k < third; k++) {
-                    tensor.set(((i * 43 + j * 19 + k * 11 + seed) % 23 - 11) / 12.0f, i, j, k);
-                }
             }
         }
         return tensor;

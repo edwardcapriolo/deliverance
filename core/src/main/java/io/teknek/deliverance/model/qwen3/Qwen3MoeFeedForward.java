@@ -18,22 +18,27 @@ public class Qwen3MoeFeedForward implements FeedForward {
     private final AbstractModel model;
     private final Qwen3MoeConfig config;
     private final AbstractTensor routerWeights;
-    private final AbstractTensor expertGateUpWeights;
-    private final AbstractTensor expertDownWeights;
+    private final AbstractTensor[] expertGateWeights;
+    private final AbstractTensor[] expertUpWeights;
+    private final AbstractTensor[] expertDownWeights;
     private final ConfigurableTensorProvider configurableTensorProvider;
 
     public Qwen3MoeFeedForward(AbstractModel model, Qwen3MoeConfig config, AbstractTensor routerWeights,
-            AbstractTensor expertGateUpWeights, AbstractTensor expertDownWeights,
+            AbstractTensor[] expertGateWeights, AbstractTensor[] expertUpWeights, AbstractTensor[] expertDownWeights,
             ConfigurableTensorProvider configurableTensorProvider) {
         this.model = model;
         this.config = config;
         this.routerWeights = routerWeights;
-        this.expertGateUpWeights = expertGateUpWeights;
+        this.expertGateWeights = expertGateWeights;
+        this.expertUpWeights = expertUpWeights;
         this.expertDownWeights = expertDownWeights;
         this.configurableTensorProvider = configurableTensorProvider;
         configurableTensorProvider.get().registerModelTensor(routerWeights);
-        configurableTensorProvider.get().registerModelTensor(expertGateUpWeights);
-        configurableTensorProvider.get().registerModelTensor(expertDownWeights);
+        for (int i = 0; i < config.numExperts; i++) {
+            configurableTensorProvider.get().registerModelTensor(expertGateWeights[i]);
+            configurableTensorProvider.get().registerModelTensor(expertUpWeights[i]);
+            configurableTensorProvider.get().registerModelTensor(expertDownWeights[i]);
+        }
     }
 
     @Override
@@ -114,28 +119,14 @@ public class Qwen3MoeFeedForward implements FeedForward {
                 float up = 0.0f;
                 for (int inputHidden = 0; inputHidden < config.embeddingLength; inputHidden++) {
                     float value = input.get(batch, inputHidden);
-                    gate += value * expertGateUpWeight(expert, intermediate, inputHidden);
-                    up += value * expertGateUpWeight(expert, config.moeIntermediateSize + intermediate, inputHidden);
+                    gate += value * expertGateWeights[expert].get(intermediate, inputHidden);
+                    up += value * expertUpWeights[expert].get(intermediate, inputHidden);
                 }
                 down += ActivationFunction.eval(config.activationFunction, gate)
                         * up
-                        * expertDownWeight(expert, hidden, intermediate);
+                        * expertDownWeights[expert].get(hidden, intermediate);
             }
             output.set(output.get(batch, hidden) + down * routeWeight, batch, hidden);
         }
-    }
-
-    private float expertGateUpWeight(int expert, int row, int column) {
-        if (expertGateUpWeights.dims() == 3) {
-            return expertGateUpWeights.get(expert, row, column);
-        }
-        return expertGateUpWeights.get(expert, row * config.embeddingLength + column);
-    }
-
-    private float expertDownWeight(int expert, int row, int column) {
-        if (expertDownWeights.dims() == 3) {
-            return expertDownWeights.get(expert, row, column);
-        }
-        return expertDownWeights.get(expert, row * config.moeIntermediateSize + column);
     }
 }
