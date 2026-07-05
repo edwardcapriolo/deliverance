@@ -50,6 +50,7 @@ public class Qwen3MoeModel extends Qwen3Model {
             LOGGER.info("loading qwen3_moe layer={} sparse={} start", i, sparseLayer);
             String base = "model.layers." + i + ".";
             String attn = base + "self_attn.";
+            LOGGER.debug("loading qwen3_moe layer={} attention weights prefix={}", i, attn);
             Qwen3CausalSelfAttention attention = new Qwen3CausalSelfAttention(
                     this,
                     i,
@@ -62,6 +63,7 @@ public class Qwen3MoeModel extends Qwen3Model {
                     configurableTensorProvider,
                     metricRegistry
             );
+            LOGGER.debug("loaded qwen3_moe layer={} attention weights", i);
 
             String mlpPrefix = base + "mlp.";
             var mlp = sparseLayer
@@ -79,6 +81,7 @@ public class Qwen3MoeModel extends Qwen3Model {
                             quantize(weights.load(mlpPrefix + "up_proj.weight"), qType),
                             configurableTensorProvider
                     );
+            LOGGER.debug("loaded qwen3_moe layer={} mlp weights sparse={}", i, sparseLayer);
 
             blocks[i] = new TransformerBlock(
                     this,

@@ -299,12 +299,22 @@ public abstract class AbstractModel implements Generator, Classifier {
                 configurableTensorProvider.get().name(), configurableTensorProvider.get().parallelSplitSize());
         logger.info("Model type = {}, Working memory type = {}, Quantized memory type = {}", modelDType, workingDType,
                 workingQType);
+        logger.debug("model constructor phase=input_weights enabled={}", inferenceType.isInput);
         this.embedInput = inferenceType.isInput ? loadInputWeights() : null;
+        logger.debug("model constructor phase=input_weights done enabled={}", inferenceType.isInput);
+        logger.debug("model constructor phase=transformer_blocks enabled={}", inferenceType.isFwdPass);
         this.transformerBlocks = inferenceType.isFwdPass ? loadTransformerBlockWeights() : null;
+        logger.debug("model constructor phase=transformer_blocks done enabled={} layers={}", inferenceType.isFwdPass,
+                this.transformerBlocks == null ? 0 : this.transformerBlocks.length);
+        logger.debug("model constructor phase=output_weights enabled={}", inferenceType.isOutput);
         this.sampleOutput = inferenceType.isOutput ? loadOutputWeights() : null;
+        logger.debug("model constructor phase=output_weights done enabled={}", inferenceType.isOutput);
+        logger.debug("model constructor phase=classifier_weights enabled={}", inferenceType.isClassify);
         this.classifyOutput = inferenceType.isClassify ? loadClassifierWeights() : null;
+        logger.debug("model constructor phase=classifier_weights done enabled={}", inferenceType.isClassify);
         this.poolingLayer = inferenceType.isPooling ? Optional.ofNullable(loadPoolingWeights()) : Optional.empty();
         this.pool = pool;
+        logger.debug("model constructor complete config={} inference_type={}", config.getClass().getSimpleName(), inferenceType);
     }
 
     void addTensorOperations(Map<TensorProviderKind, TensorOperations> additionalTensorOperations) {

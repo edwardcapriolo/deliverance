@@ -18,6 +18,8 @@ import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
 import java.util.stream.IntStream;
@@ -25,6 +27,7 @@ import java.util.stream.IntStream;
 import static io.teknek.deliverance.tensor.AbstractTensorUtils.quantize;
 
 public class LlamaModel extends AbstractModel {
+    private static final Logger LOGGER = LoggerFactory.getLogger(LlamaModel.class);
 
     private volatile AbstractTensor embedTokenWeights;
     public LlamaModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer t, DType workingMemoryDType,
@@ -46,7 +49,9 @@ public class LlamaModel extends AbstractModel {
         // but we ae calling quantize in the if?
         if (embedTokenWeights == null) {
             //embedTokenWeights = weights.load("model.embed_tokens.weight").quantize(workingDType);
+            LOGGER.debug("loading input embeddings weight=model.embed_tokens.weight target_dtype={}", workingDType);
             embedTokenWeights = quantize(weights.load("model.embed_tokens.weight"), workingDType);
+            LOGGER.debug("loaded input embeddings shape={} dtype={}", embedTokenWeights.shape(), embedTokenWeights.dType());
             configurableTensorProvider.get().registerModelTensor(embedTokenWeights);
         }
 
@@ -118,10 +123,14 @@ public class LlamaModel extends AbstractModel {
     @Override
     protected SampleOutput loadOutputWeights() {
         DType qType = modelQType.orElse(this.modelDType);
+        LOGGER.debug("loading output norm weight=model.norm.weight target_dtype={}", qType);
         final LayerNorm outputLayerNorm = new RmsNorm(this, quantize(weights.load("model.norm.weight"), qType), metricRegistry);
         DType outputHeadDType = outputHeadQuantization.orElse(workingDType);
         boolean forceOutputHeadQuantization = outputHeadQuantization.isPresent();
         // Some llama models don't have a classification head
+        boolean hasLmHead = weights.isWeightPresent("lm_head.weight");
+        LOGGER.debug("loading output logits weight={} target_dtype={} force_quantization={}",
+                hasLmHead ? "lm_head.weight" : "model.embed_tokens.weight", outputHeadDType, forceOutputHeadQuantization);
         AbstractTensor classificationWeights = weights.isWeightPresent("lm_head.weight")
                 ? io.teknek.deliverance.tensor.AbstractTensorUtils.quantize(weights.load("lm_head.weight"), outputHeadDType,
                 forceOutputHeadQuantization)
@@ -129,6 +138,7 @@ public class LlamaModel extends AbstractModel {
                         embedTokenWeights == null ? weights.load("model.embed_tokens.weight") : embedTokenWeights,
                         outputHeadDType,
                         forceOutputHeadQuantization);
+        LOGGER.debug("loaded output logits shape={} dtype={}", classificationWeights.shape(), classificationWeights.dType());
         configurableTensorProvider.get().registerModelTensor(classificationWeights);
         return new SampleOutput() {
             @Override
