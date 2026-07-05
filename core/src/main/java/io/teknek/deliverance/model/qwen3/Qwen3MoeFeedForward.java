@@ -6,6 +6,7 @@ import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import net.jafama.FastMath;
 
@@ -120,7 +121,7 @@ public class Qwen3MoeFeedForward implements FeedForward {
     private void forwardProviderExpert(AbstractTensor input, AbstractTensor output,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer, int[] selectedExperts, float[] selectedWeights,
             int expert, int tokenCount) {
-        try (AbstractTensor expertInput = model.makeTensor(tokenCount, config.embeddingLength);
+        try (AbstractTensor expertInput = model.getTensorAllocator().getDirty(input.dType(), TensorShape.of(tokenCount, config.embeddingLength));
              AbstractTensor gate = model.makeTensor(tokenCount, config.moeIntermediateSize);
              AbstractTensor up = model.makeTensor(tokenCount, config.moeIntermediateSize);
              AbstractTensor hidden = model.makeTensor(tokenCount, config.moeIntermediateSize);

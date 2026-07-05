@@ -6,6 +6,8 @@ import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
+import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
@@ -99,6 +101,23 @@ public class Qwen3MoeFeedForwardCharacterizationTest {
     }
 
     @Test
+    public void providerExecutionAcceptsQuantizedInputRows() {
+        CountingTensorOperations providerOps = new CountingTensorOperations();
+        Qwen3MoeConfig config = quantizedInputConfig();
+        Qwen3MoeFeedForward provider = feedForward(providerOps, true, Qwen3MoeFeedForward.PROVIDER_EXECUTION,
+                config, new MetricRegistry());
+
+        try (FloatBufferTensor denseInput = deterministicTensor(2, config.embeddingLength, 409);
+             AbstractTensor quantizedInput = providerOps.quantize(denseInput, DType.I8, 0, denseInput.shape().last());
+             AbstractTensor output = provider.forward(quantizedInput, java.util.Optional.empty())) {
+            assertEquals(2, output.shape().first());
+            assertEquals(config.embeddingLength, output.shape().last());
+            assertTrue(Float.isFinite(output.get(0, 0)));
+            assertTrue(Float.isFinite(output.get(1, 1)));
+        }
+    }
+
+    @Test
     public void topKChoosesLargestExpertProbabilities() throws Exception {
         Qwen3MoeFeedForward ff = feedForward(new CountingTensorOperations(), false);
         int[] selectedExperts = new int[2];
@@ -185,7 +204,10 @@ public class Qwen3MoeFeedForwardCharacterizationTest {
             Qwen3MoeFeedForward.ExecutionStrategy executionStrategy) {
         Qwen3MoeConfig config = smallConfig(normTopkProb);
         AbstractModel model = Mockito.mock(AbstractModel.class);
-        when(model.getMetricRegistry()).thenReturn(new MetricRegistry());
+        MetricRegistry metrics = new MetricRegistry();
+        TensorAllocator allocator = new ArrayQueueTensorAllocator(metrics);
+        when(model.getMetricRegistry()).thenReturn(metrics);
+        when(model.getTensorAllocator()).thenReturn(allocator);
         when(model.makeTensor(Mockito.anyInt(), Mockito.anyInt()))
                 .thenAnswer(invocation -> new FloatBufferTensor(
                         (Integer) invocation.getArgument(0), (Integer) invocation.getArgument(1)));
@@ -223,10 +245,19 @@ public class Qwen3MoeFeedForwardCharacterizationTest {
                 1, 64, 4, 16, false, false, 0.001f, List.of());
     }
 
+    private static Qwen3MoeConfig quantizedInputConfig() {
+        return new Qwen3MoeConfig(64, 32, 64, 4, 2, 1, 1.0e-6f, 64, null, 1,
+                ActivationFunction.Type.SILU, 10_000.0, Map.of("rope_type", "default", "rope_theta", 10_000.0),
+                8, false, null, null, null, 0.0f, List.of("Qwen3MoeForCausalLM"),
+                1, 32, 2, 4, true, false, 0.001f, List.of());
+    }
+
     private static Qwen3MoeFeedForward feedForward(CountingTensorOperations ops, boolean normTopkProb,
             Qwen3MoeFeedForward.ExecutionStrategy executionStrategy, Qwen3MoeConfig config, MetricRegistry metrics) {
         AbstractModel model = Mockito.mock(AbstractModel.class);
+        TensorAllocator allocator = new ArrayQueueTensorAllocator(metrics);
         when(model.getMetricRegistry()).thenReturn(metrics);
+        when(model.getTensorAllocator()).thenReturn(allocator);
         when(model.makeTensor(Mockito.anyInt(), Mockito.anyInt()))
                 .thenAnswer(invocation -> new FloatBufferTensor(
                         (Integer) invocation.getArgument(0), (Integer) invocation.getArgument(1)));
