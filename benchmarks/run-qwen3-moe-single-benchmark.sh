@@ -29,7 +29,9 @@ fi
 
 cd "$SCRIPT_DIR"
 
-MODEL_CONFIG=${MODEL_CONFIG:-"$SCRIPT_DIR/benchmarks/configs/qwen3-30b-a3b-base-q4.json"}
+MODEL_OWNER=${MODEL_OWNER:-Qwen}
+MODEL_NAME=${MODEL_NAME:-Qwen3-30B-A3B-Base-JQ4}
+MODEL_CONFIG=${MODEL_CONFIG:-"$SCRIPT_DIR/benchmarks/configs/qwen3-30b-a3b-base-jq4.json"}
 
 DEFAULT_BENCHMARK_ARGS="\
 --model-config $MODEL_CONFIG \
@@ -48,8 +50,8 @@ EXEC_ARGS="\
 -cp %classpath \
 io.teknek.deliverance.benchmark.InferenceBenchmark \
 --engine deliverance \
---owner Qwen \
---model Qwen3-30B-A3B-Base \
+--owner $MODEL_OWNER \
+--model $MODEL_NAME \
 ${DELIVERANCE_BENCHMARK_ARGS:-$DEFAULT_BENCHMARK_ARGS}"
 
 mvn -q -pl core \
