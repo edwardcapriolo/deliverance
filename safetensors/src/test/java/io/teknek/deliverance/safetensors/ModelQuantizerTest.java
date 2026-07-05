@@ -56,7 +56,7 @@ public class ModelQuantizerTest {
         Path outputDir = tempDir.resolve("output-manifest");
         Files.createDirectories(sourceDir);
         Files.writeString(sourceDir.resolve("config.json"), "{\"model_type\":\"llama\"}");
-        Files.writeString(sourceDir.resolve("README.md"), "# Original Model\n");
+        Files.writeString(sourceDir.resolve("README.md"), "# Original Model\n\nModel card summary.\n\n## Original Details\n\nOriginal body.\n");
 
         FloatBufferTensor proj = new FloatBufferTensor(1, 32);
         for (int i = 0; i < 32; i++) {
@@ -68,8 +68,10 @@ public class ModelQuantizerTest {
         new ModelQuantizer(64).quantizeModelDirectory(sourceDir, outputDir);
 
         String readme = Files.readString(outputDir.resolve("README.md"));
-        assertTrue(readme.startsWith("# Deliverance Quantization"));
+        assertTrue(readme.startsWith("# Original Model"));
+        assertTrue(readme.indexOf("# Deliverance Quantization") < readme.indexOf("## Original Details"));
         assertTrue(readme.contains("# Original Model"));
+        assertTrue(readme.contains("## Original Details"));
         JsonNode manifest = JsonUtils.om.readTree(outputDir.resolve(ModelQuantizer.QUANTIZATION_MANIFEST).toFile());
         assertEquals(1, manifest.get("schemaVersion").asInt());
         assertEquals("Q4", manifest.get("targetType").asText());
@@ -81,6 +83,84 @@ public class ModelQuantizerTest {
         assertEquals("Q4", transform.get("outputDType").asText());
         assertTrue(transform.get("quantized").asBoolean());
         assertEquals("model.layers.0.self_attn.q_proj.weight.qb", transform.get("sidecars").get(0).asText());
+    }
+
+    @Test
+    public void defaultFilterCoversDenseQwenMixtralAndQwenMoeProjectionWeights() {
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("model.layers.0.self_attn.q_proj.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("model.layers.0.mlp.gate_proj.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("model.layers.19.mlp.experts.0.gate_proj.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("model.layers.19.mlp.experts.127.up_proj.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("model.layers.19.mlp.experts.127.down_proj.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("model.layers.3.block_sparse_moe.experts.0.w1.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("model.layers.3.block_sparse_moe.experts.7.w2.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("model.layers.3.block_sparse_moe.experts.7.w3.weight"));
+
+        assertFalse(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("model.embed_tokens.weight"));
+        assertFalse(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("lm_head.weight"));
+        assertFalse(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("model.layers.0.input_layernorm.weight"));
+        assertFalse(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("model.layers.19.mlp.gate.weight"));
+        assertFalse(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("model.layers.3.block_sparse_moe.gate.weight"));
+    }
+
+    @Test
+    public void quantizesQwenMoeExpertProjectionWeightsAndKeepsRouterDense() throws Exception {
+        Path sourceDir = tempDir.resolve("source-qwen-moe");
+        Path outputDir = tempDir.resolve("output-qwen-moe");
+        Files.createDirectories(sourceDir);
+        Files.writeString(sourceDir.resolve("config.json"), "{\"model_type\":\"qwen3_moe\"}");
+
+        Map<String, AbstractTensor> tensors = new LinkedHashMap<>();
+        tensors.put("model.layers.0.mlp.gate.weight", vector(1.0f));
+        tensors.put("model.layers.0.mlp.experts.0.gate_proj.weight", vector(2.0f));
+        tensors.put("model.layers.0.mlp.experts.0.up_proj.weight", vector(3.0f));
+        tensors.put("model.layers.0.mlp.experts.0.down_proj.weight", vector(4.0f));
+        SafeTensorWriter.write(sourceDir.resolve("model.safetensors"), Map.of(), tensors);
+
+        new ModelQuantizer(256).quantizeModelDirectory(sourceDir, outputDir);
+
+        try (DefaultWeightLoader loader = new DefaultWeightLoader(outputDir.toFile())) {
+            assertEquals(DType.F32, loader.tensorInfoMap().get("model.layers.0.mlp.gate.weight").dType);
+            assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.mlp.experts.0.gate_proj.weight").dType);
+            assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.mlp.experts.0.up_proj.weight").dType);
+            assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.mlp.experts.0.down_proj.weight").dType);
+            assertTrue(loader.isWeightPresent("model.layers.0.mlp.experts.0.gate_proj.weight.qb"));
+            assertTrue(loader.isWeightPresent("model.layers.0.mlp.experts.0.up_proj.weight.qb"));
+            assertTrue(loader.isWeightPresent("model.layers.0.mlp.experts.0.down_proj.weight.qb"));
+        }
+
+        JsonNode manifest = JsonUtils.om.readTree(outputDir.resolve(ModelQuantizer.QUANTIZATION_MANIFEST).toFile());
+        long quantizedCount = 0;
+        for (JsonNode transform : manifest.get("tensorTransforms")) {
+            if (transform.get("quantized").asBoolean()) {
+                quantizedCount++;
+            }
+        }
+        assertEquals(3, quantizedCount);
+    }
+
+    @Test
+    public void quantizesMixtralExpertProjectionWeightsAndKeepsRouterDense() throws Exception {
+        Path sourceDir = tempDir.resolve("source-mixtral-moe");
+        Path outputDir = tempDir.resolve("output-mixtral-moe");
+        Files.createDirectories(sourceDir);
+        Files.writeString(sourceDir.resolve("config.json"), "{\"model_type\":\"mixtral\"}");
+
+        Map<String, AbstractTensor> tensors = new LinkedHashMap<>();
+        tensors.put("model.layers.0.block_sparse_moe.gate.weight", vector(1.0f));
+        tensors.put("model.layers.0.block_sparse_moe.experts.0.w1.weight", vector(2.0f));
+        tensors.put("model.layers.0.block_sparse_moe.experts.0.w2.weight", vector(3.0f));
+        tensors.put("model.layers.0.block_sparse_moe.experts.0.w3.weight", vector(4.0f));
+        SafeTensorWriter.write(sourceDir.resolve("model.safetensors"), Map.of(), tensors);
+
+        new ModelQuantizer(256).quantizeModelDirectory(sourceDir, outputDir);
+
+        try (DefaultWeightLoader loader = new DefaultWeightLoader(outputDir.toFile())) {
+            assertEquals(DType.F32, loader.tensorInfoMap().get("model.layers.0.block_sparse_moe.gate.weight").dType);
+            assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.block_sparse_moe.experts.0.w1.weight").dType);
+            assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.block_sparse_moe.experts.0.w2.weight").dType);
+            assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.block_sparse_moe.experts.0.w3.weight").dType);
+        }
     }
 
     @Test
@@ -245,5 +325,13 @@ public class ModelQuantizerTest {
         Field field = DefaultWeightLoader.class.getDeclaredField("allTensorInfoMap");
         field.setAccessible(true);
         return (Map<String, io.teknek.deliverance.tensor.TensorInfo>) field.get(loader);
+    }
+
+    private static FloatBufferTensor vector(float offset) {
+        FloatBufferTensor tensor = new FloatBufferTensor(1, 32);
+        for (int i = 0; i < 32; i++) {
+            tensor.set(offset + i, 0, i);
+        }
+        return tensor;
     }
 }

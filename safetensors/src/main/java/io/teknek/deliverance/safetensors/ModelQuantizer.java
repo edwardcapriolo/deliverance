@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -18,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Comparator;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
@@ -36,14 +38,32 @@ public class ModelQuantizer {
                     // attention/MLP projection matrices, while keeping embeddings, norm vectors,
                     // lm_head, and miscellaneous dense weights in their original dtype.
                     && (
-                    name.endsWith("self_attn.q_proj.weight")
-                            || name.endsWith("self_attn.k_proj.weight")
-                            || name.endsWith("self_attn.v_proj.weight")
-                            || name.endsWith("self_attn.o_proj.weight")
-                            || name.endsWith("mlp.gate_proj.weight")
-                            || name.endsWith("mlp.up_proj.weight")
-                            || name.endsWith("mlp.down_proj.weight")
+                    isAttentionProjection(name)
+                            || isDenseMlpProjection(name)
+                            || isQwenMoeExpertProjection(name)
+                            || isMixtralMoeExpertProjection(name)
             );
+
+    static boolean isAttentionProjection(String name) {
+        return name.endsWith("self_attn.q_proj.weight")
+                || name.endsWith("self_attn.k_proj.weight")
+                || name.endsWith("self_attn.v_proj.weight")
+                || name.endsWith("self_attn.o_proj.weight");
+    }
+
+    static boolean isDenseMlpProjection(String name) {
+        return name.endsWith("mlp.gate_proj.weight")
+                || name.endsWith("mlp.up_proj.weight")
+                || name.endsWith("mlp.down_proj.weight");
+    }
+
+    static boolean isQwenMoeExpertProjection(String name) {
+        return name.matches(".*\\.mlp\\.experts\\.\\d+\\.(gate_proj|up_proj|down_proj)\\.weight$");
+    }
+
+    static boolean isMixtralMoeExpertProjection(String name) {
+        return name.matches(".*\\.block_sparse_moe\\.experts\\.\\d+\\.(w1|w2|w3)\\.weight$");
+    }
 
     public ModelQuantizer() {
         this(SafeTensorWriter.DEFAULT_MAX_SHARD_SIZE);
@@ -84,37 +104,51 @@ public class ModelQuantizer {
             LOGGER.info("Copying non-weight model files from {} to {}", sourceDir, outputDir);
             copyNonWeightFiles(sourceDir, outputDir);
             try (DefaultWeightLoader loader = new DefaultWeightLoader(sourceDir.toFile())) {
-                Map<String, AbstractTensor> converted = new LinkedHashMap<>();
                 List<TensorTransform> tensorTransforms = new ArrayList<>();
-                List<String> tensorNames = tensorNamesToProcess(loader);
+                List<String> tensorNames = tensorNamesToProcess(loader, sourceDir);
                 LOGGER.info("Loaded {} tensors for quantization from {}", tensorNames.size(), sourceDir);
+                Map<String, String> outputWeightMap = new LinkedHashMap<>();
+                Map<String, AbstractTensor> currentShard = new LinkedHashMap<>();
+                long currentShardBytes = 0;
+                int[] shardCounter = new int[]{0};
                 try {
                     for (int i = 0; i < tensorNames.size(); i++) {
-                        String name = tensorNames.get(i);
-                        AbstractTensor original = loader.load(name);
-                        AbstractTensor tensor = original;
-                        boolean quantized = false;
-                        if (tensorFilter.test(name) && canQuantize(original, targetType)) {
-                            LOGGER.info("Quantizing tensor {}/{} {} from {} to {}", i + 1, tensorNames.size(), name,
-                                    original.dType(), targetType);
-                            AbstractTensor quantizedTensor = AbstractTensorUtils.quantize(original, targetType, true);
-                            if (quantizedTensor != original) {
-                                tensor = quantizedTensor;
-                                quantized = true;
+                            String name = tensorNames.get(i);
+                            AbstractTensor original = loader.load(name);
+                            AbstractTensor tensor = original;
+                            boolean quantized = false;
+                            if (tensorFilter.test(name) && canQuantize(original, targetType)) {
+                                LOGGER.info("Quantizing tensor {}/{} {} from {} to {}", i + 1, tensorNames.size(), name,
+                                        original.dType(), targetType);
+                                AbstractTensor quantizedTensor = AbstractTensorUtils.quantize(original, targetType, true);
+                                if (quantizedTensor != original) {
+                                    tensor = quantizedTensor;
+                                    quantized = true;
+                                }
                             }
+                            tensorTransforms.add(TensorTransform.from(name, original, tensor, quantized));
+                            if (quantized) {
+                                original.close();
+                            }
+                            long tensorBytes = serializedBytes(name, tensor);
+                            if (!currentShard.isEmpty() && currentShardBytes + tensorBytes > maxShardSize) {
+                                writeCurrentShard(outputDir, loader.metadata(), currentShard, outputWeightMap, shardCounter);
+                                currentShardBytes = 0;
+                            }
+                            currentShard.put(name, tensor);
+                            currentShardBytes += tensorBytes;
+                            logProgress(i + 1, tensorNames.size(), startedAt);
                         }
-                        converted.put(name, tensor);
-                        tensorTransforms.add(TensorTransform.from(name, original, tensor, quantized));
-                        if (quantized) {
-                            original.close();
-                        }
-                        logProgress(i + 1, tensorNames.size(), startedAt);
+                    if (!currentShard.isEmpty()) {
+                        writeCurrentShard(outputDir, loader.metadata(), currentShard, outputWeightMap, shardCounter);
                     }
-                    LOGGER.info("Writing quantized model weights to {}", outputDir);
-                    SafeTensorWriter.writeModel(outputDir, loader.metadata(), converted, maxShardSize);
+                    LOGGER.info("Writing quantized model index to {}", outputDir);
+                    JsonUtils.om.writeValue(outputDir.resolve(SafeTensorIndexPojo.MODEL_INDEX_JSON).toFile(),
+                            new SafeTensorIndexPojo(loader.metadata(), outputWeightMap));
+                    Files.deleteIfExists(outputDir.resolve(SafeTensorIndexPojo.SINGLE_MODEL_NAME));
                     writeQuantizationMetadata(sourceDir, outputDir, targetType, tensorTransforms);
                 } finally {
-                    converted.values().forEach(AbstractTensor::close);
+                    currentShard.values().forEach(AbstractTensor::close);
                 }
             }
             LOGGER.info("Finished quantizing model to {} in {} seconds", outputDir, Duration.between(startedAt, Instant.now()).toSeconds());
@@ -144,7 +178,7 @@ public class ModelQuantizer {
         return !name.contains("-part-") && loader.tensorInfoMap().containsKey(name + "-part-0");
     }
 
-    private List<String> tensorNamesToProcess(DefaultWeightLoader loader) {
+    private List<String> tensorNamesToProcess(DefaultWeightLoader loader, Path sourceDir) {
         List<String> names = new ArrayList<>();
         for (String name : loader.tensorInfoMap().keySet()) {
             if (name.endsWith(".qb") || isLogicalSplitTensor(name, loader)) {
@@ -152,7 +186,41 @@ public class ModelQuantizer {
             }
             names.add(name);
         }
+        Map<String, String> shardMap = sourceShardMap(sourceDir);
+        names.sort(Comparator
+                .comparing((String name) -> shardMap.getOrDefault(name, ""))
+                .thenComparing(name -> name));
         return names;
+    }
+
+    private Map<String, String> sourceShardMap(Path sourceDir) {
+        Path index = sourceDir.resolve(SafeTensorIndexPojo.MODEL_INDEX_JSON);
+        if (!Files.exists(index)) {
+            return Map.of();
+        }
+        try {
+            return JsonUtils.om.readValue(index.toFile(), SafeTensorIndexPojo.class).getWeightFileMap();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private long serializedBytes(String name, AbstractTensor tensor) {
+        return SafeTensorWriter.flatten(Map.of(name, tensor)).stream().mapToLong(SafeTensorWriter.NamedTensorPayload::length).sum();
+    }
+
+    private void writeCurrentShard(Path outputDir, Map<String, String> metadata, Map<String, AbstractTensor> tensors,
+            Map<String, String> outputWeightMap, int[] shardCounter) {
+        shardCounter[0]++;
+        String shardName = String.format("model-%05d.safetensors", shardCounter[0]);
+        List<SafeTensorWriter.NamedTensorPayload> payloads = SafeTensorWriter.flatten(tensors);
+        LOGGER.info("Writing quantized shard {} with {} payloads", shardName, payloads.size());
+        SafeTensorWriter.writeShardFile(outputDir.resolve(shardName), metadata, payloads);
+        for (SafeTensorWriter.NamedTensorPayload payload : payloads) {
+            outputWeightMap.put(payload.name(), shardName);
+        }
+        tensors.values().forEach(AbstractTensor::close);
+        tensors.clear();
     }
 
     private void logProgress(int processed, int total, Instant startedAt) {
@@ -226,9 +294,56 @@ public class ModelQuantizer {
                 + "Deliverance is a local Java inference engine with safetensors loading, Q4 quantization, "
                 + "and quantize-on-demand model generation. Learn more at "
                 + "[github.com/edwardcapriolo/deliverance](https://github.com/edwardcapriolo/deliverance).\n\n";
-        String separator = original.isBlank() ? "" : "---\n\n## Original Model Card\n\n"
-                + "The content below was copied from the source model directory and belongs to the original model authors.\n\n";
-        Files.writeString(outputDir.resolve(README_NAME), section + separator + original);
+        if (original.isBlank()) {
+            Files.writeString(outputDir.resolve(README_NAME), section);
+        } else {
+            Files.writeString(outputDir.resolve(README_NAME), insertAfterModelCardHeader(original, section));
+        }
+    }
+
+    private String insertAfterModelCardHeader(String original, String section) {
+        int insertAt = modelCardHeaderEnd(original);
+        return original.substring(0, insertAt)
+                + "\n\n---\n\n"
+                + section
+                + original.substring(insertAt).stripLeading();
+    }
+
+    private int modelCardHeaderEnd(String original) {
+        int cursor = 0;
+        if (original.startsWith("---\n")) {
+            int frontMatterEnd = original.indexOf("\n---", 4);
+            if (frontMatterEnd >= 0) {
+                int afterClosingLine = original.indexOf('\n', frontMatterEnd + 1);
+                cursor = afterClosingLine < 0 ? original.length() : afterClosingLine + 1;
+            }
+        }
+        int headingStart = firstHeadingAtOrAfter(original, cursor);
+        if (headingStart >= 0) {
+            int nextBlankLine = original.indexOf("\n\n", headingStart);
+            return nextBlankLine < 0 ? original.length() : nextBlankLine + 2;
+        }
+        if (cursor > 0) {
+            return cursor;
+        }
+        int nextBlankLine = original.indexOf("\n\n");
+        return nextBlankLine < 0 ? original.length() : nextBlankLine + 2;
+    }
+
+    private int firstHeadingAtOrAfter(String original, int start) {
+        int cursor = Math.max(0, start);
+        while (cursor < original.length()) {
+            int lineEnd = original.indexOf('\n', cursor);
+            int end = lineEnd < 0 ? original.length() : lineEnd;
+            if (end > cursor && original.charAt(cursor) == '#') {
+                return cursor;
+            }
+            if (lineEnd < 0) {
+                return -1;
+            }
+            cursor = lineEnd + 1;
+        }
+        return -1;
     }
 
     private long directorySize(Path directory) throws IOException {
