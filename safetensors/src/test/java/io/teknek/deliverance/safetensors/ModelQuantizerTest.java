@@ -164,6 +164,49 @@ public class ModelQuantizerTest {
     }
 
     @Test
+    public void canUseDefaultWeightLoaderReadMode() throws Exception {
+        Path sourceDir = tempDir.resolve("source-default-mode");
+        Path outputDir = tempDir.resolve("output-default-mode");
+        Files.createDirectories(sourceDir);
+        Files.writeString(sourceDir.resolve("config.json"), "{\"model_type\":\"llama\"}");
+
+        SafeTensorWriter.write(sourceDir.resolve("model.safetensors"), Map.of(),
+                Map.of("model.layers.0.self_attn.q_proj.weight", vector(1.0f)));
+
+        new ModelQuantizer(256, ModelQuantizer.ReadMode.DEFAULT_WEIGHT_LOADER).quantizeModelDirectory(sourceDir, outputDir);
+
+        try (DefaultWeightLoader loader = new DefaultWeightLoader(outputDir.toFile())) {
+            assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.self_attn.q_proj.weight").dType);
+        }
+    }
+
+    @Test
+    public void shardReadModeProcessesMultiShardModel() throws Exception {
+        Path sourceDir = tempDir.resolve("source-shard-mode");
+        Path outputDir = tempDir.resolve("output-shard-mode");
+        Files.createDirectories(sourceDir);
+        Files.writeString(sourceDir.resolve("config.json"), "{\"model_type\":\"qwen3_moe\"}");
+
+        SafeTensorWriter.writeShardFile(sourceDir.resolve("model-00001-of-00002.safetensors"), Map.of(),
+                SafeTensorWriter.flatten(Map.of("model.layers.0.self_attn.q_proj.weight", vector(1.0f))));
+        SafeTensorWriter.writeShardFile(sourceDir.resolve("model-00002-of-00002.safetensors"), Map.of(),
+                SafeTensorWriter.flatten(Map.of("model.layers.0.mlp.experts.0.gate_proj.weight", vector(2.0f))));
+        JsonUtils.om.writeValue(sourceDir.resolve(SafeTensorIndexPojo.MODEL_INDEX_JSON).toFile(),
+                new SafeTensorIndexPojo(Map.of(), Map.of(
+                        "model.layers.0.self_attn.q_proj.weight", "model-00001-of-00002.safetensors",
+                        "model.layers.0.mlp.experts.0.gate_proj.weight", "model-00002-of-00002.safetensors")));
+
+        new ModelQuantizer(256, ModelQuantizer.ReadMode.SHARD_WEIGHT_LOADER).quantizeModelDirectory(sourceDir, outputDir);
+
+        try (DefaultWeightLoader loader = new DefaultWeightLoader(outputDir.toFile())) {
+            assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.self_attn.q_proj.weight").dType);
+            assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.mlp.experts.0.gate_proj.weight").dType);
+            assertTrue(loader.isWeightPresent("model.layers.0.self_attn.q_proj.weight.qb"));
+            assertTrue(loader.isWeightPresent("model.layers.0.mlp.experts.0.gate_proj.weight.qb"));
+        }
+    }
+
+    @Test
     public void keepsNormWeightsDenseEvenIfStoredAsRowVectors() throws Exception {
         Path sourceDir = tempDir.resolve("source-norm");
         Path outputDir = tempDir.resolve("output-norm");

@@ -37,6 +37,12 @@ public class ModelQuantizer {
     private static final String FINISHED_MARKER = ".finished";
     private static final int PROGRESS_LOG_INTERVAL = 25;
     private final long maxShardSize;
+    private final ReadMode readMode;
+
+    public enum ReadMode {
+        DEFAULT_WEIGHT_LOADER,
+        SHARD_WEIGHT_LOADER
+    }
 
     public static final Predicate<String> DEFAULT_Q4_TENSOR_FILTER = name ->
             !name.endsWith(".qb")
@@ -77,7 +83,12 @@ public class ModelQuantizer {
     }
 
     public ModelQuantizer(long maxShardSize) {
+        this(maxShardSize, ReadMode.SHARD_WEIGHT_LOADER);
+    }
+
+    public ModelQuantizer(long maxShardSize, ReadMode readMode) {
         this.maxShardSize = maxShardSize;
+        this.readMode = readMode;
     }
 
     public void quantizeCachedModel(String inputOwner, String inputModel, String outputOwner, String outputModel) {
@@ -110,49 +121,106 @@ public class ModelQuantizer {
             Files.createDirectories(outputDir);
             LOGGER.info("Copying non-weight model files from {} to {}", sourceDir, outputDir);
             copyNonWeightFiles(sourceDir, outputDir);
-            try (DefaultWeightLoader loader = new DefaultWeightLoader(sourceDir.toFile())) {
-                List<TensorTransform> tensorTransforms = new ArrayList<>();
-                List<String> tensorNames = tensorNamesToProcess(loader, sourceDir);
-                LOGGER.info("Loaded {} tensors for quantization from {}", tensorNames.size(), sourceDir);
-                Map<String, String> outputWeightMap = new LinkedHashMap<>();
-                int[] shardCounter = new int[]{0};
-                try {
-                    for (int i = 0; i < tensorNames.size(); i++) {
-                            String name = tensorNames.get(i);
-                            AbstractTensor original = loader.load(name);
-                            boolean quantized = false;
-                            if (tensorFilter.test(name) && canQuantize(original, targetType)) {
-                                LOGGER.info("Quantizing tensor {}/{} {} from {} to {}", i + 1, tensorNames.size(), name,
-                                        original.dType(), targetType);
-                                if (targetType == DType.Q4) {
-                                    writeQ4Tensor(outputDir, loader.metadata(), outputWeightMap, shardCounter, name, original);
-                                    quantized = true;
-                                } else {
-                                    try (AbstractTensor tensor = AbstractTensorUtils.quantize(original, targetType, true)) {
-                                        writeTensor(outputDir, loader.metadata(), outputWeightMap, shardCounter, name, tensor);
-                                        quantized = tensor != original;
-                                    }
-                                }
-                            }
-                            if (!quantized) {
-                                writeTensor(outputDir, loader.metadata(), outputWeightMap, shardCounter, name, original);
-                            }
-                            tensorTransforms.add(TensorTransform.from(name, original, targetType, quantized));
-                            original.close();
-                            logProgress(i + 1, tensorNames.size(), startedAt);
-                        }
-                    LOGGER.info("Writing quantized model index to {}", outputDir);
-                    JsonUtils.om.writeValue(outputDir.resolve(SafeTensorIndexPojo.MODEL_INDEX_JSON).toFile(),
-                            new SafeTensorIndexPojo(loader.metadata(), outputWeightMap));
-                    Files.deleteIfExists(outputDir.resolve(SafeTensorIndexPojo.SINGLE_MODEL_NAME));
-                    writeQuantizationMetadata(sourceDir, outputDir, targetType, tensorTransforms);
-                } finally {
-                }
-            }
+            QuantizationRun run = readMode == ReadMode.SHARD_WEIGHT_LOADER
+                    ? quantizeWithShardLoader(sourceDir, outputDir, targetType, tensorFilter, startedAt)
+                    : quantizeWithDefaultLoader(sourceDir, outputDir, targetType, tensorFilter, startedAt);
+            LOGGER.info("Writing quantized model index to {}", outputDir);
+            JsonUtils.om.writeValue(outputDir.resolve(SafeTensorIndexPojo.MODEL_INDEX_JSON).toFile(),
+                    new SafeTensorIndexPojo(run.metadata(), run.outputWeightMap()));
+            Files.deleteIfExists(outputDir.resolve(SafeTensorIndexPojo.SINGLE_MODEL_NAME));
+            writeQuantizationMetadata(sourceDir, outputDir, targetType, run.tensorTransforms());
             LOGGER.info("Finished quantizing model to {} in {} seconds", outputDir, Duration.between(startedAt, Instant.now()).toSeconds());
         } catch (IOException e) {
             throw new RuntimeException("Unable to quantize model from " + sourceDir + " to " + outputDir, e);
         }
+    }
+
+    private QuantizationRun quantizeWithDefaultLoader(Path sourceDir, Path outputDir, DType targetType,
+            Predicate<String> tensorFilter, Instant startedAt) {
+        try (DefaultWeightLoader loader = new DefaultWeightLoader(sourceDir.toFile())) {
+            List<String> tensorNames = tensorNamesToProcess(loader, sourceDir);
+            LOGGER.info("Loaded {} tensors for quantization from {} using default loader", tensorNames.size(), sourceDir);
+            return quantizeTensorList(loader, tensorNames, outputDir, targetType, tensorFilter, startedAt);
+        }
+    }
+
+    private QuantizationRun quantizeWithShardLoader(Path sourceDir, Path outputDir, DType targetType,
+            Predicate<String> tensorFilter, Instant startedAt) {
+        Map<String, String> sourceShardMap = sourceShardMap(sourceDir);
+        if (sourceShardMap.isEmpty()) {
+            Path single = sourceDir.resolve(SafeTensorIndexPojo.SINGLE_MODEL_NAME);
+            try (SafetensorsShardWeightLoader loader = new SafetensorsShardWeightLoader(single)) {
+                return quantizeTensorList(loader, tensorNamesToProcess(loader, sourceDir), outputDir,
+                        targetType, tensorFilter, startedAt);
+            }
+        }
+
+        Map<String, List<String>> byShard = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : sourceShardMap.entrySet()) {
+            if (!entry.getKey().endsWith(".qb")) {
+                byShard.computeIfAbsent(entry.getValue(), ignored -> new ArrayList<>()).add(entry.getKey());
+            }
+        }
+        List<TensorTransform> transforms = new ArrayList<>();
+        Map<String, String> outputWeightMap = new LinkedHashMap<>();
+        Map<String, String> metadata = Map.of();
+        int[] shardCounter = new int[]{0};
+        int[] processed = new int[]{0};
+        int total = byShard.values().stream().mapToInt(List::size).sum();
+        for (Map.Entry<String, List<String>> shard : byShard.entrySet()) {
+            LOGGER.info("Opening source shard {} with {} tensors", shard.getKey(), shard.getValue().size());
+            try (SafetensorsShardWeightLoader loader = new SafetensorsShardWeightLoader(sourceDir.resolve(shard.getKey()))) {
+                metadata = loader.metadata();
+                List<String> names = shard.getValue().stream().sorted().toList();
+                quantizeNames(loader, names, outputDir, targetType, tensorFilter, startedAt,
+                        outputWeightMap, transforms, shardCounter, processed, total);
+            }
+        }
+        return new QuantizationRun(metadata, outputWeightMap, transforms);
+    }
+
+    private QuantizationRun quantizeTensorList(WeightLoader loader, List<String> tensorNames, Path outputDir,
+            DType targetType, Predicate<String> tensorFilter, Instant startedAt) {
+        List<TensorTransform> tensorTransforms = new ArrayList<>();
+        Map<String, String> outputWeightMap = new LinkedHashMap<>();
+        int[] shardCounter = new int[]{0};
+        int[] processed = new int[]{0};
+        quantizeNames(loader, tensorNames, outputDir, targetType, tensorFilter, startedAt,
+                outputWeightMap, tensorTransforms, shardCounter, processed, tensorNames.size());
+        return new QuantizationRun(loader.metadata(), outputWeightMap, tensorTransforms);
+    }
+
+    private void quantizeNames(WeightLoader loader, List<String> tensorNames, Path outputDir, DType targetType,
+            Predicate<String> tensorFilter, Instant startedAt, Map<String, String> outputWeightMap,
+            List<TensorTransform> tensorTransforms, int[] shardCounter, int[] processed, int total) {
+        for (String name : tensorNames) {
+            processed[0]++;
+            AbstractTensor original = loader.load(name);
+            boolean quantized = false;
+            if (tensorFilter.test(name) && canQuantize(original, targetType)) {
+                LOGGER.info("Quantizing tensor {}/{} {} from {} to {}", processed[0], total, name,
+                        original.dType(), targetType);
+                if (targetType == DType.Q4) {
+                    writeQ4Tensor(outputDir, loader.metadata(), outputWeightMap, shardCounter, name, original);
+                    quantized = true;
+                } else {
+                    try (AbstractTensor tensor = AbstractTensorUtils.quantize(original, targetType, true)) {
+                        writeTensor(outputDir, loader.metadata(), outputWeightMap, shardCounter, name, tensor);
+                        quantized = tensor != original;
+                    }
+                }
+            }
+            if (!quantized) {
+                writeTensor(outputDir, loader.metadata(), outputWeightMap, shardCounter, name, original);
+            }
+            tensorTransforms.add(TensorTransform.from(name, original, targetType, quantized));
+            original.close();
+            logProgress(processed[0], total, startedAt);
+        }
+    }
+
+    private record QuantizationRun(Map<String, String> metadata, Map<String, String> outputWeightMap,
+            List<TensorTransform> tensorTransforms) {
     }
 
     /**
@@ -176,10 +244,12 @@ public class ModelQuantizer {
         return !name.contains("-part-") && loader.tensorInfoMap().containsKey(name + "-part-0");
     }
 
-    private List<String> tensorNamesToProcess(DefaultWeightLoader loader, Path sourceDir) {
+    private List<String> tensorNamesToProcess(WeightLoader loader, Path sourceDir) {
         List<String> names = new ArrayList<>();
         for (String name : loader.tensorInfoMap().keySet()) {
-            if (name.endsWith(".qb") || isLogicalSplitTensor(name, loader)) {
+            boolean logicalSplit = loader instanceof DefaultWeightLoader defaultLoader
+                    && isLogicalSplitTensor(name, defaultLoader);
+            if (name.endsWith(".qb") || logicalSplit) {
                 continue;
             }
             names.add(name);
