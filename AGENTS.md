@@ -9,6 +9,7 @@
 - Do not present a proposed fix as "the fix" unless there is strong evidence it addresses the issue. Say "hypothesis" or "candidate fix" when that is what it is.
 - Avoid guess-and-check loops. Adding tests, running, adding printlns, and rerunning repeatedly should be a last resort; first isolate invariants and inspect the relevant implementation.
 - Always prefer production-grade implementations over quick scaffolding: use clear lifecycle management, explicit invariants, defensive validation, appropriate concurrency primitives, observability, and deterministic tests.
+- Build algorithms that will scale to the real target model sizes. Single-threaded scalar shortcuts for tensor/math paths have no chance of working in production; if an implementation is only a tiny-test scaffold, say so explicitly and do not present it as real model support.
 - Add appropriate tests for behavior changes. Unit tests are preferred for mechanics; ITs are appropriate when model loading or reflection paths are the actual risk.
 - Add JavaDoc or markdown for non-intuitive behavior and project-specific terms. Do not assume every programmer knows domain shorthand such as matmul = matrix multiply.
 

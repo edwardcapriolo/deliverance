@@ -72,7 +72,8 @@ public class Qwen3MoeModel extends Qwen3Model {
                             expertWeights(i, mlpPrefix, "gate_proj.weight", moeConfig.numExperts, qType),
                             expertWeights(i, mlpPrefix, "up_proj.weight", moeConfig.numExperts, qType),
                             expertWeights(i, mlpPrefix, "down_proj.weight", moeConfig.numExperts, qType),
-                            configurableTensorProvider)
+                            configurableTensorProvider,
+                            Qwen3MoeFeedForward.PROVIDER_EXECUTION)
                     : new MLPBlock(
                             this,
                             config.activationFunction,
