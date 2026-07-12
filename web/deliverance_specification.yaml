@@ -710,6 +710,12 @@ components:
           minimum: 0
           maximum: 1
           nullable: true
+        guided_regex:
+          description: |
+            Constrains generated output to match the supplied regular expression using guided decoding. This follows the
+            vLLM-style OpenAI-compatible `guided_regex` request field.
+          type: string
+          nullable: true
         xtc_threshold:
           type: number
           minimum: 0

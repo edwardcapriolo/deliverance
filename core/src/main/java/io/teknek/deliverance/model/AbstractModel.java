@@ -571,7 +571,7 @@ public abstract class AbstractModel implements Generator, Classifier {
         return tokenizer.decode(new io.teknek.deliverance.grace.TokenIds(Ints.checkedCast(token)), false, false, false, false);
     }
 
-    protected String decodeToken(int token) {
+    public String decodeToken(int token) {
         return decodeToken((long) token);
     }
 

@@ -16,6 +16,7 @@ public class GeneratorParameters {
     public Optional<List<String>> stopWords = Optional.empty();
     public Optional<Boolean> includeStopStrInOutput = Optional.empty();
     public Optional<List<String>> guidedChoice = Optional.empty();
+    public Optional<String> guidedRegex = Optional.empty();
     public Optional<Integer> maxTokens = Optional.empty();
     public Optional<Boolean> logProbs = Optional.empty();
     public Optional<Integer> topLogProbs = Optional.empty();
@@ -34,6 +35,11 @@ public class GeneratorParameters {
     }
     public GeneratorParameters withGuidedChoice(List<String> choices){
         guidedChoice = Optional.of(choices);
+        return this;
+    }
+
+    public GeneratorParameters withGuidedRegex(String regex){
+        guidedRegex = Optional.of(regex);
         return this;
     }
 

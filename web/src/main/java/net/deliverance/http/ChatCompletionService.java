@@ -43,6 +43,9 @@ public class ChatCompletionService {
         if (request.getTopK()!=null){
             params.withTopK(request.getTopK().floatValue());
         }
+        if (request.getGuidedRegex() != null) {
+            params.withGuidedRegex(request.getGuidedRegex());
+        }
         if (request.getLogprobs() != null) {
             params.withLogProbs(request.getLogprobs());
         }

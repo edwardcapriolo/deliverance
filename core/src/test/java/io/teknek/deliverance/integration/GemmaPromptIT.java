@@ -264,6 +264,21 @@ public class GemmaPromptIT {
         assertTrue(k.responseText.contains("Giants"));
     }
 
+    @Test
+    public void gemmaGuidedRegexTest() {
+        AbstractModel m = Gemma2Suite.getOrCreate();
+        String prompt = "Who is the better NFL football team?";
+        PromptSupport.Builder g = m.promptSupport().get().builder()
+                .addUserMessage(prompt);
+        var uuid = UUID.randomUUID();
+        Response k = m.generate(uuid, g.build(), new GeneratorParameters()
+                        .withTemperature(0.0f)
+                        .withGuidedRegex("(Giants|Jets)"),
+                new DoNothingGenerateEvent());
+        //System.out.println(k.responseText);
+        assertTrue(k.responseText.contains("Giants"));
+    }
+
     private static long pageFileCount(Path directory) throws IOException {
         long count = 0;
         try (DirectoryStream<Path> pages = Files.newDirectoryStream(directory, "*.page")) {

@@ -28,6 +28,7 @@ import java.util.Optional;
 import java.util.concurrent.ForkJoinPool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GuidedChoiceLogitsProcessorTest {
@@ -69,6 +70,45 @@ class GuidedChoiceLogitsProcessorTest {
         }
     }
 
+    @Test
+    void masksTokensThatDoNotContinueGuidedRegex() {
+        TinyChoiceModel model = new TinyChoiceModel();
+        try (AbstractTensor logits = new FloatBufferTensor(1, 5)) {
+            logits.set(10.0f, 0, 1); // cat
+            logits.set(20.0f, 0, 2); // dog
+            logits.set(30.0f, 0, 3); // ma
+            logits.set(40.0f, 0, 4); // zebra
+
+            ResponseContext responseContext = new ResponseContext(model);
+
+            LogitsProcessor processor = LogitsProcessorFactory.create(model,
+                    new GeneratorParameters().withGuidedRegex("dogma")).orElseThrow();
+            processor.accept(2, responseContext);
+            processor.process(logits, responseContext);
+
+            assertEquals(Float.NEGATIVE_INFINITY, logits.get(0, 1));
+            assertEquals(Float.NEGATIVE_INFINITY, logits.get(0, 2));
+            assertEquals(30.0f, logits.get(0, 3));
+            assertEquals(Float.NEGATIVE_INFINITY, logits.get(0, 4));
+        } finally {
+            model.close();
+        }
+    }
+
+    @Test
+    void rejectsConflictingGuidanceModes() {
+        TinyChoiceModel model = new TinyChoiceModel();
+        try {
+            GeneratorParameters parameters = new GeneratorParameters()
+                    .withGuidedChoice(List.of("dogma"))
+                    .withGuidedRegex("dogma");
+
+            assertThrows(IllegalArgumentException.class, () -> LogitsProcessorFactory.create(model, parameters));
+        } finally {
+            model.close();
+        }
+    }
+
     private static final class TinyChoiceModel extends AbstractModel {
         private static final Config CONFIG = new Config(16, 4, 8, 1, 1, 1, 1.0e-6f,
                 5, 0, List.of(0), ActivationFunction.Type.SILU, null, Map.of());
@@ -88,6 +128,17 @@ class GuidedChoiceLogitsProcessorTest {
                 case "dogma" -> new long[] {2, 3};
                 case "zebra" -> new long[] {4};
                 default -> throw new IllegalArgumentException("Unexpected text: " + text);
+            };
+        }
+
+        @Override
+        public String decodeToken(int token) {
+            return switch (token) {
+                case 1 -> "cat";
+                case 2 -> "dog";
+                case 3 -> "ma";
+                case 4 -> "zebra";
+                default -> "";
             };
         }
 

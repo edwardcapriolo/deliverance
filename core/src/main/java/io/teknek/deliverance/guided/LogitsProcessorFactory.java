@@ -5,6 +5,9 @@ import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.sketches.guide.ChoiceGuide;
 import io.teknek.sketches.guide.Guide;
+import io.teknek.sketches.guide.Index;
+import io.teknek.sketches.guide.IndexGuide;
+import io.teknek.sketches.guide.Vocabulary;
 import io.teknek.sketches.types.Choice;
 
 import java.util.Arrays;
@@ -19,9 +22,17 @@ public class LogitsProcessorFactory {
     }
 
     public static Optional<LogitsProcessor> create(AbstractModel model, GeneratorParameters parameters) {
+        if (parameters.guidedChoice.isPresent() && parameters.guidedRegex.isPresent()) {
+            throw new IllegalArgumentException("guidedChoice and guidedRegex can not both be set");
+        }
         if (parameters.guidedChoice.isPresent()) {
             Choice choice = new Choice(parameters.guidedChoice.get());
             Guide guide = new ChoiceGuide(encodeChoices(model, choice), model.getConfig().eosTokens);
+            return Optional.of(new GuideLogitsProcessor(guide));
+        }
+        if (parameters.guidedRegex.isPresent()) {
+            Vocabulary vocabulary = vocabularyFromModel(model);
+            Guide guide = new IndexGuide(new Index(parameters.guidedRegex.get(), vocabulary));
             return Optional.of(new GuideLogitsProcessor(guide));
         }
         return Optional.empty();
@@ -37,5 +48,16 @@ public class LogitsProcessorFactory {
             encoded.put(item, ids);
         }
         return encoded;
+    }
+
+    private static Vocabulary vocabularyFromModel(AbstractModel model) {
+        Vocabulary vocabulary = new Vocabulary(model.getConfig().eosTokens, Map.of());
+        for (int tokenId = 0; tokenId < model.getConfig().vocabularySize; tokenId++) {
+            if (model.getConfig().eosTokens.contains(tokenId)) {
+                continue;
+            }
+            vocabulary.insert(model.decodeToken(tokenId), tokenId);
+        }
+        return vocabulary;
     }
 }
