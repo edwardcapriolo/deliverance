@@ -23,6 +23,7 @@ import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
 import io.teknek.deliverance.toolcallparser.LlamaToolCallParser;
 import io.teknek.deliverance.toolcallparser.QwenToolCallParser;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
+import io.teknek.sketches.SketchesSettings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -87,6 +88,7 @@ public class AutoModelForCausaLm {
         private final EnumMap<TensorProviderKind, TensorOperations> additionalTensorOperations = new EnumMap<>(TensorProviderKind.class);
         private boolean download = true;
         private int maxBatchSize = AbstractModel.DEFAULT_MAX_BATCH_SIZE;
+        private SketchesSettings sketchesSettings = SketchesSettings.DEFAULT;
 
         record QuantizeOnDemand(DType targetType, String outputOwner, String outputModel) {
             QuantizeOnDemand {
@@ -113,6 +115,10 @@ public class AutoModelForCausaLm {
         }
         public Builder withKvBufferCacheSettings(KvBufferCacheSettings settings){
             this.settings = settings;
+            return this;
+        }
+        public Builder withSketchesSettings(SketchesSettings sketchesSettings){
+            this.sketchesSettings = Objects.requireNonNull(sketchesSettings, "sketchesSettings");
             return this;
         }
         public Builder withWorkingMemoryType(DType type){
@@ -287,6 +293,7 @@ public class AutoModelForCausaLm {
             copy.additionalTensorOperations.putAll(this.additionalTensorOperations);
             copy.download = this.download;
             copy.maxBatchSize = this.maxBatchSize;
+            copy.sketchesSettings = this.sketchesSettings;
             return copy;
         }
         /** This is a JVM wide property! **/
@@ -302,7 +309,7 @@ public class AutoModelForCausaLm {
                 model.setGossipParallelMembership(membership);
                 membership.startWorkerWhenReady(this);
             }
-            return DefaultCausalLanguageModel.local(model);
+            return DefaultCausalLanguageModel.local(model, sketchesSettings);
         }
 
         /**

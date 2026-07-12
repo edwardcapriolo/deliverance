@@ -3,6 +3,7 @@ package io.teknek.sketches.guide;
 import dk.brics.automaton.Automaton;
 import dk.brics.automaton.RegExp;
 import dk.brics.automaton.State;
+import io.teknek.sketches.SketchesSettings;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -34,8 +35,17 @@ public final class Index {
     private final Set<Integer> eosTokenIds;
 
     public Index(String regex, Vocabulary vocabulary) {
+        this(regex, vocabulary, SketchesSettings.DEFAULT);
+    }
+
+    public Index(String regex, Vocabulary vocabulary, SketchesSettings settings) {
         Objects.requireNonNull(regex, "regex");
         Objects.requireNonNull(vocabulary, "vocabulary");
+        Objects.requireNonNull(settings, "settings");
+        if (regex.length() > settings.maxRegexLength()) {
+            throw new IllegalArgumentException("guided_regex length " + regex.length()
+                    + " exceeds maxRegexLength " + settings.maxRegexLength());
+        }
         Automaton automaton = new RegExp(regex).toAutomaton();
         State initial = automaton.getInitialState();
         this.eosTokenIds = Set.copyOf(vocabulary.getEosTokenIds());
@@ -48,8 +58,13 @@ public final class Index {
         Map<Integer, Map<Integer, Integer>> builtTransitions = new LinkedHashMap<>();
         Set<Integer> builtFinalStates = new LinkedHashSet<>();
         List<Integer> tokenIds = sortedTokenIds(vocabulary);
+        int transitionCount = 0;
 
         while (!queue.isEmpty()) {
+            if (stateIds.size() > settings.maxIndexStates()) {
+                throw new IllegalArgumentException("guided_regex index exceeded maxIndexStates "
+                        + settings.maxIndexStates());
+            }
             State state = queue.remove();
             int stateId = stateIds.get(state);
             if (state.isAccept()) {
@@ -60,6 +75,7 @@ public final class Index {
             if (state.isAccept()) {
                 for (Integer eosTokenId : vocabulary.getEosTokenIds()) {
                     stateTransitions.put(eosTokenId, stateId);
+                    transitionCount = checkedTransitionCount(transitionCount, settings);
                 }
             }
 
@@ -79,6 +95,7 @@ public final class Index {
                     queue.add(next);
                 }
                 stateTransitions.put(tokenId, nextStateId);
+                transitionCount = checkedTransitionCount(transitionCount, settings);
             }
             builtTransitions.put(stateId, Map.copyOf(stateTransitions));
         }
@@ -186,5 +203,14 @@ public final class Index {
             copy.put(entry.getKey(), Map.copyOf(entry.getValue()));
         }
         return Map.copyOf(copy);
+    }
+
+    private static int checkedTransitionCount(int transitionCount, SketchesSettings settings) {
+        int next = transitionCount + 1;
+        if (next > settings.maxIndexTransitions()) {
+            throw new IllegalArgumentException("guided_regex index exceeded maxIndexTransitions "
+                    + settings.maxIndexTransitions());
+        }
+        return next;
     }
 }

@@ -1,5 +1,6 @@
 package io.teknek.sketches.guide;
 
+import io.teknek.sketches.SketchesSettings;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -62,5 +63,35 @@ class IndexTest {
         Index index = new Index("a", vocabulary);
 
         assertThrows(IllegalArgumentException.class, () -> index.getNextState(index.getInitialState(), 2));
+    }
+
+    @Test
+    void rejectsRegexOverLengthLimit() {
+        Vocabulary vocabulary = new Vocabulary(0, Map.of("a", List.of(1)));
+        SketchesSettings settings = new SketchesSettings(1, 10, 10);
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> new Index("aa", vocabulary, settings));
+        assertTrue(error.getMessage().contains("guided_regex length 2 exceeds maxRegexLength 1"));
+    }
+
+    @Test
+    void rejectsIndexOverStateLimit() {
+        Vocabulary vocabulary = new Vocabulary(0, Map.of("a", List.of(1), "b", List.of(2), "c", List.of(3)));
+        SketchesSettings settings = new SketchesSettings(10, 1, 100);
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> new Index("abc", vocabulary, settings));
+        assertTrue(error.getMessage().contains("guided_regex index exceeded maxIndexStates 1"));
+    }
+
+    @Test
+    void rejectsIndexOverTransitionLimit() {
+        Vocabulary vocabulary = new Vocabulary(0, Map.of("a", List.of(1), "b", List.of(2), "c", List.of(3)));
+        SketchesSettings settings = new SketchesSettings(10, 10, 1);
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> new Index("[abc]", vocabulary, settings));
+        assertTrue(error.getMessage().contains("guided_regex index exceeded maxIndexTransitions 1"));
     }
 }

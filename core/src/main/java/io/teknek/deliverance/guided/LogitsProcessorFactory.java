@@ -3,6 +3,7 @@ package io.teknek.deliverance.guided;
 import com.google.common.primitives.Ints;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.sketches.SketchesSettings;
 import io.teknek.sketches.guide.ChoiceGuide;
 import io.teknek.sketches.guide.Guide;
 import io.teknek.sketches.guide.Index;
@@ -22,6 +23,11 @@ public class LogitsProcessorFactory {
     }
 
     public static Optional<LogitsProcessor> create(AbstractModel model, GeneratorParameters parameters) {
+        return create(model, parameters, SketchesSettings.DEFAULT);
+    }
+
+    public static Optional<LogitsProcessor> create(AbstractModel model, GeneratorParameters parameters,
+            SketchesSettings settings) {
         if (parameters.guidedChoice.isPresent() && parameters.guidedRegex.isPresent()) {
             throw new IllegalArgumentException("guidedChoice and guidedRegex can not both be set");
         }
@@ -32,7 +38,7 @@ public class LogitsProcessorFactory {
         }
         if (parameters.guidedRegex.isPresent()) {
             Vocabulary vocabulary = vocabularyFromModel(model);
-            Guide guide = new IndexGuide(new Index(parameters.guidedRegex.get(), vocabulary));
+            Guide guide = new IndexGuide(new Index(parameters.guidedRegex.get(), vocabulary, settings));
             return Optional.of(new GuideLogitsProcessor(guide));
         }
         return Optional.empty();

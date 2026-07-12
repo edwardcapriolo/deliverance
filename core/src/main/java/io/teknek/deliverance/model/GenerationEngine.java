@@ -10,8 +10,10 @@ import io.teknek.deliverance.guided.LogitsProcessorFactory;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorAllocator;
+import io.teknek.sketches.SketchesSettings;
 
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
@@ -26,7 +28,15 @@ import java.util.concurrent.TimeUnit;
  * {@link GenerationBackend} so the same loop can run against a local model, tensor-parallel ranks, or another backend.</p>
  */
 final class GenerationEngine {
+    private final SketchesSettings sketchesSettings;
 
+    GenerationEngine() {
+        this(SketchesSettings.DEFAULT);
+    }
+
+    GenerationEngine(SketchesSettings sketchesSettings) {
+        this.sketchesSettings = Objects.requireNonNull(sketchesSettings, "sketchesSettings");
+    }
 
     /**
      * It is usually a dense tensor for the final token representation.
@@ -75,7 +85,8 @@ final class GenerationEngine {
 
         ResponseContext responseContext = new ResponseContext(model);
         Random random = generatorParameters.seed.map(Random::new).orElseGet(Random::new);
-        Optional<LogitsProcessor> logitsProcessor = LogitsProcessorFactory.create(model, generatorParameters);
+        Optional<LogitsProcessor> logitsProcessor = LogitsProcessorFactory.create(model, generatorParameters,
+                sketchesSettings);
         long[] encoded = model.encodeText(promptContext.getPrompt());
         if (encoded.length > 0 && encoded[0] == model.config.bosToken) {
             AbstractModel.logger.debug("encoded [] started with BOS token removing it");
