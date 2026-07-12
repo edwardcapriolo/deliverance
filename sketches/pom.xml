@@ -28,6 +28,12 @@
 
     <dependency>
       <groupId>io.teknek.deliverance</groupId>
+      <artifactId>sketches-core</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>io.teknek.deliverance</groupId>
       <artifactId>core</artifactId>
       <version>${project.version}</version>
     </dependency>

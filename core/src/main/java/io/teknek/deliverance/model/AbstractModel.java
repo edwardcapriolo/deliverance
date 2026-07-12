@@ -19,6 +19,7 @@ import io.teknek.deliverance.embedding.PoolingLayer;
 
 import io.teknek.deliverance.embedding.PoolingType;
 import io.teknek.deliverance.generator.*;
+import io.teknek.deliverance.guided.LogitsProcessor;
 import io.teknek.deliverance.grace.EncodeOptions;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.ActivationFunction;
@@ -597,32 +598,22 @@ public abstract class AbstractModel implements Generator, Classifier {
     }
 
     SamplerReturn createNextToken(GeneratorParameters generatorParameters, GenerationEngine.Logits logits, GenerationEngine.PrefillOutput last,
-                                  ResponseContext responseContext, Random random, float temperature){
+                                  ResponseContext responseContext, Random random, float temperature,
+                                  Optional<LogitsProcessor> logitsProcessor){
         try (AbstractTensor lastTokenOutput = last.copyLastTokenOutput(tensorAllocator)) {
-            if (generatorParameters.guidedChoice.isPresent()) {
-                GuidedChoiceSampler sampler = new GuidedChoiceSampler(this, lastTokenOutput,
-                        logits.tensor(), sampleOutput.getOutputLayerNorm(), generatorParameters.guidedChoice.get(), responseContext);
-               return new SamplerReturn(sampler.sample());
-            } else {
-                DeliveranceSampler legacy = new DeliveranceSampler(this, generatorParameters,
-                        lastTokenOutput, logits.tensor(), sampleOutput.getOutputLayerNorm(), random, random.nextFloat());
-                return legacy.sample();
-            }
+            DeliveranceSampler legacy = new DeliveranceSampler(this, generatorParameters,
+                    lastTokenOutput, logits.tensor(), sampleOutput.getOutputLayerNorm(), random, random.nextFloat(),
+                    responseContext, logitsProcessor);
+            return legacy.sample();
         }
     }
 
     SamplerReturn createNextTokenLoop(GeneratorParameters generatorParameters, AbstractTensor output,
-                            AbstractTensor logits, ResponseContext responseContext, Random random, float temperature){
-        if (generatorParameters.guidedChoice.isPresent()) {
-            GuidedChoiceSampler sampler1 = new GuidedChoiceSampler(this, output, logits,
-                    sampleOutput.getOutputLayerNorm(), generatorParameters.guidedChoice.get(), responseContext);
-            //TODO should guided choice have logits how expesnive is two code paths going forward
-            return new SamplerReturn(sampler1.sample());
-        } else {
-            DeliveranceSampler legacy = new DeliveranceSampler(this, generatorParameters, output, logits,
-                    sampleOutput.getOutputLayerNorm(), random, random.nextFloat());
-            return legacy.sample();
-        }
+                            AbstractTensor logits, ResponseContext responseContext, Random random, float temperature,
+                            Optional<LogitsProcessor> logitsProcessor){
+        DeliveranceSampler legacy = new DeliveranceSampler(this, generatorParameters, output, logits,
+                sampleOutput.getOutputLayerNorm(), random, random.nextFloat(), responseContext, logitsProcessor);
+        return legacy.sample();
     }
 
     /**

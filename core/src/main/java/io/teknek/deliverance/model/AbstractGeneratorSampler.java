@@ -4,6 +4,7 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.LayerNorm;
 import com.codahale.metrics.Timer;
+import io.teknek.deliverance.guided.LogitsProcessor;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.tensor.*;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
@@ -14,7 +15,6 @@ import io.teknek.deliverance.tensorlib.TensorLib;
 import io.teknek.dysfx.Maybe;
 
 import io.teknek.dysfx.Something;
-import io.teknek.dysfx.exception.UnreachableException;
 import net.jafama.FastMath;
 
 import java.util.*;
@@ -30,10 +30,13 @@ public abstract class AbstractGeneratorSampler {
     protected final AbstractTensor logits;
     protected final Random random;
     protected final float uniformSample;
+    protected final ResponseContext responseContext;
+    protected final Optional<LogitsProcessor> logitsProcessor;
 
     public AbstractGeneratorSampler(AbstractModel model, GeneratorParameters generatorParameters,
-                                    AbstractTensor output, AbstractTensor logits, LayerNorm layerNorm, Random random,
-                                    float uniformSample) {
+                                     AbstractTensor output, AbstractTensor logits, LayerNorm layerNorm, Random random,
+                                     float uniformSample, ResponseContext responseContext,
+                                     Optional<LogitsProcessor> logitsProcessor) {
         this.model = model;
         this.parameters = generatorParameters;
         this.layerNorm = layerNorm;
@@ -41,7 +44,10 @@ public abstract class AbstractGeneratorSampler {
         this.logits = logits;
         this.random = random;
         this.uniformSample = uniformSample;
+        this.responseContext = responseContext;
+        this.logitsProcessor = Objects.requireNonNull(logitsProcessor, "logitsProcessor");
     }
+
     public abstract SamplerReturn sample();
 
     protected void outputProjection(AbstractTensor embedding) {
@@ -81,112 +87,13 @@ public abstract class AbstractGeneratorSampler {
     }
 }
 
-class DeliveranceLegacySampler extends AbstractGeneratorSampler {
-
-    public DeliveranceLegacySampler(AbstractModel model, GeneratorParameters generatorParameters, AbstractTensor output,
-                                    AbstractTensor logits, LayerNorm layerNorm, Random random, float uniformSample) {
-        super(model, generatorParameters, output, logits, layerNorm, random, uniformSample);
-    }
-
-    @Override
-    public SamplerReturn sample() {
-        try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), "sampler.sample").time()) {
-        boolean logProbs = this.parameters.logProbs.orElse(false);
-        int topLogProbs = this.parameters.topLogProbs.orElse(0);
-        float temperature = this.parameters.temperature.orElse(0f);
-        float xtcProbability = this.parameters.xtcProbability.orElse(0f);
-        float xtcThreshold = this.parameters.xtcThreshold.orElse(0f);
-
-        try (AbstractTensor embedding = layerNorm.forward(output)) {
-            try (Timer.Context ignoredOutput = InferenceProfiler.timer(model.getMetricRegistry(), "sampler.output_projection").time()) {
-                outputProjection(embedding);
-            }
-
-            if (model.config.logitMultiplier != null) {
-                LOGGER.debug("scaling logits logitMultiplier: {}", model.config.logitMultiplier);
-                model.configurableTensorProvider.get().scale(1.0f / model.config.logitMultiplier,
-                        logits, 0, model.config.vocabularySize);
-            }
-            int maxi = Integer.MIN_VALUE;
-            double maxv = Double.NEGATIVE_INFINITY;
-            PriorityQueue<IndexValueToken> topNLogProbs = new PriorityQueue<>();
-            try (Timer.Context ignoredScan = InferenceProfiler.timer(model.getMetricRegistry(), "sampler.logit_scan").time()) {
-                for (int i = 0; i < model.config.vocabularySize; i++) {
-                    float v = logits.get(0, i);
-                    if (model.config.finalLogitSoftCapping != null) {
-                        v /= model.config.finalLogitSoftCapping;
-                        v = (float) FastMath.tanh(v);
-                        v = v * model.config.finalLogitSoftCapping;
-                        logits.set(v, 0, i);
-                    }
-                    if (logProbs) {
-                        IndexValueToken token = new IndexValueToken(i, v, model.decodeToken(i));
-                        topNLogProbs.offer(token);
-                        if (topNLogProbs.size() > topLogProbs) {
-                            topNLogProbs.poll();
-                        }
-                    }
-                    if (v > maxv) {
-                        maxi = i;
-                        maxv = v;
-                    }
-                }
-            }
-            if (logProbs) {
-                AbstractTensor logSum = model.getTensorAllocator().getDirty(logits.dType(), logits.shape());
-                VectorTensorMathUtils.logSumExpTensor(logSum, logits);
-                for (IndexValueToken token : topNLogProbs) {
-                    token.logProb = logSum.get(0, token.index);
-                }
-            }
-            Optional<IndexValueToken> chosen = Optional.empty();
-            if (xtcThreshold != 0){
-                ExcludeTopChoicePicker p = new ExcludeTopChoicePicker(model, logits, xtcThreshold, xtcProbability, random);
-                chosen = p.process();
-            }
-            if (temperature == 0.0) {
-                if (chosen.isPresent() && chosen.get().index != maxi) {
-                    if (LOGGER.isDebugEnabled()) {
-                        LOGGER.debug("xtc: {} maxi: {}", model.decodeToken(chosen.get().index), maxi);
-                    }
-                    return logProbs ? new SamplerReturn(chosen.get().index, topNLogProbs) : new SamplerReturn(chosen.get().index);
-                } else {
-                    return logProbs ? new SamplerReturn(maxi, topNLogProbs) : new SamplerReturn(maxi);
-                }
-            }
-            float sum = 0;
-            for (int i = 0; i < model.config.vocabularySize; i++) {
-                float v = (float) FastMath.exp((logits.get(0, i) - maxv) / temperature);
-                sum += v;
-                logits.set(v, 0, i);
-            }
-            float acc = 0;
-
-            for (int i = 0; i < model.config.vocabularySize; i++) {
-                float v = logits.get(0, i) / sum;
-                acc += v;
-                if (acc >= uniformSample) {
-                    LOGGER.debug("accumulator {} >= uniformSample {} returning {}", acc, uniformSample, i);
-                    return logProbs ? new SamplerReturn(i, topNLogProbs) : new SamplerReturn(i);
-                }
-            }
-            if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("Reached end returning {}", model.config.vocabularySize - 1);
-            }
-            return logProbs ? new SamplerReturn(model.config.vocabularySize - 1, topNLogProbs)
-                    : new SamplerReturn(model.config.vocabularySize - 1);
-
-        }
-        }
-    }
-}
-
-
 class DeliveranceSampler extends AbstractGeneratorSampler {
 
     public DeliveranceSampler(AbstractModel model, GeneratorParameters generatorParameters, AbstractTensor output,
-                                    AbstractTensor logits, LayerNorm layerNorm, Random random, float uniformSample) {
-        super(model, generatorParameters, output, logits, layerNorm, random, uniformSample);
+                                    AbstractTensor logits, LayerNorm layerNorm, Random random, float uniformSample,
+                                    ResponseContext responseContext, Optional<LogitsProcessor> logitsProcessor) {
+        super(model, generatorParameters, output, logits, layerNorm, random, uniformSample, responseContext,
+                logitsProcessor);
     }
 
     @Override
@@ -211,9 +118,7 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
                 model.configurableTensorProvider.get().scale(1.0f / model.config.logitMultiplier,
                         logits, 0, model.config.vocabularySize);
             }
-            int maxi = Integer.MIN_VALUE;
-            double maxv = Double.NEGATIVE_INFINITY;
-            PriorityQueue<IndexValueToken> topNLogProbs = new PriorityQueue<>();
+
             for (int i = 0; i < model.config.vocabularySize; i++) {
                 float v = logits.get(0, i);
                 if (model.config.finalLogitSoftCapping != null) {
@@ -222,6 +127,15 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
                     v = v * model.config.finalLogitSoftCapping;
                     logits.set(v, 0, i);
                 }
+            }
+
+            logitsProcessor.ifPresent(p -> p.process(logits, responseContext));
+
+            int maxi = Integer.MIN_VALUE;
+            double maxv = Double.NEGATIVE_INFINITY;
+            PriorityQueue<IndexValueToken> topNLogProbs = new PriorityQueue<>();
+            for (int i = 0; i < model.config.vocabularySize; i++) {
+                float v = logits.get(0, i);
                 if (logProbs) {
                     IndexValueToken token = new IndexValueToken(i, v, model.decodeToken(i));
                     topNLogProbs.offer(token);
@@ -248,9 +162,9 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
                     if (LOGGER.isDebugEnabled()) {
                         LOGGER.debug("xtc: {} maxi: {}", model.decodeToken(chosen.get().index), maxi);
                     }
-                    return logProbs ? new SamplerReturn(chosen.get().index, topNLogProbs) : new SamplerReturn(chosen.get().index);
+                    return samplerReturn(chosen.get().index, logProbs, topNLogProbs);
                 } else {
-                    return logProbs ? new SamplerReturn(maxi, topNLogProbs) : new SamplerReturn(maxi);
+                    return samplerReturn(maxi, logProbs, topNLogProbs);
                 }
             }
             if (parameters.topK.isPresent() && parameters.xtcThreshold.isPresent()) {
@@ -281,9 +195,9 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
                         if (LOGGER.isDebugEnabled()) {
                             LOGGER.debug("xtc: {} maxi: {}", model.decodeToken(chosen.get().index), maxi);
                         }
-                        return logProbs ? new SamplerReturn(chosen.get().index, topXLogProbs) : new SamplerReturn(chosen.get().index);
+                        return samplerReturn(chosen.get().index, logProbs, topXLogProbs);
                     } else {
-                        return logProbs ? new SamplerReturn(maxi, topXLogProbs) : new SamplerReturn(maxi);
+                        return samplerReturn(maxi, logProbs, topXLogProbs);
                     }
                 }
             } else {
@@ -291,12 +205,17 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
                 try (Timer.Context ignoredTopKTopP = InferenceProfiler.timer(model.getMetricRegistry(), "sampler.topk_topp").time()) {
                     chosenToken = sampleTopKTopP(logits, temperature, parameters.topK, parameters.topP, random.nextFloat());
                 }
-                return logProbs ? new SamplerReturn(chosenToken, topNLogProbs) : new SamplerReturn(chosenToken);
+                return samplerReturn(chosenToken, logProbs, topNLogProbs);
             }
         }
 
     }
 
+    }
+
+    private SamplerReturn samplerReturn(int token, boolean logProbs, PriorityQueue<IndexValueToken> topLogProbs) {
+        logitsProcessor.ifPresent(processor -> processor.accept(token, responseContext));
+        return logProbs ? new SamplerReturn(token, topLogProbs) : new SamplerReturn(token);
     }
 
     class TopPSummary{

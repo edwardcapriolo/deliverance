@@ -5,6 +5,8 @@ import com.google.common.base.Preconditions;
 import io.teknek.deliverance.generator.FinishReason;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
+import io.teknek.deliverance.guided.LogitsProcessor;
+import io.teknek.deliverance.guided.LogitsProcessorFactory;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorAllocator;
@@ -73,6 +75,7 @@ final class GenerationEngine {
 
         ResponseContext responseContext = new ResponseContext(model);
         Random random = generatorParameters.seed.map(Random::new).orElseGet(Random::new);
+        Optional<LogitsProcessor> logitsProcessor = LogitsProcessorFactory.create(model, generatorParameters);
         long[] encoded = model.encodeText(promptContext.getPrompt());
         if (encoded.length > 0 && encoded[0] == model.config.bosToken) {
             AbstractModel.logger.debug("encoded [] started with BOS token removing it");
@@ -102,7 +105,7 @@ final class GenerationEngine {
                 SamplerReturn nextSamplerRet;
                 try (Timer.Context ignoredSample = InferenceProfiler.timer(model.getMetricRegistry(), "generation.first_sample").time()) {
                     nextSamplerRet = model.createNextToken(generatorParameters, logits, prefillOutput, responseContext,
-                            random, temperature);
+                            random, temperature, logitsProcessor);
                 }
                 int next = nextSamplerRet.token;
                 prefillOutput.close();
@@ -125,7 +128,7 @@ final class GenerationEngine {
                     SamplerReturn nextSample;
                     try (Timer.Context ignoredDecodeSample = InferenceProfiler.timer(model.getMetricRegistry(), "generation.decode_sample").time()) {
                         nextSample = model.createNextTokenLoop(generatorParameters, output, logits.tensor,
-                                responseContext, random, temperature);
+                                responseContext, random, temperature, logitsProcessor);
                     }
                     next = nextSample.token;
                     output.close();
