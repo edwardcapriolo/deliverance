@@ -18,7 +18,7 @@ As a user you might want a compact JSON response like:
 {"name":"Alice","age":42,"city":"Paris"}
 ```
 
-But the model may choose to be wordy: "Alice is a 42-year-old person who lives in Paris." You can try to constrain it 
+But the model may choose to be wordy: "Alice: 42-year-old Location: Paris, France, located in Europe. Known for art and wine." You can try to constrain it 
 with more prompting, such as "Reply only with valid JSON matching this schema." However, that has downsides: the prompt is bigger so the prefill will take longer, and the model might not understand your direction and still answer in a way you don't expect.
 
 Guided decoding is one of the things that makes the inference engine a "real" inference engine. If you want to use 
