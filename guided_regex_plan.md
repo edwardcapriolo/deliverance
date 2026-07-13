@@ -121,6 +121,6 @@ Using both `withGuidedChoice(...)` and `withGuidedRegex(...)` should throw a cle
 ## Deferred
 
 - Full JSON schema support.
-- Full OpenAI `response_format` JSON-schema semantics.
+- Full `response_format` JSON-schema semantics.
 - CFG/BNF.
 - Performance optimizations such as precomputed bitsets.

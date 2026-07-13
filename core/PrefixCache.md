@@ -59,7 +59,7 @@ These invariants are covered by focused unit tests such as `GenerationCursorTest
 
 #### Output-preservation invariant
 
-This is the stronger user-facing contract documented by systems such as vLLM and OpenAI prompt caching:
+This is the stronger user-facing contract documented by major serving systems with prompt caching:
 
 ```
 generated output with cache == generated output without cache
@@ -80,7 +80,7 @@ batchForward(suffixTokens, prefixLength)
 ```
 
 If split-prefill equivalence fails, prefix cache may still be mechanically correct, but it is not transparent in the
-vLLM/OpenAI sense for that runtime configuration.
+strict serving-system sense for that runtime configuration.
 
 ### What Deliverance supports today
 
@@ -104,14 +104,15 @@ says prefix caching is widely used because it "won't change model outputs" and n
 
 https://docs.vllm.ai/en/latest/design/v1/prefix_caching.html
 
-OpenAI's Prompt Caching FAQ says prompt caching "does not influence the generation of output tokens or the final
-response" and that the generated output is identical regardless of whether caching is used:
+One hosted provider's Prompt Caching FAQ says prompt caching "does not influence the generation of output tokens or the
+final response" and that the generated output is identical regardless of whether caching is used:
 
 https://platform.openai.com/docs/guides/prompt-caching
 
 Matrix multiplication, attention, RMSNorm, and activation quantization can all produce different numerical results when
 the same request is sliced into different batch or chunk shapes. This can happen even with temperature 0 and a fixed
-seed. OpenAI's seed reproducibility cookbook also describes deterministic sampling as best effort rather than guaranteed:
+seed. The same provider's seed reproducibility cookbook also describes deterministic sampling as best effort rather than
+guaranteed:
 
 https://cookbook.openai.com/examples/reproducible_outputs_with_the_seed_parameter
 

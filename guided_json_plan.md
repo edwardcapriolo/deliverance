@@ -37,7 +37,7 @@ Guided JSON should reuse this path rather than adding a separate sampler or JSON
 
 ## Public API Shape
 
-Add a vLLM-style OpenAI-compatible request field:
+Add a vLLM-style chat-completion request field:
 
 ```json
 {
@@ -250,7 +250,7 @@ Error messages should clearly identify guided JSON as the source when possible, 
 
 ## Deferred
 
-- Full OpenAI `response_format` JSON-schema compatibility.
+- Full `response_format` JSON-schema compatibility.
 - Full JSON Schema draft coverage.
 - CFG/BNF guided decoding.
 - Rollback/backtracking in the generation loop.

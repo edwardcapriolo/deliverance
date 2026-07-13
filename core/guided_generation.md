@@ -34,7 +34,7 @@ Response response = model.generate(
         new DoNothingGenerateEvent());
 ```
 
-The OpenAI-compatible web API exposes this as `guided_regex`, following the vLLM-style request field:
+The chat API exposes this as `guided_regex`, following the vLLM-style request field:
 
 ```json
 {

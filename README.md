@@ -38,7 +38,9 @@ Generation:
 - [Grace tokenizer module](grace/README.md) Explains Deliverance's fuller-featured tokenizer path and how to use it
 - [Tokenizer showdown](grace/tokenizer_showdown.md) Compares Grace Java tokenization against Hugging Face's Rust-backed tokenizers
 - [Inference engine flow](core/inference_flow.md) Explains the transformations and flows http/prompt/jinja/ etc.
+- [Industry-standard chat API](core/chat_api.md) Explains `/chat/completions`, generated API models, request mapping, streaming, tools, and guided fields
 - [Tool call parser](core/tool_parser.md) Explains how the tool call parser is implemented in the stack
+- [Reasoning field support](core/reasoning_field_support.md) Documents `reasoning_content`, model reasoning channels, and nanocode behavior
 - [Quantize On Demand](core/quantize_on_demand.md) Explains local Q4 model generation, cache reuse, and provenance files
 - [Benchmarking](core/benchmarking.md) Explains benchmark scripts, profile output, CSV/JSONL artifacts, and QOD benchmark workflow
 - [Tensor engines and JQ4](core/tensor_engines_and_jq4.md) Explains why tensor kernels, safetensors, and Q4 layout matter for local inference
@@ -48,6 +50,7 @@ Generation:
 - [Vibrant Maven plugin](https://www.youtube.com/watch?v=Glp_hAieOq8) Watch a video on Vibrant Maven plugin generate code from XML based spec inside pom
 - [Generator sampling](core/generator_sampling.md) Explains how temperature, top_p, top_k, and exclude top choice work
 - [Guided generation](core/guided_generation.md) Explains guided choice, guided regex, guided JSON, sketches-core, and the FSA/token masking flow
+- [Guided decoding overview](core/guided_decoding_real_inference_engine.md) A narrative walkthrough of guided decoding and how it moves Deliverance toward a full inference-engine feature set
 - [Prefix cache](core/PrefixCache.md) Describes how to get the most benefits from the prefix cache
 - [Prefix cache MSE TurboQuant](core/prefix_cache_turboquant.md) Documents experimental compressed prefix snapshots and tradeoffs
 - [Tensor parallel guide](core/TensorParallelGuide.md) Explains how to enable tensor-parallel generation for Gemma2
