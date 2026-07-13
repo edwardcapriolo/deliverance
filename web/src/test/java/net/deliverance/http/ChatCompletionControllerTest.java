@@ -111,6 +111,56 @@ public class ChatCompletionControllerTest {
     }
 
     @Test
+    public void requestMapsGuidedRegex() {
+        CreateChatCompletionRequest request = new CreateChatCompletionRequest()
+                .model("TinyLlama-1.1B-Chat-v1.0-Jlama-Q4")
+                .guidedRegex("(Giants|Jets)")
+                .stop(null);
+        request.addMessagesItem(new ChatCompletionRequestMessage(
+                new ChatCompletionRequestUserMessage().content(
+                        new ChatCompletionRequestUserMessageContent("Who is the better NFL football team?"))));
+
+        CausalLanguageModel m = Mockito.mock(CausalLanguageModel.class);
+        io.teknek.deliverance.safetensors.prompt.PromptSupport promptSupport = Mockito.mock(io.teknek.deliverance.safetensors.prompt.PromptSupport.class);
+        io.teknek.deliverance.safetensors.prompt.PromptSupport.Builder builder = Mockito.mock(io.teknek.deliverance.safetensors.prompt.PromptSupport.Builder.class);
+        Mockito.when(m.promptSupport()).thenReturn(Optional.of(promptSupport));
+        Mockito.when(promptSupport.builder()).thenReturn(builder);
+        Mockito.when(builder.addUserMessage(Mockito.anyString())).thenReturn(builder);
+
+        Either<Error, PreparedRequest> response = ChatCompletionService.mapRequest(new HashMap<>(), m, request);
+        PreparedRequest prepared = (PreparedRequest) response.productElement(0);
+        assertEquals("(Giants|Jets)", prepared.generatorParameters().guidedRegex.orElseThrow());
+    }
+
+    @Test
+    public void requestMapsGuidedJson() {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", Map.of("foo", Map.of("type", "integer")));
+        schema.put("required", List.of("foo"));
+        schema.put("additionalProperties", false);
+
+        CreateChatCompletionRequest request = new CreateChatCompletionRequest()
+                .model("TinyLlama-1.1B-Chat-v1.0-Jlama-Q4")
+                .guidedJson(schema)
+                .stop(null);
+        request.addMessagesItem(new ChatCompletionRequestMessage(
+                new ChatCompletionRequestUserMessage().content(
+                        new ChatCompletionRequestUserMessageContent("Return foo as JSON"))));
+
+        CausalLanguageModel m = Mockito.mock(CausalLanguageModel.class);
+        io.teknek.deliverance.safetensors.prompt.PromptSupport promptSupport = Mockito.mock(io.teknek.deliverance.safetensors.prompt.PromptSupport.class);
+        io.teknek.deliverance.safetensors.prompt.PromptSupport.Builder builder = Mockito.mock(io.teknek.deliverance.safetensors.prompt.PromptSupport.Builder.class);
+        Mockito.when(m.promptSupport()).thenReturn(Optional.of(promptSupport));
+        Mockito.when(promptSupport.builder()).thenReturn(builder);
+        Mockito.when(builder.addUserMessage(Mockito.anyString())).thenReturn(builder);
+
+        Either<Error, PreparedRequest> response = ChatCompletionService.mapRequest(new HashMap<>(), m, request);
+        PreparedRequest prepared = (PreparedRequest) response.productElement(0);
+        assertTrue(prepared.generatorParameters().guidedJson.orElseThrow().contains("\"foo\""));
+    }
+
+    @Test
     public void responseMapsSamplerReturnsIntoChoiceLogprobs() {
         PriorityQueue<IndexValueToken> top = new PriorityQueue<>();
         IndexValueToken chosen = new IndexValueToken(973, 20.0f, " //");

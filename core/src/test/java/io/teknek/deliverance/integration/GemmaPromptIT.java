@@ -3,6 +3,7 @@ package io.teknek.deliverance.integration;
 import com.codahale.metrics.MetricRegistry;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
@@ -262,6 +263,48 @@ public class GemmaPromptIT {
                 new DoNothingGenerateEvent());
         System.out.println(k.responseText);
         assertTrue(k.responseText.contains("Giants"));
+    }
+
+    @Test
+    public void gemmaGuidedRegexTest() {
+        AbstractModel m = Gemma2Suite.getOrCreate();
+        String prompt = "Who is the better NFL football team?";
+        PromptSupport.Builder g = m.promptSupport().get().builder()
+                .addUserMessage(prompt);
+        var uuid = UUID.randomUUID();
+        Response k = m.generate(uuid, g.build(), new GeneratorParameters()
+                        .withTemperature(0.0f)
+                        .withGuidedRegex("(Giants|Jets)"),
+                new DoNothingGenerateEvent());
+        //System.out.println(k.responseText);
+        assertTrue(k.responseText.contains("Giants"));
+    }
+
+    @Test
+    public void gemmaGuidedJsonTest() throws Exception {
+        AbstractModel m = Gemma2Suite.getOrCreate();
+        String prompt = "Return the answer as JSON.";
+        String schema = """
+                {
+                  "type": "object",
+                  "properties": {
+                    "answer": { "const": "Giants" }
+                  },
+                  "required": ["answer"],
+                  "additionalProperties": false
+                }
+                """;
+        PromptSupport.Builder g = m.promptSupport().get().builder()
+                .addUserMessage(prompt);
+        var uuid = UUID.randomUUID();
+        Response k = m.generate(uuid, g.build(), new GeneratorParameters()
+                        .withTemperature(0.0f)
+                        .withMaxTokens(30)
+                        .withGuidedJson(schema),
+                new DoNothingGenerateEvent());
+        assertEquals("Giants", JsonUtils.om.readTree(k.responseText).get("answer").asText());
+        assertEquals("""
+                { "answer": "Giants" }""", k.responseText);
     }
 
     private static long pageFileCount(Path directory) throws IOException {

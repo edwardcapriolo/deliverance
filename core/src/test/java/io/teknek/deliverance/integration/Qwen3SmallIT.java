@@ -105,11 +105,12 @@ public class Qwen3SmallIT {
         }
     }
 
-    @Disabled("Requires enough disk/RAM to quantize and run dense Qwen3-30B.")
-    public void qwen330BDenseQuantizeOnDemandToolCallingPromptProducesOutput() {
-        ModelFetcher fetch = new ModelFetcher("Qwen", "Qwen3-30B");
+    //@Disabled("Requires enough disk/RAM to quantize and run dense Qwen3-30B.")
+    @Test
+    public void qwen332BDenseQuantizeOnDemandToolCallingPromptProducesOutput() {
+        ModelFetcher fetch = new ModelFetcher("Qwen", "Qwen3-32B");
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
-                .withQuantizeOnDemand(DType.Q4, "Qwen", "Qwen3-30B-JQ4")
+                .withQuantizeOnDemand(DType.Q4, "Qwen", "Qwen3-32B-JQ4")
                 .buildLocalTransformerModel()) {
             PromptContext prompt = model.promptSupport().orElseThrow().builder()
                     .addTemplateArgs(Map.of("enable_thinking", false))

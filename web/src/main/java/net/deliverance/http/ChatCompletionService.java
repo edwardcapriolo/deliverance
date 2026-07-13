@@ -1,5 +1,6 @@
 package net.deliverance.http;
 
+import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.model.Error;
@@ -42,6 +43,17 @@ public class ChatCompletionService {
         }
         if (request.getTopK()!=null){
             params.withTopK(request.getTopK().floatValue());
+        }
+        if (request.getGuidedRegex() != null) {
+            params.withGuidedRegex(request.getGuidedRegex());
+        }
+        if (request.getGuidedJson() != null) {
+            try {
+                params.withGuidedJson(JsonUtils.om.writeValueAsString(request.getGuidedJson()));
+            } catch (Exception e) {
+                return Either.Left(new Error().code(HttpStatus.BAD_REQUEST.value() + "")
+                        .message("Could not map guided_json " + e.getMessage()));
+            }
         }
         if (request.getLogprobs() != null) {
             params.withLogProbs(request.getLogprobs());

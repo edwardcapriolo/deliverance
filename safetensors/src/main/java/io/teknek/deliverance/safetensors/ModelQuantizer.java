@@ -240,16 +240,14 @@ public class ModelQuantizer {
      * oversized tensors. The logical parent is not directly loadable, so the quantizer must skip
      * it and process the concrete parts instead.
      */
-    boolean isLogicalSplitTensor(String name, DefaultWeightLoader loader) {
+    boolean isLogicalSplitTensor(String name, WeightLoader loader) {
         return !name.contains("-part-") && loader.tensorInfoMap().containsKey(name + "-part-0");
     }
 
     private List<String> tensorNamesToProcess(WeightLoader loader, Path sourceDir) {
         List<String> names = new ArrayList<>();
         for (String name : loader.tensorInfoMap().keySet()) {
-            boolean logicalSplit = loader instanceof DefaultWeightLoader defaultLoader
-                    && isLogicalSplitTensor(name, defaultLoader);
-            if (name.endsWith(".qb") || logicalSplit) {
+            if (name.endsWith(".qb") || isLogicalSplitTensor(name, loader)) {
                 continue;
             }
             names.add(name);

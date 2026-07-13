@@ -234,7 +234,7 @@ public class DefaultWeightLoader implements WeightLoader {
         }
     }
 
-    private static Map<List<Long>, List<String>> computeMmapSplits(Map<String, TensorInfo> tensorInfoMap, long fileLength) {
+    static Map<List<Long>, List<String>> computeMmapSplits(Map<String, TensorInfo> tensorInfoMap, long fileLength) {
         Map<List<Long>, List<String>> splits = new HashMap<>();
         long lastSplitOffset = 0;
         int tensorsInFile = tensorInfoMap.size();

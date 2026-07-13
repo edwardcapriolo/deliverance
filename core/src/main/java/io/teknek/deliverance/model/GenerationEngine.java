@@ -5,11 +5,15 @@ import com.google.common.base.Preconditions;
 import io.teknek.deliverance.generator.FinishReason;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
+import io.teknek.deliverance.guided.LogitsProcessor;
+import io.teknek.deliverance.guided.LogitsProcessorFactory;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorAllocator;
+import io.teknek.sketches.SketchesSettings;
 
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
@@ -24,7 +28,15 @@ import java.util.concurrent.TimeUnit;
  * {@link GenerationBackend} so the same loop can run against a local model, tensor-parallel ranks, or another backend.</p>
  */
 final class GenerationEngine {
+    private final SketchesSettings sketchesSettings;
 
+    GenerationEngine() {
+        this(SketchesSettings.DEFAULT);
+    }
+
+    GenerationEngine(SketchesSettings sketchesSettings) {
+        this.sketchesSettings = Objects.requireNonNull(sketchesSettings, "sketchesSettings");
+    }
 
     /**
      * It is usually a dense tensor for the final token representation.
@@ -73,6 +85,8 @@ final class GenerationEngine {
 
         ResponseContext responseContext = new ResponseContext(model);
         Random random = generatorParameters.seed.map(Random::new).orElseGet(Random::new);
+        Optional<LogitsProcessor> logitsProcessor = LogitsProcessorFactory.create(model, generatorParameters,
+                sketchesSettings);
         long[] encoded = model.encodeText(promptContext.getPrompt());
         if (encoded.length > 0 && encoded[0] == model.config.bosToken) {
             AbstractModel.logger.debug("encoded [] started with BOS token removing it");
@@ -102,7 +116,7 @@ final class GenerationEngine {
                 SamplerReturn nextSamplerRet;
                 try (Timer.Context ignoredSample = InferenceProfiler.timer(model.getMetricRegistry(), "generation.first_sample").time()) {
                     nextSamplerRet = model.createNextToken(generatorParameters, logits, prefillOutput, responseContext,
-                            random, temperature);
+                            random, temperature, logitsProcessor);
                 }
                 int next = nextSamplerRet.token;
                 prefillOutput.close();
@@ -125,7 +139,7 @@ final class GenerationEngine {
                     SamplerReturn nextSample;
                     try (Timer.Context ignoredDecodeSample = InferenceProfiler.timer(model.getMetricRegistry(), "generation.decode_sample").time()) {
                         nextSample = model.createNextTokenLoop(generatorParameters, output, logits.tensor,
-                                responseContext, random, temperature);
+                                responseContext, random, temperature, logitsProcessor);
                     }
                     next = nextSample.token;
                     output.close();

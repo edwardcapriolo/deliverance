@@ -55,6 +55,12 @@
 
         <dependency>
             <groupId>io.teknek.deliverance</groupId>
+            <artifactId>sketches-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>io.teknek.deliverance</groupId>
             <artifactId>native</artifactId>
             <version>${project.version}</version>
             <classifier>${os.detected.name}-${os.detected.arch}</classifier>

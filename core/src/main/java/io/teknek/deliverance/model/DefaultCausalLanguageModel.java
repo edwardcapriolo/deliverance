@@ -7,6 +7,7 @@ import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
+import io.teknek.sketches.SketchesSettings;
 
 import java.io.IOException;
 import java.util.Objects;
@@ -24,11 +25,17 @@ import java.util.UUID;
 public final class DefaultCausalLanguageModel implements CausalLanguageModel {
     private final AbstractModel coordinatorModel;
     private final GenerationBackend backend;
-    private final GenerationEngine engine = new GenerationEngine();
+    private final GenerationEngine engine;
 
     public DefaultCausalLanguageModel(AbstractModel coordinatorModel, GenerationBackend backend) {
+        this(coordinatorModel, backend, SketchesSettings.DEFAULT);
+    }
+
+    public DefaultCausalLanguageModel(AbstractModel coordinatorModel, GenerationBackend backend,
+            SketchesSettings sketchesSettings) {
         this.coordinatorModel = Objects.requireNonNull(coordinatorModel, "coordinatorModel");
         this.backend = Objects.requireNonNull(backend, "backend");
+        this.engine = new GenerationEngine(Objects.requireNonNull(sketchesSettings, "sketchesSettings"));
     }
 
     /**
@@ -37,7 +44,11 @@ public final class DefaultCausalLanguageModel implements CausalLanguageModel {
      * <p>The returned facade owns the supplied model and closes it from {@link #close()}.</p>
      */
     public static DefaultCausalLanguageModel local(AbstractModel model) {
-        return new DefaultCausalLanguageModel(model, new LocalGenerationBackend(model));
+        return local(model, SketchesSettings.DEFAULT);
+    }
+
+    public static DefaultCausalLanguageModel local(AbstractModel model, SketchesSettings sketchesSettings) {
+        return new DefaultCausalLanguageModel(model, new LocalGenerationBackend(model), sketchesSettings);
     }
 
     /**
