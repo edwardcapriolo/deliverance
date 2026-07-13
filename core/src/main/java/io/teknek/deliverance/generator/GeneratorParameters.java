@@ -17,6 +17,7 @@ public class GeneratorParameters {
     public Optional<Boolean> includeStopStrInOutput = Optional.empty();
     public Optional<List<String>> guidedChoice = Optional.empty();
     public Optional<String> guidedRegex = Optional.empty();
+    public Optional<String> guidedJson = Optional.empty();
     public Optional<Integer> maxTokens = Optional.empty();
     public Optional<Boolean> logProbs = Optional.empty();
     public Optional<Integer> topLogProbs = Optional.empty();
@@ -40,6 +41,11 @@ public class GeneratorParameters {
 
     public GeneratorParameters withGuidedRegex(String regex){
         guidedRegex = Optional.of(regex);
+        return this;
+    }
+
+    public GeneratorParameters withGuidedJson(String jsonSchema){
+        guidedJson = Optional.of(jsonSchema);
         return this;
     }
 

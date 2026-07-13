@@ -177,6 +177,18 @@ public final class Index {
         return transitions;
     }
 
+    public int stateCount() {
+        return transitions.size();
+    }
+
+    public int transitionCount() {
+        int count = 0;
+        for (Map<Integer, Integer> stateTransitions : transitions.values()) {
+            count += stateTransitions.size();
+        }
+        return count;
+    }
+
     private State walk(State state, String tokenText) {
         State current = state;
         for (int i = 0; i < tokenText.length(); i++) {

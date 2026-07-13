@@ -257,6 +257,7 @@ public final class InferenceBenchmark {
             if (options.seed != null) {
                 parameters.withSeed(options.seed);
             }
+            applyGuidance(benchmarkCase, parameters);
             Response response = runner.generate(UUID.randomUUID(), promptContext, parameters);
             messages.add(new ChatMessage("assistant", response.responseText));
             if (!warmup) {
@@ -281,7 +282,7 @@ public final class InferenceBenchmark {
                         response.finishReason == null ? "" : response.finishReason.name());
                 writeRow(writer, row);
                 writer.flush();
-                writeTranscript(jsonlWriter, row, messages, promptContext.getPrompt(), response.responseText,
+                writeTranscript(jsonlWriter, row, benchmarkCase.guidance, messages, promptContext.getPrompt(), response.responseText,
                         response.responseTextWithSpecialTokens);
                 printProgress("deliverance", runner.modelName(), benchmarkCase, turn + 1,
                         response.promptTokens, response.generatedTokens.size(), response.totalTimeMs, tokensPerSecond,
@@ -731,7 +732,8 @@ public final class InferenceBenchmark {
                         response.path("done_reason").asText(""));
                 writeRow(writer, row);
                 writer.flush();
-                writeTranscript(jsonlWriter, row, messages, JsonUtils.om.writeValueAsString(requestJson), assistant, assistant);
+                writeTranscript(jsonlWriter, row, Guidance.NONE, messages, JsonUtils.om.writeValueAsString(requestJson),
+                        assistant, assistant);
                 printProgress("ollama", options.ollamaModel, benchmarkCase, turn + 1,
                         response.path("prompt_eval_count").asLong(0), evalCount,
                         response.path("total_duration").asDouble(0.0) / 1_000_000.0, tokensPerSecond,
@@ -816,10 +818,49 @@ public final class InferenceBenchmark {
                     turns.add(turn.asText());
                 }
                 cases.add(new BenchmarkCase(node.path("question_id").asText("case-" + cases.size()),
-                        node.path("category").asText("unknown"), turns));
+                        node.path("category").asText("unknown"), turns, guidanceFrom(node)));
             }
         }
         return cases;
+    }
+
+    private static Guidance guidanceFrom(JsonNode node) throws IOException {
+        List<String> guidedChoice = List.of();
+        if (node.has("guided_choice")) {
+            ArrayList<String> choices = new ArrayList<>();
+            for (JsonNode choice : node.withArray("guided_choice")) {
+                choices.add(choice.asText());
+            }
+            guidedChoice = List.copyOf(choices);
+        }
+        String guidedRegex = node.path("guided_regex").isMissingNode() || node.path("guided_regex").isNull()
+                ? null : node.path("guided_regex").asText();
+        String guidedJson = null;
+        if (node.has("guided_json") && !node.get("guided_json").isNull()) {
+            guidedJson = JsonUtils.om.writeValueAsString(node.get("guided_json"));
+        }
+        Guidance guidance = new Guidance(guidedChoice, guidedRegex, guidedJson);
+        int modes = (guidance.guidedChoice.isEmpty() ? 0 : 1)
+                + (guidance.guidedRegex == null ? 0 : 1)
+                + (guidance.guidedJson == null ? 0 : 1);
+        if (modes > 1) {
+            throw new IllegalArgumentException("Benchmark case " + node.path("question_id").asText()
+                    + " sets multiple guided modes");
+        }
+        return guidance;
+    }
+
+    private static void applyGuidance(BenchmarkCase benchmarkCase, GeneratorParameters parameters) {
+        Guidance guidance = benchmarkCase.guidance;
+        if (!guidance.guidedChoice.isEmpty()) {
+            parameters.withGuidedChoice(guidance.guidedChoice);
+        }
+        if (guidance.guidedRegex != null) {
+            parameters.withGuidedRegex(guidance.guidedRegex);
+        }
+        if (guidance.guidedJson != null) {
+            parameters.withGuidedJson(guidance.guidedJson);
+        }
     }
 
     /** Writes one benchmark result row as CSV. */
@@ -843,7 +884,7 @@ public final class InferenceBenchmark {
     }
 
     /** Writes one JSONL transcript record, if transcript output is enabled. */
-    private static void writeTranscript(BufferedWriter jsonlWriter, ResultRow row, List<ChatMessage> messages,
+    private static void writeTranscript(BufferedWriter jsonlWriter, ResultRow row, Guidance guidance, List<ChatMessage> messages,
             String renderedPrompt, String responseText, String responseTextWithSpecialTokens) throws IOException {
         if (jsonlWriter == null) {
             return;
@@ -855,6 +896,17 @@ public final class InferenceBenchmark {
         root.put("case_id", row.caseId);
         root.put("category", row.category);
         root.put("turn", row.turn);
+        ObjectNode guidanceNode = root.putObject("guidance");
+        if (!guidance.guidedChoice.isEmpty()) {
+            ArrayNode choices = guidanceNode.putArray("guided_choice");
+            guidance.guidedChoice.forEach(choices::add);
+        }
+        if (guidance.guidedRegex != null) {
+            guidanceNode.put("guided_regex", guidance.guidedRegex);
+        }
+        if (guidance.guidedJson != null) {
+            guidanceNode.set("guided_json", JsonUtils.om.readTree(guidance.guidedJson));
+        }
         ArrayNode messagesNode = root.putArray("messages");
         for (ChatMessage message : messages) {
             ObjectNode messageNode = messagesNode.addObject();
@@ -889,31 +941,35 @@ public final class InferenceBenchmark {
         return List.of(
                 new BenchmarkCase("builtin-reasoning-1", "reasoning", List.of(
                         "Read the puzzle carefully and answer with a clear explanation. A company reserves five parking spaces in order for the CEO, president, vice president, secretary, and treasurer. The cars are red, blue, green, yellow, and purple. The first space is red. A blue car is between the red car and the green car. The last space is purple. The secretary drives yellow. Alice parks next to David. Enid drives green. Bert parks between Cheryl and Enid. David parks in the last space. Who is the secretary, and what are the car colors from first to last?",
-                        "Now explain which clues were necessary and which were redundant.")),
+                        "Now explain which clues were necessary and which were redundant."), Guidance.NONE),
                 new BenchmarkCase("builtin-math-1", "math", List.of(
                         "Solve step by step. A bus starts with an unknown number of passengers. At the first stop, half get off and 4 get on. At the second stop, 6 get off and 8 get on. There are 25 passengers heading to the third stop. How many passengers started at the terminal? Then compute total fare collected if every person who ever boarded paid $2.",
-                        "Generalize the algebra for starting passengers S, first-stop additions A, second-stop exits B, second-stop additions C, and final passengers F.")),
+                        "Generalize the algebra for starting passengers S, first-stop additions A, second-stop exits B, second-stop additions C, and final passengers F."), Guidance.NONE),
                 new BenchmarkCase("builtin-coding-1", "coding", List.of(
                         "Write a production-quality Python program that recursively scans a directory, reads all UTF-8 text files, ignores binary files, tokenizes words case-insensitively, and returns the top 10 words by frequency. Include error handling and a small explanation of complexity.",
-                        "Parallelize the program safely. Explain when the parallel version may be slower than the sequential version.")),
+                        "Parallelize the program safely. Explain when the parallel version may be slower than the sequential version."), Guidance.NONE),
                 new BenchmarkCase("builtin-coding-2", "coding", List.of(
                         "Given two sorted arrays of different sizes, implement an O(log(min(m,n))) algorithm to find their median. Provide Python code, explain the partition invariant, and include edge cases for empty arrays and duplicates.",
-                        "Now write five focused unit tests for the implementation and explain what bug each test would catch.")),
+                        "Now write five focused unit tests for the implementation and explain what bug each test would catch."), Guidance.NONE),
                 new BenchmarkCase("builtin-extraction-1", "extraction", List.of(
                         "Extract the highest and lowest closing prices per month from this CSV and return compact JSON with month names as keys. Round to nearest integer.\nDate,Open,High,Low,Close,Volume\n2022-01-01,150.02,155.28,148.50,153.80,15678900\n2022-01-02,154.32,157.25,153.48,156.25,19874500\n2022-02-01,160.50,163.28,159.50,161.80,14326700\n2022-02-02,161.80,164.25,161.30,163.90,17689200\n2022-03-01,165.40,168.35,163.10,166.80,16253400\n2022-03-02,167.00,169.85,165.50,168.20,19568100",
-                        "Change the JSON to CSV and include a third column for the spread between highest and lowest close.")),
+                        "Change the JSON to CSV and include a third column for the spread between highest and lowest close."), Guidance.NONE),
                 new BenchmarkCase("builtin-stem-1", "stem", List.of(
                         "Design a solar-powered water-heating system for a residential building that serves 100 people. Include components, sizing assumptions, five-step deployment workflow, rough budget, failure modes, and maintenance schedule.",
-                        "Now identify the three biggest flaws in your design and quantify how each could affect cost or output.")),
+                        "Now identify the three biggest flaws in your design and quantify how each could affect cost or output."), Guidance.NONE),
                 new BenchmarkCase("builtin-humanities-1", "humanities", List.of(
                         "Explain how GDP, inflation, and unemployment interact. Then compare how fiscal policy and monetary policy influence those indicators during a recession. Use concrete examples and caveats.",
-                        "Explain the same ideas to a ten-year-old using an analogy, but preserve the important tradeoffs.")),
+                        "Explain the same ideas to a ten-year-old using an analogy, but preserve the important tradeoffs."), Guidance.NONE),
                 new BenchmarkCase("builtin-writing-1", "writing", List.of(
                         "Draft a concise but persuasive memo to engineering leadership arguing for a monthly inference benchmark report. It should cover performance regressions, model quality drift, hardware differences, and user-facing latency.",
-                        "Rewrite the memo as a checklist that a release manager can execute before every release.")));
+                        "Rewrite the memo as a checklist that a release manager can execute before every release."), Guidance.NONE));
     }
 
-    private record BenchmarkCase(String id, String category, List<String> turns) {
+    private record BenchmarkCase(String id, String category, List<String> turns, Guidance guidance) {
+    }
+
+    private record Guidance(List<String> guidedChoice, String guidedRegex, String guidedJson) {
+        private static final Guidance NONE = new Guidance(List.of(), null, null);
     }
 
     private record ChatMessage(String role, String content) {

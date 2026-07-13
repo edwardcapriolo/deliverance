@@ -109,9 +109,70 @@ class GuidedChoiceLogitsProcessorTest {
         }
     }
 
+    @Test
+    void cachesIndexesForRepeatedGuidedRegexRequests() {
+        TinyChoiceModel model = new TinyChoiceModel();
+        try {
+            GeneratorParameters parameters = new GeneratorParameters().withGuidedRegex("dogma");
+
+            LogitsProcessorFactory.create(model, parameters).orElseThrow();
+            LogitsProcessorFactory.create(model, parameters).orElseThrow();
+
+            assertEquals(1, model.getMetricRegistry().meter("guided.index_cache.miss").getCount());
+            assertEquals(1, model.getMetricRegistry().meter("guided.index_cache.hit").getCount());
+        } finally {
+            model.close();
+        }
+    }
+
+    @Test
+    void masksTokensThatDoNotContinueGuidedJson() {
+        TinyChoiceModel model = new TinyChoiceModel();
+        String schema = """
+                {
+                  "type": "object",
+                  "properties": {
+                    "foo": { "type": "integer" }
+                  },
+                  "required": ["foo"],
+                  "additionalProperties": false
+                }
+                """;
+        try (AbstractTensor logits = new FloatBufferTensor(1, 10)) {
+            logits.set(10.0f, 0, 1); // cat
+            logits.set(20.0f, 0, 2); // dog
+            logits.set(30.0f, 0, 3); // ma
+            logits.set(40.0f, 0, 4); // zebra
+            logits.set(50.0f, 0, 5); // {
+            logits.set(60.0f, 0, 6); // "foo"
+            logits.set(70.0f, 0, 7); // :
+            logits.set(80.0f, 0, 8); // 4
+            logits.set(90.0f, 0, 9); // }
+
+            ResponseContext responseContext = new ResponseContext(model);
+
+            LogitsProcessor processor = LogitsProcessorFactory.create(model,
+                    new GeneratorParameters().withGuidedJson(schema)).orElseThrow();
+            processor.accept(5, responseContext);
+            processor.accept(6, responseContext);
+            processor.accept(7, responseContext);
+            processor.process(logits, responseContext);
+
+            for (int token = 1; token < 10; token++) {
+                if (token == 8) {
+                    assertEquals(80.0f, logits.get(0, token));
+                } else {
+                    assertEquals(Float.NEGATIVE_INFINITY, logits.get(0, token));
+                }
+            }
+        } finally {
+            model.close();
+        }
+    }
+
     private static final class TinyChoiceModel extends AbstractModel {
         private static final Config CONFIG = new Config(16, 4, 8, 1, 1, 1, 1.0e-6f,
-                5, 0, List.of(0), ActivationFunction.Type.SILU, null, Map.of());
+                10, 0, List.of(0), ActivationFunction.Type.SILU, null, Map.of());
 
         private TinyChoiceModel() {
             super(InferenceType.OUTPUT_TO_TOKEN, CONFIG, new TinyWeightLoader(), null, DType.F32, DType.F32,
@@ -138,6 +199,11 @@ class GuidedChoiceLogitsProcessorTest {
                 case 2 -> "dog";
                 case 3 -> "ma";
                 case 4 -> "zebra";
+                case 5 -> "{";
+                case 6 -> "\"foo\"";
+                case 7 -> ":";
+                case 8 -> "4";
+                case 9 -> "}";
                 default -> "";
             };
         }
