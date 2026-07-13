@@ -47,6 +47,7 @@ Generation:
 - [GPU output projection](core/gpu_output_projection.md) Shows how Deliverance uses WebGPU/Dawn for targeted Q4 output-head acceleration
 - [Vibrant Maven plugin](https://www.youtube.com/watch?v=Glp_hAieOq8) Watch a video on Vibrant Maven plugin generate code from XML based spec inside pom
 - [Generator sampling](core/generator_sampling.md) Explains how temperature, top_p, top_k, and exclude top choice work
+- [Guided generation](core/guided_generation.md) Explains guided choice, guided regex, guided JSON, sketches-core, and the FSA/token masking flow
 - [Prefix cache](core/PrefixCache.md) Describes how to get the most benefits from the prefix cache
 - [Prefix cache MSE TurboQuant](core/prefix_cache_turboquant.md) Documents experimental compressed prefix snapshots and tradeoffs
 - [Tensor parallel guide](core/TensorParallelGuide.md) Explains how to enable tensor-parallel generation for Gemma2
