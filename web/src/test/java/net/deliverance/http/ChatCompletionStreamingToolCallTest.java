@@ -1,7 +1,6 @@
 package net.deliverance.http;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.generator.FinishReason;
 import io.teknek.deliverance.generator.Response;
@@ -90,9 +89,10 @@ class ChatCompletionStreamingToolCallTest {
         String streamText = controller.emitter.events.toString();
         assertFalse(streamText.contains("<tool_call>"), "raw Qwen tool markup leaked into stream");
 
-        ObjectNode toolDelta = controller.emitter.events.stream()
-                .filter(ObjectNode.class::isInstance)
-                .map(ObjectNode.class::cast)
+        JsonNode toolDelta = controller.emitter.events.stream()
+                .map(ChatCompletionStreamingToolCallTest::asJsonNode)
+                .filter(Optional::isPresent)
+                .map(Optional::get)
                 .filter(node -> node.path("choices").path(0).path("delta").path("tool_calls").isArray())
                 .findFirst()
                 .orElseThrow();
@@ -105,8 +105,9 @@ class ChatCompletionStreamingToolCallTest {
         assertTrue(grepResult.contains("matches=1"));
         assertTrue(grepResult.contains(file + ":2:cat"));
         assertEquals(1, controller.emitter.events.stream()
-                .filter(ObjectNode.class::isInstance)
-                .map(ObjectNode.class::cast)
+                .map(ChatCompletionStreamingToolCallTest::asJsonNode)
+                .filter(Optional::isPresent)
+                .map(Optional::get)
                 .filter(node -> node.path("choices").path(0).path("delta").path("tool_calls").isArray())
                 .count(), "duplicate raw tool calls should collapse to one structured tool delta");
     }
@@ -151,9 +152,10 @@ class ChatCompletionStreamingToolCallTest {
         assertTrue(controller.emitter.awaitComplete(), "stream did not complete");
         String streamText = controller.emitter.events.toString();
         assertFalse(streamText.contains("<tool_call>"), "raw Qwen tool markup leaked into stream");
-        ObjectNode toolDelta = controller.emitter.events.stream()
-                .filter(ObjectNode.class::isInstance)
-                .map(ObjectNode.class::cast)
+        JsonNode toolDelta = controller.emitter.events.stream()
+                .map(ChatCompletionStreamingToolCallTest::asJsonNode)
+                .filter(Optional::isPresent)
+                .map(Optional::get)
                 .filter(node -> node.path("choices").path(0).path("delta").path("tool_calls").isArray())
                 .findFirst()
                 .orElseThrow();
@@ -273,6 +275,20 @@ class ChatCompletionStreamingToolCallTest {
         return NanocodeDeliverance.defaultToolSchema(false).stream()
                 .map(tool -> JsonUtils.om.convertValue(tool, ChatCompletionTool.class))
                 .toList();
+    }
+
+    private static Optional<JsonNode> asJsonNode(Object event) {
+        try {
+            if (event instanceof JsonNode node) {
+                return Optional.of(node);
+            }
+            if (event instanceof String text && text.startsWith("{")) {
+                return Optional.of(JsonUtils.om.readTree(text));
+            }
+            return Optional.empty();
+        } catch (IOException e) {
+            throw new AssertionError("invalid JSON SSE event: " + event, e);
+        }
     }
 
     private static class CapturingController extends ChatCompletionController {

@@ -375,6 +375,8 @@ public class ChatCompletionController {
         try {
             if (event instanceof SseEmitter.SseEventBuilder builder) {
                 emitter.send(builder);
+            } else if (event instanceof ObjectNode objectNode) {
+                emitter.send(JsonUtils.om.writeValueAsString(objectNode));
             } else {
                 emitter.send(event);
             }
