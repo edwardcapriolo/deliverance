@@ -48,6 +48,9 @@
         <jakarta.annotation.version>2.1.1</jakarta.annotation.version>
         <jackson.nullable.version>0.2.6</jackson.nullable.version>
         <oltu.version>1.0.1</oltu.version>
+        <spring-ai.version>1.0.0-M6</spring-ai.version>
+        <spring-boot.version>3.5.5</spring-boot.version>
+        <testcontainers.version>1.21.3</testcontainers.version>
     </properties>
 
     <modules>
@@ -61,6 +64,8 @@
         <module>web</module>
         <module>grace</module>
         <module>client</module>
+        <module>spring-ai-deliverance</module>
+        <module>spring-ai-deliverance-demo</module>
         <module>nanocode-deliverance</module>
         <module>vibrant-maven-plugin</module>
     </modules>
