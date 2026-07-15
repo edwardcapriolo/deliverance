@@ -2,11 +2,11 @@
 
 Spring AI integration for Deliverance.
 
-Deliverance can be used as a pure Java local inference engine or as a normal chat-completion HTTP server. This module exposes Deliverance through Spring AI's `ChatModel` interface.
+This module exposes a running Deliverance chat-completion HTTP server through Spring AI's `ChatModel` interface.
 
-## Modes
+It targets Spring AI 2.x and Java 17. Embedded Deliverance inference is available from the separate `spring-ai-deliverance-embedded` Java 25 add-on module.
 
-### Client Mode
+## Client Mode
 
 Client mode is the default. It calls a running Deliverance HTTP server.
 
@@ -21,9 +21,18 @@ spring:
 
 The configured `model` value is sent with each `/chat/completions` request.
 
-### Embedded Mode
+## Embedded Add-On
 
-Embedded mode loads Deliverance in the Spring application JVM.
+Add `spring-ai-deliverance-embedded` when the Spring application should load Deliverance in-process.
+This add-on requires Java 25 because it depends on Deliverance core inference.
+
+```xml
+<dependency>
+  <groupId>io.teknek.deliverance</groupId>
+  <artifactId>spring-ai-deliverance-embedded</artifactId>
+  <version>${deliverance.version}</version>
+</dependency>
+```
 
 ```yaml
 spring:
@@ -77,8 +86,8 @@ The demo is designed around a realistic private-code workflow rather than a weat
 Normal tests cover:
 
 - request mapping to generated Deliverance client models
-- embedded mode with a fake `CausalLanguageModel`
 - demo HTTP controller behavior with a fake `ChatModel`
+- embedded add-on behavior with a fake `CausalLanguageModel`
 
 Real server tests are scaffolded with Testcontainers and are opt-in:
 

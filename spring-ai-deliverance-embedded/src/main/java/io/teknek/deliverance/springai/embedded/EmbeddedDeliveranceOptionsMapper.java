@@ -1,10 +1,12 @@
-package io.teknek.deliverance.springai;
+package io.teknek.deliverance.springai.embedded;
 
 import io.teknek.deliverance.generator.GeneratorParameters;
+import io.teknek.deliverance.springai.DeliveranceChatOptions;
+
 import org.springframework.ai.chat.prompt.ChatOptions;
 
-final class DeliveranceOptionsMapper {
-    private DeliveranceOptionsMapper() {
+final class EmbeddedDeliveranceOptionsMapper {
+    private EmbeddedDeliveranceOptionsMapper() {
     }
 
     static GeneratorParameters toGeneratorParameters(ChatOptions options) {

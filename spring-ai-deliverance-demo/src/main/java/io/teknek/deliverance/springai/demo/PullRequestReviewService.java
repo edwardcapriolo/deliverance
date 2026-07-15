@@ -41,11 +41,10 @@ public class PullRequestReviewService {
             """;
 
     private final ChatModel chatModel;
-    private final ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public PullRequestReviewService(ChatModel chatModel, ObjectMapper objectMapper) {
+    public PullRequestReviewService(ChatModel chatModel) {
         this.chatModel = chatModel;
-        this.objectMapper = objectMapper;
     }
 
     public PullRequestReviewResponse reviewPullRequest(PullRequestReviewRequest request) {

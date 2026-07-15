@@ -34,6 +34,7 @@
         <excludedITGroups>large-model</excludedITGroups>
 
         <jackson.version>2.20.1</jackson.version>
+        <jackson3.annotations.version>2.21</jackson3.annotations.version>
         <dysfx.version>0.0.5</dysfx.version>
         <mockito.version>5.20.0</mockito.version>
         <metrics.version>4.2.37</metrics.version>
@@ -48,8 +49,8 @@
         <jakarta.annotation.version>2.1.1</jakarta.annotation.version>
         <jackson.nullable.version>0.2.6</jackson.nullable.version>
         <oltu.version>1.0.1</oltu.version>
-        <spring-ai.version>1.0.0-M6</spring-ai.version>
-        <spring-boot.version>3.5.5</spring-boot.version>
+        <spring-ai.version>2.0.0</spring-ai.version>
+        <spring-boot.version>4.1.0</spring-boot.version>
         <testcontainers.version>1.21.3</testcontainers.version>
     </properties>
 
@@ -65,6 +66,7 @@
         <module>grace</module>
         <module>client</module>
         <module>spring-ai-deliverance</module>
+        <module>spring-ai-deliverance-embedded</module>
         <module>spring-ai-deliverance-demo</module>
         <module>nanocode-deliverance</module>
         <module>vibrant-maven-plugin</module>

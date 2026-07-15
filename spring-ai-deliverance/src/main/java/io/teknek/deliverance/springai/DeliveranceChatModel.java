@@ -34,12 +34,12 @@ public class DeliveranceChatModel implements ChatModel {
     public ChatResponse call(Prompt prompt) {
         CreateChatCompletionResponse response = deliveranceApi.createChatCompletion(toRequest(prompt, false));
         String content = response == null || response.getChoices() == null || response.getChoices().isEmpty()
-                ? "" : response.getChoices().getFirst().getMessage().getContent();
+                ? "" : response.getChoices().get(0).getMessage().getContent();
         return new ChatResponse(List.of(new Generation(new AssistantMessage(content))));
     }
 
     @Override
-    public ChatOptions getDefaultOptions() {
+    public ChatOptions getOptions() {
         return defaultOptions;
     }
 

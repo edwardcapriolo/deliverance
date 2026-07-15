@@ -5,19 +5,19 @@
     <version>0.0.11-SNAPSHOT</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
-  <artifactId>spring-ai-deliverance</artifactId>
-  <name>spring-ai-deliverance</name>
+  <artifactId>spring-ai-deliverance-embedded</artifactId>
+  <name>spring-ai-deliverance-embedded</name>
 
   <dependencies>
     <dependency>
       <groupId>io.teknek.deliverance</groupId>
-      <artifactId>client</artifactId>
+      <artifactId>spring-ai-deliverance</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
-      <groupId>org.springframework.ai</groupId>
-      <artifactId>spring-ai-model</artifactId>
-      <version>${spring-ai.version}</version>
+      <groupId>io.teknek.deliverance</groupId>
+      <artifactId>core</artifactId>
+      <version>${project.version}</version>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
@@ -29,16 +29,6 @@
       <artifactId>spring-boot-configuration-processor</artifactId>
       <version>${spring-boot.version}</version>
       <optional>true</optional>
-    </dependency>
-    <dependency>
-      <groupId>com.fasterxml.jackson.core</groupId>
-      <artifactId>jackson-databind</artifactId>
-      <version>${jackson.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>com.fasterxml.jackson.core</groupId>
-      <artifactId>jackson-annotations</artifactId>
-      <version>${jackson3.annotations.version}</version>
     </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
@@ -56,12 +46,6 @@
       <version>${mockito.version}</version>
       <scope>test</scope>
     </dependency>
-    <dependency>
-      <groupId>org.testcontainers</groupId>
-      <artifactId>junit-jupiter</artifactId>
-      <version>${testcontainers.version}</version>
-      <scope>test</scope>
-    </dependency>
   </dependencies>
 
   <build>
@@ -70,16 +54,27 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <configuration>
-          <release>17</release>
+          <release>25</release>
           <jdkToolchain>
-            <version>17</version>
+            <version>25</version>
           </jdkToolchain>
+          <compilerArgs>
+            <arg>--add-modules</arg>
+            <arg>jdk.incubator.vector</arg>
+          </compilerArgs>
         </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <version>${surefire.version}</version>
+        <configuration>
+          <argLine>
+            --add-opens java.base/java.nio=ALL-UNNAMED
+            --add-modules jdk.incubator.vector
+            -Djdk.attach.allowAttachSelf=true
+          </argLine>
+        </configuration>
       </plugin>
     </plugins>
   </build>
