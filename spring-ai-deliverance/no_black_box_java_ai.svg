@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680" role="img" aria-labelledby="title desc">
+  <title id="title">No-black-box Java AI architecture</title>
+  <desc id="desc">Spring AI connects your data and APIs to Deliverance and a local quantized model on your own gear.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fbfb"/>
+      <stop offset="1" stop-color="#edf6f2"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f4f8f8"/>
+    </linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#69bd45"/>
+      <stop offset="1" stop-color="#16856b"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f1ce5c"/>
+      <stop offset="1" stop-color="#bd8a15"/>
+    </linearGradient>
+    <filter id="softShadow" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#0b1822" flood-opacity="0.14"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="9" markerHeight="9" orient="auto">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#16856b"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="680" fill="url(#bg)"/>
+  <circle cx="1045" cy="120" r="190" fill="#dcefe7" opacity="0.6"/>
+  <circle cx="130" cy="585" r="160" fill="#e7edf2" opacity="0.75"/>
+
+  <text x="600" y="78" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="44" font-weight="800" fill="#142331">No-Black-Box AI</text>
+  <text x="600" y="116" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="21" fill="#536471">Spring AI, Deliverance, and a local Java inference loop</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="86" y="205" width="280" height="230" rx="30" fill="url(#card)" stroke="#d8e5e8" stroke-width="2"/>
+    <rect x="122" y="252" width="208" height="54" rx="16" fill="url(#gold)"/>
+    <rect x="122" y="332" width="208" height="54" rx="16" fill="url(#gold)"/>
+  </g>
+  <text x="226" y="193" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="22" font-weight="800" fill="#172735">Your Spring App</text>
+  <text x="226" y="287" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24" font-weight="800" fill="#ffffff">Your Data</text>
+  <text x="226" y="367" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24" font-weight="800" fill="#ffffff">Your APIs</text>
+  <text x="226" y="465" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16" fill="#536471">business logic stays close</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="460" y="200" width="280" height="240" rx="34" fill="#122333"/>
+    <rect x="492" y="238" width="216" height="72" rx="18" fill="#1d3a4b" stroke="#4d7584"/>
+    <rect x="492" y="332" width="216" height="72" rx="18" fill="#1d3a4b" stroke="#4d7584"/>
+  </g>
+  <text x="600" y="193" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="22" font-weight="800" fill="#172735">Java AI Runtime</text>
+  <text x="600" y="281" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="26" font-weight="800" fill="#ffffff">Spring AI</text>
+  <text x="600" y="376" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="26" font-weight="800" fill="#ffffff">Deliverance</text>
+  <text x="600" y="465" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16" fill="#536471">client mode or Java 25 embedded add-on</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="834" y="205" width="280" height="230" rx="30" fill="url(#card)" stroke="#d8e5e8" stroke-width="2"/>
+    <circle cx="974" cy="300" r="58" fill="#fff8df" stroke="#d8ad2d" stroke-width="3"/>
+    <rect x="938" y="264" width="72" height="72" rx="14" fill="none" stroke="#c5961a" stroke-width="6"/>
+    <circle cx="974" cy="300" r="12" fill="#c5961a"/>
+    <path d="M950 300 H962 M986 300 H998 M974 276 V288 M974 312 V324" stroke="#c5961a" stroke-width="5" stroke-linecap="round"/>
+    <path d="M938 282 H922 M938 300 H922 M938 318 H922 M1010 282 H1026 M1010 300 H1026 M1010 318 H1026" stroke="#c5961a" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <text x="974" y="193" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="22" font-weight="800" fill="#172735">Local Model</text>
+  <text x="974" y="390" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="21" font-weight="800" fill="#bd8a15">Quantized Qwen</text>
+  <text x="974" y="465" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16" fill="#536471">thinking, tools, structured output</text>
+
+  <path d="M366 320 H448" stroke="#16856b" stroke-width="8" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M740 320 H822" stroke="#16856b" stroke-width="8" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M834 455 C748 540 452 540 366 455" fill="none" stroke="#c5961a" stroke-width="6" stroke-linecap="round" opacity="0.8" marker-end="url(#arrow)"/>
+
+  <g filter="url(#softShadow)">
+    <rect x="258" y="555" width="684" height="72" rx="24" fill="#142331"/>
+  </g>
+  <text x="600" y="584" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="20" font-weight="800" fill="#ffffff">Your data + your APIs + your model runtime</text>
+  <text x="600" y="612" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="17" fill="#c9d8df">Prototype the full loop locally.</text>
+</svg>

@@ -2,6 +2,8 @@
 
 Spring AI integration for Deliverance.
 
+For the broader positioning and architecture story, see [No-Black-Box AI for Spring Developers](no_black_box_java_ai.md).
+
 This module exposes a running Deliverance chat-completion HTTP server through Spring AI's `ChatModel` interface.
 
 It targets Spring AI 2.x and Java 17. Embedded Deliverance inference is available from the separate `spring-ai-deliverance-embedded` Java 25 add-on module.

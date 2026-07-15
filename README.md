@@ -51,6 +51,7 @@ Generation:
 - [Generator sampling](core/generator_sampling.md) Explains how temperature, top_p, top_k, and exclude top choice work
 - [Guided generation](core/guided_generation.md) Explains guided choice, guided regex, guided JSON, sketches-core, and the FSA/token masking flow
 - [Guided decoding overview](core/guided_decoding_real_inference_engine.md) A narrative walkthrough of guided decoding and how it moves Deliverance toward a full inference-engine feature set
+- [No-black-box AI for Spring developers](spring-ai-deliverance/no_black_box_java_ai.md) Positions Deliverance with Spring AI for Java-first local prototyping
 - [Prefix cache](core/PrefixCache.md) Describes how to get the most benefits from the prefix cache
 - [Prefix cache MSE TurboQuant](core/prefix_cache_turboquant.md) Documents experimental compressed prefix snapshots and tradeoffs
 - [Tensor parallel guide](core/TensorParallelGuide.md) Explains how to enable tensor-parallel generation for Gemma2
