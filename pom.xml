@@ -7,7 +7,7 @@
     <name>deliverance-parent</name>
     <description>deliverance parent pom</description>
     <url>http://github.com/edwardcapriolo/deliverance</url>
-    <version>0.0.11</version>
+    <version>0.0.12-SNAPSHOT</version>
 
     <parent>
         <groupId>org.sonatype.oss</groupId>
@@ -69,7 +69,7 @@
         <module>spring-ai-deliverance-embedded</module>
         <module>spring-ai-deliverance-demo</module>
         <module>nanocode-deliverance</module>
-        <!-- <module>vibrant-maven-plugin</module>-->
+        <module>vibrant-maven-plugin</module>
     </modules>
     <build>
         <extensions>
