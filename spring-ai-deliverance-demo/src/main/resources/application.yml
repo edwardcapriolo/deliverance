@@ -1,0 +1,6 @@
+spring:
+  ai:
+    deliverance:
+      mode: client
+      model: edwardcapriolo/Qwen3-4B-JQ4
+      base-url: http://localhost:8080
