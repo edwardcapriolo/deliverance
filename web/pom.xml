@@ -21,7 +21,7 @@
 
         <spring-boot.version>3.5.5</spring-boot.version>
         <springdoc-starter.version>2.8.12</springdoc-starter.version>
-        <jersey-version>3.0.4</jersey-version>
+        <jakarta.ws.rs-api.version>3.1.0</jakarta.ws.rs-api.version>
         <annotation.version>6.0.53</annotation.version>
         <openapi.generator.version>7.16.0</openapi.generator.version>
         <spring-boot.run.jvmArguments>--add-modules jdk.incubator.vector</spring-boot.run.jvmArguments>
@@ -148,32 +148,6 @@
             <artifactId>spring-boot-starter-logging</artifactId>
         </dependency>
 
-        <!-- HTTP client: jersey-client -->
-        <dependency>
-            <groupId>org.glassfish.jersey.core</groupId>
-            <artifactId>jersey-client</artifactId>
-            <version>${jersey-version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.glassfish.jersey.connectors</groupId>
-            <artifactId>jersey-apache-connector</artifactId>
-            <version>${jersey-version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.glassfish.jersey.inject</groupId>
-            <artifactId>jersey-hk2</artifactId>
-            <version>${jersey-version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.glassfish.jersey.media</groupId>
-            <artifactId>jersey-media-multipart</artifactId>
-            <version>${jersey-version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.glassfish.jersey.media</groupId>
-            <artifactId>jersey-media-json-jackson</artifactId>
-            <version>${jersey-version}</version>
-        </dependency>
         <dependency>
             <groupId>jakarta.annotation</groupId>
             <artifactId>jakarta.annotation-api</artifactId>
@@ -184,6 +158,11 @@
             <artifactId>jakarta.servlet-api</artifactId>
             <version>6.1.0</version>
             <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.ws.rs</groupId>
+            <artifactId>jakarta.ws.rs-api</artifactId>
+            <version>${jakarta.ws.rs-api.version}</version>
         </dependency>
 
         <dependency>
@@ -250,6 +229,7 @@
                             <skipValidateSpec>true</skipValidateSpec>
                             <generateApis>false</generateApis>
                             <generateSupportingFiles>true</generateSupportingFiles>
+                            <supportingFilesToGenerate>ApiException.java,JSON.java,RFC3339DateFormat.java,RFC3339InstantDeserializer.java,RFC3339JavaTimeModule.java,AbstractOpenApiSchema.java</supportingFilesToGenerate>
                             <generateModelTests>false</generateModelTests>
                             <apiPackage>io.teknek.deliverance.api</apiPackage>
                             <modelPackage>io.teknek.deliverance.model</modelPackage>
