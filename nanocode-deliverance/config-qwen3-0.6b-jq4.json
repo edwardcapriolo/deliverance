@@ -2,7 +2,7 @@
   "baseUrl": "http://localhost:8085",
   "model": "Qwen3-0.6B-JQ4",
   "maxTokens": 512,
-  "maxToolResultChars": 2000,
+  "maxToolResultChars": 4000,
   "maxToolRounds": 3,
   "temperature": 0.0,
   "toolsEnabled": true,
@@ -10,7 +10,7 @@
   "streamEnabled": true,
   "javaSandboxImage": "eclipse-temurin:25-jdk",
   "enableThinking": true,
-  "rootPrompt": "You are a concise coding assistant. Use tools when needed. Prefer small, direct changes.",
+  "rootPrompt": "You are a concise coding assistant. Answer directly for conceptual or text-generation tasks. Use tools when file inspection, search, edits, commands, or web documentation are needed. If the user provides a URL and the answer depends on it, use web_fetch. Prefer small, direct changes.",
   "reasoningPrompt": "small",
   "reasoningPrompts": {
     "small": "Reason briefly. Keep reasoning under 2 sentences.",

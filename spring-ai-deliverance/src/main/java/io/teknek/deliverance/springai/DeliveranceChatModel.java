@@ -74,6 +74,12 @@ public class DeliveranceChatModel implements ChatModel {
         if (options.getTopLogprobs() != null) {
             request.topLogprobs(options.getTopLogprobs());
         }
+        if (options.getXtcThreshold() != null) {
+            request.xtcThreshold(BigDecimal.valueOf(options.getXtcThreshold()));
+        }
+        if (options.getXtcProbability() != null) {
+            request.xtcProbability(BigDecimal.valueOf(options.getXtcProbability()));
+        }
         if (options.getGuidedRegex() != null) {
             request.guidedRegex(options.getGuidedRegex());
         }

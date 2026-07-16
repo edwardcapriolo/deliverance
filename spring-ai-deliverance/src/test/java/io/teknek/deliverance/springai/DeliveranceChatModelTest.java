@@ -26,6 +26,8 @@ class DeliveranceChatModelTest {
                 .seed(42)
                 .logprobs(true)
                 .topLogprobs(5)
+                .xtcThreshold(0.5)
+                .xtcProbability(0.1)
                 .guidedRegex("TICKET-[0-9]{4}")
                 .build();
         DeliveranceChatModel model = new DeliveranceChatModel(new NoopDeliveranceApi(), new ObjectMapper(), options);
@@ -45,6 +47,8 @@ class DeliveranceChatModelTest {
         assertEquals(42, request.getSeed());
         assertEquals(true, request.getLogprobs());
         assertEquals(5, request.getTopLogprobs());
+        assertEquals(0.5, request.getXtcThreshold().doubleValue());
+        assertEquals(0.1, request.getXtcProbability().doubleValue());
         assertEquals("TICKET-[0-9]{4}", request.getGuidedRegex());
     }
 

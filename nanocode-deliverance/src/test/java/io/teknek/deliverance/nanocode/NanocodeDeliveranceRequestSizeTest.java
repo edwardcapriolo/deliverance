@@ -20,7 +20,7 @@ class NanocodeDeliveranceRequestSizeTest {
 
     @Test
     @SuppressWarnings({"rawtypes", "unchecked"})
-    void fiveDefaultToolsProduceSmallChatRequest() throws Exception {
+    void defaultToolsProduceSmallChatRequest() throws Exception {
         NanocodeDeliverance agent = new NanocodeDeliverance(new NanocodeDeliverance.Config(
                 "http://localhost:8085", "Llama-3.2-3B-Instruct-JQ4", null, 256, 2000, 3, 0.0d, true, false, true,
                 "eclipse-temurin:25-jdk", true, "You are a concise coding assistant.", "small",
@@ -40,7 +40,7 @@ class NanocodeDeliveranceRequestSizeTest {
         int bytes = json.getBytes(StandardCharsets.UTF_8).length;
         System.out.println("nanocode request bytes=" + bytes);
         System.out.println(json);
-        assertTrue(bytes < 20_000, "expected five-tool request to remain small, bytes=" + bytes);
+        assertTrue(bytes < 20_000, "expected tool request to remain small, bytes=" + bytes);
     }
 
     @Test
@@ -49,6 +49,25 @@ class NanocodeDeliveranceRequestSizeTest {
 
         assertTrue(prompt.contains("concise coding assistant"));
         assertTrue(prompt.contains("cwd: /tmp/work"));
+    }
+
+    @Test
+    void defaultToolsIncludeWebFetch() {
+        NanocodeDeliverance agent = new NanocodeDeliverance(new NanocodeDeliverance.Config(
+                "http://localhost:8085", "test", null, 256, 2000, 3, 0.0d, true, false, true,
+                "eclipse-temurin:25-jdk", true, "You are a concise coding assistant.", "small",
+                Map.of("small", "Reason briefly. Keep reasoning under 2 sentences."), false));
+
+        assertTrue(agent.toolSchema().stream()
+                .anyMatch(tool -> "web_fetch".equals(tool.getFunction().getName())));
+    }
+
+    @Test
+    void webFetchRejectsNonPublicUrls() throws Exception {
+        assertTrue(NanocodeDeliverance.executeTool("web_fetch", JSON.readTree("{\"url\":\"file:///etc/passwd\"}"))
+                .contains("supports only http and https"));
+        assertTrue(NanocodeDeliverance.executeTool("web_fetch", JSON.readTree("{\"url\":\"http://localhost:8080\"}"))
+                .contains("only fetches public"));
     }
 
     @Test

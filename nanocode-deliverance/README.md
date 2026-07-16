@@ -8,7 +8,7 @@ This module intentionally stays small:
 
 * Java 17.
 * Depends on `deliverance-client`.
-* Provides minimal local tools: `read`, `write`, `edit`, `glob`, `grep`, `java_sandbox`.
+* Provides minimal tools: `read`, `write`, `edit`, `glob`, `grep`, `web_fetch`, `java_sandbox`.
 * Risky/eval-prone `bash` is disabled unless explicitly enabled.
 
 ## Build

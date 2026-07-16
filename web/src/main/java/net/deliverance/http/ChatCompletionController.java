@@ -32,12 +32,22 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 
 @RestController
 public class ChatCompletionController {
     private static final Logger LOGGER = LoggerFactory.getLogger(ChatCompletionController.class);
+    private static final ScheduledExecutorService STREAM_HEARTBEATS = Executors.newScheduledThreadPool(1, runnable -> {
+        Thread thread = new Thread(runnable, "deliverance-sse-heartbeat");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     private static final String DELIVERANCE_SESSION_HEADER = "X-Deliverance-Session";
 
@@ -205,8 +215,26 @@ public class ChatCompletionController {
         UUID finalSessionId = sessionId;
         PreparedRequest finalReady = ready;
         boolean toolsPresent = request.getTools() != null && !request.getTools().isEmpty();
+        AtomicReference<Thread> generationThread = new AtomicReference<>();
+        ScheduledFuture<?> heartbeat = STREAM_HEARTBEATS.scheduleAtFixedRate(() -> {
+            if (closed.get()) {
+                Thread worker = generationThread.get();
+                if (worker != null) {
+                    worker.interrupt();
+                }
+                return;
+            }
+            sendStreamEvent(emitter, closed, SseEmitter.event().comment("keepalive"));
+            if (closed.get()) {
+                Thread worker = generationThread.get();
+                if (worker != null) {
+                    worker.interrupt();
+                }
+            }
+        }, 1, 1, TimeUnit.SECONDS);
         CompletableFuture.runAsync(() -> {
             try {
+                generationThread.set(Thread.currentThread());
                 var promptContext = finalReady.promptSupportBuilder().build();
                 debugPrompt(promptContext.getPrompt());
                 StringBuilder streamedText = new StringBuilder();
@@ -268,6 +296,8 @@ public class ChatCompletionController {
                     closed.set(true);
                     emitter.completeWithError(t);
                 }
+            } finally {
+                heartbeat.cancel(false);
             }
         });
         return emitter;

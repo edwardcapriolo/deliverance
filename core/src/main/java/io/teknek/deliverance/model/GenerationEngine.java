@@ -17,6 +17,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -88,6 +89,7 @@ final class GenerationEngine {
         Optional<LogitsProcessor> logitsProcessor = LogitsProcessorFactory.create(model, generatorParameters,
                 sketchesSettings);
         long[] encoded = model.encodeText(promptContext.getPrompt());
+        throwIfInterrupted();
         if (encoded.length > 0 && encoded[0] == model.config.bosToken) {
             AbstractModel.logger.debug("encoded [] started with BOS token removing it");
             encoded = Arrays.copyOfRange(encoded, 1, encoded.length);
@@ -113,6 +115,7 @@ final class GenerationEngine {
                 try (Timer.Context ignoredPrefill = InferenceProfiler.timer(model.getMetricRegistry(), "generation.prefill").time()) {
                     prefillOutput = new PrefillOutput(session.prefill(cursor));
                 }
+                throwIfInterrupted();
                 SamplerReturn nextSamplerRet;
                 try (Timer.Context ignoredSample = InferenceProfiler.timer(model.getMetricRegistry(), "generation.first_sample").time()) {
                     nextSamplerRet = model.createNextToken(generatorParameters, logits, prefillOutput, responseContext,
@@ -132,6 +135,7 @@ final class GenerationEngine {
                     return withGenerationTiming(model, firstStop.get(), generationStartNanos, timeToFirstTokenNanos);
                 }
                 for (int i = cursor.decodeStartPosition(); i < ntokens; i++) {
+                    throwIfInterrupted();
                     AbstractTensor output;
                     try (Timer.Context ignoredDecode = InferenceProfiler.timer(model.getMetricRegistry(), "generation.decode").time()) {
                         output = session.decode(next, i);
@@ -210,6 +214,12 @@ final class GenerationEngine {
                     generationStartNanos, timeToFirstTokenNanos));
         }
         return Optional.empty();
+    }
+
+    private static void throwIfInterrupted() {
+        if (Thread.interrupted()) {
+            throw new CancellationException("generation interrupted");
+        }
     }
 
     /** Builds a final response for a stop condition and applies model-specific post-processing. */

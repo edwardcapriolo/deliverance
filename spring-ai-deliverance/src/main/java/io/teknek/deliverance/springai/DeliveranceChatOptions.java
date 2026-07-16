@@ -14,6 +14,8 @@ public class DeliveranceChatOptions implements ChatOptions {
     private Integer seed;
     private Boolean logprobs;
     private Integer topLogprobs;
+    private Double xtcThreshold;
+    private Double xtcProbability;
     private List<String> guidedChoice;
     private String guidedRegex;
     private String guidedJson;
@@ -74,6 +76,14 @@ public class DeliveranceChatOptions implements ChatOptions {
         return topLogprobs;
     }
 
+    public Double getXtcThreshold() {
+        return xtcThreshold;
+    }
+
+    public Double getXtcProbability() {
+        return xtcProbability;
+    }
+
     public List<String> getGuidedChoice() {
         return guidedChoice;
     }
@@ -98,6 +108,8 @@ public class DeliveranceChatOptions implements ChatOptions {
                 .seed(seed)
                 .logprobs(logprobs)
                 .topLogprobs(topLogprobs)
+                .xtcThreshold(xtcThreshold)
+                .xtcProbability(xtcProbability)
                 .guidedChoice(guidedChoice)
                 .guidedRegex(guidedRegex)
                 .guidedJson(guidedJson);
@@ -169,6 +181,16 @@ public class DeliveranceChatOptions implements ChatOptions {
 
         public Builder topLogprobs(Integer topLogprobs) {
             options.topLogprobs = topLogprobs;
+            return this;
+        }
+
+        public Builder xtcThreshold(Double xtcThreshold) {
+            options.xtcThreshold = xtcThreshold;
+            return this;
+        }
+
+        public Builder xtcProbability(Double xtcProbability) {
+            options.xtcProbability = xtcProbability;
             return this;
         }
 

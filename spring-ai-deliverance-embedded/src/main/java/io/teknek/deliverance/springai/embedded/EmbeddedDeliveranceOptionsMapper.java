@@ -39,6 +39,12 @@ final class EmbeddedDeliveranceOptionsMapper {
             if (deliveranceOptions.getTopLogprobs() != null) {
                 parameters.withTopLogProbs(deliveranceOptions.getTopLogprobs());
             }
+            if (deliveranceOptions.getXtcThreshold() != null) {
+                parameters.withXtcThreshold(deliveranceOptions.getXtcThreshold().floatValue());
+            }
+            if (deliveranceOptions.getXtcProbability() != null) {
+                parameters.withXtcProbability(deliveranceOptions.getXtcProbability().floatValue());
+            }
             if (deliveranceOptions.getGuidedChoice() != null) {
                 parameters.withGuidedChoice(deliveranceOptions.getGuidedChoice());
             }

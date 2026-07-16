@@ -7,6 +7,7 @@ import com.google.common.primitives.Ints;
 
 import java.nio.FloatBuffer;
 import java.util.*;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
@@ -792,6 +793,7 @@ public abstract class AbstractModel implements Generator, Classifier {
             PREFILL_PROGRESS.set(progress);
             try {
                 for (int i = 0; i < token_ids.length; i += maxBatchSize) {
+                    throwIfGenerationInterrupted();
                     int[] batch = Arrays.copyOfRange(token_ids, i, Math.min(token_ids.length, i + maxBatchSize));
                     progress.chunkStart = i;
                     progress.chunkTokens = batch.length;
@@ -844,6 +846,7 @@ public abstract class AbstractModel implements Generator, Classifier {
         emitLayerDebug(-1, "input", embedding);
         int batchTokens = embedding.shape().first();
         for (int i = 0; i < config.numberOfLayers; i++) {
+            throwIfGenerationInterrupted();
             int relativeLayer = i;
             AbstractTensor ref = embedding; // reference so we can free
             embedding = transformerBlocks[relativeLayer].forward(embedding, startPos, kvbuf, tensorReducer);
@@ -857,6 +860,12 @@ public abstract class AbstractModel implements Generator, Classifier {
             }
         }
         return embedding;
+        }
+    }
+
+    private static void throwIfGenerationInterrupted() {
+        if (Thread.interrupted()) {
+            throw new CancellationException("generation interrupted");
         }
     }
 

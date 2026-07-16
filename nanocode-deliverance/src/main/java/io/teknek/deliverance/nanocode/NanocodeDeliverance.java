@@ -30,9 +30,13 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.math.BigDecimal;
+import java.net.HttpURLConnection;
+import java.net.InetAddress;
+import java.net.URI;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -42,12 +46,25 @@ import java.util.Map;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class NanocodeDeliverance {
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final int DEFAULT_WEB_FETCH_MAX_BYTES = 100_000;
+    private static final int HARD_WEB_FETCH_MAX_BYTES = 200_000;
+    private static final int DEFAULT_WEB_FETCH_LIMIT = 3_000;
+    private static final int HARD_WEB_FETCH_LIMIT = 20_000;
+    private static final int MAX_WEB_FETCH_REDIRECTS = 5;
+    private static final ConcurrentHashMap<String, WebFetchResult> WEB_FETCH_CACHE = new ConcurrentHashMap<>();
+    private static final OkHttpClient WEB_FETCH_CLIENT = new OkHttpClient.Builder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .readTimeout(Duration.ofSeconds(20))
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .build();
     static final String OPENAI_REASONING_FIELD = "reasoning_content";
     static final String VLLM_REASONING_FIELD = "reasoning";
     private static final String RESET = "\033[0m";
@@ -518,6 +535,14 @@ public final class NanocodeDeliverance {
         tools.add(tool("grep", "Search text files with a Java regular expression. Use for grep/search requests. Returns at most limit matches, default 10.", schema(
                 props(prop("path", "string"), prop("pattern", "string"), prop("limit", "integer")),
                 array("pattern"))));
+        tools.add(tool("web_fetch", "Fetch a public HTTP/HTTPS URL. Default format=text returns a small readable page-text window with HTML removed; use this for documentation. If more content is needed, call again with offset=nextOffset. format=html returns raw HTML source only and is usually harder to read. Response includes totalChars and nextOffset. Use refresh=true to refetch. Do not use shell/curl for web pages.", schema(
+                props(prop("url", "string", "Public http or https URL to fetch."),
+                        prop("format", "string", "Use text for readable content. Use html only for raw HTML source."),
+                        prop("offset", "integer", "Character offset into cached readable content. Start with 0, then use nextOffset."),
+                        prop("limit", "integer", "Maximum characters to return from offset. Prefer 3000 or less unless necessary."),
+                        prop("maxBytes", "integer", "Maximum source bytes to fetch before conversion."),
+                        prop("refresh", "boolean", "Set true to refetch instead of using cached content.")),
+                array("url"))));
         //tools.add(tool("java_sandbox", "Run Java code or Maven tests in a one-shot isolated container with no network access by default.", schema(
         //        props(prop("mode", "string"), prop("files", "object"), prop("mainClass", "string"),
         //                prop("timeoutSeconds", "integer"), prop("maxOutputChars", "integer")),
@@ -550,6 +575,7 @@ public final class NanocodeDeliverance {
                 case "edit" -> toolEdit(args);
                 case "glob" -> toolGlob(args);
                 case "grep" -> toolGrep(args);
+                case "web_fetch" -> toolWebFetch(args);
                 case "java_sandbox" -> JavaSandboxTool.run(args, javaSandboxImage);
                 case "bash" -> allowRiskyTools ? toolBash(args) : "error: bash disabled; set allowRiskyTools=true in the config file";
                 default -> "error: unknown tool " + name;
@@ -644,6 +670,144 @@ public final class NanocodeDeliverance {
         return hits.isEmpty() ? "matches=0" : "matches=" + hits.size() + "\n" + String.join("\n", hits);
     }
 
+    private static String toolWebFetch(JsonNode args) throws IOException {
+        URI uri = URI.create(args.path("url").asText());
+        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+        if (!scheme.equals("http") && !scheme.equals("https")) {
+            return "error: web_fetch supports only http and https URLs";
+        }
+        String host = uri.getHost();
+        if (host == null || isBlockedWebFetchHost(host)) {
+            return "error: web_fetch only fetches public HTTP/HTTPS hosts";
+        }
+        String format = args.path("format").asText("text").toLowerCase(Locale.ROOT);
+        int maxBytes = Math.min(Math.max(1, args.path("maxBytes").asInt(DEFAULT_WEB_FETCH_MAX_BYTES)),
+                HARD_WEB_FETCH_MAX_BYTES);
+        int offset = Math.max(0, args.path("offset").asInt(0));
+        int limit = Math.min(Math.max(1, args.path("limit").asInt(DEFAULT_WEB_FETCH_LIMIT)), HARD_WEB_FETCH_LIMIT);
+        String cacheKey = uri + "|" + (format.equals("html") ? "html" : "text") + "|" + maxBytes;
+        boolean refresh = args.path("refresh").asBoolean(false);
+        WebFetchResult result = refresh ? null : WEB_FETCH_CACHE.get(cacheKey);
+        if (result == null) {
+            result = fetchWebPage(uri, format, maxBytes);
+            WEB_FETCH_CACHE.put(cacheKey, result);
+        }
+        return result.window(offset, limit, !refresh);
+    }
+
+    private static WebFetchResult fetchWebPage(URI uri, String format, int maxBytes) throws IOException {
+        int redirects = 0;
+        while (true) {
+            Request request = new Request.Builder()
+                    .url(uri.toString())
+                    .header("User-Agent", "nanocode-deliverance/1.0")
+                    .get()
+                    .build();
+            try (okhttp3.Response response = WEB_FETCH_CLIENT.newCall(request).execute()) {
+                int status = response.code();
+                if (status >= HttpURLConnection.HTTP_MULT_CHOICE && status < HttpURLConnection.HTTP_BAD_REQUEST) {
+                    String location = response.header("Location");
+                    if (location == null || location.isBlank()) {
+                        return WebFetchResult.error(uri.toString(), format, "web_fetch redirect missing Location header");
+                    }
+                    if (++redirects > MAX_WEB_FETCH_REDIRECTS) {
+                        return WebFetchResult.error(uri.toString(), format,
+                                "web_fetch exceeded " + MAX_WEB_FETCH_REDIRECTS + " redirects");
+                    }
+                    uri = uri.resolve(location);
+                    String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+                    if (!scheme.equals("http") && !scheme.equals("https")) {
+                        return WebFetchResult.error(uri.toString(), format,
+                                "web_fetch redirect target must be http or https");
+                    }
+                    String host = uri.getHost();
+                    if (host == null || isBlockedWebFetchHost(host)) {
+                        return WebFetchResult.error(uri.toString(), format,
+                                "web_fetch redirect target is not a public HTTP/HTTPS host");
+                    }
+                    continue;
+                }
+                if (response.body() == null) {
+                    return new WebFetchResult(status, uri.toString(), redirects, format.equals("html") ? "html" : "text", false, "");
+                }
+                byte[] bytes = response.body().byteStream().readNBytes(maxBytes + 1);
+                boolean truncated = bytes.length > maxBytes;
+                int length = Math.min(bytes.length, maxBytes);
+                String body = new String(bytes, 0, length, StandardCharsets.UTF_8);
+                String content = format.equals("html") ? body : htmlToReadableText(body);
+                return new WebFetchResult(status, uri.toString(), redirects, format.equals("html") ? "html" : "text",
+                        truncated, content);
+            }
+        }
+    }
+
+    private record WebFetchResult(int status, String url, int redirects, String format, boolean truncated, String content) {
+        private static WebFetchResult error(String url, String format, String message) {
+            return new WebFetchResult(0, url, 0, format.equals("html") ? "html" : "text", false, "error: " + message);
+        }
+
+        private String window(int offset, int limit, boolean cached) {
+            int start = Math.min(offset, content.length());
+            int end = Math.min(content.length(), start + limit);
+            int nextOffset = end < content.length() ? end : -1;
+            return "status=" + status
+                    + "\nurl=" + url
+                    + (redirects > 0 ? "\nredirects=" + redirects : "")
+                    + "\nformat=" + format
+                    + "\ncached=" + cached
+                    + "\ntotalChars=" + content.length()
+                    + "\noffset=" + start
+                    + "\nlimit=" + limit
+                    + "\nnextOffset=" + nextOffset
+                    + (truncated ? "\n(source truncated by maxBytes before text conversion)" : "")
+                    + "\n" + content.substring(start, end);
+        }
+    }
+
+    private static String htmlToReadableText(String body) {
+        if (!body.regionMatches(true, 0, "<!DOCTYPE html", 0, "<!DOCTYPE html".length())
+                && !body.regionMatches(true, 0, "<html", 0, "<html".length())
+                && !body.contains("</")) {
+            return body;
+        }
+        String text = body
+                .replaceAll("(?is)<script[^>]*>.*?</script>", " ")
+                .replaceAll("(?is)<style[^>]*>.*?</style>", " ")
+                .replaceAll("(?is)<noscript[^>]*>.*?</noscript>", " ")
+                .replaceAll("(?i)</(p|div|section|article|header|main|h[1-6]|li|tr|table|pre|blockquote)>", "\n")
+                .replaceAll("(?i)<br\s*/?>", "\n")
+                .replaceAll("(?s)<[^>]+>", " ");
+        return decodeHtmlEntities(text)
+                .replace('\u00a0', ' ')
+                .replaceAll("[ \t\u000B\f\r]+", " ")
+                .replaceAll("\n[ \t]+", "\n")
+                .replaceAll("\n{3,}", "\n\n")
+                .strip();
+    }
+
+    private static String decodeHtmlEntities(String text) {
+        return text.replace("&amp;", "&")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&quot;", "\"")
+                .replace("&#39;", "'")
+                .replace("&apos;", "'");
+    }
+
+    private static boolean isBlockedWebFetchHost(String host) throws IOException {
+        String normalized = host.toLowerCase(Locale.ROOT);
+        if (normalized.equals("localhost") || normalized.endsWith(".localhost")) {
+            return true;
+        }
+        for (InetAddress address : InetAddress.getAllByName(host)) {
+            if (address.isAnyLocalAddress() || address.isLoopbackAddress() || address.isLinkLocalAddress()
+                    || address.isSiteLocalAddress() || address.isMulticastAddress()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static String toolBash(JsonNode args) throws IOException, InterruptedException {
         Process process = new ProcessBuilder("sh", "-c", args.path("command").asText())
                 .redirectErrorStream(true)
@@ -699,6 +863,12 @@ public final class NanocodeDeliverance {
         ObjectNode node = JSON.createObjectNode();
         node.put("name", name);
         node.put("type", type);
+        return node;
+    }
+
+    private static ObjectNode prop(String name, String type, String description) {
+        ObjectNode node = prop(name, type);
+        node.put("description", description);
         return node;
     }
 
