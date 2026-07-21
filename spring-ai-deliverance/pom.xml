@@ -11,7 +11,7 @@
   <dependencies>
     <dependency>
       <groupId>io.teknek.deliverance</groupId>
-      <artifactId>client</artifactId>
+      <artifactId>client-spring</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
@@ -31,14 +31,9 @@
       <optional>true</optional>
     </dependency>
     <dependency>
-      <groupId>com.fasterxml.jackson.core</groupId>
+      <groupId>tools.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
-      <version>${jackson.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>com.fasterxml.jackson.core</groupId>
-      <artifactId>jackson-annotations</artifactId>
-      <version>${jackson3.annotations.version}</version>
+      <version>3.1.5</version>
     </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>

@@ -65,6 +65,7 @@
         <module>web</module>
         <module>grace</module>
         <module>client</module>
+        <module>client-spring</module>
         <module>spring-ai-deliverance</module>
         <module>spring-ai-deliverance-embedded</module>
         <module>spring-ai-deliverance-demo</module>
