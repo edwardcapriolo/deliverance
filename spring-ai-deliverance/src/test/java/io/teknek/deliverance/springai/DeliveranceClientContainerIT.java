@@ -6,6 +6,7 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.images.builder.ImageFromDockerfile;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
+import tools.jackson.databind.ObjectMapper;
 
 import java.nio.file.Path;
 
@@ -24,7 +25,7 @@ class DeliveranceClientContainerIT {
             String baseUrl = "http://" + container.getHost() + ":" + container.getMappedPort(8080);
             DeliveranceChatModel model = new DeliveranceChatModel(
                     DeliveranceApi.create(baseUrl, null),
-                    new com.fasterxml.jackson.databind.ObjectMapper(),
+                    new ObjectMapper(),
                     DeliveranceChatOptions.builder()
                             .model(System.getProperty("deliverance.springai.testcontainer.model", "test-model"))
                             .temperature(0.0)

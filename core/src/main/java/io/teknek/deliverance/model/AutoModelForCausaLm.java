@@ -51,6 +51,9 @@ public class AutoModelForCausaLm {
         if (fetcher.getName().startsWith("Qwen")){
             b.withToolCallParser(new QwenToolCallParser());
         }
+        if (fetcher.getName().startsWith("antares") || fetcher.getName().startsWith("granite-4.0-h")) {
+            b.withToolCallParser(new QwenToolCallParser());
+        }
     }
 
     public static CausalLanguageModel fromPretrained(ModelFetcher fetcher){
@@ -146,6 +149,10 @@ public class AutoModelForCausaLm {
         public Builder withToolCallParser(ToolCallParser toolCallParser){
             this.toolCallParser = toolCallParser;
             return this;
+        }
+
+        ToolCallParser toolCallParserForTest() {
+            return toolCallParser;
         }
         public Builder withWrappedForkJoinPool(WrappedForkJoinPool pool){
             this.pool = pool;

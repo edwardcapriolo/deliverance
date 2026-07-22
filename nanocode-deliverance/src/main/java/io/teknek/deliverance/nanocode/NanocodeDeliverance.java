@@ -260,6 +260,7 @@ public final class NanocodeDeliverance {
 
     public void runConversationTurn(List<Map<String, Object>> messages, String cwd) throws Exception {
         int toolRound = 0;
+        int noToolRetries = 0;
         while (true) {
             CreateChatCompletionResponse response = chat(messages, cwd);
             if (response.getChoices() == null || response.getChoices().isEmpty()) {
@@ -282,8 +283,14 @@ public final class NanocodeDeliverance {
 
             List<ChatCompletionMessageToolCall> toolCalls = responseMessage.getToolCalls();
             if (toolCalls == null || toolCalls.isEmpty()) {
+                if (shouldRetryNoToolTurn(noToolRetries)) {
+                    messages.add(message("user", noToolRetryMessage(noToolRetries)));
+                    noToolRetries++;
+                    continue;
+                }
                 return;
             }
+            noToolRetries = 0;
             toolRound++;
             if (toolRound > sessionConfig.maxToolRounds) {
                 System.out.println(RED + "stopped: reached max tool rounds " + sessionConfig.maxToolRounds
@@ -295,12 +302,31 @@ public final class NanocodeDeliverance {
                 String id = toolCall.getId();
                 String name = toolCall.getFunction().getName();
                 JsonNode arguments = parseJsonObject(toolCall.getFunction().getArguments());
+                if ("submit_vulnerable_files".equals(name) || "submit_no_vulnerability_found".equals(name)) {
+                    System.out.println(GREEN + "submit " + name + RESET + " " + preview(arguments.toString(), 200));
+                    return;
+                }
                 System.out.println(GREEN + "tool " + name + RESET + " " + preview(arguments.toString(), 80));
                 String result = truncateToolResult(toolExecutor.run(name, arguments));
                 System.out.println(DIM + preview(result, 120) + RESET);
                 messages.add(toolMessage(id, result));
             }
         }
+    }
+
+    private boolean shouldRetryNoToolTurn(int noToolRetries) {
+        return config.toolsEnabled
+                && config.model.toLowerCase(Locale.ROOT).contains("antares")
+                && noToolRetries < sessionConfig.maxToolRounds;
+    }
+
+    private static String noToolRetryMessage(int retryIndex) {
+        if (retryIndex == 0) {
+            return "You must use tools to investigate before reporting. Start by calling terminal to examine the code. "
+                    + "When finished, submit file paths with submit_vulnerable_files or call submit_no_vulnerability_found.";
+        }
+        return "Continue investigating with terminal or read_file. If you have enough evidence, call submit_vulnerable_files. "
+                + "If you found nothing, call submit_no_vulnerability_found.";
     }
 
     @FunctionalInterface
@@ -329,7 +355,8 @@ public final class NanocodeDeliverance {
         Response<CreateChatCompletionResponse> response = chatApi.createChatCompletion(request).execute();
         if (!response.isSuccessful() || response.body() == null) {
             String error = response.errorBody() == null ? "" : response.errorBody().string();
-            throw new IOException("Deliverance HTTP " + response.code() + ": " + error);
+            throw new IOException("Deliverance HTTP " + response.code() + ": " + error
+                    + " requestModel=" + config.model + " baseUrl=" + config.baseUrl);
         }
         return response.body();
     }
@@ -362,7 +389,8 @@ public final class NanocodeDeliverance {
         try (okhttp3.Response response = httpClient.newCall(httpRequest).execute()) {
             if (!response.isSuccessful() || response.body() == null) {
                 String error = response.body() == null ? "" : response.body().string();
-                throw new IOException("Deliverance HTTP " + response.code() + ": " + error);
+                throw new IOException("Deliverance HTTP " + response.code() + ": " + error
+                        + " request=" + request.toString());
             }
             try (BufferedReader reader = new BufferedReader(response.body().charStream())) {
                 String line;
@@ -550,6 +578,18 @@ public final class NanocodeDeliverance {
 
         //);
         if (allowRiskyTools) {
+            tools.add(tool("terminal", "Antares-compatible alias for bash. Run a shell command with a 30 second timeout.", schema(
+                    props(prop("command", "string")),
+                    array("command"))));
+            tools.add(tool("read_file", "Antares-compatible file reader. Read a file with optional line bounds.", schema(
+                    props(prop("path", "string"), prop("start_line", "integer"), prop("end_line", "integer")),
+                    array("path"))));
+            tools.add(tool("submit_vulnerable_files", "Submit a ranked list of vulnerable file paths.", schema(
+                    props(prop("ranked_files", "array")),
+                    array("ranked_files"))));
+            tools.add(tool("submit_no_vulnerability_found", "Declare that no matching vulnerability was found.", schema(
+                    props(),
+                    array())));
             tools.add(tool("bash", "Risky/eval tool. Run a shell command with a 30 second timeout.", schema(
                     props(prop("command", "string")),
                     array("command"))));
@@ -567,6 +607,10 @@ public final class NanocodeDeliverance {
         return runTool(name, args, false, null);
     }
 
+    static String runToolForTest(String name, JsonNode args, boolean allowRiskyTools, String javaSandboxImage) {
+        return runTool(name, args, allowRiskyTools, javaSandboxImage);
+    }
+
     private static String runTool(String name, JsonNode args, boolean allowRiskyTools, String javaSandboxImage) {
         try {
             return switch (name) {
@@ -577,6 +621,8 @@ public final class NanocodeDeliverance {
                 case "grep" -> toolGrep(args);
                 case "web_fetch" -> toolWebFetch(args);
                 case "java_sandbox" -> JavaSandboxTool.run(args, javaSandboxImage);
+                case "terminal" -> allowRiskyTools ? toolBash(args) : "error: terminal disabled; set allowRiskyTools=true in the config file";
+                case "read_file" -> toolRead(readFileArgs(args));
                 case "bash" -> allowRiskyTools ? toolBash(args) : "error: bash disabled; set allowRiskyTools=true in the config file";
                 default -> "error: unknown tool " + name;
             };
@@ -594,6 +640,20 @@ public final class NanocodeDeliverance {
             out.append(String.format(Locale.ROOT, "%4d| %s%n", i + 1, lines.get(i)));
         }
         return out.toString();
+    }
+
+    private static JsonNode readFileArgs(JsonNode args) {
+        ObjectNode mapped = JSON.createObjectNode();
+        mapped.put("path", args.path("path").asText());
+        if (args.has("start_line")) {
+            mapped.put("offset", Math.max(0, args.path("start_line").asInt(1) - 1));
+        }
+        if (args.has("end_line") && args.has("start_line")) {
+            int start = Math.max(1, args.path("start_line").asInt(1));
+            int end = Math.max(start, args.path("end_line").asInt(start));
+            mapped.put("limit", end - start + 1);
+        }
+        return mapped;
     }
 
     private static String toolWrite(JsonNode args) throws IOException {

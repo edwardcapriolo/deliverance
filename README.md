@@ -29,11 +29,13 @@ Generation:
 - qwen2
 - qwen3
 - gpt2
+- granitemoehybrid / Granite 4.0
 
 ### Learning and Developer docs
 
 - [0.0.10 release notes](release-notes/0.0.10.md) Detailed notes for the Qwen3, JQ4, tensor-parallel, GPU, nanocode, and benchmarking release
 - [Qwen3 support](core/qwen3_support.md) Documents Qwen3 integration status, tests, and limitations
+- [Granite 4.0 / GraniteMoeHybrid support](core/granite_support.md) Documents dense Antares and hybrid Granite support, Mamba/MoE notes, and current limitations
 - [Gemma4 support](core/gemma4_support.md) High-level status, usage, and notes for Gemma 4 support in Deliverance
 - [LoRA/PEFT adapter support](core/lora_support.md) Explains what LoRA adapters are, why Deliverance is adding support, and current implementation status
 - [Grace tokenizer module](grace/README.md) Explains Deliverance's fuller-featured tokenizer path and how to use it

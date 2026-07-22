@@ -11,6 +11,7 @@ import io.teknek.deliverance.model.gemma2.Gemma2ModelType;
 import io.teknek.deliverance.model.gemma4.Gemma4ModelType;
 import io.teknek.deliverance.model.gemma3.Gemma3ModelType;
 import io.teknek.deliverance.model.gpt2.Gpt2ModelType;
+import io.teknek.deliverance.model.granitemoehybrid.GraniteMoeHybridModelType;
 import io.teknek.deliverance.model.llama.LlamaModelType;
 import io.teknek.deliverance.model.mistral.MistralModelType;
 import io.teknek.deliverance.model.mixtral.MixtralModelType;
@@ -64,6 +65,7 @@ public class ModelSupport {
         registry.putIfAbsent("MISTRAL", new MistralModelType());
         registry.putIfAbsent("GPT2", new Gpt2ModelType());
         registry.putIfAbsent("MIXTRAL", new MixtralModelType());
+        registry.putIfAbsent("GRANITEMOEHYBRID", new GraniteMoeHybridModelType());
     }
 
     public static void addModel(String modelName, ModelType t){

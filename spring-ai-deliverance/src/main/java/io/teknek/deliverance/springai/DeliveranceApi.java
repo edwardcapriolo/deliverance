@@ -1,38 +1,34 @@
 package io.teknek.deliverance.springai;
 
-import io.teknek.deliverance.client.api.ChatApi;
-import io.teknek.deliverance.client.core.ApiClient;
-import io.teknek.deliverance.client.model.CreateChatCompletionRequest;
-import io.teknek.deliverance.client.model.CreateChatCompletionResponse;
-import okhttp3.Interceptor;
-import retrofit2.Response;
+import java.time.Duration;
 
-import java.io.IOException;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import io.teknek.deliverance.client.spring.api.ChatApi;
+import io.teknek.deliverance.client.spring.core.ApiClient;
+import io.teknek.deliverance.client.spring.model.CreateChatCompletionRequest;
+import io.teknek.deliverance.client.spring.model.CreateChatCompletionResponse;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.json.JsonMapper;
 
 public interface DeliveranceApi {
     CreateChatCompletionResponse createChatCompletion(CreateChatCompletionRequest request);
 
     static DeliveranceApi create(String baseUrl, String apiKey) {
-        ApiClient apiClient = new ApiClient();
-        String normalized = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
-        apiClient.getAdapterBuilder().baseUrl(normalized);
+        ApiClient apiClient = new ApiClient(jsonMapper(), ApiClient.createDefaultDateFormat()).setBasePath(baseUrl.endsWith("/")
+                ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl);
         if (apiKey != null && !apiKey.isBlank()) {
-            apiClient.getOkBuilder().addInterceptor((Interceptor) chain -> chain.proceed(chain.request()
-                    .newBuilder()
-                    .header("Authorization", "Bearer " + apiKey)
-                    .build()));
+            apiClient.addDefaultHeader("Authorization", "Bearer " + apiKey);
         }
-        ChatApi chatApi = apiClient.createService(ChatApi.class);
-        return request -> {
-            try {
-                Response<CreateChatCompletionResponse> response = chatApi.createChatCompletion(request).execute();
-                if (!response.isSuccessful()) {
-                    throw new IllegalStateException("Deliverance chat completion failed status=" + response.code());
-                }
-                return response.body();
-            } catch (IOException e) {
-                throw new IllegalStateException("Deliverance chat completion request failed", e);
-            }
-        };
+        ChatApi chatApi = new ChatApi(apiClient);
+        return request -> chatApi.createChatCompletion(request).block(Duration.ofMinutes(5));
+    }
+
+    static JsonMapper jsonMapper() {
+        return JsonMapper.builder()
+                .defaultDateFormat(ApiClient.createDefaultDateFormat())
+                .changeDefaultPropertyInclusion(value -> JsonInclude.Value.construct(JsonInclude.Include.NON_NULL,
+                        JsonInclude.Include.NON_NULL))
+                .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                .build();
     }
 }

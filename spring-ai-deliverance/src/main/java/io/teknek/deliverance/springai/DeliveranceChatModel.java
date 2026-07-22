@@ -1,12 +1,15 @@
 package io.teknek.deliverance.springai;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import io.teknek.deliverance.client.model.ChatCompletionRequestMessage;
-import io.teknek.deliverance.client.model.CreateChatCompletionRequest;
-import io.teknek.deliverance.client.model.CreateChatCompletionResponse;
+import io.teknek.deliverance.client.spring.model.ChatCompletionMessageToolCall;
+import io.teknek.deliverance.client.spring.model.ChatCompletionMessageToolCallFunction;
+import io.teknek.deliverance.client.spring.model.ChatCompletionRequestMessage;
+import io.teknek.deliverance.client.spring.model.CreateChatCompletionRequest;
+import io.teknek.deliverance.client.spring.model.CreateChatCompletionResponse;
+import tools.jackson.databind.ObjectMapper;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.MessageType;
+import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
@@ -50,7 +53,7 @@ public class DeliveranceChatModel implements ChatModel {
                 .stream(stream);
         List<ChatCompletionRequestMessage> messages = new ArrayList<>();
         for (Message message : prompt.getInstructions()) {
-            messages.add(new ChatCompletionRequestMessage().role(role(message)).content(message.getText()));
+            messages.addAll(toMessages(message));
         }
         request.messages(messages);
         if (options.getTemperature() != null) {
@@ -93,12 +96,49 @@ public class DeliveranceChatModel implements ChatModel {
         return request;
     }
 
+    private List<ChatCompletionRequestMessage> toMessages(Message message) {
+        if (message instanceof ToolResponseMessage toolResponseMessage) {
+            return toolResponseMessage.getResponses().stream()
+                    .map(response -> new ChatCompletionRequestMessage().role("tool")
+                            .content(response.responseData())
+                            .toolCallId(response.id()))
+                    .toList();
+        }
+        ChatCompletionRequestMessage requestMessage = new ChatCompletionRequestMessage()
+                .role(role(message))
+                .content(message.getText());
+        if (message instanceof AssistantMessage assistantMessage && !assistantMessage.getToolCalls().isEmpty()) {
+            requestMessage.toolCalls(assistantMessage.getToolCalls().stream().map(this::toToolCall).toList());
+        }
+        return List.of(requestMessage);
+    }
+
+    private ChatCompletionMessageToolCall toToolCall(AssistantMessage.ToolCall toolCall) {
+        return new ChatCompletionMessageToolCall().id(toolCall.id())
+                .type(toolCall.type())
+                .function(new ChatCompletionMessageToolCallFunction().name(toolCall.name()).arguments(toolCall.arguments()));
+    }
+
     private DeliveranceChatOptions mergeOptions(ChatOptions promptOptions) {
         if (promptOptions == null) {
             return defaultOptions;
         }
         if (promptOptions instanceof DeliveranceChatOptions deliveranceOptions) {
-            return deliveranceOptions;
+            return DeliveranceChatOptions.builder()
+                    .model(deliveranceOptions.getModel() == null ? defaultOptions.getModel() : deliveranceOptions.getModel())
+                    .temperature(deliveranceOptions.getTemperature() == null ? defaultOptions.getTemperature() : deliveranceOptions.getTemperature())
+                    .maxTokens(deliveranceOptions.getMaxTokens() == null ? defaultOptions.getMaxTokens() : deliveranceOptions.getMaxTokens())
+                    .topP(deliveranceOptions.getTopP() == null ? defaultOptions.getTopP() : deliveranceOptions.getTopP())
+                    .topK(deliveranceOptions.getTopK() == null ? defaultOptions.getTopK() : deliveranceOptions.getTopK())
+                    .stopSequences(deliveranceOptions.getStopSequences() == null ? defaultOptions.getStopSequences() : deliveranceOptions.getStopSequences())
+                    .seed(deliveranceOptions.getSeed() == null ? defaultOptions.getSeed() : deliveranceOptions.getSeed())
+                    .logprobs(deliveranceOptions.getLogprobs() == null ? defaultOptions.getLogprobs() : deliveranceOptions.getLogprobs())
+                    .topLogprobs(deliveranceOptions.getTopLogprobs() == null ? defaultOptions.getTopLogprobs() : deliveranceOptions.getTopLogprobs())
+                    .xtcThreshold(deliveranceOptions.getXtcThreshold() == null ? defaultOptions.getXtcThreshold() : deliveranceOptions.getXtcThreshold())
+                    .xtcProbability(deliveranceOptions.getXtcProbability() == null ? defaultOptions.getXtcProbability() : deliveranceOptions.getXtcProbability())
+                    .guidedRegex(deliveranceOptions.getGuidedRegex() == null ? defaultOptions.getGuidedRegex() : deliveranceOptions.getGuidedRegex())
+                    .guidedJson(deliveranceOptions.getGuidedJson() == null ? defaultOptions.getGuidedJson() : deliveranceOptions.getGuidedJson())
+                    .build();
         }
         return DeliveranceChatOptions.builder()
                 .model(promptOptions.getModel() == null ? defaultOptions.getModel() : promptOptions.getModel())

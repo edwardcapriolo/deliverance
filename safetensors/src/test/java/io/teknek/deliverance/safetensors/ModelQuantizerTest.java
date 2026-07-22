@@ -95,6 +95,12 @@ public class ModelQuantizerTest {
         assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("model.layers.3.block_sparse_moe.experts.0.w1.weight"));
         assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("model.layers.3.block_sparse_moe.experts.7.w2.weight"));
         assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("model.layers.3.block_sparse_moe.experts.7.w3.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("model.layers.3.shared_mlp.input_linear.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("model.layers.3.shared_mlp.output_linear.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("model.layers.3.block_sparse_moe.input_linear.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("model.layers.3.block_sparse_moe.output_linear.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("model.layers.3.mamba.in_proj.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("model.layers.3.mamba.out_proj.weight"));
 
         assertFalse(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("model.embed_tokens.weight"));
         assertFalse(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("lm_head.weight"));
@@ -160,6 +166,33 @@ public class ModelQuantizerTest {
             assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.block_sparse_moe.experts.0.w1.weight").dType);
             assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.block_sparse_moe.experts.0.w2.weight").dType);
             assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.block_sparse_moe.experts.0.w3.weight").dType);
+        }
+    }
+
+    @Test
+    public void quantizesGraniteMoeHybridProjectionWeights() throws Exception {
+        Path sourceDir = tempDir.resolve("source-granite");
+        Path outputDir = tempDir.resolve("output-granite");
+        Files.createDirectories(sourceDir);
+        Files.writeString(sourceDir.resolve("config.json"), "{\"model_type\":\"granitemoehybrid\"}");
+
+        Map<String, AbstractTensor> tensors = new LinkedHashMap<>();
+        tensors.put("model.layers.0.shared_mlp.input_linear.weight", vector(1.0f));
+        tensors.put("model.layers.0.shared_mlp.output_linear.weight", vector(2.0f));
+        tensors.put("model.layers.0.mamba.in_proj.weight", vector(3.0f));
+        tensors.put("model.layers.0.mamba.out_proj.weight", vector(4.0f));
+        tensors.put("model.layers.0.mamba.conv1d.weight", conv3d());
+        SafeTensorWriter.write(sourceDir.resolve("model.safetensors"), Map.of(), tensors);
+
+        new ModelQuantizer(256).quantizeModelDirectory(sourceDir, outputDir);
+
+        try (DefaultWeightLoader loader = new DefaultWeightLoader(outputDir.toFile())) {
+            assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.shared_mlp.input_linear.weight").dType);
+            assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.shared_mlp.output_linear.weight").dType);
+            assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.mamba.in_proj.weight").dType);
+            assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.mamba.out_proj.weight").dType);
+            assertEquals(DType.F32, loader.tensorInfoMap().get("model.layers.0.mamba.conv1d.weight").dType);
+            assertTrue(loader.isWeightPresent("model.layers.0.shared_mlp.input_linear.weight.qb"));
         }
     }
 
@@ -374,6 +407,14 @@ public class ModelQuantizerTest {
         FloatBufferTensor tensor = new FloatBufferTensor(1, 32);
         for (int i = 0; i < 32; i++) {
             tensor.set(offset + i, 0, i);
+        }
+        return tensor;
+    }
+
+    private static FloatBufferTensor conv3d() {
+        FloatBufferTensor tensor = new FloatBufferTensor(2, 2, 8);
+        for (int i = 0; i < 32; i++) {
+            tensor.set(i, 0, i / 8, i % 8);
         }
         return tensor;
     }

@@ -6,6 +6,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import tools.jackson.databind.ObjectMapper;
 
 @AutoConfiguration
 @EnableConfigurationProperties(DeliveranceConnectionProperties.class)
@@ -19,6 +20,6 @@ public class DeliveranceAutoConfiguration {
                 .model(properties.getModel())
                 .build();
         return new DeliveranceChatModel(DeliveranceApi.create(properties.getBaseUrl(), properties.getApiKey()),
-                new com.fasterxml.jackson.databind.ObjectMapper(), options);
+                new ObjectMapper(), options);
     }
 }

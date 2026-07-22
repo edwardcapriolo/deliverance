@@ -13,6 +13,50 @@ servers:
   - url: http://localhost:8080
 
 paths:
+  /v1/completions:
+    post:
+      operationId: createCompletion
+      tags:
+        - Completions
+      summary: Creates a legacy text completion for a raw prompt.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCompletionRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateCompletionResponse"
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/CreateCompletionResponse"
+  /completions:
+    post:
+      operationId: createCompletionLegacyPath
+      tags:
+        - Completions
+      summary: Creates a legacy text completion for a raw prompt.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCompletionRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateCompletionResponse"
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/CreateCompletionResponse"
   /chat/completions:
     post:
       operationId: createChatCompletion
@@ -140,10 +184,10 @@ components:
       type: object
       properties:
         model:
-          anyOf:
-            - type: string
-            - type: string
-              enum: ["gemma2b"]
+          type: string
+        prompt:
+          description: Raw prompt text to generate from. Deliverance supports the string form for this compatibility endpoint.
+          type: string
 
         max_tokens:
           type: integer
@@ -161,20 +205,13 @@ components:
             Uses as a value to control the generation of data
         stop:
           description:
-            Text that will stop generation
+            Text sequences that will stop generation. Deliverance's generated clients support the array form for this compatibility endpoint.
           default: null
           nullable: true
-          oneOf:
-            - type: string
-              default: <|endoftext|>
-              example: "\n"
-              nullable: true
-            - type: array
-              minItems: 1
-              maxItems: 4
-              items:
-                type: string
-                example: '["\n"]'
+          type: array
+          minItems: 1
+          items:
+            type: string
         stream:
           description: >
             Whether to stream back partial progress. If set, tokens will be sent as data-only [server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events#Event_stream_format)
@@ -194,6 +231,12 @@ components:
           nullable: true
           description:
             Temperature passed to model both.
+        top_p:
+          description: nucleus sampling probability mass. Only applies when temperature is non-zero.
+          type: number
+          minimum: 0
+          maximum: 1
+          nullable: true
 
 
       required:

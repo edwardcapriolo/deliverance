@@ -63,6 +63,31 @@ class NanocodeDeliveranceRequestSizeTest {
     }
 
     @Test
+    void terminalAliasIsAdvertisedOnlyWhenRiskyToolsAreEnabled() {
+        NanocodeDeliverance safeAgent = new NanocodeDeliverance(new NanocodeDeliverance.Config(
+                "http://localhost:8085", "test", null, 256, 2000, 3, 0.0d, true, false, true,
+                "eclipse-temurin:25-jdk", true, "You are a concise coding assistant.", "small",
+                Map.of("small", "Reason briefly. Keep reasoning under 2 sentences."), false));
+        NanocodeDeliverance riskyAgent = new NanocodeDeliverance(new NanocodeDeliverance.Config(
+                "http://localhost:8085", "test", null, 256, 2000, 3, 0.0d, true, true, true,
+                "eclipse-temurin:25-jdk", true, "You are a concise coding assistant.", "small",
+                Map.of("small", "Reason briefly. Keep reasoning under 2 sentences."), false));
+
+        assertTrue(safeAgent.toolSchema().stream()
+                .noneMatch(tool -> "terminal".equals(tool.getFunction().getName())));
+        assertTrue(riskyAgent.toolSchema().stream()
+                .anyMatch(tool -> "terminal".equals(tool.getFunction().getName())));
+    }
+
+    @Test
+    void terminalAliasRoutesToShellExecutorWhenEnabled() throws Exception {
+        String result = NanocodeDeliverance.runToolForTest("terminal", JSON.readTree("{\"command\":\"printf antares\"}"),
+                true, null);
+
+        assertEquals("antares", result);
+    }
+
+    @Test
     void webFetchRejectsNonPublicUrls() throws Exception {
         assertTrue(NanocodeDeliverance.executeTool("web_fetch", JSON.readTree("{\"url\":\"file:///etc/passwd\"}"))
                 .contains("supports only http and https"));

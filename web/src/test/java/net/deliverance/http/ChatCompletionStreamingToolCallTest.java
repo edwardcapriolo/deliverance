@@ -11,6 +11,7 @@ import io.teknek.deliverance.model.ChatCompletionTool;
 import io.teknek.deliverance.model.CausalLanguageModel;
 import io.teknek.deliverance.model.CreateChatCompletionRequest;
 import io.teknek.deliverance.model.GenerateEvent;
+import io.teknek.deliverance.model.ReasoningTextSplitter;
 import io.teknek.deliverance.model.ReasoningFieldNames;
 import io.teknek.deliverance.nanocode.NanocodeDeliverance;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
@@ -250,15 +251,37 @@ class ChatCompletionStreamingToolCallTest {
 
     @Test
     void reasoningStreamSplitterConsumesSplitClosingThinkTag() {
-        ChatCompletionController.ReasoningStreamSplitter splitter = new ChatCompletionController.ReasoningStreamSplitter();
+        ReasoningTextSplitter splitter = new ReasoningTextSplitter();
 
         assertEquals("", splitter.accept("<think>").content());
         assertEquals("reason", splitter.accept("reason</").reasoning());
         assertEquals("", splitter.accept("think").reasoning());
-        ChatCompletionController.ReasoningStreamPart afterClose = splitter.accept(">answer");
+        ReasoningTextSplitter.Part afterClose = splitter.accept(">answer");
 
         assertEquals("", afterClose.reasoning());
         assertEquals("answer", afterClose.content());
+    }
+
+    @Test
+    void reasoningStreamSplitterStartsInsideReasoningWhenPromptAlreadyOpenedThink() {
+        ReasoningTextSplitter splitter = new ReasoningTextSplitter(true);
+
+        ReasoningTextSplitter.Part first = splitter.accept("I'll inspect files.");
+        ReasoningTextSplitter.Part second = splitter.accept("</");
+        ReasoningTextSplitter.Part third = splitter.accept("think>ArchiveController.java");
+
+        assertEquals("", first.content());
+        assertEquals("I'll inspect files.", first.reasoning());
+        assertEquals("", second.content());
+        assertEquals("", second.reasoning());
+        assertEquals("ArchiveController.java", third.content());
+        assertEquals("", third.reasoning());
+    }
+
+    @Test
+    void promptEndsInsideReasoningDetectsAntaresGenerationMarker() {
+        assertTrue(ReasoningTextSplitter.promptEndsInsideReasoning("<|start_of_role|>assistant<|end_of_role|><think>\n"));
+        assertFalse(ReasoningTextSplitter.promptEndsInsideReasoning("<|start_of_role|>assistant<|end_of_role|>"));
     }
 
     private static void emitChunks(GenerateEvent event, String generated) {
