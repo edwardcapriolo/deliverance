@@ -92,7 +92,7 @@ class AntaresFetchIT {
 
     @Test
     void antares1bJq4LoadsAndGeneratesWhenCached() {
-        ModelFetcher fetch = new ModelFetcher("fdtn-ai", "antares-1b-JQ4");
+        ModelFetcher fetch = new ModelFetcher("fdtn-ai", "antares-1b-JQ4-packed");
         Assumptions.assumeTrue(fetch.pathForModel().toFile().isDirectory(),
                 "Quantized Antares cache is not present: " + fetch.pathForModel());
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch).buildLocalTransformerModel()) {
