@@ -35,6 +35,7 @@ Generation:
 - [0.0.10 release notes](release-notes/0.0.10.md) Detailed notes for the Qwen3, JQ4, tensor-parallel, GPU, nanocode, and benchmarking release
 - [Qwen3 support](core/qwen3_support.md) Documents Qwen3 integration status, tests, and limitations
 - [Gemma4 support](core/gemma4_support.md) High-level status, usage, and notes for Gemma 4 support in Deliverance
+- [LoRA/PEFT adapter support](core/lora_support.md) Explains what LoRA adapters are, why Deliverance is adding support, and current implementation status
 - [Grace tokenizer module](grace/README.md) Explains Deliverance's fuller-featured tokenizer path and how to use it
 - [Tokenizer showdown](grace/tokenizer_showdown.md) Compares Grace Java tokenization against Hugging Face's Rust-backed tokenizers
 - [Inference engine flow](core/inference_flow.md) Explains the transformations and flows http/prompt/jinja/ etc.
