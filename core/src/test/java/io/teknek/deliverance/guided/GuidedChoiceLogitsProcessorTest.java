@@ -170,6 +170,86 @@ class GuidedChoiceLogitsProcessorTest {
         }
     }
 
+    @Test
+    void masksTokensThatDoNotContinueGuidedGrammar() {
+        TinyChoiceModel model = new TinyChoiceModel();
+        try (AbstractTensor logits = new FloatBufferTensor(1, 10)) {
+            for (int token = 1; token < 10; token++) {
+                logits.set(10.0f * token, 0, token);
+            }
+            ResponseContext responseContext = new ResponseContext(model);
+            String grammar = """
+                    root ::= "{" field "}"
+                    field ::= "\\\"foo\\\"" ":" "4"
+                    """;
+
+            LogitsProcessor processor = LogitsProcessorFactory.create(model,
+                    new GeneratorParameters().withGuidedGrammar(grammar)).orElseThrow();
+            processor.accept(5, responseContext);
+            processor.accept(6, responseContext);
+            processor.accept(7, responseContext);
+            processor.process(logits, responseContext);
+
+            for (int token = 1; token < 10; token++) {
+                if (token == 8) {
+                    assertEquals(80.0f, logits.get(0, token));
+                } else {
+                    assertEquals(Float.NEGATIVE_INFINITY, logits.get(0, token));
+                }
+            }
+        } finally {
+            model.close();
+        }
+    }
+
+    @Test
+    void guidedGrammarUsesOptionalStartRule() {
+        TinyChoiceModel model = new TinyChoiceModel();
+        try {
+            String grammar = "document ::= " + quote("dog") + " " + quote("ma");
+
+            assertTrue(LogitsProcessorFactory.create(model, new GeneratorParameters()
+                    .withGuidedGrammar(grammar)
+                    .withGuidedGrammarStart("document")).isPresent());
+        } finally {
+            model.close();
+        }
+    }
+
+    @Test
+    void cachesIndexesForRepeatedGuidedGrammarRequests() {
+        TinyChoiceModel model = new TinyChoiceModel();
+        try {
+            GeneratorParameters parameters = new GeneratorParameters().withGuidedGrammar("root ::= " + quote("dog"));
+
+            LogitsProcessorFactory.create(model, parameters).orElseThrow();
+            LogitsProcessorFactory.create(model, parameters).orElseThrow();
+
+            assertEquals(1, model.getMetricRegistry().meter("guided.index_cache.miss").getCount());
+            assertEquals(1, model.getMetricRegistry().meter("guided.index_cache.hit").getCount());
+        } finally {
+            model.close();
+        }
+    }
+
+    @Test
+    void rejectsGrammarCombinedWithOtherGuidanceModes() {
+        TinyChoiceModel model = new TinyChoiceModel();
+        try {
+            GeneratorParameters parameters = new GeneratorParameters()
+                    .withGuidedGrammar("root ::= " + quote("dog"))
+                    .withGuidedRegex("dog");
+
+            assertThrows(IllegalArgumentException.class, () -> LogitsProcessorFactory.create(model, parameters));
+        } finally {
+            model.close();
+        }
+    }
+
+    private static String quote(String value) {
+        return "\"" + value + "\"";
+    }
+
     private static final class TinyChoiceModel extends AbstractModel {
         private static final Config CONFIG = new Config(16, 4, 8, 1, 1, 1, 1.0e-6f,
                 10, 0, List.of(0), ActivationFunction.Type.SILU, null, Map.of());

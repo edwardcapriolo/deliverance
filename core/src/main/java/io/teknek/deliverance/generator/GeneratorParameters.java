@@ -18,6 +18,8 @@ public class GeneratorParameters {
     public Optional<List<String>> guidedChoice = Optional.empty();
     public Optional<String> guidedRegex = Optional.empty();
     public Optional<String> guidedJson = Optional.empty();
+    public Optional<String> guidedGrammar = Optional.empty();
+    public Optional<String> guidedGrammarStart = Optional.empty();
     public Optional<Integer> maxTokens = Optional.empty();
     public Optional<Boolean> logProbs = Optional.empty();
     public Optional<Integer> topLogProbs = Optional.empty();
@@ -46,6 +48,16 @@ public class GeneratorParameters {
 
     public GeneratorParameters withGuidedJson(String jsonSchema){
         guidedJson = Optional.of(jsonSchema);
+        return this;
+    }
+
+    public GeneratorParameters withGuidedGrammar(String grammar){
+        guidedGrammar = Optional.of(grammar);
+        return this;
+    }
+
+    public GeneratorParameters withGuidedGrammarStart(String start){
+        guidedGrammarStart = Optional.of(start);
         return this;
     }
 

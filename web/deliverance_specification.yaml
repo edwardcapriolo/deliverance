@@ -723,6 +723,16 @@ components:
           type: object
           nullable: true
           additionalProperties: true
+        guided_grammar:
+          description: |
+            Constrains generated output to match the supplied EBNF grammar using guided decoding. The grammar start rule
+            defaults to `root`; use `guided_grammar_start` to select another rule for external grammars.
+          type: string
+          nullable: true
+        guided_grammar_start:
+          description: Optional start rule for `guided_grammar`. Defaults to `root` when omitted.
+          type: string
+          nullable: true
         xtc_threshold:
           type: number
           minimum: 0

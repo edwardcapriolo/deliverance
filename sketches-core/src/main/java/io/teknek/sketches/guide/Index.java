@@ -29,10 +29,10 @@ import java.util.Set;
  * the regex.</p>
  */
 public final class Index {
-    private final int initialState;
-    private final Map<Integer, Map<Integer, Integer>> transitions;
-    private final Set<Integer> finalStates;
-    private final Set<Integer> eosTokenIds;
+    private int initialState;
+    private Map<Integer, Map<Integer, Integer>> transitions;
+    private Set<Integer> finalStates;
+    private Set<Integer> eosTokenIds;
 
     public Index(String regex, Vocabulary vocabulary) {
         this(regex, vocabulary, SketchesSettings.DEFAULT);
@@ -40,13 +40,25 @@ public final class Index {
 
     public Index(String regex, Vocabulary vocabulary, SketchesSettings settings) {
         Objects.requireNonNull(regex, "regex");
-        Objects.requireNonNull(vocabulary, "vocabulary");
-        Objects.requireNonNull(settings, "settings");
         if (regex.length() > settings.maxRegexLength()) {
             throw new IllegalArgumentException("guided_regex length " + regex.length()
                     + " exceeds maxRegexLength " + settings.maxRegexLength());
         }
-        Automaton automaton = new RegExp(regex).toAutomaton();
+        initialize(new RegExp(regex).toAutomaton(), vocabulary, settings, "guided_regex");
+    }
+
+    public Index(Automaton automaton, Vocabulary vocabulary) {
+        this(automaton, vocabulary, SketchesSettings.DEFAULT);
+    }
+
+    public Index(Automaton automaton, Vocabulary vocabulary, SketchesSettings settings) {
+        initialize(automaton, vocabulary, settings, "guided_grammar");
+    }
+
+    private void initialize(Automaton automaton, Vocabulary vocabulary, SketchesSettings settings, String label) {
+        Objects.requireNonNull(automaton, "automaton");
+        Objects.requireNonNull(vocabulary, "vocabulary");
+        Objects.requireNonNull(settings, "settings");
         State initial = automaton.getInitialState();
         this.eosTokenIds = Set.copyOf(vocabulary.getEosTokenIds());
 
@@ -62,7 +74,7 @@ public final class Index {
 
         while (!queue.isEmpty()) {
             if (stateIds.size() > settings.maxIndexStates()) {
-                throw new IllegalArgumentException("guided_regex index exceeded maxIndexStates "
+                throw new IllegalArgumentException(label + " index exceeded maxIndexStates "
                         + settings.maxIndexStates());
             }
             State state = queue.remove();

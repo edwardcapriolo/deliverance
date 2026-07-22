@@ -80,6 +80,12 @@ final class GenerationEngine {
      */
     Response generate(AbstractModel model, GenerationBackend backend, UUID sessionId, PromptContext promptContext,
             GeneratorParameters generatorParameters, GenerateEvent eventFired) {
+        return generate(model, backend, new ModelTokenSampler(model), sessionId, promptContext, generatorParameters,
+                eventFired);
+    }
+
+    Response generate(AbstractModel model, GenerationBackend backend, TokenSampler tokenSampler, UUID sessionId,
+            PromptContext promptContext, GeneratorParameters generatorParameters, GenerateEvent eventFired) {
         try (Timer.Context ignoredRequest = InferenceProfiler.timer(model.getMetricRegistry(), "generation.request").time()) {
         long generationStartNanos = System.nanoTime();
         long timeToFirstTokenNanos = 0L;
@@ -118,7 +124,7 @@ final class GenerationEngine {
                 throwIfInterrupted();
                 SamplerReturn nextSamplerRet;
                 try (Timer.Context ignoredSample = InferenceProfiler.timer(model.getMetricRegistry(), "generation.first_sample").time()) {
-                    nextSamplerRet = model.createNextToken(generatorParameters, logits, prefillOutput, responseContext,
+                    nextSamplerRet = tokenSampler.firstToken(generatorParameters, logits, prefillOutput, responseContext,
                             random, temperature, logitsProcessor);
                 }
                 int next = nextSamplerRet.token;
@@ -142,7 +148,7 @@ final class GenerationEngine {
                     }
                     SamplerReturn nextSample;
                     try (Timer.Context ignoredDecodeSample = InferenceProfiler.timer(model.getMetricRegistry(), "generation.decode_sample").time()) {
-                        nextSample = model.createNextTokenLoop(generatorParameters, output, logits.tensor,
+                        nextSample = tokenSampler.nextToken(generatorParameters, output, logits.tensor,
                                 responseContext, random, temperature, logitsProcessor);
                     }
                     next = nextSample.token;

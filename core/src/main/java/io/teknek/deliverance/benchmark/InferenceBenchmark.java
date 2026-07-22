@@ -839,10 +839,16 @@ public final class InferenceBenchmark {
         if (node.has("guided_json") && !node.get("guided_json").isNull()) {
             guidedJson = JsonUtils.om.writeValueAsString(node.get("guided_json"));
         }
-        Guidance guidance = new Guidance(guidedChoice, guidedRegex, guidedJson);
+        String guidedGrammar = node.path("guided_grammar").isMissingNode() || node.path("guided_grammar").isNull()
+                ? null : node.path("guided_grammar").asText();
+        String guidedGrammarStart = node.path("guided_grammar_start").isMissingNode()
+                || node.path("guided_grammar_start").isNull()
+                ? null : node.path("guided_grammar_start").asText();
+        Guidance guidance = new Guidance(guidedChoice, guidedRegex, guidedJson, guidedGrammar, guidedGrammarStart);
         int modes = (guidance.guidedChoice.isEmpty() ? 0 : 1)
                 + (guidance.guidedRegex == null ? 0 : 1)
-                + (guidance.guidedJson == null ? 0 : 1);
+                + (guidance.guidedJson == null ? 0 : 1)
+                + (guidance.guidedGrammar == null ? 0 : 1);
         if (modes > 1) {
             throw new IllegalArgumentException("Benchmark case " + node.path("question_id").asText()
                     + " sets multiple guided modes");
@@ -860,6 +866,12 @@ public final class InferenceBenchmark {
         }
         if (guidance.guidedJson != null) {
             parameters.withGuidedJson(guidance.guidedJson);
+        }
+        if (guidance.guidedGrammar != null) {
+            parameters.withGuidedGrammar(guidance.guidedGrammar);
+            if (guidance.guidedGrammarStart != null) {
+                parameters.withGuidedGrammarStart(guidance.guidedGrammarStart);
+            }
         }
     }
 
@@ -907,6 +919,12 @@ public final class InferenceBenchmark {
         if (guidance.guidedJson != null) {
             guidanceNode.set("guided_json", JsonUtils.om.readTree(guidance.guidedJson));
         }
+        if (guidance.guidedGrammar != null) {
+            guidanceNode.put("guided_grammar", guidance.guidedGrammar);
+        }
+        if (guidance.guidedGrammarStart != null) {
+            guidanceNode.put("guided_grammar_start", guidance.guidedGrammarStart);
+        }
         ArrayNode messagesNode = root.putArray("messages");
         for (ChatMessage message : messages) {
             ObjectNode messageNode = messagesNode.addObject();
@@ -941,7 +959,7 @@ public final class InferenceBenchmark {
         return List.of(
                 new BenchmarkCase("builtin-reasoning-1", "reasoning", List.of(
                         "Read the puzzle carefully and answer with a clear explanation. A company reserves five parking spaces in order for the CEO, president, vice president, secretary, and treasurer. The cars are red, blue, green, yellow, and purple. The first space is red. A blue car is between the red car and the green car. The last space is purple. The secretary drives yellow. Alice parks next to David. Enid drives green. Bert parks between Cheryl and Enid. David parks in the last space. Who is the secretary, and what are the car colors from first to last?",
-                        "Now explain which clues were necessary and which were redundant."), Guidance.NONE),
+                         "Now explain which clues were necessary and which were redundant."), Guidance.NONE),
                 new BenchmarkCase("builtin-math-1", "math", List.of(
                         "Solve step by step. A bus starts with an unknown number of passengers. At the first stop, half get off and 4 get on. At the second stop, 6 get off and 8 get on. There are 25 passengers heading to the third stop. How many passengers started at the terminal? Then compute total fare collected if every person who ever boarded paid $2.",
                         "Generalize the algebra for starting passengers S, first-stop additions A, second-stop exits B, second-stop additions C, and final passengers F."), Guidance.NONE),
@@ -968,8 +986,9 @@ public final class InferenceBenchmark {
     private record BenchmarkCase(String id, String category, List<String> turns, Guidance guidance) {
     }
 
-    private record Guidance(List<String> guidedChoice, String guidedRegex, String guidedJson) {
-        private static final Guidance NONE = new Guidance(List.of(), null, null);
+    private record Guidance(List<String> guidedChoice, String guidedRegex, String guidedJson, String guidedGrammar,
+            String guidedGrammarStart) {
+        private static final Guidance NONE = new Guidance(List.of(), null, null, null, null);
     }
 
     private record ChatMessage(String role, String content) {

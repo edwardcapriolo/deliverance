@@ -55,6 +55,12 @@ public class ChatCompletionService {
                         .message("Could not map guided_json " + e.getMessage()));
             }
         }
+        if (request.getGuidedGrammar() != null) {
+            params.withGuidedGrammar(request.getGuidedGrammar());
+        }
+        if (request.getGuidedGrammarStart() != null) {
+            params.withGuidedGrammarStart(request.getGuidedGrammarStart());
+        }
         if (request.getLogprobs() != null) {
             params.withLogProbs(request.getLogprobs());
         }

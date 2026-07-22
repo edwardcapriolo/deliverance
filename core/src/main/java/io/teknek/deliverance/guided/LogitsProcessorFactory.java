@@ -7,6 +7,8 @@ import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.sketches.SketchesSettings;
+import io.teknek.sketches.grammar.EbnfCompiler;
+import io.teknek.sketches.grammar.EbnfLimits;
 import io.teknek.sketches.guide.ChoiceGuide;
 import io.teknek.sketches.guide.Guide;
 import io.teknek.sketches.guide.Index;
@@ -26,7 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 public class LogitsProcessorFactory {
-    private static final Map<AbstractModel, ConcurrentMap<IndexCacheKey, Index>> INDEX_CACHE =
+    private static final Map<AbstractModel, ConcurrentMap<Object, Index>> INDEX_CACHE =
             Collections.synchronizedMap(new WeakHashMap<>());
     private static final ConcurrentMap<JsonRegexCacheKey, String> JSON_REGEX_CACHE = new ConcurrentHashMap<>();
 
@@ -45,6 +47,7 @@ public class LogitsProcessorFactory {
         guidanceModes += parameters.guidedChoice.isPresent() ? 1 : 0;
         guidanceModes += parameters.guidedRegex.isPresent() ? 1 : 0;
         guidanceModes += parameters.guidedJson.isPresent() ? 1 : 0;
+        guidanceModes += parameters.guidedGrammar.isPresent() ? 1 : 0;
         if (guidanceModes > 1) {
             throw new IllegalArgumentException("Only one guided mode can be set");
         }
@@ -63,6 +66,12 @@ public class LogitsProcessorFactory {
             metrics.meter("guided.mode.json").mark();
             String regex = regexForJsonSchema(model, parameters.guidedJson.get());
             Index index = indexFor(model, regex, settings);
+            return Optional.of(new GuideLogitsProcessor(new IndexGuide(index), metrics));
+        }
+        if (parameters.guidedGrammar.isPresent()) {
+            metrics.meter("guided.mode.grammar").mark();
+            String startRule = parameters.guidedGrammarStart.orElse("root");
+            Index index = grammarIndexFor(model, parameters.guidedGrammar.get(), startRule, settings);
             return Optional.of(new GuideLogitsProcessor(new IndexGuide(index), metrics));
         }
         return Optional.empty();
@@ -116,7 +125,18 @@ public class LogitsProcessorFactory {
     private static Index indexFor(AbstractModel model, String regex, SketchesSettings settings) {
         model.getMetricRegistry().histogram("guided.regex.length").update(regex.length());
         IndexCacheKey key = new IndexCacheKey(regex, settings);
-        ConcurrentMap<IndexCacheKey, Index> modelCache;
+        return cachedIndex(model, key, settings, () -> new Index(regex, vocabularyFromModel(model), settings));
+    }
+
+    private static Index grammarIndexFor(AbstractModel model, String grammar, String startRule, SketchesSettings settings) {
+        model.getMetricRegistry().histogram("guided.grammar.length").update(grammar.length());
+        GrammarIndexCacheKey key = new GrammarIndexCacheKey(grammar, startRule, settings, EbnfLimits.DEFAULT);
+        return cachedIndex(model, key, settings,
+                () -> new Index(EbnfCompiler.compile(grammar, startRule, EbnfLimits.DEFAULT), vocabularyFromModel(model), settings));
+    }
+
+    private static Index cachedIndex(AbstractModel model, Object key, SketchesSettings settings, IndexBuilder builder) {
+        ConcurrentMap<Object, Index> modelCache;
         synchronized (INDEX_CACHE) {
             modelCache = INDEX_CACHE.computeIfAbsent(model, ignored -> new ConcurrentHashMap<>());
         }
@@ -130,12 +150,16 @@ public class LogitsProcessorFactory {
         model.getMetricRegistry().meter("guided.index_cache.miss").mark();
         InferenceProfiler.counter(model.getMetricRegistry(), "guided.index_cache.miss.count").inc();
         try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), "guided.index_build").time()) {
-            Vocabulary vocabulary = vocabularyFromModel(model);
-            Index index = new Index(regex, vocabulary, settings);
+            Index index = builder.build();
             recordIndexShape(model.getMetricRegistry(), index);
             Index existing = modelCache.putIfAbsent(key, index);
             return existing == null ? index : existing;
         }
+    }
+
+    @FunctionalInterface
+    private interface IndexBuilder {
+        Index build();
     }
 
     private static void recordIndexShape(MetricRegistry metrics, Index index) {
@@ -148,6 +172,10 @@ public class LogitsProcessorFactory {
     }
 
     private record IndexCacheKey(String regex, SketchesSettings settings) {
+    }
+
+    private record GrammarIndexCacheKey(String grammar, String startRule, SketchesSettings settings,
+            EbnfLimits limits) {
     }
 
     private record JsonRegexCacheKey(String schema) {
