@@ -15,6 +15,9 @@ import static io.teknek.deliverance.safetensors.fetch.HttpSupport.logger;
 
 public class PromptSupport {
 
+    private static final String JINJAVA_EXPRESSION_FACTORY_PROPERTY = "jinjava.javax.el.ExpressionFactory";
+    private static final String JINJAVA_EXPRESSION_FACTORY_IMPL = "jinjava.de.odysseus.el.ExpressionFactoryImpl";
+
     private final Map<String, String> promptTemplates;
     private final String bosToken;
     private final String eosToken;
@@ -26,6 +29,7 @@ public class PromptSupport {
     }
 
     public PromptSupport(Map<String, String> promptTemplates, String bosToken, String eosToken, boolean hasToolSupport){
+        ensureJinjavaExpressionFactory();
         this.promptTemplates = Map.copyOf(promptTemplates == null ? Map.of() : promptTemplates);
         this.bosToken = bosToken == null ? "" : bosToken;
         this.eosToken = eosToken == null ? "" : eosToken;
@@ -51,6 +55,12 @@ public class PromptSupport {
 
         jinjava.getGlobalContext()
                 .registerFunction(new ELFunctionDefinition("", "raise_exception", PromptSupport.class, "raiseException", String.class));
+    }
+
+    private static void ensureJinjavaExpressionFactory() {
+        if (System.getProperty(JINJAVA_EXPRESSION_FACTORY_PROPERTY) == null) {
+            System.setProperty(JINJAVA_EXPRESSION_FACTORY_PROPERTY, JINJAVA_EXPRESSION_FACTORY_IMPL);
+        }
     }
 
 
@@ -190,7 +200,7 @@ public class PromptSupport {
                 args.putAll(Map.of("messages", Map.of(), "add_generation_prompt", false, "eos_token",
                         eosToken, "bos_token", bosToken));
                 args.putAll(templateArgs);
-                RenderResult r = jinJava.renderForResult(template, args);
+                RenderResult r = renderForResult(template, args);
                 preamble = r.getOutput();
             }
 
@@ -203,7 +213,7 @@ public class PromptSupport {
             if (!renderTools.isEmpty()){
                 args.put("tools", renderTools);
             }
-            RenderResult renderResult = jinJava.renderForResult(template, args);
+            RenderResult renderResult = renderForResult(template, args);
             if (renderResult.hasErrors()) {
                 logger.debug("Prompt template errors: {}", renderResult.getErrors());
                 throw new RuntimeException("Prompt template errors: " + renderResult.getErrors());
@@ -213,6 +223,17 @@ public class PromptSupport {
                 output = output + "<|channel>thought\n";
             }
             return new PromptContext(output.substring(preamble.length()));
+        }
+
+        private RenderResult renderForResult(String template, Map<String, Object> args) {
+            ClassLoader previous = Thread.currentThread().getContextClassLoader();
+            ClassLoader promptSupportClassLoader = PromptSupport.class.getClassLoader();
+            Thread.currentThread().setContextClassLoader(promptSupportClassLoader);
+            try {
+                return jinJava.renderForResult(template, args);
+            } finally {
+                Thread.currentThread().setContextClassLoader(previous);
+            }
         }
 
         private String renderQwen3TemplateFallback(List<Tool> renderTools) {

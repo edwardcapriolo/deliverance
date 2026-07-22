@@ -24,6 +24,7 @@ metastore_db/
 derby.log
 dependency-reduced-pom.xml
 release-staging/
+.venv/
 venv/
 .sdkmanrc
 pom.xml.versionsBackup

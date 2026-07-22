@@ -3,9 +3,11 @@ package io.teknek.deliverance.model.granitemoehybrid;
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.EmbedInput;
+import io.teknek.deliverance.generator.FeedForward;
 import io.teknek.deliverance.generator.LayerNorm;
 import io.teknek.deliverance.generator.RmsNorm;
 import io.teknek.deliverance.generator.SampleOutput;
+import io.teknek.deliverance.generator.SelfAttention;
 import io.teknek.deliverance.generator.TransformerBlock;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
@@ -81,7 +83,10 @@ public class GraniteMoeHybridModel extends AbstractModel {
                 this.metricRegistry);
         DType outputHeadDType = this.outputHeadQuantization.orElse(this.workingDType);
         boolean forceOutputHeadQuantization = this.outputHeadQuantization.isPresent();
-        AbstractTensor outputWeights = quantize(this.weights.load("lm_head.weight"), outputHeadDType,
+        String outputWeightName = this.weights.isWeightPresent("lm_head.weight")
+                ? "lm_head.weight"
+                : "model.embed_tokens.weight";
+        AbstractTensor outputWeights = quantize(this.weights.load(outputWeightName), outputHeadDType,
                 forceOutputHeadQuantization);
         this.configurableTensorProvider.get().registerModelTensor(outputWeights);
         return new SampleOutput() {
@@ -98,35 +103,71 @@ public class GraniteMoeHybridModel extends AbstractModel {
     }
 
     @Override
+    protected boolean addBosToken() {
+        return false;
+    }
+
+    @Override
     protected TransformerBlock[] loadTransformerBlockWeights() {
         GraniteMoeHybridConfig graniteConfig = (GraniteMoeHybridConfig) this.config;
-        if (!graniteConfig.denseAttentionOnly()) {
-            throw new UnsupportedOperationException(
-                    "Only dense attention-only GraniteMoeHybrid configs are supported initially");
-        }
         DType qType = this.modelQType.orElse(this.modelDType);
         TransformerBlock[] blocks = new TransformerBlock[graniteConfig.numberOfLayers];
         IntStream.range(0, graniteConfig.numberOfLayers).parallel().forEach(i -> {
             String base = "model.layers." + i + ".";
-            String attentionPrefix = base + "self_attn.";
-            GraniteMoeHybridAttention attention = new GraniteMoeHybridAttention(
-                    this,
-                    i,
-                    quantize(this.weights.load(attentionPrefix + "q_proj.weight"), qType),
-                    quantize(this.weights.load(attentionPrefix + "k_proj.weight"), qType),
-                    quantize(this.weights.load(attentionPrefix + "v_proj.weight"), qType),
-                    quantize(this.weights.load(attentionPrefix + "o_proj.weight"), qType),
-                    this.configurableTensorProvider,
-                    this.metricRegistry
-            );
+            SelfAttention attention;
+            if ("mamba".equals(graniteConfig.layerTypes.get(i))) {
+                String mambaPrefix = base + "mamba.";
+                attention = new GraniteMoeHybridMambaLayer(
+                        this,
+                        graniteConfig,
+                        quantize(this.weights.load(mambaPrefix + "in_proj.weight"), qType),
+                        quantize(this.weights.load(mambaPrefix + "conv1d.weight"), qType),
+                        graniteConfig.mambaConvBias
+                                ? Optional.of(quantize(this.weights.load(mambaPrefix + "conv1d.bias"), qType))
+                                : Optional.empty(),
+                        quantize(this.weights.load(mambaPrefix + "dt_bias"), qType),
+                        quantize(this.weights.load(mambaPrefix + "A_log"), qType),
+                        quantize(this.weights.load(mambaPrefix + "D"), qType),
+                        quantize(this.weights.load(mambaPrefix + "norm.weight"), qType),
+                        quantize(this.weights.load(mambaPrefix + "out_proj.weight"), qType),
+                        this.configurableTensorProvider
+                );
+            } else if ("attention".equals(graniteConfig.layerTypes.get(i))) {
+                String attentionPrefix = base + "self_attn.";
+                attention = new GraniteMoeHybridAttention(
+                        this,
+                        i,
+                        quantize(this.weights.load(attentionPrefix + "q_proj.weight"), qType),
+                        quantize(this.weights.load(attentionPrefix + "k_proj.weight"), qType),
+                        quantize(this.weights.load(attentionPrefix + "v_proj.weight"), qType),
+                        quantize(this.weights.load(attentionPrefix + "o_proj.weight"), qType),
+                        this.configurableTensorProvider,
+                        this.metricRegistry
+                );
+            } else {
+                throw new IllegalArgumentException("Unsupported GraniteMoeHybrid layer type: " + graniteConfig.layerTypes.get(i));
+            }
 
-            GraniteMoeHybridSharedMlp sharedMlp = new GraniteMoeHybridSharedMlp(
+            FeedForward sharedMlp = new GraniteMoeHybridSharedMlp(
                     this,
                     graniteConfig,
                     quantize(this.weights.load(base + "shared_mlp.input_linear.weight"), qType),
                     quantize(this.weights.load(base + "shared_mlp.output_linear.weight"), qType),
                     this.configurableTensorProvider
             );
+            FeedForward feedForward = sharedMlp;
+            if (graniteConfig.numLocalExperts > 0) {
+                String moePrefix = base + "block_sparse_moe.";
+                feedForward = new GraniteMoeHybridMoeFeedForward(
+                        this,
+                        graniteConfig,
+                        sharedMlp,
+                        quantize(this.weights.load(moePrefix + "router.layer.weight"), qType),
+                        quantize(this.weights.load(moePrefix + "input_linear.weight"), qType),
+                        quantize(this.weights.load(moePrefix + "output_linear.weight"), qType),
+                        this.configurableTensorProvider
+                );
+            }
 
             blocks[i] = new TransformerBlock(
                     this,
@@ -137,7 +178,7 @@ public class GraniteMoeHybridModel extends AbstractModel {
                     Optional.empty(),
                     Optional.of(new RmsNorm(this, quantize(this.weights.load(base + "post_attention_layernorm.weight"), qType),
                             this.metricRegistry)),
-                    sharedMlp,
+                    feedForward,
                     Optional.empty(),
                     Optional.empty(),
                     this.configurableTensorProvider

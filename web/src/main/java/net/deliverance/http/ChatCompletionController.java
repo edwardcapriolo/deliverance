@@ -4,10 +4,13 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.teknek.deliverance.JsonUtils;
+import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.model.Error;
+import io.teknek.deliverance.model.ReasoningTextSplitter;
 import io.teknek.deliverance.model.ReasoningFieldNames;
+import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.safetensors.prompt.ToolCall;
 import io.teknek.dysfx.Either;
@@ -91,6 +94,132 @@ public class ChatCompletionController {
             }
             throw new IllegalArgumentException("Unsupported reasoning field mode: " + value);
         }
+    }
+
+    @RequestMapping(method = RequestMethod.POST, value = { "/v1/completions", "/completions" }, produces = {
+            "application/json", "text/event-stream" }, consumes = { "application/json" })
+    Object createCompletion(@RequestHeader Map<String, String> headers, @RequestBody CreateCompletionRequest request) {
+        String modelName = completionModelName(request);
+        Optional<Map.Entry<MultiModelConfig, CausalLanguageModel>> z = findModel(modelName);
+        if (z.isEmpty()) {
+            return badRequest("model not found " + modelName);
+        }
+        CausalLanguageModel model = z.get().getValue();
+        GeneratorParameters parameters = completionParameters(request);
+        PromptContext prompt = PromptContext.of(request.getPrompt() == null ? "" : request.getPrompt());
+        if (Boolean.TRUE.equals(request.getStream())) {
+            return streamCompletion(headers, request, model, prompt, parameters, modelName);
+        }
+        try {
+            Response response = model.generate(UUID.randomUUID(), prompt, parameters, new DoNothingGenerateEvent());
+            return new ResponseEntity<>(completionResponse(UUID.randomUUID(), modelName, response.responseText,
+                    completionFinishReason(response.finishReason)), HttpStatus.OK);
+        } catch (IllegalArgumentException | GenerationException e) {
+            return badRequest(e.getMessage());
+        }
+    }
+
+    private Object streamCompletion(Map<String, String> headers, CreateCompletionRequest request, CausalLanguageModel model,
+            PromptContext prompt, GeneratorParameters parameters, String modelName) {
+        UUID sessionId = UUID.randomUUID();
+        if (headers.containsKey(DELIVERANCE_SESSION_HEADER)) {
+            try {
+                sessionId = UUID.fromString(headers.get(DELIVERANCE_SESSION_HEADER));
+            } catch (IllegalArgumentException e) {
+                return badRequest("invalid " + DELIVERANCE_SESSION_HEADER);
+            }
+        }
+        SseEmitter emitter = newSseEmitter();
+        AtomicBoolean closed = new AtomicBoolean(false);
+        emitter.onCompletion(() -> closed.set(true));
+        emitter.onTimeout(() -> closed.set(true));
+        emitter.onError(ignored -> closed.set(true));
+        UUID finalSessionId = sessionId;
+        CompletableFuture.runAsync(() -> {
+            try {
+                Response response = model.generate(finalSessionId, prompt, parameters,
+                        (int next, String tok, String token, float f) -> {
+                            String text = token == null ? "" : token;
+                            if (!text.isEmpty()) {
+                                sendStreamEvent(emitter, closed, completionChunk(finalSessionId, modelName, text, null));
+                                throwIfStreamClosed(closed);
+                            }
+                        });
+                if (!closed.get()) {
+                    sendStreamEvent(emitter, closed, completionChunk(finalSessionId, modelName, "",
+                            completionFinishReason(response.finishReason)));
+                }
+                if (!closed.get()) {
+                    sendStreamEvent(emitter, closed, "[DONE]");
+                }
+                if (!closed.get()) {
+                    closed.set(true);
+                    emitter.complete();
+                }
+            } catch (Throwable t) {
+                if (!closed.get()) {
+                    closed.set(true);
+                    emitter.completeWithError(t);
+                }
+            }
+        });
+        return emitter;
+    }
+
+    private static String completionModelName(CreateCompletionRequest request) {
+        return request.getModel();
+    }
+
+    private static GeneratorParameters completionParameters(CreateCompletionRequest request) {
+        GeneratorParameters parameters = new GeneratorParameters();
+        if (request.getTemperature() != null) {
+            parameters.withTemperature(request.getTemperature().floatValue());
+        }
+        if (request.getTopP() != null) {
+            parameters.withTopP(request.getTopP().floatValue());
+        }
+        if (request.getMaxTokens() != null) {
+            parameters.withMaxTokens(request.getMaxTokens());
+        }
+        if (request.getSeed() != null) {
+            parameters.withSeed(request.getSeed());
+        }
+        if (request.getStop() != null) {
+            parameters.withStopWords(request.getStop());
+        }
+        return parameters;
+    }
+
+    private static CreateCompletionResponse completionResponse(UUID id, String modelName, String text,
+            CreateCompletionResponseChoicesInner.FinishReasonEnum finishReason) {
+        return new CreateCompletionResponse()
+                .id("cmpl-" + id)
+                .model(modelName)
+                ._object(CreateCompletionResponse.ObjectEnum.TEXT_COMPLETION)
+                .addChoicesItem(new CreateCompletionResponseChoicesInner()
+                        .index(0)
+                        .text(text == null ? "" : text)
+                        .finishReason(finishReason));
+    }
+
+    private static String completionChunk(UUID id, String modelName, String text,
+            CreateCompletionResponseChoicesInner.FinishReasonEnum finishReason) {
+        try {
+            return JsonUtils.om.writeValueAsString(completionResponse(id, modelName, text, finishReason));
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static CreateCompletionResponseChoicesInner.FinishReasonEnum completionFinishReason(
+            io.teknek.deliverance.generator.FinishReason finishReason) {
+        return switch (finishReason) {
+            case MAX_TOKENS -> CreateCompletionResponseChoicesInner.FinishReasonEnum.LENGTH;
+            case STOP_TOKEN, TOOL_CALLS -> CreateCompletionResponseChoicesInner.FinishReasonEnum.STOP;
+            case CONTENT_FILTER -> CreateCompletionResponseChoicesInner.FinishReasonEnum.CONTENT_FILTER;
+            case FUNCTION_CALL -> CreateCompletionResponseChoicesInner.FinishReasonEnum.STOP;
+            case null -> CreateCompletionResponseChoicesInner.FinishReasonEnum.STOP;
+        };
     }
 
     @RequestMapping(method = RequestMethod.POST, value = "/chat/completions", produces = { "application/json",
@@ -239,12 +368,13 @@ public class ChatCompletionController {
                 debugPrompt(promptContext.getPrompt());
                 StringBuilder streamedText = new StringBuilder();
                 StringBuilder pendingContent = new StringBuilder();
-                ReasoningStreamSplitter reasoningSplitter = new ReasoningStreamSplitter();
+                ReasoningTextSplitter reasoningSplitter = new ReasoningTextSplitter(
+                        ReasoningTextSplitter.promptEndsInsideReasoning(promptContext.getPrompt()));
                 AtomicBoolean suppressContent = new AtomicBoolean(false);
                 Response response = model.generate(finalSessionId, promptContext, finalReady.generatorParameters(),
                         (int next, String tok, String token, float f) -> {
                             streamedText.append(token == null ? "" : token);
-                            ReasoningStreamPart split = reasoningSplitter.accept(token == null ? "" : token);
+                            ReasoningTextSplitter.Part split = reasoningSplitter.accept(token == null ? "" : token);
                             if (!split.reasoning().isEmpty()) {
                                 sendStreamEvent(emitter, closed, streamReasoningDelta(finalSessionId, split.reasoning()));
                                 throwIfStreamClosed(closed);
@@ -606,55 +736,6 @@ public class ChatCompletionController {
     private static String preview(String value, int limit) {
         String sanitized = value.replace("\n", "\\n").replace("\r", "\\r");
         return sanitized.length() <= limit ? sanitized : sanitized.substring(0, limit) + "...";
-    }
-
-    record ReasoningStreamPart(String content, String reasoning) {
-    }
-
-    static final class ReasoningStreamSplitter {
-        private static final String THINK_START = "<think>";
-        private static final String THINK_END = "</think>";
-        private final StringBuilder pending = new StringBuilder();
-        private boolean inReasoning;
-
-        ReasoningStreamPart accept(String text) {
-            pending.append(text == null ? "" : text);
-            StringBuilder content = new StringBuilder();
-            StringBuilder reasoning = new StringBuilder();
-            while (pending.length() > 0) {
-                if (inReasoning) {
-                    int end = indexOf(pending, THINK_END);
-                    if (end >= 0) {
-                        reasoning.append(pending.substring(0, end));
-                        pending.delete(0, end + THINK_END.length());
-                        inReasoning = false;
-                        continue;
-                    }
-                    int keep = longestPrefixSuffix(pending, THINK_END);
-                    int flush = pending.length() - keep;
-                    if (flush > 0) {
-                        reasoning.append(pending.substring(0, flush));
-                        pending.delete(0, flush);
-                    }
-                    break;
-                }
-                int start = indexOf(pending, THINK_START);
-                if (start >= 0) {
-                    content.append(pending.substring(0, start));
-                    pending.delete(0, start + THINK_START.length());
-                    inReasoning = true;
-                    continue;
-                }
-                int keep = longestPrefixSuffix(pending, THINK_START);
-                int flush = pending.length() - keep;
-                if (flush > 0) {
-                    content.append(pending.substring(0, flush));
-                    pending.delete(0, flush);
-                }
-                break;
-            }
-            return new ReasoningStreamPart(content.toString(), reasoning.toString());
-        }
     }
 
     /**

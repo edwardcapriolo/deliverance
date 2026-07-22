@@ -7,6 +7,8 @@ import java.util.Map;
 import java.util.UUID;
 
 import io.teknek.deliverance.model.GenerateEvent;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import io.teknek.deliverance.JsonUtils;
@@ -30,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@Tag("large-model")
 class AntaresFetchIT {
 
     @Test
@@ -72,7 +75,7 @@ class AntaresFetchIT {
                     .addUserMessage("Return one Java file path.");
 
             Response response = model.generate(UUID.randomUUID(), prompt.build(),
-                    new GeneratorParameters().withTemperature(0.3f).withTopP(1.0f).withMaxTokens(256),
+                    new GeneratorParameters().withTemperature(0.3f).withTopP(1.0f).withMaxTokens(64),
                     new GenerateEvent() {
                         @Override
                         public void emit(int next, String nextRaw, String nextCleaned, float timing) {
@@ -80,8 +83,30 @@ class AntaresFetchIT {
                         }
                     });
 
-            //System.out.println("ANTARES_1B_SMOKE=" + response.responseTextWithSpecialTokens.replace("\n", "\\n"));
-            //assertFalse(response.responseTextWithSpecialTokens.isBlank());
+            System.out.println("ANTARES_1B_SMOKE=" + response.responseTextWithSpecialTokens.replace("\n", "\\n"));
+            assertFalse(response.responseTextWithSpecialTokens.isBlank());
+            assertFalse(response.responseTextWithSpecialTokens.contains("•\n•\n•"));
+            assertTrue(response.responseTextWithSpecialTokens.contains("/"));
+        }
+    }
+
+    @Test
+    void antares1bJq4LoadsAndGeneratesWhenCached() {
+        ModelFetcher fetch = new ModelFetcher("fdtn-ai", "antares-1b-JQ4");
+        Assumptions.assumeTrue(fetch.pathForModel().toFile().isDirectory(),
+                "Quantized Antares cache is not present: " + fetch.pathForModel());
+        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch).buildLocalTransformerModel()) {
+            PromptSupport.Builder prompt = model.promptSupport().orElseThrow().builder()
+                    .addUserMessage("Return one Java file path.");
+
+            Response response = model.generate(UUID.randomUUID(), prompt.build(),
+                    new GeneratorParameters().withTemperature(0.3f).withTopP(1.0f).withMaxTokens(64),
+                    new DoNothingGenerateEvent());
+
+            System.out.println("ANTARES_1B_JQ4_SMOKE=" + response.responseTextWithSpecialTokens.replace("\n", "\\n"));
+            assertFalse(response.responseTextWithSpecialTokens.isBlank());
+            assertFalse(response.responseTextWithSpecialTokens.contains("•\n•\n•"));
+            assertTrue(response.responseTextWithSpecialTokens.contains("/"));
         }
     }
 

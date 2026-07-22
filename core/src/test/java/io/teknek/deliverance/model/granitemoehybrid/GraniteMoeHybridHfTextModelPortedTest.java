@@ -159,6 +159,20 @@ public class GraniteMoeHybridHfTextModelPortedTest implements
     public void testTokenizerEncodingDigitStrings() {
     }
 
+    @Override
+    @Test
+    public void hfGenerationInputsEmbedsUnsupportedWhenModelRequiresInputIds() {
+        Path modelDir = writeTinyCheckpoint("granite-generation-inputs-embeds", 22_002);
+        try (GraniteMoeHybridModel model = loadTinyModelStatic(modelDir);
+             KvBufferCache.KvBuffer kv = model.newKvBuffer();
+             AbstractTensor inputsEmbeds = makeInputsEmbeds(1, model.getConfig().embeddingLength, 22_003);
+             AbstractTensor output = model.forward(inputsEmbeds, 0, kv, Optional.empty())) {
+            assertEquals(1, output.shape().first());
+            assertEquals(model.getConfig().embeddingLength, output.shape().last());
+            assertFinite(output);
+        }
+    }
+
     @Test
     public void modelSupportDetectsGraniteMoeHybridConfig() throws Exception {
         Path modelDir = writeTinyCheckpoint(tempDir.resolve("granite-moe-hybrid-detect"), tinyConfig(), 1234);
@@ -222,25 +236,74 @@ public class GraniteMoeHybridHfTextModelPortedTest implements
     }
 
     @Test
-    public void tinyMambaLayerConfigFailsClearly() {
-        Path modelDir = tempDir.resolve("granite-moe-hybrid-mamba");
-        writeTinyCheckpoint(modelDir, tinyConfigWithMambaLayer(), 3234);
+    public void graniteMoeHybridDoesNotPrependBosBecauseChatTemplateOwnsSpecialTokens() {
+        Path modelDir = tempDir.resolve("granite-moe-hybrid-no-bos");
+        writeTinyCheckpoint(modelDir, tinyConfig(), 2334);
 
-        UnsupportedOperationException error = assertThrows(UnsupportedOperationException.class,
-                () -> loadTinyModelStatic(modelDir));
-
-        assertTrue(error.getMessage().contains("dense attention-only"));
+        try (GraniteMoeHybridModel model = loadTinyModelStatic(modelDir)) {
+            assertFalse(model.addBosToken(),
+                    "Granite/Antares templates already render special role tokens; prepending BOS creates bad prompts");
+        }
     }
 
     @Test
-    public void tinyMoeConfigFailsClearly() {
+    public void tinyMambaLayerConfigLoadsAndRunsForward() {
+        Path modelDir = tempDir.resolve("granite-moe-hybrid-mamba");
+        writeTinyCheckpoint(modelDir, tinyConfigWithMambaLayer(), 3234);
+
+        try (GraniteMoeHybridModel model = loadTinyModelStatic(modelDir);
+             KvBufferCache.KvBuffer kv = model.newKvBuffer();
+             AbstractTensor output = model.batchForward(new int[]{3, 4, 5, 6}, 0, kv)) {
+            assertEquals(4, output.shape().first());
+            assertEquals(model.getConfig().embeddingLength, output.shape().last());
+            assertFinite(output);
+        }
+    }
+
+    @Test
+    public void tinyMoeConfigLoadsAndRunsForward() {
         Path modelDir = tempDir.resolve("granite-moe-hybrid-moe");
         writeTinyCheckpoint(modelDir, tinyConfigWithExperts(), 4234);
 
-        UnsupportedOperationException error = assertThrows(UnsupportedOperationException.class,
-                () -> loadTinyModelStatic(modelDir));
+        try (GraniteMoeHybridModel model = loadTinyModelStatic(modelDir);
+             KvBufferCache.KvBuffer kv = model.newKvBuffer();
+             AbstractTensor output = model.batchForward(new int[]{3, 4, 5, 6}, 0, kv)) {
+            assertEquals(4, output.shape().first());
+            assertEquals(model.getConfig().embeddingLength, output.shape().last());
+            assertFinite(output);
+        }
+    }
 
-        assertTrue(error.getMessage().contains("dense attention-only"));
+    @Test
+    public void tinyHybridMambaAttentionMoeModelLoadsAndRunsForward() {
+        Path modelDir = tempDir.resolve("granite-moe-hybrid-full-hybrid");
+        writeTinyCheckpoint(modelDir, tinyHybridConfig(), 4334);
+
+        try (GraniteMoeHybridModel model = loadTinyModelStatic(modelDir);
+             KvBufferCache.KvBuffer kv = model.newKvBuffer();
+             AbstractTensor output = model.batchForward(new int[]{3, 4, 5, 6, 7}, 0, kv)) {
+            assertEquals(5, output.shape().first());
+            assertEquals(model.getConfig().embeddingLength, output.shape().last());
+            assertFinite(output);
+        }
+    }
+
+    @Test
+    public void tinyMambaDecodeMatchesColdReplay() {
+        Path modelDir = tempDir.resolve("granite-moe-hybrid-mamba-decode");
+        writeTinyCheckpoint(modelDir, tinyConfigWithMambaLayer(), 4434);
+
+        try (GraniteMoeHybridModel model = loadTinyModelStatic(modelDir);
+             KvBufferCache.KvBuffer decodeKv = model.newKvBuffer();
+             AbstractTensor promptOutput = model.batchForward(new int[]{3, 4, 5}, 0, decodeKv)) {
+            assertFinite(promptOutput);
+            try (AbstractTensor decode = model.forward(6, 3, decodeKv);
+                 AbstractTensor replay = model.batchForward(new int[]{3, 4, 5, 6}, 0);
+                 AbstractTensor replayLastRow = replay.slice(true, replay.shape().first() - 1)) {
+                assertTensorsClose(replayLastRow, decode, 1.0e-3f,
+                        "Mamba cached decode should match cold replay for the appended token");
+            }
+        }
     }
 
     @Test
@@ -319,6 +382,13 @@ public class GraniteMoeHybridHfTextModelPortedTest implements
                 4, 1, 8, 8, 4, 2, 16, true, false, List.of("GraniteMoeHybridForCausalLM"));
     }
 
+    static GraniteMoeHybridConfig tinyHybridConfig() {
+        return new GraniteMoeHybridConfig(64, 16, 32, 2, 1, 4, 1.0e-5f, 48, 1, 1,
+                ActivationFunction.Type.SILU, 10_000.0, null, null, 0.0f, 2.0f, 0.25f, 0.5f,
+                4.0f, 24, 2, 1, false, 0.01f, List.of("mamba", "attention", "mamba", "attention"), "rope",
+                4, 1, 8, 8, 4, 2, 16, true, false, List.of("GraniteMoeHybridForCausalLM"));
+    }
+
     static GraniteMoeHybridConfig realAntaresConfig() {
         return new GraniteMoeHybridConfig(131072, 2048, 4096, 16, 4, 40, 1.0e-5f, 100352, 100257,
                 100257, ActivationFunction.Type.SILU, 10_000_000.0, null, null, 0.0f, 12.0f, 0.0078125f,
@@ -338,14 +408,38 @@ public class GraniteMoeHybridHfTextModelPortedTest implements
                 String layer = "model.layers." + i + ".";
                 tensors.put(layer + "input_layernorm.weight", ones(1, config.embeddingLength));
                 tensors.put(layer + "post_attention_layernorm.weight", ones(1, config.embeddingLength));
-                tensors.put(layer + "self_attn.q_proj.weight", matrix(config.attentionLength, config.embeddingLength, seed++));
-                tensors.put(layer + "self_attn.k_proj.weight", matrix(config.kvLength, config.embeddingLength, seed++));
-                tensors.put(layer + "self_attn.v_proj.weight", matrix(config.kvLength, config.embeddingLength, seed++));
-                tensors.put(layer + "self_attn.o_proj.weight", matrix(config.embeddingLength, config.attentionLength, seed++));
+                if ("mamba".equals(config.layerTypes.get(i))) {
+                    int mambaIntermediate = config.mambaExpand * config.embeddingLength;
+                    int convDim = mambaIntermediate + 2 * config.mambaNGroups * config.mambaDState;
+                    int projectionSize = mambaIntermediate + convDim + config.mambaNHeads;
+                    tensors.put(layer + "mamba.in_proj.weight", matrix(projectionSize, config.embeddingLength, seed++));
+                    tensors.put(layer + "mamba.conv1d.weight", tensor3(convDim, 1, config.mambaDConv, seed++));
+                    if (config.mambaConvBias) {
+                        tensors.put(layer + "mamba.conv1d.bias", vector(convDim, seed++));
+                    }
+                    tensors.put(layer + "mamba.dt_bias", vector(config.mambaNHeads, seed++));
+                    tensors.put(layer + "mamba.A_log", vector(config.mambaNHeads, seed++));
+                    tensors.put(layer + "mamba.D", vector(config.mambaNHeads, seed++));
+                    tensors.put(layer + "mamba.norm.weight", ones(1, mambaIntermediate));
+                    tensors.put(layer + "mamba.out_proj.weight", matrix(config.embeddingLength, mambaIntermediate, seed++));
+                } else {
+                    tensors.put(layer + "self_attn.q_proj.weight", matrix(config.attentionLength, config.embeddingLength, seed++));
+                    tensors.put(layer + "self_attn.k_proj.weight", matrix(config.kvLength, config.embeddingLength, seed++));
+                    tensors.put(layer + "self_attn.v_proj.weight", matrix(config.kvLength, config.embeddingLength, seed++));
+                    tensors.put(layer + "self_attn.o_proj.weight", matrix(config.embeddingLength, config.attentionLength, seed++));
+                }
                 tensors.put(sharedMlpWeightName(i, "input_linear.weight"),
                         matrix(config.sharedIntermediateSize * 2, config.embeddingLength, seed++));
                 tensors.put(sharedMlpWeightName(i, "output_linear.weight"),
                         matrix(config.embeddingLength, config.sharedIntermediateSize, seed++));
+                if (config.numLocalExperts > 0) {
+                    tensors.put(layer + "block_sparse_moe.router.layer.weight",
+                            matrix(config.numLocalExperts, config.embeddingLength, seed++));
+                    tensors.put(layer + "block_sparse_moe.input_linear.weight",
+                            tensor3(config.numLocalExperts, config.hiddenLength * 2, config.embeddingLength, seed++));
+                    tensors.put(layer + "block_sparse_moe.output_linear.weight",
+                            tensor3(config.numLocalExperts, config.embeddingLength, config.hiddenLength, seed++));
+                }
             }
             SafeTensorWriter.writeModel(dir, Map.of("format", "pt"), tensors, 1 << 28);
             java.nio.file.Files.createFile(dir.resolve(".finished"));
@@ -428,6 +522,26 @@ public class GraniteMoeHybridHfTextModelPortedTest implements
             for (int col = 0; col < cols; col++) {
                 tensor.set(1.0f, row, col);
             }
+        }
+        return tensor;
+    }
+
+    static FloatBufferTensor tensor3(int first, int second, int third, int seed) {
+        FloatBufferTensor tensor = new FloatBufferTensor(first, second, third);
+        for (int i = 0; i < first; i++) {
+            for (int j = 0; j < second; j++) {
+                for (int k = 0; k < third; k++) {
+                    tensor.set(((i * 11 + j * 13 + k * 7 + seed) % 19 - 9) / 9.0f, i, j, k);
+                }
+            }
+        }
+        return tensor;
+    }
+
+    static FloatBufferTensor vector(int length, int seed) {
+        FloatBufferTensor tensor = new FloatBufferTensor(1, length);
+        for (int i = 0; i < length; i++) {
+            tensor.set(((i * 7 + seed) % 13 - 6) / 13.0f, 0, i);
         }
         return tensor;
     }

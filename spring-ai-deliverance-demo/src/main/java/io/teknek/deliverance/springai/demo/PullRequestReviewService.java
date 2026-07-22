@@ -1,10 +1,10 @@
 package io.teknek.deliverance.springai.demo;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.teknek.deliverance.springai.DeliveranceChatOptions;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -53,11 +53,7 @@ public class PullRequestReviewService {
                 .maxTokens(512)
                 .guidedJson(REVIEW_SCHEMA)
                 .build())).getResult().getOutput().getText();
-        try {
-            return objectMapper.readValue(response, PullRequestReviewResponse.class);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
+        return objectMapper.readValue(response, PullRequestReviewResponse.class);
     }
 
     public String releaseNote(PullRequestReviewRequest request) {

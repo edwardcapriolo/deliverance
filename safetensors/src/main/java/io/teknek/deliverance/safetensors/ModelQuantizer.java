@@ -36,6 +36,7 @@ public class ModelQuantizer {
     private static final String README_NAME = "README.md";
     private static final String FINISHED_MARKER = ".finished";
     private static final int PROGRESS_LOG_INTERVAL = 25;
+    private static final int Q4_WRITE_BUFFER_BYTES = 1 << 20;
     private final long maxShardSize;
     private final ReadMode readMode;
 
@@ -53,6 +54,7 @@ public class ModelQuantizer {
                     && (
                     isAttentionProjection(name)
                             || isDenseMlpProjection(name)
+                            || isGraniteMoeHybridProjection(name)
                             || isQwenMoeExpertProjection(name)
                             || isMixtralMoeExpertProjection(name)
             );
@@ -72,6 +74,15 @@ public class ModelQuantizer {
 
     static boolean isQwenMoeExpertProjection(String name) {
         return name.matches(".*\\.mlp\\.experts\\.\\d+\\.(gate_proj|up_proj|down_proj)\\.weight$");
+    }
+
+    static boolean isGraniteMoeHybridProjection(String name) {
+        return name.endsWith("shared_mlp.input_linear.weight")
+                || name.endsWith("shared_mlp.output_linear.weight")
+                || name.endsWith("block_sparse_moe.input_linear.weight")
+                || name.endsWith("block_sparse_moe.output_linear.weight")
+                || name.endsWith("mamba.in_proj.weight")
+                || name.endsWith("mamba.out_proj.weight");
     }
 
     static boolean isMixtralMoeExpertProjection(String name) {
@@ -334,10 +345,14 @@ public class ModelQuantizer {
     }
 
     private void streamQ4Payloads(FileChannel channel, long dataStart, long scaleOffset, AbstractTensor source) throws IOException {
-        ByteBuffer packed = ByteBuffer.allocate(HALF_BLOCK).order(ByteOrder.LITTLE_ENDIAN);
-        ByteBuffer scaleBuffer = ByteBuffer.allocate(Float.BYTES).order(ByteOrder.LITTLE_ENDIAN);
+        int packedCapacity = Math.max(HALF_BLOCK, Q4_WRITE_BUFFER_BYTES - (Q4_WRITE_BUFFER_BYTES % HALF_BLOCK));
+        int scaleCapacity = (packedCapacity / HALF_BLOCK) * Float.BYTES;
+        ByteBuffer packed = ByteBuffer.allocateDirect(packedCapacity).order(ByteOrder.LITTLE_ENDIAN);
+        ByteBuffer scaleBuffer = ByteBuffer.allocateDirect(scaleCapacity).order(ByteOrder.LITTLE_ENDIAN);
         long blocks = source.size() / BLOCK_SIZE;
         int columns = source.shape().last();
+        long packedBytesWritten = 0;
+        long scaleBytesWritten = 0;
         for (long block = 0; block < blocks; block++) {
             int blockStart = Math.toIntExact(block * BLOCK_SIZE);
             float max = Float.MIN_VALUE;
@@ -352,7 +367,6 @@ public class ModelQuantizer {
             }
             float scale = max / -8.0f;
             float inverseScale = scale != 0.0f ? 1.0f / scale : 0.0f;
-            packed.clear();
             for (int i = 0; i < HALF_BLOCK; i++) {
                 float f0 = sourceValue(source, blockStart + i, columns) * inverseScale;
                 float f1 = sourceValue(source, blockStart + i + HALF_BLOCK, columns) * inverseScale;
@@ -360,13 +374,26 @@ public class ModelQuantizer {
                 byte q1 = (byte) Math.min(15, (byte) (f1 + 8.5f));
                 packed.put((byte) (q0 | (q1 << 4)));
             }
-            packed.flip();
-            channel.write(packed, dataStart + block * HALF_BLOCK);
-            scaleBuffer.clear();
             scaleBuffer.putFloat(scale);
-            scaleBuffer.flip();
-            channel.write(scaleBuffer, dataStart + scaleOffset + block * Float.BYTES);
+            if (!packed.hasRemaining()) {
+                packedBytesWritten += flush(channel, packed, dataStart + packedBytesWritten);
+                scaleBytesWritten += flush(channel, scaleBuffer, dataStart + scaleOffset + scaleBytesWritten);
+            }
         }
+        if (packed.position() > 0) {
+            packedBytesWritten += flush(channel, packed, dataStart + packedBytesWritten);
+            scaleBytesWritten += flush(channel, scaleBuffer, dataStart + scaleOffset + scaleBytesWritten);
+        }
+    }
+
+    private long flush(FileChannel channel, ByteBuffer buffer, long position) throws IOException {
+        buffer.flip();
+        int bytes = buffer.remaining();
+        while (buffer.hasRemaining()) {
+            channel.write(buffer, position + buffer.position());
+        }
+        buffer.clear();
+        return bytes;
     }
 
     private float sourceValue(AbstractTensor source, int flatOffset, int columns) {
