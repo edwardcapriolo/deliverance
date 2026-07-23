@@ -12,7 +12,7 @@ cd nanocode-deliverance
 sh run-server-antares-1b.sh
 ```
 
-The server defaults to `http://127.0.0.1:18085` and loads `fdtn-ai/antares-1b-JQ4` from the Deliverance model cache.
+The server defaults to `http://127.0.0.1:18085` and loads `edwardcapriolo/antares-1b-JQ4` from the Deliverance model cache.
 
 ## Run Nanocode
 

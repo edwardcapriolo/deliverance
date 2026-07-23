@@ -1,0 +1,168 @@
+# Deliverance Antares CLI
+
+`deliverance-antares-cli` is a small Java command-line helper for running Antares-style vulnerability localization against a Deliverance `/v1/completions` server.
+
+The upstream reference implementation is the official Python [`antares-cli`](https://github.com/fdtn-ai/antares-cli) project. That CLI defines the Antares prompt contract, tool protocol, repository investigation loop, submit tools, reports, and run traces. Treat the Python CLI as the source of truth for full Antares behavior.
+
+For background on the model itself, see Cisco's announcement: [Introducing Antares: The Most Efficient Open-Weight AI Models for Vulnerability Localization](https://blogs.cisco.com/ai/introducing-antares-the-most-efficient-open-weight-ai-models-for-vulnerability-localization). Cisco describes Antares-1B as an open-weight model specialized for vulnerability localization in real-world codebases, trained to navigate repositories through terminal-style tool use. This module is a Deliverance-side way to exercise that workflow locally.
+
+This module is intentionally smaller. It exists to make the local Deliverance + Antares demo convenient from Java while preserving the important pieces:
+
+- raw OpenAI-compatible `/v1/completions`, not chat completions
+- Antares/Granite prompt serialization
+- streamed model output so the terminal keeps moving during long generations
+- `terminal`, `read_file`, `submit_vulnerable_files`, and `submit_no_vulnerability_found`
+- exact repository-relative file validation for submissions
+- command approval before model-generated terminal commands by default
+
+## Safety
+
+Antares can request terminal commands. By default this Java CLI asks for `y/N` approval before every `terminal` or `bash` command:
+
+```text
+[approval] repo: /path/to/repository
+[approval] run terminal command?
+rg -n "Runtime\.getRuntime|ProcessBuilder|\.exec" .
+[approval] y/N:
+```
+
+Only use unattended mode inside a sandbox/container or another environment you are willing to let the model inspect:
+
+```bash
+--yes-run-commands
+```
+
+`read_file` is constrained to repository-relative files. `submit_vulnerable_files` rejects globs, placeholders, directories, missing files, absolute paths, and parent traversal.
+
+## Server
+
+Start the local Deliverance Antares server from the repository root:
+
+```bash
+./nanocode-deliverance/run-server-antares-1b.sh
+```
+
+The default Antares server profile uses the uploaded JQ4 model:
+
+```text
+edwardcapriolo/antares-1b-JQ4
+```
+
+and exposes the model name:
+
+```text
+antares-1b-JQ4
+```
+
+## Showcase
+
+The bundled showcase repository contains a CWE-78 OS command injection in:
+
+```text
+nanocode-deliverance/showcase-security-repo/src/main/java/demo/ArchiveController.java
+```
+
+Run the Java Antares helper:
+
+```bash
+./deliverance-antares-cli/run-showcase-cwe78.sh
+```
+
+Run unattended only in a sandbox/container:
+
+```bash
+./deliverance-antares-cli/run-showcase-cwe78.sh --yes-run-commands
+```
+
+Equivalent direct command:
+
+```bash
+java -jar deliverance-antares-cli/target/deliverance-antares-cli-0.0.12-SNAPSHOT-all.jar \
+  --repo nanocode-deliverance/showcase-security-repo \
+  --endpoint http://127.0.0.1:18085/v1 \
+  --model antares-1b-JQ4 \
+  --cwe CWE-78 \
+  --query "Look for user-controlled input reaching Runtime.exec, ProcessBuilder, shell commands, or command string concatenation." \
+  --max-tool-calls 4
+```
+
+Expected result:
+
+```json
+{
+  "vulnerabilityFound": true,
+  "rankedFiles": ["src/main/java/demo/ArchiveController.java"]
+}
+```
+
+Example condensed run:
+
+```text
+[antares] repo root .../nanocode-deliverance/showcase-security-repo
+[antares] model turn 1, tool calls 0/8
+I’ll first identify the language and major files, then search for OS command execution APIs and command-line construction patterns.
+
+[tool] terminal cd /repo && ls
+[approval] y/N: n
+[result]
+Tool terminal declined by user: cd /repo && ls
+
+[tool] terminal rg -n "\.exec\(" .
+[approval] y/N: y
+[result]
+./src/main/java/demo/ArchiveController.java:8:        return Runtime.getRuntime().exec(command);
+
+[tool] read_file src/main/java/demo/ArchiveController.java
+[result]
+1: package demo;
+...
+6:     public Process createArchive(String userName) throws IOException {
+7:         String command = "tar -czf /tmp/" + userName + ".tgz /srv/uploads/" + userName;
+8:         return Runtime.getRuntime().exec(command);
+9:     }
+
+[tool] submit_vulnerable_files {ranked_files=[src/main/java/demo/ArchiveController.java]}
+{
+  "vulnerabilityFound" : true,
+  "rankedFiles" : [ "src/main/java/demo/ArchiveController.java" ],
+  "summary" : "Submitted vulnerable files: [src/main/java/demo/ArchiveController.java]"
+}
+```
+
+The first command is intentionally shown: if Antares asks to run something you do not want, answer `n`. The model can recover and continue with safer commands.
+
+## Reference Python CLI
+
+To compare with the upstream CLI, configure a profile that points at the Deliverance completions endpoint:
+
+```toml
+[profiles.deliverance-antares]
+display_name = "Deliverance Antares JQ4"
+model = "antares-1b-JQ4"
+backend = "remote"
+endpoint_env = "ANTARES_ENDPOINT"
+context_window = 16384
+remote_timeout_seconds = 300
+
+[profiles.deliverance-antares.generation]
+max_tokens = 4096
+temperature = 0.3
+top_p = 1.0
+frequency_penalty = 0.3
+stop_tokens = ["<|end_of_text|>", "<|start_of_role|>"]
+use_completions_api = true
+```
+
+Then run:
+
+```bash
+export ANTARES_ENDPOINT="http://127.0.0.1:18085/v1/completions"
+
+uv run antares query ../deliverance/nanocode-deliverance/showcase-security-repo \
+  --cwe CWE-78 \
+  --query "Look for user-controlled input reaching Runtime.exec, ProcessBuilder, shell commands, or command string concatenation." \
+  --profile deliverance-antares \
+  --tool-budget 4
+```
+
+The Python CLI remains the full-featured implementation, including reports, SARIF, run history, read-only repository snapshots, and investigation traces.

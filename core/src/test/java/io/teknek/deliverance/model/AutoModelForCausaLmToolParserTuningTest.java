@@ -16,7 +16,7 @@ class AutoModelForCausaLmToolParserTuningTest {
 
     @Test
     void antaresUsesXmlToolCallParserTuning() {
-        AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(new ModelFetcher("fdtn-ai", "antares-1b-JQ4"));
+        AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(new ModelFetcher("edwardcapriolo", "antares-1b-JQ4"));
         ToolCallParser parser = builder.toolCallParserForTest();
 
         List<ToolCall> calls = parser.extract(new Response("", """
