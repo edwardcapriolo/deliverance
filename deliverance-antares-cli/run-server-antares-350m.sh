@@ -24,6 +24,11 @@ if [ "$OS_NAME" = "Darwin" ] && [ ! -f "$NATIVE_LIB_DIR/libwebgpu_dawn.dylib" ] 
   cp "$DAWN_LIB" "$NATIVE_LIB_DIR/"
 fi
 
+if [ ! -f "$HOME/.deliverance/fdtn-ai_antares-350m-JQ4/.finished" ]; then
+  printf '%s\n' "Quantized Antares-350M cache not found. Run: $SCRIPT_DIR/quantize-antares-350m.sh" >&2
+  exit 1
+fi
+
 cd "$WEB_DIR"
 
 java \
@@ -36,9 +41,9 @@ java \
   --add-modules jdk.incubator.vector \
   --enable-native-access=ALL-UNNAMED \
   --sun-misc-unsafe-memory-access=allow \
-  -Xmx10G \
+  -Xmx6G \
   -Djava.library.path="$NATIVE_LIB_DIR" \
-  -Dserver.port=${DELIVERANCE_PORT:-18085} \
+  -Dserver.port=${DELIVERANCE_PORT:-18086} \
   ${DELIVERANCE_KV_DISK_DIR:+-Ddeliverance.kv.disk-dir=$DELIVERANCE_KV_DISK_DIR} \
   -Ddeliverance.debug.chat-request=${DELIVERANCE_DEBUG_CHAT_REQUEST:-true} \
   -Ddebug=${DELIVERANCE_SPRING_DEBUG:-false} \
@@ -48,11 +53,11 @@ java \
   -Dlogging.level.net.deliverance.http.ChatCompletionService=${DELIVERANCE_CHAT_LOG_LEVEL:-INFO} \
   -Dlogging.level.io.teknek.deliverance=${DELIVERANCE_CORE_LOG_LEVEL:-INFO} \
   -Dlogging.level.io.teknek.deliverance.model=${DELIVERANCE_MODEL_LOG_LEVEL:-INFO} \
-  -Dlogging.level.io.teknek.deliverance.generator=${DELIVERANCE_GENERATOR_LOG_LEVEL:-WARN} \
-  -Dlogging.level.org.springframework.web=${DELIVERANCE_SPRING_WEB_LOG_LEVEL:-WARN} \
+  -Dlogging.level.io.teknek.deliverance.generator=${DELIVERANCE_GENERATOR_LOG_LEVEL:-INFO} \
+  -Dlogging.level.org.springframework.web=${DELIVERANCE_SPRING_WEB_LOG_LEVEL:-INFO} \
   -Dserver.undertow.accesslog.enabled=true \
   -Dserver.undertow.accesslog.dir=${DELIVERANCE_ACCESS_LOG_DIR:-./logs} \
   -Dserver.undertow.accesslog.prefix=access_log \
   -Dserver.undertow.accesslog.suffix=.log \
-  -Dspring.config.location=file:./antares-1b.properties \
+  -Dspring.config.location=file:./antares-350m.properties \
   -jar target/web-*-SNAPSHOT.jar

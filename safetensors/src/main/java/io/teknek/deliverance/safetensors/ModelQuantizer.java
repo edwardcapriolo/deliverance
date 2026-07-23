@@ -204,6 +204,11 @@ public class ModelQuantizer {
     private void quantizeNames(WeightLoader loader, List<String> tensorNames, Path outputDir, DType targetType,
             Predicate<String> tensorFilter, Instant startedAt, Map<String, String> outputWeightMap,
             List<TensorTransform> tensorTransforms, int[] shardCounter, int[] processed, int total) {
+        if (targetType == DType.Q4) {
+            quantizeNamesToPackedQ4Shards(loader, tensorNames, outputDir, tensorFilter, startedAt,
+                    outputWeightMap, tensorTransforms, shardCounter, processed, total);
+            return;
+        }
         for (String name : tensorNames) {
             processed[0]++;
             AbstractTensor original = loader.load(name);
@@ -211,14 +216,9 @@ public class ModelQuantizer {
             if (tensorFilter.test(name) && canQuantize(original, targetType)) {
                 LOGGER.info("Quantizing tensor {}/{} {} from {} to {}", processed[0], total, name,
                         original.dType(), targetType);
-                if (targetType == DType.Q4) {
-                    writeQ4Tensor(outputDir, loader.metadata(), outputWeightMap, shardCounter, name, original);
-                    quantized = true;
-                } else {
-                    try (AbstractTensor tensor = AbstractTensorUtils.quantize(original, targetType, true)) {
-                        writeTensor(outputDir, loader.metadata(), outputWeightMap, shardCounter, name, tensor);
-                        quantized = tensor != original;
-                    }
+                try (AbstractTensor tensor = AbstractTensorUtils.quantize(original, targetType, true)) {
+                    writeTensor(outputDir, loader.metadata(), outputWeightMap, shardCounter, name, tensor);
+                    quantized = tensor != original;
                 }
             }
             if (!quantized) {
@@ -228,6 +228,142 @@ public class ModelQuantizer {
             original.close();
             logProgress(processed[0], total, startedAt);
         }
+    }
+
+    private void quantizeNamesToPackedQ4Shards(WeightLoader loader, List<String> tensorNames, Path outputDir,
+            Predicate<String> tensorFilter, Instant startedAt, Map<String, String> outputWeightMap,
+            List<TensorTransform> tensorTransforms, int[] shardCounter, int[] processed, int total) {
+        List<OutputTensorPlan> currentShard = new ArrayList<>();
+        long currentShardBytes = 0;
+        for (String name : tensorNames) {
+            OutputTensorPlan plan = outputTensorPlan(name, loader.tensorInfoMap().get(name), tensorFilter);
+            long tensorBytes = plan.length();
+            if (!currentShard.isEmpty() && currentShardBytes + tensorBytes > maxShardSize) {
+                writePackedQ4Shard(outputDir, loader, currentShard, outputWeightMap, tensorTransforms,
+                        shardCounter, processed, total, startedAt);
+                currentShard.clear();
+                currentShardBytes = 0;
+            }
+            currentShard.add(plan);
+            currentShardBytes += tensorBytes;
+        }
+        if (!currentShard.isEmpty()) {
+            writePackedQ4Shard(outputDir, loader, currentShard, outputWeightMap, tensorTransforms,
+                    shardCounter, processed, total, startedAt);
+        }
+    }
+
+    private OutputTensorPlan outputTensorPlan(String name, TensorInfo info, Predicate<String> tensorFilter) {
+        if (info == null) {
+            throw new IllegalArgumentException("Missing tensor info for " + name);
+        }
+        boolean quantized = tensorFilter.test(name) && canQuantize(info, DType.Q4);
+        if (quantized) {
+            long elements = elementCount(info.shape);
+            if (elements % BLOCK_SIZE != 0) {
+                throw new IllegalArgumentException("Q4 streaming requires tensor size to be a multiple of "
+                        + BLOCK_SIZE + ": " + name);
+            }
+            long q4Bytes = elements / 2;
+            long scaleBytes = (elements / BLOCK_SIZE) * Float.BYTES;
+            return new OutputTensorPlan(name, quantized, List.of(
+                    new OutputPayloadPlan(name, DType.Q4, info.shape, q4Bytes),
+                    new OutputPayloadPlan(name + ".qb", DType.F32, q4BlockShape(info.shape), scaleBytes)));
+        }
+        return new OutputTensorPlan(name, false, List.of(
+                new OutputPayloadPlan(name, info.dType, info.shape, info.dataOffsets[1] - info.dataOffsets[0])));
+    }
+
+    private void writePackedQ4Shard(Path outputDir, WeightLoader loader, List<OutputTensorPlan> tensors,
+            Map<String, String> outputWeightMap, List<TensorTransform> tensorTransforms, int[] shardCounter,
+            int[] processed, int total, Instant startedAt) {
+        shardCounter[0]++;
+        String shardName = String.format("model-%05d.safetensors", shardCounter[0]);
+        Path outputFile = outputDir.resolve(shardName);
+        try {
+            Files.createDirectories(outputDir);
+            Map<String, Object> header = new LinkedHashMap<>();
+            Map<String, Long> payloadOffsets = new LinkedHashMap<>();
+            Map<String, Long> payloadEnds = new LinkedHashMap<>();
+            Map<String, String> metadata = loader.metadata();
+            if (metadata != null && !metadata.isEmpty()) {
+                header.put("__metadata__", metadata);
+            }
+            long offset = 0;
+            for (OutputTensorPlan tensor : tensors) {
+                for (OutputPayloadPlan payload : tensor.payloads()) {
+                    long end = offset + payload.length();
+                    header.put(payload.name(), tensorInfoMap(payload.dtype(), payload.shape(), offset, end));
+                    payloadOffsets.put(payload.name(), offset);
+                    payloadEnds.put(payload.name(), end);
+                    outputWeightMap.put(payload.name(), shardName);
+                    offset = end;
+                }
+            }
+            byte[] headerBytes = JsonUtils.om.writeValueAsBytes(header);
+            LOGGER.debug("Writing packed quantized shard {} with {} tensors and {} payload bytes",
+                    shardName, tensors.size(), offset);
+            try (FileChannel channel = FileChannel.open(outputFile,
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
+                ByteBuffer prefix = ByteBuffer.allocate(Long.BYTES).order(ByteOrder.LITTLE_ENDIAN);
+                prefix.putLong(headerBytes.length);
+                prefix.flip();
+                channel.write(prefix);
+                channel.write(ByteBuffer.wrap(headerBytes));
+                long dataStart = Long.BYTES + headerBytes.length;
+                for (OutputTensorPlan tensor : tensors) {
+                    processed[0]++;
+                    try (AbstractTensor original = loader.load(tensor.name())) {
+                        if (tensor.quantized()) {
+                            LOGGER.info("Quantizing tensor {}/{} {} from {} to {}", processed[0], total,
+                                    tensor.name(), original.dType(), DType.Q4);
+                            String q4Name = tensor.name();
+                            String scaleName = tensor.name() + ".qb";
+                            streamQ4Payloads(channel,
+                                    dataStart + payloadOffsets.get(q4Name),
+                                    dataStart + payloadOffsets.get(scaleName),
+                                    original);
+                        } else {
+                            writeDensePayload(channel, dataStart + payloadOffsets.get(tensor.name()), original);
+                        }
+                        tensorTransforms.add(TensorTransform.from(tensor.name(), original, DType.Q4, tensor.quantized()));
+                    }
+                    logProgress(processed[0], total, startedAt);
+                }
+            }
+            for (Map.Entry<String, Long> entry : payloadEnds.entrySet()) {
+                if (entry.getValue() < payloadOffsets.get(entry.getKey())) {
+                    throw new IllegalStateException("Invalid payload offsets for " + entry.getKey());
+                }
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Unable to write packed Q4 shard " + outputFile, e);
+        }
+    }
+
+    private long elementCount(int[] shape) {
+        long elements = 1;
+        for (long dimension : shape) {
+            elements = Math.multiplyExact(elements, dimension);
+        }
+        return elements;
+    }
+
+    private void writeDensePayload(FileChannel channel, long position, AbstractTensor tensor) throws IOException {
+        ByteBuffer bytes = tensor.getMemorySegment().asByteBuffer().duplicate().order(ByteOrder.LITTLE_ENDIAN);
+        bytes.clear();
+        while (bytes.hasRemaining()) {
+            channel.write(bytes, position + bytes.position());
+        }
+    }
+
+    private record OutputTensorPlan(String name, boolean quantized, List<OutputPayloadPlan> payloads) {
+        long length() {
+            return payloads.stream().mapToLong(OutputPayloadPlan::length).sum();
+        }
+    }
+
+    private record OutputPayloadPlan(String name, DType dtype, int[] shape, long length) {
     }
 
     private record QuantizationRun(Map<String, String> metadata, Map<String, String> outputWeightMap,
@@ -294,42 +430,6 @@ public class ModelQuantizer {
         }
     }
 
-    private void writeQ4Tensor(Path outputDir, Map<String, String> metadata, Map<String, String> outputWeightMap,
-            int[] shardCounter, String name, AbstractTensor source) {
-        if (source.size() % BLOCK_SIZE != 0) {
-            throw new IllegalArgumentException("Q4 streaming requires tensor size to be a multiple of " + BLOCK_SIZE + ": " + name);
-        }
-        shardCounter[0]++;
-        String shardName = String.format("model-%05d.safetensors", shardCounter[0]);
-        Path outputFile = outputDir.resolve(shardName);
-        try {
-            Files.createDirectories(outputDir);
-            long q4Bytes = source.size() / 2;
-            long scaleBytes = (source.size() / BLOCK_SIZE) * Float.BYTES;
-            Map<String, Object> header = new LinkedHashMap<>();
-            if (metadata != null && !metadata.isEmpty()) {
-                header.put("__metadata__", metadata);
-            }
-            header.put(name, tensorInfoMap(DType.Q4, source.shape().shapeArray(), 0, q4Bytes));
-            header.put(name + ".qb", tensorInfoMap(DType.F32, q4BlockShape(source.shape().shapeArray()), q4Bytes, q4Bytes + scaleBytes));
-            byte[] headerBytes = JsonUtils.om.writeValueAsBytes(header);
-            try (FileChannel channel = FileChannel.open(outputFile,
-                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
-                ByteBuffer prefix = ByteBuffer.allocate(Long.BYTES).order(ByteOrder.LITTLE_ENDIAN);
-                prefix.putLong(headerBytes.length);
-                prefix.flip();
-                channel.write(prefix);
-                channel.write(ByteBuffer.wrap(headerBytes));
-                long dataStart = Long.BYTES + headerBytes.length;
-                streamQ4Payloads(channel, dataStart, q4Bytes, source);
-            }
-            outputWeightMap.put(name, shardName);
-            outputWeightMap.put(name + ".qb", shardName);
-        } catch (IOException e) {
-            throw new RuntimeException("Unable to write streaming Q4 tensor " + name + " to " + outputFile, e);
-        }
-    }
-
     private Map<String, Object> tensorInfoMap(DType dtype, int[] shape, long start, long end) {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("dtype", dtype.name());
@@ -344,7 +444,7 @@ public class ModelQuantizer {
         return shape;
     }
 
-    private void streamQ4Payloads(FileChannel channel, long dataStart, long scaleOffset, AbstractTensor source) throws IOException {
+    private void streamQ4Payloads(FileChannel channel, long q4Start, long scaleStart, AbstractTensor source) throws IOException {
         int packedCapacity = Math.max(HALF_BLOCK, Q4_WRITE_BUFFER_BYTES - (Q4_WRITE_BUFFER_BYTES % HALF_BLOCK));
         int scaleCapacity = (packedCapacity / HALF_BLOCK) * Float.BYTES;
         ByteBuffer packed = ByteBuffer.allocateDirect(packedCapacity).order(ByteOrder.LITTLE_ENDIAN);
@@ -376,13 +476,13 @@ public class ModelQuantizer {
             }
             scaleBuffer.putFloat(scale);
             if (!packed.hasRemaining()) {
-                packedBytesWritten += flush(channel, packed, dataStart + packedBytesWritten);
-                scaleBytesWritten += flush(channel, scaleBuffer, dataStart + scaleOffset + scaleBytesWritten);
+                packedBytesWritten += flush(channel, packed, q4Start + packedBytesWritten);
+                scaleBytesWritten += flush(channel, scaleBuffer, scaleStart + scaleBytesWritten);
             }
         }
         if (packed.position() > 0) {
-            packedBytesWritten += flush(channel, packed, dataStart + packedBytesWritten);
-            scaleBytesWritten += flush(channel, scaleBuffer, dataStart + scaleOffset + scaleBytesWritten);
+            packedBytesWritten += flush(channel, packed, q4Start + packedBytesWritten);
+            scaleBytesWritten += flush(channel, scaleBuffer, scaleStart + scaleBytesWritten);
         }
     }
 

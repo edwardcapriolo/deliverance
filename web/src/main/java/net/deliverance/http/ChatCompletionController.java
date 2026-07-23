@@ -99,6 +99,7 @@ public class ChatCompletionController {
     @RequestMapping(method = RequestMethod.POST, value = { "/v1/completions", "/completions" }, produces = {
             "application/json", "text/event-stream" }, consumes = { "application/json" })
     Object createCompletion(@RequestHeader Map<String, String> headers, @RequestBody CreateCompletionRequest request) {
+        debugCompletionRequest(request);
         String modelName = completionModelName(request);
         Optional<Map.Entry<MultiModelConfig, CausalLanguageModel>> z = findModel(modelName);
         if (z.isEmpty()) {
@@ -107,11 +108,14 @@ public class ChatCompletionController {
         CausalLanguageModel model = z.get().getValue();
         GeneratorParameters parameters = completionParameters(request);
         PromptContext prompt = PromptContext.of(request.getPrompt() == null ? "" : request.getPrompt());
+        debugPrompt(prompt.getPrompt());
         if (Boolean.TRUE.equals(request.getStream())) {
             return streamCompletion(headers, request, model, prompt, parameters, modelName);
         }
         try {
+            long generateStart = System.nanoTime();
             Response response = model.generate(UUID.randomUUID(), prompt, parameters, new DoNothingGenerateEvent());
+            debugElapsed("completion.generate", generateStart);
             return new ResponseEntity<>(completionResponse(UUID.randomUUID(), modelName, response.responseText,
                     completionFinishReason(response.finishReason)), HttpStatus.OK);
         } catch (IllegalArgumentException | GenerationException e) {
@@ -136,6 +140,7 @@ public class ChatCompletionController {
         emitter.onError(ignored -> closed.set(true));
         UUID finalSessionId = sessionId;
         CompletableFuture.runAsync(() -> {
+            long generateStart = System.nanoTime();
             try {
                 Response response = model.generate(finalSessionId, prompt, parameters,
                         (int next, String tok, String token, float f) -> {
@@ -149,6 +154,7 @@ public class ChatCompletionController {
                     sendStreamEvent(emitter, closed, completionChunk(finalSessionId, modelName, "",
                             completionFinishReason(response.finishReason)));
                 }
+                debugElapsed("completion.stream_generate", generateStart);
                 if (!closed.get()) {
                     sendStreamEvent(emitter, closed, "[DONE]");
                 }
@@ -685,6 +691,21 @@ public class ChatCompletionController {
                 LOGGER.info("chat.message[{}] {}", i, preview(String.valueOf(request.getMessages().get(i)), 512));
             }
         }
+    }
+
+    private void debugCompletionRequest(CreateCompletionRequest request) {
+        if (!debugChatRequest) {
+            return;
+        }
+        String prompt = request.getPrompt() == null ? "" : request.getPrompt();
+        LOGGER.info("completion.request model={} prompt_chars={} stream={} max_tokens={} temperature={} top_p={} stop={}",
+                request.getModel(),
+                prompt.length(),
+                request.getStream(),
+                request.getMaxTokens(),
+                request.getTemperature(),
+                request.getTopP(),
+                request.getStop());
     }
 
     void applyReasoning(ChatCompletionResponseMessage message, String reasoning) {

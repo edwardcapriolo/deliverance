@@ -70,6 +70,7 @@
         <module>spring-ai-deliverance-embedded</module>
         <module>spring-ai-deliverance-demo</module>
         <module>nanocode-deliverance</module>
+        <module>deliverance-antares-cli</module>
         <module>vibrant-maven-plugin</module>
     </modules>
     <build>

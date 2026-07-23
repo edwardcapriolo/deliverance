@@ -13,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.HashSet;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -236,6 +237,34 @@ public class ModelQuantizerTest {
             assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.mlp.experts.0.gate_proj.weight").dType);
             assertTrue(loader.isWeightPresent("model.layers.0.self_attn.q_proj.weight.qb"));
             assertTrue(loader.isWeightPresent("model.layers.0.mlp.experts.0.gate_proj.weight.qb"));
+        }
+    }
+
+    @Test
+    public void packsStreamingQ4PayloadsIntoShards() throws Exception {
+        Path sourceDir = tempDir.resolve("source-packed-q4");
+        Path outputDir = tempDir.resolve("output-packed-q4");
+        Files.createDirectories(sourceDir);
+        Files.writeString(sourceDir.resolve("config.json"), "{\"model_type\":\"llama\"}");
+
+        Map<String, AbstractTensor> tensors = new LinkedHashMap<>();
+        tensors.put("model.layers.0.self_attn.q_proj.weight", vector(1.0f));
+        tensors.put("model.layers.0.self_attn.k_proj.weight", vector(2.0f));
+        tensors.put("model.layers.0.self_attn.v_proj.weight", vector(3.0f));
+        SafeTensorWriter.write(sourceDir.resolve("model.safetensors"), Map.of(), tensors);
+
+        new ModelQuantizer(64).quantizeModelDirectory(sourceDir, outputDir);
+
+        SafeTensorIndexPojo index = JsonUtils.om.readValue(
+                outputDir.resolve(SafeTensorIndexPojo.MODEL_INDEX_JSON).toFile(), SafeTensorIndexPojo.class);
+        assertEquals(1, new HashSet<>(index.getWeightFileMap().values()).size());
+        try (DefaultWeightLoader loader = new DefaultWeightLoader(outputDir.toFile())) {
+            assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.self_attn.q_proj.weight").dType);
+            assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.self_attn.k_proj.weight").dType);
+            assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.self_attn.v_proj.weight").dType);
+            assertTrue(loader.isWeightPresent("model.layers.0.self_attn.q_proj.weight.qb"));
+            assertTrue(loader.isWeightPresent("model.layers.0.self_attn.k_proj.weight.qb"));
+            assertTrue(loader.isWeightPresent("model.layers.0.self_attn.v_proj.weight.qb"));
         }
     }
 

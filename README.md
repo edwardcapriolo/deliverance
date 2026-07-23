@@ -44,6 +44,7 @@ Generation:
 - [Industry-standard chat API](core/chat_api.md) Explains `/chat/completions`, generated API models, request mapping, streaming, tools, and guided fields
 - [Tool call parser](core/tool_parser.md) Explains how the tool call parser is implemented in the stack
 - [Reasoning field support](core/reasoning_field_support.md) Documents `reasoning_content`, model reasoning channels, and nanocode behavior
+- [Deliverance Antares CLI](deliverance-antares-cli/README.md) Runs Antares-style vulnerability localization against Deliverance `/v1/completions` with streamed output and command approval
 - [Quantize On Demand](core/quantize_on_demand.md) Explains local Q4 model generation, cache reuse, and provenance files
 - [Benchmarking](core/benchmarking.md) Explains benchmark scripts, profile output, CSV/JSONL artifacts, and QOD benchmark workflow
 - [Tensor engines and JQ4](core/tensor_engines_and_jq4.md) Explains why tensor kernels, safetensors, and Q4 layout matter for local inference

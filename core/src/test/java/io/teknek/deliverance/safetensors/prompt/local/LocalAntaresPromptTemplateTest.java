@@ -19,7 +19,7 @@ public class LocalAntaresPromptTemplateTest {
 
     @Test
     void rendersAntaresToolTemplateWhenCached() throws Exception {
-        Path template = new ModelFetcher("fdtn-ai", "antares-1b-JQ4").pathForModel().resolve("chat_template.jinja");
+        Path template = new ModelFetcher("edwardcapriolo", "antares-1b-JQ4").pathForModel().resolve("chat_template.jinja");
         Assumptions.assumeTrue(Files.isRegularFile(template), "Antares JQ4 cache is not present: " + template);
 
         PromptSupport support = new PromptSupport(Map.of("default", Files.readString(template)), "<|end_of_text|>",
@@ -42,7 +42,7 @@ public class LocalAntaresPromptTemplateTest {
 
     @Test
     void rendersNanocodeSecurityShowcasePromptWhenCached() throws Exception {
-        Path template = new ModelFetcher("fdtn-ai", "antares-1b-JQ4").pathForModel().resolve("chat_template.jinja");
+        Path template = new ModelFetcher("edwardcapriolo", "antares-1b-JQ4").pathForModel().resolve("chat_template.jinja");
         Assumptions.assumeTrue(Files.isRegularFile(template), "Antares JQ4 cache is not present: " + template);
 
         PromptSupport support = new PromptSupport(Map.of("default", Files.readString(template)), "<|end_of_text|>",
