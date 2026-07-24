@@ -122,6 +122,10 @@ public class ModelQuantizer {
         quantizeModelDirectory(sourceDir, outputDir, DType.Q4, DEFAULT_Q4_TENSOR_FILTER);
     }
 
+    public static boolean isGraniteMoeHybridStackedExpertProjection(String name) {
+        return name.endsWith("block_sparse_moe.input_linear.weight")
+                || name.endsWith("block_sparse_moe.output_linear.weight");
+    }
     public void quantizeModelDirectory(Path sourceDir, Path outputDir, DType targetType, Predicate<String> tensorFilter) {
         if (targetType != DType.Q4 && targetType != DType.I8 && targetType != DType.BF16 && targetType != DType.F32) {
             throw new IllegalArgumentException("Unsupported export target " + targetType);
@@ -213,7 +217,7 @@ public class ModelQuantizer {
             processed[0]++;
             AbstractTensor original = loader.load(name);
             boolean quantized = false;
-            if (tensorFilter.test(name) && canQuantize(original, targetType)) {
+            if (tensorFilter.test(name) && canQuantize(name, original, targetType)) {
                 LOGGER.info("Quantizing tensor {}/{} {} from {} to {}", processed[0], total, name,
                         original.dType(), targetType);
                 try (AbstractTensor tensor = AbstractTensorUtils.quantize(original, targetType, true)) {
@@ -257,7 +261,7 @@ public class ModelQuantizer {
         if (info == null) {
             throw new IllegalArgumentException("Missing tensor info for " + name);
         }
-        boolean quantized = tensorFilter.test(name) && canQuantize(info, DType.Q4);
+        boolean quantized = tensorFilter.test(name) && canQuantize(name, info, DType.Q4);
         if (quantized) {
             long elements = elementCount(info.shape);
             if (elements % BLOCK_SIZE != 0) {
@@ -375,11 +379,31 @@ public class ModelQuantizer {
      * kernels and scalar calibration tensors are kept dense to avoid invalid block-shape handling.
      */
     boolean canQuantize(AbstractTensor tensor, DType targetType) {
+
         return tensor.dType() != targetType && tensor.shape().dims() == 2;
     }
 
     boolean canQuantize(TensorInfo tensorInfo, DType targetType) {
+
         return tensorInfo.dType != targetType && tensorInfo.shape.length == 2;
+    }
+
+    boolean canQuantize(String name, AbstractTensor tensor, DType targetType) {
+        return tensor.dType() != targetType
+                && (tensor.shape().dims() == 2
+                || canQuantizeGraniteMoeHybridStackedExpertProjection(name, tensor.shape().shapeArray()));
+    }
+
+    boolean canQuantize(String name, TensorInfo tensorInfo, DType targetType) {
+        return tensorInfo.dType != targetType
+                && (tensorInfo.shape.length == 2
+                || canQuantizeGraniteMoeHybridStackedExpertProjection(name, tensorInfo.shape));
+    }
+
+    private boolean canQuantizeGraniteMoeHybridStackedExpertProjection(String name, int[] shape) {
+        return isGraniteMoeHybridStackedExpertProjection(name)
+                && shape.length == 3
+                && shape[shape.length - 1] % BLOCK_SIZE == 0;
     }
 
     /**
@@ -496,10 +520,30 @@ public class ModelQuantizer {
         return bytes;
     }
 
+    /**
+     * Converts the flat Q4 writer offset back into source tensor coordinates.
+     *
+     * <p>The Q4 writer streams values in row-major order and packs every 32 flat values into one quantization block.
+     * A 2D matrix uses {@code flat = row * cols + col}. A Granite stacked expert tensor uses
+     * {@code flat = expert * rows * cols + row * cols + col}, so the selected expert is just the first coordinate of
+     * the 3D source tensor.</p>
+     */
     private float sourceValue(AbstractTensor source, int flatOffset, int columns) {
-        int row = flatOffset / columns;
-        int column = flatOffset % columns;
-        return source.get(row, column);
+        if (source.shape().dims() == 2) {
+            int row = flatOffset / columns;
+            int column = flatOffset % columns;
+            return source.get(row, column);
+        }
+        if (source.shape().dims() == 3) {
+            int rows = source.shape().dim(1);
+            int valuesPerPlane = rows * columns;
+            int plane = flatOffset / valuesPerPlane;
+            int remainder = flatOffset % valuesPerPlane;
+            int row = remainder / columns;
+            int column = remainder % columns;
+            return source.get(plane, row, column);
+        }
+        return source.get(flatOffset);
     }
 
     private void logProgress(int processed, int total, Instant startedAt) {

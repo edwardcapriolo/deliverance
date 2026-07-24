@@ -1,11 +1,13 @@
 package io.teknek.deliverance.integration;
 
+import io.teknek.deliverance.DType;
 import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.DoNothingGenerateEvent;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
+import io.teknek.deliverance.model.GenerateEvent;
 import io.teknek.deliverance.model.granitemoehybrid.GraniteMoeHybridConfig;
 import io.teknek.deliverance.model.granitemoehybrid.GraniteMoeHybridModel;
 import io.teknek.deliverance.safetensors.DefaultWeightLoader;
@@ -54,7 +56,9 @@ class GraniteTinyFetchIT {
     @Test
     void granite40HTinyBuildsHybridModel() {
         ModelFetcher fetch = new ModelFetcher("ibm-granite", "granite-4.0-h-tiny");
-        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch).buildLocalTransformerModel()) {
+        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
+                .withQuantizeOnDemand(DType.Q4, "edwardcapriolo","granite-4.0-h-tiny-JQ4")
+                .buildLocalTransformerModel()) {
             assertTrue(model instanceof GraniteMoeHybridModel);
             GraniteMoeHybridConfig config = (GraniteMoeHybridConfig) model.getConfig();
             assertEquals(40, config.numberOfLayers);
@@ -87,7 +91,7 @@ class GraniteTinyFetchIT {
 
     @Test
     void granite40HTinyJq4GeneratesShortSmokeWhenCached() {
-        ModelFetcher fetch = new ModelFetcher("ibm-granite", "granite-4.0-h-tiny-JQ4");
+        ModelFetcher fetch = new ModelFetcher("edwardcapriolo", "granite-4.0-h-tiny-JQ4");
         Assumptions.assumeTrue(fetch.pathForModel().toFile().isDirectory(),
                 "Quantized Granite tiny cache is not present: " + fetch.pathForModel());
         assertGraniteGeneratesShortSmoke(fetch, "GRANITE_TINY_JQ4_SMOKE");
@@ -99,8 +103,14 @@ class GraniteTinyFetchIT {
                     .addUserMessage("In one short sentence, say what a shell command does.");
             Response response = model.generate(UUID.randomUUID(), prompt.build(),
                     new GeneratorParameters().withTemperature(0.1f).withTopP(1.0f).withMaxTokens(8),
-                    new DoNothingGenerateEvent());
+                    new GenerateEvent() {
+                        @Override
+                        public void emit(int next, String nextRaw, String nextCleaned, float timing) {
+                            System.out.println(next + " " + nextCleaned);
+                        }
+                    });
             System.out.println(label + "=" + response.responseTextWithSpecialTokens.replace("\n", "\\n"));
+            System.out.println(response);
             assertFalse(response.responseTextWithSpecialTokens.isBlank());
         }
     }
