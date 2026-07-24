@@ -3,6 +3,8 @@ package io.teknek.deliverance.safetensors;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.TensorDisplayUtil;
+import io.teknek.deliverance.tensor.TensorInfo;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -14,6 +16,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.HashSet;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -194,6 +197,41 @@ public class ModelQuantizerTest {
             assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.mamba.out_proj.weight").dType);
             assertEquals(DType.F32, loader.tensorInfoMap().get("model.layers.0.mamba.conv1d.weight").dType);
             assertTrue(loader.isWeightPresent("model.layers.0.shared_mlp.input_linear.weight.qb"));
+        }
+    }
+
+    @Test
+    public void quantizesGraniteMoeHybridStackedExpertProjectionWeights() throws Exception {
+        Path sourceDir = tempDir.resolve("source-granite-stacked-expert");
+        Path outputDir = tempDir.resolve("output-granite-stacked-expert");
+        Files.createDirectories(sourceDir);
+        Files.writeString(sourceDir.resolve("config.json"), "{\"model_type\":\"granitemoehybrid\"}");
+
+        FloatBufferTensor expert = stackedExpert3dExactQ4();
+        Map<String, AbstractTensor> tensors = new LinkedHashMap<>();
+        tensors.put("model.layers.0.block_sparse_moe.input_linear.weight", expert);
+        SafeTensorWriter.write(sourceDir.resolve("model.safetensors"), Map.of(), tensors);
+
+        new ModelQuantizer(256).quantizeModelDirectory(sourceDir, outputDir);
+
+        try (DefaultWeightLoader loader = new DefaultWeightLoader(outputDir.toFile())) {
+            assertTensorInfo(loader.tensorInfoMap(), "model.layers.0.block_sparse_moe.input_linear.weight",
+                    DType.Q4, new int[]{2, 2, 32}, expert);
+            assertTensorInfo(loader.tensorInfoMap(), "model.layers.0.block_sparse_moe.input_linear.weight.qb",
+                    DType.F32, new int[]{2, 2, 1}, expert);
+            try (AbstractTensor loaded = loader.load("model.layers.0.block_sparse_moe.input_linear.weight");
+                 AbstractTensor expertOne = loaded.slice(1)) {
+                assertEquals(DType.Q4, loaded.dType());
+                assertEquals("[2, 2, 32]", java.util.Arrays.toString(loaded.shape().shapeArray()));
+                assertEquals(-8.0f, loaded.get(0, 0, 0), 0.0f, TensorDisplayUtil.pretty3dDisplayAll(loaded));
+                assertEquals(7.0f, loaded.get(0, 0, 15), 0.0f, TensorDisplayUtil.pretty3dDisplayAll(loaded));
+                assertEquals(-8.0f, loaded.get(1, 1, 16), 0.0f, TensorDisplayUtil.pretty3dDisplayAll(loaded));
+                assertEquals(7.0f, loaded.get(1, 1, 31), 0.0f, TensorDisplayUtil.pretty3dDisplayAll(loaded));
+
+                assertEquals("[2, 32]", java.util.Arrays.toString(expertOne.shape().shapeArray()));
+                assertEquals(-8.0f, expertOne.get(0, 0), 0.0f, TensorDisplayUtil.pretty2dDisplayAll(expertOne));
+                assertEquals(7.0f, expertOne.get(1, 31), 0.0f, TensorDisplayUtil.pretty2dDisplayAll(expertOne));
+            }
         }
     }
 
@@ -446,5 +484,48 @@ public class ModelQuantizerTest {
             tensor.set(i, 0, i / 8, i % 8);
         }
         return tensor;
+    }
+
+    private static FloatBufferTensor stackedExpert3d(float offset) {
+        FloatBufferTensor tensor = new FloatBufferTensor(2, 2, 32);
+        for (int expert = 0; expert < 2; expert++) {
+            for (int row = 0; row < 2; row++) {
+                for (int col = 0; col < 32; col++) {
+                    tensor.set(offset + expert * 100 + row * 32 + col, expert, row, col);
+                }
+            }
+        }
+        return tensor;
+    }
+
+    private static FloatBufferTensor stackedExpert3dExactQ4() {
+        FloatBufferTensor tensor = new FloatBufferTensor(2, 2, 32);
+        for (int expert = 0; expert < 2; expert++) {
+            for (int row = 0; row < 2; row++) {
+                for (int col = 0; col < 32; col++) {
+                    tensor.set(-8.0f + (col % 16), expert, row, col);
+                }
+            }
+        }
+        return tensor;
+    }
+
+    private static void assertTensorInfo(Map<String, TensorInfo> actual, String name, DType expectedType,
+            int[] expectedShape, AbstractTensor sourceForDisplay) {
+        TensorInfo info = actual.get(name);
+        String expected = tensorInfoDisplay(expectedType, expectedShape);
+        String got = info == null ? "<missing>" : tensorInfoDisplay(info.dType, info.shape);
+        assertEquals(expected, got, "tensor info mismatch for " + name
+                + "\nexpected: " + expected
+                + "\ngot:      " + got
+                + "\nsource tensor:\n" + TensorDisplayUtil.pretty3dDisplay(sourceForDisplay,
+                Optional.<Integer>empty(), Optional.of(Math.min(2, sourceForDisplay.shape().dim(0))),
+                Optional.<Integer>empty(), Optional.of(Math.min(2, sourceForDisplay.shape().dim(1))),
+                Optional.<Integer>empty(), Optional.of(Math.min(8, sourceForDisplay.shape().dim(2))),
+                Optional.of("%6.1f")));
+    }
+
+    private static String tensorInfoDisplay(DType dType, int[] shape) {
+        return "dtype=" + dType + " shape=" + java.util.Arrays.toString(shape);
     }
 }

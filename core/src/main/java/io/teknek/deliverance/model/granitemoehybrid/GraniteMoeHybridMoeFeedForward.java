@@ -20,7 +20,17 @@ public class GraniteMoeHybridMoeFeedForward implements FeedForward {
 
     private static final String METRIC_FORWARD = "granitemoehybrid.moe.forward";
     private static final String METRIC_ROUTE = "granitemoehybrid.moe.route";
+    private static final String METRIC_ROUTE_MATMUL = "granitemoehybrid.moe.route.matmul";
+    private static final String METRIC_ROUTE_TOPK = "granitemoehybrid.moe.route.topk_softmax";
+    private static final String METRIC_COUNT_EXPERTS = "granitemoehybrid.moe.count_experts";
     private static final String METRIC_EXPERT = "granitemoehybrid.moe.expert";
+    private static final String METRIC_EXPERT_COPY_ROWS = "granitemoehybrid.moe.expert.copy_selected_rows";
+    private static final String METRIC_EXPERT_INPUT_MATMUL = "granitemoehybrid.moe.expert.input_matmul";
+    private static final String METRIC_EXPERT_ACTIVATION_GATE = "granitemoehybrid.moe.expert.activation_gate";
+    private static final String METRIC_EXPERT_QUANTIZE_HIDDEN = "granitemoehybrid.moe.expert.quantize_hidden";
+    private static final String METRIC_EXPERT_OUTPUT_MATMUL = "granitemoehybrid.moe.expert.output_matmul";
+    private static final String METRIC_EXPERT_SCATTER_ADD = "granitemoehybrid.moe.expert.scatter_add";
+    private static final String METRIC_ACCUMULATE_SHARED_MOE = "granitemoehybrid.moe.accumulate_shared_moe";
 
     private final AbstractModel model;
     private final GraniteMoeHybridConfig config;
@@ -50,7 +60,9 @@ public class GraniteMoeHybridMoeFeedForward implements FeedForward {
         try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), METRIC_FORWARD).time();
              AbstractTensor moe = forwardMoe(input, tensorReducer)) {
             AbstractTensor shared = sharedMlp.forward(input, tensorReducer);
-            tensorProvider.get().accumulate(shared, moe, 0, config.embeddingLength);
+            try (Timer.Context ignored2 = InferenceProfiler.timer(model.getMetricRegistry(), METRIC_ACCUMULATE_SHARED_MOE).time()) {
+                tensorProvider.get().accumulate(shared, moe, 0, config.embeddingLength);
+            }
             return shared;
         }
     }
@@ -61,7 +73,10 @@ public class GraniteMoeHybridMoeFeedForward implements FeedForward {
         int[] selectedExperts = new int[tokens * config.numExpertsPerToken];
         float[] selectedWeights = new float[tokens * config.numExpertsPerToken];
         route(input, selectedExperts, selectedWeights);
-        int[] expertCounts = countSelectedExperts(tokens, selectedExperts);
+        int[] expertCounts;
+        try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), METRIC_COUNT_EXPERTS).time()) {
+            expertCounts = countSelectedExperts(tokens, selectedExperts);
+        }
         for (int expert = 0; expert < config.numLocalExperts; expert++) {
             int tokenCount = expertCounts[expert];
             if (tokenCount == 0) {
@@ -77,15 +92,19 @@ public class GraniteMoeHybridMoeFeedForward implements FeedForward {
     private void route(AbstractTensor input, int[] selectedExperts, float[] selectedWeights) {
         try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), METRIC_ROUTE).time();
              AbstractTensor logits = model.makeTensor(input.shape().first(), config.numLocalExperts)) {
-            tensorProvider.get().batchDotProduct(logits, input, routerWeights,
-                    0, 0, config.embeddingLength, 0, 0, config.numLocalExperts);
+            try (Timer.Context ignored2 = InferenceProfiler.timer(model.getMetricRegistry(), METRIC_ROUTE_MATMUL).time()) {
+                tensorProvider.get().batchDotProduct(logits, input, routerWeights,
+                        0, 0, config.embeddingLength, 0, 0, config.numLocalExperts);
+            }
             int[] rowExperts = new int[config.numExpertsPerToken];
             float[] rowWeights = new float[config.numExpertsPerToken];
-            for (int token = 0; token < input.shape().first(); token++) {
-                topKThenSoftmax(logits, token, rowExperts, rowWeights);
-                int offset = token * config.numExpertsPerToken;
-                System.arraycopy(rowExperts, 0, selectedExperts, offset, config.numExpertsPerToken);
-                System.arraycopy(rowWeights, 0, selectedWeights, offset, config.numExpertsPerToken);
+            try (Timer.Context ignored2 = InferenceProfiler.timer(model.getMetricRegistry(), METRIC_ROUTE_TOPK).time()) {
+                for (int token = 0; token < input.shape().first(); token++) {
+                    topKThenSoftmax(logits, token, rowExperts, rowWeights);
+                    int offset = token * config.numExpertsPerToken;
+                    System.arraycopy(rowExperts, 0, selectedExperts, offset, config.numExpertsPerToken);
+                    System.arraycopy(rowWeights, 0, selectedWeights, offset, config.numExpertsPerToken);
+                }
             }
         }
     }
@@ -145,16 +164,30 @@ public class GraniteMoeHybridMoeFeedForward implements FeedForward {
              AbstractTensor outputWeights = expertOutputWeights.slice(expert)) {
             int[] sourceRows = new int[tokenCount];
             float[] routeWeights = new float[tokenCount];
-            copySelectedRows(input, selectedExperts, selectedWeights, expert, expertInput, sourceRows, routeWeights);
-            tensorProvider.get().batchDotProduct(inputProjection, expertInput, inputWeights,
-                    0, 0, config.embeddingLength, 0, 0, config.hiddenLength * 2);
-            applyActivationGate(inputProjection, hidden);
-            tensorReducer.ifPresent(func -> func.accept(List.of(hidden)));
-            try (AbstractTensor hiddenQ = model.maybeQuantize(hidden)) {
-                tensorProvider.get().batchDotProduct(down, hiddenQ, outputWeights,
-                        0, 0, config.hiddenLength, 0, 0, config.embeddingLength);
+            try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), METRIC_EXPERT_COPY_ROWS).time()) {
+                copySelectedRows(input, selectedExperts, selectedWeights, expert, expertInput, sourceRows, routeWeights);
             }
-            scatterAdd(output, down, sourceRows, routeWeights);
+            try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), METRIC_EXPERT_INPUT_MATMUL).time()) {
+                tensorProvider.get().batchDotProduct(inputProjection, expertInput, inputWeights,
+                        0, 0, config.embeddingLength, 0, 0, config.hiddenLength * 2);
+            }
+            try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), METRIC_EXPERT_ACTIVATION_GATE).time()) {
+                applyActivationGate(inputProjection, hidden);
+            }
+            tensorReducer.ifPresent(func -> func.accept(List.of(hidden)));
+            AbstractTensor hiddenQ;
+            try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), METRIC_EXPERT_QUANTIZE_HIDDEN).time()) {
+                hiddenQ = model.maybeQuantize(hidden);
+            }
+            try (hiddenQ) {
+                try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), METRIC_EXPERT_OUTPUT_MATMUL).time()) {
+                    tensorProvider.get().batchDotProduct(down, hiddenQ, outputWeights,
+                            0, 0, config.hiddenLength, 0, 0, config.embeddingLength);
+                }
+            }
+            try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), METRIC_EXPERT_SCATTER_ADD).time()) {
+                scatterAdd(output, down, sourceRows, routeWeights);
+            }
         }
     }
 

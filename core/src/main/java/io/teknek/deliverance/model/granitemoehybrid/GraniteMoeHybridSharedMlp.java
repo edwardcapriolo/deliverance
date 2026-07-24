@@ -19,6 +19,12 @@ import java.util.function.Consumer;
 
 public class GraniteMoeHybridSharedMlp implements FeedForward {
 
+    private static final String METRIC_FORWARD = "granitemoehybrid.shared_mlp.forward";
+    private static final String METRIC_INPUT_PROJECTION = "granitemoehybrid.shared_mlp.input_projection";
+    private static final String METRIC_ACTIVATION_GATE = "granitemoehybrid.shared_mlp.activation_gate";
+    private static final String METRIC_QUANTIZE_HIDDEN = "granitemoehybrid.shared_mlp.quantize_hidden";
+    private static final String METRIC_OUTPUT_PROJECTION = "granitemoehybrid.shared_mlp.output_projection";
+
     private final AbstractModel model;
     private final GraniteMoeHybridConfig config;
     private final AbstractTensor inputLinearWeights;
@@ -39,27 +45,36 @@ public class GraniteMoeHybridSharedMlp implements FeedForward {
 
     @Override
     public AbstractTensor forward(AbstractTensor input, Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
-        try (Timer.Context ignored = InferenceProfiler.timer(this.model.getMetricRegistry(),
-                "granitemoehybrid.shared_mlp.forward").time()) {
+        try (Timer.Context ignored = InferenceProfiler.timer(this.model.getMetricRegistry(), METRIC_FORWARD).time()) {
             int batchSize = input.shape().first();
             try (AbstractTensor projected = this.model.getTensorAllocator()
                     .getDirty(this.model.getWorkingDType(), TensorShape.of(batchSize, this.config.sharedIntermediateSize * 2));
-                 AbstractTensor hidden = this.model.getTensorAllocator()
-                         .getDirty(this.model.getWorkingDType(), TensorShape.of(batchSize, this.config.sharedIntermediateSize))) {
-                VectorMath.pchunk(0, this.config.sharedIntermediateSize * 2, (chunkStart, chunkSize) ->
-                        this.configurableTensorProvider.get().dotProductChunk(projected, input, this.inputLinearWeights,
-                                0, this.config.embeddingLength, chunkStart, chunkSize),
-                        this.configurableTensorProvider.get().parallelSplitSize(), this.model.getPool());
+                  AbstractTensor hidden = this.model.getTensorAllocator()
+                          .getDirty(this.model.getWorkingDType(), TensorShape.of(batchSize, this.config.sharedIntermediateSize))) {
+                try (Timer.Context ignored2 = InferenceProfiler.timer(this.model.getMetricRegistry(), METRIC_INPUT_PROJECTION).time()) {
+                    VectorMath.pchunk(0, this.config.sharedIntermediateSize * 2, (chunkStart, chunkSize) ->
+                            this.configurableTensorProvider.get().dotProductChunk(projected, input, this.inputLinearWeights,
+                                    0, this.config.embeddingLength, chunkStart, chunkSize),
+                            this.configurableTensorProvider.get().parallelSplitSize(), this.model.getPool());
+                }
 
-                applyActivationGate(projected, hidden, this.config.activationFunction, this.config.sharedIntermediateSize);
+                try (Timer.Context ignored2 = InferenceProfiler.timer(this.model.getMetricRegistry(), METRIC_ACTIVATION_GATE).time()) {
+                    applyActivationGate(projected, hidden, this.config.activationFunction, this.config.sharedIntermediateSize);
+                }
                 tensorReducer.ifPresent(func -> func.accept(List.of(hidden)));
 
-                try (AbstractTensor hiddenQ = this.model.maybeQuantize(hidden)) {
+                AbstractTensor hiddenQ;
+                try (Timer.Context ignored2 = InferenceProfiler.timer(this.model.getMetricRegistry(), METRIC_QUANTIZE_HIDDEN).time()) {
+                    hiddenQ = this.model.maybeQuantize(hidden);
+                }
+                try (hiddenQ) {
                     AbstractTensor output = this.model.makeTensor(batchSize, this.config.embeddingLength);
-                    VectorMath.pchunk(0, this.config.embeddingLength, (chunkStart, chunkSize) ->
-                            this.configurableTensorProvider.get().dotProductChunk(output, hiddenQ, this.outputLinearWeights,
-                                    0, this.config.sharedIntermediateSize, chunkStart, chunkSize),
-                            this.configurableTensorProvider.get().parallelSplitSize(), this.model.getPool());
+                    try (Timer.Context ignored2 = InferenceProfiler.timer(this.model.getMetricRegistry(), METRIC_OUTPUT_PROJECTION).time()) {
+                        VectorMath.pchunk(0, this.config.embeddingLength, (chunkStart, chunkSize) ->
+                                this.configurableTensorProvider.get().dotProductChunk(output, hiddenQ, this.outputLinearWeights,
+                                        0, this.config.sharedIntermediateSize, chunkStart, chunkSize),
+                                this.configurableTensorProvider.get().parallelSplitSize(), this.model.getPool());
+                    }
                     return output;
                 }
             }

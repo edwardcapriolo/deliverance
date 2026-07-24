@@ -7,6 +7,7 @@ import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.model.hf.HfConfigTesterMixinPort;
 import io.teknek.deliverance.model.hf.HfGenerationTesterMixinPort;
 import io.teknek.deliverance.model.hf.HfModelTesterMixinPort;
@@ -16,6 +17,7 @@ import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.model.tensorparallel.SingleRankTensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.StaticTensorParallelContext;
 import io.teknek.deliverance.safetensors.DefaultWeightLoader;
+import io.teknek.deliverance.safetensors.ModelQuantizer;
 import io.teknek.deliverance.safetensors.SafeTensorWriter;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
@@ -272,6 +274,34 @@ public class GraniteMoeHybridHfTextModelPortedTest implements
             assertEquals(model.getConfig().embeddingLength, output.shape().last());
             assertFinite(output);
         }
+    }
+
+    @Test
+    public void tinyMoeForwardWithQ4StackedExpertsMatchesDenseWithinTolerance() {
+        Path denseDir = tempDir.resolve("granite-moe-hybrid-moe-dense");
+        Path q4Dir = tempDir.resolve("granite-moe-hybrid-moe-q4-experts");
+        writeTinyCheckpoint(denseDir, tinyConfigWithExperts(), 5235);
+
+        new ModelQuantizer(1 << 20).quantizeModelDirectory(denseDir, q4Dir, DType.Q4,
+                ModelQuantizer::isGraniteMoeHybridStackedExpertProjection);
+
+        int[] tokens = new int[]{3, 4, 5, 6};
+        InferenceProfiler.reset();
+        try (GraniteMoeHybridModel dense = loadTinyModelStatic(denseDir);
+             GraniteMoeHybridModel q4 = loadTinyModelStatic(q4Dir);
+             KvBufferCache.KvBuffer denseKv = dense.newKvBuffer();
+             KvBufferCache.KvBuffer q4Kv = q4.newKvBuffer();
+             AbstractTensor denseOutput = dense.batchForward(tokens, 0, denseKv);
+             AbstractTensor q4Output = q4.batchForward(tokens, 0, q4Kv)) {
+            assertEquals(denseOutput.shape().first(), q4Output.shape().first());
+            assertEquals(denseOutput.shape().last(), q4Output.shape().last());
+            assertFinite(q4Output);
+            Drift drift = drift(denseOutput, q4Output);
+            assertTrue(drift.maxAbs() < 2.0f,
+                    "Q4 stacked expert forward drift too high max=" + drift.maxAbs()
+                            + " mean=" + drift.meanAbs());
+        }
+        InferenceProfiler.printSummary("granite tiny moe dense-vs-q4-stacked-experts", 20);
     }
 
     @Test
