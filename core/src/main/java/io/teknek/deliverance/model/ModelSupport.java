@@ -127,6 +127,30 @@ public class ModelSupport {
                                              TensorParallelContext tensorParallelContext,
                                              TensorParallelCollectives tensorParallelCollectives,
                                              Optional<DType> outputHeadQuantization) {
+        return loadModel(model, workingMemoryType, workingQuantizationType, configurableTensorProvider, metricRegistry,
+                arrayQueueTensorAllocator, kvBufferCacheSettings, fetcher, toolCallParser, pool,
+                tensorParallelContext, tensorParallelCollectives, outputHeadQuantization, Optional.empty());
+    }
+
+    /**
+     * As above, with an optional LoRA adapter merged into the base model's weights at load time
+     * (Phase 1 "merge-at-load" support -- see {@code
+     * StepPlans/deliverance_lora_step3_merging_weightloader_plan_v1.md}). When {@code loraAdapter}
+     * is present, the {@link WeightLoader} handed to the model family constructor is a {@link
+     * MergingWeightLoader} wrapping the usual {@link DefaultWeightLoader}; every other call site
+     * (the 13-arg overload above, and every other overload in this class) is unaffected and keeps
+     * loading models without any LoRA merge.
+     */
+    public static AbstractModel loadModel(File model, DType workingMemoryType, DType workingQuantizationType,
+                                             ConfigurableTensorProvider configurableTensorProvider,
+                                             MetricRegistry metricRegistry, TensorAllocator arrayQueueTensorAllocator,
+                                             KvBufferCacheSettings kvBufferCacheSettings,
+                                             ModelFetcher fetcher, ToolCallParser toolCallParser,
+                                             WrappedForkJoinPool pool,
+                                             TensorParallelContext tensorParallelContext,
+                                             TensorParallelCollectives tensorParallelCollectives,
+                                             Optional<DType> outputHeadQuantization,
+                                             Optional<LoraAdapter> loraAdapter) {
         LOGGER.info("Machine Vector Spec: {} Byte Order: {}", FloatVector.SPECIES_PREFERRED.vectorBitSize(), ByteOrder.nativeOrder().toString());
         File configFile = new File(model, "config.json");
         if (!configFile.exists()){
@@ -137,6 +161,9 @@ public class ModelSupport {
             Config config = om.readValue(configFile, modelType.getConfigClass());
             PreTrainedTokenizer tokenizer = AutoTokenizer.fromPretrained(model.toPath());
             WeightLoader wl = new DefaultWeightLoader(model);
+            if (loraAdapter.isPresent()) {
+                wl = new MergingWeightLoader(wl, loraAdapter.get(), configurableTensorProvider.get());
+            }
 
             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
                     WeightLoader.class, PreTrainedTokenizer.class, DType.class, DType.class, Optional.class,

@@ -45,6 +45,43 @@ This is a qualitative smoke benchmark, not a throughput benchmark. It runs bound
 
 Use it after Qwen model/runtime changes to catch obvious regressions without hand-checking every prompt. Default output is `core/target/thinking-smoke-qwen3-4b-jq4.jsonl`.
 
+### LoRA Adapter Benchmark
+
+```sh
+./benchmarks/run-lora-adapter-benchmark.sh
+```
+
+Compares an un-adapted base model against the same base model with a LoRA/PEFT adapter merged in
+at load time (`AutoModelForCausaLm.Builder.withLoraAdapter(...)`, backed by
+`MergingWeightLoader`). Default pairing is `unsloth/Llama-3.2-1B-Instruct` (dense HF format,
+required by the merge-at-load dtype guard) with adapter `bunnycore/Llama-3.2-1b-chatml-lora_model`.
+Both models run the same small fixed prompt suite (chat/knowledge/math/writing/coding/reasoning,
+6 cases) with the same max-tokens/temperature held fixed.
+
+Outputs:
+
+- CSV at `core/target/lora-adapter-benchmark.csv` -- the same column set as
+  [Inference Benchmark](InferenceBenchmark.md)'s documented columns, with a `variant` column
+  (`base` or `lora-adapted`) in place of `engine`/`turn`, so filtering or diffing the CSV by
+  `case_id` directly surfaces the adapter's timing overhead.
+- JSONL transcript at `core/target/lora-adapter-benchmark.jsonl` -- one row per case per variant
+  with `prompt`, `response`, `generated_tokens`, `time_ms`, and `time_to_first_token_ms`, giving a
+  readable example of how each prompt is handled with and without the adapter.
+
+Pass `--profile-stages` (on by default in the script) to also print `[profile]` timing summaries
+per case/variant, using the same `InferenceProfiler` instrumentation the other benchmarks use.
+
+Override the model/adapter pairing with `DELIVERANCE_BENCHMARK_ARGS`:
+
+```sh
+DELIVERANCE_BENCHMARK_ARGS="--owner tjake --model gemma-2-2b-it --adapter-owner someuser --adapter-model some-lora-adapter --output target/gemma-lora.csv --jsonl-output target/gemma-lora.jsonl --max-tokens 128 --profile-stages" \
+./benchmarks/run-lora-adapter-benchmark.sh
+```
+
+The base model must be dense (F32/BF16/F16 on disk) -- a pre-quantized-on-disk base model (e.g.
+the `-JQ4` repos used by the other scripts on this page) is out of scope for merge-at-load and
+will fail fast with a clear exception.
+
 ### Qwen Single-Model Benchmark
 
 ```sh
