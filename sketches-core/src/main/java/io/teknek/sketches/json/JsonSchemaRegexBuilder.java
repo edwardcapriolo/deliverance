@@ -24,14 +24,17 @@ public final class JsonSchemaRegexBuilder {
     public static final String BOOLEAN = "(true|false)";
     public static final String INTEGER = "(-)?(0|[1-9][0-9]*)";
     public static final String NUMBER = "((-)?((0|[1-9][0-9]*)(\\.[0-9]+)?|\\.[0-9]+)([eE][+-]?[0-9]+)?)";
-    public static final String STRING_INNER = "([^\"\\\\]|\\\\([\"\\\\/bfnrt]|u[0-9a-fA-F]{4}))*";
-    public static final String STRING = "\"" + STRING_INNER + "\"";
-    public static final String DATE = "[0-9]{4}-[0-9]{2}-[0-9]{2}";
-    public static final String TIME = "[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})?";
+    private static final String DIGIT2 = "[0-9][0-9]";
+    private static final String DIGIT4 = DIGIT2 + DIGIT2;
+    private static final String HEX4 = "[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]";
+    public static final String STRING_INNER = "([^\"\\\\]|\\\\([\"\\\\/bfnrt]|u" + HEX4 + "))*";
+    public static final String STRING = "\\\"" + STRING_INNER + "\\\"";
+    public static final String DATE = DIGIT4 + "-" + DIGIT2 + "-" + DIGIT2;
+    public static final String TIME = DIGIT2 + ":" + DIGIT2 + ":" + DIGIT2 + "(\\.[0-9]+)?(Z|[+-]" + DIGIT2 + ":" + DIGIT2 + ")?";
     public static final String DATE_TIME = DATE + "T" + TIME;
     public static final String EMAIL = "[^@\\s]+@[^@\\s]+\\.[^@\\s]+";
     public static final String URI = "[a-zA-Z][a-zA-Z0-9+.-]*:[^\\s]*";
-    public static final String UUID = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
+    public static final String UUID = HEX4 + HEX4 + "-" + HEX4 + "-" + HEX4 + "-" + HEX4 + "-" + HEX4 + HEX4 + HEX4;
 
     private JsonSchemaRegexBuilder() {
     }

@@ -1,5 +1,6 @@
 package io.teknek.sketches.json;
 
+import dk.brics.automaton.RegExp;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -66,6 +67,7 @@ class JsonSchemaRegexBuilderTest {
         String regex = JsonSchemaRegexBuilder.buildRegexFromSchema(schema);
 
         assertTrue(Pattern.matches(regex, "{\"foo\" : 4 ,\"bar\":\"baz    baz baz bar\"}"));
+        assertCompilesWithBrics(regex);
     }
 
     @Test
@@ -84,6 +86,7 @@ class JsonSchemaRegexBuilderTest {
         String regex = JsonSchemaRegexBuilder.buildRegexFromSchema(schema, "[\\n ]*");
 
         assertTrue(Pattern.matches(regex, "{     \"foo\"   :   4, \n\n\n   \"bar\": \"baz    baz baz bar\"\n\n}"));
+        assertCompilesWithBrics(regex);
     }
 
     @Test
@@ -115,6 +118,7 @@ class JsonSchemaRegexBuilderTest {
         String regex = JsonSchemaRegexBuilder.buildRegexFromSchema(schema);
 
         assertTrue(Pattern.matches(regex, "{\"outer\":{\"inner\":7}}"));
+        assertCompilesWithBrics(regex);
     }
 
     @Test
@@ -130,6 +134,7 @@ class JsonSchemaRegexBuilderTest {
 
         assertTrue(Pattern.matches(regex, "[]"));
         assertTrue(Pattern.matches(regex, "[1,2,-3]"));
+        assertCompilesWithBrics(regex);
     }
 
     @Test
@@ -149,6 +154,8 @@ class JsonSchemaRegexBuilderTest {
         assertTrue(Pattern.matches(enumRegex, "true"));
         assertTrue(Pattern.matches(enumRegex, "null"));
         assertTrue(Pattern.matches(constRegex, "\"fixed\""));
+        assertCompilesWithBrics(enumRegex);
+        assertCompilesWithBrics(constRegex);
     }
 
     @Test
@@ -174,5 +181,45 @@ class JsonSchemaRegexBuilderTest {
         assertTrue(Pattern.matches(JsonSchemaRegexBuilder.buildRegexFromSchema(schema), "\"unknown\""));
         assertTrue(Pattern.matches(JsonSchemaRegexBuilder.buildRegexFromSchema(oneOfSchema), "false"));
         assertTrue(Pattern.matches(JsonSchemaRegexBuilder.buildRegexFromSchema(oneOfSchema), "null"));
+        assertCompilesWithBrics(JsonSchemaRegexBuilder.buildRegexFromSchema(schema));
+        assertCompilesWithBrics(JsonSchemaRegexBuilder.buildRegexFromSchema(oneOfSchema));
+    }
+
+    @Test
+    void deadToRightsCaseSchemaCompilesWithBricsAutomaton() {
+        String schema = """
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["caseTitle", "suspect", "setting", "clues", "hiddenTruth"],
+                  "properties": {
+                    "caseTitle": { "type": "string" },
+                    "suspect": { "type": "string" },
+                    "setting": { "type": "string" },
+                    "clues": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "type": "string" } },
+                    "hiddenTruth": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["crime", "motive", "method", "mistakes", "whyCluesMatter", "confession"],
+                      "properties": {
+                        "crime": { "type": "string" },
+                        "motive": { "type": "string" },
+                        "method": { "type": "string" },
+                        "mistakes": { "type": "array", "items": { "type": "string" } },
+                        "whyCluesMatter": { "type": "array", "items": { "type": "string" } },
+                        "confession": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+                """;
+
+        String regex = JsonSchemaRegexBuilder.buildRegexFromSchema(schema);
+
+        assertCompilesWithBrics(regex);
+    }
+
+    private static void assertCompilesWithBrics(String regex) {
+        new RegExp(regex).toAutomaton();
     }
 }
