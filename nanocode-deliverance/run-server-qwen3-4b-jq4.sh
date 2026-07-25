@@ -38,7 +38,7 @@ java \
   --sun-misc-unsafe-memory-access=allow \
   -Xmx8G \
   -Djava.library.path="$NATIVE_LIB_DIR" \
-  -Dserver.port=${DELIVERANCE_PORT:-8085} \
+  -Dserver.port=${DELIVERANCE_PORT:-18087} \
   ${DELIVERANCE_KV_DISK_DIR:+-Ddeliverance.kv.disk-dir=$DELIVERANCE_KV_DISK_DIR} \
   -Ddeliverance.debug.chat-request=${DELIVERANCE_DEBUG_CHAT_REQUEST:-true} \
   -Ddebug=${DELIVERANCE_SPRING_DEBUG:-false} \

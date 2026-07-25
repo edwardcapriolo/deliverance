@@ -1,0 +1,79 @@
+ard.capriolo@HNPNYC-1CNWK4DJ nanocode-deliverance % sh run-dead-to-rights.sh
+╭─ Dead to Rights ───────────────────────────────╮
+│ Interrogate the suspect. Find the lie.        │
+╰────────────────────────────────────────────────╯
+No one gets hurt. Catch the culprit in a light fictional mystery.
+Commands: /quit or /q
+model: Qwen3-4B-JQ4 @ http://localhost:18087
+
+suspect **CASE TITLE:** The Missing Muffin
+
+**SUSPECT:** Lila "Muffin" Morgan
+
+**SETTING:** A cozy bakery in the heart of a small town, known for its daily pastries and the famous "Muffin of the Day" contest.
+
+**CLUES:**
+1. The "Muffin of the Day" contest trophy, a golden muffin stand, was found missing from the bakery’s display case.
+2. The only muffin that was supposed to be baked that day was missing, though the recipe was followed exactly.
+3. The bakery’s security camera footage from the day of the theft shows a figure in a muffin-top hat entering and exiting the bakery, but the footage is grainy and the figure is not identified.
+
+You may begin questioning me.
+
+interrogate> Lila, how are you today do you want anything? Chewing gum cofee?
+suspect I'm doing well, thank you. I don't really have time for things like coffee or chewing gum. I'm more interested in the muffin of the day contest. It's a bit of a tradition here, you know?
+
+I guess I could have a coffee, but I'm not really in the mood. I'm more into the baking than anything else. Oh, and I do have a muffin from the contest... wait, no, I don't. I think I might have... um, maybe I should check the kitchen again.
+
+interrogate> I notice you are wearing a hat how many hats like that do you thing there are in this area?
+suspect I wear a hat every day, but it's not really a hat— it's a muffin-top hat. You know, it's a bit of a fashion statement. I think there are a few people around here who wear similar hats, but I'm not sure. Maybe two or three? I don't really pay attention to that kind of thing.
+
+It's not like I'm trying to hide anything. I just think it's a nice way to keep my hair out of the way while I'm baking. Oh, and it's also kind of a nod to the muffin of the day contest. I think it's a small tribute to the tradition.
+
+interrogate> Well im not sure if you know this but the muffin was stolen, and the security cam footage shows that the person who took it was wearing a hate just like that one.
+suspect I’m not sure what you’re talking about. I didn’t steal anything. The muffin was there the whole time. I mean, I didn’t take it. I didn’t even know it was missing until this morning.
+
+The security camera? I don’t know much about that. I do know that I was in the bakery all day, baking and preparing for the contest. I didn –t see anyone else in there except for the regulars. Maybe the camera is broken? Or maybe it’s a trick question.
+
+I don’t know what you’re trying to say, but I’m not the one who took the muffin. I swear. I’m just trying to help. I mean, I did win the contest last year, but that’s not relevant. I’m not a thief. I’m not even a bad baker. I’m just... I’m just trying to keep the bakery running.
+
+interrogate> Are you afriad taht you might not win the contest this year?
+suspect I’m not afraid of winning or losing the contest. I’ve won before, and I’ve lost before. It’s part of the game. I mean, I’m not really afraid of anything. I’m more focused on the muffin than anything else.
+
+But wait, the muffin was stolen, and I didn’t take it. I didn’t even know it was missing until this morning. I was in the bakery all day, baking and preparing for the contest. I didn’t see anyone else in there except for the regulars. I didn’t have time to take the muffin. I was too busy baking.
+
+I don’t know what’s going on here. I’m not a thief. I’m not even a bad baker. I’m just trying to keep the bakery running. I’m not afraid of the contest. I’m not afraid of anything. I’m just trying to make the best muffin possible.
+
+interrogate> I think you were afraid of loosing. I dont think you took the trophy i just think you hid it because you got nervous. IF you did thats ok. You can tell me what really happened. 
+suspect I don’t know what you’re talking about. I didn’t take the trophy. I didn’t even know it was missing until this morning. I was in the bakery all day, baking and preparing for the contest. I didn’t see anyone else in there except for the regulars. I didn’t have time to hide anything. I was too busy baking.
+
+I don’t know what’s going on here. I’m not a thief. I’m not even a bad baker. I’m just trying to keep the bakery running. I’m not afraid of the contest. I’m not afraid of anything. I’m just trying to make the best muffin possible.
+
+interrogate> maybe you got hungry and ate the muffin then you realized you wouldnt win the context without an entry?
+suspect I didn’t eat the muffin. I didn’t even know it was missing until this morning. I was in the bakery all day, baking and preparing for the contest. I didn’t have time to eat anything. I was too busy baking.
+
+I don’t know what you’re talking about. I didn’t take the muffin. I didn’t even know it was missing until this morning. I was in the bakery all day, baking and preparing for the contest. I didn’t see anyone else in there except for the regulars. I didn’t have time to hide anything. I was too busy baking.
+
+I don’t know what’s going on here. I’m not a thief. I’m not even a bad baker. I’m just trying to keep the bakery running. I’m not afraid of the contest. I’m not afraid of anything. I’m just trying to make the best muffin possible.
+
+interrogate> Who do you think took the trphy?            
+suspect I don’t know who took the trophy. I didn’t take it. I didn’t even know it was missing until this morning. I was in the bakery all day, baking and preparing for the contest. I didn’t see anyone else in there except for the regulars. I didn’t have time to hide anything. I was too busy baking.
+
+I don’t know what’s going on here. I’m not a thief. I’m not even a bad baker. I’m just trying to keep the bakery running. I’m not afraid of the contest. I’m not afraid of anything. I’m just trying to make the best muffin possible.
+
+interrogate> /reveal
+suspect <confession>true</confession>  
+
+I... I didn’t take the trophy. I didn’t even know it was missing until this morning. I was in the bakery all day, baking and preparing for the contest. I didn’t see anyone else in there except for the regulars. I didn’t have time to hide anything. I was too busy baking.  
+
+But... I did something else. I took the muffin. Not the trophy. The actual muffin. The one that was supposed to be baked for the contest. I didn’t take it to win the contest. I took it because I was nervous. I was nervous about losing. I was nervous about the contest. I was nervous about... everything.  
+
+I baked the muffin, but I didn’t put it in the oven. I... I forgot to bake it. I thought I had baked it. I thought I had done everything. But I didn’t. I didn’t bake the muffin. I didn’t even know it was missing until this morning.  
+
+I hid it in the bakery’s storage room. I thought I was being careful. I thought I was being... I don’t know. I just... I was nervous. I was nervous about the contest. I was nervous about... everything.  
+
+I didn’t take the trophy. I didn’t take the muffin to win. I took the muffin because I was nervous. I was nervous about losing. I was nervous about... everything.  
+
+I didn’t mean to do it. I didn’t mean to hide it. I just... I was nervous. I was nervous about the contest. I was nervous about... everything.
+
+DEAD TO RIGHTS | the suspect confessed
+
