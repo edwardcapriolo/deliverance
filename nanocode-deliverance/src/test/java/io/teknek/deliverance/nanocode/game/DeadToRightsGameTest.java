@@ -12,9 +12,9 @@ class DeadToRightsGameTest {
 
         assertTrue(prompt.contains("Dead to Rights"));
         assertTrue(prompt.contains("non-violent"));
-        assertTrue(prompt.contains("must not involve anyone being hurt"));
         assertTrue(prompt.contains("theft"));
         assertTrue(prompt.contains("embezzlement"));
+        assertTrue(prompt.contains("forgery"));
         assertTrue(prompt.contains("you are the culprit"));
         assertTrue(prompt.contains("<confession>true</confession>"));
     }
@@ -24,5 +24,14 @@ class DeadToRightsGameTest {
         assertTrue(DeadToRightsGame.confessed("Fine, I did it. <confession>true</confession>"));
         assertTrue(DeadToRightsGame.confessed("<CONFESSION>TRUE</CONFESSION>"));
         assertFalse(DeadToRightsGame.confessed("I refuse to confess."));
+    }
+
+    @Test
+    void extractsTaggedCaseSections() {
+        String setup = "before<public>CASE TITLE: Test\n</public><hidden_truth>I took it.</hidden_truth>after";
+
+        assertTrue(DeadToRightsGame.extractTag(setup, "public").contains("CASE TITLE"));
+        assertTrue(DeadToRightsGame.extractTag(setup, "hidden_truth").contains("I took it"));
+        assertTrue(DeadToRightsGame.extractTag(setup, "missing").isBlank());
     }
 }

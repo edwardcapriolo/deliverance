@@ -24,9 +24,12 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
+import java.util.UUID;
 
 public final class DeadToRightsGame {
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -40,9 +43,15 @@ public final class DeadToRightsGame {
 
     private final Options options;
     private final StreamingChatApi streamingChatApi;
+    private final int seed;
+    private final CaseVariation caseVariation;
+    private String publicCase = "";
+    private String hiddenTruth = "";
 
     private DeadToRightsGame(Options options) {
         this.options = options;
+        this.seed = (int) (System.currentTimeMillis() & 0x7fffffff);
+        this.caseVariation = CaseVariation.random(seed);
         ApiClient apiClient = new ApiClient();
         apiClient.setAdapterBuilder(new Retrofit.Builder()
                 .baseUrl(options.baseUrl + "/")
@@ -87,10 +96,22 @@ public final class DeadToRightsGame {
     private void run() throws Exception {
         List<Map<String, String>> messages = new ArrayList<>();
         messages.add(message("system", systemPrompt()));
-        messages.add(message("user", "Start a new case. Print only CASE TITLE, SUSPECT, SETTING, CLUES 1-3, and 'You may begin questioning me.'"));
+        messages.add(message("user", caseVariation.setupPrompt()));
 
         printBanner();
-        String setup = chat(messages);
+        System.out.println(DIM + "A crime has been committed. The investigating officer has brought in the suspect "
+                + "and is preparing the details for you. The suspect is waiting in the interrogation room. "
+                + "You are our best interrogator; we need you to get in there and get a confession!" + RESET);
+        String setup = chat(messages, false);
+        if (setup.isBlank()) {
+            throw new IOException("The model produced no visible case opening. Try a larger --max-tokens value or type /showthink on the next run to inspect hidden reasoning.");
+        }
+        publicCase = extractTag(setup, "public");
+        hiddenTruth = extractTag(setup, "hidden_truth");
+        if (publicCase.isBlank() || hiddenTruth.isBlank()) {
+            throw new IOException("The model did not produce a valid tagged case file. Expected <public> and <hidden_truth> sections. Raw setup: " + setup);
+        }
+        System.out.println(BOLD + CYAN + "suspect" + RESET + " " + publicCase.strip());
         messages.add(message("assistant", setup));
 
         try (BufferedReader stdin = new BufferedReader(new InputStreamReader(System.in))) {
@@ -102,11 +123,22 @@ public final class DeadToRightsGame {
                     System.out.println(DIM + "case closed" + RESET);
                     return;
                 }
+                if (input.equalsIgnoreCase("/reveal")) {
+                    System.out.println();
+                    System.out.println(BOLD + YELLOW + "HIDDEN TRUTH" + RESET);
+                    System.out.println(hiddenTruth.strip());
+                    return;
+                }
+                if (input.equalsIgnoreCase("/case")) {
+                    System.out.println(publicCase.strip());
+                    continue;
+                }
                 if (input.isBlank()) {
                     continue;
                 }
-                messages.add(message("user", "Interrogator asks: " + input.strip()));
-                String response = chat(messages);
+                messages.add(message("user", "Interrogator asks: " + input.strip()
+                        + "\nAnswer visibly as the suspect. Do not leave the visible answer blank."));
+                String response = chat(messages, true);
                 messages.add(message("assistant", response));
                 if (confessed(response)) {
                     System.out.println();
@@ -121,12 +153,13 @@ public final class DeadToRightsGame {
         return "You are running a fictional interrogation mystery game called Dead to Rights.\n\n"
                 + "Create a lighthearted fictional crime scenario. In the hidden truth, you are the culprit. "
                 + "You are not a narrator during interrogation; you are the guilty suspect being questioned by the user.\n\n"
-                + "The crime must be non-violent and must not involve anyone being hurt, injured, killed, threatened with serious harm, kidnapped, stalked, or sexually exploited. "
-                + "Use only playful mystery crimes such as theft, robbery without injury, embezzlement, fraud, forgery, art theft, insurance scams, rigged contests, harmless smuggling, or property sabotage where nobody is harmed.\n\n"
+                + "The crime must be non-violent. Use only these crime types: theft, embezzlement, or forgery.\n\n"
                 + "Secretly decide what crime you committed, your motive, how you did it, what mistakes you made, and three clues that point toward you.\n\n"
                 + "At the start, reveal only CASE TITLE, SUSPECT, SETTING, and exactly three CLUES. Do not reveal the hidden truth.\n\n"
-                + "During play, answer every user question in first person as the guilty suspect. Pretend to be innocent. Lie, deflect, minimize, misremember, blame others, or give partial truths. Do not confess just because the user asks.\n\n"
-                + "If the user presents a plausible theory that connects you to the crime using clues or contradictions, break down and confess. When you confess, include exactly this marker: <confession>true</confession>.\n\n"
+                + "During play, answer every user question in first person as the guilty suspect. Pretend to be innocent, but keep the mystery fun: give specific, useful details, partial truths, suspicious excuses, and small contradictions the user can follow up on. Do not repeatedly say only that you were not involved. If asked about an object, place, person, time, or motive, invent a concrete answer that fits the hidden truth while still trying to deflect blame. Do not confess just because the user asks.\n\n"
+                + "If the user presents a plausible theory that connects you to the crime using clues or contradictions, break down and confess. "
+                + "When you confess, explicitly admit guilt in first person before the marker, for example: 'I confess. I took it because...'. "
+                + "Explain why you did it. Only then include exactly this marker: <confession>true</confession>.\n\n"
                 + "Never reveal the hidden truth before confession.";
     }
 
@@ -135,9 +168,14 @@ public final class DeadToRightsGame {
     }
 
     private String chat(List<Map<String, String>> messages) throws IOException {
+        return chat(messages, true);
+    }
+
+    private String chat(List<Map<String, String>> messages, boolean printOutput) throws IOException {
         CreateChatCompletionRequest request = new CreateChatCompletionRequest()
                 .model(options.model)
                 .maxTokens(options.maxTokens)
+                .seed(seed)
                 .temperature(options.temperature)
                 .stream(true)
                 .chatTemplateKwargs(Map.of("enable_thinking", false))
@@ -150,7 +188,9 @@ public final class DeadToRightsGame {
         }
         StringBuilder content = new StringBuilder();
         StringBuilder reasoning = new StringBuilder();
-        System.out.print(BOLD + CYAN + "suspect" + RESET + " ");
+        if (printOutput) {
+            System.out.print(BOLD + CYAN + "suspect" + RESET + " ");
+        }
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(response.body().byteStream()))) {
             String line;
             while ((line = reader.readLine()) != null) {
@@ -170,12 +210,35 @@ public final class DeadToRightsGame {
                 String text = delta.path("content").asText("");
                 if (!text.isEmpty()) {
                     content.append(text);
-                    System.out.print(text.replace("<confession>true</confession>", GREEN + "<confession>true</confession>" + RESET));
+                    if (printOutput) {
+                        System.out.print(text.replace("<confession>true</confession>", GREEN + "<confession>true</confession>" + RESET));
+                    }
                 }
             }
         }
-        System.out.println();
+        if (printOutput) {
+            System.out.println();
+        }
         return content.toString();
+    }
+
+    static String extractTag(String text, String tagName) {
+        if (text == null) {
+            return "";
+        }
+        String open = "<" + tagName + ">";
+        String close = "</" + tagName + ">";
+        String lower = text.toLowerCase();
+        int start = lower.indexOf(open.toLowerCase());
+        if (start < 0) {
+            return "";
+        }
+        int contentStart = start + open.length();
+        int end = lower.indexOf(close.toLowerCase(), contentStart);
+        if (end < 0) {
+            return "";
+        }
+        return text.substring(contentStart, end).strip();
     }
 
     private static String reasoningDelta(JsonNode delta) {
@@ -197,16 +260,59 @@ public final class DeadToRightsGame {
         System.out.println(CYAN + "│ " + RESET + BOLD + "Interrogate the suspect. Find the lie." + RESET + CYAN + "        │" + RESET);
         System.out.println(CYAN + "╰────────────────────────────────────────────────╯" + RESET);
         System.out.println(YELLOW + "No one gets hurt. Catch the culprit in a light fictional mystery." + RESET);
-        System.out.println(DIM + "Commands: /quit or /q" + RESET);
-        System.out.println(DIM + "model: " + options.model + " @ " + options.baseUrl + RESET);
+        System.out.println(DIM + "Commands: /case, /reveal, /quit, /q" + RESET);
+        System.out.println(DIM + "model: " + options.model + " @ " + options.baseUrl + " | seed=" + seed
+                + " | " + caseVariation.shortLabel() + RESET);
         System.out.println();
+    }
+
+    private record CaseVariation(String id, String setting, String crime, String object, String suspectRole,
+            String clueStyle) {
+        private static CaseVariation random(int seed) {
+            Random random = new Random((((long) seed) << 32) ^ System.nanoTime());
+            return new CaseVariation(
+                    UUID.randomUUID().toString(),
+                    pick(random, "bookshop", "botanical conservatory", "museum fundraiser", "small-town bakery",
+                            "community theater", "antique map fair", "hotel lost-and-found", "university archive",
+                            "radio station", "local chess club"),
+                    pick(random, "theft", "embezzlement", "forgery"),
+                    pick(random, "rare stamp", "silver trophy", "donation ledger", "antique violin", "secret sauce recipe",
+                            "signed first edition", "festival cash box", "prototype gadget", "theater prop crown", "archive key"),
+                    pick(random, "bookkeeper", "assistant curator", "stage manager", "night clerk", "contest judge",
+                            "catering manager", "archivist", "auction assistant", "maintenance lead", "club treasurer"),
+                    pick(random, "physical clue", "paper trail", "timeline contradiction", "odd smell", "misplaced key",
+                            "changed receipt", "muddy footprint", "rewritten note", "camera blind spot", "overheard excuse"));
+        }
+
+        private String setupPrompt() {
+            return "Start a new case for Dead to Rights. Return exactly two tagged sections: <public> and <hidden_truth>.\n\n"
+                    + "Inside <public>, print only CASE TITLE, SUSPECT, SETTING, CLUES 1-3, and 'You may begin questioning me.'\n"
+                    + "Inside <hidden_truth>, write the actual crime, motive, method, mistakes, why each clue points to you, and the confession you would give if caught.\n"
+                    + "Do not put hidden truth outside <hidden_truth>. Do not omit either tag.\n\n"
+                    + "Freshness token: " + id + "\n"
+                    + "Use this variation and do not reuse prior cases:\n"
+                    + "- setting: " + setting + "\n"
+                    + "- nonviolent crime type: " + crime + "\n"
+                    + "- important object: " + object + "\n"
+                    + "- suspect role you are playing: " + suspectRole + "\n"
+                    + "- one clue style: " + clueStyle + "\n"
+                    + "Current time: " + Instant.now();
+        }
+
+        private String shortLabel() {
+            return crime + " at " + setting;
+        }
+
+        private static String pick(Random random, String... values) {
+            return values[random.nextInt(values.length)];
+        }
     }
 
     private record Options(String baseUrl, String model, int maxTokens, BigDecimal temperature, boolean help) {
         static Options parse(String[] args) {
             String baseUrl = "http://localhost:8085";
             String model = "Qwen3-4B-JQ4";
-            int maxTokens = 512;
+            int maxTokens = 1024;
             BigDecimal temperature = BigDecimal.valueOf(0.8);
             boolean help = false;
             for (int i = 0; i < args.length; i++) {
@@ -224,9 +330,9 @@ public final class DeadToRightsGame {
 
         static void printHelp() {
             System.out.println("Dead to Rights options:");
-            System.out.println("  --base-url http://localhost:8085");
+            System.out.println("  --base-url http://localhost:18087");
             System.out.println("  --model Qwen3-4B-JQ4");
-            System.out.println("  --max-tokens 512");
+            System.out.println("  --max-tokens 1024");
             System.out.println("  --temperature 0.8");
         }
     }
