@@ -1302,7 +1302,7 @@ components:
           maximum: 1
           nullable: true
           description: &completions_uniform_top_p_description |
-            Uniform nucleus sampling. The model keeps candidates until this probability mass is reached, then chooses uniformly from that nucleus instead of weighting candidates by probability. Only applies when temperature is non-zero. Do not combine with `top_p`.
+            Uniform top_p selection. When set with top_p, Deliverance builds the top_p nucleus, then chooses uniformly from that nucleus instead of weighting candidates by probability. Only applies when temperature is non-zero.
         user: &end_user_param_configuration
           type: string
           example: user-1234

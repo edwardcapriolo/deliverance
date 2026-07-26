@@ -61,7 +61,8 @@ Prompt prompt = new Prompt(
                 .model("edwardcapriolo/Qwen3-4B-JQ4")
                 .temperature(1.0)
                 .maxTokens(32)
-                .uniformTopP(0.95)
+                .topP(0.95)
+                .uniformTopP(1.0)
                 .guidedRegex("TICKET-[0-9]{4}")
                 .build());
 ```

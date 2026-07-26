@@ -238,7 +238,7 @@ components:
           maximum: 1
           nullable: true
         uniform_top_p:
-          description: Uniform nucleus sampling. Sort candidates by probability, keep candidates until this probability mass is reached, then choose uniformly from that nucleus instead of weighting by probability. Only applies when temperature is non-zero. Do not combine with top_p.
+          description: Uniform top_p selection. When set with top_p, Deliverance builds the top_p nucleus, then chooses uniformly from that nucleus instead of weighting by probability. Only applies when temperature is non-zero.
           type: number
           minimum: 0
           maximum: 1
@@ -760,7 +760,7 @@ components:
           maximum: 1
           nullable: true
         uniform_top_p:
-          description: Uniform nucleus sampling. Sort candidates by probability, keep candidates until this probability mass is reached, then choose uniformly from that nucleus instead of weighting by probability. Only applies when temperature is non-zero. Do not combine with top_p.
+          description: Uniform top_p selection. When set with top_p, Deliverance builds the top_p nucleus, then chooses uniformly from that nucleus instead of weighting by probability. Only applies when temperature is non-zero.
           type: number
           minimum: 0
           maximum: 1

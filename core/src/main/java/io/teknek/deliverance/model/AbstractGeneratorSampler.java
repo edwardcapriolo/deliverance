@@ -274,8 +274,8 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
         if (uniformTopP.isPresent() && (uniformTopP.get() <= 0.0f || uniformTopP.get() > 1.0f)) {
             throw new IllegalArgumentException("uniformTopP must be in (0, 1]");
         }
-        if (topP.isPresent() && uniformTopP.isPresent()) {
-            throw new IllegalArgumentException("topP and uniformTopP can not both be enabled");
+        if (uniformTopP.isPresent() && topP.isEmpty()) {
+            throw new IllegalArgumentException("uniformTopP requires topP");
         }
         int vocabularySize = Math.toIntExact(logits.size());
         int candidateLimit = topK.map(k -> topKCandidateCount(k, vocabularySize)).orElse(vocabularySize);
@@ -295,14 +295,13 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
             filtered.add(candidates.get(i));
         }
         double total = probabilitySum(filtered, max);
-        Optional<Float> nucleusP = topP.isPresent() ? topP : uniformTopP;
-        if (nucleusP.isPresent()) {
+        if (topP.isPresent()) {
             double normalized = 0.0d;
             List<IndexValueToken> nucleus = new ArrayList<>();
             for (IndexValueToken token : filtered) {
                 nucleus.add(token);
                 normalized += FastMath.exp(token.value - max) / total;
-                if (normalized >= nucleusP.get()) {
+                if (normalized >= topP.get()) {
                     break;
                 }
             }

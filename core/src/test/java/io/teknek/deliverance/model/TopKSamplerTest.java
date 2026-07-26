@@ -46,8 +46,8 @@ public class TopKSamplerTest {
 
         int weighted = DeliveranceSampler.sampleTopKTopP(logits, 1.0f, Optional.of(2.0f), Optional.of(0.95f),
                 Optional.empty(), 0.60f);
-        int uniform = DeliveranceSampler.sampleTopKTopP(logits, 1.0f, Optional.of(2.0f), Optional.empty(),
-                Optional.of(0.95f), 0.60f);
+        int uniform = DeliveranceSampler.sampleTopKTopP(logits, 1.0f, Optional.of(2.0f), Optional.of(0.95f),
+                Optional.of(1.0f), 0.60f);
 
         assertEquals(0, weighted);
         assertEquals(1, uniform);
@@ -64,6 +64,6 @@ public class TopKSamplerTest {
         assertThrows(IllegalArgumentException.class, () -> DeliveranceSampler.sampleTopKTopP(logits, 1.0f,
                 Optional.empty(), Optional.empty(), Optional.of(1.01f), 0.50f));
         assertThrows(IllegalArgumentException.class, () -> DeliveranceSampler.sampleTopKTopP(logits, 1.0f,
-                Optional.empty(), Optional.of(0.95f), Optional.of(0.95f), 0.50f));
+                Optional.empty(), Optional.empty(), Optional.of(1.0f), 0.50f));
     }
 }
