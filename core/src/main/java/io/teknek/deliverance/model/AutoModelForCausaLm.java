@@ -9,7 +9,9 @@ import io.teknek.deliverance.model.tensorparallel.GossipParallelMembership;
 import io.teknek.deliverance.model.tensorparallel.GossipParallelSettings;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelContext;
+import io.teknek.deliverance.safetensors.LoraAdapter;
 import io.teknek.deliverance.safetensors.ModelQuantizer;
+import io.teknek.deliverance.safetensors.fetch.LoraAdapterModelFetcher;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.TensorAllocator;
@@ -88,6 +90,7 @@ public class AutoModelForCausaLm {
         private Optional<GossipParallelSettings> parallelSettings = Optional.empty();
         private Optional<DType> outputHeadQuantization = Optional.empty();
         private Optional<QuantizeOnDemand> quantizeOnDemand = Optional.empty();
+        private LoraAdapterModelFetcher loraAdapterFetcher;
         private final EnumMap<TensorProviderKind, TensorOperations> additionalTensorOperations = new EnumMap<>(TensorProviderKind.class);
         private boolean download = true;
         private int maxBatchSize = AbstractModel.DEFAULT_MAX_BATCH_SIZE;
@@ -225,6 +228,20 @@ public class AutoModelForCausaLm {
             return this;
         }
 
+        /**
+         * Merges the given LoRA/PEFT adapter into the base model's weights at load time (Phase 1
+         * "merge-at-load" -- see {@code
+         * StepPlans/deliverance_lora_step3_merging_weightloader_plan_v1.md}). The base model is
+         * loaded and merged fresh on every {@link #build()}/{@link #buildLocalTransformerModel()}
+         * call; nothing is cached to disk. Requires a dense (F32/BF16/F16) base model and does not
+         * support tensor-parallel loading -- both are enforced with a clear exception at load time
+         * rather than silently producing an unmerged or wrong model.
+         */
+        public Builder withLoraAdapter(LoraAdapterModelFetcher adapterFetcher) {
+            this.loraAdapterFetcher = adapterFetcher;
+            return this;
+        }
+
         /** Applies a JSON-friendly builder configuration object. Explicit method calls made after this one can override it. */
         public Builder withConfig(AutoModelConfig config) {
             Objects.requireNonNull(config, "config");
@@ -297,6 +314,7 @@ public class AutoModelForCausaLm {
             copy.tensorParallelCollectives = Objects.requireNonNull(collectives, "collectives");
             copy.outputHeadQuantization = this.outputHeadQuantization;
             copy.quantizeOnDemand = this.quantizeOnDemand;
+            copy.loraAdapterFetcher = this.loraAdapterFetcher;
             copy.additionalTensorOperations.putAll(this.additionalTensorOperations);
             copy.download = this.download;
             copy.maxBatchSize = this.maxBatchSize;
@@ -353,9 +371,12 @@ public class AutoModelForCausaLm {
                 Optional<TensorOperations> maybe = getNative(base.get());
                 provider = maybe.map(ConfigurableTensorProvider::new).orElse(base);
             }
+            Optional<LoraAdapter> loraAdapter = loraAdapterFetcher == null
+                    ? Optional.empty()
+                    : Optional.of(LoraAdapter.fromPretrained(loraAdapterFetcher, mr));
             AbstractModel model = ModelSupport.loadModel(modelRoot, workingMem, workingQuant, provider,
                     mr, allocator, settings, fetcherForLoad, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives,
-                    outputHeadQuantization);
+                    outputHeadQuantization, loraAdapter);
             model.setMaxBatchSize(maxBatchSize);
             model.setTensorProviderExplicit(tensorProviderExplicit);
             if (!tensorProviderExplicit) {
