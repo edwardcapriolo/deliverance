@@ -46,14 +46,12 @@ public final class DeadToRightsGame {
     private final Options options;
     private final StreamingChatApi streamingChatApi;
     private final int seed;
-    private final CaseVariation caseVariation;
     private String publicCase = "";
     private String hiddenTruth = "";
 
     private DeadToRightsGame(Options options) {
         this.options = options;
         this.seed = (int) (System.currentTimeMillis() & 0x7fffffff);
-        this.caseVariation = CaseVariation.random(seed);
         ApiClient apiClient = new ApiClient();
         apiClient.setAdapterBuilder(new Retrofit.Builder()
                 .baseUrl(options.baseUrl + "/")
@@ -96,11 +94,21 @@ public final class DeadToRightsGame {
     }
 
     private void run() throws Exception {
+        printBanner();
+        Random random = new Random((((long) seed) << 32) ^ System.nanoTime());
+        String suspectName = generateSuspectName();
+        System.out.println(BOLD + CYAN + "The suspect's name is " + RESET + suspectName);
+
+        List<String> places = generateChoices("places", "Generate 10 ordinary present-day locations for a light non-violent mystery game. Use grounded places like a bakery, radio station, community theater, office, bookshop, school fundraiser, museum office, hotel desk, garden center, or local club. Avoid fantasy, supernatural, hidden temples, magic objects, ancient rituals, whispering voices, changing books, glowing symbols, locked-room melodrama, remote cabins, spooky mansions, and exotic mystery settings.");
+        String place = pickAndPrint("places", places, random);
+
+        List<String> items = generateChoices("items", "Generate 10 ordinary non-magical objects that could be stolen in a light non-violent mystery game. Use grounded items like a trophy, ledger, donation envelope, recipe card, signed book, office key, antique vase, raffle tickets, camera, or cash box. Avoid magical, supernatural, glowing, future-predicting, cursed, enchanted, or fantasy items.");
+        String item = pickAndPrint("items", items, random);
+
         List<Map<String, String>> messages = new ArrayList<>();
         messages.add(message("system", systemPrompt()));
-        messages.add(message("user", caseVariation.setupPrompt()));
+        messages.add(message("user", caseSetupPrompt(suspectName, place, item)));
 
-        printBanner();
         System.out.println(DIM + "A crime has been committed. The investigating officer has brought in the suspect "
                 + "and is preparing the details for you. The suspect is waiting in the interrogation room. "
                 + "You are our best interrogator; we need you to get in there and get a confession!" + RESET);
@@ -180,16 +188,63 @@ public final class DeadToRightsGame {
         return text != null && text.toLowerCase().contains("<confession>true</confession>");
     }
 
+    private String generateSuspectName() throws IOException {
+        List<Map<String, String>> messages = List.of(
+                message("system", "You create concise ordinary fictional names for a light mystery game. Avoid fantasy, gothic, supernatural, or melodramatic names."),
+                message("user", "Generate only one fictional suspect name. No title, no explanation."));
+        return stripNoise(chat(messages, false, null, BigDecimal.valueOf(1.3))).replaceAll("[\r\n]+", " ").strip();
+    }
+
+    private List<String> generateChoices(String fieldName, String prompt) throws IOException {
+        List<Map<String, String>> messages = List.of(
+                message("system", "You generate varied setup options for a light, non-violent mystery game."),
+                message("user", prompt + " Return only JSON matching the schema."));
+        JsonNode node = JSON.readTree(chat(messages, true, choicesSchema(fieldName), BigDecimal.valueOf(1.2)));
+        JsonNode array = node.path(fieldName);
+        List<String> values = new ArrayList<>();
+        for (JsonNode value : array) {
+            if (value.isTextual() && !value.asText().isBlank()) {
+                values.add(value.asText().strip());
+            }
+        }
+        if (values.size() < 10) {
+            throw new IOException("Expected 10 " + fieldName + ", got " + values + " from " + node);
+        }
+        return values.subList(0, 10);
+    }
+
+    private String pickAndPrint(String label, List<String> values, Random random) {
+        System.out.println(BOLD + CYAN + label + RESET);
+        for (int i = 0; i < values.size(); i++) {
+            System.out.println((i + 1) + ". " + values.get(i));
+        }
+        String selected = values.get(random.nextInt(values.size()));
+        System.out.println(BOLD + GREEN + "selected " + label.substring(0, label.length() - 1) + ": " + RESET + selected);
+        System.out.println();
+        return selected;
+    }
+
+    private static String stripNoise(String text) {
+        return text == null ? "" : text.replace("\"", "").replace("`", "").strip();
+    }
+
     private String chat(List<Map<String, String>> messages) throws IOException {
-        return chat(messages, true, null);
+        return chat(messages, true, null, options.temperature);
     }
 
     private String chat(List<Map<String, String>> messages, boolean printOutput, Map<String, Object> guidedJson) throws IOException {
+        return chat(messages, printOutput, guidedJson, options.temperature);
+    }
+
+    private String chat(List<Map<String, String>> messages, boolean printOutput, Map<String, Object> guidedJson,
+            BigDecimal temperature) throws IOException {
         CreateChatCompletionRequest request = new CreateChatCompletionRequest()
                 .model(options.model)
                 .maxTokens(options.maxTokens)
                 .seed(seed)
-                .temperature(options.temperature)
+                .temperature(temperature)
+                .xtcThreshold(options.xtcThreshold)
+                .xtcProbability(options.xtcProbability)
                 .stream(true)
                 .chatTemplateKwargs(Map.of("enable_thinking", false))
                 .messages((List) messages);
@@ -243,7 +298,10 @@ public final class DeadToRightsGame {
         if (caseFile.caseTitle == null || caseFile.caseTitle.isBlank()
                 || caseFile.suspect == null || caseFile.suspect.isBlank()
                 || caseFile.setting == null || caseFile.setting.isBlank()
-                || caseFile.clues == null || caseFile.clues.size() != 3
+                || caseFile.crimeDescription == null || caseFile.crimeDescription.isBlank()
+                || caseFile.meansClue == null || caseFile.meansClue.isBlank()
+                || caseFile.opportunityClue == null || caseFile.opportunityClue.isBlank()
+                || caseFile.mistakeClue == null || caseFile.mistakeClue.isBlank()
                 || caseFile.hiddenTruth == null) {
             throw new IOException("Invalid Dead to Rights case JSON: " + json);
         }
@@ -255,22 +313,34 @@ public final class DeadToRightsGame {
         return Map.of(
                 "type", "object",
                 "additionalProperties", false,
-                "required", List.of("caseTitle", "suspect", "setting", "clues", "hiddenTruth"),
+                "required", List.of("caseTitle", "suspect", "setting", "crimeDescription", "meansClue",
+                        "opportunityClue", "mistakeClue", "hiddenTruth"),
                 "properties", Map.of(
                         "caseTitle", string,
                         "suspect", string,
                         "setting", string,
-                        "clues", Map.of("type", "array", "minItems", 3, "maxItems", 3, "items", string),
+                        "crimeDescription", string,
+                        "meansClue", string,
+                        "opportunityClue", string,
+                        "mistakeClue", string,
                         "hiddenTruth", Map.of(
                                 "type", "object",
                                 "additionalProperties", false,
-                                "required", List.of("crime", "method", "mistakes", "whyCluesMatter", "confession"),
+                                "required", List.of("crime", "method", "mistakes", "whyCluesMatter"),
                                 "properties", Map.of(
                                         "crime", string,
                                         "method", string,
                                         "mistakes", Map.of("type", "array", "items", string),
-                                        "whyCluesMatter", Map.of("type", "array", "items", string),
-                                        "confession", string))));
+                                        "whyCluesMatter", Map.of("type", "array", "items", string)))));
+    }
+
+    static Map<String, Object> choicesSchema(String fieldName) {
+        return Map.of(
+                "type", "object",
+                "additionalProperties", false,
+                "required", List.of(fieldName),
+                "properties", Map.of(
+                        fieldName, Map.of("type", "array", "items", Map.of("type", "string"))));
     }
 
     private static String reasoningDelta(JsonNode delta) {
@@ -293,56 +363,37 @@ public final class DeadToRightsGame {
         System.out.println(CYAN + "╰────────────────────────────────────────────────╯" + RESET);
         System.out.println(YELLOW + "No one gets hurt. Catch the culprit in a light fictional mystery." + RESET);
         System.out.println(DIM + "Commands: /case, /reveal, /quit, /q" + RESET);
-        System.out.println(DIM + "model: " + options.model + " @ " + options.baseUrl + " | seed=" + seed
-                + " | " + caseVariation.shortLabel() + RESET);
+        System.out.println(DIM + "model: " + options.model + " @ " + options.baseUrl + " | seed=" + seed + RESET);
         System.out.println();
     }
 
-    private record CaseVariation(String id, String setting, String crime, String object, String suspectRole,
-            String clueStyle) {
-        private static CaseVariation random(int seed) {
-            Random random = new Random((((long) seed) << 32) ^ System.nanoTime());
-            return new CaseVariation(
-                    UUID.randomUUID().toString(),
-                    pick(random, "bookshop", "botanical conservatory", "museum fundraiser", "small-town bakery",
-                            "community theater", "antique map fair", "hotel lost-and-found", "university archive",
-                            "radio station", "local chess club"),
-                    pick(random, "theft", "embezzlement", "forgery"),
-                    pick(random, "rare stamp", "silver trophy", "donation ledger", "antique violin", "secret sauce recipe",
-                            "signed first edition", "festival cash box", "prototype gadget", "theater prop crown", "archive key"),
-                    pick(random, "bookkeeper", "assistant curator", "stage manager", "night clerk", "contest judge",
-                            "catering manager", "archivist", "auction assistant", "maintenance lead", "club treasurer"),
-                    pick(random, "physical clue", "paper trail", "timeline contradiction", "odd smell", "misplaced key",
-                            "changed receipt", "muddy footprint", "rewritten note", "camera blind spot", "overheard excuse"));
-        }
-
-        private String setupPrompt() {
-            return "Start a new case for Dead to Rights.\n"
-                    + "The public fields are caseTitle, suspect, setting, and exactly three clues.\n"
-                    + "The hiddenTruth object contains the actual crime, method, mistakes, why the clues matter, and the confession you would give if caught.\n"
-                    + "Freshness token: " + id + "\n"
-                    + "- setting: " + setting + "\n"
-                    + "- nonviolent crime type: " + crime + "\n"
-                    + "- important object: " + object + "\n"
-                    + "- suspect role you are playing: " + suspectRole + "\n"
-                    + "- one clue style: " + clueStyle + "\n"
-                    + "Current time: " + Instant.now();
-        }
-
-        private String shortLabel() {
-            return crime + " at " + setting;
-        }
-
-        private static String pick(Random random, String... values) {
-            return values[random.nextInt(values.length)];
-        }
+    private String caseSetupPrompt(String suspectName, String place, String item) {
+        return "Start a new case for Dead to Rights.\n"
+                + "The suspect is: " + suspectName + "\n"
+                + "The setting is: " + place + "\n"
+                + "The suspect stole this item: " + item + "\n"
+                    + "The public fields are caseTitle, suspect, setting, crimeDescription, meansClue, opportunityClue, and mistakeClue.\n"
+                    + "crimeDescription must be one simple sentence that states exactly what was stolen, for example: 'The cash box contents were stolen.' Do not confuse a container with its contents.\n"
+                    + "The hiddenTruth object contains the actual crime, method, mistakes, and why the clues matter.\n"
+                    + "A clue must be a concrete observable fact, such as a receipt, timestamp, key, witness statement, misplaced object, log entry, footprint, note, damaged lock, altered record, or contradiction.\n"
+                    + "Do not use the suspect name, setting, or stolen item alone as a clue.\n"
+                    + "meansClue must show how the suspect could access or take the item.\n"
+                    + "opportunityClue must place the suspect near the item at the relevant time.\n"
+                    + "mistakeClue must show an error the suspect made while hiding or covering up the theft.\n"
+                + "The crime is theft. The theft went wrong in three ways, creating the three clues.\n"
+                + "The suspect either left evidence, was seen by a witness, contradicted a timeline, had unusual access, or hid the item poorly.\n"
+                + "Freshness token: " + UUID.randomUUID() + "\n"
+                + "Current time: " + Instant.now();
     }
 
     static final class CaseFile {
         public String caseTitle;
         public String suspect;
         public String setting;
-        public List<String> clues;
+        public String crimeDescription;
+        public String meansClue;
+        public String opportunityClue;
+        public String mistakeClue;
         public HiddenTruth hiddenTruth;
 
         String publicOpening() {
@@ -350,10 +401,11 @@ public final class DeadToRightsGame {
             sb.append("CASE TITLE: ").append(caseTitle).append('\n');
             sb.append("SUSPECT: ").append(suspect).append('\n');
             sb.append("SETTING: ").append(setting).append('\n');
+            sb.append("CRIME: ").append(crimeDescription).append('\n');
             sb.append("CLUES:\n");
-            for (int i = 0; i < clues.size(); i++) {
-                sb.append(i + 1).append(". ").append(clues.get(i)).append('\n');
-            }
+            sb.append("1. ").append(meansClue).append('\n');
+            sb.append("2. ").append(opportunityClue).append('\n');
+            sb.append("3. ").append(mistakeClue).append('\n');
             sb.append("\nYou may begin questioning me.");
             return sb.toString();
         }
@@ -362,8 +414,7 @@ public final class DeadToRightsGame {
             return "CRIME: " + hiddenTruth.crime + "\n"
                     + "METHOD: " + hiddenTruth.method + "\n"
                     + "MISTAKES: " + hiddenTruth.mistakes + "\n"
-                    + "WHY THE CLUES MATTER: " + hiddenTruth.whyCluesMatter + "\n"
-                    + "CONFESSION: " + hiddenTruth.confession;
+                    + "WHY THE CLUES MATTER: " + hiddenTruth.whyCluesMatter;
         }
     }
 
@@ -372,15 +423,17 @@ public final class DeadToRightsGame {
         public String method;
         public List<String> mistakes;
         public List<String> whyCluesMatter;
-        public String confession;
     }
 
-    private record Options(String baseUrl, String model, int maxTokens, BigDecimal temperature, boolean help) {
+    private record Options(String baseUrl, String model, int maxTokens, BigDecimal temperature,
+            BigDecimal xtcThreshold, BigDecimal xtcProbability, boolean help) {
         static Options parse(String[] args) {
             String baseUrl = "http://localhost:8085";
             String model = "Qwen3-4B-JQ4";
             int maxTokens = 1024;
             BigDecimal temperature = BigDecimal.valueOf(0.8);
+            BigDecimal xtcThreshold = BigDecimal.valueOf(0.1);
+            BigDecimal xtcProbability = BigDecimal.valueOf(0.2);
             boolean help = false;
             for (int i = 0; i < args.length; i++) {
                 switch (args[i]) {
@@ -389,10 +442,13 @@ public final class DeadToRightsGame {
                     case "--model" -> model = args[++i];
                     case "--max-tokens" -> maxTokens = Integer.parseInt(args[++i]);
                     case "--temperature" -> temperature = new BigDecimal(args[++i]);
+                    case "--xtc-threshold" -> xtcThreshold = new BigDecimal(args[++i]);
+                    case "--xtc-probability" -> xtcProbability = new BigDecimal(args[++i]);
                     default -> throw new IllegalArgumentException("Unknown argument: " + args[i]);
                 }
             }
-            return new Options(baseUrl.replaceAll("/+$", ""), model, maxTokens, temperature, help);
+            return new Options(baseUrl.replaceAll("/+$", ""), model, maxTokens, temperature, xtcThreshold,
+                    xtcProbability, help);
         }
 
         static void printHelp() {
@@ -401,6 +457,8 @@ public final class DeadToRightsGame {
             System.out.println("  --model Qwen3-4B-JQ4");
             System.out.println("  --max-tokens 1024");
             System.out.println("  --temperature 0.8");
+            System.out.println("  --xtc-threshold 0.1");
+            System.out.println("  --xtc-probability 0.2");
         }
     }
 }
