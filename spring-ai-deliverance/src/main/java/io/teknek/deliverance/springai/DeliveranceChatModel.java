@@ -62,6 +62,9 @@ public class DeliveranceChatModel implements ChatModel {
         if (options.getTopP() != null) {
             request.topP(BigDecimal.valueOf(options.getTopP()));
         }
+        if (options.getUniformTopP() != null) {
+            request.uniformTopP(BigDecimal.valueOf(options.getUniformTopP()));
+        }
         if (options.getTopK() != null) {
             request.topK(BigDecimal.valueOf(options.getTopK()));
         }
@@ -129,6 +132,7 @@ public class DeliveranceChatModel implements ChatModel {
                     .temperature(deliveranceOptions.getTemperature() == null ? defaultOptions.getTemperature() : deliveranceOptions.getTemperature())
                     .maxTokens(deliveranceOptions.getMaxTokens() == null ? defaultOptions.getMaxTokens() : deliveranceOptions.getMaxTokens())
                     .topP(deliveranceOptions.getTopP() == null ? defaultOptions.getTopP() : deliveranceOptions.getTopP())
+                    .uniformTopP(deliveranceOptions.getUniformTopP() == null ? defaultOptions.getUniformTopP() : deliveranceOptions.getUniformTopP())
                     .topK(deliveranceOptions.getTopK() == null ? defaultOptions.getTopK() : deliveranceOptions.getTopK())
                     .stopSequences(deliveranceOptions.getStopSequences() == null ? defaultOptions.getStopSequences() : deliveranceOptions.getStopSequences())
                     .seed(deliveranceOptions.getSeed() == null ? defaultOptions.getSeed() : deliveranceOptions.getSeed())
@@ -145,7 +149,15 @@ public class DeliveranceChatModel implements ChatModel {
                 .temperature(promptOptions.getTemperature() == null ? defaultOptions.getTemperature() : promptOptions.getTemperature())
                 .maxTokens(promptOptions.getMaxTokens() == null ? defaultOptions.getMaxTokens() : promptOptions.getMaxTokens())
                 .topP(promptOptions.getTopP() == null ? defaultOptions.getTopP() : promptOptions.getTopP())
+                .uniformTopP(defaultOptions.getUniformTopP())
                 .topK(promptOptions.getTopK() == null ? defaultOptions.getTopK() : promptOptions.getTopK())
+                .seed(defaultOptions.getSeed())
+                .logprobs(defaultOptions.getLogprobs())
+                .topLogprobs(defaultOptions.getTopLogprobs())
+                .xtcThreshold(defaultOptions.getXtcThreshold())
+                .xtcProbability(defaultOptions.getXtcProbability())
+                .guidedRegex(defaultOptions.getGuidedRegex())
+                .guidedJson(defaultOptions.getGuidedJson())
                 .stopSequences(promptOptions.getStopSequences() == null ? defaultOptions.getStopSequences() : promptOptions.getStopSequences())
                 .build();
     }

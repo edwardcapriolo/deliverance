@@ -41,6 +41,9 @@ public class ChatCompletionService {
         if (request.getTopP()!= null){
             params.withTopP(request.getTopP().floatValue());
         }
+        if (request.getUniformTopP()!= null){
+            params.withUniformTopP(request.getUniformTopP().floatValue());
+        }
         if (request.getTopK()!=null){
             params.withTopK(request.getTopK().floatValue());
         }

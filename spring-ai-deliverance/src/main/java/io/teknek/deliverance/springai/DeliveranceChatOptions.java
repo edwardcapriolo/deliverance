@@ -9,6 +9,7 @@ public class DeliveranceChatOptions implements ChatOptions {
     private Double temperature;
     private Integer maxTokens;
     private Double topP;
+    private Double uniformTopP;
     private Integer topK;
     private List<String> stopSequences;
     private Integer seed;
@@ -64,6 +65,10 @@ public class DeliveranceChatOptions implements ChatOptions {
         return topP;
     }
 
+    public Double getUniformTopP() {
+        return uniformTopP;
+    }
+
     public Integer getSeed() {
         return seed;
     }
@@ -103,6 +108,7 @@ public class DeliveranceChatOptions implements ChatOptions {
                 .temperature(temperature)
                 .maxTokens(maxTokens)
                 .topP(topP)
+                .uniformTopP(uniformTopP)
                 .topK(topK)
                 .stopSequences(stopSequences)
                 .seed(seed)
@@ -154,6 +160,11 @@ public class DeliveranceChatOptions implements ChatOptions {
         @Override
         public Builder topP(Double topP) {
             options.topP = topP;
+            return this;
+        }
+
+        public Builder uniformTopP(Double uniformTopP) {
+            options.uniformTopP = uniformTopP;
             return this;
         }
 
@@ -228,6 +239,10 @@ public class DeliveranceChatOptions implements ChatOptions {
             }
             if (otherOptions.getTopP() != null) {
                 topP(otherOptions.getTopP());
+            }
+            if (otherOptions instanceof DeliveranceChatOptions deliveranceOptions
+                    && deliveranceOptions.getUniformTopP() != null) {
+                uniformTopP(deliveranceOptions.getUniformTopP());
             }
             if (otherOptions.getTopK() != null) {
                 topK(otherOptions.getTopK());

@@ -184,6 +184,9 @@ public class ChatCompletionController {
         if (request.getTopP() != null) {
             parameters.withTopP(request.getTopP().floatValue());
         }
+        if (request.getUniformTopP() != null) {
+            parameters.withUniformTopP(request.getUniformTopP().floatValue());
+        }
         if (request.getMaxTokens() != null) {
             parameters.withMaxTokens(request.getMaxTokens());
         }
@@ -698,13 +701,14 @@ public class ChatCompletionController {
             return;
         }
         String prompt = request.getPrompt() == null ? "" : request.getPrompt();
-        LOGGER.info("completion.request model={} prompt_chars={} stream={} max_tokens={} temperature={} top_p={} stop={}",
+        LOGGER.info("completion.request model={} prompt_chars={} stream={} max_tokens={} temperature={} top_p={} uniform_top_p={} stop={}",
                 request.getModel(),
                 prompt.length(),
                 request.getStream(),
                 request.getMaxTokens(),
                 request.getTemperature(),
                 request.getTopP(),
+                request.getUniformTopP(),
                 request.getStop());
     }
 

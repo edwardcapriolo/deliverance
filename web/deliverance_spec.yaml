@@ -1296,6 +1296,13 @@ components:
             An alternative to sampling with temperature, called nucleus sampling, where the model considers the results of the tokens with top_p probability mass. So 0.1 means only the tokens comprising the top 10% probability mass are considered.
             
             We generally recommend altering this or `temperature` but not both.
+        uniform_top_p:
+          type: number
+          minimum: 0
+          maximum: 1
+          nullable: true
+          description: &completions_uniform_top_p_description |
+            Uniform nucleus sampling. The model keeps candidates until this probability mass is reached, then chooses uniformly from that nucleus instead of weighting candidates by probability. Only applies when temperature is non-zero. Do not combine with `top_p`.
         user: &end_user_param_configuration
           type: string
           example: user-1234
@@ -1987,6 +1994,12 @@ components:
           example: 1
           nullable: true
           description: *completions_top_p_description
+        uniform_top_p:
+          type: number
+          minimum: 0
+          maximum: 1
+          nullable: true
+          description: *completions_uniform_top_p_description
         tools:
           type: array
           description: >
