@@ -10,4 +10,6 @@ java -cp "$SCRIPT_DIR/target/nanocode-deliverance-0.0.12-SNAPSHOT-all.jar" \
   --model "${DELIVERANCE_DEAD_TO_RIGHTS_MODEL:-Qwen3-4B-JQ4}" \
   --max-tokens "${DELIVERANCE_DEAD_TO_RIGHTS_MAX_TOKENS:-512}" \
   --temperature "${DELIVERANCE_DEAD_TO_RIGHTS_TEMPERATURE:-0.8}" \
+  --xtc-threshold "${DELIVERANCE_DEAD_TO_RIGHTS_XTC_THRESHOLD:-0.1}" \
+  --xtc-probability "${DELIVERANCE_DEAD_TO_RIGHTS_XTC_PROBABILITY:-0.2}" \
   "$@"
