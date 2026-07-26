@@ -63,7 +63,15 @@ public class LoraAdapter implements AutoCloseable {
                 ByteBuffer mapped = raf.getChannel().map(FileChannel.MapMode.READ_ONLY, 0, raf.length());
                 Map<String, String> metadata = new java.util.HashMap<>();
                 Map<String, TensorInfo> tensorInfoMap = DefaultWeightLoader.readTensorInfoMap(mapped, Optional.of(metadata));
-                Weights weights = new Weights(metadata, tensorInfoMap, mapped, Optional.empty());
+                // readTensorInfoMap only advances mapped's position past the header; TensorInfo's
+                // dataOffsets are 0-based from the start of the tensor-data section, but Weights#load
+                // seeks with an *absolute* ByteBuffer#position(), so a duplicate() of mapped as-is would
+                // silently re-seek into the header/earlier tensors instead of skipping past them. slice()
+                // fixes that by making the tensor-data section start at index 0 of the buffer Weights sees
+                // -- the same effect DefaultWeightLoader gets by mapping a fresh region starting after the
+                // header instead of reusing one buffer across the header and the data.
+                ByteBuffer tensorData = mapped.slice();
+                Weights weights = new Weights(metadata, tensorInfoMap, tensorData, Optional.empty());
                 return new LoraAdapter(config, weights, raf, metricRegistry);
             } catch (RuntimeException | Error e) {
                 closeQuietly(raf);
