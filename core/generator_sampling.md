@@ -132,4 +132,13 @@ top_p=0.95
 top_k=64
 ```
 
+## Uniform nucleus sampling
 
+`uniform_top_p` builds a nucleus using probability mass, then samples uniformly from the candidates in that nucleus instead of weighting the final draw by probability.
+
+```text
+temperature=1.0
+uniform_top_p=0.95
+```
+
+`uniform_top_p` and `top_p` are mutually exclusive because they both define nucleus sampling behavior. `top_k` may still be used as a safety cap before `uniform_top_p` is applied.

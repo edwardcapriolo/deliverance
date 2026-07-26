@@ -59,8 +59,9 @@ Prompt prompt = new Prompt(
         "Create a ticket id.",
         DeliveranceChatOptions.builder()
                 .model("edwardcapriolo/Qwen3-4B-JQ4")
-                .temperature(0.0)
+                .temperature(1.0)
                 .maxTokens(32)
+                .uniformTopP(0.95)
                 .guidedRegex("TICKET-[0-9]{4}")
                 .build());
 ```
@@ -70,6 +71,7 @@ Supported Deliverance-specific options include:
 ```text
 seed
 topK
+uniformTopP
 logprobs
 topLogprobs
 guidedChoice

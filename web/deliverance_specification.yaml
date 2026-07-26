@@ -237,6 +237,12 @@ components:
           minimum: 0
           maximum: 1
           nullable: true
+        uniform_top_p:
+          description: Uniform nucleus sampling. Sort candidates by probability, keep candidates until this probability mass is reached, then choose uniformly from that nucleus instead of weighting by probability. Only applies when temperature is non-zero. Do not combine with top_p.
+          type: number
+          minimum: 0
+          maximum: 1
+          nullable: true
 
 
       required:
@@ -749,6 +755,12 @@ components:
           nullable: true
         top_p:
           description: nucleus sampling, sort by probability, keep candidates until top_p probability mass is reached, then choose a random token from that sample. Only applies when temperature is non-zero.
+          type: number
+          minimum: 0
+          maximum: 1
+          nullable: true
+        uniform_top_p:
+          description: Uniform nucleus sampling. Sort candidates by probability, keep candidates until this probability mass is reached, then choose uniformly from that nucleus instead of weighting by probability. Only applies when temperature is non-zero. Do not combine with top_p.
           type: number
           minimum: 0
           maximum: 1

@@ -52,7 +52,8 @@ Generation:
 - [Native SIMD kernels](core/native_simd_kernels.md) Explains native GEMM/SAXPY support and the dtype combinations currently accelerated
 - [GPU output projection](core/gpu_output_projection.md) Shows how Deliverance uses WebGPU/Dawn for targeted Q4 output-head acceleration
 - [Vibrant Maven plugin](https://www.youtube.com/watch?v=Glp_hAieOq8) Watch a video on Vibrant Maven plugin generate code from XML based spec inside pom
-- [Generator sampling](core/generator_sampling.md) Explains how temperature, top_p, top_k, and exclude top choice work
+- [Generator sampling](core/generator_sampling.md) Explains temperature, top_p, top_k, XTC, and `uniform_top_p`
+- [Sampler-side random setup choices](core/uniform_top_p_game_setup.md) Shows why `uniform_top_p` avoids generating long option lists just to pick one in user code
 - [Guided generation](core/guided_generation.md) Explains guided choice, guided regex, guided JSON, sketches-core, and the FSA/token masking flow
 - [Guided decoding overview](core/guided_decoding_real_inference_engine.md) A narrative walkthrough of guided decoding and how it moves Deliverance toward a full inference-engine feature set
 - [No-black-box AI for Spring developers](spring-ai-deliverance/no_black_box_java_ai.md) Positions Deliverance with Spring AI for Java-first local prototyping

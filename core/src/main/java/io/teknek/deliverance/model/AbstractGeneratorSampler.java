@@ -104,7 +104,8 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
         float temperature = this.parameters.temperature.orElse(0f);
         float xtcProbability = this.parameters.xtcProbability.orElse(0f);
         float xtcThreshold = this.parameters.xtcThreshold.orElse(0f);
-        if (parameters.xtcThreshold.isEmpty() && parameters.topK.isEmpty()) {
+        if (parameters.xtcThreshold.isEmpty() && parameters.topK.isEmpty()
+                && parameters.topP.isEmpty() && parameters.uniformTopP.isEmpty()) {
             parameters.topP = Optional.of(0.10f);
         }
 
@@ -158,6 +159,9 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
                 chosen = p.process();
             }
             if (temperature == 0.0) {
+                if (parameters.uniformTopP.isPresent()) {
+                    throw new IllegalArgumentException("uniformTopP requires temperature > 0");
+                }
                 if (chosen.isPresent() && chosen.get().index != maxi) {
                     if (LOGGER.isDebugEnabled()) {
                         LOGGER.debug("xtc: {} maxi: {}", model.decodeToken(chosen.get().index), maxi);
@@ -203,7 +207,8 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
             } else {
                 int chosenToken;
                 try (Timer.Context ignoredTopKTopP = InferenceProfiler.timer(model.getMetricRegistry(), "sampler.topk_topp").time()) {
-                    chosenToken = sampleTopKTopP(logits, temperature, parameters.topK, parameters.topP, random.nextFloat());
+                    chosenToken = sampleTopKTopP(logits, temperature, parameters.topK, parameters.topP,
+                            parameters.uniformTopP, random.nextFloat());
                 }
                 return samplerReturn(chosenToken, logProbs, topNLogProbs);
             }
@@ -259,12 +264,18 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
     }
 
     static int sampleTopKTopP(AbstractTensor logits, float temperature, Optional<Float> topK, Optional<Float> topP,
-            float uniformSample) {
+            Optional<Float> uniformTopP, float uniformSample) {
         if (temperature <= 0.0f) {
             throw new IllegalArgumentException("temperature must be > 0 for sampling");
         }
         if (topP.isPresent() && (topP.get() <= 0.0f || topP.get() > 1.0f)) {
             throw new IllegalArgumentException("topP must be in (0, 1]");
+        }
+        if (uniformTopP.isPresent() && (uniformTopP.get() <= 0.0f || uniformTopP.get() > 1.0f)) {
+            throw new IllegalArgumentException("uniformTopP must be in (0, 1]");
+        }
+        if (topP.isPresent() && uniformTopP.isPresent()) {
+            throw new IllegalArgumentException("topP and uniformTopP can not both be enabled");
         }
         int vocabularySize = Math.toIntExact(logits.size());
         int candidateLimit = topK.map(k -> topKCandidateCount(k, vocabularySize)).orElse(vocabularySize);
@@ -284,18 +295,23 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
             filtered.add(candidates.get(i));
         }
         double total = probabilitySum(filtered, max);
-        if (topP.isPresent()) {
+        Optional<Float> nucleusP = topP.isPresent() ? topP : uniformTopP;
+        if (nucleusP.isPresent()) {
             double normalized = 0.0d;
             List<IndexValueToken> nucleus = new ArrayList<>();
             for (IndexValueToken token : filtered) {
                 nucleus.add(token);
                 normalized += FastMath.exp(token.value - max) / total;
-                if (normalized >= topP.get()) {
+                if (normalized >= nucleusP.get()) {
                     break;
                 }
             }
             filtered = nucleus;
             total = probabilitySum(filtered, max);
+            if (uniformTopP.isPresent()) {
+                int pick = Math.min((int) (uniformSample * filtered.size()), filtered.size() - 1);
+                return filtered.get(pick).index;
+            }
         }
         double pick = uniformSample * total;
         for (IndexValueToken token : filtered) {

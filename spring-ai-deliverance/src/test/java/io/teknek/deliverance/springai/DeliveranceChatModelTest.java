@@ -21,9 +21,9 @@ class DeliveranceChatModelTest {
     void mapsPromptAndOptionsToChatCompletionRequest() {
         DeliveranceChatOptions options = DeliveranceChatOptions.builder()
                 .model("edwardcapriolo/Qwen3-4B-JQ4")
-                .temperature(0.0)
+                .temperature(1.0)
                 .maxTokens(64)
-                .topP(0.95)
+                .uniformTopP(0.95)
                 .topK(64)
                 .seed(42)
                 .logprobs(true)
@@ -42,9 +42,9 @@ class DeliveranceChatModelTest {
         assertEquals(false, request.getStream());
         assertEquals("system", request.getMessages().get(0).getRole());
         assertEquals("user", request.getMessages().get(1).getRole());
-        assertEquals(0.0, request.getTemperature().doubleValue());
+        assertEquals(1.0, request.getTemperature().doubleValue());
         assertEquals(64, request.getMaxTokens());
-        assertEquals(0.95, request.getTopP().doubleValue());
+        assertEquals(0.95, request.getUniformTopP().doubleValue());
         assertEquals(64, request.getTopK().intValue());
         assertEquals(42, request.getSeed());
         assertEquals(true, request.getLogprobs());
@@ -72,12 +72,26 @@ class DeliveranceChatModelTest {
     }
 
     @Test
+    void mapsNormalTopPToChatCompletionRequest() {
+        DeliveranceChatOptions options = DeliveranceChatOptions.builder()
+                .model("edwardcapriolo/Qwen3-4B-JQ4")
+                .temperature(1.0)
+                .topP(0.9)
+                .build();
+        DeliveranceChatModel model = new DeliveranceChatModel(new NoopDeliveranceApi(), new ObjectMapper(), options);
+
+        CreateChatCompletionRequest request = model.toRequest(new Prompt("Pick one."), false);
+
+        assertEquals(0.9, request.getTopP().doubleValue());
+    }
+
+    @Test
     void runtimeDeliveranceOptionsMergeWithDefaults() {
         DeliveranceChatOptions defaults = DeliveranceChatOptions.builder()
                 .model("default-model")
                 .temperature(0.7)
                 .maxTokens(128)
-                .topP(0.9)
+                .uniformTopP(0.8)
                 .topK(40)
                 .seed(42)
                 .xtcThreshold(0.5)
@@ -94,7 +108,7 @@ class DeliveranceChatModelTest {
         assertEquals("default-model", request.getModel());
         assertEquals(0.0, request.getTemperature().doubleValue());
         assertEquals(64, request.getMaxTokens());
-        assertEquals(0.9, request.getTopP().doubleValue());
+        assertEquals(0.8, request.getUniformTopP().doubleValue());
         assertEquals(40, request.getTopK().intValue());
         assertEquals(42, request.getSeed());
         assertEquals(0.5, request.getXtcThreshold().doubleValue());
@@ -105,9 +119,10 @@ class DeliveranceChatModelTest {
     void serializesRequestWithSpringGeneratedMapper() throws Exception {
         DeliveranceChatOptions options = DeliveranceChatOptions.builder()
                 .model("edwardcapriolo/Qwen3-4B-JQ4")
-                .temperature(0.0)
+                .temperature(1.0)
                 .maxTokens(64)
                 .topK(64)
+                .uniformTopP(0.95)
                 .xtcThreshold(0.5)
                 .guidedJson("""
                         {"type":"object","properties":{"foo":{"type":"integer"}},"required":["foo"]}
@@ -125,6 +140,7 @@ class DeliveranceChatModelTest {
         assertTrue(json.contains("\"role\":\"system\""), json);
         assertTrue(json.contains("\"role\":\"user\""), json);
         assertTrue(json.contains("\"top_k\":64"), json);
+        assertTrue(json.contains("\"uniform_top_p\":0.95"), json);
         assertTrue(json.contains("\"xtc_threshold\":0.5"), json);
         assertTrue(json.contains("\"guided_json\""), json);
         assertTrue(json.contains("\"foo\""), json);
