@@ -112,8 +112,8 @@ Top-p defaults to 10%. We cut-off the top 10% and rescale
 |:----|:---:|
 | .66 | .33 |
 
-The inference engine draws a psuedo-random number like 0.09, 9%. That would fall-in the 5 bucket as 0.05 < .63. 
-Another draw might generate 0.88 or 88%. That lands in the second bucket. That is the magic of top_p we keep gathing choices until we get above a propbability, then we pick a random high probability choice.
+The inference engine draws a psuedo-random number like 0.09, 9%. That would fall-in the 5 bucket as 0.05 < .63.
+Another draw might generate 0.88 or 88%. That lands in the second bucket. That is the magic of top_p: we keep gathering choices until we get above a probability mass, then we do a probability-weighted pick from that nucleus.
 
 ## Top-k sampling
 

@@ -754,7 +754,7 @@ components:
           default: null
           nullable: true
         top_p:
-          description: nucleus sampling, sort by probability, keep candidates until top_p probability mass is reached, then choose a random token from that sample. Only applies when temperature is non-zero.
+          description: Nucleus sampling. Sort by probability, keep candidates until top_p probability mass is reached, then choose a probability-weighted random token from that sample. Only applies when temperature is non-zero. When uniform_top_p is set, the final choice from this sample is uniform instead of probability-weighted.
           type: number
           minimum: 0
           maximum: 1
