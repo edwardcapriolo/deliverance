@@ -33,6 +33,7 @@ Generation:
 
 ### Learning and Developer docs
 
+- [0.0.12 release notes: Corner Stone](release-notes/0.0.12.md) Granite, Antares, packed Q4, LoRA merge, uniform top-p, Dead to Rights, and Spring client support
 - [0.0.10 release notes](release-notes/0.0.10.md) Detailed notes for the Qwen3, JQ4, tensor-parallel, GPU, nanocode, and benchmarking release
 - [Qwen3 support](core/qwen3_support.md) Documents Qwen3 integration status, tests, and limitations
 - [Granite 4.0 / GraniteMoeHybrid support](core/granite_support.md) Documents dense Antares and hybrid Granite support, Mamba/MoE notes, and current limitations

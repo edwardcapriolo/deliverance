@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">Deliverance 0.0.12 - Corner Stone</title>
+  <desc id="desc">Release artwork for Deliverance 0.0.12, codename Corner Stone, with a granite block, JVM inference circuitry, and local model features.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#10141f"/>
+      <stop offset="0.55" stop-color="#172033"/>
+      <stop offset="1" stop-color="#090b12"/>
+    </linearGradient>
+    <linearGradient id="stoneTop" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d8dde6"/>
+      <stop offset="0.52" stop-color="#aab2c0"/>
+      <stop offset="1" stop-color="#747d8e"/>
+    </linearGradient>
+    <linearGradient id="stoneFace" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9ba4b4"/>
+      <stop offset="0.5" stop-color="#6f7888"/>
+      <stop offset="1" stop-color="#464d5c"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f7c948"/>
+      <stop offset="1" stop-color="#ff8a3d"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+    <pattern id="grain" width="70" height="70" patternUnits="userSpaceOnUse">
+      <circle cx="9" cy="13" r="1.6" fill="#fff" opacity="0.22"/>
+      <circle cx="31" cy="29" r="1.1" fill="#1b2230" opacity="0.25"/>
+      <circle cx="55" cy="18" r="1.4" fill="#fff" opacity="0.14"/>
+      <circle cx="46" cy="52" r="1.2" fill="#111827" opacity="0.22"/>
+      <path d="M5 57 C22 48, 34 66, 63 50" fill="none" stroke="#fff" stroke-width="1" opacity="0.1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <path d="M0 494 C190 450, 310 505, 480 466 C695 416, 790 498, 980 454 C1080 431, 1134 420, 1200 438 L1200 630 L0 630 Z" fill="#0d111b" opacity="0.95"/>
+  <path d="M81 132 H275 M158 132 V89 M275 132 C314 132, 314 187, 355 187 H450 M989 145 H1119 M1059 145 V89 M936 242 H1087 C1120 242, 1120 288, 1155 288" fill="none" stroke="#f7c948" stroke-width="3" opacity="0.36" stroke-linecap="round"/>
+  <g fill="#f7c948" opacity="0.72">
+    <circle cx="81" cy="132" r="5"/>
+    <circle cx="158" cy="89" r="5"/>
+    <circle cx="450" cy="187" r="5"/>
+    <circle cx="989" cy="145" r="5"/>
+    <circle cx="1059" cy="89" r="5"/>
+    <circle cx="1155" cy="288" r="5"/>
+  </g>
+
+  <g transform="translate(116 96)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="30" font-weight="700" fill="#f4f7fb" letter-spacing="3">DELIVERANCE</text>
+    <text x="0" y="54" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="80" font-weight="800" fill="#ffffff">0.0.12</text>
+    <text x="4" y="111" font-family="Georgia, Times New Roman, serif" font-size="54" font-weight="700" fill="url(#amber)">Corner Stone</text>
+    <rect x="5" y="137" width="388" height="3" rx="1.5" fill="url(#amber)"/>
+    <text x="5" y="183" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24" fill="#cbd5e1">Granite support, Antares CLI, Q4 packing,</text>
+    <text x="5" y="217" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24" fill="#cbd5e1">guided generation, and local Java AI.</text>
+  </g>
+
+  <g transform="translate(604 112)" filter="url(#shadow)">
+    <path d="M113 71 L382 18 L517 119 L238 184 Z" fill="url(#stoneTop)"/>
+    <path d="M113 71 L238 184 L238 438 L113 314 Z" fill="#5c6575"/>
+    <path d="M238 184 L517 119 L517 365 L238 438 Z" fill="url(#stoneFace)"/>
+    <path d="M113 71 L382 18 L517 119 L238 184 Z" fill="url(#grain)" opacity="0.7"/>
+    <path d="M238 184 L517 119 L517 365 L238 438 Z" fill="url(#grain)" opacity="0.45"/>
+    <path d="M113 71 L238 184 L238 438 L113 314 Z" fill="url(#grain)" opacity="0.4"/>
+    <path d="M238 184 L238 438" stroke="#252b36" stroke-width="4" opacity="0.45"/>
+    <path d="M113 71 L238 184 L517 119" fill="none" stroke="#eef2f7" stroke-width="4" opacity="0.45"/>
+
+    <g transform="translate(290 238)">
+      <rect x="0" y="0" width="150" height="78" rx="13" fill="#111827" opacity="0.86"/>
+      <text x="75" y="32" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="24" font-weight="800" fill="#f7c948">JQ4</text>
+      <text x="75" y="59" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16" fill="#cbd5e1">packed tensors</text>
+    </g>
+
+    <g transform="translate(142 215)">
+      <rect x="0" y="0" width="118" height="86" rx="16" fill="#111827" opacity="0.86"/>
+      <rect x="12" y="12" width="94" height="62" rx="10" fill="none" stroke="#f7c948" stroke-width="4" opacity="0.95"/>
+      <text x="59" y="45" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="28" font-weight="900" fill="#f8fafc">JVM</text>
+      <text x="59" y="65" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" font-weight="700" fill="#cbd5e1" letter-spacing="1.3">LOCAL AI</text>
+    </g>
+  </g>
+
+  <g transform="translate(116 455)">
+    <rect x="0" y="0" width="968" height="86" rx="22" fill="#111827" opacity="0.82" stroke="#303848"/>
+    <g font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18" font-weight="700" fill="#e5e7eb">
+      <text x="38" y="36">GraniteMoeHybrid</text>
+      <text x="278" y="36">Antares VLoc</text>
+      <text x="477" y="36">uniform top-p</text>
+      <text x="690" y="36">LoRA merge</text>
+      <text x="838" y="36">Spring client</text>
+    </g>
+    <g fill="url(#amber)">
+      <rect x="38" y="53" width="151" height="5" rx="2.5"/>
+      <rect x="278" y="53" width="116" height="5" rx="2.5"/>
+      <rect x="477" y="53" width="130" height="5" rx="2.5"/>
+      <rect x="690" y="53" width="96" height="5" rx="2.5"/>
+      <rect x="838" y="53" width="118" height="5" rx="2.5"/>
+    </g>
+  </g>
+</svg>
