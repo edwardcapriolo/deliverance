@@ -24,6 +24,23 @@ if [ "$OS_NAME" = "Darwin" ] && [ ! -f "$NATIVE_LIB_DIR/libwebgpu_dawn.dylib" ] 
   cp "$DAWN_LIB" "$NATIVE_LIB_DIR/"
 fi
 
+WEB_JAR=${DELIVERANCE_WEB_JAR:-}
+if [ -z "$WEB_JAR" ]; then
+  for candidate in "$WEB_DIR"/target/web-*-SNAPSHOT.jar; do
+    [ -e "$candidate" ] || continue
+    case "$candidate" in
+      *-sources.jar|*-javadoc.jar|*.original) continue ;;
+    esac
+    if [ -z "$WEB_JAR" ] || [ "$candidate" -nt "$WEB_JAR" ]; then
+      WEB_JAR=$candidate
+    fi
+  done
+fi
+if [ -z "$WEB_JAR" ]; then
+  printf '%s\n' "No web jar found. Run: mvn -pl web -am -DskipTests package" >&2
+  exit 1
+fi
+
 cd "$WEB_DIR"
 
 java \
@@ -55,4 +72,4 @@ java \
   -Dserver.undertow.accesslog.prefix=access_log \
   -Dserver.undertow.accesslog.suffix=.log \
   -Dspring.config.location=file:./qwen3-4b-jq4.properties \
-  -jar target/web-*-SNAPSHOT.jar
+  -jar "$WEB_JAR"

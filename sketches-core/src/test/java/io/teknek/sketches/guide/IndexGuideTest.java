@@ -2,6 +2,9 @@ package io.teknek.sketches.guide;
 
 import org.junit.jupiter.api.Test;
 
+import io.teknek.sketches.json.JsonSchemaRegexBuilder;
+import org.junit.jupiter.api.Disabled;
+
 import java.util.List;
 import java.util.Map;
 
@@ -13,7 +16,24 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class IndexGuideTest {
 
     @Test
-    void interfaceMatchesRegexFsaAllowedTokenFlow() {
+    void outlinesCoreTestIndexBasicInterfacePort() {
+        // Upstream: outlines-core/tests/test_index.py::test_basic_interface
+        Vocabulary vocabulary = new Vocabulary(3, Map.of("1", List.of(1), "2", List.of(2)));
+        Index index = new Index("[1-9]", vocabulary);
+
+        int initState = index.getInitialState();
+        assertFalse(index.isFinalState(initState));
+        assertEquals(List.of(1, 2), index.getAllowedTokens(initState));
+
+        int nextState = index.getNextState(initState, 2);
+        assertTrue(index.isFinalState(nextState));
+        assertEquals(java.util.Set.of(nextState), index.getFinalStates());
+        assertEquals(nextState, index.getNextState(nextState, 3));
+    }
+
+    @Test
+    void outlinesCoreTestGuideInterfacePort() {
+        // Upstream: outlines-core/tests/test_guide.py::test_interface
         Vocabulary vocabulary = new Vocabulary(3, Map.of("1", List.of(1), "a", List.of(2)));
         Index index = new Index("[1-9]", vocabulary);
         IndexGuide guide = new IndexGuide(index);
@@ -31,7 +51,8 @@ class IndexGuideTest {
     }
 
     @Test
-    void walksRegexFinalStateThroughOptionalBranch() {
+    void outlinesCoreTestGuideRegexFinalStateWalkPort() {
+        // Upstream: outlines-core/tests/test_guide.py::test_regex_final_state_walk
         Vocabulary vocabulary = new Vocabulary(104, Map.of("\n", List.of(103), ".",
                 List.of(102), "`", List.of(101)));
         Index index = new Index("`\n(\\.\n)?`\n", vocabulary);
@@ -46,7 +67,8 @@ class IndexGuideTest {
     }
 
     @Test
-    void tokenTransitionsForEquivalentAlternativesAreIdentical() {
+    void outlinesCoreTestGuideTokenTransKeysIdenticalPort() {
+        // Upstream: outlines-core/tests/test_guide.py::test_token_trans_keys_identical
         Vocabulary vocabulary = new Vocabulary(4, Map.of("a", List.of(1), "b", List.of(2), "z", List.of(3)));
         Index index = new Index("z[ab]z", vocabulary);
 
@@ -61,8 +83,15 @@ class IndexGuideTest {
         assertTrue(guide2.isFinished());
     }
 
+    @Disabled("Java Vocabulary currently accepts String token text only; upstream test also covers bytes token inputs.")
     @Test
-    void acceptsTokensReportsCompleteRegexMatches() {
+    void outlinesCoreTestGuideStrAndBytesProduceTheSamePort() {
+        // Upstream: outlines-core/tests/test_guide.py::test_str_and_bytes_produce_the_same
+    }
+
+    @Test
+    void outlinesCoreTestGuideAcceptsTokensCorrectnessPort() {
+        // Upstream: outlines-core/tests/test_guide.py::test_accepts_tokens_correctness
         Vocabulary vocabulary = new Vocabulary(3, Map.of("1", List.of(1), "2", List.of(2)));
         IndexGuide guide = new IndexGuide(new Index("[1-9]", vocabulary));
 
@@ -70,5 +99,61 @@ class IndexGuideTest {
         assertTrue(guide.acceptsTokens(List.of(2)));
         assertFalse(guide.acceptsTokens(List.of(1, 1)));
         assertFalse(guide.acceptsTokens(List.of(2, 3)));
+    }
+
+    @Disabled("Outlines Core Guide.write_mask_into has no sketches-core Java equivalent yet.")
+    @Test
+    void outlinesCoreTestGuideWriteMaskIntoPort() {
+        // Upstream: outlines-core/tests/test_guide.py::test_write_mask_into
+    }
+
+    @Disabled("Outlines Core Guide.write_mask_into has no sketches-core Java equivalent yet.")
+    @Test
+    void outlinesCoreTestGuideWriteMaskIntoInterfacePort() {
+        // Upstream: outlines-core/tests/test_guide.py::test_write_mask_into_interface
+    }
+
+    @Disabled("Outlines Core tensor kernel masking APIs are not present in sketches-core Java.")
+    @Test
+    void outlinesCoreTestKernelsTorchCorrectnessPort() {
+        // Upstream: outlines-core/tests/test_kernels.py::test_torch_correctness
+    }
+
+    @Disabled("Outlines Core tensor kernel masking APIs are not present in sketches-core Java.")
+    @Test
+    void outlinesCoreTestKernelsNumpyCorrectnessPort() {
+        // Upstream: outlines-core/tests/test_kernels.py::test_numpy_correctness
+    }
+
+    @Test
+    void objectKeyStateDoesNotAllowWhitespaceThenInvalidCharacterToken() {
+        String schema = """
+                {
+                  "type": "object",
+                  "properties": {
+                    "places": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    }
+                  }
+                }
+                """;
+        String regex = JsonSchemaRegexBuilder.buildRegexFromSchema(schema);
+        Vocabulary vocabulary = new Vocabulary(99, Map.of(
+                "{", List.of(1),
+                "\"places\"", List.of(2),
+                " ", List.of(3),
+                " n", List.of(4),
+                ":", List.of(5),
+                "[]", List.of(6),
+                "}", List.of(7)));
+        IndexGuide guide = new IndexGuide(new Index(regex, vocabulary));
+
+        guide.advance(1);
+        guide.advance(2);
+
+        assertTrue(guide.getTokens().contains(5), "colon should be valid after object key");
+        assertFalse(guide.getTokens().contains(3), "default guided JSON should use tight structural binding");
+        assertFalse(guide.getTokens().contains(4), "token ' n' would produce invalid JSON after a completed key");
     }
 }

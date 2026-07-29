@@ -19,7 +19,7 @@ import java.util.regex.Pattern;
 public final class JsonSchemaRegexBuilder {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    public static final String WHITESPACE = "[ \\n\\t\\r]*";
+    public static final String WHITESPACE = "";
     public static final String NULL = "null";
     public static final String BOOLEAN = "(true|false)";
     public static final String INTEGER = "(-)?(0|[1-9][0-9]*)";
@@ -27,7 +27,8 @@ public final class JsonSchemaRegexBuilder {
     private static final String DIGIT2 = "[0-9][0-9]";
     private static final String DIGIT4 = DIGIT2 + DIGIT2;
     private static final String HEX4 = "[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]";
-    public static final String STRING_INNER = "([^\"\\\\]|\\\\([\"\\\\/bfnrt]|u" + HEX4 + "))*";
+    private static final String CONTROL_RANGE = String.valueOf((char) 0) + "-" + String.valueOf((char) 31);
+    public static final String STRING_INNER = "([^\"\\\\" + CONTROL_RANGE + "]|\\\\([\"\\\\/bfnrt]|u" + HEX4 + "))*";
     public static final String STRING = "\\\"" + STRING_INNER + "\\\"";
     public static final String DATE = DIGIT4 + "-" + DIGIT2 + "-" + DIGIT2;
     public static final String TIME = DIGIT2 + ":" + DIGIT2 + ":" + DIGIT2 + "(\\.[0-9]+)?(Z|[+-]" + DIGIT2 + ":" + DIGIT2 + ")?";
@@ -71,7 +72,7 @@ public final class JsonSchemaRegexBuilder {
         String type = schema.path("type").asText();
         return switch (type) {
             case "object" -> regexForObject(schema, whitespacePattern);
-            case "string" -> STRING;
+            case "string" -> regexForString(schema);
             case "integer" -> INTEGER;
             case "number" -> NUMBER;
             case "boolean" -> BOOLEAN;
@@ -109,8 +110,48 @@ public final class JsonSchemaRegexBuilder {
             throw new UnsupportedOperationException("Array schemas without items are not supported yet");
         }
         String itemRegex = regexForSchema(itemSchema, whitespacePattern);
+        if (schema.has("maxItems")) {
+            int maxItems = schema.get("maxItems").asInt(-1);
+            int minItems = schema.path("minItems").asInt(0);
+            if (maxItems < 0) {
+                throw new IllegalArgumentException("JSON Schema maxItems must be >= 0");
+            }
+            if (minItems < 0 || minItems > maxItems) {
+                throw new IllegalArgumentException("JSON Schema minItems must be >= 0 and <= maxItems");
+            }
+            List<String> alternatives = new ArrayList<>();
+            for (int count = minItems; count <= maxItems; count++) {
+                alternatives.add(regexForArrayItems(itemRegex, whitespacePattern, count));
+            }
+            return "\\[" + whitespacePattern + "(" + String.join("|", alternatives) + ")" + whitespacePattern + "\\]";
+        }
         return "\\[" + whitespacePattern + "(" + itemRegex + "(" + whitespacePattern + "," + whitespacePattern
                 + itemRegex + ")*)?" + whitespacePattern + "\\]";
+    }
+
+    private static String regexForArrayItems(String itemRegex, String whitespacePattern, int count) {
+        if (count == 0) {
+            return "";
+        }
+        StringBuilder regex = new StringBuilder(itemRegex);
+        for (int i = 1; i < count; i++) {
+            regex.append(whitespacePattern).append(",").append(whitespacePattern).append(itemRegex);
+        }
+        return regex.toString();
+    }
+
+    private static String regexForString(JsonNode schema) {
+        if (schema.has("pattern")) {
+            return "\\\"" + schema.get("pattern").asText() + "\\\"";
+        }
+        if (!schema.has("maxLength")) {
+            return STRING;
+        }
+        int maxLength = schema.get("maxLength").asInt(-1);
+        if (maxLength < 0) {
+            throw new IllegalArgumentException("JSON Schema maxLength must be >= 0");
+        }
+        return "\\\"" + "([^\"\\\\" + CONTROL_RANGE + "]|\\\\([\"\\\\/bfnrt]|u" + HEX4 + ")){0," + maxLength + "}" + "\\\"";
     }
 
     private static String regexForSchemaAlternatives(JsonNode alternativesNode, String whitespacePattern, String keyword) {

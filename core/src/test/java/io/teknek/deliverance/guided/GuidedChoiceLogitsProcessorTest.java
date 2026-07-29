@@ -20,6 +20,7 @@ import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
 import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
+import io.teknek.sketches.SketchesSettings;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -110,16 +111,33 @@ class GuidedChoiceLogitsProcessorTest {
     }
 
     @Test
-    void cachesIndexesForRepeatedGuidedRegexRequests() {
+    void createsLazyGuidesForRepeatedGuidedRegexRequests() {
         TinyChoiceModel model = new TinyChoiceModel();
         try {
             GeneratorParameters parameters = new GeneratorParameters().withGuidedRegex("dogma");
 
             LogitsProcessorFactory.create(model, parameters).orElseThrow();
             LogitsProcessorFactory.create(model, parameters).orElseThrow();
+        } finally {
+            model.close();
+        }
+    }
 
+    @Test
+    void guidedIndexModeComesFromSketchesSettings() {
+        TinyChoiceModel model = new TinyChoiceModel();
+        try {
+            GeneratorParameters parameters = new GeneratorParameters().withGuidedRegex("dogma");
+
+            LogitsProcessorFactory.create(model, parameters,
+                    new SketchesSettings(10_000, 10_000, 2_000_000, SketchesSettings.GuidedIndexMode.EAGER))
+                    .orElseThrow();
             assertEquals(1, model.getMetricRegistry().meter("guided.index_cache.miss").getCount());
-            assertEquals(1, model.getMetricRegistry().meter("guided.index_cache.hit").getCount());
+
+            LogitsProcessorFactory.create(model, parameters,
+                    new SketchesSettings(10_000, 10_000, 2_000_000, SketchesSettings.GuidedIndexMode.LAZY))
+                    .orElseThrow();
+            assertEquals(1, model.getMetricRegistry().meter("guided.index_cache.miss").getCount());
         } finally {
             model.close();
         }

@@ -1,5 +1,8 @@
 package io.teknek.deliverance.nanocode.game;
 
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.StreamReadFeature;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -34,7 +37,10 @@ import java.util.UUID;
 public final class DeadToRightsGame {
     private static final int CASE_CONTEXT_MESSAGES = 3;
     private static final int RECENT_INTERROGATION_MESSAGES = 4;
-    private static final ObjectMapper JSON = new ObjectMapper();
+    static final String SUSPECT_NAME_REGEX = "[A-Z][a-z]{2,12}( [A-Z][a-z]{2,12})?";
+    private static final ObjectMapper JSON = new ObjectMapper(JsonFactory.builder()
+            .enable(StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION)
+            .build());
     private static final String RESET = "\033[0m";
     private static final String BOLD = "\033[1m";
     private static final String DIM = "\033[2m";
@@ -120,7 +126,7 @@ public final class DeadToRightsGame {
         publicCase = caseFile.publicOpening();
         hiddenTruth = caseFile.hiddenReveal();
         System.out.println(BOLD + CYAN + "suspect" + RESET + " " + publicCase.strip());
-        messages.add(message("assistant", setup));
+        resetInterrogationContext(messages, caseFile);
 
         try (BufferedReader stdin = new BufferedReader(new InputStreamReader(System.in))) {
             while (true) {
@@ -192,7 +198,9 @@ public final class DeadToRightsGame {
         List<Map<String, String>> messages = List.of(
                 message("system", "You create concise ordinary fictional names for a light mystery game. Avoid fantasy, gothic, supernatural, or melodramatic names."),
                 message("user", "Generate only one fictional suspect name. No title, no explanation."));
-        return stripNoise(chat(messages, false, null, BigDecimal.valueOf(1.3))).replaceAll("[\r\n]+", " ").strip();
+        return stripNoise(chat(messages, false, null, BigDecimal.valueOf(1.3),
+                BigDecimal.valueOf(0.95), BigDecimal.ONE,
+                SUSPECT_NAME_REGEX)).replaceAll("[\r\n]+", " ").strip();
     }
 
     private List<String> generateChoices(String fieldName, String prompt) throws IOException {
@@ -204,13 +212,22 @@ public final class DeadToRightsGame {
         List<String> values = new ArrayList<>();
         for (JsonNode value : array) {
             if (value.isTextual() && !value.asText().isBlank()) {
-                values.add(value.asText().strip());
+                values.add(cleanChoice(value.asText()));
             }
         }
         if (values.size() < 10) {
             throw new IOException("Expected 10 " + fieldName + ", got " + values + " from " + node);
         }
         return values.subList(0, 10);
+    }
+
+    static String cleanChoice(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.replace('_', ' ')
+                .replaceAll("^[\\s,;:.-]+", "")
+                .strip();
     }
 
     private String pickAndPrint(String label, List<String> values, Random random) {
@@ -238,6 +255,16 @@ public final class DeadToRightsGame {
 
     private String chat(List<Map<String, String>> messages, boolean printOutput, Map<String, Object> guidedJson,
             BigDecimal temperature) throws IOException {
+        return chat(messages, printOutput, guidedJson, temperature, null, null);
+    }
+
+    private String chat(List<Map<String, String>> messages, boolean printOutput, Map<String, Object> guidedJson,
+            BigDecimal temperature, BigDecimal topP, BigDecimal uniformTopP) throws IOException {
+        return chat(messages, printOutput, guidedJson, temperature, topP, uniformTopP, null);
+    }
+
+    private String chat(List<Map<String, String>> messages, boolean printOutput, Map<String, Object> guidedJson,
+            BigDecimal temperature, BigDecimal topP, BigDecimal uniformTopP, String guidedRegex) throws IOException {
         CreateChatCompletionRequest request = new CreateChatCompletionRequest()
                 .model(options.model)
                 .maxTokens(options.maxTokens)
@@ -248,8 +275,17 @@ public final class DeadToRightsGame {
                 .stream(true)
                 .chatTemplateKwargs(Map.of("enable_thinking", false))
                 .messages((List) messages);
+        if (topP != null) {
+            request.topP(topP);
+        }
+        if (uniformTopP != null) {
+            request.uniformTopP(uniformTopP);
+        }
         if (guidedJson != null) {
             request.guidedJson(guidedJson);
+        }
+        if (guidedRegex != null) {
+            request.guidedRegex(guidedRegex);
         }
         Response<ResponseBody> response = streamingChatApi.createStreamingChatCompletion(request).execute();
         if (!response.isSuccessful() || response.body() == null) {
@@ -259,6 +295,7 @@ public final class DeadToRightsGame {
         }
         StringBuilder content = new StringBuilder();
         StringBuilder reasoning = new StringBuilder();
+        String finishReason = null;
         if (printOutput) {
             System.out.print(BOLD + CYAN + "suspect" + RESET + " ");
         }
@@ -273,6 +310,10 @@ public final class DeadToRightsGame {
                     break;
                 }
                 JsonNode chunk = JSON.readTree(data);
+                String chunkFinishReason = finishReason(chunk);
+                if (!chunkFinishReason.isBlank()) {
+                    finishReason = chunkFinishReason;
+                }
                 JsonNode delta = chunk.path("choices").path(0).path("delta");
                 String reasoningDelta = reasoningDelta(delta);
                 if (!reasoningDelta.isEmpty()) {
@@ -281,24 +322,57 @@ public final class DeadToRightsGame {
                 String text = delta.path("content").asText("");
                 if (!text.isEmpty()) {
                     content.append(text);
-                    if (printOutput) {
-                        System.out.print(text.replace("<confession>true</confession>", GREEN + "<confession>true</confession>" + RESET));
-                    }
                 }
             }
         }
-        if (printOutput) {
-            System.out.println();
+        if ("length".equals(finishReason)) {
+            throw new IOException("Deliverance stopped because max_tokens was reached before the response completed. "
+                    + "For guided JSON this means the JSON may be incomplete. Increase --max-tokens or reduce the schema/output size. "
+                    + "Partial model output follows:\n" + previewJson(content.toString()));
         }
-        return content.toString();
+        if (printOutput) {
+            System.out.println(cleanVisibleText(content.toString())
+                    .replace("<confession>true</confession>", GREEN + "<confession>true</confession>" + RESET));
+        }
+        return cleanVisibleText(content.toString());
+    }
+
+    static String finishReason(JsonNode chunk) {
+        return chunk.path("choices").path(0).path("finish_reason").asText("");
+    }
+
+    private void resetInterrogationContext(List<Map<String, String>> messages, CaseFile caseFile) {
+        messages.clear();
+        messages.add(message("system", systemPrompt()));
+        messages.add(message("user", "CASE FILE FOR ROLEPLAY\n"
+                + "Public case shown to the interrogator:\n" + caseFile.publicOpening().strip() + "\n\n"
+                + "Private truth for suspect consistency. Do not recite this as fields or JSON. Do not reveal it unless you confess:\n"
+                + caseFile.hiddenReveal().strip()));
+        messages.add(message("assistant", "I understand. I will answer as " + caseFile.suspect
+                + " in natural speech, keep the private truth hidden, and avoid repeating case-file labels or JSON."));
+    }
+
+    static String cleanVisibleText(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.replaceAll("(?is)<think>.*?</think>", "")
+                .replace("<think>", "")
+                .replace("</think>", "")
+                .strip();
     }
 
     static CaseFile parseCaseFile(String json) throws IOException {
-        CaseFile caseFile = JSON.readValue(json, CaseFile.class);
+        CaseFile caseFile;
+        try {
+            caseFile = JSON.readValue(json, CaseFile.class);
+        } catch (JsonProcessingException e) {
+            throw new IOException("Could not parse Dead to Rights case JSON. Model output follows:\n"
+                    + previewJson(json), e);
+        }
         if (caseFile.caseTitle == null || caseFile.caseTitle.isBlank()
                 || caseFile.suspect == null || caseFile.suspect.isBlank()
                 || caseFile.setting == null || caseFile.setting.isBlank()
-                || caseFile.crimeDescription == null || caseFile.crimeDescription.isBlank()
                 || caseFile.meansClue == null || caseFile.meansClue.isBlank()
                 || caseFile.opportunityClue == null || caseFile.opportunityClue.isBlank()
                 || caseFile.mistakeClue == null || caseFile.mistakeClue.isBlank()
@@ -308,30 +382,57 @@ public final class DeadToRightsGame {
         return caseFile;
     }
 
+    static String previewJson(String json) {
+        if (json == null) {
+            return "<null>";
+        }
+        int maxChars = 24_000;
+        if (json.length() <= maxChars) {
+            return json;
+        }
+        return json.substring(0, maxChars) + "\n... <truncated " + (json.length() - maxChars) + " chars>";
+    }
+
     static Map<String, Object> caseFileSchema() {
-        Map<String, Object> string = Map.of("type", "string");
+        Map<String, Object> title = textString(80);
+        Map<String, Object> name = textString(80);
+        Map<String, Object> setting = textString(80);
+        Map<String, Object> clue = textString(120);
+        Map<String, Object> hidden = textString(180);
         return Map.of(
                 "type", "object",
                 "additionalProperties", false,
-                "required", List.of("caseTitle", "suspect", "setting", "crimeDescription", "meansClue",
+                "required", List.of("caseTitle", "suspect", "setting", "meansClue",
                         "opportunityClue", "mistakeClue", "hiddenTruth"),
                 "properties", Map.of(
-                        "caseTitle", string,
-                        "suspect", string,
-                        "setting", string,
-                        "crimeDescription", string,
-                        "meansClue", string,
-                        "opportunityClue", string,
-                        "mistakeClue", string,
+                        "caseTitle", title,
+                        "suspect", name,
+                        "setting", setting,
+                        "meansClue", clue,
+                        "opportunityClue", clue,
+                        "mistakeClue", clue,
                         "hiddenTruth", Map.of(
                                 "type", "object",
                                 "additionalProperties", false,
                                 "required", List.of("crime", "method", "mistakes", "whyCluesMatter"),
                                 "properties", Map.of(
-                                        "crime", string,
-                                        "method", string,
-                                        "mistakes", Map.of("type", "array", "items", string),
-                                        "whyCluesMatter", Map.of("type", "array", "items", string)))));
+                                        "crime", hidden,
+                                        "method", hidden,
+                                        "mistakes", boundedArray(hidden, 1, 3),
+                                        "whyCluesMatter", boundedArray(hidden, 1, 3)))));
+    }
+
+    private static Map<String, Object> boundedString(int maxLength) {
+        return Map.of("type", "string", "maxLength", maxLength);
+    }
+
+    private static Map<String, Object> textString(int maxLength) {
+        return Map.of("type", "string", "maxLength", maxLength,
+                "pattern", "[A-Za-z0-9][A-Za-z0-9 ,.'-]{0," + (maxLength - 1) + "}");
+    }
+
+    private static Map<String, Object> boundedArray(Map<String, Object> itemSchema, int minItems, int maxItems) {
+        return Map.of("type", "array", "minItems", minItems, "maxItems", maxItems, "items", itemSchema);
     }
 
     static Map<String, Object> choicesSchema(String fieldName) {
@@ -340,7 +441,7 @@ public final class DeadToRightsGame {
                 "additionalProperties", false,
                 "required", List.of(fieldName),
                 "properties", Map.of(
-                        fieldName, Map.of("type", "array", "items", Map.of("type", "string"))));
+                        fieldName, boundedArray(textString(40), 10, 10)));
     }
 
     private static String reasoningDelta(JsonNode delta) {
@@ -372,8 +473,8 @@ public final class DeadToRightsGame {
                 + "The suspect is: " + suspectName + "\n"
                 + "The setting is: " + place + "\n"
                 + "The suspect stole this item: " + item + "\n"
-                    + "The public fields are caseTitle, suspect, setting, crimeDescription, meansClue, opportunityClue, and mistakeClue.\n"
-                    + "crimeDescription must be one simple sentence that states exactly what was stolen, for example: 'The cash box contents were stolen.' Do not confuse a container with its contents.\n"
+                    + "The public fields are caseTitle, suspect, setting, meansClue, opportunityClue, and mistakeClue.\n"
+                    + "Do not include a public crime summary field. The public case should be ambiguous and clue-driven.\n"
                     + "The hiddenTruth object contains the actual crime, method, mistakes, and why the clues matter.\n"
                     + "A clue must be a concrete observable fact, such as a receipt, timestamp, key, witness statement, misplaced object, log entry, footprint, note, damaged lock, altered record, or contradiction.\n"
                     + "Do not use the suspect name, setting, or stolen item alone as a clue.\n"
@@ -390,7 +491,6 @@ public final class DeadToRightsGame {
         public String caseTitle;
         public String suspect;
         public String setting;
-        public String crimeDescription;
         public String meansClue;
         public String opportunityClue;
         public String mistakeClue;
@@ -401,7 +501,6 @@ public final class DeadToRightsGame {
             sb.append("CASE TITLE: ").append(caseTitle).append('\n');
             sb.append("SUSPECT: ").append(suspect).append('\n');
             sb.append("SETTING: ").append(setting).append('\n');
-            sb.append("CRIME: ").append(crimeDescription).append('\n');
             sb.append("CLUES:\n");
             sb.append("1. ").append(meansClue).append('\n');
             sb.append("2. ").append(opportunityClue).append('\n');

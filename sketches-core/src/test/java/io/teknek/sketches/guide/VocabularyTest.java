@@ -1,6 +1,7 @@
 package io.teknek.sketches.guide;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Disabled;
 
 import java.util.List;
 import java.util.Map;
@@ -13,7 +14,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class VocabularyTest {
 
     @Test
-    void basicVocabularyInterface() {
+    void outlinesCoreTestVocabularyBasicInterfacePort() {
+        // Upstream: outlines-core/tests/test_vocabulary.py::test_basic_vocabulary_interface
         Vocabulary vocabulary = vocabulary();
 
         assertEquals(3, vocabulary.getEosTokenId());
@@ -45,7 +47,8 @@ class VocabularyTest {
     }
 
     @Test
-    void stringTokensProduceEquivalentVocabularies() {
+    void outlinesCoreTestVocabularyStringAndBytesAsTokensPortStringSubset() {
+        // Upstream: outlines-core/tests/test_vocabulary.py::test_string_and_bytes_as_tokens
         Vocabulary vocabulary = new Vocabulary(3, Map.of("1", List.of(1), "a", List.of(2)));
         Vocabulary same = new Vocabulary(3, Map.of("1", List.of(1), "a", List.of(2)));
 
@@ -53,6 +56,12 @@ class VocabularyTest {
         assertEquals(vocabulary.get("1"), same.get("1"));
         assertEquals(vocabulary.size(), same.size());
         assertEquals(vocabulary, same);
+    }
+
+    @Disabled("Java Vocabulary currently accepts String token text only; upstream test also covers bytes token inputs.")
+    @Test
+    void outlinesCoreTestVocabularyStringAndBytesAsTokensPortBytesSubset() {
+        // Upstream: outlines-core/tests/test_vocabulary.py::test_string_and_bytes_as_tokens
     }
 
     @Test
@@ -67,7 +76,8 @@ class VocabularyTest {
     }
 
     @Test
-    void rejectsEosTokenInsertion() {
+    void outlinesCoreTestVocabularyInsertEosTokenPort() {
+        // Upstream: outlines-core/tests/test_vocabulary.py::test_insert_eos_token
         Vocabulary vocabulary = vocabulary();
         assertThrows(IllegalArgumentException.class, () -> vocabulary.insert("eos-token", 3));
     }

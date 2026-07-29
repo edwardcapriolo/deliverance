@@ -8,6 +8,7 @@ import io.teknek.sketches.SketchesSettings;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -18,7 +19,7 @@ import java.util.Queue;
 import java.util.Set;
 
 /**
- * Token transition index for a regular expression and a model vocabulary.
+ * Eager token transition index for a regular expression and a model vocabulary.
  *
  * <p>The regex automaton operates on text, while generation operates on token ids. This class precomputes transitions of
  * the form {@code state -> token id -> next state} by walking each decoded token string through the regex automaton from
@@ -27,7 +28,11 @@ import java.util.Set;
  * <p>Accepting states include transitions for every configured EOS token id. Those EOS transitions loop back to the same
  * accepting state, mirroring the constrained-decoding convention that EOS is allowed once the generated text satisfies
  * the regex.</p>
+ *
+ * @deprecated Runtime guided regex/JSON generation should use {@link LazyIndex}. Eager indexing can materialize millions
+ * of state/token transitions for broad JSON schemas and large vocabularies.
  */
+@Deprecated(forRemoval = false)
 public final class Index {
     private final int initialState;
     private final Map<Integer, Map<Integer, Integer>> transitions;
@@ -57,7 +62,7 @@ public final class Index {
 
         Map<Integer, Map<Integer, Integer>> builtTransitions = new LinkedHashMap<>();
         Set<Integer> builtFinalStates = new LinkedHashSet<>();
-        List<Integer> tokenIds = sortedTokenIds(vocabulary);
+        TokenTrie tokenTrie = TokenTrie.from(vocabulary);
         int transitionCount = 0;
 
         while (!queue.isEmpty()) {
@@ -79,24 +84,9 @@ public final class Index {
                 }
             }
 
-            for (Integer tokenId : tokenIds) {
-                String tokenText = vocabulary.tokenText(tokenId);
-                if (tokenText == null || tokenText.isEmpty()) {
-                    continue;
-                }
-                State next = walk(state, tokenText);
-                if (next == null) {
-                    continue;
-                }
-                Integer nextStateId = stateIds.get(next);
-                if (nextStateId == null) {
-                    nextStateId = stateIds.size();
-                    stateIds.put(next, nextStateId);
-                    queue.add(next);
-                }
-                stateTransitions.put(tokenId, nextStateId);
-                transitionCount = checkedTransitionCount(transitionCount, settings);
-            }
+            TransitionBuildResult result = tokenTrie.collectTransitions(state, stateIds, queue, stateTransitions,
+                    transitionCount, settings);
+            transitionCount = result.transitionCount();
             builtTransitions.put(stateId, Map.copyOf(stateTransitions));
         }
 
@@ -189,26 +179,6 @@ public final class Index {
         return count;
     }
 
-    private State walk(State state, String tokenText) {
-        State current = state;
-        for (int i = 0; i < tokenText.length(); i++) {
-            current = current.step(tokenText.charAt(i));
-            if (current == null) {
-                return null;
-            }
-        }
-        return current;
-    }
-
-    private static List<Integer> sortedTokenIds(Vocabulary vocabulary) {
-        List<Integer> tokenIds = new ArrayList<>();
-        for (List<Integer> ids : vocabulary.tokens().values()) {
-            tokenIds.addAll(ids);
-        }
-        Collections.sort(tokenIds);
-        return tokenIds;
-    }
-
     private static Map<Integer, Map<Integer, Integer>> deepCopy(Map<Integer, Map<Integer, Integer>> source) {
         Map<Integer, Map<Integer, Integer>> copy = new LinkedHashMap<>();
         for (Map.Entry<Integer, Map<Integer, Integer>> entry : source.entrySet()) {
@@ -224,5 +194,82 @@ public final class Index {
                     + settings.maxIndexTransitions());
         }
         return next;
+    }
+
+    private record TransitionBuildResult(int transitionCount) {
+    }
+
+    private static final class TokenTrie {
+        private final TokenTrieNode root = new TokenTrieNode();
+
+        static TokenTrie from(Vocabulary vocabulary) {
+            TokenTrie trie = new TokenTrie();
+            List<Integer> tokenIds = new ArrayList<>();
+            for (List<Integer> ids : vocabulary.tokens().values()) {
+                tokenIds.addAll(ids);
+            }
+            Collections.sort(tokenIds);
+            for (Integer tokenId : tokenIds) {
+                String tokenText = vocabulary.tokenText(tokenId);
+                if (tokenText == null || tokenText.isEmpty()) {
+                    continue;
+                }
+                trie.insert(tokenText, tokenId);
+            }
+            return trie;
+        }
+
+        private void insert(String tokenText, int tokenId) {
+            TokenTrieNode current = root;
+            for (int i = 0; i < tokenText.length(); i++) {
+                char c = tokenText.charAt(i);
+                current = current.children.computeIfAbsent(c, ignored -> new TokenTrieNode());
+            }
+            current.tokenIds.add(tokenId);
+        }
+
+        TransitionBuildResult collectTransitions(State automatonState, Map<State, Integer> stateIds, Queue<State> queue,
+                Map<Integer, Integer> stateTransitions, int transitionCount, SketchesSettings settings) {
+            int count = transitionCount;
+            for (Map.Entry<Character, TokenTrieNode> entry : root.children.entrySet()) {
+                State next = automatonState.step(entry.getKey());
+                if (next == null) {
+                    continue;
+                }
+                count = collectTransitions(next, entry.getValue(), stateIds, queue, stateTransitions, count, settings);
+            }
+            return new TransitionBuildResult(count);
+        }
+
+        private int collectTransitions(State automatonState, TokenTrieNode trieNode, Map<State, Integer> stateIds,
+                Queue<State> queue, Map<Integer, Integer> stateTransitions, int transitionCount,
+                SketchesSettings settings) {
+            int count = transitionCount;
+            if (!trieNode.tokenIds.isEmpty()) {
+                Integer nextStateId = stateIds.get(automatonState);
+                if (nextStateId == null) {
+                    nextStateId = stateIds.size();
+                    stateIds.put(automatonState, nextStateId);
+                    queue.add(automatonState);
+                }
+                for (Integer tokenId : trieNode.tokenIds) {
+                    stateTransitions.put(tokenId, nextStateId);
+                    count = checkedTransitionCount(count, settings);
+                }
+            }
+            for (Map.Entry<Character, TokenTrieNode> entry : trieNode.children.entrySet()) {
+                State next = automatonState.step(entry.getKey());
+                if (next == null) {
+                    continue;
+                }
+                count = collectTransitions(next, entry.getValue(), stateIds, queue, stateTransitions, count, settings);
+            }
+            return count;
+        }
+    }
+
+    private static final class TokenTrieNode {
+        private final Map<Character, TokenTrieNode> children = new HashMap<>();
+        private final List<Integer> tokenIds = new ArrayList<>();
     }
 }

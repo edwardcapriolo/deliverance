@@ -11,6 +11,8 @@ import io.teknek.sketches.guide.ChoiceGuide;
 import io.teknek.sketches.guide.Guide;
 import io.teknek.sketches.guide.Index;
 import io.teknek.sketches.guide.IndexGuide;
+import io.teknek.sketches.guide.LazyIndex;
+import io.teknek.sketches.guide.LazyIndexGuide;
 import io.teknek.sketches.guide.Vocabulary;
 import io.teknek.sketches.json.JsonSchemaRegexBuilder;
 import io.teknek.sketches.types.Choice;
@@ -56,14 +58,12 @@ public class LogitsProcessorFactory {
         }
         if (parameters.guidedRegex.isPresent()) {
             metrics.meter("guided.mode.regex").mark();
-            Index index = indexFor(model, parameters.guidedRegex.get(), settings);
-            return Optional.of(new GuideLogitsProcessor(new IndexGuide(index), metrics));
+            return Optional.of(new GuideLogitsProcessor(guideFor(model, parameters.guidedRegex.get(), settings), metrics));
         }
         if (parameters.guidedJson.isPresent()) {
             metrics.meter("guided.mode.json").mark();
             String regex = regexForJsonSchema(model, parameters.guidedJson.get());
-            Index index = indexFor(model, regex, settings);
-            return Optional.of(new GuideLogitsProcessor(new IndexGuide(index), metrics));
+            return Optional.of(new GuideLogitsProcessor(guideFor(model, regex, settings), metrics));
         }
         return Optional.empty();
         }
@@ -136,6 +136,20 @@ public class LogitsProcessorFactory {
             Index existing = modelCache.putIfAbsent(key, index);
             return existing == null ? index : existing;
         }
+    }
+
+    private static LazyIndex lazyIndexFor(AbstractModel model, String regex) {
+        model.getMetricRegistry().histogram("guided.regex.length").update(regex.length());
+        try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), "guided.lazy_index_build").time()) {
+            return new LazyIndex(regex, vocabularyFromModel(model));
+        }
+    }
+
+    private static Guide guideFor(AbstractModel model, String regex, SketchesSettings settings) {
+        if (settings.guidedIndexMode() == SketchesSettings.GuidedIndexMode.EAGER) {
+            return new IndexGuide(indexFor(model, regex, settings));
+        }
+        return new LazyIndexGuide(lazyIndexFor(model, regex));
     }
 
     private static void recordIndexShape(MetricRegistry metrics, Index index) {
