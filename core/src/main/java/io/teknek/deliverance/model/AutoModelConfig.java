@@ -20,6 +20,7 @@ public record AutoModelConfig(
         Optional<DType> workingMemoryType,
         Optional<DType> workingQuantType,
         Optional<DType> outputHeadQuantization,
+        Optional<Boolean> gpuPrefill,
         Optional<Boolean> download,
         Optional<Integer> maxBatchSize,
         Optional<KvBufferCache> kvBufferCache,
@@ -29,6 +30,7 @@ public record AutoModelConfig(
         workingMemoryType = workingMemoryType == null ? Optional.empty() : workingMemoryType;
         workingQuantType = workingQuantType == null ? Optional.empty() : workingQuantType;
         outputHeadQuantization = outputHeadQuantization == null ? Optional.empty() : outputHeadQuantization;
+        gpuPrefill = gpuPrefill == null ? Optional.empty() : gpuPrefill;
         download = download == null ? Optional.empty() : download;
         maxBatchSize = maxBatchSize == null ? Optional.empty() : maxBatchSize;
         kvBufferCache = kvBufferCache == null ? Optional.empty() : kvBufferCache;

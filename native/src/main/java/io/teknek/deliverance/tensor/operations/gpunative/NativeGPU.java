@@ -381,13 +381,18 @@ public class NativeGPU {
     private static class gpu_gemm_batch {
         public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
             NativeGPU.C_LONG,
+            NativeGPU.C_LONG,
             NativeGPU.C_INT,
             NativeGPU.C_POINTER,
             NativeGPU.C_POINTER,
             NativeGPU.C_INT,
-            NativeGPU.C_POINTER,
             NativeGPU.C_INT,
             NativeGPU.C_POINTER,
+            NativeGPU.C_POINTER,
+            NativeGPU.C_INT,
+            NativeGPU.C_INT,
+            NativeGPU.C_POINTER,
+            NativeGPU.C_INT,
             NativeGPU.C_INT,
             NativeGPU.C_INT,
             NativeGPU.C_INT,
@@ -406,7 +411,7 @@ public class NativeGPU {
     /**
      * Function descriptor for:
      * {@snippet lang=c :
-     * void gpu_gemm_batch(long shader, int batch_num, const void *a, const void *a2, int aoffset, const long *bid, int boffset, float **r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldc)
+     * void gpu_gemm_batch(long scratch_id, long shader, int batch_num, const void *a, const void *a2, int aoffset, int alimit, const long *bid, const long *bid2, int boffset, int blimit, float **r, int roffset, int rlimit, int m, int n0, int n, int k, int lda, int ldb, int ldc, int m1_optimized)
      * }
      */
     public static FunctionDescriptor gpu_gemm_batch$descriptor() {
@@ -416,7 +421,7 @@ public class NativeGPU {
     /**
      * Downcall method handle for:
      * {@snippet lang=c :
-     * void gpu_gemm_batch(long shader, int batch_num, const void *a, const void *a2, int aoffset, const long *bid, int boffset, float **r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldc)
+     * void gpu_gemm_batch(long scratch_id, long shader, int batch_num, const void *a, const void *a2, int aoffset, int alimit, const long *bid, const long *bid2, int boffset, int blimit, float **r, int roffset, int rlimit, int m, int n0, int n, int k, int lda, int ldb, int ldc, int m1_optimized)
      * }
      */
     public static MethodHandle gpu_gemm_batch$handle() {
@@ -426,7 +431,7 @@ public class NativeGPU {
     /**
      * Address for:
      * {@snippet lang=c :
-     * void gpu_gemm_batch(long shader, int batch_num, const void *a, const void *a2, int aoffset, const long *bid, int boffset, float **r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldc)
+     * void gpu_gemm_batch(long scratch_id, long shader, int batch_num, const void *a, const void *a2, int aoffset, int alimit, const long *bid, const long *bid2, int boffset, int blimit, float **r, int roffset, int rlimit, int m, int n0, int n, int k, int lda, int ldb, int ldc, int m1_optimized)
      * }
      */
     public static MemorySegment gpu_gemm_batch$address() {
@@ -435,19 +440,18 @@ public class NativeGPU {
 
     /**
      * {@snippet lang=c :
-     * void gpu_gemm_batch(long shader, int batch_num, const void *a, const void *a2, int aoffset, const long *bid, int boffset, float **r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldc)
+     * void gpu_gemm_batch(long scratch_id, long shader, int batch_num, const void *a, const void *a2, int aoffset, int alimit, const long *bid, const long *bid2, int boffset, int blimit, float **r, int roffset, int rlimit, int m, int n0, int n, int k, int lda, int ldb, int ldc, int m1_optimized)
      * }
      */
-    public static void gpu_gemm_batch(long shader, int batch_num, MemorySegment a, MemorySegment a2, int aoffset, MemorySegment bid, int boffset, MemorySegment r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldc) {
+    public static void gpu_gemm_batch(long scratch_id, long shader, int batch_num, MemorySegment a, MemorySegment a2, int aoffset, int alimit, MemorySegment bid, MemorySegment bid2, int boffset, int blimit, MemorySegment r, int roffset, int rlimit, int m, int n0, int n, int k, int lda, int ldb, int ldc, int m1_optimized) {
         var mh$ = gpu_gemm_batch.HANDLE;
         try {
             if (TRACE_DOWNCALLS) {
-                traceDowncall("gpu_gemm_batch", shader, batch_num, a, a2, aoffset, bid, boffset, r, roffset, m, n0, n, k, lda, ldb, ldc);
+                traceDowncall("gpu_gemm_batch", scratch_id, shader, batch_num, a, a2, aoffset, alimit, bid, bid2, boffset, blimit, r, roffset, rlimit, m, n0, n, k, lda, ldb, ldc, m1_optimized);
             }
-            mh$.invokeExact(shader, batch_num, a, a2, aoffset, bid, boffset, r, roffset, m, n0, n, k, lda, ldb, ldc);
+            mh$.invokeExact(scratch_id, shader, batch_num, a, a2, aoffset, alimit, bid, bid2, boffset, blimit, r, roffset, rlimit, m, n0, n, k, lda, ldb, ldc, m1_optimized);
         } catch (Throwable ex$) {
            throw new AssertionError("should not reach here", ex$);
         }
     }
 }
-

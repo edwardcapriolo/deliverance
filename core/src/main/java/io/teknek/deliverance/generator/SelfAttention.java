@@ -10,4 +10,9 @@ import java.util.function.Consumer;
 public interface SelfAttention {
     AbstractTensor forward(AbstractTensor input, int startPosition, KvBufferCache.KvBuffer kvMem,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer);
+
+    default AbstractTensor forward(AbstractTensor input, int startPosition, KvBufferCache.KvBuffer kvMem,
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer, ForwardPhase phase) {
+        return forward(input, startPosition, kvMem, tensorReducer);
+    }
 }

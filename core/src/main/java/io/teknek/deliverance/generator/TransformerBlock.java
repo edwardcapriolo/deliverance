@@ -142,18 +142,33 @@ public class TransformerBlock {
         return forward(embedding, position, kvBuffer, Optional.empty());
     }
 
+    public AbstractTensor forward(AbstractTensor embedding, int position, KvBufferCache.KvBuffer kvBuffer,
+            ForwardPhase phase) {
+        return forward(embedding, position, kvBuffer, Optional.empty(), phase);
+    }
+
     public AbstractTensor forward(
             AbstractTensor embedding,
             int position,
             KvBufferCache.KvBuffer kvBuffer,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer
     ) {
+        return forward(embedding, position, kvBuffer, tensorReducer, ForwardPhase.DECODE);
+    }
+
+    public AbstractTensor forward(
+            AbstractTensor embedding,
+            int position,
+            KvBufferCache.KvBuffer kvBuffer,
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer,
+            ForwardPhase phase
+    ) {
         Timer timer = InferenceProfiler.timer(model.getMetricRegistry(), "transformerblock.forward");
         try (Timer.Context ignored = timer.time()) {
         AbstractTensor lnemb = preAttentionNorm.map(ln -> ln.forward(embedding)).orElse(embedding);
         AbstractTensor postAttention;
         try (AbstractTensor qlnemb = model.maybeQuantize(lnemb)) {
-            postAttention = attention.forward(qlnemb, position, kvBuffer, tensorReducer);
+            postAttention = attention.forward(qlnemb, position, kvBuffer, tensorReducer, phase);
         }
         AbstractTensor lnattn = maybeApplyNorm(postAttention, postAttentionNorm);
         // residual connection
@@ -166,7 +181,7 @@ public class TransformerBlock {
         AbstractTensor lnpreFF = preFFNorm.map(ln -> ln.forward(lnattn)).orElse(lnattn);
         AbstractTensor postFF;
         try (AbstractTensor qlnemb2 = model.maybeQuantize(lnpreFF)) {
-            postFF = ffBlock.forward(qlnemb2, tensorReducer);
+            postFF = ffBlock.forward(qlnemb2, tensorReducer, phase);
         }
 
         AbstractTensor lnpostFF = maybeApplyNorm(postFF, postFFNorm);

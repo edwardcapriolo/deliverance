@@ -179,6 +179,37 @@ public class KvBufferCachePrefixTest {
     }
 
     @Test
+    public void rawPrefixEntryCanBeEvictedWhileHeldByLookup() {
+        int expectedPrefixLength = 4;
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withMaxEntries(1)
+                .withBlockSize(4)
+                .withPrefixCheckpointPolicy(KvBufferCacheSettings.PrefixCheckpointPolicy.FIXED_BLOCKS);
+        AbstractModel model = mockModel();
+        KvBufferCache cache = new KvBufferCache(model, settings);
+        int[] firstTokens = {1, 2, 3, 4};
+        int[] secondTokens = {5, 6, 7, 8};
+
+        try (KvBufferCache.KvBuffer firstSource = cache.getEphemeralKvBuffer();
+             KvBufferCache.KvBuffer secondSource = cache.getEphemeralKvBuffer();
+             KvBufferCache.KvBuffer copied = cache.getEphemeralKvBuffer()) {
+            fillKv(firstSource, model.getConfig(), expectedPrefixLength);
+            fillKv(secondSource, model.getConfig(), expectedPrefixLength);
+
+            cache.storePrefix(firstTokens, firstSource, Optional.empty());
+            KvBufferCache.PrefixEntry held = cache.lookupPrefix(firstTokens, Optional.empty());
+            assertNotNull(held);
+            assertFalse(held.temporary(), "raw cache lookup returns the shared cached buffer");
+
+            cache.storePrefix(secondTokens, secondSource, Optional.empty());
+            assertNull(cache.lookupPrefix(firstTokens, Optional.empty()), "first entry should have been evicted");
+
+            assertThrows(RuntimeException.class, () -> cache.copyPrefix(held.buffer(), copied, held.length()),
+                    "copying from a held raw prefix after eviction should expose the unsafe lifecycle race");
+        }
+    }
+
+    @Test
     public void lz4PrefixStoreLookupAndCopyPreservesKeysAndValues() {
         int expectedPrefixLength = 8;
         KvBufferCacheSettings settings = new KvBufferCacheSettings(true)

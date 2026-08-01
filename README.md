@@ -49,6 +49,7 @@ Generation:
 - [Quantize On Demand](core/quantize_on_demand.md) Explains local Q4 model generation, cache reuse, and provenance files
 - [Benchmarking](core/benchmarking.md) Explains benchmark scripts, profile output, CSV/JSONL artifacts, and QOD benchmark workflow
 - [Tensor engines and JQ4](core/tensor_engines_and_jq4.md) Explains why tensor kernels, safetensors, and Q4 layout matter for local inference
+- [TensorPlan](tensor/tensor_plan.md) Documents the lazy tensor workflow, ownership model, ASCII plans, and MLP fusion replay benchmark
 - [JQ4 tensor format](core/jq4_tensor_format.md) Documents Deliverance's Q4 tensor representation and sidecar scale tensors
 - [Native SIMD kernels](core/native_simd_kernels.md) Explains native GEMM/SAXPY support and the dtype combinations currently accelerated
 - [GPU output projection](core/gpu_output_projection.md) Shows how Deliverance uses WebGPU/Dawn for targeted Q4 output-head acceleration

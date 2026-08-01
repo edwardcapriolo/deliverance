@@ -1,0 +1,10 @@
+{
+  "workingMemoryType": "F32",
+  "workingQuantType": "I8",
+  "outputHeadQuantization": "Q4",
+  "gpuPrefill": true,
+  "kvBufferCache": {
+    "maxEntries": 0,
+    "maxPrefixTokensPerPrompt": 0
+  }
+}

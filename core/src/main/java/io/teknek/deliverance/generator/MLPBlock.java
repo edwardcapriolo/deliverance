@@ -8,6 +8,7 @@ import io.teknek.deliverance.model.tensorparallel.TensorParallelMlp;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensorlib.TensorPlan;
 
 import java.util.Collections;
 import java.util.List;
@@ -106,6 +107,11 @@ public class MLPBlock implements FeedForward {
     // For FFN in PyTorch we have: self.w2(F.silu(self.w1(x)) * self.w3(x))
     @Override
     public AbstractTensor forward(AbstractTensor lnemb, Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
+        return forward(lnemb, tensorReducer, ForwardPhase.DECODE);
+    }
+
+    public AbstractTensor forward(AbstractTensor lnemb, Optional<Consumer<List<AbstractTensor>>> tensorReducer,
+            ForwardPhase phase) {
         try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), "mlpblock.forward").time()) {
         int hiddenLength = model.getConfig().hiddenLength;
         int batchSize = lnemb.shape().first();
@@ -142,36 +148,45 @@ public class MLPBlock implements FeedForward {
                         InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock.up_weight_" + upProjectionWeights.dType()).inc();
                     }
                 }
+                io.teknek.deliverance.tensor.operations.TensorOperations projectionOps =
+                        model.prefillProjectionOperations(lnemb, fullyConnectedWeights, phase);
                 VectorMath.pchunk(0, hiddenLength, (chunkStart, chunkSize) -> {
                 if (upProjectionWeights != null) {
-                    configurableTensorProvider.get()
+                    projectionOps
                             .dotProductBatchChunk(batchResults, lnemb, batchWeights, 0,
                                     model.getConfig().embeddingLength, chunkStart, chunkSize);
                 } else {
-                    configurableTensorProvider.get()
+                    projectionOps
                             .dotProductChunk(buf, lnemb, fullyConnectedWeights, 0, model.getConfig().embeddingLength, chunkStart, chunkSize);
                 }
-                }, configurableTensorProvider.get().parallelSplitSize(), model.getPool());
+                }, projectionOps.parallelSplitSize(), model.getPool());
             }
 
             fullyConnectedBias.ifPresent(
                     bias -> configurableTensorProvider.get().accumulate(buf, bias, 0, hiddenLength)
             );
 
-            // Not using pfor because we can use all cores
-            try (Timer.Context ignoredActivation = InferenceProfiler.timer(model.getMetricRegistry(), "mlpblock.activation").time()) {
-                IntStream.range(0, hiddenLength).parallel().forEach(i -> {
-                for (int j = 0; j < batchSize; j++) {
-                    float w1 = buf.get(j, i);
-                    float w1a = ActivationFunction.eval(activationFunction, w1);
-                    buf.set(w1a, j, i);
-                }
-                });
-            }
-
             if (upProjectionWeights != null) {
-                try (Timer.Context ignoredMultiply = InferenceProfiler.timer(model.getMetricRegistry(), "mlpblock.multiply").time()) {
-                    configurableTensorProvider.get().maccumulate(buf, buf2, 0, hiddenLength);
+                model.getMetricRegistry().counter("mlpblock.tensorplan.fused_activation_multiply").inc();
+                if (InferenceProfiler.isEnabled()) {
+                    InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock.tensorplan.fused_activation_multiply").inc();
+                }
+                TensorPlan plan = new TensorPlan(configurableTensorProvider.get(), model.getPool(), model.getMetricRegistry());
+                plan.mutable("gate", buf)
+                        .activate(activationFunction)
+                        .multiply(plan.input("up", buf2))
+                        .timer("mlpblock.multiply")
+                        .materialize();
+            } else {
+                // Not using pfor because we can use all cores
+                try (Timer.Context ignoredActivation = InferenceProfiler.timer(model.getMetricRegistry(), "mlpblock.activation").time()) {
+                    IntStream.range(0, hiddenLength).parallel().forEach(i -> {
+                    for (int j = 0; j < batchSize; j++) {
+                        float w1 = buf.get(j, i);
+                        float w1a = ActivationFunction.eval(activationFunction, w1);
+                        buf.set(w1a, j, i);
+                    }
+                    });
                 }
             }
 
@@ -183,8 +198,10 @@ public class MLPBlock implements FeedForward {
                 // matmul the projection and sum into input
                 AbstractTensor result = model.makeTensor(batchSize, model.getConfig().embeddingLength);
                 try (Timer.Context ignoredDown = InferenceProfiler.timer(model.getMetricRegistry(), "mlpblock.down_projection").time()) {
+                    io.teknek.deliverance.tensor.operations.TensorOperations downOps =
+                            model.prefillProjectionOperations(bufq, projectionWeights, phase);
                     VectorMath.pchunk(0, model.getConfig().embeddingLength, (chunkStart, chunkSize) -> {
-                    configurableTensorProvider.get()
+                    downOps
                             .dotProductChunk(
                                     result,
                                     bufq,
@@ -194,7 +211,7 @@ public class MLPBlock implements FeedForward {
                                     chunkStart,
                                     chunkSize
                             );
-                    }, configurableTensorProvider.get().parallelSplitSize(), model.getPool());
+                    }, downOps.parallelSplitSize(), model.getPool());
                 }
 
                 tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(result)));
