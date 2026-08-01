@@ -68,6 +68,11 @@ public class VariableMLPBlock implements FeedForward {
 
     @Override
     public AbstractTensor forward(AbstractTensor input, Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
+        return forward(input, tensorReducer, ForwardPhase.DECODE);
+    }
+
+    public AbstractTensor forward(AbstractTensor input, Optional<Consumer<List<AbstractTensor>>> tensorReducer,
+            ForwardPhase phase) {
         int batchSize = input.shape().first();
         try (
                 AbstractTensor gate = model.getTensorAllocator().getDirty(model.getWorkingDType(), TensorShape.of(batchSize, hiddenLength));

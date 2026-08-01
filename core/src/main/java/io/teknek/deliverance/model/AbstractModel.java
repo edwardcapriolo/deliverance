@@ -171,6 +171,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     protected final TensorParallelCollectives tensorParallelCollectives;
     private final EnumMap<TensorProviderKind, TensorOperations> tensorOperations = new EnumMap<>(TensorProviderKind.class);
     private boolean tensorProviderExplicit;
+    private boolean gpuPrefillEnabled;
     private GossipParallelMembership gossipParallelMembership;
 
     //embedding
@@ -327,6 +328,14 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.tensorProviderExplicit = tensorProviderExplicit;
     }
 
+    void setGpuPrefillEnabled(boolean gpuPrefillEnabled) {
+        this.gpuPrefillEnabled = gpuPrefillEnabled;
+    }
+
+    public boolean isGpuPrefillEnabled() {
+        return gpuPrefillEnabled;
+    }
+
     public boolean isTensorProviderExplicit() {
         return tensorProviderExplicit;
     }
@@ -337,6 +346,27 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public TensorOperations primaryTensorOperations() {
         return configurableTensorProvider.get();
+    }
+
+    public TensorOperations prefillProjectionOperations(AbstractTensor input, AbstractTensor weight,
+            io.teknek.deliverance.generator.ForwardPhase phase) {
+        if (gpuPrefillEnabled
+                && phase == io.teknek.deliverance.generator.ForwardPhase.PREFILL
+                && !tensorProviderExplicit
+                && input.shape().first() >= 384
+                && (input.dType() == DType.F32 || input.dType() == DType.I8)
+                && (weight.dType() == DType.F32 || weight.dType() == DType.BF16 || weight.dType() == DType.Q4)) {
+            Optional<TensorOperations> gpu = tensorOperations(TensorProviderKind.GPU);
+            if (gpu.isPresent()) {
+                TensorOperations operations = gpu.get();
+                operations.registerModelTensor(weight);
+                if (InferenceProfiler.isEnabled()) {
+                    InferenceProfiler.counter(metricRegistry, "prefill.projection_provider_gpu").inc();
+                }
+                return operations;
+            }
+        }
+        return primaryTensorOperations();
     }
 
     public TensorParallelContext getTensorParallelContext() {
@@ -798,7 +828,7 @@ public abstract class AbstractModel implements Generator, Classifier {
                     progress.chunkStart = i;
                     progress.chunkTokens = batch.length;
                     AbstractTensor inputEmbeddings = embedInput.batchInputsToEmbeddings(batch, startPos + i);
-                    lastBatchOutput = forward(inputEmbeddings, startPos + i, kvbuf, tensorReducer);
+                    lastBatchOutput = forward(inputEmbeddings, startPos + i, kvbuf, tensorReducer, io.teknek.deliverance.generator.ForwardPhase.PREFILL);
                     int processed = Math.min(token_ids.length, i + batch.length);
                     long now = System.nanoTime();
                     if (processed < token_ids.length && now >= progress.nextLogNanos) {
@@ -842,6 +872,11 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public AbstractTensor forward(AbstractTensor embedding, int startPos, KvBufferCache.KvBuffer kvbuf,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
+        return forward(embedding, startPos, kvbuf, tensorReducer, io.teknek.deliverance.generator.ForwardPhase.DECODE);
+    }
+
+    public AbstractTensor forward(AbstractTensor embedding, int startPos, KvBufferCache.KvBuffer kvbuf,
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer, io.teknek.deliverance.generator.ForwardPhase phase) {
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "abstractmodel.forward_layers").time()) {
         emitLayerDebug(-1, "input", embedding);
         int batchTokens = embedding.shape().first();
@@ -849,7 +884,7 @@ public abstract class AbstractModel implements Generator, Classifier {
             throwIfGenerationInterrupted();
             int relativeLayer = i;
             AbstractTensor ref = embedding; // reference so we can free
-            embedding = transformerBlocks[relativeLayer].forward(embedding, startPos, kvbuf, tensorReducer);
+            embedding = transformerBlocks[relativeLayer].forward(embedding, startPos, kvbuf, tensorReducer, phase);
             emitLayerDebug(relativeLayer, "layer_output", embedding);
             ref.close();
             long now = System.nanoTime();

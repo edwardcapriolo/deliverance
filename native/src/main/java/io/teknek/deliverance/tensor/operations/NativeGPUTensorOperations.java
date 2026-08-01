@@ -387,8 +387,76 @@ public class NativeGPUTensorOperations implements TensorOperations {
     ) {
         Long btId = tensorCache.get(b[0].getUid());
         if (gpuSupported(btId, a.dType(), b[0].dType(), r[0].dType())) {
-            for (int i = 0; i < r.length; i++) {
-                batchDotProduct(r[i], a, b[i], columnOffset, columnOffset, columnLength, 0, bRowOffset, rowChunkSize);
+            long resultBytes = r[0].size() * r[0].dType().size();
+            int aOffset = a.getOffset(0, columnOffset);
+            int aLimit = a.getOffset(a.shape().first(), columnOffset);
+            if (aLimit > a.size()) aLimit = (int) a.size();
+            boolean allRegistered = true;
+            long[] bids = new long[b.length];
+            long[] bid2s = new long[b.length];
+            long[] resultPointers = new long[r.length];
+            for (int i = 0; i < b.length; i++) {
+                Long id = tensorCache.get(b[i].getUid());
+                if (id == null || b[i].dType() != b[0].dType() || r[i].dType() != r[0].dType()) {
+                    allRegistered = false;
+                    break;
+                }
+                bids[i] = id;
+                bid2s[i] = b[i].dType() == DType.Q4 ? tensorCache.get(((Q4ByteBufferTensor) b[i]).getBlockF().getUid()) : -1;
+                resultPointers[i] = r[i].getMemorySegment().address();
+            }
+            if (allRegistered && resultBytes * r.length <= MAX_SCRATCH_SIZE && aLimit * a.dType().size() <= MAX_SCRATCH_SIZE) {
+                long scratchId = gpuBuffers();
+                int M = a.shape().dim(0);
+                int N = rowChunkSize;
+                int K = columnLength;
+                long shaderId = switch (b[0].dType()) {
+                    case F32 -> switch (a.dType()) {
+                        case F32 -> gemm_f32_id;
+                        default -> throw new RuntimeException("Unsupported type: " + a.dType());
+                    };
+                    case BF16 -> switch (a.dType()) {
+                        case F32 -> gemm_bf16_id;
+                        default -> throw new RuntimeException("Unsupported type: " + a.dType());
+                    };
+                    case Q4 -> switch (a.dType()) {
+                        case F32 -> gemm_q4_id;
+                        case I8 -> M == 1 ? gemm_i8q4_m1_id : gemm_i8q4_id;
+                        default -> throw new RuntimeException("Unsupported type: " + a.dType());
+                    };
+                    default -> throw new RuntimeException("Unsupported type: " + b[0].dType());
+                };
+                int bOffset = b[0].getOffset(bRowOffset + b[0].shape().sparseRowOffset(), columnOffset);
+                int bLimit = b[0].getOffset(bRowOffset + N + b[0].shape().sparseRowOffset(), columnOffset);
+                if (bLimit > b[0].size()) bLimit = (int) b[0].size();
+                int rOffset = r[0].shape().sparseColumnOffset() - b[0].shape().sparseRowOffset();
+                NativeGPU.gpu_gemm_batch(
+                        scratchId,
+                        shaderId,
+                        r.length,
+                        a.getMemorySegment(),
+                        a.dType() == DType.I8 ? ((Q8ByteBufferTensor) a).getBlockF().getMemorySegment() : MemorySegment.NULL,
+                        a.getMemorySegmentOffset(aOffset),
+                        a.getMemorySegmentOffset(aLimit),
+                        MemorySegment.ofArray(bids),
+                        MemorySegment.ofArray(bid2s),
+                        b[0].getMemorySegmentOffset(bOffset),
+                        b[0].getMemorySegmentOffset(bLimit),
+                        MemorySegment.ofArray(resultPointers),
+                        rOffset,
+                        (int) (resultBytes),
+                        M,
+                        bRowOffset - b[0].shape().sparseRowOffset(),
+                        N,
+                        K,
+                        a.getStride(),
+                        b[0].getStride(),
+                        r[0].getStride(),
+                        M == 1 ? 1 : 0);
+            } else {
+                for (int i = 0; i < r.length; i++) {
+                    batchDotProduct(r[i], a, b[i], columnOffset, columnOffset, columnLength, 0, bRowOffset, rowChunkSize);
+                }
             }
         } else {
             VectorMath.pchunk(bRowOffset, rowChunkSize, (chunkStart, chunkSize) -> {

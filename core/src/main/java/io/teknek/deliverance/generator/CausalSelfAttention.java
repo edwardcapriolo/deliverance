@@ -126,6 +126,11 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
 
     public AbstractTensor forward(AbstractTensor input, int startPosition, KvBufferCache.KvBuffer kvMem,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
+        return forward(input, startPosition, kvMem, tensorReducer, ForwardPhase.DECODE);
+    }
+
+    public AbstractTensor forward(AbstractTensor input, int startPosition, KvBufferCache.KvBuffer kvMem,
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer, ForwardPhase phase) {
         Timer forwardTimer = InferenceProfiler.timer(metricRegistry, "causalselfattention.forward");
         try (Timer.Context ignored = forwardTimer.time()) {
         Preconditions.checkArgument(input.dims() == 2 && input.shape().last() == config.embeddingLength);
@@ -347,7 +352,7 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
             try (AbstractTensor vq = m.maybeQuantize(valueBatch)) {
                 try (Timer.Context ignoredOutput = InferenceProfiler.timer(metricRegistry, "causalselfattention.output_projection").time()) {
                     VectorMath.pchunk(0, config.embeddingLength, (chunkStart, chunkSize) -> {
-                    configurableTensorProvider.get()
+                    m.prefillProjectionOperations(vq, outputProjectionWeights, phase)
                             .dotProductChunk(
                                     result,
                                     vq,

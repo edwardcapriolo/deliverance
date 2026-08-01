@@ -40,9 +40,9 @@ public class Qwen3CausalSelfAttention extends CausalSelfAttention {
 
     @Override
     public AbstractTensor forward(AbstractTensor input, int startPosition, KvBufferCache.KvBuffer kvMem,
-            Optional<java.util.function.Consumer<java.util.List<AbstractTensor>>> tensorReducer) {
+            Optional<java.util.function.Consumer<java.util.List<AbstractTensor>>> tensorReducer, ForwardPhase phase) {
         // Qwen3 q/k head RMSNorm is implemented by the base class hook below.
-        return super.forward(input, startPosition, kvMem, tensorReducer);
+        return super.forward(input, startPosition, kvMem, tensorReducer, phase);
     }
 
     @Override

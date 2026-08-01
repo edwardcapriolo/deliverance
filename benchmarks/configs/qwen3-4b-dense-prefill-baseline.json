@@ -1,0 +1,12 @@
+{
+  "workingMemoryType": "F32",
+  "workingQuantType": "I8",
+  "gpuPrefill": false,
+  "maxBatchSize": 512,
+  "kvBufferCache": {
+    "maxEntries": 0,
+    "maxPrefixTokensPerPrompt": 0,
+    "blockSize": 32,
+    "contextRowsPerPageTarget": 32
+  }
+}

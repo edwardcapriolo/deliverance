@@ -43,6 +43,7 @@ SRCS2    := $(wildcard $(SRC2_DIR)/*.c)
 OBJS2    := $(SRCS2:$(SRC2_DIR)/%.c=$(OBJ2_DIR)/%.o)
 LIB2     := $(LIB_DIR)/$(LIB_NAME)gpu.$(LIB_EXT)
 BF16_TEST := $(OBJ_DIR)/test_bf16_gemm
+GPU_HEADER_TEST := $(OBJ_DIR)/test_gpu_header.o
 
 all: $(LIB)
 ifdef CFLAGS2
@@ -106,6 +107,15 @@ $(BF16_TEST): src/test/c/test_bf16_gemm.c $(SRC_DIR)/vector_simd.c
 
 test-bf16-gemm-run: $(BF16_TEST)
 	$(BF16_TEST)
+
+$(GPU_HEADER_TEST): src/test/c/test_gpu_header.c
+	mkdir -p $(OBJ_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+test-gpu-header-run: $(GPU_HEADER_TEST)
+	@echo "GPU header signature compile test passed"
+
+test-bf16-gemm-run: test-gpu-header-run
 
 ## Debug support
 # use `make print-VARIABLE name` to see the value of any variable

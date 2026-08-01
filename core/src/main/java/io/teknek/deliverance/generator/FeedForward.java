@@ -8,4 +8,9 @@ import java.util.function.Consumer;
 
 public interface FeedForward {
     AbstractTensor forward(AbstractTensor input, Optional<Consumer<List<AbstractTensor>>> tensorReducer);
+
+    default AbstractTensor forward(AbstractTensor input, Optional<Consumer<List<AbstractTensor>>> tensorReducer,
+            ForwardPhase phase) {
+        return forward(input, tensorReducer);
+    }
 }
