@@ -27,6 +27,10 @@ public abstract class BaseCausalSelfAttention implements SelfAttention {
         io.teknek.deliverance.tensor.VectorTensorMathUtils.softMax(attn, 0, visibleLength);
     }
 
+    protected void scaledSoftmax(AbstractTensor attn, int visibleLength, float scale, Float softcap) {
+        io.teknek.deliverance.tensor.VectorTensorMathUtils.scaledSoftMax(attn, 0, visibleLength, scale, softcap);
+    }
+
     /** Packs visible KV rows from paged cache tensors into a dense front-packed tensor. */
     protected int fillVisibleRows(AbstractTensor packed, AbstractTensor[] pages, int position, int windowStart,
             int rowWidth) {

@@ -11,6 +11,7 @@ import io.teknek.deliverance.tensor.operations.util.JarSupport;
 import com.google.common.io.Resources;
 import com.google.common.primitives.Ints;
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
@@ -503,5 +504,11 @@ public class NativeGPUTensorOperations implements TensorOperations {
     @Override
     public AbstractTensor quantize(AbstractTensor t, DType qtype, int offset, int length) {
         return delegate.quantize(t, qtype, offset, length);
+    }
+
+    @Override
+    public AbstractTensor activationMultiplyQuantize(AbstractTensor gate, AbstractTensor up,
+            ActivationFunction.Type activation, DType qtype, int offset, int length) {
+        return delegate.activationMultiplyQuantize(gate, up, activation, qtype, offset, length);
     }
 }

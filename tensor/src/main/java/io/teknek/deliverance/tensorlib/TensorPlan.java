@@ -18,6 +18,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ForkJoinTask;
 import java.util.concurrent.ForkJoinPool;
+import java.util.stream.IntStream;
 
 /**
  * Small lazy tensor workflow for experimenting with logical tensor plans and local fusion rules.
@@ -61,7 +62,15 @@ public final class TensorPlan {
     }
 
     public FusedBuilder fuse(String name, TensorShape shape) {
-        return new FusedBuilder(name, shape);
+        return new FusedBuilder(name, shape, FusedExecution.FIXED_POOL_LINEAR);
+    }
+
+    public FusedBuilder fuseColumnsIntStream(String name, TensorShape shape) {
+        return new FusedBuilder(name, shape, FusedExecution.INT_STREAM_COLUMNS);
+    }
+
+    public FusedBuilder fuseRowsIntStream(String name, TensorShape shape) {
+        return new FusedBuilder(name, shape, FusedExecution.INT_STREAM_ROWS);
     }
 
     public final class Tensor {
@@ -139,7 +148,15 @@ public final class TensorPlan {
     public enum TensorOp {
         CUSTOM,
         SILU_WRITE,
-        MUL_IN_PLACE
+        MUL_IN_PLACE,
+        ACTIVATION_MUL_IN_PLACE,
+        ACTIVATION_SPARSITY_IN_PLACE
+    }
+
+    private enum FusedExecution {
+        FIXED_POOL_LINEAR,
+        INT_STREAM_COLUMNS,
+        INT_STREAM_ROWS
     }
 
     @FunctionalInterface
@@ -166,16 +183,25 @@ public final class TensorPlan {
     public final class FusedBuilder {
         private final String name;
         private final TensorShape shape;
+        private final FusedExecution execution;
         private final Map<String, Node> inputs = new LinkedHashMap<>();
         private final List<FusedStep> steps = new ArrayList<>();
+        private String outputInputName;
 
-        private FusedBuilder(String name, TensorShape shape) {
+        private FusedBuilder(String name, TensorShape shape, FusedExecution execution) {
             this.name = Objects.requireNonNull(name, "name");
             this.shape = Objects.requireNonNull(shape, "shape");
+            this.execution = Objects.requireNonNull(execution, "execution");
         }
 
         public FusedBuilder read(String name, Tensor tensor) {
             inputs.put(name, tensor.node);
+            return this;
+        }
+
+        public FusedBuilder write(String name, Tensor tensor) {
+            read(name, tensor);
+            outputInputName = name;
             return this;
         }
 
@@ -189,7 +215,8 @@ public final class TensorPlan {
         }
 
         public Tensor tensor() {
-            return new Tensor(new FusedNode(name, shape, Map.copyOf(inputs), List.copyOf(steps)));
+            return new Tensor(new FusedNode(name, shape, execution, Map.copyOf(inputs), outputInputName,
+                    List.copyOf(steps)));
         }
     }
 
@@ -551,13 +578,18 @@ public final class TensorPlan {
     private final class FusedNode implements Node {
         private final String name;
         private final TensorShape shape;
+        private final FusedExecution execution;
         private final Map<String, Node> inputs;
+        private final String outputInputName;
         private final List<FusedStep> steps;
 
-        private FusedNode(String name, TensorShape shape, Map<String, Node> inputs, List<FusedStep> steps) {
+        private FusedNode(String name, TensorShape shape, FusedExecution execution, Map<String, Node> inputs,
+                String outputInputName, List<FusedStep> steps) {
             this.name = name;
             this.shape = shape;
+            this.execution = execution;
             this.inputs = inputs;
+            this.outputInputName = outputInputName;
             this.steps = steps;
         }
 
@@ -570,27 +602,53 @@ public final class TensorPlan {
                 evals.put(entry.getKey(), eval);
                 tensors.put(entry.getKey(), eval.tensor());
             }
-            AbstractTensor output = new FloatBufferTensor(shape);
+            Eval outputEval = outputInputName == null ? null : evals.get(outputInputName);
+            AbstractTensor output = outputEval == null ? new FloatBufferTensor(shape) : outputEval.tensor();
             tensors.put(name, output);
             FusedContext context = new FusedContext(tensors);
+            if (execution == FusedExecution.INT_STREAM_COLUMNS) {
+                executeIntStreamColumns(context);
+            } else if (execution == FusedExecution.INT_STREAM_ROWS) {
+                executeIntStreamRows(context);
+            } else {
+                executeFixedPoolLinear(context);
+            }
+            evals.entrySet().stream()
+                    .filter(entry -> outputInputName == null || !outputInputName.equals(entry.getKey()))
+                    .map(Map.Entry::getValue)
+                    .forEach(TensorPlan::closeIfOwned);
+            return new Eval(output, outputEval == null || outputEval.owned(), true);
+        }
+
+        private void executeFixedPoolLinear(FusedContext context) {
             long length = shape.size();
             List<TensorSplit> splits = TensorLib.calculateTSplits(0, length, Math.max(1, pool.getCoreCount()));
             List<ForkJoinTask<?>> tasks = new ArrayList<>();
             for (TensorSplit split : splits) {
-                tasks.add(pool.getUnderlying().submit(() -> {
-                    for (FusedStep step : steps) {
-                        Timer.Context timer = startTimer(step.metricName());
-                        try {
-                            step.map().map(context, split.offset, split.length);
-                        } finally {
-                            stopTimer(timer);
-                        }
-                    }
-                }));
+                tasks.add(pool.getUnderlying().submit(() -> runSteps(context, split.offset, split.length)));
             }
             tasks.forEach(ForkJoinTask::join);
-            evals.values().forEach(TensorPlan::closeIfOwned);
-            return new Eval(output, true, true);
+        }
+
+        private void executeIntStreamColumns(FusedContext context) {
+            int columns = (int) shape.last();
+            IntStream.range(0, columns).parallel().forEach(column -> runSteps(context, column, 1));
+        }
+
+        private void executeIntStreamRows(FusedContext context) {
+            int rows = (int) shape.first();
+            IntStream.range(0, rows).parallel().forEach(row -> runSteps(context, row, 1));
+        }
+
+        private void runSteps(FusedContext context, long offset, long length) {
+            for (FusedStep step : steps) {
+                Timer.Context timer = startTimer(step.metricName());
+                try {
+                    step.map().map(context, offset, length);
+                } finally {
+                    stopTimer(timer);
+                }
+            }
         }
 
         @Override

@@ -102,6 +102,66 @@ class TensorPlanTest {
     }
 
     @Test
+    void columnIntStreamFuseCanMutateWritableInput() {
+        TensorPlan plan = new TensorPlan(new NaiveTensorOperations(), new WrappedForkJoinPool(new ForkJoinPool(1)));
+        try (AbstractTensor gate = TensorTestSupport.tensorOf(2, 3, -1, 0, 1, 2, 3, 4);
+             AbstractTensor up = TensorTestSupport.tensorOf(2, 3, 2, 2, 2, 0.5f, 0.25f, 0.125f)) {
+
+            plan.fuseColumnsIntStream("gate", gate.shape())
+                    .write("gate", plan.mutable("gate", gate))
+                    .read("up", plan.input("up", up))
+                    .map("gate = silu(gate) * up", TensorPlan.TensorOp.ACTIVATION_MUL_IN_PLACE,
+                            (ctx, offset, length) -> {
+                                AbstractTensor g = ctx.tensor("gate");
+                                AbstractTensor u = ctx.tensor("up");
+                                int col = (int) offset;
+                                for (int row = 0; row < g.shape().first(); row++) {
+                                    float activated = ActivationFunction.eval(ActivationFunction.Type.SILU,
+                                            g.get(row, col));
+                                    g.set(activated * u.get(row, col), row, col);
+                                }
+                            })
+                    .tensor()
+                    .materialize();
+
+            assertEquals(ActivationFunction.eval(ActivationFunction.Type.SILU, -1.0f) * 2.0f, gate.get(0, 0),
+                    1.0e-6f);
+            assertEquals(ActivationFunction.eval(ActivationFunction.Type.SILU, 4.0f) * 0.125f, gate.get(1, 2),
+                    1.0e-6f);
+        }
+    }
+
+    @Test
+    void rowIntStreamFuseCanMutateWritableInput() {
+        TensorPlan plan = new TensorPlan(new NaiveTensorOperations(), new WrappedForkJoinPool(new ForkJoinPool(1)));
+        try (AbstractTensor gate = TensorTestSupport.tensorOf(2, 4, 1, 2, 3, 4, 10, 10, 20, 20)) {
+
+            plan.fuseRowsIntStream("gate", gate.shape())
+                    .write("gate", plan.mutable("gate", gate))
+                    .map("gate -= row mean", TensorPlan.TensorOp.ACTIVATION_SPARSITY_IN_PLACE,
+                            (ctx, offset, length) -> {
+                                AbstractTensor g = ctx.tensor("gate");
+                                int row = (int) offset;
+                                double sum = 0.0d;
+                                for (int col = 0; col < g.shape().last(); col++) {
+                                    sum += g.get(row, col);
+                                }
+                                float mean = (float) (sum / g.shape().last());
+                                for (int col = 0; col < g.shape().last(); col++) {
+                                    g.set(g.get(row, col) - mean, row, col);
+                                }
+                            })
+                    .tensor()
+                    .materialize();
+
+            assertEquals(-1.5f, gate.get(0, 0), 1.0e-6f);
+            assertEquals(1.5f, gate.get(0, 3), 1.0e-6f);
+            assertEquals(-5.0f, gate.get(1, 0), 1.0e-6f);
+            assertEquals(5.0f, gate.get(1, 3), 1.0e-6f);
+        }
+    }
+
+    @Test
     void basicOpsMaterializeWithoutMutatingBorrowedInputs() {
         TensorPlan plan = new TensorPlan(new NaiveTensorOperations(), new WrappedForkJoinPool(new ForkJoinPool(1)));
         try (AbstractTensor a = TensorTestSupport.tensorOf(2, 3, 1, 2, 3, 4, 5, 6);

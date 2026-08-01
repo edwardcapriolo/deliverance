@@ -8,7 +8,6 @@ import io.teknek.deliverance.model.tensorparallel.TensorParallelMlp;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import io.teknek.deliverance.tensorlib.TensorPlan;
 
 import java.util.Collections;
 import java.util.List;
@@ -171,12 +170,8 @@ public class MLPBlock implements FeedForward {
                 if (InferenceProfiler.isEnabled()) {
                     InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock.tensorplan.fused_activation_multiply").inc();
                 }
-                TensorPlan plan = new TensorPlan(configurableTensorProvider.get(), model.getPool(), model.getMetricRegistry());
-                plan.mutable("gate", buf)
-                        .activate(activationFunction)
-                        .multiply(plan.input("up", buf2))
-                        .timer("mlpblock.multiply")
-                        .materialize();
+                // TensorOperations can fuse activation*multiply with block quantization, avoiding a full F32
+                // intermediate pass before the down projection.
             } else {
                 // Not using pfor because we can use all cores
                 try (Timer.Context ignoredActivation = InferenceProfiler.timer(model.getMetricRegistry(), "mlpblock.activation").time()) {
@@ -194,7 +189,7 @@ public class MLPBlock implements FeedForward {
                 InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock.down_input_" + buf.dType()).inc();
                 InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock.down_weight_" + projectionWeights.dType()).inc();
             }
-            try (AbstractTensor bufq = downQuantize(buf)) {
+            try (AbstractTensor bufq = hiddenForDownProjection(buf, buf2, upProjectionWeights != null)) {
                 // matmul the projection and sum into input
                 AbstractTensor result = model.makeTensor(batchSize, model.getConfig().embeddingLength);
                 try (Timer.Context ignoredDown = InferenceProfiler.timer(model.getMetricRegistry(), "mlpblock.down_projection").time()) {
@@ -226,6 +221,17 @@ public class MLPBlock implements FeedForward {
     private AbstractTensor downQuantize(AbstractTensor buf) {
         try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), "mlpblock.down_quantize").time()) {
             return model.maybeQuantize(buf);
+        }
+    }
+
+    private AbstractTensor hiddenForDownProjection(AbstractTensor gate, AbstractTensor up, boolean fusedGateUp) {
+        if (!fusedGateUp) {
+            return downQuantize(gate);
+        }
+        try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(),
+                "mlpblock.fused_activation_multiply_quantize").time()) {
+            return configurableTensorProvider.get().activationMultiplyQuantize(gate, up, activationFunction,
+                    model.getWorkingQType(), 0, (int) gate.shape().last());
         }
     }
 

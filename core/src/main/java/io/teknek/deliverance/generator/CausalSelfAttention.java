@@ -321,12 +321,8 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
                                         .batchDotProduct(attn, query, kvp[i], yoffset, xoffset, config.headSize, offset, 0, size);
                             }
 
-                            configurableTensorProvider.get().scale(attentionScale, attn, 0, finalPosition + 1);
-
-                            applyAttentionSoftcap(attn, finalPosition + 1, config.attnLogitSoftCapping);
-
                             // softmax the scores to get attention weights, from 0..pos inclusively
-                            softmax(attn, finalPosition + 1);
+                            scaledSoftmax(attn, finalPosition + 1, attentionScale, config.attnLogitSoftCapping);
 
                             // apply adjusted attention weights to value vectors
                             // do this for each position since the pages are not contiguous
@@ -420,9 +416,7 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
                                 int visibleLength = startPosition + bi + 1;
                                 try (AbstractTensor attnRow = attn.slice(bi);
                                      AbstractTensor valueRow = valueBatch.slice(bi)) {
-                                    configurableTensorProvider.get().scale(attentionScale, attnRow, 0, visibleLength);
-                                    applyAttentionSoftcap(attnRow, visibleLength, config.attnLogitSoftCapping);
-                                    softmax(attnRow, visibleLength);
+                                    scaledSoftmax(attnRow, visibleLength, attentionScale, config.attnLogitSoftCapping);
                                     configurableTensorProvider.get().saxpy(attnRow, packedValues, valueRow,
                                             xoffset, yoffset, config.headSize, 0, 0, visibleLength);
                                 }

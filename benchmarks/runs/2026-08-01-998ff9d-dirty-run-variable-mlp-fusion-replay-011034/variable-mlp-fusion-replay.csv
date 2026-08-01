@@ -1,0 +1,3 @@
+m,hidden,baseline_ms,fixed_plan_ms,intstream_plan_ms,fixed_speedup,intstream_speedup,fixed_max_abs,intstream_max_abs,fixed_mean_abs,intstream_mean_abs
+1,3072,13.304,30.182,36.201,0.4408,0.3675,0.00000000,0.00000000,0.00000000,0.00000000
+32,3072,3.279,5.776,8.348,0.5676,0.3928,0.00000000,0.00000000,0.00000000,0.00000000

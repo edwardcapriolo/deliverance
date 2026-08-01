@@ -6,6 +6,7 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensorlib.TensorPlan;
 
 import java.util.Collections;
 import java.util.List;
@@ -84,13 +85,19 @@ public class VariableMLPBlock implements FeedForward {
                     .dotProductBatchChunk(batchResults, input, batchWeights, 0, model.getConfig().embeddingLength, chunkStart, chunkSize),
                     configurableTensorProvider.get().parallelSplitSize(), model.getPool());
 
-            applyActivationSparsity(gate, batchSize);
-            IntStream.range(0, hiddenLength).parallel().forEach(i -> {
-                for (int j = 0; j < batchSize; j++) {
-                    float activated = ActivationFunction.eval(activationFunction, gate.get(j, i));
-                    gate.set(activated * up.get(j, i), j, i);
-                }
-            });
+            TensorPlan plan = new TensorPlan(configurableTensorProvider.get(), model.getPool(), model.getMetricRegistry());
+            applyActivationSparsity(plan, gate, batchSize);
+            model.getMetricRegistry().counter("variablemlpblock.tensorplan.intstream_activation_multiply").inc();
+            plan.fuseColumnsIntStream("gate", gate.shape())
+                    .write("gate", plan.mutable("gate", gate))
+                    .read("up", plan.input("up", up))
+                    .map("gate = " + activationFunction.name().toLowerCase() + "(gate) * up",
+                            TensorPlan.TensorOp.ACTIVATION_MUL_IN_PLACE,
+                            (ctx, offset, length) -> applyActivationMultiplyColumns(ctx.tensor("gate"),
+                                    ctx.tensor("up"), batchSize, (int) offset))
+                    .tensor()
+                    .timer("variablemlpblock.multiply")
+                    .materialize();
 
             try (AbstractTensor gateQ = model.maybeQuantize(gate)) {
                 AbstractTensor result = model.makeTensor(batchSize, model.getConfig().embeddingLength);
@@ -103,11 +110,44 @@ public class VariableMLPBlock implements FeedForward {
         }
     }
 
-    private void applyActivationSparsity(AbstractTensor gate, int batchSize) {
+    private void applyActivationSparsity(TensorPlan plan, AbstractTensor gate, int batchSize) {
         if (activationSparsity <= 0.0f) {
             return;
         }
-        applyActivationSparsity(gate, batchSize, hiddenLength, activationSparsityStdMultiplier);
+        model.getMetricRegistry().counter("variablemlpblock.tensorplan.intstream_activation_sparsity").inc();
+        plan.fuseRowsIntStream("gate", gate.shape())
+                .write("gate", plan.mutable("gate", gate))
+                .map("gate = activation_sparsity(gate)", TensorPlan.TensorOp.ACTIVATION_SPARSITY_IN_PLACE,
+                        (ctx, offset, length) -> applyActivationSparsityRow(ctx.tensor("gate"), (int) offset))
+                .tensor()
+                .timer("variablemlpblock.activation_sparsity")
+                .materialize();
+    }
+
+    private void applyActivationMultiplyColumns(AbstractTensor gate, AbstractTensor up, int batchSize, int column) {
+        for (int row = 0; row < batchSize; row++) {
+            float activated = ActivationFunction.eval(activationFunction, gate.get(row, column));
+            gate.set(activated * up.get(row, column), row, column);
+        }
+    }
+
+    private void applyActivationSparsityRow(AbstractTensor gate, int row) {
+        double sum = 0.0d;
+        for (int col = 0; col < hiddenLength; col++) {
+            sum += gate.get(row, col);
+        }
+        double mean = sum / hiddenLength;
+        double variance = 0.0d;
+        for (int col = 0; col < hiddenLength; col++) {
+            double diff = gate.get(row, col) - mean;
+            variance += diff * diff;
+        }
+        double std = Math.sqrt(variance / hiddenLength);
+        float cutoff = (float) (mean + std * activationSparsityStdMultiplier);
+        for (int col = 0; col < hiddenLength; col++) {
+            float v = gate.get(row, col) - cutoff;
+            gate.set(Math.max(0.0f, v), row, col);
+        }
     }
 
     static void applyActivationSparsity(AbstractTensor gate, int batchSize, int hiddenLength,

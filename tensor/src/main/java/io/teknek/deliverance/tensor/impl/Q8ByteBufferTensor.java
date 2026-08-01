@@ -143,6 +143,15 @@ public class Q8ByteBufferTensor extends AbstractTensor {
         return blockF;
     }
 
+    public void setRawByte(byte value, int row, int column) {
+        Preconditions.checkArgument(!b.isReadOnly(), "Can't modify a read only buffer");
+        b.put(getOffset(row, column), value);
+    }
+
+    public void setBlockScale(float value, int row, int blockColumn) {
+        blockF.set(value, row, blockColumn);
+    }
+
     public final float getFactorForIndex(int d, int i) {
         int ix = Q4ByteBufferTensor.blockIndex(i);
         if (ix >= blockF.size()) throw new RuntimeException();

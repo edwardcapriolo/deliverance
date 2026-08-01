@@ -3,6 +3,7 @@ package io.teknek.deliverance.tensor.operations;
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.DType;
 
+import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.BiIntConsumer;
 
 import io.teknek.deliverance.math.WrappedForkJoinPool;
@@ -2002,6 +2003,42 @@ public final class PanamaTensorOperations implements TensorOperations {
             };
             default -> throw new UnsupportedOperationException("" + t.dType());
         };
+    }
+
+    @Override
+    public AbstractTensor activationMultiplyQuantize(AbstractTensor gate, AbstractTensor up,
+            ActivationFunction.Type activation, DType qtype, int offset, int length) {
+        if (gate.dType() != DType.F32 || up.dType() != DType.F32 || qtype != DType.I8) {
+            return TensorOperations.super.activationMultiplyQuantize(gate, up, activation, qtype, offset, length);
+        }
+        Preconditions.checkArgument(gate instanceof FloatBufferTensor && up instanceof FloatBufferTensor,
+                "F32 tensors must be FloatBufferTensor");
+        Preconditions.checkArgument(gate.dims() == 2 && gate.shape().equals(up.shape()),
+                "gate and up must be same 2D shape");
+        Preconditions.checkArgument(length % Q8ByteBufferTensor.BLOCK_SIZE == 0,
+                "I8 block quantization requires length multiple of block size");
+        Q8ByteBufferTensor out = (Q8ByteBufferTensor) tensorCache.getDirty(DType.I8, gate.shape());
+        float[] block = new float[Q8ByteBufferTensor.BLOCK_SIZE];
+        for (int row = 0; row < gate.shape().first(); row++) {
+            for (int col = offset; col < offset + length; col += Q8ByteBufferTensor.BLOCK_SIZE) {
+                float max = 0.0f;
+                for (int i = 0; i < Q8ByteBufferTensor.BLOCK_SIZE; i++) {
+                    float v = ActivationFunction.eval(activation, gate.get(row, col + i)) * up.get(row, col + i);
+                    block[i] = v;
+                    float abs = Math.abs(v);
+                    if (abs > max) {
+                        max = abs;
+                    }
+                }
+                float scale = max / 127f;
+                float invScale = max != 0.0f ? 127f / max : 0.0f;
+                out.setBlockScale(scale, row, (int) (col * Q8ByteBufferTensor.I_BLOCK_SIZE));
+                for (int i = 0; i < Q8ByteBufferTensor.BLOCK_SIZE; i++) {
+                    out.setRawByte((byte) (block[i] * invScale + 0.5f), row, col + i);
+                }
+            }
+        }
+        return out;
     }
 
     public BFloat16BufferTensor quantizeBF16(FloatBufferTensor ft, final int offset, int length) {
