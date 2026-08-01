@@ -46,4 +46,7 @@ void gemm_f32_bf16_batch(int flags, int batch_num, const float *a, int aoffset, 
 void saxpy_f32(float alpha, const float *x, float *y, int xoffset, int yoffset, int limit);
 void saxpy_f32_batch(const float *alpha, const float *x, float *y, int xoffset, int yoffset, int limit, int aoffset, int xrowoffset, int batch_size, int xstride);
 
+void activation_multiply_quantize_silu_q8(const float *gate, const float *up, char *out, float *out_scale,
+    int rows, int offset, int length, int gate_stride, int up_stride, int out_stride, int scale_stride);
+
 #endif

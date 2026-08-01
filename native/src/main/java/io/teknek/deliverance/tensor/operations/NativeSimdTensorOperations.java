@@ -10,6 +10,7 @@ import java.lang.foreign.MemorySegment;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import org.slf4j.Logger;
@@ -513,6 +514,32 @@ public class NativeSimdTensorOperations implements TensorOperations {
     @Override
     public AbstractTensor activationMultiplyQuantize(AbstractTensor gate, AbstractTensor up,
             ActivationFunction.Type activation, DType qtype, int offset, int length) {
+        if (activation == ActivationFunction.Type.SILU
+                && gate.dType() == DType.F32
+                && up.dType() == DType.F32
+                && qtype == DType.I8
+                && gate instanceof FloatBufferTensor
+                && up instanceof FloatBufferTensor
+                && gate.dims() == 2
+                && gate.shape().equals(up.shape())
+                && offset % Q8ByteBufferTensor.BLOCK_SIZE == 0
+                && length % Q8ByteBufferTensor.BLOCK_SIZE == 0) {
+            Q8ByteBufferTensor out = new Q8ByteBufferTensor(gate.shape());
+            NativeSimd.activation_multiply_quantize_silu_q8(
+                    gate.getMemorySegment(),
+                    up.getMemorySegment(),
+                    out.getMemorySegment(),
+                    out.getBlockF().getMemorySegment(),
+                    gate.shape().first(),
+                    offset,
+                    length,
+                    gate.getStride(),
+                    up.getStride(),
+                    out.getStride(),
+                    out.getBlockF().getStride()
+            );
+            return out;
+        }
         return delegate.activationMultiplyQuantize(gate, up, activation, qtype, offset, length);
     }
 }

@@ -400,6 +400,7 @@ public class NativeGPU {
             NativeGPU.C_INT,
             NativeGPU.C_INT,
             NativeGPU.C_INT,
+            NativeGPU.C_INT,
             NativeGPU.C_INT
         );
 

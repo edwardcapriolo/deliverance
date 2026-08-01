@@ -182,6 +182,36 @@ void saxpy_f32_batch(const float *alpha, const float *x, float *y, int xoffset, 
 #endif
 }
 
+void activation_multiply_quantize_silu_q8(const float *gate, const float *up, char *out, float *out_scale,
+    int rows, int offset, int length, int gate_stride, int up_stride, int out_stride, int scale_stride) {
+    float block[Q8_BLOCK_SIZE];
+    for (int row = 0; row < rows; row++) {
+        const float *gate_row = gate + row * gate_stride;
+        const float *up_row = up + row * up_stride;
+        char *out_row = out + row * out_stride;
+        float *scale_row = out_scale + row * scale_stride;
+        for (int col = offset; col < offset + length; col += Q8_BLOCK_SIZE) {
+            float max_abs = 0.0f;
+            for (int i = 0; i < Q8_BLOCK_SIZE; i++) {
+                float g = gate_row[col + i];
+                float silu = g * (1.0f / (1.0f + expf(-g)));
+                float v = silu * up_row[col + i];
+                block[i] = v;
+                float av = fabsf(v);
+                if (av > max_abs) {
+                    max_abs = av;
+                }
+            }
+            float scale = max_abs / 127.0f;
+            float inv_scale = max_abs != 0.0f ? 127.0f / max_abs : 0.0f;
+            scale_row[col / Q8_BLOCK_SIZE] = scale;
+            for (int i = 0; i < Q8_BLOCK_SIZE; i++) {
+                out_row[col + i] = (char) (block[i] * inv_scale + 0.5f);
+            }
+        }
+    }
+}
+
 void __attribute__((noinline)) gemm(int m0, int m, int n0, int n,
   void (*gemmPtr)(int, int, int, int, int, int, struct gemm_params),
   struct gemm_params params) {

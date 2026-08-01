@@ -114,6 +114,54 @@ public class NativeSimd {
         return Q4_BLOCK_SIZE;
     }
 
+    private static class activation_multiply_quantize_silu_q8 {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
+            NativeSimd.C_POINTER,
+            NativeSimd.C_POINTER,
+            NativeSimd.C_POINTER,
+            NativeSimd.C_POINTER,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT
+        );
+
+        public static final MemorySegment ADDR = NativeSimd.findOrThrow("activation_multiply_quantize_silu_q8");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    public static FunctionDescriptor activation_multiply_quantize_silu_q8$descriptor() {
+        return activation_multiply_quantize_silu_q8.DESC;
+    }
+
+    public static MethodHandle activation_multiply_quantize_silu_q8$handle() {
+        return activation_multiply_quantize_silu_q8.HANDLE;
+    }
+
+    public static MemorySegment activation_multiply_quantize_silu_q8$address() {
+        return activation_multiply_quantize_silu_q8.ADDR;
+    }
+
+    public static void activation_multiply_quantize_silu_q8(MemorySegment gate, MemorySegment up,
+            MemorySegment out, MemorySegment out_scale, int rows, int offset, int length, int gate_stride,
+            int up_stride, int out_stride, int scale_stride) {
+        var mh$ = activation_multiply_quantize_silu_q8.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("activation_multiply_quantize_silu_q8", gate, up, out, out_scale, rows, offset,
+                        length, gate_stride, up_stride, out_stride, scale_stride);
+            }
+            mh$.invokeExact(gate, up, out, out_scale, rows, offset, length, gate_stride, up_stride, out_stride,
+                    scale_stride);
+        } catch (Throwable ex$) {
+           throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
     private static class gemm_q8_q4 {
         public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
             NativeSimd.C_INT,
