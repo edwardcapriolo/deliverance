@@ -8,6 +8,7 @@ import io.teknek.deliverance.tensor.operations.util.MemorySegmentSupport;
 import java.lang.foreign.MemorySegment;
 
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
@@ -507,5 +508,11 @@ public class NativeSimdTensorOperations implements TensorOperations {
     @Override
     public AbstractTensor quantize(AbstractTensor t, DType qtype, int offset, int length) {
         return delegate.quantize(t, qtype, offset, length);
+    }
+
+    @Override
+    public AbstractTensor activationMultiplyQuantize(AbstractTensor gate, AbstractTensor up,
+            ActivationFunction.Type activation, DType qtype, int offset, int length) {
+        return delegate.activationMultiplyQuantize(gate, up, activation, qtype, offset, length);
     }
 }

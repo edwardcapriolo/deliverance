@@ -2,6 +2,7 @@ package io.teknek.deliverance.tensor.operations;
 
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
@@ -145,6 +146,18 @@ public interface TensorOperations {
         return t2;
     }*/
     AbstractTensor quantize(AbstractTensor t, DType qtype, int offset, int length);
+
+    default AbstractTensor activationMultiplyQuantize(AbstractTensor gate, AbstractTensor up,
+            ActivationFunction.Type activation, DType qtype, int offset, int length) {
+        Preconditions.checkArgument(gate.shape().equals(up.shape()), "gate and up must have same shape");
+        FloatBufferTensor hidden = new FloatBufferTensor(gate.shape());
+        for (int row = 0; row < gate.shape().first(); row++) {
+            for (int col = offset; col < offset + length; col++) {
+                hidden.set(ActivationFunction.eval(activation, gate.get(row, col)) * up.get(row, col), row, col);
+            }
+        }
+        return quantize(hidden, qtype, offset, length);
+    }
 
     /**
      * Collects the total sum of each position in the tensor.  (For testing purposes)

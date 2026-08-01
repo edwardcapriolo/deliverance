@@ -92,4 +92,53 @@ public class VectorTensorMathUtilsTest {
         assertTrue(original.get(0, 4) > original.get(0, 3));
         assertTrue(original.get(0, 3) > original.get(0, 2));
     }
+
+    @Test
+    public void scaledSoftMaxMatchesSeparateScaleAndSoftcapPasses() {
+        AbstractTensor separate = new FloatBufferTensor(1, 5);
+        AbstractTensor fused = new FloatBufferTensor(1, 5);
+        for (int i = 0; i < 5; i++) {
+            float value = (i - 2) * 1.75f;
+            separate.set(value, 0, i);
+            fused.set(value, 0, i);
+        }
+
+        float scale = 0.25f;
+        float softcap = 1.5f;
+        for (int i = 0; i < 5; i++) {
+            float v = separate.get(0, i) * scale;
+            v = (float) net.jafama.FastMath.tanh(v / softcap) * softcap;
+            separate.set(v, 0, i);
+        }
+        VectorTensorMathUtils.softMax(separate, 0, 5);
+
+        VectorTensorMathUtils.scaledSoftMax(fused, 0, 5, scale, softcap);
+
+        for (int i = 0; i < 5; i++) {
+            assertEquals(separate.get(0, i), fused.get(0, i), 0.000001, "col=" + i);
+        }
+    }
+
+    @Test
+    public void scaledSoftMaxMatchesSeparateScalePass() {
+        AbstractTensor separate = new FloatBufferTensor(1, 5);
+        AbstractTensor fused = new FloatBufferTensor(1, 5);
+        for (int i = 0; i < 5; i++) {
+            float value = (i - 2) * 1.25f;
+            separate.set(value, 0, i);
+            fused.set(value, 0, i);
+        }
+
+        float scale = 0.5f;
+        for (int i = 0; i < 5; i++) {
+            separate.set(separate.get(0, i) * scale, 0, i);
+        }
+        VectorTensorMathUtils.softMax(separate, 0, 5);
+
+        VectorTensorMathUtils.scaledSoftMax(fused, 0, 5, scale, null);
+
+        for (int i = 0; i < 5; i++) {
+            assertEquals(separate.get(0, i), fused.get(0, i), 0.000001, "col=" + i);
+        }
+    }
 }

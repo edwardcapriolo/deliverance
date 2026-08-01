@@ -116,6 +116,66 @@ chunk 1:
 
 The `TensorOp` identifiers are intentionally explicit. They let future physical planners recognize common fused operations while keeping the Java mapper as a correctness fallback.
 
+## In-Place And IntStream Fusion
+
+Use `write(...)` when the fused output should be an existing mutable tensor instead of a newly allocated tensor:
+
+```java
+plan.fuseColumnsIntStream("gate", gate.shape())
+        .write("gate", plan.mutable("gate", gate))
+        .read("up", plan.input("up", up))
+        .map("gate = silu(gate) * up", TensorPlan.TensorOp.ACTIVATION_MUL_IN_PLACE,
+                (ctx, offset, length) -> {
+                    int column = (int) offset;
+                    AbstractTensor gateTensor = ctx.tensor("gate");
+                    AbstractTensor upTensor = ctx.tensor("up");
+                    for (int row = 0; row < gateTensor.shape().first(); row++) {
+                        float activated = ActivationFunction.eval(ActivationFunction.Type.SILU,
+                                gateTensor.get(row, column));
+                        gateTensor.set(activated * upTensor.get(row, column), row, column);
+                    }
+                })
+        .tensor()
+        .timer("variablemlpblock.multiply")
+        .materialize();
+```
+
+`fuseColumnsIntStream(...)` intentionally mirrors older code shaped like:
+
+```java
+IntStream.range(0, hiddenLength).parallel().forEach(column -> {
+    for (int row = 0; row < batchSize; row++) {
+        gate[row, column] = activation(gate[row, column]) * up[row, column];
+    }
+});
+```
+
+Use this mode only when preserving that column-parallel/common-pool behavior matters. For normal fixed-core execution, prefer `fuse(...)`, which uses the `WrappedForkJoinPool` passed into `TensorPlan`.
+
+For row-wise reductions followed by row-wise writes, use `fuseRowsIntStream(...)`:
+
+```java
+plan.fuseRowsIntStream("gate", gate.shape())
+        .write("gate", plan.mutable("gate", gate))
+        .map("gate = activation_sparsity(gate)", TensorPlan.TensorOp.ACTIVATION_SPARSITY_IN_PLACE,
+                (ctx, offset, length) -> applyActivationSparsityRow(ctx.tensor("gate"), (int) offset))
+        .tensor()
+        .timer("variablemlpblock.activation_sparsity")
+        .materialize();
+```
+
+This mirrors older code shaped like:
+
+```java
+IntStream.range(0, batchSize).parallel().forEach(row -> {
+    mean = mean(gate[row, :]);
+    std = std(gate[row, :]);
+    gate[row, :] = max(0, gate[row, :] - cutoff);
+});
+```
+
+`fuseColumnsIntStream(...)` and `fuseRowsIntStream(...)` are physical execution choices, not new tensor math primitives. They exist so hot paths can move into TensorPlan without accidentally changing their established parallel shape.
+
 ## Plan Output
 
 `plan()` returns an ASCII tree intended for debugging and review.
