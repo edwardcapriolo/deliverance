@@ -6,6 +6,7 @@ import com.codahale.metrics.Timer;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensorlib.TensorPlan;
 import net.jafama.FastMath;
 
 import java.time.Duration;
@@ -29,27 +30,54 @@ public class RmsNorm extends LayerNorm {
     public AbstractTensor forward(AbstractTensor input, int offset, int length) {
         try (Timer.Context ignored = InferenceProfiler.timer(metricReigstry, "rmsnorm.forward").time()) {
         long start = System.currentTimeMillis();
-        int batchSize = input.shape().first();
         AbstractTensor output = model.makeDenseTensor(input.shape());
         int limit = offset + length;
-        for (int b = 0; b < batchSize; b++) {
-            double ss = 0.0f;
-            for (int j = offset; j < limit; j++) {
-                float v = input.get(b, j);
-                ss += v * v;
-            }
-            //originally normalizaing over the enter length
-            //ss /= model.getConfig().embeddingLength;
-            ss /= length;
-            ss += model.getConfig().layerNormEps;
-            ss = (1.0 / FastMath.sqrt(ss));
-            for (int j = offset; j < limit; j++) {
-                output.set((weightAdjustment + weights.get(0, j)) * ((float) ss * input.get(b, j)), b, j);
-            }
+        if (model.getConfigurableTensorProvider() == null) {
+            applyRmsNorm(input, output, offset, length, limit);
+            long end = System.currentTimeMillis();
+            totalTime.update(Duration.ofMillis(end-start));
+            return output;
         }
+        // RMSNorm is a tiny row-local operation during decode; TensorRuntime scheduling and locality checks cost more
+        // than they save here, so keep TensorPlan diagnostics but execute inline.
+        TensorPlan plan = TensorPlanSupport.plan(model, model.getConfigurableTensorProvider().get())
+                .forcedRunMode(TensorPlan.RunMode.CALLER_THREAD);
+        plan.fuseRowsIntStream("rmsnorm", output.shape())
+                .read("input", plan.input("input", input))
+                .write("output", plan.mutable("output", output))
+                .map("output = rmsnorm(input)", TensorPlan.TensorOp.CUSTOM, (ctx, rowOffset, rowLength) -> {
+                    AbstractTensor in = ctx.tensor("input");
+                    AbstractTensor out = ctx.tensor("output");
+                    applyRmsNormRow(in, out, (int) rowOffset, offset, length, limit);
+                })
+                .tensor()
+                .materialize();
         long end = System.currentTimeMillis();
         totalTime.update(Duration.ofMillis(end-start));
         return output;
+        }
+    }
+
+    private void applyRmsNorm(AbstractTensor input, AbstractTensor output, int offset, int length, int limit) {
+        int batchSize = input.shape().first();
+        for (int b = 0; b < batchSize; b++) {
+            applyRmsNormRow(input, output, b, offset, length, limit);
+        }
+    }
+
+    private void applyRmsNormRow(AbstractTensor input, AbstractTensor output, int b, int offset, int length, int limit) {
+        double ss = 0.0f;
+        for (int j = offset; j < limit; j++) {
+            float v = input.get(b, j);
+            ss += v * v;
+        }
+        //originally normalizaing over the enter length
+        //ss /= model.getConfig().embeddingLength;
+        ss /= length;
+        ss += model.getConfig().layerNormEps;
+        ss = (1.0 / FastMath.sqrt(ss));
+        for (int j = offset; j < limit; j++) {
+            output.set((weightAdjustment + weights.get(0, j)) * ((float) ss * input.get(b, j)), b, j);
         }
     }
 }
