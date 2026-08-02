@@ -542,4 +542,13 @@ public class NativeSimdTensorOperations implements TensorOperations {
         }
         return delegate.activationMultiplyQuantize(gate, up, activation, qtype, offset, length);
     }
+
+    @Override
+    public void decodePagedAttention(AbstractTensor valueOut, AbstractTensor query, AbstractTensor[] keyPages,
+            AbstractTensor[] valuePages, int visibleRows, int numberOfHeads, int numberOfKeyValueHeads, int headSize,
+            float scale, Float softcap) {
+        java.util.stream.IntStream.range(0, numberOfHeads).parallel().forEach(head ->
+                decodePagedAttentionHeadWithProviderKernels(valueOut, query, keyPages, valuePages, visibleRows,
+                        numberOfHeads, numberOfKeyValueHeads, headSize, scale, softcap, head));
+    }
 }

@@ -97,6 +97,7 @@ public class AutoModelForCausaLm {
         private int maxBatchSize = AbstractModel.DEFAULT_MAX_BATCH_SIZE;
         private SketchesSettings sketchesSettings = SketchesSettings.DEFAULT;
         private boolean gpuPrefill;
+        private boolean gpuDecode;
         private Optional<TensorRuntimeMode> tensorRuntimeMode = Optional.empty();
 
         record QuantizeOnDemand(DType targetType, String outputOwner, String outputModel) {
@@ -230,6 +231,15 @@ public class AutoModelForCausaLm {
             return this;
         }
 
+        /**
+         * Opts into experimental GPU decode projection work. Decode runs once per generated token, so routing supported
+         * projection matmuls to GPU is controlled separately from prefill.
+         */
+        public Builder withGpuDecode(boolean gpuDecode) {
+            this.gpuDecode = gpuDecode;
+            return this;
+        }
+
         public Builder withTensorRuntimeMode(TensorRuntimeMode tensorRuntimeMode) {
             this.tensorRuntimeMode = Optional.of(Objects.requireNonNull(tensorRuntimeMode, "tensorRuntimeMode"));
             return this;
@@ -266,6 +276,7 @@ public class AutoModelForCausaLm {
             config.workingQuantType().ifPresent(this::withWorkingQuantType);
             config.outputHeadQuantization().ifPresent(this::withOutputHeadQuantization);
             config.gpuPrefill().ifPresent(this::withGpuPrefill);
+            config.gpuDecode().ifPresent(this::withGpuDecode);
             config.download().ifPresent(this::withDownload);
             config.maxBatchSize().ifPresent(this::withMaxBatchSize);
             config.tensorRuntimeMode().ifPresent(this::withTensorRuntimeMode);
@@ -339,6 +350,7 @@ public class AutoModelForCausaLm {
             copy.maxBatchSize = this.maxBatchSize;
             copy.sketchesSettings = this.sketchesSettings;
             copy.gpuPrefill = this.gpuPrefill;
+            copy.gpuDecode = this.gpuDecode;
             return copy;
         }
         /** This is a JVM wide property! **/
@@ -400,6 +412,7 @@ public class AutoModelForCausaLm {
             model.setMaxBatchSize(maxBatchSize);
             model.setTensorProviderExplicit(tensorProviderExplicit);
             model.setGpuPrefillEnabled(gpuPrefill);
+            model.setGpuDecodeEnabled(gpuDecode);
             model.setTensorRuntimeMode(tensorRuntimeMode);
             if (!tensorProviderExplicit) {
                 model.addTensorOperations(hydrateTensorOperations());
@@ -427,8 +440,8 @@ public class AutoModelForCausaLm {
             if (gpu == null) {
                 Optional<TensorOperations> maybeGpu = tryLoadTensorOperations("io.teknek.deliverance.tensor.operations.NativeGPUTensorOperations");
                 maybeGpu.ifPresent(value -> operations.put(TensorProviderKind.GPU, value));
-                if (gpuPrefill && maybeGpu.isEmpty()) {
-                    throw new IllegalStateException("GPU prefill requested but NativeGPUTensorOperations is not available");
+                if ((gpuPrefill || gpuDecode) && maybeGpu.isEmpty()) {
+                    throw new IllegalStateException("GPU projection requested but NativeGPUTensorOperations is not available");
                 }
             } else {
                 operations.put(TensorProviderKind.GPU, gpu);
@@ -553,6 +566,10 @@ public class AutoModelForCausaLm {
 
         public boolean isGpuPrefill() {
             return gpuPrefill;
+        }
+
+        public boolean isGpuDecode() {
+            return gpuDecode;
         }
 
         public ConfigurableTensorProvider getProvider() {

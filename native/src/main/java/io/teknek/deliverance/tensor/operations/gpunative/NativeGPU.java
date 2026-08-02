@@ -178,7 +178,41 @@ public class NativeGPU {
             }
             return (long)mh$.invokeExact(data, size);
         } catch (Throwable ex$) {
-           throw new AssertionError("should not reach here", ex$);
+            throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
+    private static class unregister_tensor {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
+            NativeGPU.C_LONG
+        );
+
+        public static final MemorySegment ADDR = NativeGPU.findOrThrow("unregister_tensor");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    public static FunctionDescriptor unregister_tensor$descriptor() {
+        return unregister_tensor.DESC;
+    }
+
+    public static MethodHandle unregister_tensor$handle() {
+        return unregister_tensor.HANDLE;
+    }
+
+    public static MemorySegment unregister_tensor$address() {
+        return unregister_tensor.ADDR;
+    }
+
+    public static void unregister_tensor(long id) {
+        var mh$ = unregister_tensor.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("unregister_tensor", id);
+            }
+            mh$.invokeExact(id);
+        } catch (Throwable ex$) {
+            throw new AssertionError("should not reach here", ex$);
         }
     }
 

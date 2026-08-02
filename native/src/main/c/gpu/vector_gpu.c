@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 
 #define UNUSED(x) (void)x;
 
@@ -13,6 +14,7 @@
 #define RN 8
 #define RN_M1 64
 #define MAX_SCRATCH_SIZE (1 << 24)
+#define MAX_REGISTERED_TENSORS 8192
 
 // Info for quantization
 #define Q8_BLOCK_SIZE 32
@@ -75,8 +77,8 @@ static void handle_request_device(WGPURequestDeviceStatus status, WGPUDevice dev
 
 
 typedef struct {
-    WGPUBuffer* R_staging_buffer;
-    size_t* R_size;
+    WGPUBuffer R_staging_buffer;
+    size_t R_size;
     bool* mappingComplete;
     float const ** buf;
 } QCallbackContext;
@@ -86,9 +88,8 @@ void buffer_map_callback(WGPUMapAsyncStatus status, WGPUStringView message, void
     QCallbackContext* cc = (QCallbackContext*)userdata1;
 
     if (status == WGPUMapAsyncStatus_Success) {
-        void const *buf = wgpuBufferGetConstMappedRange(*cc->R_staging_buffer, 0, *cc->R_size);
+        void const *buf = wgpuBufferGetConstMappedRange(cc->R_staging_buffer, 0, cc->R_size);
         assert(cc->R_staging_buffer != NULL);
-        assert(cc->R_size != NULL);
         assert(buf != NULL);
 
         *cc->buf = (float const *)buf;
@@ -111,7 +112,7 @@ void work_done_callback(WGPUQueueWorkDoneStatus status, void *userdata1, void *u
                         .callback = buffer_map_callback,
                         .userdata1 = cc};
 
-        wgpuBufferMapAsync(*cc->R_staging_buffer, WGPUMapMode_Read, 0, *cc->R_size, mapCallbackInfo);
+        wgpuBufferMapAsync(cc->R_staging_buffer, WGPUMapMode_Read, 0, cc->R_size, mapCallbackInfo);
     } else {
         fprintf(stderr, "Work done failed with status: %d\n", status);
         exit(4);
@@ -155,8 +156,11 @@ WGPUDevice device = NULL;
 WGPUQueue queue = NULL;
 uint32_t storageAlign = 0;
 
-WGPUBuffer tensor_lookup[8192];
+WGPUBuffer tensor_lookup[MAX_REGISTERED_TENSORS];
 int64_t tensor_lookup_idx = 0;
+int64_t tensor_free_list[MAX_REGISTERED_TENSORS];
+int64_t tensor_free_count = 0;
+pthread_mutex_t tensor_registry_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 Scratch scratch_lookup[8192];
 int64_t scratch_lookup_idx = 0;
@@ -286,7 +290,17 @@ void init_gpu(int64_t *results) {
     assert(queue != NULL);
 
 
+    pthread_mutex_lock(&tensor_registry_mutex);
+    for (int64_t i = 0; i < tensor_lookup_idx; i++) {
+        if (tensor_lookup[i] != NULL) {
+            wgpuBufferDestroy(tensor_lookup[i]);
+            wgpuBufferRelease(tensor_lookup[i]);
+            tensor_lookup[i] = NULL;
+        }
+    }
     tensor_lookup_idx = 0;
+    tensor_free_count = 0;
+    pthread_mutex_unlock(&tensor_registry_mutex);
     scratch_lookup_idx = 0;
     shader_lookup_idx = 0;
     shader_pipeline_lookup_idx = 0;
@@ -387,17 +401,69 @@ WGPUBuffer create_working_buffer(WGPUDevice device, char const *label, size_t si
 }
 
 int64_t register_tensor(const char *data, int size) {
-    WGPUBuffer buffer = create_buffer(device, (void *)data, size, WGPUBufferUsage_Storage);
+    WGPUBuffer buffer = create_buffer(device, (void *)data, size, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
 
     if (buffer == NULL) {
         return -1;
     }
 
-    tensor_lookup[tensor_lookup_idx] = buffer;
-    int64_t id = tensor_lookup_idx;
-    tensor_lookup_idx++;
+    pthread_mutex_lock(&tensor_registry_mutex);
+    int64_t id;
+    if (tensor_free_count > 0) {
+        id = tensor_free_list[--tensor_free_count];
+    } else if (tensor_lookup_idx < MAX_REGISTERED_TENSORS) {
+        id = tensor_lookup_idx++;
+    } else {
+        pthread_mutex_unlock(&tensor_registry_mutex);
+        fprintf(stderr, "GPU tensor registry exhausted: %lld/%d registered tensors. This indicates leaked/unreleased GPU tensors.\n",
+                (long long) tensor_lookup_idx, MAX_REGISTERED_TENSORS);
+        wgpuBufferDestroy(buffer);
+        wgpuBufferRelease(buffer);
+        return -1;
+    }
+    tensor_lookup[id] = buffer;
+    pthread_mutex_unlock(&tensor_registry_mutex);
 
     return id;
+}
+
+void unregister_tensor(int64_t id) {
+    if (id < 0) {
+        return;
+    }
+    pthread_mutex_lock(&tensor_registry_mutex);
+    if (id >= tensor_lookup_idx || tensor_lookup[id] == NULL) {
+        pthread_mutex_unlock(&tensor_registry_mutex);
+        return;
+    }
+    WGPUBuffer buffer = tensor_lookup[id];
+    tensor_lookup[id] = NULL;
+    if (tensor_free_count < MAX_REGISTERED_TENSORS) {
+        tensor_free_list[tensor_free_count++] = id;
+    }
+    pthread_mutex_unlock(&tensor_registry_mutex);
+
+    wgpuBufferDestroy(buffer);
+    wgpuBufferRelease(buffer);
+}
+
+WGPUBuffer lookup_tensor_addref(int64_t id) {
+    if (id < 0) {
+        return NULL;
+    }
+    pthread_mutex_lock(&tensor_registry_mutex);
+    WGPUBuffer buffer = id < tensor_lookup_idx ? tensor_lookup[id] : NULL;
+    if (buffer != NULL) {
+        wgpuBufferAddRef(buffer);
+    }
+    pthread_mutex_unlock(&tensor_registry_mutex);
+    return buffer;
+}
+
+void release_tensor(WGPUBuffer buffer) {
+    if (buffer != NULL) {
+        wgpuBufferRelease(buffer);
+    }
 }
 
 int64_t register_scratch_buffers( int params_size, int input_size, int result_size) {
@@ -498,10 +564,12 @@ void gpu_gemm(int64_t scratch_id, int64_t shader, const void *a, const void *a2,
     size_t A2_offset = a2 == NULL ? 0 : (aoffset * 4)/Q8_BLOCK_SIZE;
 
     size_t B_size = blimit - boffset;
-    WGPUBuffer B_buffer = tensor_lookup[bid];
+    WGPUBuffer B_buffer = lookup_tensor_addref(bid);
     assert(B_buffer);
 
-    WGPUBuffer B2_buffer = bid2 == -1 ? s.empty_buffer : tensor_lookup[bid2];
+    WGPUBuffer B2_registered_buffer = bid2 == -1 ? NULL : lookup_tensor_addref(bid2);
+    WGPUBuffer B2_buffer = bid2 == -1 ? s.empty_buffer : B2_registered_buffer;
+    assert(B2_buffer);
     // For Q4 the offsets are not in bytes, but in 4 byte chunks
     // So to get to the offset & size of scales array we double to get to bytes (Q4 -> u8) and multiply by 4 to the number of floats quantized
     size_t B2_size = bid2 == -1 ? 8 : (B_size * 2 * 4)/Q4_BLOCK_SIZE; // use bind size 8 in case of zero due to min bind size in windows
@@ -598,7 +666,7 @@ void gpu_gemm(int64_t scratch_id, int64_t shader, const void *a, const void *a2,
     // Wait for work to complete
     bool mappingComplete = false;
     float const *buf = NULL;
-    QCallbackContext context = {.mappingComplete = &mappingComplete, .R_size = &R_size, .R_staging_buffer = &R_staging_buffer, .buf = &buf};
+    QCallbackContext context = {.mappingComplete = &mappingComplete, .R_size = R_size, .R_staging_buffer = R_staging_buffer, .buf = &buf};
 
     WGPUQueueWorkDoneCallbackInfo workDoneCallbackInfo = {
           .mode = WGPUCallbackMode_AllowSpontaneous,
@@ -629,6 +697,9 @@ void gpu_gemm(int64_t scratch_id, int64_t shader, const void *a, const void *a2,
     wgpuCommandEncoderRelease(encoder); // release encoder after it's finished
 
     wgpuBindGroupRelease(bind_group);
+
+    release_tensor(B_buffer);
+    release_tensor(B2_registered_buffer);
 }
 
 void gpu_gemm_batch(int64_t scratch_id, int64_t shader, int batch_num, const void *a, const void *a2, int aoffset, int alimit, const int64_t *bid, const int64_t *bid2, int boffset, int blimit, float **r, int roffset, int rlimit, int m, int n0, int n, int k, int lda, int ldb, int ldc, int m1_optimized) {
@@ -674,10 +745,16 @@ void gpu_gemm_batch(int64_t scratch_id, int64_t shader, int batch_num, const voi
     wgpuComputePassEncoderSetPipeline(compute_pass, pipeline);
 
     WGPUBindGroup *bind_groups = calloc(batch_num, sizeof(WGPUBindGroup));
+    WGPUBuffer *borrowed_b_buffers = calloc(batch_num, sizeof(WGPUBuffer));
+    WGPUBuffer *borrowed_b2_buffers = calloc(batch_num, sizeof(WGPUBuffer));
     for (int i = 0; i < batch_num; i++) {
-        WGPUBuffer B_buffer = tensor_lookup[bid[i]];
+        WGPUBuffer B_buffer = lookup_tensor_addref(bid[i]);
         assert(B_buffer);
-        WGPUBuffer B2_buffer = bid2[i] == -1 ? s.empty_buffer : tensor_lookup[bid2[i]];
+        WGPUBuffer B2_registered_buffer = bid2[i] == -1 ? NULL : lookup_tensor_addref(bid2[i]);
+        WGPUBuffer B2_buffer = bid2[i] == -1 ? s.empty_buffer : B2_registered_buffer;
+        assert(B2_buffer);
+        borrowed_b_buffers[i] = B_buffer;
+        borrowed_b2_buffers[i] = B2_registered_buffer;
         size_t B2_size = bid2[i] == -1 ? 8 : (B_size * 2 * 4)/Q4_BLOCK_SIZE;
         size_t B2_offset = bid2[i] == -1 ? 0 : (boffset * 2 * 4)/Q4_BLOCK_SIZE;
 
@@ -696,7 +773,7 @@ void gpu_gemm_batch(int64_t scratch_id, int64_t shader, int batch_num, const voi
             { .binding = 1, .buffer = A2_buffer, .offset = 0, .size = A2_size },
             { .binding = 2, .buffer = B_buffer, .offset = alignedBOffset, .size = alignedBSize },
             { .binding = 3, .buffer = B2_buffer, .offset = alignedB2Offset, .size = alignedB2Size },
-            { .binding = 4, .buffer = R_buffer, .offset = 0, .size = R_size },
+            { .binding = 4, .buffer = R_buffer, .offset = R_size * i, .size = R_size },
             { .binding = 5, .buffer = s.params_buffer, .offset = 0, .size = sizeof(Params) },
         };
         bind_groups[i] = wgpuDeviceCreateBindGroup(device, &(WGPUBindGroupDescriptor){
@@ -712,10 +789,11 @@ void gpu_gemm_batch(int64_t scratch_id, int64_t shader, int batch_num, const voi
             workgroup_count_y = 1;
         }
         wgpuComputePassEncoderDispatchWorkgroups(compute_pass, workgroup_count_x, workgroup_count_y, 1);
-        wgpuCommandEncoderCopyBufferToBuffer(encoder, R_buffer, 0, R_staging_buffer, R_size * i, R_size);
     }
     wgpuComputePassEncoderEnd(compute_pass);
     wgpuComputePassEncoderRelease(compute_pass);
+
+    wgpuCommandEncoderCopyBufferToBuffer(encoder, R_buffer, 0, R_staging_buffer, 0, total_R_size);
 
     WGPUCommandBuffer command_buffer = wgpuCommandEncoderFinish(encoder, &(const WGPUCommandBufferDescriptor){
         .label = "batch_command_buffer",
@@ -724,7 +802,7 @@ void gpu_gemm_batch(int64_t scratch_id, int64_t shader, int batch_num, const voi
 
     bool mappingComplete = false;
     float const *buf = NULL;
-    QCallbackContext context = {.mappingComplete = &mappingComplete, .R_size = &total_R_size, .R_staging_buffer = &R_staging_buffer, .buf = &buf};
+    QCallbackContext context = {.mappingComplete = &mappingComplete, .R_size = total_R_size, .R_staging_buffer = R_staging_buffer, .buf = &buf};
     WGPUQueueWorkDoneCallbackInfo workDoneCallbackInfo = {
           .mode = WGPUCallbackMode_AllowSpontaneous,
           .callback = work_done_callback,
@@ -751,8 +829,12 @@ void gpu_gemm_batch(int64_t scratch_id, int64_t shader, int batch_num, const voi
     wgpuBufferUnmap(R_staging_buffer);
     for (int i = 0; i < batch_num; i++) {
         wgpuBindGroupRelease(bind_groups[i]);
+        release_tensor(borrowed_b_buffers[i]);
+        release_tensor(borrowed_b2_buffers[i]);
     }
     free(bind_groups);
+    free(borrowed_b_buffers);
+    free(borrowed_b2_buffers);
     wgpuCommandBufferRelease(command_buffer);
     wgpuCommandEncoderRelease(encoder);
 }

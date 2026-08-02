@@ -6,10 +6,12 @@ import com.google.common.base.Preconditions;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.InferenceProfiler;
+import io.teknek.deliverance.model.TensorProviderKind;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor.operations.TensorOperations;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -298,43 +300,7 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
                 }
 
                 if (!usePackedPrefill(batchSize)) {
-                    AbstractTensor[] kvp = kvMem.getKeyTensorsUptoPosition(layerIndex, position);
-                    AbstractTensor[] vvp = kvMem.getValTensorsUptoPosition(layerIndex, position);
-                    recordKvLayout(kvp, finalPosition + 1);
-                    // Attention
-                    try (Timer.Context ignoredScore = InferenceProfiler.timer(metricRegistry, "causalselfattention.score_value").time()) {
-                        VectorMath.pfor(0, numberOfHeads, h -> {
-                        int xoffset = Math.floorDiv(h, headGroupSize) * config.headSize;
-                        int yoffset = h * config.headSize;
-
-                        if (yoffset >= query.shape().last()) return;
-
-                        try (AbstractTensor attn = m.makeDenseTensor(1, kvp[0].shape().first() * kvp.length)) { // chunky so the cache isn't
-                            // thrashed
-                            // compute attention scores by multiplying query and key for every position
-                            // do this for each position since the pages are not contiguous
-                            for (int i = 0; i < kvp.length; i++) {
-                                int len = kvp[i].shape().first();
-                                int offset = i * len;
-                                int size = i == kvp.length - 1 ? (finalPosition + 1) - offset : len;
-                                configurableTensorProvider.get()
-                                        .batchDotProduct(attn, query, kvp[i], yoffset, xoffset, config.headSize, offset, 0, size);
-                            }
-
-                            // softmax the scores to get attention weights, from 0..pos inclusively
-                            scaledSoftmax(attn, finalPosition + 1, attentionScale, config.attnLogitSoftCapping);
-
-                            // apply adjusted attention weights to value vectors
-                            // do this for each position since the pages are not contiguous
-                            for (int i = 0; i < vvp.length; i++) {
-                                int len = vvp[i].shape().first(); // batch size
-                                int offset = i * len;
-                                int size = i == vvp.length - 1 ? (finalPosition + 1) - offset : len;
-                                configurableTensorProvider.get().saxpy(attn, vvp[i], value, xoffset, yoffset, config.headSize, offset, 0, size);
-                            }
-                        }
-                        }, m.getPool());
-                    }
+                    decodePagedAttention(query, value, kvMem, finalPosition);
                 }
             }
             if (usePackedPrefill(batchSize)) {
@@ -347,18 +313,19 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
             AbstractTensor result = m.makeDenseTensor(batchSize, config.embeddingLength);
             try (AbstractTensor vq = m.maybeQuantize(valueBatch)) {
                 try (Timer.Context ignoredOutput = InferenceProfiler.timer(metricRegistry, "causalselfattention.output_projection").time()) {
+                    io.teknek.deliverance.tensor.operations.TensorOperations outputOps =
+                            m.prefillProjectionOperations(vq, outputProjectionWeights, phase);
                     VectorMath.pchunk(0, config.embeddingLength, (chunkStart, chunkSize) -> {
-                    m.prefillProjectionOperations(vq, outputProjectionWeights, phase)
-                            .dotProductChunk(
-                                    result,
-                                    vq,
-                                    outputProjectionWeights,
+                    outputOps.dotProductChunk(
+                                     result,
+                                     vq,
+                                     outputProjectionWeights,
                                     0,
                                     attentionLength,
                                     chunkStart,
-                                    chunkSize
-                            );
-                    }, splitSize, m.getPool());
+                                     chunkSize
+                             );
+                    }, outputOps.parallelSplitSize(), m.getPool());
                 }
                 AbstractTensor reduced = m.getTensorParallelContext().enabled()
                         ? allReduceAttention(result)
@@ -429,6 +396,48 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
             closeAll(keyPages);
             closeAll(valuePages);
         }
+    }
+
+    private void decodePagedAttention(AbstractTensor query, AbstractTensor value, KvBufferCache.KvBuffer kvMem,
+            int finalPosition) {
+        InferenceProfiler.counter(metricRegistry, "causalselfattention.decode_paged_attention.calls").inc();
+        InferenceProfiler.counter(metricRegistry, "causalselfattention.decode_paged_attention.visible_rows")
+                .inc(finalPosition + 1L);
+        AbstractTensor[] keyPages = kvMem.getKeyTensorsUptoPosition(layerIndex, finalPosition);
+        AbstractTensor[] valuePages = kvMem.getValTensorsUptoPosition(layerIndex, finalPosition);
+        recordKvLayout(keyPages, finalPosition + 1);
+        try {
+            try (Timer.Context ignoredScore = InferenceProfiler.timer(metricRegistry, "causalselfattention.score_value").time();
+                 Timer.Context ignoredPackedScore = InferenceProfiler.timer(metricRegistry,
+                         "causalselfattention.decode_paged_attention").time()) {
+                TensorOperations decodeAttentionOps = decodeAttentionOperations(value, query, keyPages, valuePages,
+                        finalPosition + 1);
+                if (InferenceProfiler.isEnabled()) {
+                    InferenceProfiler.counter(metricRegistry, "causalselfattention.decode_paged_attention.provider_"
+                            + decodeAttentionOps.name().replace(' ', '_')).inc();
+                }
+                decodeAttentionOps.decodePagedAttention(value, query, keyPages, valuePages,
+                        finalPosition + 1, numberOfHeads, numberOfKeyValueHeads, config.headSize, attentionScale,
+                        config.attnLogitSoftCapping);
+            }
+        } finally {
+            closeAll(keyPages);
+            closeAll(valuePages);
+        }
+    }
+
+    private TensorOperations decodeAttentionOperations(AbstractTensor valueOut, AbstractTensor query,
+            AbstractTensor[] keyPages, AbstractTensor[] valuePages, int visibleRows) {
+        TensorOperations primary = configurableTensorProvider.get();
+        if (!m.isTensorProviderExplicit()) {
+            Optional<TensorOperations> gpu = m.tensorOperations(TensorProviderKind.GPU);
+            if (gpu.isPresent() && gpu.get().supportsDecodePagedAttention(valueOut, query, keyPages, valuePages,
+                    visibleRows, numberOfHeads, numberOfKeyValueHeads, config.headSize, attentionScale,
+                    config.attnLogitSoftCapping)) {
+                return gpu.get();
+            }
+        }
+        return primary;
     }
 
     private void recordKvLayout(AbstractTensor[] kvp, int visibleRows) {

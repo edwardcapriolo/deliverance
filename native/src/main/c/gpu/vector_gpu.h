@@ -9,6 +9,8 @@ void init_gpu(int64_t *results);
 //Returns a unique identifier for the tensor
 int64_t register_tensor(const char *data, int size);
 
+void unregister_tensor(int64_t id);
+
 int64_t register_scratch_buffers(int params_size, int input_size, int result_size);
 
 //Returns a unique identifier for the shader

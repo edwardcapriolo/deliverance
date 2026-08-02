@@ -7,6 +7,7 @@ import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelMlp;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensorlib.TensorPlan;
 
@@ -131,6 +132,10 @@ public class MLPBlock implements FeedForward {
                     model.getConfig().embeddingLength));
             return reduced;
         }
+        if (phase == ForwardPhase.DECODE && upProjectionWeights != null && fullyConnectedBias.isEmpty()
+                && model.getWorkingQType() != null) {
+            return tensorPlanDecodeMlp(lnemb, tensorReducer);
+        }
         try (
                 //TODO ensure its ok to use dirty here do we write the entire tensor
                 AbstractTensor buf = model.getTensorAllocator().getDirty(model.getWorkingDType(), TensorShape.of(batchSize, hiddenLength));
@@ -149,7 +154,7 @@ public class MLPBlock implements FeedForward {
                     }
                 }
                 io.teknek.deliverance.tensor.operations.TensorOperations projectionOps =
-                        model.prefillProjectionOperations(lnemb, fullyConnectedWeights, phase);
+                        projectionOperations(lnemb, fullyConnectedWeights, phase);
                 VectorMath.pchunk(0, hiddenLength, (chunkStart, chunkSize) -> {
                 if (upProjectionWeights != null) {
                     projectionOps
@@ -195,7 +200,7 @@ public class MLPBlock implements FeedForward {
                 AbstractTensor result = model.makeTensor(batchSize, model.getConfig().embeddingLength);
                 try (Timer.Context ignoredDown = InferenceProfiler.timer(model.getMetricRegistry(), "mlpblock.down_projection").time()) {
                     io.teknek.deliverance.tensor.operations.TensorOperations downOps =
-                            model.prefillProjectionOperations(bufq, projectionWeights, phase);
+                            projectionOperations(bufq, projectionWeights, phase);
                     VectorMath.pchunk(0, model.getConfig().embeddingLength, (chunkStart, chunkSize) -> {
                     downOps
                             .dotProductChunk(
@@ -219,15 +224,49 @@ public class MLPBlock implements FeedForward {
         }
     }
 
+    private AbstractTensor tensorPlanDecodeMlp(AbstractTensor lnemb, Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
+        if (InferenceProfiler.isEnabled()) {
+            InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock.tensorplan.decode_full_mlp").inc();
+            InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock.gate_input_" + lnemb.dType()).inc();
+            InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock.gate_weight_" + fullyConnectedWeights.dType()).inc();
+            InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock.up_weight_" + upProjectionWeights.dType()).inc();
+            InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock.down_input_" + model.getWorkingQType()).inc();
+            InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock.down_weight_" + projectionWeights.dType()).inc();
+        }
+        TensorPlan plan = TensorPlanSupport.plan(model, configurableTensorProvider.get());
+        AbstractTensor result = plan.input("input", lnemb)
+                .mlp(plan.immutable("gateWeight", fullyConnectedWeights),
+                        plan.immutable("upWeight", upProjectionWeights),
+                        plan.immutable("downWeight", projectionWeights),
+                        activationFunction,
+                        model.getWorkingQType())
+                .as("mlpOutput")
+                .materialize();
+        tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(result)));
+        projectionBias.ifPresent(bias -> configurableTensorProvider.get().accumulate(result, bias, 0,
+                model.getConfig().embeddingLength));
+        return result;
+    }
+
     private AbstractTensor downQuantize(AbstractTensor buf) {
         try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), "mlpblock.down_quantize").time()) {
             return model.maybeQuantize(buf);
         }
     }
 
+    private io.teknek.deliverance.tensor.operations.TensorOperations projectionOperations(AbstractTensor input,
+            AbstractTensor weight, ForwardPhase phase) {
+        io.teknek.deliverance.tensor.operations.TensorOperations operations =
+                model.prefillProjectionOperations(input, weight, phase);
+        return operations == null ? configurableTensorProvider.get() : operations;
+    }
+
     private AbstractTensor hiddenForDownProjection(AbstractTensor gate, AbstractTensor up, boolean fusedGateUp) {
         if (!fusedGateUp) {
             return downQuantize(gate);
+        }
+        if (model.getWorkingQType() == null) {
+            return activationMultiply(gate, up);
         }
         try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(),
                 "mlpblock.fused_activation_multiply_quantize").time()) {
@@ -240,6 +279,18 @@ public class MLPBlock implements FeedForward {
                     .as("hiddenQ")
                     .materialize();
         }
+    }
+
+    private AbstractTensor activationMultiply(AbstractTensor gate, AbstractTensor up) {
+        int hiddenLength = (int) gate.shape().last();
+        int batchSize = (int) gate.shape().first();
+        AbstractTensor hidden = new FloatBufferTensor(batchSize, hiddenLength);
+        IntStream.range(0, hiddenLength).parallel().forEach(i -> {
+            for (int row = 0; row < batchSize; row++) {
+                hidden.set(ActivationFunction.eval(activationFunction, gate.get(row, i)) * up.get(row, i), row, i);
+            }
+        });
+        return hidden;
     }
 
     private void registerTensorRuntimeCounters() {
