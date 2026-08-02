@@ -3,6 +3,7 @@ package io.teknek.deliverance.model;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
+import io.teknek.deliverance.tensorlib.TensorRuntimeMode;
 
 import java.io.File;
 import java.io.IOException;
@@ -23,6 +24,7 @@ public record AutoModelConfig(
         Optional<Boolean> gpuPrefill,
         Optional<Boolean> download,
         Optional<Integer> maxBatchSize,
+        Optional<TensorRuntimeMode> tensorRuntimeMode,
         Optional<KvBufferCache> kvBufferCache,
         Optional<QuantizeOnDemand> quantizeOnDemand) {
 
@@ -33,6 +35,7 @@ public record AutoModelConfig(
         gpuPrefill = gpuPrefill == null ? Optional.empty() : gpuPrefill;
         download = download == null ? Optional.empty() : download;
         maxBatchSize = maxBatchSize == null ? Optional.empty() : maxBatchSize;
+        tensorRuntimeMode = tensorRuntimeMode == null ? Optional.empty() : tensorRuntimeMode;
         kvBufferCache = kvBufferCache == null ? Optional.empty() : kvBufferCache;
         quantizeOnDemand = quantizeOnDemand == null ? Optional.empty() : quantizeOnDemand;
     }

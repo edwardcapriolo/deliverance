@@ -5,6 +5,7 @@ import com.google.common.primitives.Ints;
 
 import java.lang.foreign.MemorySegment;
 import java.util.Arrays;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.slf4j.Logger;
@@ -21,6 +22,7 @@ public abstract class AbstractTensor implements AutoCloseable, ReadableTensor {
     protected final AbstractTensor[] sliceCache;
     protected final int stride;
     protected volatile TensorAllocator originCache = null;
+    private volatile TensorLocality locality;
 
 
     protected AbstractTensor(DType dType, TensorShape shape, boolean cacheSlices) {
@@ -34,6 +36,18 @@ public abstract class AbstractTensor implements AutoCloseable, ReadableTensor {
 
     public String getUid() {
         return uid;
+    }
+
+    public Optional<TensorLocality> locality() {
+        return Optional.ofNullable(locality);
+    }
+
+    public void setLocality(TensorLocality locality) {
+        this.locality = locality;
+    }
+
+    public void clearLocality() {
+        this.locality = null;
     }
 
     public void setUid(String uid) {

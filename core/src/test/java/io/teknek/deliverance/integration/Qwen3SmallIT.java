@@ -1,5 +1,6 @@
 package io.teknek.deliverance.integration;
 
+import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
@@ -9,6 +10,7 @@ import io.teknek.deliverance.model.DoNothingGenerateEvent;
 import io.teknek.deliverance.model.GenerateEvent;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
+import io.teknek.deliverance.tensorlib.TensorRuntimeMode;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -25,7 +27,9 @@ public class Qwen3SmallIT {
     @Test
     public void qwen306BLoadsAndGeneratesShortAnswer() {
         ModelFetcher fetch = new ModelFetcher("Qwen", "Qwen3-0.6B");
-        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch).buildLocalTransformerModel()) {
+        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
+                .withTensorRuntimeMode(TensorRuntimeMode.ENFORCE)
+                .buildLocalTransformerModel()) {
             PromptContext prompt = model.promptSupport().orElseThrow().builder()
                     .addTemplateArgs(Map.of("enable_thinking", false))
                     .addUserMessage("What is 1 + 1? Answer with only the number.")
@@ -34,6 +38,7 @@ public class Qwen3SmallIT {
                     new GeneratorParameters().withTemperature(0.7f).withTopP(0.8f).withTopK(20.0f).withMaxTokens(8),
                     new DoNothingGenerateEvent());
             System.out.println("QWEN3_06B_SHORT=" + response.responseTextWithSpecialTokens.replace("\n", "\\n"));
+            printTensorRuntimeCounters(model.getMetricRegistry());
             assertFalse(response.responseTextWithSpecialTokens.isBlank());
         }
     }
@@ -130,5 +135,21 @@ public class Qwen3SmallIT {
             System.out.flush();
             System.out.printf("%n[%s token=%d elapsed=%.3fs]%n", label, next, timing);
         };
+    }
+
+    private static void printTensorRuntimeCounters(MetricRegistry metrics) {
+        printCounter(metrics, "tensorruntime.affinity.pinned");
+        printCounter(metrics, "tensorruntime.affinity.failed");
+        printCounter(metrics, "tensorruntime.affinity.unsupported");
+        printCounter(metrics, "tensorruntime.locality.local");
+        printCounter(metrics, "tensorruntime.locality.remote");
+        printCounter(metrics, "tensorruntime.locality.unknown");
+        printCounter(metrics, "tensorruntime.tasks.submitted");
+        printCounter(metrics, "tensorruntime.policy.applied");
+        printCounter(metrics, "tensorruntime.policy.not_applied");
+    }
+
+    private static void printCounter(MetricRegistry metrics, String name) {
+        System.out.printf("[tensor-runtime-counter] %s count=%d%n", name, metrics.counter(name).getCount());
     }
 }

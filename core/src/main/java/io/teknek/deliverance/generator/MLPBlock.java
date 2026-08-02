@@ -8,6 +8,9 @@ import io.teknek.deliverance.model.tensorparallel.TensorParallelMlp;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensorlib.TensorPlan;
+import io.teknek.deliverance.tensorlib.TensorRuntime;
+import io.teknek.deliverance.tensorlib.TensorRuntimeGlobal;
 
 import java.util.Collections;
 import java.util.List;
@@ -230,9 +233,29 @@ public class MLPBlock implements FeedForward {
         }
         try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(),
                 "mlpblock.fused_activation_multiply_quantize").time()) {
-            return configurableTensorProvider.get().activationMultiplyQuantize(gate, up, activationFunction,
-                    model.getWorkingQType(), 0, (int) gate.shape().last());
+            TensorRuntime runtime = TensorRuntimeGlobal.get(model.getMetricRegistry(), model.getTensorRuntimeMode(),
+                    model.getPool().getCoreCount());
+            registerTensorRuntimeCounters();
+            TensorPlan plan = new TensorPlan(configurableTensorProvider.get(), model.getPool(), model.getMetricRegistry(), runtime);
+            return plan.input("gate", gate)
+                    .activate(activationFunction)
+                    .multiply(plan.input("up", up))
+                    .quantize(model.getWorkingQType())
+                    .as("hiddenQ")
+                    .materialize();
         }
+    }
+
+    private void registerTensorRuntimeCounters() {
+        if (!InferenceProfiler.isEnabled()) {
+            return;
+        }
+        InferenceProfiler.counter(model.getMetricRegistry(), "tensorruntime.locality.local").inc(0);
+        InferenceProfiler.counter(model.getMetricRegistry(), "tensorruntime.locality.remote").inc(0);
+        InferenceProfiler.counter(model.getMetricRegistry(), "tensorruntime.locality.unknown").inc(0);
+        InferenceProfiler.counter(model.getMetricRegistry(), "tensorruntime.affinity.pinned").inc(0);
+        InferenceProfiler.counter(model.getMetricRegistry(), "tensorruntime.affinity.failed").inc(0);
+        InferenceProfiler.counter(model.getMetricRegistry(), "tensorruntime.affinity.unsupported").inc(0);
     }
 
     private boolean usesLocalTensorParallelShard(int hiddenLength) {

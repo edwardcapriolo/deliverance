@@ -7,6 +7,7 @@ import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensorlib.TensorPlan;
+import io.teknek.deliverance.tensorlib.TensorRuntimeGlobal;
 
 import java.util.Collections;
 import java.util.List;
@@ -85,7 +86,8 @@ public class VariableMLPBlock implements FeedForward {
                     .dotProductBatchChunk(batchResults, input, batchWeights, 0, model.getConfig().embeddingLength, chunkStart, chunkSize),
                     configurableTensorProvider.get().parallelSplitSize(), model.getPool());
 
-            TensorPlan plan = new TensorPlan(configurableTensorProvider.get(), model.getPool(), model.getMetricRegistry());
+            TensorPlan plan = new TensorPlan(configurableTensorProvider.get(), model.getPool(), model.getMetricRegistry(),
+                    TensorRuntimeGlobal.get(model.getMetricRegistry()));
             applyActivationSparsity(plan, gate, batchSize);
             model.getMetricRegistry().counter("variablemlpblock.tensorplan.intstream_activation_multiply").inc();
             plan.fuseColumnsIntStream("gate", gate.shape())

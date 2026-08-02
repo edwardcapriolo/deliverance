@@ -5,6 +5,7 @@ import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
+import io.teknek.deliverance.tensor.TensorLocality;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.operations.MachineSpec;
@@ -16,6 +17,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.concurrent.ForkJoinPool;
 
 public final class TensorPlanMlpReplayBenchmark {
@@ -27,43 +30,60 @@ public final class TensorPlanMlpReplayBenchmark {
         Files.createDirectories(options.output.getParent());
         Files.createDirectories(options.jsonOutput.getParent());
         MetricRegistry metrics = new MetricRegistry();
+        TensorRuntime runtime = options.runtimeMode == TensorRuntimeMode.DISABLED ? null
+                : new TensorRuntime(options.runtimeWorkers, options.runtimeMode, new FakeNative(), metrics);
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(new ForkJoinPool(options.poolSize));
              BufferedWriter csv = Files.newBufferedWriter(options.output);
              BufferedWriter json = Files.newBufferedWriter(options.jsonOutput)) {
             TensorOperations ops = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
                     new ArrayQueueTensorAllocator(metrics), pool);
-            csv.write("m,h,i,baseline_ms,plan_ms,speedup,max_abs,mean_abs\n");
+            csv.write("m,h,i,runtime_mode,baseline_ms,plan_ms,speedup,max_abs,mean_abs,local,remote,unknown\n");
             json.write("{\"cases\":[\n");
             List<String> jsonRows = new ArrayList<>();
             for (int m : options.mValues) {
-                Result result = runCase(ops, pool, m, options.hidden, options.intermediate, options.seed);
-                csv.write("%d,%d,%d,%.3f,%.3f,%.4f,%.8f,%.8f%n".formatted(m, options.hidden,
-                        options.intermediate, result.baselineMs, result.planMs, result.speedup(), result.maxAbs,
-                        result.meanAbs));
+                Result result = runCase(ops, pool, runtime, m, options.hidden, options.intermediate, options.seed,
+                        options.tensorNumaNode);
+                TensorRuntime.LocalitySnapshot snapshot = runtime == null
+                        ? new TensorRuntime.LocalitySnapshot(0, 0, 0, 0, 0)
+                        : runtime.snapshot();
+                csv.write("%d,%d,%d,%s,%.3f,%.3f,%.4f,%.8f,%.8f,%d,%d,%d%n".formatted(m,
+                        options.hidden, options.intermediate, options.runtimeMode, result.baselineMs, result.planMs,
+                        result.speedup(), result.maxAbs, result.meanAbs, snapshot.local(), snapshot.remote(),
+                        snapshot.unknown()));
                 jsonRows.add("{\"m\":" + m + ",\"hidden\":" + options.hidden + ",\"intermediate\":"
-                        + options.intermediate + ",\"baselineMs\":" + result.baselineMs + ",\"planMs\":"
-                        + result.planMs + ",\"speedup\":" + result.speedup() + ",\"maxAbs\":" + result.maxAbs
-                        + ",\"meanAbs\":" + result.meanAbs + ",\"plan\":" + quote(result.plan) + "}");
-                System.out.printf("TENSOR_PLAN_MLP_REPLAY m=%d h=%d i=%d baseline_ms=%.3f plan_ms=%.3f speedup=%.4f max_abs=%.8f mean_abs=%.8f first_diff=%s%n",
-                        m, options.hidden, options.intermediate, result.baselineMs, result.planMs, result.speedup(),
-                        result.maxAbs, result.meanAbs, result.firstDiff);
+                        + options.intermediate + ",\"runtimeMode\":\"" + options.runtimeMode
+                        + "\",\"baselineMs\":" + result.baselineMs + ",\"planMs\":" + result.planMs
+                        + ",\"speedup\":" + result.speedup() + ",\"maxAbs\":" + result.maxAbs
+                        + ",\"meanAbs\":" + result.meanAbs + ",\"local\":" + snapshot.local()
+                        + ",\"remote\":" + snapshot.remote() + ",\"unknown\":" + snapshot.unknown()
+                        + ",\"plan\":" + quote(result.plan) + "}");
+                System.out.printf("TENSOR_PLAN_MLP_REPLAY m=%d h=%d i=%d runtime_mode=%s baseline_ms=%.3f plan_ms=%.3f speedup=%.4f max_abs=%.8f mean_abs=%.8f first_diff=%s local=%d remote=%d unknown=%d%n",
+                        m, options.hidden, options.intermediate, options.runtimeMode, result.baselineMs,
+                        result.planMs, result.speedup(), result.maxAbs, result.meanAbs, result.firstDiff,
+                        snapshot.local(), snapshot.remote(), snapshot.unknown());
             }
             json.write(String.join(",\n", jsonRows));
             json.write("\n]}\n");
+        } finally {
+            if (runtime != null) {
+                runtime.close();
+            }
         }
     }
 
-    private static Result runCase(TensorOperations ops, WrappedForkJoinPool pool, int m, int h, int i, int seed) {
+    private static Result runCase(TensorOperations ops, WrappedForkJoinPool pool, TensorRuntime runtime, int m, int h,
+            int i, int seed, int tensorNumaNode) {
         try (AbstractTensor input = deterministic(m, h, seed);
              AbstractTensor gateW = deterministic(i, h, seed + 1);
              AbstractTensor upW = deterministic(i, h, seed + 2);
              AbstractTensor downW = deterministic(h, i, seed + 3)) {
+            attachLocality(input, tensorNumaNode);
 
             long start = System.nanoTime();
             AbstractTensor baseline = baseline(ops, input, gateW, upW, downW);
             double baselineMs = elapsedMs(start);
 
-            TensorPlan plan = new TensorPlan(ops, pool);
+            TensorPlan plan = new TensorPlan(ops, pool, null, runtime);
             TensorPlan.Tensor inputNode = plan.input("input", input);
             TensorPlan.ImmutableTensor gateWeight = plan.immutable("gateWeight", gateW);
             TensorPlan.ImmutableTensor upWeight = plan.immutable("upWeight", upW);
@@ -130,6 +150,11 @@ public final class TensorPlanMlpReplayBenchmark {
         return tensor;
     }
 
+    private static void attachLocality(AbstractTensor tensor, int numaNode) {
+        tensor.setLocality(new TensorLocality(tensor.getMemorySegment().address(), tensor.getMemorySegment().byteSize(),
+                numaNode, List.of(numaNode), System.currentTimeMillis(), "fake-replay"));
+    }
+
     private static void siluWrite(AbstractTensor input, AbstractTensor output, long offset, long length) {
         int cols = (int) input.shape().last();
         for (long index = offset; index < offset + length; index++) {
@@ -192,12 +217,15 @@ public final class TensorPlanMlpReplayBenchmark {
     private record Diff(float maxAbs, double meanAbs, String firstDiff) {
     }
 
-    private record Options(Path output, Path jsonOutput, int poolSize, int hidden, int intermediate, List<Integer> mValues,
-                           int seed) {
+    private record Options(Path output, Path jsonOutput, int poolSize, int runtimeWorkers, TensorRuntimeMode runtimeMode,
+                           int tensorNumaNode, int hidden, int intermediate, List<Integer> mValues, int seed) {
         static Options parse(String[] args) {
             Path output = Path.of("target/tensor-plan-mlp-replay.csv");
             Path jsonOutput = Path.of("target/tensor-plan-mlp-replay.json");
             int poolSize = Math.max(1, Runtime.getRuntime().availableProcessors() / 2);
+            int runtimeWorkers = poolSize;
+            TensorRuntimeMode runtimeMode = TensorRuntimeMode.DISABLED;
+            int tensorNumaNode = 1;
             int hidden = Integer.getInteger("deliverance.tensorplan.hidden", 512);
             int intermediate = Integer.getInteger("deliverance.tensorplan.intermediate", 1536);
             int seed = Integer.getInteger("deliverance.tensorplan.seed", 7);
@@ -207,6 +235,9 @@ public final class TensorPlanMlpReplayBenchmark {
                     case "--output" -> output = Path.of(args[++idx]);
                     case "--json-output" -> jsonOutput = Path.of(args[++idx]);
                     case "--pool-size" -> poolSize = Integer.parseInt(args[++idx]);
+                    case "--runtime-workers" -> runtimeWorkers = Integer.parseInt(args[++idx]);
+                    case "--runtime-mode" -> runtimeMode = TensorRuntimeMode.valueOf(args[++idx].trim().toUpperCase());
+                    case "--tensor-numa-node" -> tensorNumaNode = Integer.parseInt(args[++idx]);
                     case "--hidden" -> hidden = Integer.parseInt(args[++idx]);
                     case "--intermediate" -> intermediate = Integer.parseInt(args[++idx]);
                     case "--m-values" -> {
@@ -219,7 +250,45 @@ public final class TensorPlanMlpReplayBenchmark {
                     default -> throw new IllegalArgumentException("Unknown argument " + args[idx]);
                 }
             }
-            return new Options(output, jsonOutput, poolSize, hidden, intermediate, List.copyOf(mValues), seed);
+            return new Options(output, jsonOutput, poolSize, runtimeWorkers, runtimeMode, tensorNumaNode, hidden,
+                    intermediate, List.copyOf(mValues), seed);
+        }
+    }
+
+    private static final class FakeNative implements TensorRuntimeNative {
+        @Override
+        public boolean available() {
+            return true;
+        }
+
+        @Override
+        public String reason() {
+            return "fake two-node topology";
+        }
+
+        @Override
+        public Optional<TensorLocality> localityOf(AbstractTensor tensor) {
+            return tensor.locality();
+        }
+
+        @Override
+        public OptionalInt currentCpu() {
+            return OptionalInt.empty();
+        }
+
+        @Override
+        public OptionalInt currentNumaNode() {
+            return OptionalInt.empty();
+        }
+
+        @Override
+        public OptionalInt numaNodeOfCpu(int cpu) {
+            return OptionalInt.of(cpu % 2);
+        }
+
+        @Override
+        public boolean pinCurrentThread(int cpu) {
+            return true;
         }
     }
 }

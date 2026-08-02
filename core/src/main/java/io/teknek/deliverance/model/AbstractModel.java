@@ -42,6 +42,7 @@ import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensorlib.TensorRuntimeMode;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import jdk.incubator.vector.FloatVector;
 import org.slf4j.Logger;
@@ -183,6 +184,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     protected WrappedForkJoinPool pool;
     protected PreTrainedTokenizer preTrainedTokenizer;
     protected int maxBatchSize = DEFAULT_MAX_BATCH_SIZE;
+    private Optional<TensorRuntimeMode> tensorRuntimeMode = Optional.empty();
     private volatile Consumer<GenerationDebugEvent> generationDebugHook = event -> {};
     private volatile Consumer<LayerDebugEvent> layerDebugHook = event -> {};
 
@@ -980,6 +982,14 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public WrappedForkJoinPool getPool() {
         return pool;
+    }
+
+    public Optional<TensorRuntimeMode> getTensorRuntimeMode() {
+        return tensorRuntimeMode;
+    }
+
+    public void setTensorRuntimeMode(Optional<TensorRuntimeMode> tensorRuntimeMode) {
+        this.tensorRuntimeMode = Objects.requireNonNull(tensorRuntimeMode, "tensorRuntimeMode");
     }
 
 }
