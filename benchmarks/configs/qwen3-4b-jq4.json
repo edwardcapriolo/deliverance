@@ -1,6 +1,7 @@
 {
   "outputHeadQuantization": "Q4",
   "maxBatchSize": 512,
+  "tensorRuntimeMode": "ENFORCE",
   "kvBufferCache": {
     "maxEntries": 10000,
     "blockSize": 32,

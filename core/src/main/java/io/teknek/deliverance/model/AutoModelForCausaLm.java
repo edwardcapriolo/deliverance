@@ -21,6 +21,7 @@ import io.teknek.deliverance.tensor.operations.MachineSpec;
 import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
 import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensorlib.TensorRuntimeMode;
 import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
 import io.teknek.deliverance.toolcallparser.LlamaToolCallParser;
 import io.teknek.deliverance.toolcallparser.QwenToolCallParser;
@@ -96,6 +97,7 @@ public class AutoModelForCausaLm {
         private int maxBatchSize = AbstractModel.DEFAULT_MAX_BATCH_SIZE;
         private SketchesSettings sketchesSettings = SketchesSettings.DEFAULT;
         private boolean gpuPrefill;
+        private Optional<TensorRuntimeMode> tensorRuntimeMode = Optional.empty();
 
         record QuantizeOnDemand(DType targetType, String outputOwner, String outputModel) {
             QuantizeOnDemand {
@@ -228,6 +230,11 @@ public class AutoModelForCausaLm {
             return this;
         }
 
+        public Builder withTensorRuntimeMode(TensorRuntimeMode tensorRuntimeMode) {
+            this.tensorRuntimeMode = Optional.of(Objects.requireNonNull(tensorRuntimeMode, "tensorRuntimeMode"));
+            return this;
+        }
+
         /**
          * Loads a cached quantized target when it exists, otherwise quantizes the source model into
          * the local Deliverance cache and loads that generated target. Source download behavior is
@@ -261,6 +268,7 @@ public class AutoModelForCausaLm {
             config.gpuPrefill().ifPresent(this::withGpuPrefill);
             config.download().ifPresent(this::withDownload);
             config.maxBatchSize().ifPresent(this::withMaxBatchSize);
+            config.tensorRuntimeMode().ifPresent(this::withTensorRuntimeMode);
             config.kvBufferCache().map(AutoModelConfig.KvBufferCache::toSettings).ifPresent(this::withKvBufferCacheSettings);
             config.quantizeOnDemand().ifPresent(q -> withQuantizeOnDemand(q.targetType(), q.outputOwner(), q.outputModel()));
             return this;
@@ -392,6 +400,7 @@ public class AutoModelForCausaLm {
             model.setMaxBatchSize(maxBatchSize);
             model.setTensorProviderExplicit(tensorProviderExplicit);
             model.setGpuPrefillEnabled(gpuPrefill);
+            model.setTensorRuntimeMode(tensorRuntimeMode);
             if (!tensorProviderExplicit) {
                 model.addTensorOperations(hydrateTensorOperations());
             }

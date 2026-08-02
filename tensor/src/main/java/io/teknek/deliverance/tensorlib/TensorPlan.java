@@ -16,9 +16,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ForkJoinTask;
 import java.util.concurrent.ForkJoinPool;
 import java.util.stream.IntStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Small lazy tensor workflow for experimenting with logical tensor plans and local fusion rules.
@@ -27,18 +30,26 @@ import java.util.stream.IntStream;
  * build a logical graph and execute only when {@link Tensor#materialize()} is called.</p>
  */
 public final class TensorPlan {
+    private static final Logger LOGGER = LoggerFactory.getLogger(TensorPlan.class);
     private final TensorOperations operations;
     private final WrappedForkJoinPool pool;
     private final MetricRegistry metricRegistry;
+    private final TensorRuntime runtime;
 
     public TensorPlan(TensorOperations operations, WrappedForkJoinPool pool) {
         this(operations, pool, null);
     }
 
     public TensorPlan(TensorOperations operations, WrappedForkJoinPool pool, MetricRegistry metricRegistry) {
+        this(operations, pool, metricRegistry, null);
+    }
+
+    public TensorPlan(TensorOperations operations, WrappedForkJoinPool pool, MetricRegistry metricRegistry,
+            TensorRuntime runtime) {
         this.operations = Objects.requireNonNull(operations, "operations");
         this.pool = Objects.requireNonNull(pool, "pool");
         this.metricRegistry = metricRegistry;
+        this.runtime = runtime;
     }
 
     public Tensor input(AbstractTensor tensor) {
@@ -46,10 +57,12 @@ public final class TensorPlan {
     }
 
     public Tensor input(String name, AbstractTensor tensor) {
+        ensureLocality(tensor);
         return new Tensor(new InputNode(name, tensor, false));
     }
 
     public ImmutableTensor immutable(String name, AbstractTensor tensor) {
+        ensureLocality(tensor);
         return new ImmutableTensor(new InputNode(name, tensor, false));
     }
 
@@ -58,6 +71,7 @@ public final class TensorPlan {
     }
 
     public Tensor mutable(String name, AbstractTensor tensor) {
+        ensureLocality(tensor);
         return new Tensor(new InputNode(name, tensor, true));
     }
 
@@ -121,6 +135,9 @@ public final class TensorPlan {
         }
 
         public AbstractTensor materialize() {
+            if (LOGGER.isDebugEnabled()) {
+                LOGGER.debug("TensorPlan:\n{}", plan());
+            }
             return node.eval().tensor();
         }
 
@@ -353,8 +370,9 @@ public final class TensorPlan {
             Eval a = input.eval();
             Eval b = weight.eval();
             AbstractTensor result = new FloatBufferTensor((int) a.tensor().shape().first(), (int) b.tensor().shape().first());
-            operations.dotProductChunk(result, a.tensor(), b.tensor(), 0, (int) a.tensor().shape().last(), 0,
-                    (int) b.tensor().shape().first());
+            a.tensor().locality().ifPresent(result::setLocality);
+            run("tensorplan.batchDot", 0, Optional.of(a.tensor()), () -> operations.dotProductChunk(result, a.tensor(),
+                    b.tensor(), 0, (int) a.tensor().shape().last(), 0, (int) b.tensor().shape().first()));
             closeIfOwned(a);
             closeIfOwned(b);
             return new Eval(result, true, true);
@@ -441,7 +459,8 @@ public final class TensorPlan {
             Eval lhs = left.eval();
             Eval rhs = right.eval();
             AbstractTensor out = lhs.owned() || lhs.mutable() ? lhs.tensor() : copyOf(lhs.tensor());
-            operations.maccumulate(out, rhs.tensor(), 0, (int) out.shape().last());
+            run("tensorplan.multiply", 0, Optional.of(lhs.tensor()), () -> operations.maccumulate(out, rhs.tensor(), 0,
+                    (int) out.shape().last()));
             closeIfOwned(rhs);
             return new Eval(out, lhs.owned(), lhs.mutable());
         }
@@ -483,7 +502,8 @@ public final class TensorPlan {
             Eval lhs = left.eval();
             Eval rhs = right.eval();
             AbstractTensor out = lhs.owned() || lhs.mutable() ? lhs.tensor() : copyOf(lhs.tensor());
-            operations.accumulate(out, rhs.tensor(), 0, (int) out.shape().last());
+            run("tensorplan.add", 0, Optional.of(out), () -> operations.accumulate(out, rhs.tensor(), 0,
+                    (int) out.shape().last()));
             closeIfOwned(rhs);
             return new Eval(out, lhs.owned(), lhs.mutable());
         }
@@ -520,7 +540,8 @@ public final class TensorPlan {
         public Eval eval() {
             Eval in = input.eval();
             AbstractTensor out = in.owned() || in.mutable() ? in.tensor() : copyOf(in.tensor());
-            operations.scale(factor, out, 0, (int) out.shape().last());
+            run("tensorplan.scale", 0, Optional.of(out), () -> operations.scale(factor, out, 0,
+                    (int) out.shape().last()));
             return new Eval(out, in.owned(), in.mutable());
         }
 
@@ -552,8 +573,24 @@ public final class TensorPlan {
 
         @Override
         public Eval eval() {
+            if (input instanceof MultiplyNode multiplyNode && multiplyNode.left instanceof ActivationNode activationNode) {
+                Eval base = activationNode.input.eval();
+                Eval rhs = multiplyNode.right.eval();
+                final AbstractTensor[] result = new AbstractTensor[1];
+                run("tensorplan.activation_multiply_quantize", 0, Optional.of(base.tensor()),
+                        () -> result[0] = operations.activationMultiplyQuantize(base.tensor(), rhs.tensor(),
+                                activationNode.activation, dtype, 0, (int) base.tensor().shape().last()));
+                base.tensor().locality().ifPresent(result[0]::setLocality);
+                closeIfOwned(base);
+                closeIfOwned(rhs);
+                return new Eval(result[0], true, true);
+            }
             Eval in = input.eval();
-            AbstractTensor out = operations.quantize(in.tensor(), dtype, 0, (int) in.tensor().shape().last());
+            final AbstractTensor[] result = new AbstractTensor[1];
+            run("tensorplan.quantize", 0, Optional.of(in.tensor()), () -> result[0] = operations.quantize(in.tensor(),
+                    dtype, 0, (int) in.tensor().shape().last()));
+            AbstractTensor out = result[0];
+            in.tensor().locality().ifPresent(out::setLocality);
             closeIfOwned(in);
             return new Eval(out, true, true);
         }
@@ -604,6 +641,9 @@ public final class TensorPlan {
             }
             Eval outputEval = outputInputName == null ? null : evals.get(outputInputName);
             AbstractTensor output = outputEval == null ? new FloatBufferTensor(shape) : outputEval.tensor();
+            if (outputEval == null) {
+                tensors.values().stream().findFirst().flatMap(AbstractTensor::locality).ifPresent(output::setLocality);
+            }
             tensors.put(name, output);
             FusedContext context = new FusedContext(tensors);
             if (execution == FusedExecution.INT_STREAM_COLUMNS) {
@@ -623,6 +663,16 @@ public final class TensorPlan {
         private void executeFixedPoolLinear(FusedContext context) {
             long length = shape.size();
             List<TensorSplit> splits = TensorLib.calculateTSplits(0, length, Math.max(1, pool.getCoreCount()));
+            if (runtime != null) {
+                List<CompletableFuture<Void>> tasks = new ArrayList<>();
+                int chunk = 0;
+                for (TensorSplit split : splits) {
+                    tasks.add(runtime.submit("tensorplan.fuse.linear", chunk++, representativeTensor(context),
+                            () -> runSteps(context, split.offset, split.length)));
+                }
+                tasks.forEach(CompletableFuture::join);
+                return;
+            }
             List<ForkJoinTask<?>> tasks = new ArrayList<>();
             for (TensorSplit split : splits) {
                 tasks.add(pool.getUnderlying().submit(() -> runSteps(context, split.offset, split.length)));
@@ -632,12 +682,39 @@ public final class TensorPlan {
 
         private void executeIntStreamColumns(FusedContext context) {
             int columns = (int) shape.last();
+            if (runtime != null) {
+                List<CompletableFuture<Void>> tasks = new ArrayList<>();
+                for (int column = 0; column < columns; column++) {
+                    int chunk = column;
+                    tasks.add(runtime.submit("tensorplan.fuse.columns", chunk, representativeTensor(context),
+                            () -> runSteps(context, chunk, 1)));
+                }
+                tasks.forEach(CompletableFuture::join);
+                return;
+            }
             IntStream.range(0, columns).parallel().forEach(column -> runSteps(context, column, 1));
         }
 
         private void executeIntStreamRows(FusedContext context) {
             int rows = (int) shape.first();
+            if (runtime != null) {
+                List<CompletableFuture<Void>> tasks = new ArrayList<>();
+                for (int row = 0; row < rows; row++) {
+                    int chunk = row;
+                    tasks.add(runtime.submit("tensorplan.fuse.rows", chunk, representativeTensor(context),
+                            () -> runSteps(context, chunk, 1)));
+                }
+                tasks.forEach(CompletableFuture::join);
+                return;
+            }
             IntStream.range(0, rows).parallel().forEach(row -> runSteps(context, row, 1));
+        }
+
+        private Optional<AbstractTensor> representativeTensor(FusedContext context) {
+            if (outputInputName != null) {
+                return Optional.ofNullable(context.tensors.get(outputInputName));
+            }
+            return context.tensors.values().stream().findFirst();
         }
 
         private void runSteps(FusedContext context, long offset, long length) {
@@ -708,6 +785,7 @@ public final class TensorPlan {
     private static AbstractTensor copyOf(AbstractTensor tensor) {
         FloatBufferTensor copy = new FloatBufferTensor(tensor.shape());
         copy.copyFrom(tensor, 0, 0, (int) tensor.size());
+        tensor.locality().ifPresent(copy::setLocality);
         return copy;
     }
 
@@ -730,6 +808,22 @@ public final class TensorPlan {
         int cols = (int) tensor.shape().last();
         long length = (long) rows * cols;
         List<TensorSplit> splits = TensorLib.calculateTSplits(0, length, Math.max(1, pool.getCoreCount()));
+        if (runtime != null) {
+            List<CompletableFuture<Void>> tasks = new ArrayList<>();
+            int chunk = 0;
+            for (TensorSplit split : splits) {
+                tasks.add(runtime.submit("tensorplan.foreach", chunk++, Optional.of(tensor), () -> {
+                    long end = split.offset + split.length;
+                    for (long index = split.offset; index < end; index++) {
+                        int row = (int) (index / cols);
+                        int col = (int) (index % cols);
+                        consumer.accept(row, col);
+                    }
+                }));
+            }
+            tasks.forEach(CompletableFuture::join);
+            return;
+        }
         List<ForkJoinTask<?>> tasks = new ArrayList<>();
         for (TensorSplit split : splits) {
             tasks.add(pool.getUnderlying().submit(() -> {
@@ -747,5 +841,19 @@ public final class TensorPlan {
     @FunctionalInterface
     private interface ElementConsumer {
         void accept(int row, int col);
+    }
+
+    private void run(String operation, int chunkId, Optional<AbstractTensor> tensor, Runnable action) {
+        if (runtime == null) {
+            action.run();
+            return;
+        }
+        runtime.runAndWait(operation, chunkId, tensor, action);
+    }
+
+    private void ensureLocality(AbstractTensor tensor) {
+        if (runtime != null && tensor.locality().isEmpty()) {
+            runtime.ensureLocality(tensor);
+        }
     }
 }

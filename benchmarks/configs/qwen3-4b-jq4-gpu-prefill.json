@@ -4,6 +4,7 @@
   "outputHeadQuantization": "Q4",
   "gpuPrefill": true,
   "maxBatchSize": 512,
+  "tensorRuntimeMode": "ENFORCE",
   "kvBufferCache": {
     "maxEntries": 0,
     "maxPrefixTokensPerPrompt": 0,
