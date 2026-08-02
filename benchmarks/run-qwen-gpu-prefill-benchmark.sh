@@ -9,6 +9,7 @@ else
 fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+BENCHMARK_ROOT="$SCRIPT_DIR" BENCHMARK_SCRIPT_NAME="$(basename "$0" .sh)" . "$SCRIPT_DIR/benchmarks/benchmark-run-dir.sh"
 OS_NAME=$(uname -s)
 OS_ARCH=$(uname -m)
 case "$OS_NAME:$OS_ARCH" in
@@ -33,5 +34,5 @@ cd "$SCRIPT_DIR"
 mvn -q -pl core \
   -Dexec.classpathScope=test \
   -Dexec.executable="$JAVA_BIN" \
-  -Dexec.args="-Djava.library.path=$NATIVE_LIB_DIR --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.deliverance.benchmark.InferenceBenchmark --engine deliverance --owner edwardcapriolo --model Qwen3-0.6B-JQ4 --model-config $MODEL_CONFIG ${DELIVERANCE_BENCHMARK_ARGS:---pool-size 16 --max-tokens 64 --warmup-cases 0 --max-cases 1 --profile-stages --output target/qwen-gpu-prefill-benchmark.csv --jsonl-output target/qwen-gpu-prefill-benchmark.jsonl}" \
+  -Dexec.args="-Djava.library.path=$NATIVE_LIB_DIR --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.deliverance.benchmark.InferenceBenchmark --engine deliverance --owner edwardcapriolo --model Qwen3-0.6B-JQ4 --model-config $MODEL_CONFIG ${DELIVERANCE_BENCHMARK_ARGS:---pool-size 16 --max-tokens 64 --warmup-cases 0 --max-cases 1 --profile-stages --output $BENCHMARK_RUN_DIR/qwen-gpu-prefill-benchmark.csv --jsonl-output $BENCHMARK_RUN_DIR/qwen-gpu-prefill-benchmark.jsonl}" \
   org.codehaus.mojo:exec-maven-plugin:3.5.0:exec

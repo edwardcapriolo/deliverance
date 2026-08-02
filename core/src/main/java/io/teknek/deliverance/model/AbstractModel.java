@@ -984,6 +984,10 @@ public abstract class AbstractModel implements Generator, Classifier {
         return pool;
     }
 
+    public ConfigurableTensorProvider getConfigurableTensorProvider() {
+        return configurableTensorProvider;
+    }
+
     public Optional<TensorRuntimeMode> getTensorRuntimeMode() {
         return tensorRuntimeMode;
     }

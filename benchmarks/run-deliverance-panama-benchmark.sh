@@ -9,6 +9,7 @@ else
 fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+BENCHMARK_ROOT="$SCRIPT_DIR" BENCHMARK_SCRIPT_NAME="$(basename "$0" .sh)" . "$SCRIPT_DIR/benchmarks/benchmark-run-dir.sh"
 
 cd "$SCRIPT_DIR"
 
@@ -17,8 +18,8 @@ DEFAULT_BENCHMARK_ARGS="\
 --max-tokens 256 \
 --warmup-cases 0 \
 --profile-stages \
---output target/deliverance-panama-benchmark.csv \
---jsonl-output target/deliverance-panama-benchmark.jsonl"
+--output $BENCHMARK_RUN_DIR/deliverance-panama-benchmark.csv \
+--jsonl-output $BENCHMARK_RUN_DIR/deliverance-panama-benchmark.jsonl"
 
 EXEC_ARGS="\
 --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http \

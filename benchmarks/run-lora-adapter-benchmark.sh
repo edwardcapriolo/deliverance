@@ -10,6 +10,7 @@ fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+BENCHMARK_ROOT="$ROOT_DIR" BENCHMARK_SCRIPT_NAME="$(basename "$0" .sh)" . "$ROOT_DIR/benchmarks/benchmark-run-dir.sh"
 OS_NAME=$(uname -s)
 OS_ARCH=$(uname -m)
 case "$OS_NAME:$OS_ARCH" in
@@ -22,8 +23,8 @@ esac
 
 NATIVE_CLASSIFIER=${DELIVERANCE_NATIVE_CLASSIFIER:-$NATIVE_CLASSIFIER}
 NATIVE_LIB_DIR="$ROOT_DIR/native/target/native-lib-only/$NATIVE_CLASSIFIER"
-OUTPUT=${DELIVERANCE_LORA_BENCHMARK_OUTPUT:-"$ROOT_DIR/core/target/lora-adapter-benchmark.csv"}
-JSONL_OUTPUT=${DELIVERANCE_LORA_BENCHMARK_JSONL_OUTPUT:-"$ROOT_DIR/core/target/lora-adapter-benchmark.jsonl"}
+OUTPUT=${DELIVERANCE_LORA_BENCHMARK_OUTPUT:-"$BENCHMARK_RUN_DIR/lora-adapter-benchmark.csv"}
+JSONL_OUTPUT=${DELIVERANCE_LORA_BENCHMARK_JSONL_OUTPUT:-"$BENCHMARK_RUN_DIR/lora-adapter-benchmark.jsonl"}
 BENCHMARK_ARGS=${DELIVERANCE_BENCHMARK_ARGS:-"--owner unsloth --model Llama-3.2-1B-Instruct --adapter-owner bunnycore --adapter-model Llama-3.2-1b-chatml-lora_model --output $OUTPUT --jsonl-output $JSONL_OUTPUT --max-tokens 128 --profile-stages"}
 
 cd "$ROOT_DIR"

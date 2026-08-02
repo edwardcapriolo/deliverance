@@ -31,10 +31,16 @@ import org.slf4j.LoggerFactory;
  */
 public final class TensorPlan {
     private static final Logger LOGGER = LoggerFactory.getLogger(TensorPlan.class);
+    public enum RunMode {
+        DEFAULT,
+        CALLER_THREAD
+    }
+
     private final TensorOperations operations;
     private final WrappedForkJoinPool pool;
     private final MetricRegistry metricRegistry;
     private final TensorRuntime runtime;
+    private RunMode runMode = RunMode.DEFAULT;
 
     public TensorPlan(TensorOperations operations, WrappedForkJoinPool pool) {
         this(operations, pool, null);
@@ -85,6 +91,11 @@ public final class TensorPlan {
 
     public FusedBuilder fuseRowsIntStream(String name, TensorShape shape) {
         return new FusedBuilder(name, shape, FusedExecution.INT_STREAM_ROWS);
+    }
+
+    public TensorPlan forcedRunMode(RunMode runMode) {
+        this.runMode = Objects.requireNonNull(runMode, "runMode");
+        return this;
     }
 
     public final class Tensor {
@@ -663,7 +674,7 @@ public final class TensorPlan {
         private void executeFixedPoolLinear(FusedContext context) {
             long length = shape.size();
             List<TensorSplit> splits = TensorLib.calculateTSplits(0, length, Math.max(1, pool.getCoreCount()));
-            if (runtime != null) {
+            if (useTensorRuntime()) {
                 List<CompletableFuture<Void>> tasks = new ArrayList<>();
                 int chunk = 0;
                 for (TensorSplit split : splits) {
@@ -682,7 +693,7 @@ public final class TensorPlan {
 
         private void executeIntStreamColumns(FusedContext context) {
             int columns = (int) shape.last();
-            if (runtime != null) {
+            if (useTensorRuntime()) {
                 List<CompletableFuture<Void>> tasks = new ArrayList<>();
                 for (int column = 0; column < columns; column++) {
                     int chunk = column;
@@ -697,7 +708,7 @@ public final class TensorPlan {
 
         private void executeIntStreamRows(FusedContext context) {
             int rows = (int) shape.first();
-            if (runtime != null) {
+            if (useTensorRuntime()) {
                 List<CompletableFuture<Void>> tasks = new ArrayList<>();
                 for (int row = 0; row < rows; row++) {
                     int chunk = row;
@@ -808,7 +819,7 @@ public final class TensorPlan {
         int cols = (int) tensor.shape().last();
         long length = (long) rows * cols;
         List<TensorSplit> splits = TensorLib.calculateTSplits(0, length, Math.max(1, pool.getCoreCount()));
-        if (runtime != null) {
+        if (useTensorRuntime()) {
             List<CompletableFuture<Void>> tasks = new ArrayList<>();
             int chunk = 0;
             for (TensorSplit split : splits) {
@@ -848,12 +859,20 @@ public final class TensorPlan {
             action.run();
             return;
         }
+        if (!useTensorRuntime()) {
+            action.run();
+            return;
+        }
         runtime.runAndWait(operation, chunkId, tensor, action);
     }
 
     private void ensureLocality(AbstractTensor tensor) {
-        if (runtime != null && tensor.locality().isEmpty()) {
+        if (useTensorRuntime() && tensor.locality().isEmpty()) {
             runtime.ensureLocality(tensor);
         }
+    }
+
+    private boolean useTensorRuntime() {
+        return runtime != null && runMode != RunMode.CALLER_THREAD;
     }
 }

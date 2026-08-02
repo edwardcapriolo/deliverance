@@ -10,6 +10,7 @@ fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+BENCHMARK_ROOT="$ROOT_DIR" BENCHMARK_SCRIPT_NAME="$(basename "$0" .sh)" . "$ROOT_DIR/benchmarks/benchmark-run-dir.sh"
 OS_NAME=$(uname -s)
 OS_ARCH=$(uname -m)
 case "$OS_NAME:$OS_ARCH" in
@@ -23,7 +24,7 @@ esac
 NATIVE_CLASSIFIER=${DELIVERANCE_NATIVE_CLASSIFIER:-$NATIVE_CLASSIFIER}
 NATIVE_LIB_DIR="$ROOT_DIR/native/target/native-lib-only/$NATIVE_CLASSIFIER"
 MODEL_CONFIG=${MODEL_CONFIG:-"$ROOT_DIR/benchmarks/configs/qwen3-4b-jq4.json"}
-OUTPUT=${DELIVERANCE_THINKING_SMOKE_OUTPUT:-"$ROOT_DIR/core/target/thinking-smoke-qwen3-4b-jq4.jsonl"}
+OUTPUT=${DELIVERANCE_THINKING_SMOKE_OUTPUT:-"$BENCHMARK_RUN_DIR/thinking-smoke-qwen3-4b-jq4.jsonl"}
 
 cd "$ROOT_DIR"
 

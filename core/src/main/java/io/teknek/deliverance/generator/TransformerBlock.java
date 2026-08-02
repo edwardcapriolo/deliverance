@@ -10,6 +10,7 @@ import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensorlib.TensorPlan;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -171,11 +172,7 @@ public class TransformerBlock {
             postAttention = attention.forward(qlnemb, position, kvBuffer, tensorReducer, phase);
         }
         AbstractTensor lnattn = maybeApplyNorm(postAttention, postAttentionNorm);
-        // residual connection
-        if (model.getConfig().residualMultiplier != null) {
-            configurableTensorProvider.get().scale(model.getConfig().residualMultiplier, lnattn, 0, model.getConfig().embeddingLength);
-        }
-        configurableTensorProvider.get().accumulate(lnattn, embedding, 0, model.getConfig().embeddingLength);
+        applyResidual(lnattn, embedding, "post_attention_residual");
         model.emitLayerDebug(layerIndex, "post_attention_residual", lnattn);
 
         AbstractTensor lnpreFF = preFFNorm.map(ln -> ln.forward(lnattn)).orElse(lnattn);
@@ -186,11 +183,7 @@ public class TransformerBlock {
 
         AbstractTensor lnpostFF = maybeApplyNorm(postFF, postFFNorm);
 
-        // residual connection
-        if (model.getConfig().residualMultiplier != null) {
-            configurableTensorProvider.get().scale(model.getConfig().residualMultiplier, lnpostFF, 0, model.getConfig().embeddingLength);
-        }
-        configurableTensorProvider.get().accumulate(lnpostFF, lnattn, 0, model.getConfig().embeddingLength);
+        applyResidual(lnpostFF, lnattn, "post_ff_residual");
         model.emitLayerDebug(layerIndex, "post_ff_residual", lnpostFF);
 
         // Release any tmp buffers (embedding is released by caller)
@@ -216,5 +209,32 @@ public class TransformerBlock {
             tensor.close();
             return o;
         }).orElse(tensor);
+    }
+
+    private void applyResidual(AbstractTensor target, AbstractTensor residual, String name) {
+        TensorPlan plan = TensorPlanSupport.plan(model, configurableTensorProvider.get());
+        plan.fuse(name, target.shape())
+                .write("target", plan.mutable("target", target))
+                .read("residual", plan.input("residual", residual))
+                .map(name + " = residual(target, residual)", TensorPlan.TensorOp.CUSTOM,
+                        (ctx, offset, length) -> applyResidualRange(ctx.tensor("target"), ctx.tensor("residual"),
+                                model.getConfig().residualMultiplier, offset, length))
+                .tensor()
+                .materialize();
+    }
+
+    static void applyResidualRange(AbstractTensor target, AbstractTensor residual, Float multiplier, long offset,
+            long length) {
+        int columns = (int) target.shape().last();
+        long end = offset + length;
+        for (long index = offset; index < end; index++) {
+            int row = (int) (index / columns);
+            int column = (int) (index % columns);
+            float value = target.get(row, column);
+            if (multiplier != null) {
+                value *= multiplier;
+            }
+            target.set(value + residual.get(row, column), row, column);
+        }
     }
 }

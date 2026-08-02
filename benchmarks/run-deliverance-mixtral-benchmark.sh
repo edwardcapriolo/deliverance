@@ -9,6 +9,7 @@ else
 fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+BENCHMARK_ROOT="$SCRIPT_DIR" BENCHMARK_SCRIPT_NAME="$(basename "$0" .sh)" . "$SCRIPT_DIR/benchmarks/benchmark-run-dir.sh"
 OS_NAME=$(uname -s)
 OS_ARCH=$(uname -m)
 case "$OS_NAME:$OS_ARCH" in
@@ -34,8 +35,8 @@ DEFAULT_BENCHMARK_ARGS="\
 --max-tokens 128 \
 --warmup-cases 0 \
 --profile-stages \
---output target/deliverance-mixtral-benchmark.csv \
---jsonl-output target/deliverance-mixtral-benchmark.jsonl"
+--output $BENCHMARK_RUN_DIR/deliverance-mixtral-benchmark.csv \
+--jsonl-output $BENCHMARK_RUN_DIR/deliverance-mixtral-benchmark.jsonl"
 
 EXEC_ARGS="\
 -Djava.library.path=$NATIVE_LIB_DIR \
