@@ -33,6 +33,7 @@ public class Qwen3SmallIT {
         ModelFetcher fetch = new ModelFetcher("Qwen", "Qwen3-0.6B");
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
                 .withTensorRuntimeMode(TensorRuntimeMode.ENFORCE)
+                .withGpuDecodeAttention(true)
                 .buildLocalTransformerModel()) {
             PromptContext prompt = model.promptSupport().orElseThrow().builder()
                     .addTemplateArgs(Map.of("enable_thinking", false))
@@ -48,7 +49,7 @@ public class Qwen3SmallIT {
     }
 
     @Test
-    public void qwen306BLoadsAndGeneratesShortAnswerWithGpuDecodeAttention() {
+    public void qwen306BGpuDecodeAttentionShort() {
         boolean previousProfiling = InferenceProfiler.isEnabled();
         InferenceProfiler.setEnabled(true);
         InferenceProfiler.reset();
@@ -81,13 +82,14 @@ public class Qwen3SmallIT {
     }
 
     @Test
-    public void qwen34BJq4LoadsAndGeneratesShortAnswerWithGpuDecodeAttention() {
+    public void qwen34BJq4GpuDecodeAttentionShort() {
         boolean previousProfiling = InferenceProfiler.isEnabled();
         InferenceProfiler.setEnabled(true);
         InferenceProfiler.reset();
         ModelFetcher fetch = new ModelFetcher("edwardcapriolo", "Qwen3-4B-JQ4");
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
                 .withTensorRuntimeMode(TensorRuntimeMode.ENFORCE)
+                .withGpuDecodeAttention(true)
                 .buildLocalTransformerModel()) {
             assertTrue(model.tensorOperations(TensorProviderKind.GPU).isPresent(),
                     "GPU tensor operations must be available for this integration test");
@@ -114,13 +116,14 @@ public class Qwen3SmallIT {
     }
 
     @Test
-    public void qwen34BJq4LongGenerationWithGpuDecodeAttention() {
+    public void qwen34BJq4GpuDecodeAttentionLong() {
         boolean previousProfiling = InferenceProfiler.isEnabled();
         InferenceProfiler.setEnabled(true);
         InferenceProfiler.reset();
         ModelFetcher fetch = new ModelFetcher("edwardcapriolo", "Qwen3-4B-JQ4");
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
                 .withTensorRuntimeMode(TensorRuntimeMode.ENFORCE)
+                .withGpuDecodeAttention(true)
                 .buildLocalTransformerModel()) {
             assertTrue(model.tensorOperations(TensorProviderKind.GPU).isPresent(),
                     "GPU tensor operations must be available for this integration test");
@@ -137,7 +140,7 @@ public class Qwen3SmallIT {
                     new GenerateEvent() {
                         @Override
                         public void emit(int next, String nextRaw, String nextCleaned, float timing) {
-                            System.out.println(k.getAndIncrement() + nextRaw);
+                            System.out.println(k.getAndIncrement() +" "+ nextRaw+" "+System.currentTimeMillis());
                         }
                     });
             System.out.println("QWEN3_4B_JQ4_LONG_GPU_DECODE_ATTENTION="

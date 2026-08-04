@@ -174,6 +174,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     private boolean tensorProviderExplicit;
     private boolean gpuPrefillEnabled;
     private boolean gpuDecodeEnabled;
+    private boolean gpuDecodeAttentionEnabled;
     private GossipParallelMembership gossipParallelMembership;
 
     //embedding
@@ -339,12 +340,20 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.gpuDecodeEnabled = gpuDecodeEnabled;
     }
 
+    void setGpuDecodeAttentionEnabled(boolean gpuDecodeAttentionEnabled) {
+        this.gpuDecodeAttentionEnabled = gpuDecodeAttentionEnabled;
+    }
+
     public boolean isGpuPrefillEnabled() {
         return gpuPrefillEnabled;
     }
 
     public boolean isGpuDecodeEnabled() {
         return gpuDecodeEnabled;
+    }
+
+    public boolean isGpuDecodeAttentionEnabled() {
+        return gpuDecodeAttentionEnabled;
     }
 
     public boolean isTensorProviderExplicit() {

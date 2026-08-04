@@ -98,6 +98,7 @@ public class AutoModelForCausaLm {
         private SketchesSettings sketchesSettings = SketchesSettings.DEFAULT;
         private boolean gpuPrefill;
         private boolean gpuDecode;
+        private boolean gpuDecodeAttention;
         private Optional<TensorRuntimeMode> tensorRuntimeMode = Optional.empty();
 
         record QuantizeOnDemand(DType targetType, String outputOwner, String outputModel) {
@@ -240,6 +241,11 @@ public class AutoModelForCausaLm {
             return this;
         }
 
+        public Builder withGpuDecodeAttention(boolean gpuDecodeAttention) {
+            this.gpuDecodeAttention = gpuDecodeAttention;
+            return this;
+        }
+
         public Builder withTensorRuntimeMode(TensorRuntimeMode tensorRuntimeMode) {
             this.tensorRuntimeMode = Optional.of(Objects.requireNonNull(tensorRuntimeMode, "tensorRuntimeMode"));
             return this;
@@ -277,6 +283,7 @@ public class AutoModelForCausaLm {
             config.outputHeadQuantization().ifPresent(this::withOutputHeadQuantization);
             config.gpuPrefill().ifPresent(this::withGpuPrefill);
             config.gpuDecode().ifPresent(this::withGpuDecode);
+            config.gpuDecodeAttention().ifPresent(this::withGpuDecodeAttention);
             config.download().ifPresent(this::withDownload);
             config.maxBatchSize().ifPresent(this::withMaxBatchSize);
             config.tensorRuntimeMode().ifPresent(this::withTensorRuntimeMode);
@@ -351,6 +358,7 @@ public class AutoModelForCausaLm {
             copy.sketchesSettings = this.sketchesSettings;
             copy.gpuPrefill = this.gpuPrefill;
             copy.gpuDecode = this.gpuDecode;
+            copy.gpuDecodeAttention = this.gpuDecodeAttention;
             return copy;
         }
         /** This is a JVM wide property! **/
@@ -413,6 +421,7 @@ public class AutoModelForCausaLm {
             model.setTensorProviderExplicit(tensorProviderExplicit);
             model.setGpuPrefillEnabled(gpuPrefill);
             model.setGpuDecodeEnabled(gpuDecode);
+            model.setGpuDecodeAttentionEnabled(gpuDecodeAttention);
             model.setTensorRuntimeMode(tensorRuntimeMode);
             if (!tensorProviderExplicit) {
                 model.addTensorOperations(hydrateTensorOperations());
@@ -440,7 +449,7 @@ public class AutoModelForCausaLm {
             if (gpu == null) {
                 Optional<TensorOperations> maybeGpu = tryLoadTensorOperations("io.teknek.deliverance.tensor.operations.NativeGPUTensorOperations");
                 maybeGpu.ifPresent(value -> operations.put(TensorProviderKind.GPU, value));
-                if ((gpuPrefill || gpuDecode) && maybeGpu.isEmpty()) {
+                if ((gpuPrefill || gpuDecode || gpuDecodeAttention) && maybeGpu.isEmpty()) {
                     throw new IllegalStateException("GPU projection requested but NativeGPUTensorOperations is not available");
                 }
             } else {
@@ -570,6 +579,10 @@ public class AutoModelForCausaLm {
 
         public boolean isGpuDecode() {
             return gpuDecode;
+        }
+
+        public boolean isGpuDecodeAttention() {
+            return gpuDecodeAttention;
         }
 
         public ConfigurableTensorProvider getProvider() {

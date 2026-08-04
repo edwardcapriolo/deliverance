@@ -28,7 +28,9 @@ import java.nio.ByteOrder;
 import java.nio.LongBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -63,6 +65,7 @@ public class NativeGPUTensorOperations implements TensorOperations {
     private long gemm_q4_id;
     private long gemm_i8q4_m1_id;
     private long gemm_i8q4_id;
+    private long decodePagedAttentionF32Id;
 
     private int params_size;
 
@@ -98,6 +101,7 @@ public class NativeGPUTensorOperations implements TensorOperations {
         this.gemm_q4_id = runtime.gemmQ4Id;
         this.gemm_i8q4_m1_id = runtime.gemmI8Q4M1Id;
         this.gemm_i8q4_id = runtime.gemmI8Q4Id;
+        this.decodePagedAttentionF32Id = runtime.decodePagedAttentionF32Id;
         this.params_size = runtime.paramsSize;
     }
 
@@ -241,8 +245,10 @@ public class NativeGPUTensorOperations implements TensorOperations {
             long gemmQ4Id = registerShader("gemm_q4.wgsl");
             long gemmI8Q4Id = registerShader("gemm_i8q4.wgsl");
             long gemmI8Q4M1Id = registerShader("gemm_i8q4_v5.wgsl");
+            long decodePagedAttentionF32Id = registerShader("decode_paged_attention_f32.wgsl");
 
-            return new GpuRuntime(paramsSize, gemmF32Id, gemmBf16Id, gemmQ4Id, gemmI8Q4Id, gemmI8Q4M1Id);
+            return new GpuRuntime(paramsSize, gemmF32Id, gemmBf16Id, gemmQ4Id, gemmI8Q4Id, gemmI8Q4M1Id,
+                    decodePagedAttentionF32Id);
 
         } catch (Throwable t) {
             logger.error("Failed to load native GPU operations", t);
@@ -256,7 +262,8 @@ public class NativeGPUTensorOperations implements TensorOperations {
             long gemmBf16Id,
             long gemmQ4Id,
             long gemmI8Q4Id,
-            long gemmI8Q4M1Id) {
+            long gemmI8Q4M1Id,
+            long decodePagedAttentionF32Id) {
     }
 
     private boolean gpuSupported(Long btId, DType atype, DType btype, DType rtype) {
@@ -552,13 +559,16 @@ public class NativeGPUTensorOperations implements TensorOperations {
         if (visibleRows <= 0 || (long) visibleRows * Float.BYTES > MAX_SCRATCH_SIZE) {
             return false;
         }
+        if (softcap != null) {
+            return false;
+        }
         for (AbstractTensor keyPage : keyPages) {
-            if (keyPage.dType() != DType.F32 && keyPage.dType() != DType.BF16) {
+            if (keyPage.dType() != DType.F32) {
                 return false;
             }
         }
         for (AbstractTensor valuePage : valuePages) {
-            if (valuePage.dType() != DType.F32 && valuePage.dType() != DType.BF16) {
+            if (valuePage.dType() != DType.F32) {
                 return false;
             }
         }
@@ -575,77 +585,76 @@ public class NativeGPUTensorOperations implements TensorOperations {
                     numberOfKeyValueHeads, headSize, scale, softcap);
             return;
         }
-        List<Long> temporaryTensorIds = new ArrayList<>();
-        try {
-            for (AbstractTensor keyPage : keyPages) {
-                if (keyPage.dType() != DType.F32 && keyPage.dType() != DType.BF16) {
-                    logger.debug("GPU decode paged attention unsupported key dtype {}", keyPage.dType());
-                    delegate.decodePagedAttention(valueOut, query, keyPages, valuePages, visibleRows, numberOfHeads,
-                            numberOfKeyValueHeads, headSize, scale, softcap);
-                    return;
-                }
-                if (temporaryRegisterTensor(keyPage, temporaryTensorIds) == -1) {
-                    delegate.decodePagedAttention(valueOut, query, keyPages, valuePages, visibleRows, numberOfHeads,
-                            numberOfKeyValueHeads, headSize, scale, softcap);
-                    return;
-                }
+        if (softcap != null) {
+            delegate.decodePagedAttention(valueOut, query, keyPages, valuePages, visibleRows, numberOfHeads,
+                    numberOfKeyValueHeads, headSize, scale, softcap);
+            return;
+        }
+        for (AbstractTensor keyPage : keyPages) {
+            if (keyPage.dType() != DType.F32) {
+                delegate.decodePagedAttention(valueOut, query, keyPages, valuePages, visibleRows, numberOfHeads,
+                        numberOfKeyValueHeads, headSize, scale, softcap);
+                return;
             }
-            int headGroupSize = numberOfHeads / numberOfKeyValueHeads;
-            for (int head = 0; head < numberOfHeads; head++) {
-                int kvHead = head / headGroupSize;
-                int queryOffset = head * headSize;
-                int kvOffset = kvHead * headSize;
-                try (AbstractTensor attn = new FloatBufferTensor(1, visibleRows)) {
-                    int globalRow = 0;
-                    boolean usedGpu = true;
-                    for (int pageIndex = 0; pageIndex < keyPages.length; pageIndex++) {
-                        AbstractTensor keyPage = keyPages[pageIndex];
-                        if (globalRow >= visibleRows) {
-                            break;
-                        }
-                        int rows = (int) Math.min(keyPage.shape().first(), visibleRows - globalRow);
-                        usedGpu &= gpuDotProductAllowSmall(attn, query, keyPage, queryOffset, kvOffset, headSize,
-                                globalRow, rows, visibleRows, head, kvHead, pageIndex);
-                        globalRow += rows;
-                    }
-                    if (!usedGpu) {
-                        decodePagedAttentionHeadWithProviderKernels(valueOut, query, keyPages, valuePages, visibleRows,
-                                numberOfHeads, numberOfKeyValueHeads, headSize, scale, softcap, head);
-                        continue;
-                    }
-                    VectorTensorMathUtils.scaledSoftMax(attn, 0, visibleRows, scale, softcap);
-                    globalRow = 0;
-                    for (AbstractTensor valuePage : valuePages) {
-                        if (globalRow >= visibleRows) {
-                            break;
-                        }
-                        int rows = (int) Math.min(valuePage.shape().first(), visibleRows - globalRow);
-                        delegate.saxpy(attn, valuePage, valueOut, kvOffset, queryOffset, headSize, globalRow, 0, rows);
-                        globalRow += rows;
-                    }
-                }
+        }
+        for (AbstractTensor valuePage : valuePages) {
+            if (valuePage.dType() != DType.F32) {
+                delegate.decodePagedAttention(valueOut, query, keyPages, valuePages, visibleRows, numberOfHeads,
+                        numberOfKeyValueHeads, headSize, scale, softcap);
+                return;
             }
-        } finally {
-            unregisterTemporaryTensors(temporaryTensorIds);
+        }
+        int kvLength = numberOfKeyValueHeads * headSize;
+        try (FloatBufferTensor packedKey = new FloatBufferTensor(visibleRows, kvLength);
+             FloatBufferTensor packedValue = new FloatBufferTensor(visibleRows, kvLength)) {
+            packPages(packedKey, keyPages, visibleRows, kvLength);
+            packPages(packedValue, valuePages, visibleRows, kvLength);
+            gpuDecodePackedAttentionAllHeads(valueOut, query, packedKey, packedValue, visibleRows, numberOfHeads,
+                    numberOfKeyValueHeads, headSize, kvLength, scale);
         }
     }
 
-    private long temporaryRegisterTensor(AbstractTensor tensor, List<Long> temporaryTensorIds) {
-        Long persistent = tensorCache.get(tensor.getUid());
-        if (persistent != null) {
-            return persistent;
+    private void packPages(FloatBufferTensor packed, AbstractTensor[] pages, int visibleRows, int rowWidth) {
+        int packedRow = 0;
+        for (AbstractTensor page : pages) {
+            if (packedRow >= visibleRows) {
+                break;
+            }
+            int rows = (int) Math.min(page.shape().first(), visibleRows - packedRow);
+            for (int row = 0; row < rows; row++) {
+                for (int col = 0; col < rowWidth; col++) {
+                    packed.set(page.get(row, col), packedRow + row, col);
+                }
+            }
+            packedRow += rows;
         }
-        long id = NativeGPU.register_tensor(tensor.getMemorySegment(), (int) tensor.getMemorySegment().byteSize());
-        if (id != -1) {
-            temporaryTensorIds.add(id);
-        }
-        return id;
     }
 
-    private void unregisterTemporaryTensors(List<Long> temporaryTensorIds) {
-        for (Long id : temporaryTensorIds) {
-            NativeGPU.unregister_tensor(id);
+    private void gpuDecodePackedAttentionAllHeads(AbstractTensor valueOut, AbstractTensor query,
+            FloatBufferTensor packedKey, FloatBufferTensor packedValue, int visibleRows, int numberOfHeads,
+            int numberOfKeyValueHeads, int headSize, int kvLength, float scale) {
+        Long scratchId = gpuBuffers();
+        if (scratchId == null) {
+            throw new IllegalStateException("GPU scratch buffers are unavailable");
         }
+        NativeGPU.gpu_decode_attention_packed_all_heads(
+                scratchId,
+                decodePagedAttentionF32Id,
+                query.getMemorySegment(),
+                query.getMemorySegmentOffset(query.getOffset(0, 0)),
+                (int) query.getMemorySegment().byteSize(),
+                packedKey.getMemorySegment(),
+                (int) packedKey.getMemorySegment().byteSize(),
+                packedValue.getMemorySegment(),
+                (int) packedValue.getMemorySegment().byteSize(),
+                valueOut.getMemorySegment(),
+                valueOut.getOffset(0, 0),
+                visibleRows,
+                numberOfHeads,
+                numberOfKeyValueHeads,
+                headSize,
+                kvLength,
+                scale);
     }
 
     private boolean gpuDotProductAllowSmall(AbstractTensor result, AbstractTensor at, AbstractTensor bt,

@@ -429,7 +429,7 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
     private TensorOperations decodeAttentionOperations(AbstractTensor valueOut, AbstractTensor query,
             AbstractTensor[] keyPages, AbstractTensor[] valuePages, int visibleRows) {
         TensorOperations primary = configurableTensorProvider.get();
-        if (!m.isTensorProviderExplicit()) {
+        if (m.isGpuDecodeAttentionEnabled() && !m.isTensorProviderExplicit()) {
             Optional<TensorOperations> gpu = m.tensorOperations(TensorProviderKind.GPU);
             if (gpu.isPresent() && gpu.get().supportsDecodePagedAttention(valueOut, query, keyPages, valuePages,
                     visibleRows, numberOfHeads, numberOfKeyValueHeads, config.headSize, attentionScale,
