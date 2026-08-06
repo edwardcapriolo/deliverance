@@ -5,6 +5,7 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor.VectorTensorMathUtils;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 
 public interface TensorOperations {
@@ -157,6 +158,61 @@ public interface TensorOperations {
                 }
             }
             return quantize(hidden, qtype, offset, length);
+        }
+    }
+
+    /**
+     * Computes one-token decode attention over paged KV cache tensors without packing the full visible KV window.
+     *
+     * <p>The default implementation uses existing provider kernels over the current pages: one page-aware QK pass,
+     * softmax, then one page-aware value accumulation pass. It avoids model-level orchestration and avoids packing the
+     * full visible KV window.</p>
+     */
+    default void decodePagedAttention(AbstractTensor valueOut, AbstractTensor query, AbstractTensor[] keyPages,
+            AbstractTensor[] valuePages, int visibleRows, int numberOfHeads, int numberOfKeyValueHeads, int headSize,
+            float scale, Float softcap) {
+        for (int head = 0; head < numberOfHeads; head++) {
+            decodePagedAttentionHeadWithProviderKernels(valueOut, query, keyPages, valuePages, visibleRows,
+                    numberOfHeads, numberOfKeyValueHeads, headSize, scale, softcap, head);
+        }
+    }
+
+    default boolean supportsDecodePagedAttention(AbstractTensor valueOut, AbstractTensor query, AbstractTensor[] keyPages,
+            AbstractTensor[] valuePages, int visibleRows, int numberOfHeads, int numberOfKeyValueHeads, int headSize,
+            float scale, Float softcap) {
+        return true;
+    }
+
+    default void decodePagedAttentionHeadWithProviderKernels(AbstractTensor valueOut, AbstractTensor query,
+            AbstractTensor[] keyPages, AbstractTensor[] valuePages, int visibleRows, int numberOfHeads,
+            int numberOfKeyValueHeads, int headSize, float scale, Float softcap, int head) {
+        Preconditions.checkArgument(keyPages.length == valuePages.length, "key/value page count mismatch");
+        Preconditions.checkArgument(query.shape().first() == 1, "decode query must have one row");
+        Preconditions.checkArgument(valueOut.shape().first() == 1, "decode value output must have one row");
+        int headGroupSize = numberOfHeads / numberOfKeyValueHeads;
+        int kvHead = head / headGroupSize;
+        int queryOffset = head * headSize;
+        int kvOffset = kvHead * headSize;
+        try (AbstractTensor attn = new FloatBufferTensor(1, visibleRows)) {
+            int globalRow = 0;
+            for (AbstractTensor keyPage : keyPages) {
+                if (globalRow >= visibleRows) {
+                    break;
+                }
+                int rows = (int) Math.min(keyPage.shape().first(), visibleRows - globalRow);
+                batchDotProduct(attn, query, keyPage, queryOffset, kvOffset, headSize, globalRow, 0, rows);
+                globalRow += rows;
+            }
+            VectorTensorMathUtils.scaledSoftMax(attn, 0, visibleRows, scale, softcap);
+            globalRow = 0;
+            for (AbstractTensor valuePage : valuePages) {
+                if (globalRow >= visibleRows) {
+                    break;
+                }
+                int rows = (int) Math.min(valuePage.shape().first(), visibleRows - globalRow);
+                saxpy(attn, valuePage, valueOut, kvOffset, queryOffset, headSize, globalRow, 0, rows);
+                globalRow += rows;
+            }
         }
     }
 

@@ -22,6 +22,8 @@ public record AutoModelConfig(
         Optional<DType> workingQuantType,
         Optional<DType> outputHeadQuantization,
         Optional<Boolean> gpuPrefill,
+        Optional<Boolean> gpuDecode,
+        Optional<Boolean> gpuDecodeAttention,
         Optional<Boolean> download,
         Optional<Integer> maxBatchSize,
         Optional<TensorRuntimeMode> tensorRuntimeMode,
@@ -33,6 +35,8 @@ public record AutoModelConfig(
         workingQuantType = workingQuantType == null ? Optional.empty() : workingQuantType;
         outputHeadQuantization = outputHeadQuantization == null ? Optional.empty() : outputHeadQuantization;
         gpuPrefill = gpuPrefill == null ? Optional.empty() : gpuPrefill;
+        gpuDecode = gpuDecode == null ? Optional.empty() : gpuDecode;
+        gpuDecodeAttention = gpuDecodeAttention == null ? Optional.empty() : gpuDecodeAttention;
         download = download == null ? Optional.empty() : download;
         maxBatchSize = maxBatchSize == null ? Optional.empty() : maxBatchSize;
         tensorRuntimeMode = tensorRuntimeMode == null ? Optional.empty() : tensorRuntimeMode;

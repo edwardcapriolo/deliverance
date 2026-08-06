@@ -173,6 +173,8 @@ public abstract class AbstractModel implements Generator, Classifier {
     private final EnumMap<TensorProviderKind, TensorOperations> tensorOperations = new EnumMap<>(TensorProviderKind.class);
     private boolean tensorProviderExplicit;
     private boolean gpuPrefillEnabled;
+    private boolean gpuDecodeEnabled;
+    private boolean gpuDecodeAttentionEnabled;
     private GossipParallelMembership gossipParallelMembership;
 
     //embedding
@@ -334,8 +336,24 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.gpuPrefillEnabled = gpuPrefillEnabled;
     }
 
+    void setGpuDecodeEnabled(boolean gpuDecodeEnabled) {
+        this.gpuDecodeEnabled = gpuDecodeEnabled;
+    }
+
+    void setGpuDecodeAttentionEnabled(boolean gpuDecodeAttentionEnabled) {
+        this.gpuDecodeAttentionEnabled = gpuDecodeAttentionEnabled;
+    }
+
     public boolean isGpuPrefillEnabled() {
         return gpuPrefillEnabled;
+    }
+
+    public boolean isGpuDecodeEnabled() {
+        return gpuDecodeEnabled;
+    }
+
+    public boolean isGpuDecodeAttentionEnabled() {
+        return gpuDecodeAttentionEnabled;
     }
 
     public boolean isTensorProviderExplicit() {
@@ -352,10 +370,12 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public TensorOperations prefillProjectionOperations(AbstractTensor input, AbstractTensor weight,
             io.teknek.deliverance.generator.ForwardPhase phase) {
-        if (gpuPrefillEnabled
-                && phase == io.teknek.deliverance.generator.ForwardPhase.PREFILL
+        boolean useGpu = (gpuPrefillEnabled && phase == io.teknek.deliverance.generator.ForwardPhase.PREFILL
+                && input.shape().first() >= 384)
+                || (gpuDecodeEnabled && phase == io.teknek.deliverance.generator.ForwardPhase.DECODE
+                && input.shape().first() == 1);
+        if (useGpu
                 && !tensorProviderExplicit
-                && input.shape().first() >= 384
                 && (input.dType() == DType.F32 || input.dType() == DType.I8)
                 && (weight.dType() == DType.F32 || weight.dType() == DType.BF16 || weight.dType() == DType.Q4)) {
             Optional<TensorOperations> gpu = tensorOperations(TensorProviderKind.GPU);
@@ -363,7 +383,8 @@ public abstract class AbstractModel implements Generator, Classifier {
                 TensorOperations operations = gpu.get();
                 operations.registerModelTensor(weight);
                 if (InferenceProfiler.isEnabled()) {
-                    InferenceProfiler.counter(metricRegistry, "prefill.projection_provider_gpu").inc();
+                    String phaseName = phase == io.teknek.deliverance.generator.ForwardPhase.PREFILL ? "prefill" : "decode";
+                    InferenceProfiler.counter(metricRegistry, phaseName + ".projection_provider_gpu").inc();
                 }
                 return operations;
             }

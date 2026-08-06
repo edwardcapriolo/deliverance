@@ -1,12 +1,16 @@
 package io.teknek.deliverance.generator;
 
 import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.Timer;
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensorlib.TensorPlan;
 
 import java.util.Optional;
+import java.util.concurrent.ForkJoinTask;
 
 public class Qwen3CausalSelfAttention extends CausalSelfAttention {
     private final AbstractModel model;
@@ -47,7 +51,21 @@ public class Qwen3CausalSelfAttention extends CausalSelfAttention {
 
     @Override
     protected void normalizeQueryKey(AbstractTensor query, AbstractTensor key) {
-        Gemma4RmsNormSupport.applyInPlace(query, numberOfHeads, headDim, model.getConfig().layerNormEps, qNormWeights);
-        Gemma4RmsNormSupport.applyInPlace(key, numberOfKeyValueHeads, headDim, model.getConfig().layerNormEps, kNormWeights);
+
+        //TensorPlan tp = new TensorPlan(model.primaryTensorOperations(), model.getPool(), model.getMetricRegistry());
+        ForkJoinTask<?> queryTask = model.getPool().getUnderlying().submit( () -> {
+            try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(),
+                "causalselfattention.q_norm").time()) {
+                Gemma4RmsNormSupport.applyInPlaceSimd(query, numberOfHeads, headDim, model.getConfig().layerNormEps,
+                    qNormWeights);
+        } } );
+        ForkJoinTask<?> keyTask = model.getPool().getUnderlying().submit( () -> {
+        try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(),
+                "causalselfattention.k_norm").time()) {
+            Gemma4RmsNormSupport.applyInPlaceSimd(key, numberOfKeyValueHeads, headDim, model.getConfig().layerNormEps,
+                    kNormWeights);
+        } } );
+        queryTask.join();
+        keyTask.join();
     }
 }

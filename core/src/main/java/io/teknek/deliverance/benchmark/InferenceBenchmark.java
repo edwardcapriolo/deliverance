@@ -22,8 +22,11 @@ import io.teknek.deliverance.model.tensorparallel.TensorParallelGenerationGroup;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor.operations.MachineSpec;
+import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.gossip.GossipSettings;
 import io.teknek.gossip.Member;
@@ -186,7 +189,12 @@ public final class InferenceBenchmark {
         if ("native-simd".equals(options.tensorProvider)) {
             return builder;
         }
-        throw new IllegalArgumentException("--tensor-provider must be auto, native-simd, or native-gpu");
+        if ("panama".equals(options.tensorProvider)) {
+            WrappedForkJoinPool pool = builder.getPool();
+            return builder.withTensorProvider(new ConfigurableTensorProvider(new PanamaTensorOperations(
+                    MachineSpec.VECTOR_TYPE, new ArrayQueueTensorAllocator(builder.getMr()), pool)));
+        }
+        throw new IllegalArgumentException("--tensor-provider must be auto, native-simd, native-gpu, or panama");
     }
 
     private static TensorOperations loadTensorOperations(String className) {
@@ -287,7 +295,7 @@ public final class InferenceBenchmark {
                 printProgress("deliverance", runner.modelName(), benchmarkCase, turn + 1,
                         response.promptTokens, response.generatedTokens.size(), response.totalTimeMs, tokensPerSecond,
                         response.finishReason == null ? "" : response.finishReason.name());
-                runner.printProfileSummary("case=" + benchmarkCase.id + " turn=" + (turn + 1), 20);
+                runner.printProfileSummary("case=" + benchmarkCase.id + " turn=" + (turn + 1), 30);
                 runner.printProfileCounters();
                 runner.printAllocatorMetrics();
             } else {
@@ -298,7 +306,7 @@ public final class InferenceBenchmark {
                         turn + 1,
                         response.generatedTokens.size(),
                         response.totalTimeMs);
-                runner.printProfileSummary("warmup case=" + benchmarkCase.id + " turn=" + (turn + 1), 20);
+                runner.printProfileSummary("warmup case=" + benchmarkCase.id + " turn=" + (turn + 1), 30);
                 runner.printProfileCounters();
                 runner.printAllocatorMetrics();
             }
@@ -1081,8 +1089,9 @@ public final class InferenceBenchmark {
             }
             if (!options.tensorProvider.equals("auto")
                     && !options.tensorProvider.equals("native-simd")
-                    && !options.tensorProvider.equals("native-gpu")) {
-                throw new IllegalArgumentException("--tensor-provider must be auto, native-simd, or native-gpu");
+                    && !options.tensorProvider.equals("native-gpu")
+                    && !options.tensorProvider.equals("panama")) {
+                throw new IllegalArgumentException("--tensor-provider must be auto, native-simd, native-gpu, or panama");
             }
             if (!options.tensorParallelCollectiveTransport.equals("http")
                     && !options.tensorParallelCollectiveTransport.equals("netty")) {
@@ -1127,7 +1136,7 @@ public final class InferenceBenchmark {
                       --kv-context-rows-per-page N        Active KV page context-row target, default 32
                       --model-config PATH                 AutoModelForCausaLm JSON builder config
                       --model-config PATH                 AutoModelForCausaLm JSON builder config
-                      --tensor-provider auto|native-simd|native-gpu Tensor provider for local Deliverance runner, default auto
+                      --tensor-provider auto|native-simd|native-gpu|panama Tensor provider for local Deliverance runner, default auto
                       --profile-stages                   Print accumulated broad-stage timing after each Deliverance turn
                       --suite-file PATH                  FastChat MT-Bench question.jsonl; default built-in subset
                       --output PATH                      CSV output path, default target/inference-benchmark.csv

@@ -8,6 +8,8 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.DoNothingGenerateEvent;
 import io.teknek.deliverance.model.GenerateEvent;
+import io.teknek.deliverance.model.InferenceProfiler;
+import io.teknek.deliverance.model.TensorProviderKind;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.tensorlib.TensorRuntimeMode;
@@ -17,9 +19,11 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("large-model")
 public class Qwen3SmallIT {
@@ -29,6 +33,7 @@ public class Qwen3SmallIT {
         ModelFetcher fetch = new ModelFetcher("Qwen", "Qwen3-0.6B");
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
                 .withTensorRuntimeMode(TensorRuntimeMode.ENFORCE)
+                .withGpuDecodeAttention(true)
                 .buildLocalTransformerModel()) {
             PromptContext prompt = model.promptSupport().orElseThrow().builder()
                     .addTemplateArgs(Map.of("enable_thinking", false))
@@ -43,6 +48,116 @@ public class Qwen3SmallIT {
         }
     }
 
+    @Test
+    public void qwen306BGpuDecodeAttentionShort() {
+        boolean previousProfiling = InferenceProfiler.isEnabled();
+        InferenceProfiler.setEnabled(true);
+        InferenceProfiler.reset();
+        ModelFetcher fetch = new ModelFetcher("Qwen", "Qwen3-0.6B");
+        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
+                .withTensorRuntimeMode(TensorRuntimeMode.ENFORCE)
+                .buildLocalTransformerModel()) {
+            assertTrue(model.tensorOperations(TensorProviderKind.GPU).isPresent(),
+                    "GPU tensor operations must be available for this integration test");
+            PromptContext prompt = model.promptSupport().orElseThrow().builder()
+                    .addTemplateArgs(Map.of("enable_thinking", false))
+                    .addUserMessage("What is 1 + 1? Answer with only the number.")
+                    .build();
+            Response response = model.generate(UUID.randomUUID(), prompt,
+                    new GeneratorParameters().withTemperature(0.7f).withTopP(0.8f).withTopK(20.0f).withMaxTokens(8),
+                    new DoNothingGenerateEvent());
+            System.out.println("QWEN3_06B_SHORT_GPU_DECODE_ATTENTION="
+                    + response.responseTextWithSpecialTokens.replace("\n", "\\n"));
+            printTensorRuntimeCounters(model.getMetricRegistry());
+            printCounter(model.getMetricRegistry(),
+                    "causalselfattention.decode_paged_attention.provider_Native_GPU_Operations");
+            assertFalse(response.responseTextWithSpecialTokens.isBlank());
+            assertTrue(model.getMetricRegistry()
+                            .counter("causalselfattention.decode_paged_attention.provider_Native_GPU_Operations")
+                            .getCount() > 0,
+                    "decode paged attention should use Native GPU Operations");
+        } finally {
+            InferenceProfiler.setEnabled(previousProfiling);
+        }
+    }
+
+    @Test
+    public void qwen34BJq4GpuDecodeAttentionShort() {
+        boolean previousProfiling = InferenceProfiler.isEnabled();
+        InferenceProfiler.setEnabled(true);
+        InferenceProfiler.reset();
+        ModelFetcher fetch = new ModelFetcher("edwardcapriolo", "Qwen3-4B-JQ4");
+        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
+                .withTensorRuntimeMode(TensorRuntimeMode.ENFORCE)
+                .withGpuDecodeAttention(true)
+                .buildLocalTransformerModel()) {
+            assertTrue(model.tensorOperations(TensorProviderKind.GPU).isPresent(),
+                    "GPU tensor operations must be available for this integration test");
+            PromptContext prompt = model.promptSupport().orElseThrow().builder()
+                    .addTemplateArgs(Map.of("enable_thinking", false))
+                    .addUserMessage("What is 1 + 1? Answer with only the number.")
+                    .build();
+            Response response = model.generate(UUID.randomUUID(), prompt,
+                    new GeneratorParameters().withTemperature(0.7f).withTopP(0.8f).withTopK(20.0f).withMaxTokens(8),
+                    new DoNothingGenerateEvent());
+            System.out.println("QWEN3_4B_JQ4_SHORT_GPU_DECODE_ATTENTION="
+                    + response.responseTextWithSpecialTokens.replace("\n", "\\n"));
+            printTensorRuntimeCounters(model.getMetricRegistry());
+            printCounter(model.getMetricRegistry(),
+                    "causalselfattention.decode_paged_attention.provider_Native_GPU_Operations");
+            assertFalse(response.responseTextWithSpecialTokens.isBlank());
+            assertTrue(model.getMetricRegistry()
+                            .counter("causalselfattention.decode_paged_attention.provider_Native_GPU_Operations")
+                            .getCount() > 0,
+                    "decode paged attention should use Native GPU Operations");
+        } finally {
+            InferenceProfiler.setEnabled(previousProfiling);
+        }
+    }
+
+    @Test
+    public void qwen34BJq4GpuDecodeAttentionLong() {
+        boolean previousProfiling = InferenceProfiler.isEnabled();
+        InferenceProfiler.setEnabled(true);
+        InferenceProfiler.reset();
+        ModelFetcher fetch = new ModelFetcher("edwardcapriolo", "Qwen3-4B-JQ4");
+        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
+                .withTensorRuntimeMode(TensorRuntimeMode.ENFORCE)
+                .withGpuDecodeAttention(true)
+                .buildLocalTransformerModel()) {
+            assertTrue(model.tensorOperations(TensorProviderKind.GPU).isPresent(),
+                    "GPU tensor operations must be available for this integration test");
+            PromptContext prompt = model.promptSupport().orElseThrow().builder()
+                    .addTemplateArgs(Map.of("enable_thinking", false))
+                    .addUserMessage("Solve this carefully but concisely: A train leaves at 3 PM traveling 60 mph. "
+                            + "Another leaves the same station at 4 PM traveling 90 mph on the same route. "
+                            + "When does the second train catch the first? Explain briefly, then give the final time.")
+                    .build();
+            AtomicInteger k = new AtomicInteger(0);
+            Response response = model.generate(UUID.randomUUID(), prompt,
+                    new GeneratorParameters().withTemperature(0.7f).withTopP(0.8f).withTopK(20.0f).withMaxTokens(256),
+
+                    new GenerateEvent() {
+                        @Override
+                        public void emit(int next, String nextRaw, String nextCleaned, float timing) {
+                            System.out.println(k.getAndIncrement() +" "+ nextRaw+" "+System.currentTimeMillis());
+                        }
+                    });
+            System.out.println("QWEN3_4B_JQ4_LONG_GPU_DECODE_ATTENTION="
+                    + response.responseTextWithSpecialTokens.replace("\n", "\\n"));
+            printTensorRuntimeCounters(model.getMetricRegistry());
+            printCounter(model.getMetricRegistry(),
+                    "causalselfattention.decode_paged_attention.provider_Native_GPU_Operations");
+            assertFalse(response.responseTextWithSpecialTokens.isBlank());
+            assertTrue(model.getMetricRegistry()
+                            .counter("causalselfattention.decode_paged_attention.provider_Native_GPU_Operations")
+                            .getCount() > 0,
+                    "decode paged attention should use Native GPU Operations");
+        } finally {
+            InferenceProfiler.setEnabled(previousProfiling);
+        }
+    }
+
     @Disabled
     public void qwen306BThinkingPathProducesNonEmptyOutput() {
         ModelFetcher fetch = new ModelFetcher("Qwen", "Qwen3-0.6B");
@@ -53,7 +168,12 @@ public class Qwen3SmallIT {
                     .build();
             Response response = model.generate(UUID.randomUUID(), prompt,
                     new GeneratorParameters().withTemperature(0.6f).withTopP(0.95f).withTopK(20.0f).withMaxTokens(64),
-                    new DoNothingGenerateEvent());
+                    new GenerateEvent() {
+                        @Override
+                        public void emit(int next, String nextRaw, String nextCleaned, float timing) {
+                            System.out.println(nextRaw );
+                        }
+                    });
             System.out.println("QWEN3_06B_THINKING=" + response.responseTextWithSpecialTokens.replace("\n", "\\n"));
             assertFalse(response.responseTextWithSpecialTokens.isBlank());
             assertEquals("""

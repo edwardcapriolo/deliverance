@@ -113,6 +113,12 @@ public final class TensorPlan {
             return new Tensor(new BatchDotNode(this.node, weight.node));
         }
 
+        public Tensor mlp(ImmutableTensor gateWeight, ImmutableTensor upWeight, ImmutableTensor downWeight,
+                ActivationFunction.Type activation, DType quantizedType) {
+            return new Tensor(new MlpNode(this.node, gateWeight.node, upWeight.node, downWeight.node, activation,
+                    quantizedType));
+        }
+
         public Tensor activate(ActivationFunction.Type activation) {
             return new Tensor(new ActivationNode(this.node, activation));
         }
@@ -406,6 +412,111 @@ public final class TensorPlan {
         @Override
         public String label() {
             return "batchDot";
+        }
+    }
+
+    private final class MlpNode implements Node {
+        private final Node input;
+        private final Node gateWeight;
+        private final Node upWeight;
+        private final Node downWeight;
+        private final ActivationFunction.Type activation;
+        private final DType quantizedType;
+
+        private MlpNode(Node input, Node gateWeight, Node upWeight, Node downWeight,
+                ActivationFunction.Type activation, DType quantizedType) {
+            this.input = Objects.requireNonNull(input, "input");
+            this.gateWeight = Objects.requireNonNull(gateWeight, "gateWeight");
+            this.upWeight = Objects.requireNonNull(upWeight, "upWeight");
+            this.downWeight = Objects.requireNonNull(downWeight, "downWeight");
+            this.activation = Objects.requireNonNull(activation, "activation");
+            this.quantizedType = Objects.requireNonNull(quantizedType, "quantizedType");
+        }
+
+        @Override
+        public Eval eval() {
+            Eval inputEval = input.eval();
+            Eval gateWeightEval = gateWeight.eval();
+            Eval upWeightEval = upWeight.eval();
+            Eval downWeightEval = downWeight.eval();
+            int batchSize = (int) inputEval.tensor().shape().first();
+            int embeddingLength = (int) inputEval.tensor().shape().last();
+            int hiddenLength = (int) gateWeightEval.tensor().shape().first();
+            int outputLength = (int) downWeightEval.tensor().shape().first();
+            AbstractTensor gate = new FloatBufferTensor(batchSize, hiddenLength);
+            AbstractTensor up = new FloatBufferTensor(batchSize, hiddenLength);
+            AbstractTensor[] hidden = new AbstractTensor[1];
+            AbstractTensor output = new FloatBufferTensor(batchSize, outputLength);
+            inputEval.tensor().locality().ifPresent(output::setLocality);
+            try {
+                Runnable compute = () -> {
+                    AbstractTensor[] projectionResults = new AbstractTensor[] { gate, up };
+                    AbstractTensor[] projectionWeights = new AbstractTensor[] { gateWeightEval.tensor(), upWeightEval.tensor() };
+                    Timer.Context gateUpTimer = startTimer("tensorplan.mlp.gate_up_projection");
+                    try {
+                        runProviderRowChunks(hiddenLength,
+                                (chunkStart, chunkSize) -> operations.dotProductBatchChunk(projectionResults,
+                                        inputEval.tensor(), projectionWeights, 0, embeddingLength, chunkStart, chunkSize));
+                    } finally {
+                        stopTimer(gateUpTimer);
+                    }
+                    Timer.Context activationTimer = startTimer("tensorplan.mlp.fused_activation_multiply_quantize");
+                    try {
+                        hidden[0] = operations.activationMultiplyQuantize(gate, up, activation, quantizedType, 0,
+                                hiddenLength);
+                    } finally {
+                        stopTimer(activationTimer);
+                    }
+                    hidden[0].locality().or(() -> inputEval.tensor().locality()).ifPresent(output::setLocality);
+                    AbstractTensor hiddenTensor = hidden[0];
+                    Timer.Context downTimer = startTimer("tensorplan.mlp.down_projection");
+                    try {
+                        runProviderRowChunks(outputLength,
+                                (chunkStart, chunkSize) -> operations.dotProductChunk(output, hiddenTensor,
+                                        downWeightEval.tensor(), 0, hiddenLength, chunkStart, chunkSize));
+                    } finally {
+                        stopTimer(downTimer);
+                    }
+                };
+                if (useTensorRuntime()) {
+                    runtime.runAndWait("tensorplan.mlp", 0, Optional.of(inputEval.tensor()), compute);
+                } else {
+                    compute.run();
+                }
+                return new Eval(output, true, true);
+            } finally {
+                gate.close();
+                up.close();
+                if (hidden[0] != null) {
+                    hidden[0].close();
+                }
+                closeIfOwned(inputEval);
+                closeIfOwned(gateWeightEval);
+                closeIfOwned(upWeightEval);
+                closeIfOwned(downWeightEval);
+            }
+        }
+
+        @Override
+        public TensorShape shape() {
+            return TensorShape.of((int) input.shape().first(), (int) downWeight.shape().first());
+        }
+
+        @Override
+        public void render(StringBuilder sb, String indent, boolean last) {
+            renderLine(sb, indent, last, "mlp(" + input.label() + ", " + gateWeight.label() + ", "
+                    + upWeight.label() + ", " + downWeight.label() + ") -> " + compactShape(shape())
+                    + " activation=" + activation + " q=" + quantizedType);
+            String childIndent = indent + (last ? "   " : "│  ");
+            input.render(sb, childIndent, false);
+            gateWeight.render(sb, childIndent, false);
+            upWeight.render(sb, childIndent, false);
+            downWeight.render(sb, childIndent, true);
+        }
+
+        @Override
+        public String label() {
+            return "mlp";
         }
     }
 
@@ -864,6 +975,45 @@ public final class TensorPlan {
             return;
         }
         runtime.runAndWait(operation, chunkId, tensor, action);
+    }
+
+    private void runRowChunks(String operation, int rowCount, AbstractTensor representative, RowChunk action) {
+        List<TensorSplit> splits = TensorLib.calculateTSplits(0, rowCount, Math.max(1, operations.parallelSplitSize()));
+        if (useTensorRuntime()) {
+            List<CompletableFuture<Void>> tasks = new ArrayList<>();
+            int chunk = 0;
+            for (TensorSplit split : splits) {
+                int chunkStart = (int) split.offset;
+                int chunkSize = (int) split.length;
+                tasks.add(runtime.submit(operation, chunk++, Optional.of(representative),
+                        () -> action.run(chunkStart, chunkSize)));
+            }
+            tasks.forEach(CompletableFuture::join);
+            return;
+        }
+        List<ForkJoinTask<?>> tasks = new ArrayList<>();
+        for (TensorSplit split : splits) {
+            int chunkStart = (int) split.offset;
+            int chunkSize = (int) split.length;
+            tasks.add(pool.getUnderlying().submit(() -> action.run(chunkStart, chunkSize)));
+        }
+        tasks.forEach(ForkJoinTask::join);
+    }
+
+    private void runProviderRowChunks(int rowCount, RowChunk action) {
+        List<TensorSplit> splits = TensorLib.calculateTSplits(0, rowCount, Math.max(1, operations.parallelSplitSize()));
+        List<ForkJoinTask<?>> tasks = new ArrayList<>();
+        for (TensorSplit split : splits) {
+            int chunkStart = (int) split.offset;
+            int chunkSize = (int) split.length;
+            tasks.add(pool.getUnderlying().submit(() -> action.run(chunkStart, chunkSize)));
+        }
+        tasks.forEach(ForkJoinTask::join);
+    }
+
+    @FunctionalInterface
+    private interface RowChunk {
+        void run(int chunkStart, int chunkSize);
     }
 
     private void ensureLocality(AbstractTensor tensor) {

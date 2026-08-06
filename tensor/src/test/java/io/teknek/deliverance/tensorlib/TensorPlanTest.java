@@ -1,9 +1,11 @@
 package io.teknek.deliverance.tensorlib;
 
+import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorTestSupport;
+import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
 import org.junit.jupiter.api.Test;
 
@@ -202,6 +204,57 @@ class TensorPlanTest {
                 assertEquals(3, output.shape().last());
                 assertTrue(Float.isFinite(output.get(0, 0)));
                 assertTrue(Float.isFinite(output.get(1, 2)));
+            }
+        }
+    }
+
+    @Test
+    void providerBackedMlpPrimitiveMatchesExplicitProviderPath() {
+        NaiveTensorOperations ops = new NaiveTensorOperations();
+        TensorPlan plan = new TensorPlan(ops, new WrappedForkJoinPool(new ForkJoinPool(2)));
+        try (AbstractTensor input = TensorTestSupport.deterministicTensor(2, 32, 1);
+             AbstractTensor gateWeight = TensorTestSupport.deterministicTensor(32, 32, 2);
+             AbstractTensor upWeight = TensorTestSupport.deterministicTensor(32, 32, 3);
+             AbstractTensor downWeight = TensorTestSupport.deterministicTensor(2, 32, 4);
+             AbstractTensor expected = explicitMlp(ops, input, gateWeight, upWeight, downWeight);
+             AbstractTensor actual = plan.input("input", input)
+                     .mlp(plan.immutable("gateWeight", gateWeight),
+                             plan.immutable("upWeight", upWeight),
+                             plan.immutable("downWeight", downWeight),
+                             ActivationFunction.Type.SILU,
+                             DType.I8)
+                     .materialize()) {
+
+            assertEquals(expected.shape(), actual.shape());
+            for (int row = 0; row < expected.shape().first(); row++) {
+                for (int col = 0; col < expected.shape().last(); col++) {
+                    assertEquals(expected.get(row, col), actual.get(row, col), 1.0e-6f,
+                            "row=" + row + " col=" + col);
+                }
+            }
+        }
+    }
+
+    private static AbstractTensor explicitMlp(NaiveTensorOperations ops, AbstractTensor input, AbstractTensor gateWeight,
+            AbstractTensor upWeight, AbstractTensor downWeight) {
+        AbstractTensor gate = new FloatBufferTensor((int) input.shape().first(), (int) gateWeight.shape().first());
+        AbstractTensor up = new FloatBufferTensor((int) input.shape().first(), (int) upWeight.shape().first());
+        AbstractTensor hidden = null;
+        AbstractTensor output = new FloatBufferTensor((int) input.shape().first(), (int) downWeight.shape().first());
+        try {
+            ops.dotProductBatchChunk(new AbstractTensor[] { gate, up }, input,
+                    new AbstractTensor[] { gateWeight, upWeight }, 0, (int) input.shape().last(), 0,
+                    (int) gateWeight.shape().first());
+            hidden = ops.activationMultiplyQuantize(gate, up, ActivationFunction.Type.SILU, DType.I8, 0,
+                    (int) gate.shape().last());
+            ops.dotProductChunk(output, hidden, downWeight, 0, (int) hidden.shape().last(), 0,
+                    (int) downWeight.shape().first());
+            return output;
+        } finally {
+            gate.close();
+            up.close();
+            if (hidden != null) {
+                hidden.close();
             }
         }
     }

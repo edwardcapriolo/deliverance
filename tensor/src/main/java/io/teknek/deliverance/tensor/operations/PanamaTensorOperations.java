@@ -70,6 +70,16 @@ public final class PanamaTensorOperations implements TensorOperations {
         return pool.getCoreCount();
     }
 
+    @Override
+    public void decodePagedAttention(AbstractTensor valueOut, AbstractTensor query, AbstractTensor[] keyPages,
+            AbstractTensor[] valuePages, int visibleRows, int numberOfHeads, int numberOfKeyValueHeads, int headSize,
+            float scale, Float softcap) {
+        io.teknek.deliverance.math.VectorMath.pfor(0, numberOfHeads,
+                head -> decodePagedAttentionHeadWithProviderKernels(valueOut, query, keyPages, valuePages,
+                        visibleRows, numberOfHeads, numberOfKeyValueHeads, headSize, scale, softcap, head),
+                pool);
+    }
+
     /**
      *  multiplies matrices on cpu
      *  with column major ordering

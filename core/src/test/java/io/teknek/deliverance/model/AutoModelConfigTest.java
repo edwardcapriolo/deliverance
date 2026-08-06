@@ -24,6 +24,8 @@ public class AutoModelConfigTest {
                   "workingQuantType": "Q4",
                   "outputHeadQuantization": "Q4",
                   "gpuPrefill": true,
+                  "gpuDecode": true,
+                  "gpuDecodeAttention": true,
                   "download": false,
                   "maxBatchSize": 17,
                   "kvBufferCache": {
@@ -48,6 +50,8 @@ public class AutoModelConfigTest {
         assertEquals(DType.Q4, builder.getWorkingQuant());
         assertEquals(DType.Q4, builder.getOutputHeadQuantization().orElseThrow());
         assertEquals(true, builder.isGpuPrefill());
+        assertEquals(true, builder.isGpuDecode());
+        assertEquals(true, builder.isGpuDecodeAttention());
         assertFalse(builder.isDownload());
         assertEquals(17, builder.getMaxBatchSize());
         assertEquals(0, builder.getSettings().getMaxEntries());
