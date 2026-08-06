@@ -725,6 +725,18 @@ public class KvBufferCache implements Closeable {
         private final String session;
         private final AtomicInteger currentContextPosition = new AtomicInteger(0);
         private final KvBufferPage[][] pages;
+        /**
+         * Reusable visible-page views keyed by logical layer index.
+         *
+         * <p>During decode, each layer repeatedly asks for visible KV pages as {@code upperBound} advances by one token.
+         * The page list only changes when {@code upperBound} crosses a context-page boundary, so this cache reuses the
+         * same {@link KvPageTable} for most decode calls and rebuilds only when the visible page count changes.</p>
+         *
+         * <p>This is currently safe for the single-threaded per-session decode flow. If a future execution path shares a
+         * {@link KvBuffer} across concurrent layer/token execution, this cache should become immutable-per-call or be
+         * protected by per-layer synchronization.</p>
+         */
+        private final KvPageTable[] pageTableCache;
 
         private final KvPageContext pageContext;
 
@@ -732,6 +744,7 @@ public class KvBufferCache implements Closeable {
             this.session = session;
             this.pageContext = computePageSize(maxPageSizeInBytes);
             this.pages = new KvBufferPage[pageContext.numberOfLayerPages][pageContext.numberOfContextPages];
+            this.pageTableCache = new KvPageTable[model.getConfig().numberOfLayers];
         }
 
         public int getCurrentContextPosition() {
@@ -857,6 +870,24 @@ public class KvBufferCache implements Closeable {
 
         public AbstractTensor[] getValTensorsUptoPosition(int layerIndex, int upperBound) {
             return getTensorsUptoPosition(layerIndex, 1, upperBound);
+        }
+
+        public KvPageTable getPageTable(int layerIndex, int upperBound) {
+            InferenceProfiler.counter(model.getMetricRegistry(), "kvpagetable.request").inc();
+            int contextPageIndex = upperBound / pageContext.contextLengthPerPage;
+            KvPageTable cached = pageTableCache[layerIndex];
+            if (cached != null && cached.pageCount() == contextPageIndex + 1) {
+                cached.updateUpperBound(upperBound);
+                InferenceProfiler.counter(model.getMetricRegistry(), "kvpagetable.reuse").inc();
+                InferenceProfiler.counter(model.getMetricRegistry(), "kvpagetable.pages").inc(cached.pageCount());
+                return cached;
+            }
+            KvPageTable pageTable = new KvPageTable(layerIndex, upperBound, pageContext.contextLengthPerPage,
+                    getKeyTensorsUptoPosition(layerIndex, upperBound), getValTensorsUptoPosition(layerIndex, upperBound));
+            pageTableCache[layerIndex] = pageTable;
+            InferenceProfiler.counter(model.getMetricRegistry(), "kvpagetable.rebuild").inc();
+            InferenceProfiler.counter(model.getMetricRegistry(), "kvpagetable.pages").inc(pageTable.pageCount());
+            return pageTable;
         }
 
         private AbstractTensor[] getTensorsUptoPosition(int layerIndex, int index, int upperBound) {

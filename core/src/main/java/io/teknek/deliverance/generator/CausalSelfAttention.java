@@ -10,6 +10,7 @@ import io.teknek.deliverance.model.TensorProviderKind;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
+import io.teknek.deliverance.tensor.KvPageTable;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
 
@@ -246,41 +247,8 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
                     int poffset = finalPosition * headPiece;
 
                     if (config.isGQA) {
-                        // apply RoPE rotation to the q and k vectors for each head
-                        for (int h = 0; h < numberOfHeads; h++) {
-                            // get the q vectors for this head
-                            int offset = h * config.headSize;
-
-                            // skip if we are out of bounds
-                            if (offset >= query.shape().last()) break;
-
-                            // rotate q by the freq theta and freq r
-                            for (int i = offset, freqIndex = 0; i < (offset + headPiece); i++, freqIndex++) {
-                                float q0 = query.get(0, i);
-                                float q1 = query.get(0, i + headPiece); // hf permutation is 0,64,1,65 etc...
-                                float[] f = rf[poffset + freqIndex];
-                                float fcr = f[0];
-                                float fci = f[1];
-                                query.set(q0 * fcr - q1 * fci, 0, i);
-                                query.set(q0 * fci + q1 * fcr, 0, i + headPiece);
-                            }
-                        }
-
-                        for (int h = 0; h < numberOfKeyValueHeads; h++) {
-                            // get the k vectors for this head
-                            int offset = h * config.headSize;
-                            if (offset >= key.shape().last()) break;
-                            // rotate k by the freq theta and freq r
-                            for (int i = offset, freqIndex = 0; i < (offset + headPiece); i++, freqIndex++) {
-                                float k00 = key.get(0, i);
-                                float k1 = key.get(0, i + headPiece); // hf permutation is 0,64,1,65 etc...
-                                float[] f = rf[poffset + freqIndex];
-                                float fcr = f[0];
-                                float fci = f[1];
-                                key.set(k00 * fcr - k1 * fci, 0, i);
-                                key.set(k00 * fci + k1 * fcr, 0, i + headPiece);
-                            }
-                        }
+                        rotateRopeHeads(query, numberOfHeads, config.headSize, headPiece, poffset, rf);
+                        rotateRopeHeads(key, numberOfKeyValueHeads, config.headSize, headPiece, poffset, rf);
                     } else {
                         // apply RoPE rotation to the q and k vectors for each head
                         for (int h = 0; h < numberOfHeads; h++) {
@@ -350,6 +318,32 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
         }
     }
 
+    /**
+     * Applies RoPE rotation to each attention head stored contiguously in a single row tensor.
+     *
+     * <p>The tensor layout is {@code [1, heads * headSize]}. Each head is split into two equal halves. For a
+     * {@code headSize} of 4, one head is laid out as {@code [x0, x1, y0, y1]}; with {@code cos=0} and {@code sin=1},
+     * this rotates to {@code [-y0, -y1, x0, x1]}.</p>
+     */
+    static void rotateRopeHeads(AbstractTensor tensor, int heads, int headSize, int headPiece, int positionOffset,
+            float[][] ropeFreqs) {
+        for (int h = 0; h < heads; h++) {
+            int offset = h * headSize;
+            if (offset >= tensor.shape().last()) {
+                break;
+            }
+            for (int i = offset, freqIndex = 0; i < (offset + headPiece); i++, freqIndex++) {
+                float x0 = tensor.get(0, i);
+                float x1 = tensor.get(0, i + headPiece);
+                float[] f = ropeFreqs[positionOffset + freqIndex];
+                float fcr = f[0];
+                float fci = f[1];
+                tensor.set(x0 * fcr - x1 * fci, 0, i);
+                tensor.set(x0 * fci + x1 * fcr, 0, i + headPiece);
+            }
+        }
+    }
+
     private AbstractTensor allReduceAttention(AbstractTensor result) {
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "causalselfattention.all_reduce").time()) {
             return m.getTensorParallelCollectives().allReduceSum("layer." + layerIndex + ".self_attn.o_proj", result);
@@ -411,36 +405,38 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
         InferenceProfiler.counter(metricRegistry, "causalselfattention.decode_paged_attention.calls").inc();
         InferenceProfiler.counter(metricRegistry, "causalselfattention.decode_paged_attention.visible_rows")
                 .inc(finalPosition + 1L);
-        AbstractTensor[] keyPages = kvMem.getKeyTensorsUptoPosition(layerIndex, finalPosition);
-        AbstractTensor[] valuePages = kvMem.getValTensorsUptoPosition(layerIndex, finalPosition);
-        recordKvLayout(keyPages, finalPosition + 1);
+        // Old path, kept here while KvPageTable is introduced:
+        // AbstractTensor[] keyPages = kvMem.getKeyTensorsUptoPosition(layerIndex, finalPosition);
+        // AbstractTensor[] valuePages = kvMem.getValTensorsUptoPosition(layerIndex, finalPosition);
+        KvPageTable pageTable = kvMem.getPageTable(layerIndex, finalPosition);
+        AbstractTensor[] keyPages = pageTable.keyPages();
+        AbstractTensor[] valuePages = pageTable.valuePages();
+        recordKvLayout(keyPages, pageTable.visibleRows());
         try {
             try (Timer.Context ignoredScore = InferenceProfiler.timer(metricRegistry, "causalselfattention.score_value").time();
                  Timer.Context ignoredPackedScore = InferenceProfiler.timer(metricRegistry,
                          "causalselfattention.decode_paged_attention").time()) {
-                TensorOperations decodeAttentionOps = decodeAttentionOperations(value, query, keyPages, valuePages,
-                        finalPosition + 1);
+                TensorOperations decodeAttentionOps = decodeAttentionOperations(value, query, pageTable);
                 if (InferenceProfiler.isEnabled()) {
                     InferenceProfiler.counter(metricRegistry, "causalselfattention.decode_paged_attention.provider_"
                             + decodeAttentionOps.name().replace(' ', '_')).inc();
                 }
                 decodeAttentionOps.decodePagedAttention(value, query, keyPages, valuePages,
-                        finalPosition + 1, numberOfHeads, numberOfKeyValueHeads, config.headSize, attentionScale,
+                        pageTable.visibleRows(), numberOfHeads, numberOfKeyValueHeads, config.headSize, attentionScale,
                         config.attnLogitSoftCapping);
             }
         } finally {
-            closeAll(keyPages);
-            closeAll(valuePages);
+            // KvPageTable is cached by KvBuffer and does not own the underlying page views.
         }
     }
 
     private TensorOperations decodeAttentionOperations(AbstractTensor valueOut, AbstractTensor query,
-            AbstractTensor[] keyPages, AbstractTensor[] valuePages, int visibleRows) {
+            KvPageTable pageTable) {
         TensorOperations primary = configurableTensorProvider.get();
         if (m.isGpuDecodeAttentionEnabled() && !m.isTensorProviderExplicit()) {
             Optional<TensorOperations> gpu = m.tensorOperations(TensorProviderKind.GPU);
-            if (gpu.isPresent() && gpu.get().supportsDecodePagedAttention(valueOut, query, keyPages, valuePages,
-                    visibleRows, numberOfHeads, numberOfKeyValueHeads, config.headSize, attentionScale,
+            if (gpu.isPresent() && gpu.get().supportsDecodePagedAttention(valueOut, query, pageTable.keyPages(),
+                    pageTable.valuePages(), pageTable.visibleRows(), numberOfHeads, numberOfKeyValueHeads, config.headSize, attentionScale,
                     config.attnLogitSoftCapping)) {
                 return gpu.get();
             }

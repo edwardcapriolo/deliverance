@@ -153,6 +153,91 @@ public class KvBufferCachePrefixTest {
     }
 
     @Test
+    public void pageTableReusesVisiblePageViewUntilContextCrossesPageBoundary() {
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true).withBlockSize(1);
+        KvBufferCache cache = new KvBufferCache(mockModel(), settings);
+        KvBufferCache.KvBuffer buffer = cache.new KvBuffer("page-table", 1024);
+
+        /*
+        For max page size 1024, the computed layout ends up:
+
+        layersPerPage = 16
+        contextLengthPerPage = 2
+        So pageRows = 2.
+
+        That means:
+
+        positions 0,1 -> context page 0
+        positions 2,3 -> context page 1
+        position 4    -> context page 2
+        */  
+
+        // Fake CausalSelfAttention decode state: five visible token rows are enough to cross context-page
+        // boundaries in this small mock model, where the computed page table has two context rows per page.
+        try (AbstractTensor inputKeys = TensorTestSupport.tensorOf(5, 4,
+                     1, 2, 3, 4,
+                     11, 12, 13, 14,
+                     21, 22, 23, 24,
+                     31, 32, 33, 34,
+                     41, 42, 43, 44);
+             AbstractTensor inputValues = TensorTestSupport.tensorOf(5, 4,
+                     1, 2, 3, 4,
+                     101, 102, 103, 104,
+                     201, 202, 203, 204,
+                     301, 302, 303, 304,
+                     401, 402, 403, 404)) {
+            for (int pos = 0; pos < inputKeys.shape().first(); pos++) {
+                try (AbstractTensor key = buffer.getKeyTensorForPosition(0, pos);
+                     AbstractTensor value = buffer.getValTensorForPosition(0, pos)) {
+                    // This mirrors CausalSelfAttention's KV-cache write for one logical token position:
+                    // copy the projected key/value row into the cache row for this layer and position.
+                    key.copyFrom(inputKeys, inputKeys.getOffset(pos, 0), 0, 4);
+                    value.copyFrom(inputValues, inputValues.getOffset(pos, 0), 0, 4);
+                }
+            }
+        }
+
+        // This mirrors decode attention asking which cached K/V pages are visible up to a position.
+        KvPageTable first = buffer.getPageTable(0, 2);
+        KvPageTable sameContextPage = buffer.getPageTable(0, 3);
+        KvPageTable nextContextPage = buffer.getPageTable(0, 4);
+
+        assertEquals(2, first.pageRows(), "1024-byte mock KV page budget computes two context rows per page");
+        assertSame(first, sameContextPage, "same context page should reuse the page table view");
+        assertNotSame(first, nextContextPage, "crossing a context page should rebuild the page table view");
+        assertEquals(0, sameContextPage.layerIndex());
+        assertEquals(3, sameContextPage.upperBound());
+        assertEquals(4, sameContextPage.visibleRows());
+        assertEquals(2, sameContextPage.pageRows());
+        assertEquals(2, sameContextPage.pageCount());
+        assertEquals(5, nextContextPage.visibleRows());
+        assertEquals(3, nextContextPage.pageCount());
+
+        try (AbstractTensor packedKeys = new FloatBufferTensor(5, 4);
+             AbstractTensor packedValues = new FloatBufferTensor(5, 4);
+             AbstractTensor expectedKeys = TensorTestSupport.tensorOf(5, 4,
+                     1, 2, 3, 4,
+                     11, 12, 13, 14,
+                     21, 22, 23, 24,
+                     31, 32, 33, 34,
+                     41, 42, 43, 44);
+             AbstractTensor expectedValues = TensorTestSupport.tensorOf(5, 4,
+                     1, 2, 3, 4,
+                     101, 102, 103, 104,
+                     201, 202, 203, 204,
+                     301, 302, 303, 304,
+                     401, 402, 403, 404)) {
+            assertEquals(5, fillVisibleRows(packedKeys, nextContextPage.keyPages(), 4, 0, 4));
+            assertEquals(5, fillVisibleRows(packedValues, nextContextPage.valuePages(), 4, 0, 4));
+
+            assertTensorEquals(expectedKeys, packedKeys);
+            assertTensorEquals(expectedValues, packedValues);
+        } finally {
+            buffer.close();
+        }
+    }
+
+    @Test
     public void storeLookupAndCopyPrefixPreservesKeysAndValues() {
         int expectedPrefixLength = 8;
         KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
@@ -482,6 +567,16 @@ public class KvBufferCachePrefixTest {
             globalOffset += page.shape().first();
         }
         return packedRow;
+    }
+
+    private static void assertTensorEquals(AbstractTensor expected, AbstractTensor actual) {
+        assertEquals(expected.shape(), actual.shape());
+        for (int row = 0; row < expected.shape().first(); row++) {
+            for (int col = 0; col < expected.shape().last(); col++) {
+                assertEquals(expected.get(row, col), actual.get(row, col), 0.0f,
+                        "row=" + row + " col=" + col);
+            }
+        }
     }
 
     private static void fillKv(KvBufferCache.KvBuffer buffer, Config config, int length) {
