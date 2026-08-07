@@ -2,11 +2,7 @@ package io.teknek.deliverance.integration;
 
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
-import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.model.AutoModelConfig;
-import io.teknek.deliverance.model.AutoModelForCausaLm;
-import io.teknek.deliverance.model.DoNothingGenerateEvent;
-import io.teknek.deliverance.model.InferenceProfiler;
+import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
@@ -36,7 +32,7 @@ class Qwen3BenchmarkCasesIT {
 
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
                 .withConfig(AutoModelConfig.fromJson(resolveRepoPath("benchmarks/configs/qwen3-4b-jq4.json")))
-                .withDownload(false)
+                .withDownload(false).withDecodeAttentionMode(DecodeAttentionMode.FLASH_DECODE)
                 .buildLocalTransformerModel()) {
             runCase(model, "builtin-reasoning-1", List.of(
                     "Read the puzzle carefully and answer with a clear explanation. A company reserves five parking spaces in order for the CEO, president, vice president, secretary, and treasurer. The cars are red, blue, green, yellow, and purple. The first space is red. A blue car is between the red car and the green car. The last space is purple. The secretary drives yellow. Alice parks next to David. Enid drives green. Bert parks between Cheryl and Enid. David parks in the last space. Who is the secretary, and what are the car colors from first to last?",
@@ -68,9 +64,15 @@ class Qwen3BenchmarkCasesIT {
                     tokensPerSecond, response.finishReason);
             InferenceProfiler.printSummary("case=" + caseId + " turn=" + (turn + 1), 30);
             model.getMetricRegistry().getCounters().entrySet().stream()
-                    .filter(entry -> InferenceProfiler.shouldPrintCounter(entry.getKey()))
-                    .forEach(entry -> System.out.println("[profile-counter] " + entry.getKey()
-                            + " count=" + InferenceProfiler.counterValue(entry.getKey())));
+                    .filter(entry -> InferenceProfiler.shouldPrintCounter(entry.getKey())
+                            || entry.getKey().startsWith("tensorplan.")
+                            || entry.getKey().startsWith("gpu."))
+                    .forEach(entry -> {
+                        long count = InferenceProfiler.shouldPrintCounter(entry.getKey())
+                                ? InferenceProfiler.counterValue(entry.getKey())
+                                : entry.getValue().getCount();
+                        System.out.println("[profile-counter] " + entry.getKey() + " count=" + count);
+                    });
             assertFalse(response.responseTextWithSpecialTokens.isBlank());
         }
     }

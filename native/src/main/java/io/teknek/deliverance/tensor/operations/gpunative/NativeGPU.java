@@ -182,6 +182,55 @@ public class NativeGPU {
         }
     }
 
+    private static class update_tensor {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
+            NativeGPU.C_LONG,
+            NativeGPU.C_POINTER,
+            NativeGPU.C_INT
+        );
+
+        public static final MemorySegment ADDR = NativeGPU.findOrThrow("update_tensor");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    public static void update_tensor(long id, MemorySegment data, int size) {
+        var mh$ = update_tensor.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("update_tensor", id, data, size);
+            }
+            mh$.invokeExact(id, data, size);
+        } catch (Throwable ex$) {
+            throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
+    private static class update_tensor_range {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
+            NativeGPU.C_LONG,
+            NativeGPU.C_INT,
+            NativeGPU.C_POINTER,
+            NativeGPU.C_INT
+        );
+
+        public static final MemorySegment ADDR = NativeGPU.findOrThrow("update_tensor_range");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    public static void update_tensor_range(long id, int dst_offset, MemorySegment data, int size) {
+        var mh$ = update_tensor_range.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("update_tensor_range", id, dst_offset, data, size);
+            }
+            mh$.invokeExact(id, dst_offset, data, size);
+        } catch (Throwable ex$) {
+            throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
     private static class unregister_tensor {
         public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
             NativeGPU.C_LONG
@@ -532,6 +581,58 @@ public class NativeGPU {
             mh$.invokeExact(scratch_id, shader, query, qoffset, kid, vid, page_count, visible_rows, page_rows,
                     head_size, kv_offset, key_stride, value_stride, out, out_offset, out_stride, scale,
                     key_buffer_size, value_buffer_size);
+        } catch (Throwable ex$) {
+            throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
+    private static class gpu_decode_paged_attention_all_heads {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
+            NativeGPU.C_LONG,
+            NativeGPU.C_LONG,
+            NativeGPU.C_POINTER,
+            NativeGPU.C_INT,
+            NativeGPU.C_INT,
+            NativeGPU.C_POINTER,
+            NativeGPU.C_POINTER,
+            NativeGPU.C_INT,
+            NativeGPU.C_INT,
+            NativeGPU.C_INT,
+            NativeGPU.C_INT,
+            NativeGPU.C_INT,
+            NativeGPU.C_INT,
+            NativeGPU.C_INT,
+            NativeGPU.C_INT,
+            NativeGPU.C_INT,
+            NativeGPU.C_POINTER,
+            NativeGPU.C_INT,
+            NativeGPU.C_INT,
+            NativeGPU.C_FLOAT,
+            NativeGPU.C_INT,
+            NativeGPU.C_INT
+        );
+
+        public static final MemorySegment ADDR = NativeGPU.findOrThrow("gpu_decode_paged_attention_all_heads");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    public static void gpu_decode_paged_attention_all_heads(long scratch_id, long shader, MemorySegment query,
+            int qoffset, int query_size, MemorySegment kid, MemorySegment vid, int page_count, int visible_rows,
+            int page_rows, int number_of_heads, int number_of_kv_heads, int head_size, int kv_length, int key_stride,
+            int value_stride, MemorySegment out, int out_offset, int out_stride, float scale, int key_buffer_size,
+            int value_buffer_size) {
+        var mh$ = gpu_decode_paged_attention_all_heads.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("gpu_decode_paged_attention_all_heads", scratch_id, shader, query, qoffset, query_size,
+                        kid, vid, page_count, visible_rows, page_rows, number_of_heads, number_of_kv_heads, head_size,
+                        kv_length, key_stride, value_stride, out, out_offset, out_stride, scale, key_buffer_size,
+                        value_buffer_size);
+            }
+            mh$.invokeExact(scratch_id, shader, query, qoffset, query_size, kid, vid, page_count, visible_rows,
+                    page_rows, number_of_heads, number_of_kv_heads, head_size, kv_length, key_stride, value_stride,
+                    out, out_offset, out_stride, scale, key_buffer_size, value_buffer_size);
         } catch (Throwable ex$) {
             throw new AssertionError("should not reach here", ex$);
         }

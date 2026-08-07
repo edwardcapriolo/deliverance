@@ -99,7 +99,9 @@ public class AutoModelForCausaLm {
         private boolean gpuPrefill;
         private boolean gpuDecode;
         private boolean gpuDecodeAttention;
+        private boolean gpuFlashDecodeAttention;
         private Optional<TensorRuntimeMode> tensorRuntimeMode = Optional.empty();
+        private DecodeAttentionMode decodeAttentionMode = DecodeAttentionMode.STAGED;
 
         record QuantizeOnDemand(DType targetType, String outputOwner, String outputModel) {
             QuantizeOnDemand {
@@ -246,8 +248,18 @@ public class AutoModelForCausaLm {
             return this;
         }
 
+        public Builder withGpuFlashDecodeAttention(boolean gpuFlashDecodeAttention) {
+            this.gpuFlashDecodeAttention = gpuFlashDecodeAttention;
+            return this;
+        }
+
         public Builder withTensorRuntimeMode(TensorRuntimeMode tensorRuntimeMode) {
             this.tensorRuntimeMode = Optional.of(Objects.requireNonNull(tensorRuntimeMode, "tensorRuntimeMode"));
+            return this;
+        }
+
+        public Builder withDecodeAttentionMode(DecodeAttentionMode decodeAttentionMode) {
+            this.decodeAttentionMode = Objects.requireNonNull(decodeAttentionMode, "decodeAttentionMode");
             return this;
         }
 
@@ -284,9 +296,11 @@ public class AutoModelForCausaLm {
             config.gpuPrefill().ifPresent(this::withGpuPrefill);
             config.gpuDecode().ifPresent(this::withGpuDecode);
             config.gpuDecodeAttention().ifPresent(this::withGpuDecodeAttention);
+            config.gpuFlashDecodeAttention().ifPresent(this::withGpuFlashDecodeAttention);
             config.download().ifPresent(this::withDownload);
             config.maxBatchSize().ifPresent(this::withMaxBatchSize);
             config.tensorRuntimeMode().ifPresent(this::withTensorRuntimeMode);
+            config.decodeAttentionMode().ifPresent(this::withDecodeAttentionMode);
             config.kvBufferCache().map(AutoModelConfig.KvBufferCache::toSettings).ifPresent(this::withKvBufferCacheSettings);
             config.quantizeOnDemand().ifPresent(q -> withQuantizeOnDemand(q.targetType(), q.outputOwner(), q.outputModel()));
             return this;
@@ -359,6 +373,8 @@ public class AutoModelForCausaLm {
             copy.gpuPrefill = this.gpuPrefill;
             copy.gpuDecode = this.gpuDecode;
             copy.gpuDecodeAttention = this.gpuDecodeAttention;
+            copy.gpuFlashDecodeAttention = this.gpuFlashDecodeAttention;
+            copy.decodeAttentionMode = this.decodeAttentionMode;
             return copy;
         }
         /** This is a JVM wide property! **/
@@ -422,7 +438,9 @@ public class AutoModelForCausaLm {
             model.setGpuPrefillEnabled(gpuPrefill);
             model.setGpuDecodeEnabled(gpuDecode);
             model.setGpuDecodeAttentionEnabled(gpuDecodeAttention);
+            model.setGpuFlashDecodeAttentionEnabled(gpuFlashDecodeAttention);
             model.setTensorRuntimeMode(tensorRuntimeMode);
+            model.setDecodeAttentionMode(decodeAttentionMode);
             if (!tensorProviderExplicit) {
                 model.addTensorOperations(hydrateTensorOperations());
             }
@@ -449,7 +467,7 @@ public class AutoModelForCausaLm {
             if (gpu == null) {
                 Optional<TensorOperations> maybeGpu = tryLoadTensorOperations("io.teknek.deliverance.tensor.operations.NativeGPUTensorOperations");
                 maybeGpu.ifPresent(value -> operations.put(TensorProviderKind.GPU, value));
-                if ((gpuPrefill || gpuDecode || gpuDecodeAttention) && maybeGpu.isEmpty()) {
+                if ((gpuPrefill || gpuDecode || gpuDecodeAttention || gpuFlashDecodeAttention) && maybeGpu.isEmpty()) {
                     throw new IllegalStateException("GPU projection requested but NativeGPUTensorOperations is not available");
                 }
             } else {
@@ -583,6 +601,14 @@ public class AutoModelForCausaLm {
 
         public boolean isGpuDecodeAttention() {
             return gpuDecodeAttention;
+        }
+
+        public boolean isGpuFlashDecodeAttention() {
+            return gpuFlashDecodeAttention;
+        }
+
+        public DecodeAttentionMode getDecodeAttentionMode() {
+            return decodeAttentionMode;
         }
 
         public ConfigurableTensorProvider getProvider() {

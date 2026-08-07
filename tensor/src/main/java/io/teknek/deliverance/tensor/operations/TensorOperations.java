@@ -1,5 +1,6 @@
 package io.teknek.deliverance.tensor.operations;
 
+import com.codahale.metrics.MetricRegistry;
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.ActivationFunction;
@@ -31,6 +32,15 @@ public interface TensorOperations {
      * Register a tensor with the operations provider.  This is used to optimize operations on the tensor (e.g. GPU Load).
      */
     default void registerModelTensor(AbstractTensor t) { }
+
+    /** Creates an optional backend for providers that maintain device-side KV storage. */
+    default io.teknek.deliverance.tensor.KvStorageBackend createKvStorageBackend() {
+        return io.teknek.deliverance.tensor.KvStorageBackend.NONE;
+    }
+
+    default io.teknek.deliverance.tensor.KvStorageBackend createKvStorageBackend(MetricRegistry metricRegistry) {
+        return createKvStorageBackend();
+    }
 
     default float dotProduct(AbstractTensor a, AbstractTensor b, int limit) {
         return dotProduct(a, b, 0, 0, limit);
@@ -148,6 +158,91 @@ public interface TensorOperations {
     }*/
     AbstractTensor quantize(AbstractTensor t, DType qtype, int offset, int length);
 
+    /** Computes a dot product over two row slices. Providers may override with hardware-specific implementations. */
+    default float dotSlice(AbstractTensor left, int leftRow, int leftOffset, AbstractTensor right, int rightRow,
+            int rightOffset, int length) {
+        float dot = 0.0f;
+        for (int col = 0; col < length; col++) {
+            dot += left.get(leftRow, leftOffset + col) * right.get(rightRow, rightOffset + col);
+        }
+        return dot;
+    }
+
+    default boolean usesOptimizedDotSlice(AbstractTensor left, AbstractTensor right) {
+        return false;
+    }
+
+    /** Computes dot products between one row slice and a batch of row slices into {@code scores}. */
+    default void dotRowsToArray(AbstractTensor left, int leftRow, int leftOffset, AbstractTensor rows,
+            int rowOffset, int rowColumnOffset, int rowCount, int width, float[] scores, int scoresOffset) {
+        for (int row = 0; row < rowCount; row++) {
+            scores[scoresOffset + row] = dotSlice(left, leftRow, leftOffset, rows, rowOffset + row, rowColumnOffset,
+                    width);
+        }
+    }
+
+    default boolean usesOptimizedDotRowsToArray(AbstractTensor left, AbstractTensor rows) {
+        return false;
+    }
+
+    /** Mutates {@code out = out * oldScale + value * weight} over one row slice. */
+    default void weightedRescaleAccumulateSlice(AbstractTensor out, int outRow, int outOffset, AbstractTensor value,
+            int valueRow, int valueOffset, int length, float oldScale, float weight) {
+        for (int col = 0; col < length; col++) {
+            out.set(out.get(outRow, outOffset + col) * oldScale + value.get(valueRow, valueOffset + col) * weight,
+                    outRow, outOffset + col);
+        }
+    }
+
+    default boolean usesOptimizedWeightedRescaleAccumulateSlice(AbstractTensor out, AbstractTensor value) {
+        return false;
+    }
+
+    /** Mutates {@code out += value * weight} over one row slice. */
+    default void accumulateWeightedSlice(AbstractTensor out, int outRow, int outOffset, AbstractTensor value,
+            int valueRow, int valueOffset, int length, float weight) {
+        for (int col = 0; col < length; col++) {
+            out.set(out.get(outRow, outOffset + col) + value.get(valueRow, valueOffset + col) * weight,
+                    outRow, outOffset + col);
+        }
+    }
+
+    default boolean usesOptimizedAccumulateWeightedSlice(AbstractTensor out, AbstractTensor value) {
+        return false;
+    }
+
+    /** Mutates {@code out += sum_i weights[i] * rows[rowOffset + i]} over one row slice. */
+    default void accumulateWeightedRows(AbstractTensor out, int outRow, int outOffset, AbstractTensor rows,
+            int rowOffset, int rowColumnOffset, int rowCount, int width, float[] weights, int weightsOffset) {
+        for (int row = 0; row < rowCount; row++) {
+            accumulateWeightedSlice(out, outRow, outOffset, rows, rowOffset + row, rowColumnOffset, width,
+                    weights[weightsOffset + row]);
+        }
+    }
+
+    default boolean usesOptimizedAccumulateWeightedRows(AbstractTensor out, AbstractTensor rows) {
+        return false;
+    }
+
+    /** Multiplies one row slice by {@code factor}. */
+    default void normalizeSlice(AbstractTensor tensor, int row, int offset, int length, float factor) {
+        for (int col = 0; col < length; col++) {
+            tensor.set(tensor.get(row, offset + col) * factor, row, offset + col);
+        }
+    }
+
+    default boolean usesOptimizedNormalizeSlice(AbstractTensor tensor) {
+        return false;
+    }
+
+    default void scaleSlice(AbstractTensor tensor, int row, int offset, int length, float factor) {
+        normalizeSlice(tensor, row, offset, length, factor);
+    }
+
+    default boolean usesOptimizedScaleSlice(AbstractTensor tensor) {
+        return usesOptimizedNormalizeSlice(tensor);
+    }
+
     default AbstractTensor activationMultiplyQuantize(AbstractTensor gate, AbstractTensor up,
             ActivationFunction.Type activation, DType qtype, int offset, int length) {
         Preconditions.checkArgument(gate.shape().equals(up.shape()), "gate and up must have same shape");
@@ -181,6 +276,18 @@ public interface TensorOperations {
             AbstractTensor[] valuePages, int visibleRows, int numberOfHeads, int numberOfKeyValueHeads, int headSize,
             float scale, Float softcap) {
         return true;
+    }
+
+    default boolean supportsFlashDecodePagedAttention(AbstractTensor valueOut, AbstractTensor query,
+            AbstractTensor[] keyPages, AbstractTensor[] valuePages, int visibleRows, int numberOfHeads,
+            int numberOfKeyValueHeads, int headSize, float scale, Float softcap) {
+        return false;
+    }
+
+    default void flashDecodePagedAttention(AbstractTensor valueOut, AbstractTensor query, AbstractTensor[] keyPages,
+            AbstractTensor[] valuePages, int visibleRows, int numberOfHeads, int numberOfKeyValueHeads, int headSize,
+            float scale, Float softcap) {
+        throw new UnsupportedOperationException("flashDecodePagedAttention is not supported by " + name());
     }
 
     default void decodePagedAttentionHeadWithProviderKernels(AbstractTensor valueOut, AbstractTensor query,

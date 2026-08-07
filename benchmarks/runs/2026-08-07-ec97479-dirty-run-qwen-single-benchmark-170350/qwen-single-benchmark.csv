@@ -1,0 +1,12 @@
+timestamp,engine,model,case_id,category,turn,prompt_chars,prompt_tokens,generated_tokens,total_ms,generation_ms,tokens_per_second,response_chars,finish_reason
+"2026-08-07T21:04:25.560299Z","deliverance","edwardcapriolo/Qwen3-4B-JQ4","builtin-reasoning-1","reasoning",1,592,128,256,26997.830709,21346.973917000003,11.945487027410788,1059,"MAX_TOKENS"
+"2026-08-07T21:04:55.165893Z","deliverance","edwardcapriolo/Qwen3-4B-JQ4","builtin-reasoning-1","reasoning",2,1776,403,256,29586.691917,21999.822958,11.591002367920057,1116,"MAX_TOKENS"
+"2026-08-07T21:05:17.095198Z","deliverance","edwardcapriolo/Qwen3-4B-JQ4","builtin-math-1","math",1,382,89,256,21919.426667,20046.957374999998,12.720134793023673,1071,"MAX_TOKENS"
+"2026-08-07T21:05:46.868831Z","deliverance","edwardcapriolo/Qwen3-4B-JQ4","builtin-math-1","math",2,1657,382,256,29767.778375,21612.940459,11.798487137080581,993,"MAX_TOKENS"
+"2026-08-07T21:06:09.731296Z","deliverance","edwardcapriolo/Qwen3-4B-JQ4","builtin-coding-1","coding",1,318,63,256,22854.005625,21682.166042,11.760817600328567,1123,"MAX_TOKENS"
+"2026-08-07T21:06:40.738415Z","deliverance","edwardcapriolo/Qwen3-4B-JQ4","builtin-coding-1","coding",2,1610,346,256,30987.890542,22705.961459,11.230530821628134,1189,"MAX_TOKENS"
+"2026-08-07T21:07:01.757166Z","deliverance","edwardcapriolo/Qwen3-4B-JQ4","builtin-coding-2","coding",1,265,50,256,21011.441958,20087.690208,12.694341527551298,1122,"MAX_TOKENS"
+"2026-08-07T21:07:33.870274Z","deliverance","edwardcapriolo/Qwen3-4B-JQ4","builtin-coding-2","coding",2,1548,332,256,32108.141459,24915.622084,10.234542775624803,1152,"MAX_TOKENS"
+"2026-08-07T21:08:04.716156Z","deliverance","edwardcapriolo/Qwen3-4B-JQ4","builtin-extraction-1","extraction",1,515,335,256,30829.68975,22200.738125000003,11.486104586443787,783,"MAX_TOKENS"
+"2026-08-07T21:08:45.820938Z","deliverance","edwardcapriolo/Qwen3-4B-JQ4","builtin-extraction-1","extraction",2,1457,617,256,41095.34325,24293.290083,10.496725603192148,912,"MAX_TOKENS"
+"2026-08-07T21:09:06.268859Z","deliverance","edwardcapriolo/Qwen3-4B-JQ4","builtin-stem-1","stem",1,270,50,256,20440.252833,19420.0805,13.130738567226844,1112,"MAX_TOKENS"

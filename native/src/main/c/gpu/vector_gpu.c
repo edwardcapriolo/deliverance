@@ -52,6 +52,21 @@ typedef struct {
     uint32_t _pad;
 } DecodeAttentionParams;
 
+typedef struct {
+    uint32_t rows;
+    uint32_t head_size;
+    uint32_t number_of_heads;
+    uint32_t number_of_kv_heads;
+    uint32_t kv_length;
+    uint32_t key_stride;
+    uint32_t value_stride;
+    uint32_t reset;
+    float scale;
+    uint32_t _pad0;
+    uint32_t _pad1;
+    uint32_t _pad2;
+} DecodeAttentionAllHeadsParams;
+
 static void log_callback(WGPULoggingType level, struct WGPUStringView message, void * userdata) {
   UNUSED(userdata)
   char *level_str;
@@ -172,6 +187,9 @@ int64_t tensor_lookup_idx = 0;
 int64_t tensor_free_list[MAX_REGISTERED_TENSORS];
 int64_t tensor_free_count = 0;
 pthread_mutex_t tensor_registry_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+WGPUBuffer lookup_tensor_addref(int64_t id);
+void release_tensor(WGPUBuffer buffer);
 
 Scratch scratch_lookup[8192];
 int64_t scratch_lookup_idx = 0;
@@ -436,6 +454,26 @@ int64_t register_tensor(const char *data, int size) {
     pthread_mutex_unlock(&tensor_registry_mutex);
 
     return id;
+}
+
+void update_tensor(int64_t id, const char *data, int size) {
+    WGPUBuffer buffer = lookup_tensor_addref(id);
+    if (buffer == NULL) {
+        fprintf(stderr, "GPU tensor update failed: id %lld is not registered\n", (long long) id);
+        exit(6);
+    }
+    wgpuQueueWriteBuffer(queue, buffer, 0, data, size);
+    release_tensor(buffer);
+}
+
+void update_tensor_range(int64_t id, int dst_offset, const char *data, int size) {
+    WGPUBuffer buffer = lookup_tensor_addref(id);
+    if (buffer == NULL) {
+        fprintf(stderr, "GPU tensor range update failed: id %lld is not registered\n", (long long) id);
+        exit(6);
+    }
+    wgpuQueueWriteBuffer(queue, buffer, dst_offset, data, size);
+    release_tensor(buffer);
 }
 
 void unregister_tensor(int64_t id) {
@@ -869,6 +907,7 @@ void gpu_decode_paged_attention_head(int64_t scratch_id, int64_t shader, const v
 
     WGPUBuffer *borrowed_k = calloc(page_count, sizeof(WGPUBuffer));
     WGPUBuffer *borrowed_v = calloc(page_count, sizeof(WGPUBuffer));
+    WGPUBuffer *params_buffers = calloc(page_count, sizeof(WGPUBuffer));
     WGPUBindGroup *bind_groups = calloc(page_count, sizeof(WGPUBindGroup));
 
     int rows_remaining = visible_rows;
@@ -879,7 +918,9 @@ void gpu_decode_paged_attention_head(int64_t scratch_id, int64_t shader, const v
         assert(borrowed_k[i]);
         assert(borrowed_v[i]);
         DecodeAttentionParams params = {rows, head_size, kv_offset, key_stride, value_stride, i == 0 ? 1u : 0u, scale, 0u};
-        wgpuQueueWriteBuffer(queue, s.params_buffer, 0, &params, sizeof(DecodeAttentionParams));
+        params_buffers[i] = create_buffer(device, &params, sizeof(DecodeAttentionParams),
+                WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+        assert(params_buffers[i]);
 
         WGPUBindGroupEntry bind_group_entries[6] = {
             { .binding = 0, .buffer = s.input_buffer, .offset = 0, .size = query_size },
@@ -887,7 +928,7 @@ void gpu_decode_paged_attention_head(int64_t scratch_id, int64_t shader, const v
             { .binding = 2, .buffer = borrowed_v[i], .offset = 0, .size = value_buffer_size },
             { .binding = 3, .buffer = s.empty_buffer, .offset = 0, .size = 8 },
             { .binding = 4, .buffer = s.result_buffer, .offset = 0, .size = state_size },
-            { .binding = 5, .buffer = s.params_buffer, .offset = 0, .size = sizeof(DecodeAttentionParams) },
+            { .binding = 5, .buffer = params_buffers[i], .offset = 0, .size = sizeof(DecodeAttentionParams) },
         };
         bind_groups[i] = wgpuDeviceCreateBindGroup(device, &(WGPUBindGroupDescriptor){
             .layout = bind_group_layout,
@@ -935,10 +976,121 @@ void gpu_decode_paged_attention_head(int64_t scratch_id, int64_t shader, const v
         if (bind_groups[i] != NULL) {
             wgpuBindGroupRelease(bind_groups[i]);
         }
+        if (params_buffers[i] != NULL) {
+            wgpuBufferDestroy(params_buffers[i]);
+            wgpuBufferRelease(params_buffers[i]);
+        }
         release_tensor(borrowed_k[i]);
         release_tensor(borrowed_v[i]);
     }
     free(bind_groups);
+    free(params_buffers);
+    free(borrowed_k);
+    free(borrowed_v);
+    wgpuCommandBufferRelease(command_buffer);
+    wgpuCommandEncoderRelease(encoder);
+}
+
+void gpu_decode_paged_attention_all_heads(int64_t scratch_id, int64_t shader, const void *query, int qoffset, int query_size, const int64_t *kid, const int64_t *vid, int page_count, int visible_rows, int page_rows, int number_of_heads, int number_of_kv_heads, int head_size, int kv_length, int key_stride, int value_stride, float *out, int out_offset, int out_stride, float scale, int key_buffer_size, int value_buffer_size) {
+    Scratch s = scratch_lookup[scratch_id];
+    size_t state_width = (size_t) (2 + head_size);
+    size_t state_size = (size_t) number_of_heads * state_width * sizeof(float);
+    if ((size_t) query_size > MAX_SCRATCH_SIZE || state_size > MAX_SCRATCH_SIZE) {
+        fprintf(stderr, "decode all-head paged attention scratch too small query=%d state=%zu\n", query_size, state_size);
+        exit(6);
+    }
+
+    wgpuQueueWriteBuffer(queue, s.input_buffer, 0, ((const char *) query) + qoffset, (size_t) query_size);
+
+    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device, &(const WGPUCommandEncoderDescriptor){
+        .label = "decode_all_heads_paged_attention_command_encoder",
+    });
+    WGPUComputePipeline pipeline = shader_pipeline_lookup[shader];
+    assert(pipeline);
+
+    WGPUBuffer *borrowed_k = calloc(page_count, sizeof(WGPUBuffer));
+    WGPUBuffer *borrowed_v = calloc(page_count, sizeof(WGPUBuffer));
+    WGPUBuffer *params_buffers = calloc(page_count, sizeof(WGPUBuffer));
+    WGPUBindGroup *bind_groups = calloc(page_count, sizeof(WGPUBindGroup));
+
+    int rows_remaining = visible_rows;
+    for (int i = 0; i < page_count && rows_remaining > 0; i++) {
+        int rows = rows_remaining < page_rows ? rows_remaining : page_rows;
+        borrowed_k[i] = lookup_tensor_addref(kid[i]);
+        borrowed_v[i] = lookup_tensor_addref(vid[i]);
+        assert(borrowed_k[i]);
+        assert(borrowed_v[i]);
+        DecodeAttentionAllHeadsParams params = {rows, head_size, number_of_heads, number_of_kv_heads, kv_length, key_stride, value_stride, i == 0 ? 1u : 0u, scale, 0u, 0u, 0u};
+        params_buffers[i] = create_buffer(device, &params, sizeof(DecodeAttentionAllHeadsParams),
+                WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+        assert(params_buffers[i]);
+
+        WGPUBindGroupEntry bind_group_entries[6] = {
+            { .binding = 0, .buffer = s.input_buffer, .offset = 0, .size = (size_t) query_size },
+            { .binding = 1, .buffer = borrowed_k[i], .offset = 0, .size = key_buffer_size },
+            { .binding = 2, .buffer = borrowed_v[i], .offset = 0, .size = value_buffer_size },
+            { .binding = 3, .buffer = s.empty_buffer, .offset = 0, .size = 8 },
+            { .binding = 4, .buffer = s.result_buffer, .offset = 0, .size = state_size },
+            { .binding = 5, .buffer = params_buffers[i], .offset = 0, .size = sizeof(DecodeAttentionAllHeadsParams) },
+        };
+        bind_groups[i] = wgpuDeviceCreateBindGroup(device, &(WGPUBindGroupDescriptor){
+            .layout = bind_group_layout,
+            .entryCount = 6,
+            .entries = bind_group_entries,
+        });
+
+        WGPUComputePassEncoder compute_pass = wgpuCommandEncoderBeginComputePass(encoder, &(const WGPUComputePassDescriptor){
+            .label = "decode_all_heads_paged_attention_compute_pass",
+        });
+        wgpuComputePassEncoderSetPipeline(compute_pass, pipeline);
+        wgpuComputePassEncoderSetBindGroup(compute_pass, 0, bind_groups[i], 0, NULL);
+        wgpuComputePassEncoderDispatchWorkgroups(compute_pass, number_of_heads, 1, 1);
+        wgpuComputePassEncoderEnd(compute_pass);
+        wgpuComputePassEncoderRelease(compute_pass);
+        rows_remaining -= rows;
+    }
+
+    wgpuCommandEncoderCopyBufferToBuffer(encoder, s.result_buffer, 0, s.result_staging_buffer, 0, state_size);
+    WGPUCommandBuffer command_buffer = wgpuCommandEncoderFinish(encoder, &(const WGPUCommandBufferDescriptor){
+        .label = "decode_all_heads_paged_attention_command_buffer",
+    });
+    wgpuQueueSubmit(queue, 1, &command_buffer);
+
+    bool mappingComplete = false;
+    float const *buf = NULL;
+    QCallbackContext context = {.mappingComplete = &mappingComplete, .R_size = state_size, .R_staging_buffer = s.result_staging_buffer, .buf = &buf};
+    WGPUQueueWorkDoneCallbackInfo workDoneCallbackInfo = {
+          .mode = WGPUCallbackMode_AllowSpontaneous,
+          .callback = work_done_callback,
+          .userdata1 = &context
+    };
+    wgpuQueueOnSubmittedWorkDone(queue, workDoneCallbackInfo);
+    while (!mappingComplete) {
+       wgpuInstanceProcessEvents(instance);
+    }
+
+    for (int head = 0; head < number_of_heads; head++) {
+        size_t state_base = (size_t) head * state_width;
+        float sum = buf[state_base + 1];
+        for (int i = 0; i < head_size; i++) {
+            out[out_offset + head * out_stride + i] = buf[state_base + 2 + i] / sum;
+        }
+    }
+    wgpuBufferUnmap(s.result_staging_buffer);
+
+    for (int i = 0; i < page_count; i++) {
+        if (bind_groups[i] != NULL) {
+            wgpuBindGroupRelease(bind_groups[i]);
+        }
+        if (params_buffers[i] != NULL) {
+            wgpuBufferDestroy(params_buffers[i]);
+            wgpuBufferRelease(params_buffers[i]);
+        }
+        release_tensor(borrowed_k[i]);
+        release_tensor(borrowed_v[i]);
+    }
+    free(bind_groups);
+    free(params_buffers);
     free(borrowed_k);
     free(borrowed_v);
     wgpuCommandBufferRelease(command_buffer);

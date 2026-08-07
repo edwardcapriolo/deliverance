@@ -80,6 +80,158 @@ public final class PanamaTensorOperations implements TensorOperations {
                 pool);
     }
 
+    @Override
+    public float dotSlice(AbstractTensor left, int leftRow, int leftOffset, AbstractTensor right, int rightRow,
+            int rightOffset, int length) {
+        if (left instanceof FloatBufferTensor leftF32 && right instanceof FloatBufferTensor rightF32) {
+            FloatVector acc = FloatVector.zero(FloatVector.SPECIES_PREFERRED);
+            int upper = FloatVector.SPECIES_PREFERRED.loopBound(length);
+            int col = 0;
+            for (; col < upper; col += FloatVector.SPECIES_PREFERRED.length()) {
+                acc = leftF32.getVector(FloatVector.SPECIES_PREFERRED, leftRow, leftOffset + col)
+                        .fma(rightF32.getVector(FloatVector.SPECIES_PREFERRED, rightRow, rightOffset + col), acc);
+            }
+            float dot = acc.reduceLanes(VectorOperators.ADD);
+            for (; col < length; col++) {
+                dot += left.get(leftRow, leftOffset + col) * right.get(rightRow, rightOffset + col);
+            }
+            return dot;
+        }
+        return TensorOperations.super.dotSlice(left, leftRow, leftOffset, right, rightRow, rightOffset, length);
+    }
+
+    @Override
+    public boolean usesOptimizedDotSlice(AbstractTensor left, AbstractTensor right) {
+        return left instanceof FloatBufferTensor && right instanceof FloatBufferTensor;
+    }
+
+    @Override
+    public void dotRowsToArray(AbstractTensor left, int leftRow, int leftOffset, AbstractTensor rows,
+            int rowOffset, int rowColumnOffset, int rowCount, int width, float[] scores, int scoresOffset) {
+        if (left instanceof FloatBufferTensor leftF32 && rows instanceof FloatBufferTensor rowsF32) {
+            for (int row = 0; row < rowCount; row++) {
+                scores[scoresOffset + row] = dotSlice(leftF32, leftRow, leftOffset, rowsF32, rowOffset + row,
+                        rowColumnOffset, width);
+            }
+            return;
+        }
+        TensorOperations.super.dotRowsToArray(left, leftRow, leftOffset, rows, rowOffset, rowColumnOffset, rowCount,
+                width, scores, scoresOffset);
+    }
+
+    @Override
+    public boolean usesOptimizedDotRowsToArray(AbstractTensor left, AbstractTensor rows) {
+        return left instanceof FloatBufferTensor && rows instanceof FloatBufferTensor;
+    }
+
+    @Override
+    public void weightedRescaleAccumulateSlice(AbstractTensor out, int outRow, int outOffset, AbstractTensor value,
+            int valueRow, int valueOffset, int length, float oldScale, float weight) {
+        if (out instanceof FloatBufferTensor outF32 && value instanceof FloatBufferTensor valueF32) {
+            FloatVector oldScaleVector = FloatVector.broadcast(FloatVector.SPECIES_PREFERRED, oldScale);
+            FloatVector weightVector = FloatVector.broadcast(FloatVector.SPECIES_PREFERRED, weight);
+            int upper = FloatVector.SPECIES_PREFERRED.loopBound(length);
+            int col = 0;
+            for (; col < upper; col += FloatVector.SPECIES_PREFERRED.length()) {
+                FloatVector outVector = outF32.getVector(FloatVector.SPECIES_PREFERRED, outRow, outOffset + col);
+                FloatVector valueVector = valueF32.getVector(FloatVector.SPECIES_PREFERRED, valueRow, valueOffset + col);
+                outF32.intoTensor(valueVector.fma(weightVector, outVector.mul(oldScaleVector)), outRow,
+                        outOffset + col);
+            }
+            for (; col < length; col++) {
+                out.set(out.get(outRow, outOffset + col) * oldScale
+                        + value.get(valueRow, valueOffset + col) * weight, outRow, outOffset + col);
+            }
+            return;
+        }
+        TensorOperations.super.weightedRescaleAccumulateSlice(out, outRow, outOffset, value, valueRow, valueOffset,
+                length, oldScale, weight);
+    }
+
+    @Override
+    public boolean usesOptimizedWeightedRescaleAccumulateSlice(AbstractTensor out, AbstractTensor value) {
+        return out instanceof FloatBufferTensor && value instanceof FloatBufferTensor;
+    }
+
+    @Override
+    public void accumulateWeightedSlice(AbstractTensor out, int outRow, int outOffset, AbstractTensor value,
+            int valueRow, int valueOffset, int length, float weight) {
+        if (out instanceof FloatBufferTensor outF32 && value instanceof FloatBufferTensor valueF32) {
+            FloatVector weightVector = FloatVector.broadcast(FloatVector.SPECIES_PREFERRED, weight);
+            int upper = FloatVector.SPECIES_PREFERRED.loopBound(length);
+            int col = 0;
+            for (; col < upper; col += FloatVector.SPECIES_PREFERRED.length()) {
+                FloatVector outVector = outF32.getVector(FloatVector.SPECIES_PREFERRED, outRow, outOffset + col);
+                FloatVector valueVector = valueF32.getVector(FloatVector.SPECIES_PREFERRED, valueRow, valueOffset + col);
+                outF32.intoTensor(valueVector.fma(weightVector, outVector), outRow, outOffset + col);
+            }
+            for (; col < length; col++) {
+                out.set(out.get(outRow, outOffset + col) + value.get(valueRow, valueOffset + col) * weight,
+                        outRow, outOffset + col);
+            }
+            return;
+        }
+        TensorOperations.super.accumulateWeightedSlice(out, outRow, outOffset, value, valueRow, valueOffset, length,
+                weight);
+    }
+
+    @Override
+    public boolean usesOptimizedAccumulateWeightedSlice(AbstractTensor out, AbstractTensor value) {
+        return out instanceof FloatBufferTensor && value instanceof FloatBufferTensor;
+    }
+
+    @Override
+    public void accumulateWeightedRows(AbstractTensor out, int outRow, int outOffset, AbstractTensor rows,
+            int rowOffset, int rowColumnOffset, int rowCount, int width, float[] weights, int weightsOffset) {
+        if (out instanceof FloatBufferTensor outF32 && rows instanceof FloatBufferTensor rowsF32) {
+            for (int row = 0; row < rowCount; row++) {
+                accumulateWeightedSlice(outF32, outRow, outOffset, rowsF32, rowOffset + row, rowColumnOffset, width,
+                        weights[weightsOffset + row]);
+            }
+            return;
+        }
+        TensorOperations.super.accumulateWeightedRows(out, outRow, outOffset, rows, rowOffset, rowColumnOffset,
+                rowCount, width, weights, weightsOffset);
+    }
+
+    @Override
+    public boolean usesOptimizedAccumulateWeightedRows(AbstractTensor out, AbstractTensor rows) {
+        return out instanceof FloatBufferTensor && rows instanceof FloatBufferTensor;
+    }
+
+    @Override
+    public void normalizeSlice(AbstractTensor tensor, int row, int offset, int length, float factor) {
+        if (tensor instanceof FloatBufferTensor tensorF32) {
+            FloatVector factorVector = FloatVector.broadcast(FloatVector.SPECIES_PREFERRED, factor);
+            int upper = FloatVector.SPECIES_PREFERRED.loopBound(length);
+            int col = 0;
+            for (; col < upper; col += FloatVector.SPECIES_PREFERRED.length()) {
+                tensorF32.intoTensor(tensorF32.getVector(FloatVector.SPECIES_PREFERRED, row, offset + col)
+                        .mul(factorVector), row, offset + col);
+            }
+            for (; col < length; col++) {
+                tensor.set(tensor.get(row, offset + col) * factor, row, offset + col);
+            }
+            return;
+        }
+        TensorOperations.super.normalizeSlice(tensor, row, offset, length, factor);
+    }
+
+    @Override
+    public boolean usesOptimizedNormalizeSlice(AbstractTensor tensor) {
+        return tensor instanceof FloatBufferTensor;
+    }
+
+    @Override
+    public void scaleSlice(AbstractTensor tensor, int row, int offset, int length, float factor) {
+        normalizeSlice(tensor, row, offset, length, factor);
+    }
+
+    @Override
+    public boolean usesOptimizedScaleSlice(AbstractTensor tensor) {
+        return tensor instanceof FloatBufferTensor;
+    }
+
     /**
      *  multiplies matrices on cpu
      *  with column major ordering

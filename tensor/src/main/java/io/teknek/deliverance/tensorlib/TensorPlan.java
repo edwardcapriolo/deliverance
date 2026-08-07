@@ -98,6 +98,78 @@ public final class TensorPlan {
         return this;
     }
 
+    /** Computes a dot product over two row slices. */
+    public float dotSlice(AbstractTensor left, int leftRow, int leftOffset, AbstractTensor right, int rightRow,
+            int rightOffset, int length) {
+        Objects.requireNonNull(left, "left");
+        Objects.requireNonNull(right, "right");
+        recordPrimitivePath("tensorplan.dot_slice", operations.usesOptimizedDotSlice(left, right));
+        float[] result = new float[1];
+        run("tensorplan.dot_slice", 0, Optional.of(left), () -> result[0] = operations.dotSlice(left, leftRow, leftOffset,
+                right, rightRow, rightOffset, length));
+        return result[0];
+    }
+
+    public void dotRowsToArray(AbstractTensor left, int leftRow, int leftOffset, AbstractTensor rows, int rowOffset,
+            int rowColumnOffset, int rowCount, int width, float[] scores, int scoresOffset) {
+        Objects.requireNonNull(left, "left");
+        Objects.requireNonNull(rows, "rows");
+        Objects.requireNonNull(scores, "scores");
+        recordPrimitivePath("tensorplan.dot_rows_to_array", operations.usesOptimizedDotRowsToArray(left, rows));
+        run("tensorplan.dot_rows_to_array", 0, Optional.of(left), () -> operations.dotRowsToArray(left, leftRow,
+                leftOffset, rows, rowOffset, rowColumnOffset, rowCount, width, scores, scoresOffset));
+    }
+
+    /** Mutates {@code out = out * oldScale + value * weight} over one row slice. */
+    public void weightedRescaleAccumulateSlice(AbstractTensor out, int outRow, int outOffset, AbstractTensor value,
+            int valueRow, int valueOffset, int length, float oldScale, float weight) {
+        Objects.requireNonNull(out, "out");
+        Objects.requireNonNull(value, "value");
+        recordPrimitivePath("tensorplan.weighted_rescale_accumulate_slice",
+                operations.usesOptimizedWeightedRescaleAccumulateSlice(out, value));
+        run("tensorplan.weighted_rescale_accumulate_slice", 0, Optional.of(out), () ->
+                operations.weightedRescaleAccumulateSlice(out, outRow, outOffset, value, valueRow, valueOffset, length,
+                        oldScale, weight));
+    }
+
+    /** Mutates {@code out += value * weight} over one row slice. */
+    public void accumulateWeightedSlice(AbstractTensor out, int outRow, int outOffset, AbstractTensor value,
+            int valueRow, int valueOffset, int length, float weight) {
+        Objects.requireNonNull(out, "out");
+        Objects.requireNonNull(value, "value");
+        recordPrimitivePath("tensorplan.accumulate_weighted_slice",
+                operations.usesOptimizedAccumulateWeightedSlice(out, value));
+        run("tensorplan.accumulate_weighted_slice", 0, Optional.of(out), () ->
+                operations.accumulateWeightedSlice(out, outRow, outOffset, value, valueRow, valueOffset, length,
+                        weight));
+    }
+
+    public void accumulateWeightedRows(AbstractTensor out, int outRow, int outOffset, AbstractTensor rows,
+            int rowOffset, int rowColumnOffset, int rowCount, int width, float[] weights, int weightsOffset) {
+        Objects.requireNonNull(out, "out");
+        Objects.requireNonNull(rows, "rows");
+        Objects.requireNonNull(weights, "weights");
+        recordPrimitivePath("tensorplan.accumulate_weighted_rows",
+                operations.usesOptimizedAccumulateWeightedRows(out, rows));
+        run("tensorplan.accumulate_weighted_rows", 0, Optional.of(out), () -> operations.accumulateWeightedRows(out,
+                outRow, outOffset, rows, rowOffset, rowColumnOffset, rowCount, width, weights, weightsOffset));
+    }
+
+    /** Multiplies one row slice by {@code factor}. */
+    public void normalizeSlice(AbstractTensor tensor, int row, int offset, int length, float factor) {
+        Objects.requireNonNull(tensor, "tensor");
+        recordPrimitivePath("tensorplan.normalize_slice", operations.usesOptimizedNormalizeSlice(tensor));
+        run("tensorplan.normalize_slice", 0, Optional.of(tensor), () -> operations.normalizeSlice(tensor, row, offset,
+                length, factor));
+    }
+
+    public void scaleSlice(AbstractTensor tensor, int row, int offset, int length, float factor) {
+        Objects.requireNonNull(tensor, "tensor");
+        recordPrimitivePath("tensorplan.scale_slice", operations.usesOptimizedScaleSlice(tensor));
+        run("tensorplan.scale_slice", 0, Optional.of(tensor), () -> operations.scaleSlice(tensor, row, offset,
+                length, factor));
+    }
+
     public final class Tensor {
         private final Node node;
 
@@ -896,6 +968,13 @@ public final class TensorPlan {
         if (timer != null) {
             timer.stop();
         }
+    }
+
+    private void recordPrimitivePath(String operation, boolean optimized) {
+        if (metricRegistry == null) {
+            return;
+        }
+        metricRegistry.counter(operation + (optimized ? ".optimized" : ".generic")).inc();
     }
 
     private static void closeIfOwned(Eval eval) {

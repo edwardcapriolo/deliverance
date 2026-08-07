@@ -738,6 +738,10 @@ public class KvBufferCache implements Closeable {
          */
         private final KvPageTable[] pageTableCache;
 
+        private final AbstractTensor[][][] pageTensorSliceCache;
+
+        private KvStorageBackend storageBackend = KvStorageBackend.NONE;
+
         private final KvPageContext pageContext;
 
         KvBuffer(String session, int maxPageSizeInBytes) {
@@ -745,6 +749,7 @@ public class KvBufferCache implements Closeable {
             this.pageContext = computePageSize(maxPageSizeInBytes);
             this.pages = new KvBufferPage[pageContext.numberOfLayerPages][pageContext.numberOfContextPages];
             this.pageTableCache = new KvPageTable[model.getConfig().numberOfLayers];
+            this.pageTensorSliceCache = new AbstractTensor[model.getConfig().numberOfLayers][2][pageContext.numberOfContextPages];
         }
 
         public int getCurrentContextPosition() {
@@ -753,6 +758,20 @@ public class KvBufferCache implements Closeable {
 
         public void setCurrentContextPosition(int position) {
             currentContextPosition.set(position);
+        }
+
+        public void setStorageBackend(KvStorageBackend storageBackend) {
+            this.storageBackend = storageBackend == null ? KvStorageBackend.NONE : storageBackend;
+        }
+
+        public KvStorageBackend getStorageBackend() {
+            return storageBackend;
+        }
+
+        public void kvRowWritten(int layerIndex, int position, int rowWidth) {
+            AbstractTensor keyPage = getKeyPageTensorForPosition(layerIndex, position);
+            AbstractTensor valuePage = getValuePageTensorForPosition(layerIndex, position);
+            storageBackend.rowWritten(keyPage, valuePage, getRowInContextPage(position), rowWidth);
         }
 
         /**
@@ -825,6 +844,7 @@ public class KvBufferCache implements Closeable {
 
         @Override
         public void close() {
+            storageBackend.close();
             for (KvBufferPage[] layerPages : pages) {
                 if (layerPages != null) {
                     for (KvBufferPage page : layerPages) {
@@ -848,12 +868,30 @@ public class KvBufferCache implements Closeable {
             return getTensorForPosition(layerIndex, position, 1);
         }
 
-        private AbstractTensor getTensorForPosition(int layerIndex, int position, int index) {
-            // Calculate page indices and relative indices
-            int layerPageIndex = layerIndex / pageContext.layersPerPage;
+        public AbstractTensor getKeyPageTensorForPosition(int layerIndex, int position) {
+            return getPageTensorForPosition(layerIndex, position, 0);
+        }
+
+        public AbstractTensor getValuePageTensorForPosition(int layerIndex, int position) {
+            return getPageTensorForPosition(layerIndex, position, 1);
+        }
+
+        public int getRowInContextPage(int position) {
+            return position % pageContext.contextLengthPerPage;
+        }
+
+        private AbstractTensor getPageTensorForPosition(int layerIndex, int position, int index) {
             int contextPageIndex = position / pageContext.contextLengthPerPage;
+            return getPageTensor(layerIndex, index, contextPageIndex);
+        }
+
+        private AbstractTensor getPageTensor(int layerIndex, int index, int contextPageIndex) {
+            AbstractTensor cached = pageTensorSliceCache[layerIndex][index][contextPageIndex];
+            if (cached != null) {
+                return cached;
+            }
+            int layerPageIndex = layerIndex / pageContext.layersPerPage;
             int relativeLayerIndex = layerIndex % pageContext.layersPerPage;
-            int relativeContextIndex = position % pageContext.contextLengthPerPage;
 
             KvBufferPage page = pages[layerPageIndex][contextPageIndex];
             if (page == null || page.isClosed()) {
@@ -861,7 +899,17 @@ public class KvBufferCache implements Closeable {
                 pages[layerPageIndex][contextPageIndex] = page;
             }
 
-            return page.getTensor().slice(true, relativeLayerIndex, index, relativeContextIndex);
+            AbstractTensor slice = page.getTensor().slice(true, relativeLayerIndex, index);
+            pageTensorSliceCache[layerIndex][index][contextPageIndex] = slice;
+            return slice;
+        }
+
+        private AbstractTensor getTensorForPosition(int layerIndex, int position, int index) {
+            // Calculate page indices and relative indices
+            int contextPageIndex = position / pageContext.contextLengthPerPage;
+            int relativeContextIndex = position % pageContext.contextLengthPerPage;
+
+            return getPageTensor(layerIndex, index, contextPageIndex).slice(true, relativeContextIndex);
         }
 
         public AbstractTensor[] getKeyTensorsUptoPosition(int layerIndex, int upperBound) {
@@ -893,7 +941,6 @@ public class KvBufferCache implements Closeable {
         private AbstractTensor[] getTensorsUptoPosition(int layerIndex, int index, int upperBound) {
             int layerPageIndex = layerIndex / pageContext.layersPerPage;
             int contextPageIndex = upperBound / pageContext.contextLengthPerPage;
-            int relativeLayerIndex = layerIndex % pageContext.layersPerPage;
 
             KvBufferPage[] layerPages = pages[layerPageIndex];
 
@@ -907,7 +954,7 @@ public class KvBufferCache implements Closeable {
                     layerPages[i] = page;
                 }
 
-                tensors[i] = page.getTensor().slice(true, relativeLayerIndex, index);
+                tensors[i] = getPageTensor(layerIndex, index, i);
             }
 
             return tensors;

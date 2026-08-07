@@ -512,6 +512,84 @@ public class NativeSimdTensorOperations implements TensorOperations {
     }
 
     @Override
+    public float dotSlice(AbstractTensor left, int leftRow, int leftOffset, AbstractTensor right, int rightRow,
+            int rightOffset, int length) {
+        return delegate.dotSlice(left, leftRow, leftOffset, right, rightRow, rightOffset, length);
+    }
+
+    @Override
+    public boolean usesOptimizedDotSlice(AbstractTensor left, AbstractTensor right) {
+        return delegate.usesOptimizedDotSlice(left, right);
+    }
+
+    @Override
+    public void dotRowsToArray(AbstractTensor left, int leftRow, int leftOffset, AbstractTensor rows,
+            int rowOffset, int rowColumnOffset, int rowCount, int width, float[] scores, int scoresOffset) {
+        delegate.dotRowsToArray(left, leftRow, leftOffset, rows, rowOffset, rowColumnOffset, rowCount, width, scores,
+                scoresOffset);
+    }
+
+    @Override
+    public boolean usesOptimizedDotRowsToArray(AbstractTensor left, AbstractTensor rows) {
+        return delegate.usesOptimizedDotRowsToArray(left, rows);
+    }
+
+    @Override
+    public void weightedRescaleAccumulateSlice(AbstractTensor out, int outRow, int outOffset, AbstractTensor value,
+            int valueRow, int valueOffset, int length, float oldScale, float weight) {
+        delegate.weightedRescaleAccumulateSlice(out, outRow, outOffset, value, valueRow, valueOffset, length,
+                oldScale, weight);
+    }
+
+    @Override
+    public boolean usesOptimizedWeightedRescaleAccumulateSlice(AbstractTensor out, AbstractTensor value) {
+        return delegate.usesOptimizedWeightedRescaleAccumulateSlice(out, value);
+    }
+
+    @Override
+    public void accumulateWeightedSlice(AbstractTensor out, int outRow, int outOffset, AbstractTensor value,
+            int valueRow, int valueOffset, int length, float weight) {
+        delegate.accumulateWeightedSlice(out, outRow, outOffset, value, valueRow, valueOffset, length, weight);
+    }
+
+    @Override
+    public boolean usesOptimizedAccumulateWeightedSlice(AbstractTensor out, AbstractTensor value) {
+        return delegate.usesOptimizedAccumulateWeightedSlice(out, value);
+    }
+
+    @Override
+    public void accumulateWeightedRows(AbstractTensor out, int outRow, int outOffset, AbstractTensor rows,
+            int rowOffset, int rowColumnOffset, int rowCount, int width, float[] weights, int weightsOffset) {
+        delegate.accumulateWeightedRows(out, outRow, outOffset, rows, rowOffset, rowColumnOffset, rowCount, width,
+                weights, weightsOffset);
+    }
+
+    @Override
+    public boolean usesOptimizedAccumulateWeightedRows(AbstractTensor out, AbstractTensor rows) {
+        return delegate.usesOptimizedAccumulateWeightedRows(out, rows);
+    }
+
+    @Override
+    public void normalizeSlice(AbstractTensor tensor, int row, int offset, int length, float factor) {
+        delegate.normalizeSlice(tensor, row, offset, length, factor);
+    }
+
+    @Override
+    public boolean usesOptimizedNormalizeSlice(AbstractTensor tensor) {
+        return delegate.usesOptimizedNormalizeSlice(tensor);
+    }
+
+    @Override
+    public void scaleSlice(AbstractTensor tensor, int row, int offset, int length, float factor) {
+        delegate.scaleSlice(tensor, row, offset, length, factor);
+    }
+
+    @Override
+    public boolean usesOptimizedScaleSlice(AbstractTensor tensor) {
+        return delegate.usesOptimizedScaleSlice(tensor);
+    }
+
+    @Override
     public AbstractTensor activationMultiplyQuantize(AbstractTensor gate, AbstractTensor up,
             ActivationFunction.Type activation, DType qtype, int offset, int length) {
         if (activation == ActivationFunction.Type.SILU

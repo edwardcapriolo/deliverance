@@ -4,18 +4,26 @@ import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.Timer;
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.math.VectorMath;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.DecodeAttentionMode;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.model.TensorProviderKind;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.KvPageTable;
+import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensorlib.TensorPlan;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import net.jafama.FastMath;
+import jdk.incubator.vector.FloatVector;
+import jdk.incubator.vector.VectorOperators;
+import jdk.incubator.vector.VectorSpecies;
 
 import java.util.*;
 import java.util.concurrent.ForkJoinTask;
@@ -26,6 +34,7 @@ import static io.teknek.deliverance.tensor.DebugSupport.debug;
 public class CausalSelfAttention extends BaseCausalSelfAttention {
     private static final Logger logger = LoggerFactory.getLogger(CausalSelfAttention.class);
     private static final String PACKED_PREFILL_PROPERTY = "deliverance.attention.packed-prefill";
+    private static final VectorSpecies<Float> F32_SPECIES = FloatVector.SPECIES_PREFERRED;
 
     private final AbstractModel m;
     private final Config config;
@@ -275,6 +284,8 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
                     });
                 }
 
+                kvMem.kvRowWritten(layerIndex, finalPosition, kvLength);
+
                 if (!usePackedPrefill(batchSize)) {
                     decodePagedAttention(query, value, kvMem, finalPosition);
                 }
@@ -416,18 +427,403 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
             try (Timer.Context ignoredScore = InferenceProfiler.timer(metricRegistry, "causalselfattention.score_value").time();
                  Timer.Context ignoredPackedScore = InferenceProfiler.timer(metricRegistry,
                          "causalselfattention.decode_paged_attention").time()) {
-                TensorOperations decodeAttentionOps = decodeAttentionOperations(value, query, pageTable);
-                if (InferenceProfiler.isEnabled()) {
-                    InferenceProfiler.counter(metricRegistry, "causalselfattention.decode_paged_attention.provider_"
-                            + decodeAttentionOps.name().replace(' ', '_')).inc();
+                if (m.getDecodeAttentionMode() == DecodeAttentionMode.FLASH_DECODE) {
+                    InferenceProfiler.counter(metricRegistry, "causalselfattention.decode_paged_attention.mode_flash_decode").inc();
+                    TensorOperations gpuFlashOps = flashDecodeAttentionOperations(value, query, pageTable);
+                    if (gpuFlashOps != null) {
+                        InferenceProfiler.counter(metricRegistry,
+                                "causalselfattention.decode_paged_attention.mode_flash_decode_gpu").inc();
+                        gpuFlashOps.flashDecodePagedAttention(value, query, keyPages, valuePages,
+                                pageTable.visibleRows(), numberOfHeads, numberOfKeyValueHeads, config.headSize,
+                                attentionScale, config.attnLogitSoftCapping);
+                    } else {
+                        InferenceProfiler.counter(metricRegistry,
+                                "causalselfattention.decode_paged_attention.mode_flash_decode_page_block_simd").inc();
+                        flashDecodeAttentionPageBlockSimdF32ParallelHeads(value, query, keyPages, valuePages,
+                                pageTable.visibleRows(), numberOfHeads, numberOfKeyValueHeads, config.headSize,
+                                attentionScale, config.attnLogitSoftCapping, m.getPool());
+                    }
+                } else {
+                    InferenceProfiler.counter(metricRegistry, "causalselfattention.decode_paged_attention.mode_staged").inc();
+                    TensorOperations decodeAttentionOps = decodeAttentionOperations(value, query, pageTable);
+                    if (InferenceProfiler.isEnabled()) {
+                        InferenceProfiler.counter(metricRegistry, "causalselfattention.decode_paged_attention.provider_"
+                                + decodeAttentionOps.name().replace(' ', '_')).inc();
+                    }
+                    decodeAttentionOps.decodePagedAttention(value, query, keyPages, valuePages,
+                            pageTable.visibleRows(), numberOfHeads, numberOfKeyValueHeads, config.headSize, attentionScale,
+                            config.attnLogitSoftCapping);
                 }
-                decodeAttentionOps.decodePagedAttention(value, query, keyPages, valuePages,
-                        pageTable.visibleRows(), numberOfHeads, numberOfKeyValueHeads, config.headSize, attentionScale,
-                        config.attnLogitSoftCapping);
             }
         } finally {
             // KvPageTable is cached by KvBuffer and does not own the underlying page views.
         }
+    }
+
+    static void flashDecodeAttention(AbstractTensor valueOut, AbstractTensor query, AbstractTensor[] keyPages,
+            AbstractTensor[] valuePages, int visibleRows, int numberOfHeads, int numberOfKeyValueHeads, int headSize,
+            float scale, Float softcap) {
+        Preconditions.checkArgument(keyPages.length == valuePages.length, "key/value page count mismatch");
+        Preconditions.checkArgument(query.shape().first() == 1, "decode query must have one row");
+        Preconditions.checkArgument(valueOut.shape().first() == 1, "decode value output must have one row");
+        Preconditions.checkArgument(visibleRows > 0, "visibleRows must be positive");
+        int headGroupSize = numberOfHeads / numberOfKeyValueHeads;
+        for (int head = 0; head < numberOfHeads; head++) {
+            flashDecodeAttentionHead(valueOut, query, keyPages, valuePages, visibleRows, headGroupSize, headSize,
+                    scale, softcap, head);
+        }
+    }
+
+    static void flashDecodeAttentionParallelHeads(AbstractTensor valueOut, AbstractTensor query,
+            AbstractTensor[] keyPages, AbstractTensor[] valuePages, int visibleRows, int numberOfHeads,
+            int numberOfKeyValueHeads, int headSize, float scale, Float softcap, WrappedForkJoinPool pool) {
+        Preconditions.checkArgument(keyPages.length == valuePages.length, "key/value page count mismatch");
+        Preconditions.checkArgument(query.shape().first() == 1, "decode query must have one row");
+        Preconditions.checkArgument(valueOut.shape().first() == 1, "decode value output must have one row");
+        Preconditions.checkArgument(visibleRows > 0, "visibleRows must be positive");
+        int headGroupSize = numberOfHeads / numberOfKeyValueHeads;
+        VectorMath.pfor(0, numberOfHeads, head -> flashDecodeAttentionHead(valueOut, query, keyPages, valuePages,
+                visibleRows, headGroupSize, headSize, scale, softcap, head), pool);
+    }
+
+    static void flashDecodeAttentionSimdF32ParallelHeads(AbstractTensor valueOut, AbstractTensor query,
+            AbstractTensor[] keyPages, AbstractTensor[] valuePages, int visibleRows, int numberOfHeads,
+            int numberOfKeyValueHeads, int headSize, float scale, Float softcap, WrappedForkJoinPool pool) {
+        Preconditions.checkArgument(keyPages.length == valuePages.length, "key/value page count mismatch");
+        Preconditions.checkArgument(query.shape().first() == 1, "decode query must have one row");
+        Preconditions.checkArgument(valueOut.shape().first() == 1, "decode value output must have one row");
+        Preconditions.checkArgument(visibleRows > 0, "visibleRows must be positive");
+        Preconditions.checkArgument(valueOut.shape().last() >= numberOfHeads * headSize,
+                "valueOut width must contain all query heads");
+        Preconditions.checkArgument(query.shape().last() >= numberOfHeads * headSize,
+                "query width must contain all query heads");
+        int kvLength = numberOfKeyValueHeads * headSize;
+        for (int pageIndex = 0; pageIndex < keyPages.length; pageIndex++) {
+            Preconditions.checkArgument(keyPages[pageIndex].shape().last() >= kvLength,
+                    "key page width must contain all KV heads");
+            Preconditions.checkArgument(valuePages[pageIndex].shape().last() >= kvLength,
+                    "value page width must contain all KV heads");
+        }
+        if (!(valueOut instanceof FloatBufferTensor valueOutF32) || !(query instanceof FloatBufferTensor queryF32)
+                || !allFloatBufferTensors(keyPages) || !allFloatBufferTensors(valuePages)) {
+            flashDecodeAttentionParallelHeads(valueOut, query, keyPages, valuePages, visibleRows, numberOfHeads,
+                    numberOfKeyValueHeads, headSize, scale, softcap, pool);
+            return;
+        }
+        int headGroupSize = numberOfHeads / numberOfKeyValueHeads;
+        VectorMath.pfor(0, numberOfHeads, head -> flashDecodeAttentionHeadSimdF32(valueOutF32, queryF32, keyPages,
+                valuePages, visibleRows, headGroupSize, headSize, scale, softcap, head), pool);
+    }
+
+    static void flashDecodeAttentionTensorPlanParallelHeads(TensorPlan plan, AbstractTensor valueOut,
+            AbstractTensor query, AbstractTensor[] keyPages, AbstractTensor[] valuePages, int visibleRows,
+            int numberOfHeads, int numberOfKeyValueHeads, int headSize, float scale, Float softcap,
+            WrappedForkJoinPool pool) {
+        Preconditions.checkArgument(keyPages.length == valuePages.length, "key/value page count mismatch");
+        Preconditions.checkArgument(query.shape().first() == 1, "decode query must have one row");
+        Preconditions.checkArgument(valueOut.shape().first() == 1, "decode value output must have one row");
+        Preconditions.checkArgument(visibleRows > 0, "visibleRows must be positive");
+        Preconditions.checkArgument(valueOut.shape().last() >= numberOfHeads * headSize,
+                "valueOut width must contain all query heads");
+        Preconditions.checkArgument(query.shape().last() >= numberOfHeads * headSize,
+                "query width must contain all query heads");
+        int kvLength = numberOfKeyValueHeads * headSize;
+        for (int pageIndex = 0; pageIndex < keyPages.length; pageIndex++) {
+            Preconditions.checkArgument(keyPages[pageIndex].shape().last() >= kvLength,
+                    "key page width must contain all KV heads");
+            Preconditions.checkArgument(valuePages[pageIndex].shape().last() >= kvLength,
+                    "value page width must contain all KV heads");
+        }
+        int headGroupSize = numberOfHeads / numberOfKeyValueHeads;
+        VectorMath.pfor(0, numberOfHeads, head -> flashDecodeAttentionHeadTensorPlan(plan, valueOut, query, keyPages,
+                valuePages, visibleRows, headGroupSize, headSize, scale, softcap, head), pool);
+    }
+
+    static void flashDecodeAttentionPageBlockSimdF32ParallelHeads(AbstractTensor valueOut, AbstractTensor query,
+            AbstractTensor[] keyPages, AbstractTensor[] valuePages, int visibleRows, int numberOfHeads,
+            int numberOfKeyValueHeads, int headSize, float scale, Float softcap, WrappedForkJoinPool pool) {
+        Preconditions.checkArgument(keyPages.length == valuePages.length, "key/value page count mismatch");
+        Preconditions.checkArgument(query.shape().first() == 1, "decode query must have one row");
+        Preconditions.checkArgument(valueOut.shape().first() == 1, "decode value output must have one row");
+        Preconditions.checkArgument(visibleRows > 0, "visibleRows must be positive");
+        Preconditions.checkArgument(valueOut.shape().last() >= numberOfHeads * headSize,
+                "valueOut width must contain all query heads");
+        Preconditions.checkArgument(query.shape().last() >= numberOfHeads * headSize,
+                "query width must contain all query heads");
+        int kvLength = numberOfKeyValueHeads * headSize;
+        for (int pageIndex = 0; pageIndex < keyPages.length; pageIndex++) {
+            Preconditions.checkArgument(keyPages[pageIndex].shape().last() >= kvLength,
+                    "key page width must contain all KV heads");
+            Preconditions.checkArgument(valuePages[pageIndex].shape().last() >= kvLength,
+                    "value page width must contain all KV heads");
+        }
+        if (!(valueOut instanceof FloatBufferTensor valueOutF32) || !(query instanceof FloatBufferTensor queryF32)
+                || !allFloatBufferTensors(keyPages) || !allFloatBufferTensors(valuePages)) {
+            flashDecodeAttentionParallelHeads(valueOut, query, keyPages, valuePages, visibleRows, numberOfHeads,
+                    numberOfKeyValueHeads, headSize, scale, softcap, pool);
+            return;
+        }
+        int headGroupSize = numberOfHeads / numberOfKeyValueHeads;
+        VectorMath.pfor(0, numberOfHeads, head -> flashDecodeAttentionHeadPageBlockSimdF32(valueOutF32, queryF32,
+                keyPages, valuePages, visibleRows, headGroupSize, headSize, scale, softcap, head), pool);
+    }
+
+    private static void flashDecodeAttentionHeadPageBlockSimdF32(FloatBufferTensor valueOut, FloatBufferTensor query,
+            AbstractTensor[] keyPages, AbstractTensor[] valuePages, int visibleRows, int headGroupSize, int headSize,
+            float scale, Float softcap, int head) {
+        int kvHead = head / headGroupSize;
+        int queryOffset = head * headSize;
+        int kvOffset = kvHead * headSize;
+        zeroSliceF32(valueOut, queryOffset, headSize);
+
+        int maxPageRows = 0;
+        for (AbstractTensor keyPage : keyPages) {
+            maxPageRows = Math.max(maxPageRows, keyPage.shape().first());
+        }
+        float[] scores = new float[maxPageRows];
+        double runningMax = Double.NEGATIVE_INFINITY;
+        double runningDenom = 0.0;
+        int globalRow = 0;
+        for (int pageIndex = 0; pageIndex < keyPages.length && globalRow < visibleRows; pageIndex++) {
+            FloatBufferTensor keyPage = (FloatBufferTensor) keyPages[pageIndex];
+            FloatBufferTensor valuePage = (FloatBufferTensor) valuePages[pageIndex];
+            int rows = Math.min(keyPage.shape().first(), visibleRows - globalRow);
+            double pageMax = Double.NEGATIVE_INFINITY;
+            for (int row = 0; row < rows; row++) {
+                float dot = dotHeadF32(query, queryOffset, keyPage, row, kvOffset, headSize);
+                scores[row] = transformForAttentionSoftmax(dot, scale, softcap);
+                pageMax = Math.max(pageMax, scores[row]);
+            }
+            double newMax = Math.max(runningMax, pageMax);
+            float oldScale = runningMax == Double.NEGATIVE_INFINITY ? 0.0f
+                    : (float) FastMath.exp(runningMax - newMax);
+            double pageDenom = 0.0;
+            for (int row = 0; row < rows; row++) {
+                float weight = (float) FastMath.exp(scores[row] - newMax);
+                pageDenom += weight;
+                if (row == 0) {
+                    rescaleAndAccumulateF32(valueOut, queryOffset, valuePage, row, kvOffset, headSize, oldScale,
+                            weight);
+                } else {
+                    accumulateWeightedF32(valueOut, queryOffset, valuePage, row, kvOffset, headSize, weight);
+                }
+            }
+            runningDenom = runningDenom * oldScale + pageDenom;
+            runningMax = newMax;
+            globalRow += rows;
+        }
+        normalizeSliceF32(valueOut, queryOffset, headSize, (float) (1.0 / runningDenom));
+    }
+
+    private static void flashDecodeAttentionHeadTensorPlan(TensorPlan plan, AbstractTensor valueOut,
+            AbstractTensor query, AbstractTensor[] keyPages, AbstractTensor[] valuePages, int visibleRows,
+            int headGroupSize, int headSize, float scale, Float softcap, int head) {
+        int kvHead = head / headGroupSize;
+        int queryOffset = head * headSize;
+        int kvOffset = kvHead * headSize;
+        for (int col = 0; col < headSize; col++) {
+            valueOut.set(0.0f, 0, queryOffset + col);
+        }
+
+        int maxPageRows = 0;
+        for (AbstractTensor keyPage : keyPages) {
+            maxPageRows = Math.max(maxPageRows, keyPage.shape().first());
+        }
+        float[] scores = new float[maxPageRows];
+        double runningMax = Double.NEGATIVE_INFINITY;
+        double runningDenom = 0.0;
+        int globalRow = 0;
+        for (int pageIndex = 0; pageIndex < keyPages.length && globalRow < visibleRows; pageIndex++) {
+            AbstractTensor keyPage = keyPages[pageIndex];
+            AbstractTensor valuePage = valuePages[pageIndex];
+            int rows = Math.min(keyPage.shape().first(), visibleRows - globalRow);
+            plan.dotRowsToArray(query, 0, queryOffset, keyPage, 0, kvOffset, rows, headSize, scores, 0);
+            double pageMax = Double.NEGATIVE_INFINITY;
+            for (int row = 0; row < rows; row++) {
+                scores[row] = transformForAttentionSoftmax(scores[row], scale, softcap);
+                pageMax = Math.max(pageMax, scores[row]);
+            }
+            double newMax = Math.max(runningMax, pageMax);
+            float oldScale = runningMax == Double.NEGATIVE_INFINITY ? 0.0f
+                    : (float) FastMath.exp(runningMax - newMax);
+            double pageDenom = 0.0;
+            for (int row = 0; row < rows; row++) {
+                scores[row] = (float) FastMath.exp(scores[row] - newMax);
+                pageDenom += scores[row];
+            }
+            if (oldScale != 1.0f) {
+                plan.scaleSlice(valueOut, 0, queryOffset, headSize, oldScale);
+            }
+            plan.accumulateWeightedRows(valueOut, 0, queryOffset, valuePage, 0, kvOffset, rows, headSize, scores, 0);
+            runningDenom = runningDenom * oldScale + pageDenom;
+            runningMax = newMax;
+            globalRow += rows;
+        }
+        plan.normalizeSlice(valueOut, 0, queryOffset, headSize, (float) (1.0 / runningDenom));
+    }
+
+    private static boolean allFloatBufferTensors(AbstractTensor[] tensors) {
+        for (AbstractTensor tensor : tensors) {
+            if (!(tensor instanceof FloatBufferTensor)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static void flashDecodeAttentionHeadSimdF32(FloatBufferTensor valueOut, FloatBufferTensor query,
+            AbstractTensor[] keyPages, AbstractTensor[] valuePages, int visibleRows, int headGroupSize, int headSize,
+            float scale, Float softcap, int head) {
+        int kvHead = head / headGroupSize;
+        int queryOffset = head * headSize;
+        int kvOffset = kvHead * headSize;
+        zeroSliceF32(valueOut, queryOffset, headSize);
+
+        double runningMax = Double.NEGATIVE_INFINITY;
+        double runningDenom = 0.0;
+        int globalRow = 0;
+        for (int pageIndex = 0; pageIndex < keyPages.length && globalRow < visibleRows; pageIndex++) {
+            FloatBufferTensor keyPage = (FloatBufferTensor) keyPages[pageIndex];
+            FloatBufferTensor valuePage = (FloatBufferTensor) valuePages[pageIndex];
+            int rows = Math.min(keyPage.shape().first(), visibleRows - globalRow);
+            for (int row = 0; row < rows; row++) {
+                float dot = dotHeadF32(query, queryOffset, keyPage, row, kvOffset, headSize);
+                double score = transformForAttentionSoftmax(dot, scale, softcap);
+                double newMax = Math.max(runningMax, score);
+                float oldScale = runningMax == Double.NEGATIVE_INFINITY ? 0.0f
+                        : (float) FastMath.exp(runningMax - newMax);
+                float weight = (float) FastMath.exp(score - newMax);
+                rescaleAndAccumulateF32(valueOut, queryOffset, valuePage, row, kvOffset, headSize, oldScale, weight);
+                runningDenom = runningDenom * oldScale + weight;
+                runningMax = newMax;
+            }
+            globalRow += rows;
+        }
+        normalizeSliceF32(valueOut, queryOffset, headSize, (float) (1.0 / runningDenom));
+    }
+
+    private static float dotHeadF32(FloatBufferTensor query, int queryOffset, FloatBufferTensor keyPage, int keyRow,
+            int keyOffset, int headSize) {
+        FloatVector acc = FloatVector.zero(F32_SPECIES);
+        int upper = F32_SPECIES.loopBound(headSize);
+        int col = 0;
+        for (; col < upper; col += F32_SPECIES.length()) {
+            acc = query.getVector(F32_SPECIES, 0, queryOffset + col)
+                    .fma(keyPage.getVector(F32_SPECIES, keyRow, keyOffset + col), acc);
+        }
+        float dot = acc.reduceLanes(VectorOperators.ADD);
+        for (; col < headSize; col++) {
+            dot += query.get(0, queryOffset + col) * keyPage.get(keyRow, keyOffset + col);
+        }
+        return dot;
+    }
+
+    private static void zeroSliceF32(FloatBufferTensor valueOut, int offset, int length) {
+        FloatVector zero = FloatVector.zero(F32_SPECIES);
+        int upper = F32_SPECIES.loopBound(length);
+        int col = 0;
+        for (; col < upper; col += F32_SPECIES.length()) {
+            valueOut.intoTensor(zero, 0, offset + col);
+        }
+        for (; col < length; col++) {
+            valueOut.set(0.0f, 0, offset + col);
+        }
+    }
+
+    private static void rescaleAndAccumulateF32(FloatBufferTensor valueOut, int outOffset,
+            FloatBufferTensor valuePage, int valueRow, int valueOffset, int length, float oldScale, float weight) {
+        FloatVector oldScaleVector = FloatVector.broadcast(F32_SPECIES, oldScale);
+        FloatVector weightVector = FloatVector.broadcast(F32_SPECIES, weight);
+        int upper = F32_SPECIES.loopBound(length);
+        int col = 0;
+        for (; col < upper; col += F32_SPECIES.length()) {
+            FloatVector out = valueOut.getVector(F32_SPECIES, 0, outOffset + col);
+            FloatVector value = valuePage.getVector(F32_SPECIES, valueRow, valueOffset + col);
+            valueOut.intoTensor(value.fma(weightVector, out.mul(oldScaleVector)), 0, outOffset + col);
+        }
+        for (; col < length; col++) {
+            valueOut.set(valueOut.get(0, outOffset + col) * oldScale
+                    + valuePage.get(valueRow, valueOffset + col) * weight, 0, outOffset + col);
+        }
+    }
+
+    private static void accumulateWeightedF32(FloatBufferTensor valueOut, int outOffset, FloatBufferTensor valuePage,
+            int valueRow, int valueOffset, int length, float weight) {
+        FloatVector weightVector = FloatVector.broadcast(F32_SPECIES, weight);
+        int upper = F32_SPECIES.loopBound(length);
+        int col = 0;
+        for (; col < upper; col += F32_SPECIES.length()) {
+            FloatVector out = valueOut.getVector(F32_SPECIES, 0, outOffset + col);
+            FloatVector value = valuePage.getVector(F32_SPECIES, valueRow, valueOffset + col);
+            valueOut.intoTensor(value.fma(weightVector, out), 0, outOffset + col);
+        }
+        for (; col < length; col++) {
+            valueOut.set(valueOut.get(0, outOffset + col) + valuePage.get(valueRow, valueOffset + col) * weight,
+                    0, outOffset + col);
+        }
+    }
+
+    private static void normalizeSliceF32(FloatBufferTensor valueOut, int offset, int length, float invDenom) {
+        FloatVector inv = FloatVector.broadcast(F32_SPECIES, invDenom);
+        int upper = F32_SPECIES.loopBound(length);
+        int col = 0;
+        for (; col < upper; col += F32_SPECIES.length()) {
+            valueOut.intoTensor(valueOut.getVector(F32_SPECIES, 0, offset + col).mul(inv), 0, offset + col);
+        }
+        for (; col < length; col++) {
+            valueOut.set(valueOut.get(0, offset + col) * invDenom, 0, offset + col);
+        }
+    }
+
+    private static void flashDecodeAttentionHead(AbstractTensor valueOut, AbstractTensor query,
+            AbstractTensor[] keyPages, AbstractTensor[] valuePages, int visibleRows, int headGroupSize, int headSize,
+            float scale, Float softcap, int head) {
+        int kvHead = head / headGroupSize;
+        int queryOffset = head * headSize;
+        int kvOffset = kvHead * headSize;
+        for (int col = 0; col < headSize; col++) {
+            valueOut.set(0.0f, 0, queryOffset + col);
+        }
+
+        double runningMax = Double.NEGATIVE_INFINITY;
+        double runningDenom = 0.0;
+        int globalRow = 0;
+        for (int pageIndex = 0; pageIndex < keyPages.length && globalRow < visibleRows; pageIndex++) {
+            AbstractTensor keyPage = keyPages[pageIndex];
+            AbstractTensor valuePage = valuePages[pageIndex];
+            int rows = Math.min(keyPage.shape().first(), visibleRows - globalRow);
+            for (int row = 0; row < rows; row++) {
+                float dot = 0.0f;
+                for (int col = 0; col < headSize; col++) {
+                    dot += query.get(0, queryOffset + col) * keyPage.get(row, kvOffset + col);
+                }
+                double score = transformForAttentionSoftmax(dot, scale, softcap);
+                double newMax = Math.max(runningMax, score);
+                double oldScale = runningMax == Double.NEGATIVE_INFINITY ? 0.0 : FastMath.exp(runningMax - newMax);
+                double weight = FastMath.exp(score - newMax);
+                for (int col = 0; col < headSize; col++) {
+                    double accumulated = valueOut.get(0, queryOffset + col) * oldScale
+                            + weight * valuePage.get(row, kvOffset + col);
+                    valueOut.set((float) accumulated, 0, queryOffset + col);
+                }
+                runningDenom = runningDenom * oldScale + weight;
+                runningMax = newMax;
+            }
+            globalRow += rows;
+        }
+
+        float invDenom = (float) (1.0 / runningDenom);
+        for (int col = 0; col < headSize; col++) {
+            valueOut.set(valueOut.get(0, queryOffset + col) * invDenom, 0, queryOffset + col);
+        }
+    }
+
+    private static float transformForAttentionSoftmax(float value, float scale, Float softcap) {
+        float scaled = value * scale;
+        if (softcap == null) {
+            return scaled;
+        }
+        return (float) FastMath.tanh(scaled / softcap) * softcap;
     }
 
     private TensorOperations decodeAttentionOperations(AbstractTensor valueOut, AbstractTensor query,
@@ -442,6 +838,20 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
             }
         }
         return primary;
+    }
+
+    private TensorOperations flashDecodeAttentionOperations(AbstractTensor valueOut, AbstractTensor query,
+            KvPageTable pageTable) {
+        if (!m.isGpuFlashDecodeAttentionEnabled() || m.isTensorProviderExplicit()) {
+            return null;
+        }
+        Optional<TensorOperations> gpu = m.tensorOperations(TensorProviderKind.GPU);
+        if (gpu.isPresent() && gpu.get().supportsFlashDecodePagedAttention(valueOut, query, pageTable.keyPages(),
+                pageTable.valuePages(), pageTable.visibleRows(), numberOfHeads, numberOfKeyValueHeads,
+                config.headSize, attentionScale, config.attnLogitSoftCapping)) {
+            return gpu.get();
+        }
+        return null;
     }
 
     private void recordKvLayout(AbstractTensor[] kvp, int visibleRows) {

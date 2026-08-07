@@ -238,6 +238,42 @@ public class KvBufferCachePrefixTest {
     }
 
     @Test
+    public void pageViewsHaveStableIdentityAndSurviveCallerClose() {
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true).withBlockSize(1);
+        KvBufferCache cache = new KvBufferCache(mockModel(), settings);
+        KvBufferCache.KvBuffer buffer = cache.new KvBuffer("stable-page-views", 1024);
+
+        try {
+            try (AbstractTensor row0 = buffer.getKeyTensorForPosition(0, 0);
+                 AbstractTensor row1 = buffer.getKeyTensorForPosition(0, 1)) {
+                row0.set(1, 0, 0);
+                row0.set(2, 0, 1);
+                row1.set(11, 0, 0);
+                row1.set(12, 0, 1);
+            }
+
+            AbstractTensor pageA = buffer.getKeyPageTensorForPosition(0, 0);
+            AbstractTensor pageB = buffer.getKeyPageTensorForPosition(0, 1);
+            assertSame(pageA, pageB, "same layer/key/context page should return stable page view identity");
+            String uid = pageA.getUid();
+
+            AbstractTensor[] visiblePages = buffer.getKeyTensorsUptoPosition(0, 1);
+            assertSame(pageA, visiblePages[0], "page table-visible page should reuse stable page view");
+            visiblePages[0].close();
+
+            AbstractTensor pageAfterClose = buffer.getKeyPageTensorForPosition(0, 1);
+            assertSame(pageA, pageAfterClose, "closing a non-owning page view must not replace the cached page view");
+            assertEquals(uid, pageAfterClose.getUid(), "page view UID must stay stable for GPU registration");
+            assertEquals(1.0f, pageAfterClose.get(0, 0));
+            assertEquals(2.0f, pageAfterClose.get(0, 1));
+            assertEquals(11.0f, pageAfterClose.get(1, 0));
+            assertEquals(12.0f, pageAfterClose.get(1, 1));
+        } finally {
+            buffer.close();
+        }
+    }
+
+    @Test
     public void storeLookupAndCopyPrefixPreservesKeysAndValues() {
         int expectedPrefixLength = 8;
         KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
@@ -264,7 +300,7 @@ public class KvBufferCachePrefixTest {
     }
 
     @Test
-    public void rawPrefixEntryCanBeEvictedWhileHeldByLookup() {
+    public void heldRawPrefixEntryAfterEvictionDoesNotPreserveOriginalKv() {
         int expectedPrefixLength = 4;
         KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
                 .withMaxEntries(1)
@@ -289,8 +325,10 @@ public class KvBufferCachePrefixTest {
             cache.storePrefix(secondTokens, secondSource, Optional.empty());
             assertNull(cache.lookupPrefix(firstTokens, Optional.empty()), "first entry should have been evicted");
 
-            assertThrows(RuntimeException.class, () -> cache.copyPrefix(held.buffer(), copied, held.length()),
-                    "copying from a held raw prefix after eviction should expose the unsafe lifecycle race");
+            cache.copyPrefix(held.buffer(), copied, held.length());
+            assertNotEquals(firstSource.getKeyTensorForPosition(0, 0).get(0, 0),
+                    copied.getKeyTensorForPosition(0, 0).get(0, 0),
+                    "held raw prefix after eviction is not a safe retained snapshot");
         }
     }
 

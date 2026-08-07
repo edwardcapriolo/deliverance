@@ -175,6 +175,8 @@ public abstract class AbstractModel implements Generator, Classifier {
     private boolean gpuPrefillEnabled;
     private boolean gpuDecodeEnabled;
     private boolean gpuDecodeAttentionEnabled;
+    private boolean gpuFlashDecodeAttentionEnabled;
+    private DecodeAttentionMode decodeAttentionMode = DecodeAttentionMode.STAGED;
     private GossipParallelMembership gossipParallelMembership;
 
     //embedding
@@ -344,6 +346,14 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.gpuDecodeAttentionEnabled = gpuDecodeAttentionEnabled;
     }
 
+    void setGpuFlashDecodeAttentionEnabled(boolean gpuFlashDecodeAttentionEnabled) {
+        this.gpuFlashDecodeAttentionEnabled = gpuFlashDecodeAttentionEnabled;
+    }
+
+    void setDecodeAttentionMode(DecodeAttentionMode decodeAttentionMode) {
+        this.decodeAttentionMode = Objects.requireNonNull(decodeAttentionMode, "decodeAttentionMode");
+    }
+
     public boolean isGpuPrefillEnabled() {
         return gpuPrefillEnabled;
     }
@@ -354,6 +364,14 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public boolean isGpuDecodeAttentionEnabled() {
         return gpuDecodeAttentionEnabled;
+    }
+
+    public boolean isGpuFlashDecodeAttentionEnabled() {
+        return gpuFlashDecodeAttentionEnabled;
+    }
+
+    public DecodeAttentionMode getDecodeAttentionMode() {
+        return decodeAttentionMode;
     }
 
     public boolean isTensorProviderExplicit() {
@@ -401,7 +419,12 @@ public abstract class AbstractModel implements Generator, Classifier {
     }
 
     public KvBufferCache.KvBuffer newKvBuffer() {
-        return kvBufferCache.getEphemeralKvBuffer();
+        KvBufferCache.KvBuffer buffer = kvBufferCache.getEphemeralKvBuffer();
+        if (gpuFlashDecodeAttentionEnabled && !tensorProviderExplicit) {
+            tensorOperations(TensorProviderKind.GPU)
+                    .ifPresent(gpu -> buffer.setStorageBackend(gpu.createKvStorageBackend(metricRegistry)));
+        }
+        return buffer;
     }
 
     public int getLocalNumberOfHeads() {

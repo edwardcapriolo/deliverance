@@ -14,6 +14,7 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.KvStorageBackend;
 import io.teknek.deliverance.tensor.VectorTensorMathUtils;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
@@ -64,6 +65,8 @@ public class NativeGPUTensorOperations implements TensorOperations {
     private long gemm_i8q4_m1_id;
     private long gemm_i8q4_id;
     private long decodePagedAttentionF32Id;
+    private long flashDecodePagedAttentionHeadF32Id;
+    private long flashDecodePagedAttentionAllHeadsF32Id;
 
     private int params_size;
 
@@ -71,6 +74,7 @@ public class NativeGPUTensorOperations implements TensorOperations {
 
     private final AtomicLong totalBytesAllocated = new AtomicLong(0);
     private final AtomicBoolean limitReached = new AtomicBoolean(false);
+    private volatile MetricRegistry activeMetricRegistry;
 
     private static final TensorOperations delegate;
     private static final WrappedForkJoinPool pool;
@@ -100,6 +104,8 @@ public class NativeGPUTensorOperations implements TensorOperations {
         this.gemm_i8q4_m1_id = runtime.gemmI8Q4M1Id;
         this.gemm_i8q4_id = runtime.gemmI8Q4Id;
         this.decodePagedAttentionF32Id = runtime.decodePagedAttentionF32Id;
+        this.flashDecodePagedAttentionHeadF32Id = runtime.flashDecodePagedAttentionHeadF32Id;
+        this.flashDecodePagedAttentionAllHeadsF32Id = runtime.flashDecodePagedAttentionAllHeadsF32Id;
         this.params_size = runtime.paramsSize;
     }
 
@@ -129,6 +135,7 @@ public class NativeGPUTensorOperations implements TensorOperations {
         try {
             tensorCache.computeIfAbsent(t.getUid(), s -> {
                 synchronized (tensorCache) {
+                    recordGpuCounter("gpu.tensor.register");
                     Long id = NativeGPU.register_tensor(t.getMemorySegment(), (int) t.getMemorySegment().byteSize());
                     if (id == -1) {
                         throw new RuntimeException("OOM");
@@ -142,6 +149,7 @@ public class NativeGPUTensorOperations implements TensorOperations {
                 Q4ByteBufferTensor q4 = (Q4ByteBufferTensor) t;
                 tensorCache.computeIfAbsent(q4.getBlockF().getUid(), s -> {
                     synchronized (tensorCache) {
+                        recordGpuCounter("gpu.tensor.register");
                         long id = NativeGPU.register_tensor(
                             q4.getBlockF().getMemorySegment(),
                             (int) q4.getBlockF().getMemorySegment().byteSize()
@@ -160,7 +168,73 @@ public class NativeGPUTensorOperations implements TensorOperations {
             tensorCache.remove(t.getUid()); // Remove top level
             // TODO Cleanup already allocated tensors
             limitReached.set(true);
+            recordGpuCounter("gpu.tensor.register.failure");
             logger.warn("GPU Memory Limit reached, falling back to CPU");
+        }
+    }
+
+    @Override
+    public KvStorageBackend createKvStorageBackend(MetricRegistry metricRegistry) {
+        return new GpuMirroredKvStorageBackend(metricRegistry);
+    }
+
+    private final class GpuMirroredKvStorageBackend implements KvStorageBackend {
+
+        private final MetricRegistry metricRegistry;
+
+        private GpuMirroredKvStorageBackend(MetricRegistry metricRegistry) {
+            this.metricRegistry = metricRegistry;
+            activeMetricRegistry = metricRegistry;
+        }
+
+        @Override
+        public void rowWritten(AbstractTensor keyPage, AbstractTensor valuePage, int rowInPage, int rowWidth) {
+            if (limitReached.get() || keyPage.dType() != DType.F32 || valuePage.dType() != DType.F32) {
+                metricRegistry.counter("gpu.kv.row_update.skip").inc();
+                return;
+            }
+            try {
+                long keyId = registerTensorIfAbsent(keyPage);
+                long valueId = registerTensorIfAbsent(valuePage);
+                int rowElements = rowWidth;
+                int keyElementOffset = keyPage.getOffset(rowInPage, 0);
+                int valueElementOffset = valuePage.getOffset(rowInPage, 0);
+                int bytes = rowElements * keyPage.dType().size();
+                metricRegistry.counter("gpu.kv.row_update").inc();
+                metricRegistry.counter("gpu.kv.row_update.bytes").inc(bytes * 2L);
+                NativeGPU.update_tensor_range(keyId, keyPage.getMemorySegmentOffset(keyElementOffset),
+                        keyPage.getMemorySegment().asSlice(keyPage.getMemorySegmentOffset(keyElementOffset), bytes), bytes);
+                NativeGPU.update_tensor_range(valueId, valuePage.getMemorySegmentOffset(valueElementOffset),
+                        valuePage.getMemorySegment().asSlice(valuePage.getMemorySegmentOffset(valueElementOffset), bytes), bytes);
+            } catch (RuntimeException e) {
+                limitReached.set(true);
+                metricRegistry.counter("gpu.kv.row_update.failure").inc();
+                logger.warn("GPU KV storage backend update failed, disabling GPU flash decode", e);
+            }
+        }
+
+        @Override
+        public boolean supportsGpuAttention() {
+            return !limitReached.get();
+        }
+    }
+
+    private long registerTensorIfAbsent(AbstractTensor tensor) {
+        Long id = tensorCache.get(tensor.getUid());
+        if (id == null) {
+            registerModelTensor(tensor);
+            id = tensorCache.get(tensor.getUid());
+        }
+        if (id == null || id == -1) {
+            throw new IllegalStateException("GPU tensor registration failed for " + tensor.getUid());
+        }
+        return id;
+    }
+
+    private void recordGpuCounter(String name) {
+        MetricRegistry metrics = activeMetricRegistry;
+        if (metrics != null) {
+            metrics.counter(name).inc();
         }
     }
 
@@ -244,9 +318,12 @@ public class NativeGPUTensorOperations implements TensorOperations {
             long gemmI8Q4Id = registerShader("gemm_i8q4.wgsl");
             long gemmI8Q4M1Id = registerShader("gemm_i8q4_v5.wgsl");
             long decodePagedAttentionF32Id = registerShader("decode_paged_attention_f32.wgsl");
+            long flashDecodePagedAttentionHeadF32Id = registerShader("decode_paged_attention_head_f32.wgsl");
+            long flashDecodePagedAttentionAllHeadsF32Id = registerShader("decode_paged_attention_all_heads_f32.wgsl");
 
             return new GpuRuntime(paramsSize, gemmF32Id, gemmBf16Id, gemmQ4Id, gemmI8Q4Id, gemmI8Q4M1Id,
-                    decodePagedAttentionF32Id);
+                    decodePagedAttentionF32Id, flashDecodePagedAttentionHeadF32Id,
+                    flashDecodePagedAttentionAllHeadsF32Id);
 
         } catch (Throwable t) {
             logger.error("Failed to load native GPU operations", t);
@@ -261,7 +338,9 @@ public class NativeGPUTensorOperations implements TensorOperations {
             long gemmQ4Id,
             long gemmI8Q4Id,
             long gemmI8Q4M1Id,
-            long decodePagedAttentionF32Id) {
+            long decodePagedAttentionF32Id,
+            long flashDecodePagedAttentionHeadF32Id,
+            long flashDecodePagedAttentionAllHeadsF32Id) {
     }
 
     private boolean gpuSupported(Long btId, DType atype, DType btype, DType rtype) {
@@ -528,6 +607,84 @@ public class NativeGPUTensorOperations implements TensorOperations {
     }
 
     @Override
+    public float dotSlice(AbstractTensor left, int leftRow, int leftOffset, AbstractTensor right, int rightRow,
+            int rightOffset, int length) {
+        return delegate.dotSlice(left, leftRow, leftOffset, right, rightRow, rightOffset, length);
+    }
+
+    @Override
+    public boolean usesOptimizedDotSlice(AbstractTensor left, AbstractTensor right) {
+        return delegate.usesOptimizedDotSlice(left, right);
+    }
+
+    @Override
+    public void dotRowsToArray(AbstractTensor left, int leftRow, int leftOffset, AbstractTensor rows,
+            int rowOffset, int rowColumnOffset, int rowCount, int width, float[] scores, int scoresOffset) {
+        delegate.dotRowsToArray(left, leftRow, leftOffset, rows, rowOffset, rowColumnOffset, rowCount, width, scores,
+                scoresOffset);
+    }
+
+    @Override
+    public boolean usesOptimizedDotRowsToArray(AbstractTensor left, AbstractTensor rows) {
+        return delegate.usesOptimizedDotRowsToArray(left, rows);
+    }
+
+    @Override
+    public void weightedRescaleAccumulateSlice(AbstractTensor out, int outRow, int outOffset, AbstractTensor value,
+            int valueRow, int valueOffset, int length, float oldScale, float weight) {
+        delegate.weightedRescaleAccumulateSlice(out, outRow, outOffset, value, valueRow, valueOffset, length,
+                oldScale, weight);
+    }
+
+    @Override
+    public boolean usesOptimizedWeightedRescaleAccumulateSlice(AbstractTensor out, AbstractTensor value) {
+        return delegate.usesOptimizedWeightedRescaleAccumulateSlice(out, value);
+    }
+
+    @Override
+    public void accumulateWeightedSlice(AbstractTensor out, int outRow, int outOffset, AbstractTensor value,
+            int valueRow, int valueOffset, int length, float weight) {
+        delegate.accumulateWeightedSlice(out, outRow, outOffset, value, valueRow, valueOffset, length, weight);
+    }
+
+    @Override
+    public boolean usesOptimizedAccumulateWeightedSlice(AbstractTensor out, AbstractTensor value) {
+        return delegate.usesOptimizedAccumulateWeightedSlice(out, value);
+    }
+
+    @Override
+    public void accumulateWeightedRows(AbstractTensor out, int outRow, int outOffset, AbstractTensor rows,
+            int rowOffset, int rowColumnOffset, int rowCount, int width, float[] weights, int weightsOffset) {
+        delegate.accumulateWeightedRows(out, outRow, outOffset, rows, rowOffset, rowColumnOffset, rowCount, width,
+                weights, weightsOffset);
+    }
+
+    @Override
+    public boolean usesOptimizedAccumulateWeightedRows(AbstractTensor out, AbstractTensor rows) {
+        return delegate.usesOptimizedAccumulateWeightedRows(out, rows);
+    }
+
+    @Override
+    public void normalizeSlice(AbstractTensor tensor, int row, int offset, int length, float factor) {
+        delegate.normalizeSlice(tensor, row, offset, length, factor);
+    }
+
+    @Override
+    public boolean usesOptimizedNormalizeSlice(AbstractTensor tensor) {
+        return delegate.usesOptimizedNormalizeSlice(tensor);
+    }
+
+    @Override
+    public void scaleSlice(AbstractTensor tensor, int row, int offset, int length, float factor) {
+        delegate.scaleSlice(tensor, row, offset, length, factor);
+    }
+
+    @Override
+    public boolean usesOptimizedScaleSlice(AbstractTensor tensor) {
+        return delegate.usesOptimizedScaleSlice(tensor);
+    }
+
+    @Override
     public AbstractTensor activationMultiplyQuantize(AbstractTensor gate, AbstractTensor up,
             ActivationFunction.Type activation, DType qtype, int offset, int length) {
         return delegate.activationMultiplyQuantize(gate, up, activation, qtype, offset, length);
@@ -571,6 +728,86 @@ public class NativeGPUTensorOperations implements TensorOperations {
             }
         }
         return true;
+    }
+
+    @Override
+    public boolean supportsFlashDecodePagedAttention(AbstractTensor valueOut, AbstractTensor query,
+            AbstractTensor[] keyPages, AbstractTensor[] valuePages, int visibleRows, int numberOfHeads,
+            int numberOfKeyValueHeads, int headSize, float scale, Float softcap) {
+        if (limitReached.get() || query.dType() != DType.F32 || valueOut.dType() != DType.F32 || softcap != null) {
+            return false;
+        }
+        if (visibleRows <= 0 || (long) (headSize + 2) * Float.BYTES > MAX_SCRATCH_SIZE) {
+            return false;
+        }
+        for (AbstractTensor keyPage : keyPages) {
+            if (keyPage.dType() != DType.F32) {
+                return false;
+            }
+        }
+        for (AbstractTensor valuePage : valuePages) {
+            if (valuePage.dType() != DType.F32) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    @Override
+    public void flashDecodePagedAttention(AbstractTensor valueOut, AbstractTensor query, AbstractTensor[] keyPages,
+            AbstractTensor[] valuePages, int visibleRows, int numberOfHeads, int numberOfKeyValueHeads, int headSize,
+            float scale, Float softcap) {
+        recordGpuCounter("gpu.flash_decode.call");
+        if (!supportsFlashDecodePagedAttention(valueOut, query, keyPages, valuePages, visibleRows, numberOfHeads,
+                numberOfKeyValueHeads, headSize, scale, softcap)) {
+            recordGpuCounter("gpu.flash_decode.fallback.unsupported");
+            delegate.decodePagedAttention(valueOut, query, keyPages, valuePages, visibleRows, numberOfHeads,
+                    numberOfKeyValueHeads, headSize, scale, softcap);
+            return;
+        }
+        Long scratchId = gpuBuffers();
+        if (scratchId == null || scratchId == -1 || limitReached.get()) {
+            recordGpuCounter("gpu.flash_decode.fallback.scratch");
+            delegate.decodePagedAttention(valueOut, query, keyPages, valuePages, visibleRows, numberOfHeads,
+                    numberOfKeyValueHeads, headSize, scale, softcap);
+            return;
+        }
+        int pageRows = keyPages[0].shape().first();
+        int pageCount = Math.min(keyPages.length, (visibleRows + pageRows - 1) / pageRows);
+        LongBuffer keyIds = ByteBuffer.allocateDirect(Long.BYTES * pageCount).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer();
+        LongBuffer valueIds = ByteBuffer.allocateDirect(Long.BYTES * pageCount).order(ByteOrder.LITTLE_ENDIAN).asLongBuffer();
+        for (int i = 0; i < pageCount; i++) {
+            long kid = registerTensorIfAbsent(keyPages[i]);
+            long vid = registerTensorIfAbsent(valuePages[i]);
+            keyIds.put(i, kid);
+            valueIds.put(i, vid);
+        }
+        int keyBufferSize = (int) keyPages[0].getMemorySegment().byteSize();
+        int valueBufferSize = (int) valuePages[0].getMemorySegment().byteSize();
+        recordGpuCounter("gpu.flash_decode.all_heads_dispatch");
+        NativeGPU.gpu_decode_paged_attention_all_heads(
+                scratchId,
+                flashDecodePagedAttentionAllHeadsF32Id,
+                query.getMemorySegment(),
+                query.getMemorySegmentOffset(query.getOffset(0, 0)),
+                (int) query.getMemorySegment().byteSize(),
+                MemorySegment.ofBuffer(keyIds),
+                MemorySegment.ofBuffer(valueIds),
+                pageCount,
+                visibleRows,
+                pageRows,
+                numberOfHeads,
+                numberOfKeyValueHeads,
+                headSize,
+                numberOfKeyValueHeads * headSize,
+                keyPages[0].getStride(),
+                valuePages[0].getStride(),
+                valueOut.getMemorySegment(),
+                valueOut.getOffset(0, 0),
+                headSize,
+                scale,
+                keyBufferSize,
+                valueBufferSize);
     }
 
     void decodePagedAttentionViaGpuQkExperiment(AbstractTensor valueOut, AbstractTensor query, AbstractTensor[] keyPages,

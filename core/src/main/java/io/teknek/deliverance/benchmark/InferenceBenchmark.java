@@ -617,9 +617,15 @@ public final class InferenceBenchmark {
             return;
         }
         model.getMetricRegistry().getCounters().entrySet().stream()
-                .filter(entry -> InferenceProfiler.shouldPrintCounter(entry.getKey()))
-                .forEach(entry -> System.out.println("[profile-counter] " + entry.getKey()
-                        + " count=" + InferenceProfiler.counterValue(entry.getKey())));
+                .filter(entry -> InferenceProfiler.shouldPrintCounter(entry.getKey())
+                        || entry.getKey().startsWith("tensorplan.")
+                        || entry.getKey().startsWith("gpu."))
+                .forEach(entry -> {
+                    long count = InferenceProfiler.shouldPrintCounter(entry.getKey())
+                            ? InferenceProfiler.counterValue(entry.getKey())
+                            : entry.getValue().getCount();
+                    System.out.println("[profile-counter] " + entry.getKey() + " count=" + count);
+                });
     }
 
     private static void printAllocatorMetrics(AbstractModel model) {
