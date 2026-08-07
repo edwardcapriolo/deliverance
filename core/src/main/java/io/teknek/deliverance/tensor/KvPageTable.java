@@ -14,18 +14,26 @@ import java.util.Objects;
  */
 public final class KvPageTable implements AutoCloseable {
     private final int layerIndex;
+    private final int layerPageIndex;
+    private final int relativeLayerIndex;
     private final int pageRows;
+    private final int[] contextPageIndexes;
     private final AbstractTensor[] keyPages;
     private final AbstractTensor[] valuePages;
     private int upperBound;
     private int visibleRows;
 
-    public KvPageTable(int layerIndex, int upperBound, int pageRows, AbstractTensor[] keyPages,
-            AbstractTensor[] valuePages) {
+    public KvPageTable(int layerIndex, int layerPageIndex, int relativeLayerIndex, int upperBound, int pageRows,
+            int[] contextPageIndexes, AbstractTensor[] keyPages, AbstractTensor[] valuePages) {
         this.layerIndex = layerIndex;
+        this.layerPageIndex = layerPageIndex;
+        this.relativeLayerIndex = relativeLayerIndex;
         this.pageRows = pageRows;
+        this.contextPageIndexes = Objects.requireNonNull(contextPageIndexes, "contextPageIndexes");
         this.keyPages = Objects.requireNonNull(keyPages, "keyPages");
         this.valuePages = Objects.requireNonNull(valuePages, "valuePages");
+        Preconditions.checkArgument(contextPageIndexes.length == keyPages.length,
+                "context page index count must match key page count");
         Preconditions.checkArgument(keyPages.length == valuePages.length, "key/value page count mismatch");
         updateUpperBound(upperBound);
     }
@@ -37,6 +45,14 @@ public final class KvPageTable implements AutoCloseable {
 
     public int layerIndex() {
         return layerIndex;
+    }
+
+    public int layerPageIndex() {
+        return layerPageIndex;
+    }
+
+    public int relativeLayerIndex() {
+        return relativeLayerIndex;
     }
 
     public int upperBound() {
@@ -53,6 +69,10 @@ public final class KvPageTable implements AutoCloseable {
 
     public int pageCount() {
         return keyPages.length;
+    }
+
+    public int[] contextPageIndexes() {
+        return contextPageIndexes;
     }
 
     public AbstractTensor[] keyPages() {

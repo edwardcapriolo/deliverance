@@ -206,12 +206,16 @@ public class KvBufferCachePrefixTest {
         assertSame(first, sameContextPage, "same context page should reuse the page table view");
         assertNotSame(first, nextContextPage, "crossing a context page should rebuild the page table view");
         assertEquals(0, sameContextPage.layerIndex());
+        assertEquals(0, sameContextPage.layerPageIndex());
+        assertEquals(0, sameContextPage.relativeLayerIndex());
         assertEquals(3, sameContextPage.upperBound());
         assertEquals(4, sameContextPage.visibleRows());
         assertEquals(2, sameContextPage.pageRows());
         assertEquals(2, sameContextPage.pageCount());
+        assertArrayEquals(new int[] { 0, 1 }, sameContextPage.contextPageIndexes());
         assertEquals(5, nextContextPage.visibleRows());
         assertEquals(3, nextContextPage.pageCount());
+        assertArrayEquals(new int[] { 0, 1, 2 }, nextContextPage.contextPageIndexes());
 
         try (AbstractTensor packedKeys = new FloatBufferTensor(5, 4);
              AbstractTensor packedValues = new FloatBufferTensor(5, 4);

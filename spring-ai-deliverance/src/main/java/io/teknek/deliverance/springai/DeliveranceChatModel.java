@@ -1,49 +1,147 @@
 package io.teknek.deliverance.springai;
 
-import io.teknek.deliverance.client.spring.model.ChatCompletionMessageToolCall;
-import io.teknek.deliverance.client.spring.model.ChatCompletionMessageToolCallFunction;
-import io.teknek.deliverance.client.spring.model.ChatCompletionRequestMessage;
-import io.teknek.deliverance.client.spring.model.CreateChatCompletionRequest;
-import io.teknek.deliverance.client.spring.model.CreateChatCompletionResponse;
-import tools.jackson.databind.ObjectMapper;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.MessageType;
-import org.springframework.ai.chat.messages.ToolResponseMessage;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.model.Generation;
-import org.springframework.ai.chat.prompt.ChatOptions;
-import org.springframework.ai.chat.prompt.Prompt;
-
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
+import io.micrometer.observation.contextpropagation.ObservationThreadLocalAccessor;
+import io.teknek.deliverance.client.spring.model.ChatCompletionMessageToolCall;
+import io.teknek.deliverance.client.spring.model.ChatCompletionMessageToolCallFunction;
+import io.teknek.deliverance.client.spring.model.ChatCompletionRequestMessage;
+import io.teknek.deliverance.client.spring.model.ChatCompletionResponseMessage;
+import io.teknek.deliverance.client.spring.model.ChatCompletionTool;
+import io.teknek.deliverance.client.spring.model.CreateChatCompletionRequest;
+import io.teknek.deliverance.client.spring.model.CreateChatCompletionResponse;
+import io.teknek.deliverance.client.spring.model.CreateChatCompletionResponseChoicesInner;
+import io.teknek.deliverance.client.spring.model.FunctionObject;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.MessageType;
+import org.springframework.ai.chat.messages.ToolResponseMessage;
+import org.springframework.ai.chat.metadata.ChatGenerationMetadata;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.chat.model.MessageAggregator;
+import org.springframework.ai.chat.observation.ChatModelObservationContext;
+import org.springframework.ai.chat.observation.ChatModelObservationConvention;
+import org.springframework.ai.chat.observation.ChatModelObservationDocumentation;
+import org.springframework.ai.chat.observation.DefaultChatModelObservationConvention;
+import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.model.tool.ToolCallingManager;
+import org.springframework.ai.retry.RetryUtils;
+import org.springframework.ai.tool.definition.ToolDefinition;
+import org.springframework.core.retry.RetryTemplate;
+import org.springframework.util.Assert;
+import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
+import reactor.core.publisher.Flux;
+import tools.jackson.databind.ObjectMapper;
+
 public class DeliveranceChatModel implements ChatModel {
+    private static final Log logger = LogFactory.getLog(DeliveranceChatModel.class);
+    private static final ChatModelObservationConvention DEFAULT_OBSERVATION_CONVENTION = new DefaultChatModelObservationConvention();
+    private static final ToolCallingManager DEFAULT_TOOL_CALLING_MANAGER = ToolCallingManager.builder().build();
+
     private final DeliveranceApi deliveranceApi;
     private final ObjectMapper objectMapper;
     private final DeliveranceChatOptions defaultOptions;
+    private final ToolCallingManager toolCallingManager;
+    private final RetryTemplate retryTemplate;
+    private final ObservationRegistry observationRegistry;
+    private ChatModelObservationConvention observationConvention = DEFAULT_OBSERVATION_CONVENTION;
 
-    public DeliveranceChatModel(DeliveranceApi deliveranceApi, ObjectMapper objectMapper, DeliveranceChatOptions defaultOptions) {
+    public DeliveranceChatModel(DeliveranceApi deliveranceApi, ObjectMapper objectMapper,
+            DeliveranceChatOptions defaultOptions) {
+        this(deliveranceApi, objectMapper, defaultOptions, DEFAULT_TOOL_CALLING_MANAGER);
+    }
+
+    public DeliveranceChatModel(DeliveranceApi deliveranceApi, ObjectMapper objectMapper,
+            DeliveranceChatOptions defaultOptions, ToolCallingManager toolCallingManager) {
+        this(deliveranceApi, objectMapper, defaultOptions, toolCallingManager, RetryUtils.DEFAULT_RETRY_TEMPLATE,
+                ObservationRegistry.NOOP);
+    }
+
+    public DeliveranceChatModel(DeliveranceApi deliveranceApi, ObjectMapper objectMapper,
+            DeliveranceChatOptions defaultOptions, ToolCallingManager toolCallingManager, RetryTemplate retryTemplate,
+            ObservationRegistry observationRegistry) {
         this.deliveranceApi = Objects.requireNonNull(deliveranceApi, "deliveranceApi");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.defaultOptions = Objects.requireNonNull(defaultOptions, "defaultOptions");
+        this.toolCallingManager = Objects.requireNonNull(toolCallingManager, "toolCallingManager");
+        this.retryTemplate = Objects.requireNonNull(retryTemplate, "retryTemplate");
+        this.observationRegistry = Objects.requireNonNull(observationRegistry, "observationRegistry");
+    }
+
+    public static Builder builder() {
+        return new Builder();
     }
 
     @Override
     public ChatResponse call(Prompt prompt) {
-        CreateChatCompletionResponse response = deliveranceApi.createChatCompletion(toRequest(prompt, false));
-        String content = response == null || response.getChoices() == null || response.getChoices().isEmpty()
-                ? "" : response.getChoices().get(0).getMessage().getContent();
-        return new ChatResponse(List.of(new Generation(new AssistantMessage(content))));
+        Prompt requestPrompt = buildRequestPrompt(prompt);
+        CreateChatCompletionRequest request = toRequest(requestPrompt, false);
+        ChatModelObservationContext observationContext = ChatModelObservationContext.builder()
+                .prompt(requestPrompt)
+                .provider(DeliveranceApi.PROVIDER_NAME)
+                .build();
+
+        return ChatModelObservationDocumentation.CHAT_MODEL_OPERATION
+                .observation(this.observationConvention, DEFAULT_OBSERVATION_CONVENTION, () -> observationContext,
+                        this.observationRegistry)
+                .observe(() -> {
+                    CreateChatCompletionResponse response = RetryUtils.execute(this.retryTemplate,
+                            () -> this.deliveranceApi.createChatCompletion(request));
+                    ChatResponse chatResponse = toChatResponse(response, requestPrompt);
+                    observationContext.setResponse(chatResponse);
+                    return chatResponse;
+                });
     }
 
     @Override
-    public ChatOptions getOptions() {
+    public Flux<ChatResponse> stream(Prompt prompt) {
+        Prompt requestPrompt = buildRequestPrompt(prompt);
+        return Flux.deferContextual(contextView -> {
+            CreateChatCompletionRequest request = toRequest(requestPrompt, true);
+            ChatModelObservationContext observationContext = ChatModelObservationContext.builder()
+                    .prompt(requestPrompt)
+                    .provider(DeliveranceApi.PROVIDER_NAME)
+                    .streaming(true)
+                    .build();
+            Observation observation = ChatModelObservationDocumentation.CHAT_MODEL_OPERATION.observation(
+                    this.observationConvention, DEFAULT_OBSERVATION_CONVENTION, () -> observationContext,
+                    this.observationRegistry);
+            Observation parentObservation = contextView.getOrDefault(ObservationThreadLocalAccessor.KEY, null);
+            observation.parentObservation(parentObservation);
+            try (Observation.Scope ignored = parentObservation != null ? parentObservation.openScope()
+                    : Observation.Scope.NOOP) {
+                observation.start();
+            }
+
+            Flux<ChatResponse> responseFlux = RetryUtils.execute(this.retryTemplate,
+                    () -> this.deliveranceApi.streamChatCompletion(request));
+            Flux<ChatResponse> observedFlux = responseFlux.doOnError(observation::error)
+                    .doFinally(s -> observation.stop())
+                    .contextWrite(ctx -> ctx.put(ObservationThreadLocalAccessor.KEY, observation));
+            return new MessageAggregator().aggregate(observedFlux, observationContext::setResponse);
+        });
+    }
+
+    @Override
+    public DeliveranceChatOptions getOptions() {
         return defaultOptions;
+    }
+
+    public void setObservationConvention(ChatModelObservationConvention observationConvention) {
+        Assert.notNull(observationConvention, "observationConvention cannot be null");
+        this.observationConvention = observationConvention;
     }
 
     CreateChatCompletionRequest toRequest(Prompt prompt, boolean stream) {
@@ -96,7 +194,51 @@ public class DeliveranceChatModel implements ChatModel {
                 throw new IllegalArgumentException("guidedJson must be valid JSON schema", e);
             }
         }
+        List<ToolDefinition> toolDefinitions = this.toolCallingManager.resolveToolDefinitions(options);
+        if (!CollectionUtils.isEmpty(toolDefinitions)) {
+            request.tools(toolDefinitions.stream().map(this::toTool).toList());
+            request.parallelToolCalls(false);
+        }
         return request;
+    }
+
+    private ChatCompletionTool toTool(ToolDefinition toolDefinition) {
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> parameters = this.objectMapper.readValue(toolDefinition.inputSchema(), Map.class);
+            return new ChatCompletionTool().type("function")
+                    .function(new FunctionObject().name(toolDefinition.name())
+                            .description(toolDefinition.description())
+                            .parameters(parameters));
+        }
+        catch (Exception ex) {
+            throw new IllegalArgumentException("Tool input schema must be valid JSON", ex);
+        }
+    }
+
+    private ChatResponse toChatResponse(CreateChatCompletionResponse response, Prompt prompt) {
+        if (response == null) {
+            throw new IllegalStateException("Deliverance chat completion returned no response");
+        }
+        if (response.getChoices() == null || response.getChoices().isEmpty()) {
+            if (logger.isWarnEnabled()) {
+                logger.warn("No choices returned for prompt: " + prompt);
+            }
+            return new ChatResponse(List.of(), DeliveranceApi.metadata(response));
+        }
+        List<Generation> generations = response.getChoices().stream().map(this::toGeneration).toList();
+        return new ChatResponse(generations, DeliveranceApi.metadata(response));
+    }
+
+    private Generation toGeneration(CreateChatCompletionResponseChoicesInner choice) {
+        ChatCompletionResponseMessage responseMessage = choice.getMessage();
+        String content = responseMessage != null && responseMessage.getContent() != null ? responseMessage.getContent() : "";
+        AssistantMessage assistantMessage = AssistantMessage.builder()
+                .content(content)
+                .toolCalls(responseMessage != null ? DeliveranceApi.toolCalls(responseMessage.getToolCalls()) : List.of())
+                .build();
+        String finishReason = choice.getFinishReason() != null ? choice.getFinishReason().getValue() : "";
+        return new Generation(assistantMessage, ChatGenerationMetadata.builder().finishReason(finishReason).build());
     }
 
     private List<ChatCompletionRequestMessage> toMessages(Message message) {
@@ -122,6 +264,13 @@ public class DeliveranceChatModel implements ChatModel {
                 .function(new ChatCompletionMessageToolCallFunction().name(toolCall.name()).arguments(toolCall.arguments()));
     }
 
+    private Prompt buildRequestPrompt(Prompt prompt) {
+        if (prompt.getOptions() == null) {
+            return prompt.mutate().chatOptions(this.getOptions()).build();
+        }
+        return prompt;
+    }
+
     private DeliveranceChatOptions mergeOptions(ChatOptions promptOptions) {
         if (promptOptions == null) {
             return defaultOptions;
@@ -142,6 +291,8 @@ public class DeliveranceChatModel implements ChatModel {
                     .xtcProbability(deliveranceOptions.getXtcProbability() == null ? defaultOptions.getXtcProbability() : deliveranceOptions.getXtcProbability())
                     .guidedRegex(deliveranceOptions.getGuidedRegex() == null ? defaultOptions.getGuidedRegex() : deliveranceOptions.getGuidedRegex())
                     .guidedJson(deliveranceOptions.getGuidedJson() == null ? defaultOptions.getGuidedJson() : deliveranceOptions.getGuidedJson())
+                    .toolCallbacks(deliveranceOptions.getToolCallbacks() == null ? defaultOptions.getToolCallbacks() : deliveranceOptions.getToolCallbacks())
+                    .toolContext(deliveranceOptions.getToolContext() == null ? defaultOptions.getToolContext() : deliveranceOptions.getToolContext())
                     .build();
         }
         return DeliveranceChatOptions.builder()
@@ -181,5 +332,58 @@ public class DeliveranceChatModel implements ChatModel {
             return "tool";
         }
         return "user";
+    }
+
+    public static final class Builder {
+        private DeliveranceApi deliveranceApi;
+        private ObjectMapper objectMapper = new ObjectMapper();
+        private DeliveranceChatOptions options = DeliveranceChatOptions.builder().build();
+        private ToolCallingManager toolCallingManager = DEFAULT_TOOL_CALLING_MANAGER;
+        private RetryTemplate retryTemplate = RetryUtils.DEFAULT_RETRY_TEMPLATE;
+        private ObservationRegistry observationRegistry = ObservationRegistry.NOOP;
+
+        private Builder() {
+        }
+
+        public Builder deliveranceApi(DeliveranceApi deliveranceApi) {
+            this.deliveranceApi = deliveranceApi;
+            return this;
+        }
+
+        public Builder objectMapper(ObjectMapper objectMapper) {
+            Assert.notNull(objectMapper, "objectMapper cannot be null");
+            this.objectMapper = objectMapper;
+            return this;
+        }
+
+        public Builder options(DeliveranceChatOptions options) {
+            Assert.notNull(options, "options cannot be null");
+            this.options = options;
+            return this;
+        }
+
+        public Builder toolCallingManager(ToolCallingManager toolCallingManager) {
+            Assert.notNull(toolCallingManager, "toolCallingManager cannot be null");
+            this.toolCallingManager = toolCallingManager;
+            return this;
+        }
+
+        public Builder retryTemplate(RetryTemplate retryTemplate) {
+            Assert.notNull(retryTemplate, "retryTemplate cannot be null");
+            this.retryTemplate = retryTemplate;
+            return this;
+        }
+
+        public Builder observationRegistry(ObservationRegistry observationRegistry) {
+            Assert.notNull(observationRegistry, "observationRegistry cannot be null");
+            this.observationRegistry = observationRegistry;
+            return this;
+        }
+
+        public DeliveranceChatModel build() {
+            Assert.state(this.deliveranceApi != null, "DeliveranceApi must not be null");
+            return new DeliveranceChatModel(this.deliveranceApi, this.objectMapper, this.options,
+                    this.toolCallingManager, this.retryTemplate, this.observationRegistry);
+        }
     }
 }

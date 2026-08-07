@@ -874,6 +874,8 @@ public class KvBufferCache implements Closeable {
 
         public KvPageTable getPageTable(int layerIndex, int upperBound) {
             InferenceProfiler.counter(model.getMetricRegistry(), "kvpagetable.request").inc();
+            int layerPageIndex = layerIndex / pageContext.layersPerPage;
+            int relativeLayerIndex = layerIndex % pageContext.layersPerPage;
             int contextPageIndex = upperBound / pageContext.contextLengthPerPage;
             KvPageTable cached = pageTableCache[layerIndex];
             if (cached != null && cached.pageCount() == contextPageIndex + 1) {
@@ -882,12 +884,21 @@ public class KvBufferCache implements Closeable {
                 InferenceProfiler.counter(model.getMetricRegistry(), "kvpagetable.pages").inc(cached.pageCount());
                 return cached;
             }
-            KvPageTable pageTable = new KvPageTable(layerIndex, upperBound, pageContext.contextLengthPerPage,
+            KvPageTable pageTable = new KvPageTable(layerIndex, layerPageIndex, relativeLayerIndex, upperBound,
+                    pageContext.contextLengthPerPage, contextPageIndexes(contextPageIndex),
                     getKeyTensorsUptoPosition(layerIndex, upperBound), getValTensorsUptoPosition(layerIndex, upperBound));
             pageTableCache[layerIndex] = pageTable;
             InferenceProfiler.counter(model.getMetricRegistry(), "kvpagetable.rebuild").inc();
             InferenceProfiler.counter(model.getMetricRegistry(), "kvpagetable.pages").inc(pageTable.pageCount());
             return pageTable;
+        }
+
+        private int[] contextPageIndexes(int lastContextPageIndex) {
+            int[] indexes = new int[lastContextPageIndex + 1];
+            for (int i = 0; i <= lastContextPageIndex; i++) {
+                indexes[i] = i;
+            }
+            return indexes;
         }
 
         private AbstractTensor[] getTensorsUptoPosition(int layerIndex, int index, int upperBound) {
