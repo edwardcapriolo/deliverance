@@ -1,10 +1,13 @@
 package io.teknek.deliverance.springai;
 
 import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.ai.model.tool.ToolCallingChatOptions;
+import org.springframework.ai.tool.ToolCallback;
 
 import java.util.List;
+import java.util.Map;
 
-public class DeliveranceChatOptions implements ChatOptions {
+public class DeliveranceChatOptions implements ToolCallingChatOptions {
     private String model;
     private Double temperature;
     private Integer maxTokens;
@@ -20,6 +23,8 @@ public class DeliveranceChatOptions implements ChatOptions {
     private List<String> guidedChoice;
     private String guidedRegex;
     private String guidedJson;
+    private List<ToolCallback> toolCallbacks;
+    private Map<String, Object> toolContext;
 
     public static Builder builder() {
         return new Builder();
@@ -102,6 +107,16 @@ public class DeliveranceChatOptions implements ChatOptions {
     }
 
     @Override
+    public List<ToolCallback> getToolCallbacks() {
+        return toolCallbacks;
+    }
+
+    @Override
+    public Map<String, Object> getToolContext() {
+        return toolContext;
+    }
+
+    @Override
     public Builder mutate() {
         return builder()
                 .model(model)
@@ -118,10 +133,12 @@ public class DeliveranceChatOptions implements ChatOptions {
                 .xtcProbability(xtcProbability)
                 .guidedChoice(guidedChoice)
                 .guidedRegex(guidedRegex)
-                .guidedJson(guidedJson);
+                .guidedJson(guidedJson)
+                .toolCallbacks(toolCallbacks)
+                .toolContext(toolContext);
     }
 
-    public static final class Builder implements ChatOptions.Builder<Builder> {
+    public static final class Builder implements ToolCallingChatOptions.Builder<Builder> {
         private final DeliveranceChatOptions options = new DeliveranceChatOptions();
 
         @Override
@@ -221,6 +238,32 @@ public class DeliveranceChatOptions implements ChatOptions {
         }
 
         @Override
+        public Builder toolCallbacks(List<ToolCallback> toolCallbacks) {
+            options.toolCallbacks = toolCallbacks == null ? null : List.copyOf(toolCallbacks);
+            return this;
+        }
+
+        @Override
+        public Builder toolCallbacks(ToolCallback... toolCallbacks) {
+            options.toolCallbacks = toolCallbacks == null ? null : List.of(toolCallbacks);
+            return this;
+        }
+
+        @Override
+        public Builder toolContext(Map<String, Object> context) {
+            options.toolContext = context == null ? null : Map.copyOf(context);
+            return this;
+        }
+
+        @Override
+        public Builder toolContext(String key, Object value) {
+            options.toolContext = options.toolContext == null ? new java.util.HashMap<>()
+                    : new java.util.HashMap<>(options.toolContext);
+            options.toolContext.put(key, value);
+            return this;
+        }
+
+        @Override
         public DeliveranceChatOptions build() {
             return options;
         }
@@ -249,6 +292,14 @@ public class DeliveranceChatOptions implements ChatOptions {
             }
             if (otherOptions.getStopSequences() != null) {
                 stopSequences(otherOptions.getStopSequences());
+            }
+            if (otherOptions instanceof ToolCallingChatOptions toolCallingChatOptions) {
+                if (toolCallingChatOptions.getToolCallbacks() != null) {
+                    toolCallbacks(toolCallingChatOptions.getToolCallbacks());
+                }
+                if (toolCallingChatOptions.getToolContext() != null) {
+                    toolContext(toolCallingChatOptions.getToolContext());
+                }
             }
             return this;
         }

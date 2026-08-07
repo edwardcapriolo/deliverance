@@ -24,7 +24,7 @@ class DeliveranceClientContainerIT {
             container.start();
             String baseUrl = "http://" + container.getHost() + ":" + container.getMappedPort(8080);
             DeliveranceChatModel model = new DeliveranceChatModel(
-                    DeliveranceApi.create(baseUrl, null),
+                    DeliveranceApi.create(baseUrl, null, null),
                     new ObjectMapper(),
                     DeliveranceChatOptions.builder()
                             .model(System.getProperty("deliverance.springai.testcontainer.model", "test-model"))

@@ -2,12 +2,19 @@ package io.teknek.deliverance.springai;
 
 import io.teknek.deliverance.client.spring.model.CreateChatCompletionRequest;
 import io.teknek.deliverance.client.spring.model.CreateChatCompletionResponse;
+import io.teknek.deliverance.client.spring.model.CreateChatCompletionResponseChoicesInner;
+import io.teknek.deliverance.client.spring.model.ChatCompletionResponseMessage;
+import io.teknek.deliverance.client.spring.model.ListModelsResponse;
+import io.teknek.deliverance.client.spring.model.Model;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.definition.ToolDefinition;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
@@ -84,6 +91,30 @@ class DeliveranceChatModelTest {
         CreateChatCompletionRequest request = model.toRequest(new Prompt("Pick one."), false);
 
         assertEquals(0.9, request.getTopP().doubleValue());
+    }
+
+    @Test
+    void mapsToolCallbacksToDeliveranceTools() {
+        DeliveranceChatOptions options = DeliveranceChatOptions.builder()
+                .model("test-model")
+                .toolCallbacks(new WeatherToolCallback())
+                .build();
+        DeliveranceChatModel model = new DeliveranceChatModel(new NoopDeliveranceApi(), new ObjectMapper(), options);
+
+        CreateChatCompletionRequest request = model.toRequest(new Prompt("weather"), false);
+
+        assertEquals(1, request.getTools().size());
+        assertEquals("function", request.getTools().get(0).getType());
+        assertEquals("getWeather", request.getTools().get(0).getFunction().getName());
+        assertEquals(false, request.getParallelToolCalls());
+    }
+
+    @Test
+    void apiCanListModels() {
+        ListModelsResponse response = new NoopDeliveranceApi().listModels();
+
+        assertEquals(1, response.getData().size());
+        assertEquals("test-model", response.getData().get(0).getId());
     }
 
     @Test
@@ -178,10 +209,68 @@ class DeliveranceChatModelTest {
         assertTrue(request.getMessages().get(2).getContent().contains("30"));
     }
 
+    @Test
+    void builderCreatesChatModel() {
+        DeliveranceChatModel model = DeliveranceChatModel.builder()
+                .deliveranceApi(new NoopDeliveranceApi())
+                .objectMapper(new ObjectMapper())
+                .options(DeliveranceChatOptions.builder().model("test-model").build())
+                .build();
+
+        ChatResponse response = model.call(new Prompt("hello"));
+
+        assertEquals("hello", response.getResult().getOutput().getText());
+    }
+
+    @Test
+    void callMapsResponseMetadataAndFinishReason() {
+        DeliveranceChatModel model = new DeliveranceChatModel(new NoopDeliveranceApi(), new ObjectMapper(),
+                DeliveranceChatOptions.builder().model("test-model").build());
+
+        ChatResponse response = model.call(new Prompt("hello"));
+
+        assertEquals("chatcmpl-1", response.getMetadata().getId());
+        assertEquals("test-model", response.getMetadata().getModel());
+        assertEquals(42, ((Number) response.getMetadata().get("created")).intValue());
+        assertEquals("stop", response.getResult().getMetadata().getFinishReason());
+    }
+
     private static final class NoopDeliveranceApi implements DeliveranceApi {
         @Override
         public CreateChatCompletionResponse createChatCompletion(CreateChatCompletionRequest request) {
-            return null;
+            return new CreateChatCompletionResponse().id("chatcmpl-1")
+                    .model("test-model")
+                    .created(42)
+                    .choices(List.of(new CreateChatCompletionResponseChoicesInner()
+                            .finishReason(CreateChatCompletionResponseChoicesInner.FinishReasonEnum.STOP)
+                            .message(new ChatCompletionResponseMessage().content("hello"))));
+        }
+
+        @Override
+        public reactor.core.publisher.Flux<ChatResponse> streamChatCompletion(CreateChatCompletionRequest request) {
+            return reactor.core.publisher.Flux.just(new ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(new AssistantMessage("hello")))));
+        }
+
+        @Override
+        public ListModelsResponse listModels() {
+            return new ListModelsResponse().data(List.of(new Model().id("test-model").created(42).ownedBy("deliverance")));
+        }
+    }
+
+    private static final class WeatherToolCallback implements ToolCallback {
+
+        @Override
+        public ToolDefinition getToolDefinition() {
+            return ToolDefinition.builder()
+                    .name("getWeather")
+                    .description("Get weather by city")
+                    .inputSchema("{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}}}")
+                    .build();
+        }
+
+        @Override
+        public String call(String toolInput) {
+            return "sunny";
         }
     }
 }

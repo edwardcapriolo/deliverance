@@ -8,7 +8,8 @@ public class DeliveranceConnectionProperties {
     private String model;
     private String modelConfig;
     private String baseUrl = "http://localhost:8080";
-    private String apiKey;
+    private String username;
+    private String password;
     private boolean autoPull = true;
     private HuggingFace huggingface = new HuggingFace();
 
@@ -44,12 +45,20 @@ public class DeliveranceConnectionProperties {
         this.baseUrl = baseUrl;
     }
 
-    public String getApiKey() {
-        return apiKey;
+    public String getUsername() {
+        return username;
     }
 
-    public void setApiKey(String apiKey) {
-        this.apiKey = apiKey;
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    public String getPassword() {
+        return password;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
     }
 
     public boolean isAutoPull() {
