@@ -4,6 +4,7 @@ import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
 
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -35,14 +36,16 @@ public final class LocalGenerationBackend implements GenerationBackend {
     private final class LocalGenerationSession implements GenerationSession {
         private final int[] promptTokens;
         private final GeneratorParameters parameters;
+        private final Optional<String> effectiveCacheSalt;
         private final KvBufferCache.KvBuffer kvBuffer;
         private final int prefixLength;
 
         private LocalGenerationSession(int[] promptTokens, GeneratorParameters parameters) {
             this.promptTokens = promptTokens;
             this.parameters = parameters;
+            this.effectiveCacheSalt = withActiveAdapterScope(parameters.cacheSalt);
             this.kvBuffer = model.kvBufferCache.getEphemeralKvBuffer();
-            KvBufferCache.PrefixEntry prefixHit = model.kvBufferCache.lookupPrefix(promptTokens, parameters.cacheSalt);
+            KvBufferCache.PrefixEntry prefixHit = model.kvBufferCache.lookupPrefix(promptTokens, effectiveCacheSalt);
             if (prefixHit == null) {
                 this.prefixLength = 0;
             } else {
@@ -82,7 +85,7 @@ public final class LocalGenerationBackend implements GenerationBackend {
             AbstractTensor last;
             if (cursor.hasTokensToProcess()) {
                 last = model.batchForward(cursor.tokensToProcess(), cursor.startPosition(), kvBuffer);
-                model.kvBufferCache.storePrefix(promptTokens, kvBuffer, parameters.cacheSalt);
+                model.kvBufferCache.storePrefix(promptTokens, kvBuffer, effectiveCacheSalt);
             } else {
                 last = model.forward(cursor.replayToken(), cursor.replayPosition(), kvBuffer);
             }
@@ -113,5 +116,20 @@ public final class LocalGenerationBackend implements GenerationBackend {
         public void close() {
             kvBuffer.close();
         }
+    }
+
+    /**
+     * Folds the currently active LoRA adapter's id (if any) into the caller-supplied cache salt,
+     * so the local prefix cache never reuses KV state computed under a different active adapter
+     * (or no adapter) for byte-identical prompt tokens -- see step 4 plan Section 11 item 12. A
+     * request with no active adapter gets the caller's salt back unchanged, so models that never
+     * use hot-swap see no behavior change at all.
+     */
+    private Optional<String> withActiveAdapterScope(Optional<String> callerSalt) {
+        Optional<String> adapterId = model.activeLoraAdapterId();
+        if (adapterId.isEmpty()) {
+            return callerSalt;
+        }
+        return Optional.of("lora:" + adapterId.get() + "|" + callerSalt.orElse(""));
     }
 }

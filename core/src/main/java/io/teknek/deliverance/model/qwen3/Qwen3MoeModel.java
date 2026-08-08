@@ -37,6 +37,18 @@ public class Qwen3MoeModel extends Qwen3Model {
                 toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
     }
 
+    /**
+     * Not supported: dense layers use {@code MLPBlock} (free LoRA coverage) but sparse layers route
+     * through {@code Qwen3MoeFeedForward} (one base tensor name per expert, not per layer) -- a real
+     * adapter targeting gate/up/down would apply silently only to dense layers, a confusing
+     * partial result. Overrides {@code Qwen3Model}'s (inherited from {@code LlamaModel}) {@code
+     * true} back to {@code false}. See step 4 plan Section 6.
+     */
+    @Override
+    protected boolean supportsLoraHotSwap() {
+        return false;
+    }
+
     @Override
     protected TransformerBlock[] loadTransformerBlockWeights() {
         Qwen3MoeConfig moeConfig = (Qwen3MoeConfig) config;
