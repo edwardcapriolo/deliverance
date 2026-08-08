@@ -4,10 +4,6 @@ import com.google.common.primitives.Ints;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorInfo;
-import io.teknek.deliverance.tensor.TensorShape;
-import io.teknek.deliverance.tensor.impl.BFloat16BufferTensor;
-import io.teknek.deliverance.tensor.impl.Float16BufferTensor;
-import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
 
 import java.util.Map;
@@ -123,11 +119,11 @@ public class MergingWeightLoader implements WeightLoader {
         int inFeatures = base.shape().last();
         int rank = delta.loraA().shape().first();
 
-        AbstractTensor merged = allocateLike(base.dType(), outFeatures, inFeatures);
+        AbstractTensor merged = LoraTensorMath.allocateLike(base.dType(), outFeatures, inFeatures);
         merged.copyFrom(base, 0, 0, Ints.checkedCast(base.size()));
 
-        AbstractTensor loraA = toDType(delta.loraA(), base.dType());
-        AbstractTensor scaledB = scaledCopy(delta.loraB(), base.dType(), (float) adapter.scale());
+        AbstractTensor loraA = LoraTensorMath.toDType(delta.loraA(), base.dType());
+        AbstractTensor scaledB = LoraTensorMath.scaledCopy(delta.loraB(), base.dType(), (float) adapter.scale());
 
         for (int o = 0; o < outFeatures; o++) {
             AbstractTensor mergedRow = merged.slice(o);
@@ -135,37 +131,5 @@ public class MergingWeightLoader implements WeightLoader {
             tensorOps.saxpy(scaledBRow, loraA, mergedRow, 0, 0, inFeatures, 0, 0, rank);
         }
         return merged;
-    }
-
-    private static AbstractTensor toDType(AbstractTensor src, DType target) {
-        if (src.dType() == target) {
-            return src;
-        }
-        return scaledCopy(src, target, 1.0f);
-    }
-
-    private static AbstractTensor scaledCopy(AbstractTensor src, DType target, float factor) {
-        AbstractTensor converted = allocateLike(target, src.shape().first(), src.shape().last());
-        for (int row = 0; row < src.shape().first(); row++) {
-            for (int col = 0; col < src.shape().last(); col++) {
-                converted.set(src.get(row, col) * factor, row, col);
-            }
-        }
-        return converted;
-    }
-
-    /**
-     * Duplicated from {@link DefaultWeightLoader}'s private {@code allocateLike} rather than
-     * extracted into a shared utility -- see Section 11 of the step 3 plan for why this PR keeps
-     * the two copies independent.
-     */
-    private static AbstractTensor allocateLike(DType dType, int rows, int cols) {
-        TensorShape shape = TensorShape.of(rows, cols);
-        return switch (dType) {
-            case F32 -> new FloatBufferTensor(shape);
-            case BF16 -> new BFloat16BufferTensor(shape);
-            case F16 -> new Float16BufferTensor(shape);
-            default -> throw new UnsupportedOperationException("Unsupported dtype for LoRA merge: " + dType);
-        };
     }
 }

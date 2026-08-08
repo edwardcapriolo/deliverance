@@ -8,7 +8,9 @@ import com.google.common.primitives.Ints;
 import java.nio.FloatBuffer;
 import java.util.*;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 
@@ -34,7 +36,11 @@ import io.teknek.deliverance.model.tensorparallel.TensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelContext;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelPlanner;
 import io.teknek.deliverance.safetensors.Config;
+import io.teknek.deliverance.safetensors.LoraAdapter;
+import io.teknek.deliverance.safetensors.LoraLayerDelta;
+import io.teknek.deliverance.safetensors.ResolvedLoraAdapter;
 import io.teknek.deliverance.safetensors.WeightLoader;
+import io.teknek.deliverance.safetensors.fetch.LoraAdapterModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.tensor.*;
@@ -452,6 +458,98 @@ public abstract class AbstractModel implements Generator, Classifier {
         generationDebugHook.accept(event);
     }
 
+    private final ConcurrentHashMap<String, ResolvedLoraAdapter> registeredLoraAdapters = new ConcurrentHashMap<>();
+    private final AtomicReference<ResolvedLoraAdapter> activeLoraAdapter = new AtomicReference<>();
+    private final AtomicReference<String> activeLoraAdapterId = new AtomicReference<>();
+
+    /**
+     * Whether this model family supports LoRA runtime hot-swap ({@link #registerLoraAdapter}/
+     * {@link #setActiveAdapter}).
+     *
+     * <p>Opt-in, not opt-out: defaults to {@code false}, matching {@link WeightLoader}'s own
+     * "must opt in by overriding" convention for operations that aren't safe/meaningful
+     * everywhere. Families whose {@code loadTransformerBlockWeights()} threads real per-layer base
+     * tensor names through plain {@code CausalSelfAttention}/{@code MLPBlock} construction may
+     * override this to {@code true}. Families with MoE-routed feed-forward layers (one base tensor
+     * name per expert, not per layer) or independent, non-shared forward-pass classes must not --
+     * a LoRA delta silently applied to only part of a targeted module's projections would be a
+     * confusing, silently-partial result. See step 4 plan Section 6.</p>
+     */
+    protected boolean supportsLoraHotSwap() {
+        return false;
+    }
+
+    /**
+     * Registers a LoRA adapter for runtime hot-swap under {@code adapterId}, without activating
+     * it. Call {@link #setActiveAdapter(String)} to actually apply it during generation.
+     */
+    public void registerLoraAdapter(String adapterId, LoraAdapter adapter) {
+        if (!supportsLoraHotSwap()) {
+            throw new UnsupportedOperationException(getClass().getSimpleName()
+                    + " does not support LoRA runtime hot-swap -- see step 4 plan Section 6");
+        }
+        registeredLoraAdapters.put(adapterId, new ResolvedLoraAdapter(adapter, getWorkingDType()));
+    }
+
+    public void registerLoraAdapter(String adapterId, LoraAdapterModelFetcher fetcher) {
+        registerLoraAdapter(adapterId, LoraAdapter.fromPretrained(fetcher, metricRegistry));
+    }
+
+    /** Unregisters and closes a previously-registered adapter. It must not be the active adapter. */
+    public void unregisterLoraAdapter(String adapterId) {
+        if (activeLoraAdapter.get() == registeredLoraAdapters.get(adapterId)) {
+            throw new IllegalStateException("Cannot unregister the currently active LoRA adapter \""
+                    + adapterId + "\" -- call clearActiveAdapter() first");
+        }
+        ResolvedLoraAdapter removed = registeredLoraAdapters.remove(adapterId);
+        if (removed != null) {
+            removed.close();
+        }
+    }
+
+    /** Activates a previously-registered LoRA adapter; every subsequent forward pass applies its deltas. */
+    public void setActiveAdapter(String adapterId) {
+        if (tensorParallelContext.enabled()) {
+            throw new UnsupportedOperationException(
+                    "LoRA runtime hot-swap does not support tensor-parallel inference -- see step 4 plan Section 7");
+        }
+        ResolvedLoraAdapter resolved = registeredLoraAdapters.get(adapterId);
+        if (resolved == null) {
+            throw new IllegalArgumentException("No LoRA adapter registered under id \"" + adapterId + "\"");
+        }
+        activeLoraAdapter.set(resolved);
+        activeLoraAdapterId.set(adapterId);
+    }
+
+    /** Deactivates the currently active LoRA adapter, if any, restoring plain base-model behavior. */
+    public void clearActiveAdapter() {
+        activeLoraAdapter.set(null);
+        activeLoraAdapterId.set(null);
+    }
+
+    /**
+     * Returns the currently active LoRA adapter's registered id, or empty if none is active.
+     *
+     * <p>Used to scope the local prefix cache per active adapter (see {@link
+     * io.teknek.deliverance.model.LocalGenerationBackend}) -- KV state computed under one adapter
+     * (or none) must never be reused for a request running under a different adapter, even when
+     * the prompt tokens are byte-identical, or a cache hit would silently apply the wrong (or no)
+     * adapter's effect to the cached prefix. See step 4 plan Section 11 item 12.</p>
+     */
+    public Optional<String> activeLoraAdapterId() {
+        return Optional.ofNullable(activeLoraAdapterId.get());
+    }
+
+    /**
+     * Returns the active adapter's resolved delta for {@code baseTensorName}, or empty if no
+     * adapter is active or the active adapter doesn't target that tensor. Called once per targeted
+     * projection per {@code forward()} call by {@code CausalSelfAttention}/{@code MLPBlock}.
+     */
+    public Optional<LoraLayerDelta> activeLoraDeltaFor(String baseTensorName) {
+        ResolvedLoraAdapter active = activeLoraAdapter.get();
+        return active == null ? Optional.empty() : active.deltaFor(baseTensorName);
+    }
+
     /**
      * Forces the model's disk-backed KV page cleanup pass to run immediately.
      *
@@ -500,6 +598,10 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     @Override
     public void close() {
+        registeredLoraAdapters.values().forEach(ResolvedLoraAdapter::close);
+        registeredLoraAdapters.clear();
+        activeLoraAdapter.set(null);
+        activeLoraAdapterId.set(null);
         if (gossipParallelMembership != null) {
             gossipParallelMembership.close();
             gossipParallelMembership = null;
@@ -512,6 +614,11 @@ public abstract class AbstractModel implements Generator, Classifier {
             }
         }
         kvBufferCache.close();
+        try {
+            weights.close();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public Optional<GossipParallelMembership> gossipParallelMembership() {
