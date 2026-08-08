@@ -34,6 +34,17 @@ public class Gemma4Model extends LlamaModel {
     private volatile AbstractTensor perLayerProjectionNormWeights;
     private volatile AbstractTensor embedTokenWeights;
 
+    /**
+     * Not supported: {@code loadTransformerBlockWeights()} uses the independent
+     * {@code Gemma4CausalSelfAttention}/{@code VariableMLPBlock} classes, which share no code with
+     * {@code CausalSelfAttention}/{@code MLPBlock} and have no LoRA hook wired in. Overrides
+     * {@code LlamaModel}'s inherited {@code true} back to {@code false}. See step 4 plan Section 6.
+     */
+    @Override
+    protected boolean supportsLoraHotSwap() {
+        return false;
+    }
+
     public record SharedKeyValues(AbstractTensor key, AbstractTensor value) implements AutoCloseable {
         @Override
         public void close() {

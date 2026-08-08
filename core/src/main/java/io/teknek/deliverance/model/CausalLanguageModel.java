@@ -3,6 +3,8 @@ package io.teknek.deliverance.model;
 import io.teknek.deliverance.generator.Generator;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.safetensors.Config;
+import io.teknek.deliverance.safetensors.LoraAdapter;
+import io.teknek.deliverance.safetensors.fetch.LoraAdapterModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 
@@ -66,4 +68,27 @@ public interface CausalLanguageModel extends Generator {
      * Returns the parser used to interpret generated tool-call text for this model family.
      */
     ToolCallParser getToolCallParser();
+
+    /**
+     * Registers a LoRA adapter for runtime hot-swap under {@code adapterId}, without activating
+     * it. Call {@link #setActiveAdapter(String)} to actually apply it during generation.
+     *
+     * <p>Only supported by local, non-tensor-parallel backends over an opted-in model family --
+     * see the step 4 plan (LoRA runtime hot-swap), Sections 6 and 7. Registration, activation, and
+     * clearing are equally not thread-safe against concurrent {@link #generate} calls and must be
+     * externally serialized by the caller, exactly like {@code generate} itself.</p>
+     */
+    void registerLoraAdapter(String adapterId, LoraAdapter adapter);
+
+    /** Convenience overload that fetches and loads the adapter before registering it. */
+    void registerLoraAdapter(String adapterId, LoraAdapterModelFetcher fetcher);
+
+    /** Unregisters and closes a previously-registered adapter. It must not be the active adapter. */
+    void unregisterLoraAdapter(String adapterId);
+
+    /** Activates a previously-registered LoRA adapter; every subsequent forward pass applies its deltas. */
+    void setActiveAdapter(String adapterId);
+
+    /** Deactivates the currently active LoRA adapter, if any, restoring plain base-model behavior. */
+    void clearActiveAdapter();
 }

@@ -37,6 +37,16 @@ public class MLPBlock implements FeedForward {
     private final ConfigurableTensorProvider configurableTensorProvider;
     private final String tensorParallelCollectiveKey;
 
+    /**
+     * Base tensor names for this layer's gate/up/down projections (e.g.
+     * {@code "model.layers.3.mlp.gate_proj.weight"}), used to look up an active LoRA adapter's
+     * delta for this layer via {@link AbstractModel#activeLoraDeltaFor(String)}. {@code null} for
+     * model families that haven't opted into LoRA runtime hot-swap -- see step 4 plan Section 6.
+     */
+    private final String gateWeightName;
+    private final String upWeightName;
+    private final String downWeightName;
+
     public MLPBlock(AbstractModel model, ActivationFunction.Type activationFunction, AbstractTensor fullyConnectedWeights,
             AbstractTensor projectionWeights, AbstractTensor upProjectionWeights, ConfigurableTensorProvider configurableTensorProvider) {
         this(model, activationFunction, fullyConnectedWeights, projectionWeights, upProjectionWeights,
@@ -48,6 +58,24 @@ public class MLPBlock implements FeedForward {
             ConfigurableTensorProvider configurableTensorProvider, String tensorParallelCollectiveKey) {
         this(model, activationFunction, Optional.empty(), fullyConnectedWeights,
                 Optional.empty(), projectionWeights, upProjectionWeights, configurableTensorProvider, tensorParallelCollectiveKey);
+    }
+
+    /** Variant carrying base tensor names for LoRA runtime hot-swap, no tensor-parallel collective key. */
+    public MLPBlock(AbstractModel model, ActivationFunction.Type activationFunction, AbstractTensor fullyConnectedWeights,
+            AbstractTensor projectionWeights, AbstractTensor upProjectionWeights, ConfigurableTensorProvider configurableTensorProvider,
+            String gateWeightName, String upWeightName, String downWeightName) {
+        this(model, activationFunction, Optional.empty(), fullyConnectedWeights,
+                Optional.empty(), projectionWeights, upProjectionWeights, configurableTensorProvider, null,
+                gateWeightName, upWeightName, downWeightName);
+    }
+
+    /** Variant carrying base tensor names for LoRA runtime hot-swap, with a tensor-parallel collective key. */
+    public MLPBlock(AbstractModel model, ActivationFunction.Type activationFunction, AbstractTensor fullyConnectedWeights,
+            AbstractTensor projectionWeights, AbstractTensor upProjectionWeights, ConfigurableTensorProvider configurableTensorProvider,
+            String tensorParallelCollectiveKey, String gateWeightName, String upWeightName, String downWeightName) {
+        this(model, activationFunction, Optional.empty(), fullyConnectedWeights,
+                Optional.empty(), projectionWeights, upProjectionWeights, configurableTensorProvider, tensorParallelCollectiveKey,
+                gateWeightName, upWeightName, downWeightName);
     }
 
     public MLPBlock(
@@ -85,6 +113,25 @@ public class MLPBlock implements FeedForward {
             ConfigurableTensorProvider configurableTensorProvider,
             String tensorParallelCollectiveKey
     ) {
+        this(model, activationFunction, fullyConnectedBias, fullyConnectedWeights, projectionBias, projectionWeights,
+                upProjectionWeights, configurableTensorProvider, tensorParallelCollectiveKey, null, null, null);
+    }
+
+    /** Canonical constructor, carrying base tensor names for LoRA runtime hot-swap -- see step 4 plan Section 4.2. */
+    public MLPBlock(
+            AbstractModel model,
+            ActivationFunction.Type activationFunction,
+            Optional<AbstractTensor> fullyConnectedBias,
+            AbstractTensor fullyConnectedWeights,
+            Optional<AbstractTensor> projectionBias,
+            AbstractTensor projectionWeights,
+            AbstractTensor upProjectionWeights,
+            ConfigurableTensorProvider configurableTensorProvider,
+            String tensorParallelCollectiveKey,
+            String gateWeightName,
+            String upWeightName,
+            String downWeightName
+    ) {
         this.model = model;
         this.activationFunction = activationFunction;
         this.fullyConnectedBias = fullyConnectedBias;
@@ -96,6 +143,9 @@ public class MLPBlock implements FeedForward {
         this.batchWeights = new AbstractTensor[] { fullyConnectedWeights, upProjectionWeights };
         this.configurableTensorProvider = configurableTensorProvider;
         this.tensorParallelCollectiveKey = tensorParallelCollectiveKey;
+        this.gateWeightName = gateWeightName;
+        this.upWeightName = upWeightName;
+        this.downWeightName = downWeightName;
 
         configurableTensorProvider.get().registerModelTensor(fullyConnectedWeights);
         if (upProjectionWeights != null) {
@@ -118,6 +168,15 @@ public class MLPBlock implements FeedForward {
         if (usesLocalTensorParallelShard(hiddenLength)) {
             if (tensorParallelCollectiveKey == null) {
                 throw new IllegalStateException("Tensor-parallel MLP requires a collective key");
+            }
+            // Defense in depth: AbstractModel.setActiveAdapter already refuses to activate an adapter under
+            // tensor-parallel (so activeLoraDeltaFor below would return empty regardless), but this branch is a
+            // completely separate forward-pass code path this hook is never wired into -- a future refactor could
+            // otherwise silently reintroduce LoRA-under-TP. See step 4 plan Section 1 item 5 / Section 4.2.
+            if (model.activeLoraDeltaFor(gateWeightName).isPresent() || model.activeLoraDeltaFor(upWeightName).isPresent()
+                    || model.activeLoraDeltaFor(downWeightName).isPresent()) {
+                throw new UnsupportedOperationException(
+                        "LoRA runtime hot-swap does not support tensor-parallel inference -- see step 4 plan Section 7");
             }
             AbstractTensor reduced;
             try (Timer.Context ignoredTp = InferenceProfiler.timer(model.getMetricRegistry(), "mlpblock.tensor_parallel_forward").time()) {
@@ -165,6 +224,12 @@ public class MLPBlock implements FeedForward {
             fullyConnectedBias.ifPresent(
                     bias -> configurableTensorProvider.get().accumulate(buf, bias, 0, hiddenLength)
             );
+            model.activeLoraDeltaFor(gateWeightName).ifPresent(
+                    delta -> LoraDeltaApplier.apply(model, buf, lnemb, delta));
+            if (upProjectionWeights != null) {
+                model.activeLoraDeltaFor(upWeightName).ifPresent(
+                        delta -> LoraDeltaApplier.apply(model, buf2, lnemb, delta));
+            }
 
             if (upProjectionWeights != null) {
                 model.getMetricRegistry().counter("mlpblock.tensorplan.fused_activation_multiply").inc();
@@ -213,6 +278,9 @@ public class MLPBlock implements FeedForward {
                 tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(result)));
 
                 projectionBias.ifPresent(bias -> configurableTensorProvider.get().accumulate(result, bias, 0, model.getConfig().embeddingLength));
+                // bufq is whatever the base down_proj matmul itself consumes; LoraDeltaApplier dequantizes it to
+                // match loraA's dtype internally -- see step 4 plan Section 11 item 9 (revised).
+                model.activeLoraDeltaFor(downWeightName).ifPresent(delta -> LoraDeltaApplier.apply(model, result, bufq, delta));
                 return result;
             }
         }

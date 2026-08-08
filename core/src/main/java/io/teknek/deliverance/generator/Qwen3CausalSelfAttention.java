@@ -28,8 +28,29 @@ public class Qwen3CausalSelfAttention extends CausalSelfAttention {
             ConfigurableTensorProvider configurableTensorProvider,
             MetricRegistry metricRegistry
     ) {
+        this(model, layerIndex, queryAttnWeights, keyAttnWeights, valueAttnWeights, outputProjectionWeights,
+                qNormWeights, kNormWeights, configurableTensorProvider, metricRegistry, null, null, null, null);
+    }
+
+    /** Variant carrying base tensor names for LoRA runtime hot-swap -- see step 4 plan Section 4.1. */
+    public Qwen3CausalSelfAttention(
+            AbstractModel model,
+            int layerIndex,
+            AbstractTensor queryAttnWeights,
+            AbstractTensor keyAttnWeights,
+            AbstractTensor valueAttnWeights,
+            AbstractTensor outputProjectionWeights,
+            AbstractTensor qNormWeights,
+            AbstractTensor kNormWeights,
+            ConfigurableTensorProvider configurableTensorProvider,
+            MetricRegistry metricRegistry,
+            String queryWeightName,
+            String keyWeightName,
+            String valueWeightName,
+            String outputWeightName
+    ) {
         super(model, layerIndex, queryAttnWeights, keyAttnWeights, valueAttnWeights, outputProjectionWeights,
-                configurableTensorProvider, metricRegistry);
+                configurableTensorProvider, metricRegistry, queryWeightName, keyWeightName, valueWeightName, outputWeightName);
         this.model = model;
         this.qNormWeights = qNormWeights;
         this.kNormWeights = kNormWeights;

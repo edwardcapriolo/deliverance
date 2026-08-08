@@ -56,27 +56,36 @@ public class Qwen3Model extends LlamaModel {
         IntStream.range(0, config.numberOfLayers).parallel().forEach(i -> {
             String base = "model.layers." + i + ".";
             String attn = base + "self_attn.";
+            String qName = attn + "q_proj.weight";
+            String kName = attn + "k_proj.weight";
+            String vName = attn + "v_proj.weight";
+            String oName = attn + "o_proj.weight";
             Qwen3CausalSelfAttention attention = new Qwen3CausalSelfAttention(
                     this,
                     i,
-                    quantize(weights.load(attn + "q_proj.weight"), qType),
-                    quantize(weights.load(attn + "k_proj.weight"), qType),
-                    quantize(weights.load(attn + "v_proj.weight"), qType),
-                    quantize(weights.load(attn + "o_proj.weight"), qType),
+                    quantize(weights.load(qName), qType),
+                    quantize(weights.load(kName), qType),
+                    quantize(weights.load(vName), qType),
+                    quantize(weights.load(oName), qType),
                     quantize(weights.load(attn + "q_norm.weight"), qType),
                     quantize(weights.load(attn + "k_norm.weight"), qType),
                     configurableTensorProvider,
-                    metricRegistry
+                    metricRegistry,
+                    qName, kName, vName, oName
             );
 
             String mlpPrefix = base + "mlp.";
+            String gateName = mlpPrefix + "gate_proj.weight";
+            String downName = mlpPrefix + "down_proj.weight";
+            String upName = mlpPrefix + "up_proj.weight";
             MLPBlock mlp = new MLPBlock(
                     this,
                     config.activationFunction,
-                    quantize(weights.load(mlpPrefix + "gate_proj.weight"), qType),
-                    quantize(weights.load(mlpPrefix + "down_proj.weight"), qType),
-                    quantize(weights.load(mlpPrefix + "up_proj.weight"), qType),
-                    configurableTensorProvider
+                    quantize(weights.load(gateName), qType),
+                    quantize(weights.load(downName), qType),
+                    quantize(weights.load(upName), qType),
+                    configurableTensorProvider,
+                    gateName, upName, downName
             );
 
             blocks[i] = new TransformerBlock(

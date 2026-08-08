@@ -71,24 +71,33 @@ public class Gemma2Model extends LlamaModel {
         IntStream.range(0, config.numberOfLayers).parallel().forEach(i -> {
             String base = "model.layers." + i + ".";
             String prefix = base + "self_attn.";
+            String qName = prefix + "q_proj.weight";
+            String kName = prefix + "k_proj.weight";
+            String vName = prefix + "v_proj.weight";
+            String oName = prefix + "o_proj.weight";
             CausalSelfAttention attention = new CausalSelfAttention(this, i,
-                    quantize(tensorParallelWeights.load(prefix + "q_proj.weight"), qType),
-                    quantize(tensorParallelWeights.load(prefix + "k_proj.weight"), qType),
-                    quantize(tensorParallelWeights.load(prefix + "v_proj.weight"), qType),
-                    quantize(tensorParallelWeights.load(prefix + "o_proj.weight"), qType),
+                    quantize(tensorParallelWeights.load(qName), qType),
+                    quantize(tensorParallelWeights.load(kName), qType),
+                    quantize(tensorParallelWeights.load(vName), qType),
+                    quantize(tensorParallelWeights.load(oName), qType),
                     configurableTensorProvider,
-                    metricRegistry
+                    metricRegistry,
+                    qName, kName, vName, oName
             );
 
             prefix = base + "mlp.";
+            String gateName = prefix + "gate_proj.weight";
+            String downName = prefix + "down_proj.weight";
+            String upName = prefix + "up_proj.weight";
             MLPBlock mlp = new MLPBlock(
                     this,
                     config.activationFunction,
-                    quantize(tensorParallelWeights.load(prefix + "gate_proj.weight"), qType), // w1
-                    quantize(tensorParallelWeights.load(prefix + "down_proj.weight"), qType), // w2
-                    quantize(tensorParallelWeights.load(prefix + "up_proj.weight"), qType), // w3,
+                    quantize(tensorParallelWeights.load(gateName), qType), // w1
+                    quantize(tensorParallelWeights.load(downName), qType), // w2
+                    quantize(tensorParallelWeights.load(upName), qType), // w3,
                     configurableTensorProvider,
-                    "layer." + i + ".mlp.down_proj"
+                    "layer." + i + ".mlp.down_proj",
+                    gateName, upName, downName
             );
 
             transformerBlocks[i] = new TransformerBlock(this, i,

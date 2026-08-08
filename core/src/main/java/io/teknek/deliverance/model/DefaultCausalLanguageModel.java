@@ -4,6 +4,8 @@ import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.safetensors.Config;
+import io.teknek.deliverance.safetensors.LoraAdapter;
+import io.teknek.deliverance.safetensors.fetch.LoraAdapterModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
@@ -82,6 +84,39 @@ public final class DefaultCausalLanguageModel implements CausalLanguageModel {
     @Override
     public ToolCallParser getToolCallParser() {
         return coordinatorModel.getToolCallParser();
+    }
+
+    /**
+     * Delegates to {@link #coordinatorModel} directly rather than checking {@code backend
+     * instanceof LocalGenerationBackend} first -- {@code coordinatorModel}'s own
+     * {@code tensorParallelContext} correctly reflects this rank's TP state regardless of which
+     * backend wraps it, so {@code AbstractModel.setActiveAdapter}'s existing TP guard already
+     * enforces the step 4 plan's Section 7 non-goal at this layer too. See step 4 plan Section
+     * 3.1's "implementation-time item to verify" for why either placement is correct.
+     */
+    @Override
+    public void registerLoraAdapter(String adapterId, LoraAdapter adapter) {
+        coordinatorModel.registerLoraAdapter(adapterId, adapter);
+    }
+
+    @Override
+    public void registerLoraAdapter(String adapterId, LoraAdapterModelFetcher fetcher) {
+        coordinatorModel.registerLoraAdapter(adapterId, fetcher);
+    }
+
+    @Override
+    public void unregisterLoraAdapter(String adapterId) {
+        coordinatorModel.unregisterLoraAdapter(adapterId);
+    }
+
+    @Override
+    public void setActiveAdapter(String adapterId) {
+        coordinatorModel.setActiveAdapter(adapterId);
+    }
+
+    @Override
+    public void clearActiveAdapter() {
+        coordinatorModel.clearActiveAdapter();
     }
 
     /**

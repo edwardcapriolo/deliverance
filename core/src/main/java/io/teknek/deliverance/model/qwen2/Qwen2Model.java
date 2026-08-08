@@ -69,29 +69,38 @@ public class Qwen2Model extends LlamaModel {
             int relativeLayer = i;
             String base = "model.layers." + i + ".";
             String prefix = base + "self_attn.";
+            String qName = prefix + "q_proj.weight";
+            String kName = prefix + "k_proj.weight";
+            String vName = prefix + "v_proj.weight";
+            String oName = prefix + "o_proj.weight";
             CausalSelfAttention attention = new CausalSelfAttention(
                     this,
                     relativeLayer,
                     Optional.of(quantize(weights.load(prefix + "q_proj.bias"), qType)),
                     Optional.of(quantize(weights.load(prefix + "k_proj.bias"), qType)),
                     Optional.of(quantize(weights.load(prefix + "v_proj.bias"), qType)),
-                    quantize(weights.load(prefix + "q_proj.weight"), qType),
-                    quantize(weights.load(prefix + "k_proj.weight"), qType),
-                    quantize(weights.load(prefix + "v_proj.weight"), qType),
+                    quantize(weights.load(qName), qType),
+                    quantize(weights.load(kName), qType),
+                    quantize(weights.load(vName), qType),
                     Optional.empty(),
-                    quantize(weights.load(prefix + "o_proj.weight"), qType),
+                    quantize(weights.load(oName), qType),
                     configurableTensorProvider,
-                    metricRegistry
+                    metricRegistry,
+                    qName, kName, vName, oName
             );
 
             prefix = base + "mlp.";
+            String gateName = prefix + "gate_proj.weight";
+            String downName = prefix + "down_proj.weight";
+            String upName = prefix + "up_proj.weight";
             MLPBlock mlp = new MLPBlock(
                     this,
                     config.activationFunction,
-                    quantize(weights.load(prefix + "gate_proj.weight"), qType), // w1
-                    quantize(weights.load(prefix + "down_proj.weight"), qType), // w2
-                    quantize(weights.load(prefix + "up_proj.weight"), qType),
-                    configurableTensorProvider
+                    quantize(weights.load(gateName), qType), // w1
+                    quantize(weights.load(downName), qType), // w2
+                    quantize(weights.load(upName), qType),
+                    configurableTensorProvider,
+                    gateName, upName, downName
             ); // w3
 
             transformerBlocks[relativeLayer] = new TransformerBlock(
