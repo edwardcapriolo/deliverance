@@ -35,7 +35,20 @@ public class MixtralModel extends LlamaModel {
                 metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, toolCallParser, pool, tensorParallelContext,
                 tensorParallelCollectives, outputHeadQuantization);
     }
-    
+
+    /**
+     * Not supported: attention uses plain {@code CausalSelfAttention} (free LoRA coverage), but the
+     * feed-forward layer routes through {@code MixtureOfExpertsBlock} (one base tensor name per
+     * expert, not per layer) -- the same MoE-routing ambiguity {@code Qwen3MoeModel}/
+     * {@code GraniteMoeHybridModel} are excluded for. Overrides {@code LlamaModel}'s inherited
+     * {@code true} back to {@code false}. See step 4 plan Section 6/Section 11 item 6 -- this gap
+     * was missed by the original family survey and found only during implementation.
+     */
+    @Override
+    protected boolean supportsLoraHotSwap() {
+        return false;
+    }
+
     @Override
     protected TransformerBlock[] loadTransformerBlockWeights() {
         MixtralConfig mixtralConfig = (MixtralConfig) config;

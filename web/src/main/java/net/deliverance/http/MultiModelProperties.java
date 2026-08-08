@@ -295,6 +295,31 @@ class TensorParallelSpringCausalLanguageModel implements CausalLanguageModel {
     }
 
     @Override
+    public void registerLoraAdapter(String adapterId, io.teknek.deliverance.safetensors.LoraAdapter adapter) {
+        coordinatorModel.registerLoraAdapter(adapterId, adapter);
+    }
+
+    @Override
+    public void registerLoraAdapter(String adapterId, io.teknek.deliverance.safetensors.fetch.LoraAdapterModelFetcher fetcher) {
+        coordinatorModel.registerLoraAdapter(adapterId, fetcher);
+    }
+
+    @Override
+    public void unregisterLoraAdapter(String adapterId) {
+        coordinatorModel.unregisterLoraAdapter(adapterId);
+    }
+
+    @Override
+    public void setActiveAdapter(String adapterId) {
+        coordinatorModel.setActiveAdapter(adapterId);
+    }
+
+    @Override
+    public void clearActiveAdapter() {
+        coordinatorModel.clearActiveAdapter();
+    }
+
+    @Override
     public void close() throws IOException {
         try {
             group.close();

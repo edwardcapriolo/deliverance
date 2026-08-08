@@ -65,6 +65,19 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
 
     private final MetricRegistry metricRegistry;
 
+    /**
+     * Base tensor names for this layer's q/k/v/o projections (e.g.
+     * {@code "model.layers.3.self_attn.q_proj.weight"}), used to look up an active LoRA adapter's
+     * delta for this layer via {@link AbstractModel#activeLoraDeltaFor(String)}. {@code null} for
+     * model families that haven't opted into LoRA runtime hot-swap (see step 4 plan Section 6) --
+     * safe because {@code activeLoraDeltaFor} never consults the name when no adapter is active,
+     * and non-opted-in families can never have one.
+     */
+    private final String queryWeightName;
+    private final String keyWeightName;
+    private final String valueWeightName;
+    private final String outputWeightName;
+
     public CausalSelfAttention(
             AbstractModel m,
             int layerIndex,
@@ -78,6 +91,37 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
         this(
                 m,
                 layerIndex,
+                queryAttnWeights,
+                keyAttnWeights,
+                valueAttnWeights,
+                outputProjectionWeights,
+                configurableTensorProvider,
+                metricRegistry,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    /** Variant carrying base tensor names for LoRA runtime hot-swap -- see step 4 plan Section 4.1. */
+    public CausalSelfAttention(
+            AbstractModel m,
+            int layerIndex,
+            AbstractTensor queryAttnWeights,
+            AbstractTensor keyAttnWeights,
+            AbstractTensor valueAttnWeights,
+            AbstractTensor outputProjectionWeights,
+            ConfigurableTensorProvider configurableTensorProvider,
+            MetricRegistry metricRegistry,
+            String queryWeightName,
+            String keyWeightName,
+            String valueWeightName,
+            String outputWeightName
+    ) {
+        this(
+                m,
+                layerIndex,
                 Optional.empty(),
                 Optional.empty(),
                 Optional.empty(),
@@ -87,7 +131,11 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
                 Optional.empty(),
                 outputProjectionWeights,
                 configurableTensorProvider,
-                metricRegistry
+                metricRegistry,
+                queryWeightName,
+                keyWeightName,
+                valueWeightName,
+                outputWeightName
         );
     }
 
@@ -104,6 +152,45 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
             AbstractTensor outputProjectionWeights,
             ConfigurableTensorProvider configurableTensorProvider,
             MetricRegistry metricRegistry
+    ) {
+        this(
+                m,
+                layerIndex,
+                queryAttnBias,
+                keyAttnBias,
+                valueAttnBias,
+                queryAttnWeights,
+                keyAttnWeights,
+                valueAttnWeights,
+                outputProjectionBias,
+                outputProjectionWeights,
+                configurableTensorProvider,
+                metricRegistry,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    /** Canonical constructor, carrying base tensor names for LoRA runtime hot-swap -- see step 4 plan Section 4.1. */
+    public CausalSelfAttention(
+            AbstractModel m,
+            int layerIndex,
+            Optional<AbstractTensor> queryAttnBias,
+            Optional<AbstractTensor> keyAttnBias,
+            Optional<AbstractTensor> valueAttnBias,
+            AbstractTensor queryAttnWeights,
+            AbstractTensor keyAttnWeights,
+            AbstractTensor valueAttnWeights,
+            Optional<AbstractTensor> outputProjectionBias,
+            AbstractTensor outputProjectionWeights,
+            ConfigurableTensorProvider configurableTensorProvider,
+            MetricRegistry metricRegistry,
+            String queryWeightName,
+            String keyWeightName,
+            String valueWeightName,
+            String outputWeightName
     ) {
         this.m = m;
         this.layerIndex = layerIndex;
@@ -135,6 +222,10 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
         configurableTensorProvider.get().registerModelTensor(outputProjectionWeights);
 
         this.metricRegistry = metricRegistry;
+        this.queryWeightName = queryWeightName;
+        this.keyWeightName = keyWeightName;
+        this.valueWeightName = valueWeightName;
+        this.outputWeightName = outputWeightName;
     }
 
     public AbstractTensor forward(AbstractTensor input, int startPosition, KvBufferCache.KvBuffer kvMem,
@@ -208,6 +299,12 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
                     bias -> configurableTensorProvider.get().accumulate(tmpValBatch, bias,
                             0, kvLength)
             );
+            m.activeLoraDeltaFor(queryWeightName).ifPresent(
+                    delta -> LoraDeltaApplier.apply(m, queryBatch, input, delta));
+            m.activeLoraDeltaFor(keyWeightName).ifPresent(
+                    delta -> LoraDeltaApplier.apply(m, tmpKeyBatch, input, delta));
+            m.activeLoraDeltaFor(valueWeightName).ifPresent(
+                    delta -> LoraDeltaApplier.apply(m, tmpValBatch, input, delta));
             normalizeQueryKey(queryBatch, tmpKeyBatch);
             m.emitLayerDebug(layerIndex, "query_projection", queryBatch);
             m.emitLayerDebug(layerIndex, "key_projection", tmpKeyBatch);
@@ -320,6 +417,10 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
                 m.emitLayerDebug(layerIndex, "attention_output", reduced);
                 tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(reduced)));
                 outputProjectionBias.ifPresent(bias -> configurableTensorProvider.get().accumulate(reduced, bias, 0, config.embeddingLength));
+                // vq is whatever the base o_proj matmul itself consumes; LoraDeltaApplier dequantizes it to
+                // match loraA's dtype internally -- see step 4 plan Section 11 item 9 (revised).
+                m.activeLoraDeltaFor(outputWeightName).ifPresent(
+                        delta -> LoraDeltaApplier.apply(m, reduced, vq, delta));
                 if (reduced != result) {
                     result.close();
                 }
