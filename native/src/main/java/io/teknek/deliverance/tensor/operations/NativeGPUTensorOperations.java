@@ -67,6 +67,7 @@ public class NativeGPUTensorOperations implements TensorOperations {
     private long decodePagedAttentionF32Id;
     private long flashDecodePagedAttentionHeadF32Id;
     private long flashDecodePagedAttentionAllHeadsF32Id;
+    private long flashDecodePagedAttentionVllmF32Id;
 
     private int params_size;
 
@@ -106,6 +107,7 @@ public class NativeGPUTensorOperations implements TensorOperations {
         this.decodePagedAttentionF32Id = runtime.decodePagedAttentionF32Id;
         this.flashDecodePagedAttentionHeadF32Id = runtime.flashDecodePagedAttentionHeadF32Id;
         this.flashDecodePagedAttentionAllHeadsF32Id = runtime.flashDecodePagedAttentionAllHeadsF32Id;
+        this.flashDecodePagedAttentionVllmF32Id = runtime.flashDecodePagedAttentionVllmF32Id;
         this.params_size = runtime.paramsSize;
     }
 
@@ -320,10 +322,11 @@ public class NativeGPUTensorOperations implements TensorOperations {
             long decodePagedAttentionF32Id = registerShader("decode_paged_attention_f32.wgsl");
             long flashDecodePagedAttentionHeadF32Id = registerShader("decode_paged_attention_head_f32.wgsl");
             long flashDecodePagedAttentionAllHeadsF32Id = registerShader("decode_paged_attention_all_heads_f32.wgsl");
+            long flashDecodePagedAttentionVllmF32Id = registerShader("decode_paged_attention_vllm_f32.wgsl");
 
             return new GpuRuntime(paramsSize, gemmF32Id, gemmBf16Id, gemmQ4Id, gemmI8Q4Id, gemmI8Q4M1Id,
                     decodePagedAttentionF32Id, flashDecodePagedAttentionHeadF32Id,
-                    flashDecodePagedAttentionAllHeadsF32Id);
+                    flashDecodePagedAttentionAllHeadsF32Id, flashDecodePagedAttentionVllmF32Id);
 
         } catch (Throwable t) {
             logger.error("Failed to load native GPU operations", t);
@@ -340,7 +343,53 @@ public class NativeGPUTensorOperations implements TensorOperations {
             long gemmI8Q4M1Id,
             long decodePagedAttentionF32Id,
             long flashDecodePagedAttentionHeadF32Id,
-            long flashDecodePagedAttentionAllHeadsF32Id) {
+            long flashDecodePagedAttentionAllHeadsF32Id,
+            long flashDecodePagedAttentionVllmF32Id) {
+    }
+
+    void debugFlashDecodePagedAttentionVllm(AbstractTensor valueOut, AbstractTensor query, AbstractTensor keyCache,
+            AbstractTensor valueCache, int[] blockTable, int visibleRows, int blockSize, int numberOfHeads,
+            int numberOfKeyValueHeads, int headSize, float scale) {
+        validateVllmLayoutDebugInputs(valueOut, query, keyCache, valueCache, blockTable, visibleRows, blockSize,
+                numberOfHeads, numberOfKeyValueHeads, headSize);
+        Long scratchId = gpuBuffers();
+        if (scratchId == null || scratchId == -1) {
+            throw new IllegalStateException("GPU scratch buffers are unavailable");
+        }
+        long keyCacheId = registerTensorIfAbsent(keyCache);
+        long valueCacheId = registerTensorIfAbsent(valueCache);
+        ByteBuffer blockTableBuffer = ByteBuffer.allocateDirect(Integer.BYTES * blockTable.length)
+                .order(ByteOrder.LITTLE_ENDIAN);
+        for (int block : blockTable) {
+            blockTableBuffer.putInt(block);
+        }
+        blockTableBuffer.flip();
+        NativeGPU.gpu_decode_paged_attention_vllm(
+                scratchId,
+                flashDecodePagedAttentionVllmF32Id,
+                query.getMemorySegment(),
+                query.getMemorySegmentOffset(query.getOffset(0, 0)),
+                (int) query.getMemorySegment().byteSize(),
+                keyCacheId,
+                valueCacheId,
+                MemorySegment.ofBuffer(blockTableBuffer),
+                Integer.BYTES * blockTable.length,
+                valueOut.getMemorySegment(),
+                valueOut.getOffset(0, 0),
+                visibleRows,
+                blockSize,
+                numberOfHeads,
+                numberOfKeyValueHeads,
+                headSize,
+                blockTable.length,
+                scale);
+    }
+
+    static void validateVllmLayoutDebugInputs(AbstractTensor valueOut, AbstractTensor query, AbstractTensor keyCache,
+            AbstractTensor valueCache, int[] blockTable, int visibleRows, int blockSize, int numberOfHeads,
+            int numberOfKeyValueHeads, int headSize) {
+        GpuFlashDecodeShape.validateVllmLayout(valueOut, query, keyCache, valueCache, blockTable, visibleRows,
+                blockSize, numberOfHeads, numberOfKeyValueHeads, headSize);
     }
 
     private boolean gpuSupported(Long btId, DType atype, DType btype, DType rtype) {
@@ -738,6 +787,9 @@ public class NativeGPUTensorOperations implements TensorOperations {
             return false;
         }
         if (visibleRows <= 0 || (long) (headSize + 2) * Float.BYTES > MAX_SCRATCH_SIZE) {
+            return false;
+        }
+        if (headSize > 128) {
             return false;
         }
         for (AbstractTensor keyPage : keyPages) {

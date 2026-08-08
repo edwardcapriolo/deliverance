@@ -1,22 +1,18 @@
 struct Params {
-    rows: u32,
-    head_size: u32,
+    visible_rows: u32,
+    block_size: u32,
     number_of_heads: u32,
     number_of_kv_heads: u32,
-    kv_length: u32,
-    key_stride: u32,
-    value_stride: u32,
-    reset: u32,
+    head_size: u32,
+    max_blocks_per_seq: u32,
     scale: f32,
-    _pad0: u32,
-    _pad1: u32,
-    _pad2: u32,
+    _pad: u32,
 };
 
 @group(0) @binding(0) var<storage, read> Q: array<f32>;
-@group(0) @binding(1) var<storage, read> K: array<f32>;
-@group(0) @binding(2) var<storage, read> V: array<f32>;
-@group(0) @binding(3) var<storage, read> Empty: array<f32>;
+@group(0) @binding(1) var<storage, read> KCache: array<f32>;
+@group(0) @binding(2) var<storage, read> VCache: array<f32>;
+@group(0) @binding(3) var<storage, read> BlockTable: array<u32>;
 @group(0) @binding(4) var<storage, read_write> State: array<f32>;
 @group(0) @binding(5) var<uniform> params: Params;
 
@@ -36,14 +32,12 @@ fn main(@builtin(workgroup_id) workgroup_id: vec3<u32>, @builtin(local_invocatio
     let q_base = head * params.head_size;
     let head_group_size = params.number_of_heads / params.number_of_kv_heads;
     let kv_head = head / head_group_size;
-    let kv_offset = kv_head * params.head_size;
 
-    if (lane == 0u && params.reset != 0u) {
+    if (lane == 0u) {
         State[state_base] = -3.4028234663852886e38;
         State[state_base + 1u] = 0.0;
     }
-
-    if (params.reset != 0u && lane < params.head_size) {
+    if (lane < params.head_size) {
         State[state_base + 2u + lane] = 0.0;
     }
     workgroupBarrier();
@@ -51,11 +45,14 @@ fn main(@builtin(workgroup_id) workgroup_id: vec3<u32>, @builtin(local_invocatio
     var max_val = State[state_base];
     var sum_val = State[state_base + 1u];
 
-    for (var row = 0u; row < params.rows; row = row + 1u) {
-        let key_base = row * params.key_stride + kv_offset;
+    for (var logical_row = 0u; logical_row < params.visible_rows; logical_row = logical_row + 1u) {
+        let logical_block = logical_row / params.block_size;
+        let block_offset = logical_row % params.block_size;
+        let physical_block = BlockTable[logical_block];
+        let kv_base = (((physical_block * params.block_size + block_offset) * params.number_of_kv_heads + kv_head) * params.head_size);
 
         if (lane < params.head_size) {
-            partial[lane] = Q[q_base + lane] * K[key_base + lane];
+            partial[lane] = Q[q_base + lane] * KCache[kv_base + lane];
         } else {
             partial[lane] = 0.0;
         }
@@ -91,16 +88,10 @@ fn main(@builtin(workgroup_id) workgroup_id: vec3<u32>, @builtin(local_invocatio
         }
         workgroupBarrier();
 
-        let value_base = row * params.value_stride + kv_offset;
         if (lane < params.head_size) {
             let out_idx = state_base + 2u + lane;
-            State[out_idx] = State[out_idx] * scale_weight[0] + scale_weight[1] * V[value_base + lane];
+            State[out_idx] = State[out_idx] * scale_weight[0] + scale_weight[1] * VCache[kv_base + lane];
         }
         workgroupBarrier();
-    }
-
-    if (lane == 0u) {
-        State[state_base] = max_val;
-        State[state_base + 1u] = sum_val;
     }
 }

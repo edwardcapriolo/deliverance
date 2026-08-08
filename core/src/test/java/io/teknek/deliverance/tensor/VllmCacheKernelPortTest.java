@@ -183,6 +183,47 @@ class VllmCacheKernelPortTest {
     }
 
     @Test
+    void vllmLayoutDecodeAttentionMatchesPackedPageReference() {
+        int numberOfHeads = 4;
+        int numberOfKeyValueHeads = 2;
+        int headSize = 8;
+        int blockSize = 4;
+        int visibleRows = 9;
+        int rowWidth = numberOfKeyValueHeads * headSize;
+        int[][] blocks = { { 2, 0, 3 } };
+        KvBlockTable blockTable = new KvBlockTable(blockSize, blocks);
+
+        try (AbstractTensor query = tensor(1, numberOfHeads * headSize, 5);
+             AbstractTensor keyCache = tensor(16, rowWidth, 7);
+             AbstractTensor valueCache = tensor(16, rowWidth, 11);
+             AbstractTensor expected = new FloatBufferTensor(1, numberOfHeads * headSize);
+             AbstractTensor actual = new FloatBufferTensor(1, numberOfHeads * headSize)) {
+
+            decodeVllmLayoutReference(actual, query, keyCache, valueCache, blockTable, 0, visibleRows,
+                    numberOfHeads, numberOfKeyValueHeads, headSize, 0.25f);
+
+            AbstractTensor[] keyPages = logicalPagesFromBlockTable(keyCache, blockTable, 0, blockSize, visibleRows,
+                    rowWidth);
+            AbstractTensor[] valuePages = logicalPagesFromBlockTable(valueCache, blockTable, 0, blockSize, visibleRows,
+                    rowWidth);
+            try {
+                new io.teknek.deliverance.tensor.operations.NaiveTensorOperations()
+                        .decodePagedAttention(expected, query, keyPages, valuePages, visibleRows, numberOfHeads,
+                                numberOfKeyValueHeads, headSize, 0.25f, null);
+            } finally {
+                for (AbstractTensor page : keyPages) {
+                    page.close();
+                }
+                for (AbstractTensor page : valuePages) {
+                    page.close();
+                }
+            }
+
+            assertTensorEquals(expected, actual);
+        }
+    }
+
+    @Test
     void slotMappingDefensivelyCopiesSlots() {
         int[] slots = { 3, 1, 2 };
         KvSlotMapping mapping = new KvSlotMapping(4, slots);
@@ -371,6 +412,58 @@ class VllmCacheKernelPortTest {
             for (int col = 0; col < expected.shape().last(); col++) {
                 assertEquals(expected.get(row, col), actual.get(row, col), 1.0e-6f,
                         "row=" + row + " col=" + col);
+            }
+        }
+    }
+
+    private static AbstractTensor[] logicalPagesFromBlockTable(AbstractTensor cache, KvBlockTable blockTable,
+            int sequence, int blockSize, int visibleRows, int rowWidth) {
+        int pageCount = (visibleRows + blockSize - 1) / blockSize;
+        AbstractTensor[] pages = new AbstractTensor[pageCount];
+        for (int logicalBlock = 0; logicalBlock < pageCount; logicalBlock++) {
+            int physicalBlock = blockTable.physicalBlock(sequence, logicalBlock);
+            FloatBufferTensor page = new FloatBufferTensor(blockSize, rowWidth);
+            for (int row = 0; row < blockSize; row++) {
+                page.copyFrom(cache, cache.getOffset(physicalBlock * blockSize + row, 0), page.getOffset(row, 0),
+                        rowWidth);
+            }
+            pages[logicalBlock] = page;
+        }
+        return pages;
+    }
+
+    private static void decodeVllmLayoutReference(AbstractTensor out, AbstractTensor query, AbstractTensor keyCache,
+            AbstractTensor valueCache, KvBlockTable blockTable, int sequence, int visibleRows, int numberOfHeads,
+            int numberOfKeyValueHeads, int headSize, float scale) {
+        int headGroupSize = numberOfHeads / numberOfKeyValueHeads;
+        for (int head = 0; head < numberOfHeads; head++) {
+            int kvHead = head / headGroupSize;
+            int queryOffset = head * headSize;
+            int kvOffset = kvHead * headSize;
+            float max = Float.NEGATIVE_INFINITY;
+            float denom = 0.0f;
+            for (int col = 0; col < headSize; col++) {
+                out.set(0.0f, 0, queryOffset + col);
+            }
+            for (int logicalRow = 0; logicalRow < visibleRows; logicalRow++) {
+                int slot = blockTable.slot(sequence, logicalRow);
+                float score = 0.0f;
+                for (int col = 0; col < headSize; col++) {
+                    score += query.get(0, queryOffset + col) * keyCache.get(slot, kvOffset + col);
+                }
+                score *= scale;
+                float nextMax = Math.max(max, score);
+                float oldScale = max == Float.NEGATIVE_INFINITY ? 0.0f : (float) Math.exp(max - nextMax);
+                float weight = (float) Math.exp(score - nextMax);
+                for (int col = 0; col < headSize; col++) {
+                    out.set(out.get(0, queryOffset + col) * oldScale + weight * valueCache.get(slot, kvOffset + col),
+                            0, queryOffset + col);
+                }
+                denom = denom * oldScale + weight;
+                max = nextMax;
+            }
+            for (int col = 0; col < headSize; col++) {
+                out.set(out.get(0, queryOffset + col) / denom, 0, queryOffset + col);
             }
         }
     }

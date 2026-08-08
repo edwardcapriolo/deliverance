@@ -638,6 +638,52 @@ public class NativeGPU {
         }
     }
 
+    private static class gpu_decode_paged_attention_vllm {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
+            NativeGPU.C_LONG,
+            NativeGPU.C_LONG,
+            NativeGPU.C_POINTER,
+            NativeGPU.C_INT,
+            NativeGPU.C_INT,
+            NativeGPU.C_LONG,
+            NativeGPU.C_LONG,
+            NativeGPU.C_POINTER,
+            NativeGPU.C_INT,
+            NativeGPU.C_POINTER,
+            NativeGPU.C_INT,
+            NativeGPU.C_INT,
+            NativeGPU.C_INT,
+            NativeGPU.C_INT,
+            NativeGPU.C_INT,
+            NativeGPU.C_INT,
+            NativeGPU.C_INT,
+            NativeGPU.C_FLOAT
+        );
+
+        public static final MemorySegment ADDR = NativeGPU.findOrThrow("gpu_decode_paged_attention_vllm");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    public static void gpu_decode_paged_attention_vllm(long scratch_id, long shader, MemorySegment query,
+            int qoffset, int query_size, long key_cache_id, long value_cache_id, MemorySegment block_table,
+            int block_table_size, MemorySegment out, int out_offset, int visible_rows, int block_size,
+            int number_of_heads, int number_of_kv_heads, int head_size, int max_blocks_per_seq, float scale) {
+        var mh$ = gpu_decode_paged_attention_vllm.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("gpu_decode_paged_attention_vllm", scratch_id, shader, query, qoffset, query_size,
+                        key_cache_id, value_cache_id, block_table, block_table_size, out, out_offset, visible_rows,
+                        block_size, number_of_heads, number_of_kv_heads, head_size, max_blocks_per_seq, scale);
+            }
+            mh$.invokeExact(scratch_id, shader, query, qoffset, query_size, key_cache_id, value_cache_id,
+                    block_table, block_table_size, out, out_offset, visible_rows, block_size, number_of_heads,
+                    number_of_kv_heads, head_size, max_blocks_per_seq, scale);
+        } catch (Throwable ex$) {
+            throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
     private static class gpu_decode_attention_packed_head {
         public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
             NativeGPU.C_LONG,
