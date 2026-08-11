@@ -1,4 +1,4 @@
-package io.teknek.deliverance.integration;
+package io.teknek.deliverance.integration.llama;
 
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.model.AbstractModel;

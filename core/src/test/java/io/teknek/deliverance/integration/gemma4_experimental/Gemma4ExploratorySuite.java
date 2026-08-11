@@ -1,4 +1,4 @@
-package io.teknek.deliverance.integration;
+package io.teknek.deliverance.integration.gemma4_experimental;
 
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;

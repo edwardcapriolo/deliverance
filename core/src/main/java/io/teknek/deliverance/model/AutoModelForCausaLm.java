@@ -575,7 +575,7 @@ public class AutoModelForCausaLm {
             }
         }
 
-        ModelFetcher resolveModelFetcherForLoad() {
+        public ModelFetcher resolveModelFetcherForLoad() {
             fetch.setDownload(download);
             if (quantizeOnDemand.isEmpty()) {
                 return fetch;

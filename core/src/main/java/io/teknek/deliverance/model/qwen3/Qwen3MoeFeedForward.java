@@ -143,7 +143,8 @@ public class Qwen3MoeFeedForward implements FeedForward {
                 }
             }
             tensorReducer.ifPresent(func -> func.accept(List.of(hidden)));
-            try (AbstractTensor hiddenQ = model.maybeQuantize(hidden);
+            try (AbstractTensor hiddenQ = model.maybeQuantizeReadOnly(hidden,
+                    "qwen3moe.maybe_quantize.expert_down_projection");
                  Timer.Context ignoredDown = InferenceProfiler.timer(model.getMetricRegistry(), METRIC_EXPERT_DOWN_PROJECTION).time()) {
                 configurableTensorProvider.get().batchDotProduct(down, hiddenQ, expertDownWeights[expert],
                         0, 0, config.moeIntermediateSize, 0, 0, config.embeddingLength);

@@ -1,9 +1,8 @@
 package io.teknek.deliverance.safetensors.prompt;
 
-import io.teknek.deliverance.integration.TinyLlamaSuite;
+import io.teknek.deliverance.integration.llama.TinyLlamaSuite;
 import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.generator.GeneratorParameters;
-import io.teknek.deliverance.generator.Response;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;

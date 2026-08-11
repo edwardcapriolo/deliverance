@@ -105,6 +105,9 @@ public final class PanamaTensorOperations implements TensorOperations {
             int bRowOffset,
             int rowChunkSize
     ) {
+        TensorMutability.requireWritable(result, "batchDotProduct");
+        a = TensorMutability.unwrapReadOnly(a);
+        b = TensorMutability.unwrapReadOnly(b);
         Preconditions.checkArgument(a.dims() == 2 && b.dims() == 2 && result.dims() == 2);
         Preconditions.checkArgument(a.shape().dim(0) == result.shape().dim(0), "BAD M");
         Preconditions.checkArgument(rOffset == 0 || rOffset >= bRowOffset, "Result offset must be >= b row offset");

@@ -384,7 +384,8 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
             // input += c_proj_weight @ ybuf + c_proj_bias
             m.emitLayerDebug(layerIndex, "attention_value", valueBatch);
             AbstractTensor result = m.makeDenseTensor(batchSize, config.embeddingLength);
-            try (AbstractTensor vq = m.maybeQuantize(valueBatch)) {
+            try (AbstractTensor vq = m.maybeQuantizeReadOnly(valueBatch,
+                    "causalselfattention.maybe_quantize.output_projection")) {
                 try (Timer.Context ignoredOutput = InferenceProfiler.timer(metricRegistry, "causalselfattention.output_projection").time()) {
                     io.teknek.deliverance.tensor.operations.TensorOperations outputOps =
                             m.prefillProjectionOperations(vq, outputProjectionWeights, phase);

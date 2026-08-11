@@ -1083,6 +1083,16 @@ public abstract class AbstractModel implements Generator, Classifier {
         return t2;
     }
 
+    /** Returns a close-safe read-only tensor when no dtype conversion is needed; otherwise returns an owned tensor. */
+    public AbstractTensor maybeQuantizeReadOnly(AbstractTensor t, String counterPrefix) {
+        if (t.dType() == workingQType) {
+            InferenceProfiler.counter(metricRegistry, counterPrefix + ".read_only").inc();
+            return new ReadOnlyTensor(t);
+        }
+        InferenceProfiler.counter(metricRegistry, counterPrefix + ".copy_or_quantize").inc();
+        return maybeQuantize(t);
+    }
+
     public PreTrainedTokenizer getTokenizer(){
         return this.tokenizer;
     }

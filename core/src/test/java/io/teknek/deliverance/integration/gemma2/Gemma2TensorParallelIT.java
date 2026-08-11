@@ -1,4 +1,4 @@
-package io.teknek.deliverance.integration;
+package io.teknek.deliverance.integration.gemma2;
 
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.generator.GeneratorParameters;

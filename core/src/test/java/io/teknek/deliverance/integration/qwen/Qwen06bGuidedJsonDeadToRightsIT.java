@@ -1,4 +1,4 @@
-package io.teknek.deliverance.integration;
+package io.teknek.deliverance.integration.qwen;
 
 import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.generator.GeneratorParameters;

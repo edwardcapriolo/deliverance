@@ -1,4 +1,4 @@
-package io.teknek.deliverance.integration;
+package io.teknek.deliverance.integration.qwen;
 
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
@@ -15,7 +15,6 @@ import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
-import java.io.File;
 import java.io.IOException;
 import java.util.*;
 

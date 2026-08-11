@@ -178,7 +178,7 @@ public class MixtureOfExpertsBlock implements FeedForward {
 
     private AbstractTensor downQuantize(AbstractTensor buf) {
         try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), "mixtureofexpertsblock.down_quantize").time()) {
-            return model.maybeQuantize(buf);
+            return model.maybeQuantizeReadOnly(buf, "mixtureofexpertsblock.maybe_quantize.down_projection");
         }
     }
 

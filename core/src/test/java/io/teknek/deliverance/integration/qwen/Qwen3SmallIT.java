@@ -1,4 +1,4 @@
-package io.teknek.deliverance.integration;
+package io.teknek.deliverance.integration.qwen;
 
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;

@@ -1,4 +1,4 @@
-package io.teknek.deliverance.integration;
+package io.teknek.deliverance.integration.granite;
 
 import java.io.File;
 import java.io.IOException;

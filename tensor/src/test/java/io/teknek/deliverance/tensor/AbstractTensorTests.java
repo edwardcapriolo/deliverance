@@ -80,7 +80,6 @@ public class AbstractTensorTests {
         assertEquals(10F, original.get(1, 0));
     }
 
-
     @Test
     void iterateTest(){
         int rows = 4;

@@ -1,10 +1,9 @@
-package io.teknek.deliverance.integration;
+package io.teknek.deliverance.integration.gemma4_experimental;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.GeneratorParameters;
-import io.teknek.deliverance.generator.LayerNorm;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.generator.SampleOutput;
 import io.teknek.deliverance.grace.TokenIds;

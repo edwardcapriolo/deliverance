@@ -115,7 +115,8 @@ public class GraniteMoeHybridMambaLayer implements SelfAttention {
                 }
                 tensorReducer.ifPresent(func -> func.accept(List.of(scanOutput)));
                 AbstractTensor output = model.makeTensor(sequenceLength, config.embeddingLength);
-                try (AbstractTensor scanQ = model.maybeQuantize(scanOutput)) {
+                try (AbstractTensor scanQ = model.maybeQuantizeReadOnly(scanOutput,
+                        "granitemoehybrid.mamba.maybe_quantize.out_projection")) {
                     try (Timer.Context ignored2 = InferenceProfiler.timer(model.getMetricRegistry(), METRIC_OUT_PROJECTION).time()) {
                         tensorProvider.get().batchDotProduct(output, scanQ, outProjWeights,
                                 0, 0, intermediateSize, 0, 0, config.embeddingLength);

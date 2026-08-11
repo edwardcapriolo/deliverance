@@ -1,4 +1,4 @@
-package io.teknek.deliverance.integration;
+package io.teknek.deliverance.integration.gemma4_experimental;
 
 
 import io.teknek.deliverance.generator.GeneratorParameters;
@@ -6,7 +6,6 @@ import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.generator.SampleOutput;
 import io.teknek.deliverance.grace.TokenIds;
 import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.model.DoNothingGenerateEvent;
 import io.teknek.deliverance.model.GenerateEvent;
 import io.teknek.deliverance.model.gemma4.Gemma4ResponseParser;
 import io.teknek.deliverance.safetensors.prompt.Function;

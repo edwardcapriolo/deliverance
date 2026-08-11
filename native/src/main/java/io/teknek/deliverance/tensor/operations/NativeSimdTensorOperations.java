@@ -10,6 +10,7 @@ import java.lang.foreign.MemorySegment;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.TensorMutability;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
@@ -77,6 +78,9 @@ public class NativeSimdTensorOperations implements TensorOperations {
         int bRowOffset,
         int rowChunkSize
     ) {
+        TensorMutability.requireWritable(result, "batchDotProduct");
+        at = TensorMutability.unwrapReadOnly(at);
+        bt = TensorMutability.unwrapReadOnly(bt);
         int M = at.shape().dim(0);
         int N = rowChunkSize; // b.shape().dim(0);
         int K = columnLength; // a.shape().dim(1);

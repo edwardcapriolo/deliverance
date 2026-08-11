@@ -14,6 +14,7 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.TensorMutability;
 import io.teknek.deliverance.tensor.VectorTensorMathUtils;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
@@ -284,6 +285,9 @@ public class NativeGPUTensorOperations implements TensorOperations {
         int bRowOffset,
         int rowChunkSize
     ) {
+        TensorMutability.requireWritable(result, "batchDotProduct");
+        at = TensorMutability.unwrapReadOnly(at);
+        bt = TensorMutability.unwrapReadOnly(bt);
         Long btId = tensorCache.get(bt.getUid());
 
         if (rRowOffset == 0 && bRowOffset == 0 && gpuSupported(btId, at.dType(), bt.dType(), result.dType())) {
@@ -378,8 +382,11 @@ public class NativeGPUTensorOperations implements TensorOperations {
                 delegate.batchDotProduct(result, at, bt, aColumnOffset, bColumnOffset, columnLength, rRowOffset, bRowOffset, rowChunkSize);
             } else {
                 // We know we have split size of 1 so we can just re-process this using the delegate's split size
+                final AbstractTensor finalAt = at;
+                final AbstractTensor finalBt = bt;
                 VectorMath.pchunk(0, rowChunkSize, (chunkStart, chunkSize) -> {
-                    delegate.batchDotProduct(result, at, bt, aColumnOffset, bColumnOffset, columnLength, 0, chunkStart, chunkSize);
+                    delegate.batchDotProduct(result, finalAt, finalBt, aColumnOffset, bColumnOffset, columnLength, 0,
+                            chunkStart, chunkSize);
                 }, delegate.parallelSplitSize(), pool);
             }
         }

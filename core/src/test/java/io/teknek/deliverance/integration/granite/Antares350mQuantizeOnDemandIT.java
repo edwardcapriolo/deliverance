@@ -1,6 +1,7 @@
-package io.teknek.deliverance.model;
+package io.teknek.deliverance.integration.granite;
 
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.safetensors.ModelQuantizer;
 import io.teknek.deliverance.safetensors.SafeTensorIndexPojo;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
