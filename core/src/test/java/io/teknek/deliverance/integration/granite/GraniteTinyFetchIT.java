@@ -1,10 +1,9 @@
-package io.teknek.deliverance.integration;
+package io.teknek.deliverance.integration.granite;
 
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
-import io.teknek.deliverance.model.DoNothingGenerateEvent;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.GenerateEvent;

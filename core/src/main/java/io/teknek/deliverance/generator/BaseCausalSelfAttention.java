@@ -79,7 +79,8 @@ public abstract class BaseCausalSelfAttention implements SelfAttention {
             MetricRegistry metricRegistry, String metricName, AbstractTensor valueOutput,
             AbstractTensor outputProjectionWeights, int inputLength, int outputLength) {
         AbstractTensor result = model.makeDenseTensor(valueOutput.shape().first(), outputLength);
-        try (AbstractTensor valueQ = model.maybeQuantize(valueOutput)) {
+        try (AbstractTensor valueQ = model.maybeQuantizeReadOnly(valueOutput,
+                "basecausalselfattention.maybe_quantize.output_projection")) {
             try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, metricName).time()) {
                 tensorProvider.get().dotProductChunk(result, valueQ, outputProjectionWeights, 0, inputLength, 0,
                         outputLength);

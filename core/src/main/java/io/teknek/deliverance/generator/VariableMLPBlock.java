@@ -101,7 +101,8 @@ public class VariableMLPBlock implements FeedForward {
                     .timer("variablemlpblock.multiply")
                     .materialize();
 
-            try (AbstractTensor gateQ = model.maybeQuantize(gate)) {
+            try (AbstractTensor gateQ = model.maybeQuantizeReadOnly(gate,
+                    "variablemlpblock.maybe_quantize.down_projection")) {
                 AbstractTensor result = model.makeTensor(batchSize, model.getConfig().embeddingLength);
                 VectorMath.pchunk(0, model.getConfig().embeddingLength, (chunkStart, chunkSize) -> configurableTensorProvider.get()
                         .dotProductChunk(result, gateQ, projectionWeights, 0, hiddenLength, chunkStart, chunkSize),

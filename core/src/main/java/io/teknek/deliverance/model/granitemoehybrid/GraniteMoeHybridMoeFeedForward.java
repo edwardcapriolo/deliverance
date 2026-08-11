@@ -177,7 +177,8 @@ public class GraniteMoeHybridMoeFeedForward implements FeedForward {
             tensorReducer.ifPresent(func -> func.accept(List.of(hidden)));
             AbstractTensor hiddenQ;
             try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), METRIC_EXPERT_QUANTIZE_HIDDEN).time()) {
-                hiddenQ = model.maybeQuantize(hidden);
+                hiddenQ = model.maybeQuantizeReadOnly(hidden,
+                        "granitemoehybrid.moe.maybe_quantize.output_projection");
             }
             try (hiddenQ) {
                 try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), METRIC_EXPERT_OUTPUT_MATMUL).time()) {

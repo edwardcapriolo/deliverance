@@ -168,7 +168,7 @@ public class TransformerBlock {
         try (Timer.Context ignored = timer.time()) {
         AbstractTensor lnemb = preAttentionNorm.map(ln -> ln.forward(embedding)).orElse(embedding);
         AbstractTensor postAttention;
-        try (AbstractTensor qlnemb = model.maybeQuantize(lnemb)) {
+        try (AbstractTensor qlnemb = preAttentionProjectionInput(lnemb)) {
             postAttention = attention.forward(qlnemb, position, kvBuffer, tensorReducer, phase);
         }
         AbstractTensor lnattn = maybeApplyNorm(postAttention, postAttentionNorm);
@@ -177,7 +177,8 @@ public class TransformerBlock {
 
         AbstractTensor lnpreFF = preFFNorm.map(ln -> ln.forward(lnattn)).orElse(lnattn);
         AbstractTensor postFF;
-        try (AbstractTensor qlnemb2 = model.maybeQuantize(lnpreFF)) {
+        try (AbstractTensor qlnemb2 = model.maybeQuantizeReadOnly(lnpreFF,
+                "transformerblock.maybe_quantize.pre_ff")) {
             postFF = ffBlock.forward(qlnemb2, tensorReducer, phase);
         }
 
@@ -195,6 +196,10 @@ public class TransformerBlock {
 
         return maybeApplyNorm(lnpostFF, preResponseNorm);
         }
+    }
+
+    private AbstractTensor preAttentionProjectionInput(AbstractTensor tensor) {
+        return model.maybeQuantizeReadOnly(tensor, "transformerblock.maybe_quantize.pre_attention");
     }
 
     /**

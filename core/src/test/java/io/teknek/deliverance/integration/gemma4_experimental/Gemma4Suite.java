@@ -1,10 +1,8 @@
-package io.teknek.deliverance.integration;
+package io.teknek.deliverance.integration.gemma4_experimental;
 
-import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.platform.suite.api.AfterSuite;
 import org.junit.platform.suite.api.BeforeSuite;

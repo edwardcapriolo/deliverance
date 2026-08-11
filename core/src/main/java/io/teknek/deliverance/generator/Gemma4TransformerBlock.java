@@ -102,7 +102,8 @@ public class Gemma4TransformerBlock extends TransformerBlock {
         AbstractTensor lnemb = preAttentionNorm.map(ln -> ln.forward(embedding)).orElse(embedding);
         logIfInteresting("pre_attn_norm", lnemb);
         AbstractTensor postAttention;
-        try (AbstractTensor qlnemb = model.maybeQuantize(lnemb)) {
+        try (AbstractTensor qlnemb = model.maybeQuantizeReadOnly(lnemb,
+                "gemma4transformerblock.maybe_quantize.pre_attention")) {
             postAttention = attention.forward(qlnemb, position, kvBuffer, tensorReducer);
         }
         AbstractTensor lnattn = maybeApplyNorm(postAttention, postAttentionNorm);
@@ -114,7 +115,8 @@ public class Gemma4TransformerBlock extends TransformerBlock {
 
         AbstractTensor lnpreFF = preFFNorm.map(ln -> ln.forward(lnattn)).orElse(lnattn);
         AbstractTensor postFF;
-        try (AbstractTensor qlnemb2 = model.maybeQuantize(lnpreFF)) {
+        try (AbstractTensor qlnemb2 = model.maybeQuantizeReadOnly(lnpreFF,
+                "gemma4transformerblock.maybe_quantize.pre_ff")) {
             postFF = ffBlock.forward(qlnemb2, tensorReducer);
         }
 
@@ -143,7 +145,8 @@ public class Gemma4TransformerBlock extends TransformerBlock {
                         gated.set(v, b, i);
                     }
                 }
-                try (AbstractTensor gatedQ = model.maybeQuantize(gated)) {
+                try (AbstractTensor gatedQ = model.maybeQuantizeReadOnly(gated,
+                        "gemma4transformerblock.maybe_quantize.per_layer_input")) {
                     configurableTensorProvider.get().dotProductChunk(projected, gatedQ, perLayerProjectionWeights.get(), 0,
                             perLayerInputLength, 0, model.getConfig().embeddingLength);
                 }

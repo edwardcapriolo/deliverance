@@ -324,7 +324,7 @@ public class MLPBlock implements FeedForward {
 
     private AbstractTensor downQuantize(AbstractTensor buf) {
         try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), "mlpblock.down_quantize").time()) {
-            return model.maybeQuantize(buf);
+            return model.maybeQuantizeReadOnly(buf, "mlpblock.maybe_quantize.down_projection");
         }
     }
 

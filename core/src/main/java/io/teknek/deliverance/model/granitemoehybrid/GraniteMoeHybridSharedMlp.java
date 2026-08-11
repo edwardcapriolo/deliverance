@@ -65,7 +65,8 @@ public class GraniteMoeHybridSharedMlp implements FeedForward {
 
                 AbstractTensor hiddenQ;
                 try (Timer.Context ignored2 = InferenceProfiler.timer(this.model.getMetricRegistry(), METRIC_QUANTIZE_HIDDEN).time()) {
-                    hiddenQ = this.model.maybeQuantize(hidden);
+                    hiddenQ = this.model.maybeQuantizeReadOnly(hidden,
+                            "granitemoehybrid.shared_mlp.maybe_quantize.output_projection");
                 }
                 try (hiddenQ) {
                     AbstractTensor output = this.model.makeTensor(batchSize, this.config.embeddingLength);

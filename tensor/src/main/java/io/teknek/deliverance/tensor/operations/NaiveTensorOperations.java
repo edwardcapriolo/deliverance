@@ -3,6 +3,7 @@ import com.google.common.base.Preconditions;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.AbstractTensorUtils;
+import io.teknek.deliverance.tensor.TensorMutability;
 
 public class NaiveTensorOperations implements TensorOperations {
     @Override
@@ -75,6 +76,9 @@ public class NaiveTensorOperations implements TensorOperations {
             int bRowOffset,
             int rowChunkSize
     ) {
+        TensorMutability.requireWritable(result, "batchDotProduct");
+        a = TensorMutability.unwrapReadOnly(a);
+        b = TensorMutability.unwrapReadOnly(b);
         Preconditions.checkArgument(a.dims() == 2 && b.dims() == 2 && result.dims() == 2);
 
         int bRowLimit = bRowOffset + rowChunkSize;
