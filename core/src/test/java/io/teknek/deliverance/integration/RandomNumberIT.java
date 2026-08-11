@@ -12,11 +12,9 @@ import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
-import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import java.io.File;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -29,15 +27,20 @@ public class RandomNumberIT {
         String modelName = "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4";
         String modelOwner = "tjake";
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
-        File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
         ArrayQueueTensorAllocator arrayQueueTensorAllocator = new ArrayQueueTensorAllocator(mr);
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
             NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(arrayQueueTensorAllocator, pool).get());
 
-            try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                    new MetricRegistry(), arrayQueueTensorAllocator, new KvBufferCacheSettings(true), fetch,
-                    new DefaultToolCallParser(), pool)) {
+            try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch)
+                    .withWorkingMemoryType(DType.F32)
+                    .withWorkingQuantType(DType.I8)
+                    .withMetricRegistry(new MetricRegistry())
+                    .withTensorAllocator(arrayQueueTensorAllocator)
+                    .withKvBufferCacheSettings(new KvBufferCacheSettings(true))
+                    .withWrappedForkJoinPool(pool)
+                    .withTensorProvider(new ConfigurableTensorProvider(operation))
+                    .buildLocalTransformerModel()) {
                 String prompt = "Pick a random number between 0 and 100";
                 PromptContext ctx = m.promptSupport().get().builder()
                         .addUserMessage(prompt)

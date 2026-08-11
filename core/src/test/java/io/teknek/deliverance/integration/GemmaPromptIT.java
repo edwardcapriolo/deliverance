@@ -46,13 +46,19 @@ public class GemmaPromptIT {
     @Disabled
     public void summarizeGemmaTest() throws IOException {
         ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
-        File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
         ArrayQueueTensorAllocator arrayQueueTensorAllocator = new ArrayQueueTensorAllocator(mr);
         WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
         NativeSimdTensorOperations operation = new NativeSimdTensorOperations(new ConfigurableTensorProvider(arrayQueueTensorAllocator, pool).get());
-        try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(operation),
-                mr, arrayQueueTensorAllocator, new KvBufferCacheSettings(true), fetch, new DefaultToolCallParser(), pool)) {
+        try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch)
+                .withWorkingMemoryType(DType.F32)
+                .withWorkingQuantType(DType.I8)
+                .withMetricRegistry(mr)
+                .withTensorAllocator(arrayQueueTensorAllocator)
+                .withKvBufferCacheSettings(new KvBufferCacheSettings(true))
+                .withWrappedForkJoinPool(pool)
+                .withTensorProvider(new ConfigurableTensorProvider(operation))
+                .buildLocalTransformerModel()) {
             String prompt = """
                     You are a software engineer.
                     

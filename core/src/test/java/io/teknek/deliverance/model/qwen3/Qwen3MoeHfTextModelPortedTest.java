@@ -220,11 +220,13 @@ public class Qwen3MoeHfTextModelPortedTest {
         MetricRegistry metrics = new MetricRegistry();
         TensorAllocator allocator = new ArrayQueueTensorAllocator(metrics);
         WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
-        return new Qwen3MoeModel(AbstractModel.InferenceType.FULL_GENERATION, configFromFile(modelDir),
+        Qwen3MoeModel model = new Qwen3MoeModel(AbstractModel.InferenceType.FULL_GENERATION, configFromFile(modelDir),
                 new DefaultWeightLoader(modelDir.toFile()), Mockito.mock(PreTrainedTokenizer.class), DType.F32, DType.I8,
                 Optional.empty(), new ConfigurableTensorProvider(new NaiveTensorOperations()), metrics, allocator,
                 new KvBufferCacheSettings(true), new DefaultToolCallParser(), pool,
                 new StaticTensorParallelContext(0, 1), new SingleRankTensorParallelCollectives(), Optional.empty());
+        model.init();
+        return model;
     }
 
     static Path writeTinyCheckpoint(Path dir, Qwen3MoeConfig config, int seed) {

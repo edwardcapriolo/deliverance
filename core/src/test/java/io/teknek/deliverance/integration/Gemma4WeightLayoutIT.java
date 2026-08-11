@@ -3,12 +3,14 @@ package io.teknek.deliverance.integration;
 import io.teknek.deliverance.safetensors.DefaultWeightLoader;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.TensorInfo;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@Tag("large-model")
 public class Gemma4WeightLayoutIT {
 
     @Test

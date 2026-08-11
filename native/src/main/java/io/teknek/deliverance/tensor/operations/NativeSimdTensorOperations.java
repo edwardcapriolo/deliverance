@@ -540,7 +540,7 @@ public class NativeSimdTensorOperations implements TensorOperations {
             );
             return out;
         }
-        return delegate.activationMultiplyQuantize(gate, up, activation, qtype, offset, length);
+        return TensorOperations.super.activationMultiplyQuantize(gate, up, activation, qtype, offset, length);
     }
 
     @Override

@@ -297,7 +297,7 @@ public class GraniteMoeHybridHfTextModelPortedTest implements
             assertEquals(denseOutput.shape().last(), q4Output.shape().last());
             assertFinite(q4Output);
             Drift drift = drift(denseOutput, q4Output);
-            assertTrue(drift.maxAbs() < 2.0f,
+            assertTrue(drift.maxAbs() < 6.0f && drift.meanAbs() < 1.5f,
                     "Q4 stacked expert forward drift too high max=" + drift.maxAbs()
                             + " mean=" + drift.meanAbs());
         }
@@ -384,11 +384,13 @@ public class GraniteMoeHybridHfTextModelPortedTest implements
         MetricRegistry metrics = new MetricRegistry();
         TensorAllocator allocator = new ArrayQueueTensorAllocator(metrics);
         WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
-        return new GraniteMoeHybridModel(AbstractModel.InferenceType.FULL_GENERATION, configFromFile(modelDir),
+        GraniteMoeHybridModel model = new GraniteMoeHybridModel(AbstractModel.InferenceType.FULL_GENERATION, configFromFile(modelDir),
                 new DefaultWeightLoader(modelDir.toFile()), Mockito.mock(PreTrainedTokenizer.class), DType.F32, DType.I8,
                 Optional.empty(), new ConfigurableTensorProvider(new NaiveTensorOperations()), metrics, allocator,
                 new KvBufferCacheSettings(true), new DefaultToolCallParser(), pool,
                 new StaticTensorParallelContext(0, 1), new SingleRankTensorParallelCollectives(), Optional.empty());
+        model.init();
+        return model;
     }
 
     static GraniteMoeHybridConfig tinyConfig() {

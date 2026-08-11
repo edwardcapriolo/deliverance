@@ -193,6 +193,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     protected PreTrainedTokenizer preTrainedTokenizer;
     protected int maxBatchSize = DEFAULT_MAX_BATCH_SIZE;
     private Optional<TensorRuntimeMode> tensorRuntimeMode = Optional.empty();
+    private boolean initialized;
     private volatile Consumer<GenerationDebugEvent> generationDebugHook = event -> {};
     private volatile Consumer<LayerDebugEvent> layerDebugHook = event -> {};
 
@@ -252,82 +253,85 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.tensorAllocator = tensorAllocator;
         this.toolCallParser = toolCallParser;
 
-        if (workingMemoryQType == null) {
-            workingMemoryQType = configurableTensorProvider.get().preferredWorkingQuantizedType();
-        }
-
-        // FIXME: This is a hack to support Avoid Q8F32 evals
-        if (modelDType == DType.F32 && workingMemoryQType != DType.F32 && modelQType.isEmpty()) {
-            workingMemoryQType = DType.F32;
-        }
-
-        // FIXME: This is a hack to support Avoid Q8BF16 evals
-        if (modelDType == DType.BF16 && workingMemoryQType != DType.BF16 && workingMemoryQType != DType.F32 && modelQType.isEmpty()) {
-            workingMemoryQType = DType.BF16;
-        }
-
-        // Check to make sure the model is big enough to support Q4I8 computations
-        // If not, fall back to F32
-        if (modelDType == DType.Q4
-                && workingMemoryQType == DType.I8
-                && ((c.embeddingLength / Q8ByteBufferTensor.BLOCK_SIZE) % (FloatVector.SPECIES_PREFERRED.vectorBitSize() / Float.SIZE) != 0
-                || (c.hiddenLength / Q8ByteBufferTensor.BLOCK_SIZE) % (FloatVector.SPECIES_PREFERRED.vectorBitSize() / Float.SIZE) != 0)) {
-            workingMemoryQType = DType.F32;
-        }
-
-        // Check to make sure the model is big enough to support Q4I8 computations
-        // If not, fall back to F32
-        if (modelDType == DType.Q4
-                && workingMemoryQType == DType.I8
-                && (c.embeddingLength / Q8ByteBufferTensor.BLOCK_SIZE) % (FloatVector.SPECIES_PREFERRED.vectorBitSize() / Float.SIZE) != 0) {
-            logger.warn("Determined model could not support quant type. Request {} model {} falling back to {} ",
-                    workingMemoryQType, modelDType, DType.F32 );
-            workingMemoryQType = DType.F32;
-        }
-
-        // Some operation providers don't support Q4I8
-        if (modelDType == DType.Q4 && workingMemoryQType.size() < configurableTensorProvider.get().preferredWorkingQuantizedType().size()) {
-            workingMemoryQType = configurableTensorProvider.get().preferredWorkingQuantizedType();
-            logger.warn("Tensor provider {} does not support Q4. Using {} as workingMemoryType ",
-                    configurableTensorProvider.get().name(), workingMemoryQType);
-        }
-
-        if (workingMemoryQType != workingMemoryDType) {
-            boolean supportsQType;
-            AbstractTensor tmp = makeDenseTensor(Q8ByteBufferTensor.BLOCK_SIZE);
-            try (AbstractTensor tmp2 = configurableTensorProvider.get().quantize(tmp, workingMemoryQType, 0, Q8ByteBufferTensor.BLOCK_SIZE)) {
-                supportsQType = tmp2.dType() == workingMemoryQType;
-                if (!supportsQType) {
-                    logger.warn("Quantized memory type {} not supported, falling back to {}", workingMemoryQType, workingMemoryDType);
-                    this.workingQType = this.workingDType;
-                } else {
-                    this.workingQType = workingMemoryQType;
-                }
-            }
-        } else {
-            this.workingQType = workingMemoryQType;
-        }
+        this.workingQType = resolveWorkingQType(workingMemoryQType);
 
         logger.info("Tensor provider = {}, parallelSplitSize = {} ",
                 configurableTensorProvider.get().name(), configurableTensorProvider.get().parallelSplitSize());
         logger.info("Model type = {}, Working memory type = {}, Quantized memory type = {}", modelDType, workingDType,
                 workingQType);
-        logger.debug("model constructor phase=input_weights enabled={}", inferenceType.isInput);
-        this.embedInput = inferenceType.isInput ? loadInputWeights() : null;
-        logger.debug("model constructor phase=input_weights done enabled={}", inferenceType.isInput);
-        logger.debug("model constructor phase=transformer_blocks enabled={}", inferenceType.isFwdPass);
-        this.transformerBlocks = inferenceType.isFwdPass ? loadTransformerBlockWeights() : null;
-        logger.debug("model constructor phase=transformer_blocks done enabled={} layers={}", inferenceType.isFwdPass,
-                this.transformerBlocks == null ? 0 : this.transformerBlocks.length);
-        logger.debug("model constructor phase=output_weights enabled={}", inferenceType.isOutput);
-        this.sampleOutput = inferenceType.isOutput ? loadOutputWeights() : null;
-        logger.debug("model constructor phase=output_weights done enabled={}", inferenceType.isOutput);
-        logger.debug("model constructor phase=classifier_weights enabled={}", inferenceType.isClassify);
-        this.classifyOutput = inferenceType.isClassify ? loadClassifierWeights() : null;
-        logger.debug("model constructor phase=classifier_weights done enabled={}", inferenceType.isClassify);
-        this.poolingLayer = inferenceType.isPooling ? Optional.ofNullable(loadPoolingWeights()) : Optional.empty();
         this.pool = pool;
         logger.debug("model constructor complete config={} inference_type={}", config.getClass().getSimpleName(), inferenceType);
+    }
+
+    public final void init() {
+        if (initialized) {
+            return;
+        }
+        logger.debug("model init start config={} inference_type={}", config.getClass().getSimpleName(), inferenceType);
+        this.embedInput = inferenceType.isInput ? loadInputWeights() : null;
+        this.transformerBlocks = inferenceType.isFwdPass ? loadTransformerBlockWeights() : null;
+        this.sampleOutput = inferenceType.isOutput ? loadOutputWeights() : null;
+        this.classifyOutput = inferenceType.isClassify ? loadClassifierWeights() : null;
+        this.poolingLayer = inferenceType.isPooling ? Optional.ofNullable(loadPoolingWeights()) : Optional.empty();
+        initialized = true;
+        logger.debug("model init complete config={} inference_type={} layers={}", config.getClass().getSimpleName(),
+                inferenceType, this.transformerBlocks == null ? 0 : this.transformerBlocks.length);
+    }
+
+    private DType resolveWorkingQType(DType requestedWorkingQType) {
+        if (requestedWorkingQType == null) {
+            requestedWorkingQType = configurableTensorProvider.get().preferredWorkingQuantizedType();
+        }
+
+        // FIXME: This is a hack to support Avoid Q8F32 evals
+        if (modelDType == DType.F32 && requestedWorkingQType != DType.F32 && modelQType.isEmpty()) {
+            requestedWorkingQType = DType.F32;
+        }
+
+        // FIXME: This is a hack to support Avoid Q8BF16 evals
+        if (modelDType == DType.BF16 && requestedWorkingQType != DType.BF16 && requestedWorkingQType != DType.F32
+                && modelQType.isEmpty()) {
+            requestedWorkingQType = DType.BF16;
+        }
+
+        // Check to make sure the model is big enough to support Q4I8 computations.
+        if (modelDType == DType.Q4
+                && requestedWorkingQType == DType.I8
+                && ((config.embeddingLength / Q8ByteBufferTensor.BLOCK_SIZE) % (FloatVector.SPECIES_PREFERRED.vectorBitSize() / Float.SIZE) != 0
+                || (config.hiddenLength / Q8ByteBufferTensor.BLOCK_SIZE) % (FloatVector.SPECIES_PREFERRED.vectorBitSize() / Float.SIZE) != 0)) {
+            requestedWorkingQType = DType.F32;
+        }
+
+        // Check to make sure the model is big enough to support Q4I8 computations.
+        if (modelDType == DType.Q4
+                && requestedWorkingQType == DType.I8
+                && (config.embeddingLength / Q8ByteBufferTensor.BLOCK_SIZE) % (FloatVector.SPECIES_PREFERRED.vectorBitSize() / Float.SIZE) != 0) {
+            logger.warn("Determined model could not support quant type. Request {} model {} falling back to {} ",
+                    requestedWorkingQType, modelDType, DType.F32);
+            requestedWorkingQType = DType.F32;
+        }
+
+        // Some operation providers don't support Q4I8.
+        DType providerPreferredQType = configurableTensorProvider.get().preferredWorkingQuantizedType();
+        if (modelDType == DType.Q4 && requestedWorkingQType.size() < providerPreferredQType.size()) {
+            requestedWorkingQType = providerPreferredQType;
+            logger.warn("Tensor provider {} does not support Q4. Using {} as workingMemoryType ",
+                    configurableTensorProvider.get().name(), requestedWorkingQType);
+        }
+
+        if (requestedWorkingQType == workingDType) {
+            return requestedWorkingQType;
+        }
+        try (AbstractTensor tmp = makeDenseTensor(Q8ByteBufferTensor.BLOCK_SIZE);
+             AbstractTensor tmp2 = configurableTensorProvider.get().quantize(tmp, requestedWorkingQType, 0,
+                     Q8ByteBufferTensor.BLOCK_SIZE)) {
+            if (tmp2.dType() == requestedWorkingQType) {
+                return requestedWorkingQType;
+            }
+            logger.warn("Quantized memory type {} not supported, falling back to {}", requestedWorkingQType,
+                    workingDType);
+            return workingDType;
+        }
     }
 
     void addTensorOperations(Map<TensorProviderKind, TensorOperations> additionalTensorOperations) {
@@ -1072,7 +1076,7 @@ public abstract class AbstractModel implements Generator, Classifier {
         return String.format(Locale.ROOT, "%.1f", tokensPerSecond);
     }
 
-    /** This is a hook method that does nothing here but can be overridden by subclasses */
+    /** Returns an owned working tensor that callers may safely close. */
     public AbstractTensor maybeQuantize(AbstractTensor t) {
         AbstractTensor t2 = tensorAllocator.getDirty(t.dType(), t.shape());
         t2.copyFrom(t, 0, 0, Ints.checkedCast(t.size()));

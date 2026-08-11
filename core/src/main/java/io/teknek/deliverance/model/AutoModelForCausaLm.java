@@ -2,7 +2,32 @@ package io.teknek.deliverance.model;
 
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.JsonUtils;
+import io.teknek.deliverance.grace.AutoTokenizer;
+import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
+import io.teknek.deliverance.model.gemma2.Gemma2Config;
+import io.teknek.deliverance.model.gemma2.Gemma2Model;
+import io.teknek.deliverance.model.gemma3.Gemma3Config;
+import io.teknek.deliverance.model.gemma3.Gemma3Model;
+import io.teknek.deliverance.model.gemma4.Gemma4Config;
+import io.teknek.deliverance.model.gemma4.Gemma4Model;
+import io.teknek.deliverance.model.gpt2.Gpt2Config;
+import io.teknek.deliverance.model.gpt2.Gpt2Model;
+import io.teknek.deliverance.model.granitemoehybrid.GraniteMoeHybridConfig;
+import io.teknek.deliverance.model.granitemoehybrid.GraniteMoeHybridModel;
+import io.teknek.deliverance.model.llama.LlamaConfig;
+import io.teknek.deliverance.model.llama.LlamaModel;
+import io.teknek.deliverance.model.mistral.MistralConfig;
+import io.teknek.deliverance.model.mistral.MistralModel;
+import io.teknek.deliverance.model.mixtral.MixtralConfig;
+import io.teknek.deliverance.model.mixtral.MixtralModel;
+import io.teknek.deliverance.model.qwen2.Qwen2Config;
+import io.teknek.deliverance.model.qwen2.Qwen2Model;
+import io.teknek.deliverance.model.qwen3.Qwen3Config;
+import io.teknek.deliverance.model.qwen3.Qwen3Model;
+import io.teknek.deliverance.model.qwen3.Qwen3MoeConfig;
+import io.teknek.deliverance.model.qwen3.Qwen3MoeModel;
 import io.teknek.deliverance.model.tensorparallel.StaticTensorParallelContext;
 import io.teknek.deliverance.model.tensorparallel.SingleRankTensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.GossipParallelMembership;
@@ -10,7 +35,11 @@ import io.teknek.deliverance.model.tensorparallel.GossipParallelSettings;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelContext;
 import io.teknek.deliverance.safetensors.LoraAdapter;
+import io.teknek.deliverance.safetensors.MergingWeightLoader;
 import io.teknek.deliverance.safetensors.ModelQuantizer;
+import io.teknek.deliverance.safetensors.Config;
+import io.teknek.deliverance.safetensors.DefaultWeightLoader;
+import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.safetensors.fetch.LoraAdapterModelFetcher;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
@@ -33,6 +62,7 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.lang.reflect.InvocationTargetException;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -414,9 +444,7 @@ public class AutoModelForCausaLm {
             Optional<LoraAdapter> loraAdapter = loraAdapterFetcher == null
                     ? Optional.empty()
                     : Optional.of(LoraAdapter.fromPretrained(loraAdapterFetcher, mr));
-            AbstractModel model = ModelSupport.loadModel(modelRoot, workingMem, workingQuant, provider,
-                    mr, allocator, settings, fetcherForLoad, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives,
-                    outputHeadQuantization, loraAdapter);
+            AbstractModel model = constructModel(modelRoot, loraAdapter);
             model.setMaxBatchSize(maxBatchSize);
             model.setTensorProviderExplicit(tensorProviderExplicit);
             model.setGpuPrefillEnabled(gpuPrefill);
@@ -426,7 +454,86 @@ public class AutoModelForCausaLm {
             if (!tensorProviderExplicit) {
                 model.addTensorOperations(hydrateTensorOperations());
             }
+            model.init();
             return model;
+        }
+
+        protected AbstractModel constructModel(File modelRoot, Optional<LoraAdapter> loraAdapter) {
+            File configFile = modelRoot.toPath().resolve("config.json").toFile();
+            if (!configFile.exists()) {
+                throw new RuntimeException("Expecting to find config file " + configFile);
+            }
+            try {
+                String modelType = JsonUtils.om.readTree(configFile).get("model_type").textValue().toUpperCase();
+                Config config = readConfig(configFile, modelType);
+                PreTrainedTokenizer tokenizer = AutoTokenizer.fromPretrained(modelRoot.toPath());
+                WeightLoader weightLoader = new DefaultWeightLoader(modelRoot);
+                if (loraAdapter.isPresent()) {
+                    weightLoader = new MergingWeightLoader(weightLoader, loraAdapter.get(), provider.get());
+                }
+                return newModel(modelType, config, weightLoader, tokenizer);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
+
+        public Config readConfig(File configFile, String modelType) throws IOException {
+            return switch (modelType) {
+                case "BERT" -> JsonUtils.om.readValue(configFile, io.teknek.deliverance.model.bert.BertConfig.class);
+                case "LLAMA" -> JsonUtils.om.readValue(configFile, LlamaConfig.class);
+                case "QWEN2" -> JsonUtils.om.readValue(configFile, Qwen2Config.class);
+                case "QWEN3" -> JsonUtils.om.readValue(configFile, Qwen3Config.class);
+                case "QWEN3_MOE" -> JsonUtils.om.readValue(configFile, Qwen3MoeConfig.class);
+                case "GEMMA2" -> JsonUtils.om.readValue(configFile, Gemma2Config.class);
+                case "GEMMA4" -> JsonUtils.om.readValue(configFile, Gemma4Config.class);
+                case "GEMMA3_TEXT" -> JsonUtils.om.readValue(configFile, Gemma3Config.class);
+                case "MISTRAL" -> JsonUtils.om.readValue(configFile, MistralConfig.class);
+                case "GPT2" -> JsonUtils.om.readValue(configFile, Gpt2Config.class);
+                case "MIXTRAL" -> JsonUtils.om.readValue(configFile, MixtralConfig.class);
+                case "GRANITEMOEHYBRID" -> JsonUtils.om.readValue(configFile, GraniteMoeHybridConfig.class);
+                default -> throw new IllegalArgumentException(modelType + " not found in AutoModelForCausaLm");
+            };
+        }
+
+        protected AbstractModel newModel(String modelType, Config config, WeightLoader weightLoader,
+                PreTrainedTokenizer tokenizer) {
+            return switch (modelType) {
+                case "LLAMA" -> new LlamaModel(AbstractModel.InferenceType.FULL_GENERATION, config, weightLoader,
+                        tokenizer, workingMem, workingQuant, Optional.empty(), provider, mr, allocator, settings,
+                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                case "QWEN2" -> new Qwen2Model(AbstractModel.InferenceType.FULL_GENERATION, config, weightLoader,
+                        tokenizer, workingMem, workingQuant, Optional.empty(), provider, mr, allocator, settings,
+                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                case "QWEN3" -> new Qwen3Model(AbstractModel.InferenceType.FULL_GENERATION, config, weightLoader,
+                        tokenizer, workingMem, workingQuant, Optional.empty(), provider, mr, allocator, settings,
+                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                case "QWEN3_MOE" -> new Qwen3MoeModel(AbstractModel.InferenceType.FULL_GENERATION, config, weightLoader,
+                        tokenizer, workingMem, workingQuant, Optional.empty(), provider, mr, allocator, settings,
+                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                case "GEMMA2" -> new Gemma2Model(AbstractModel.InferenceType.FULL_GENERATION, config, weightLoader,
+                        tokenizer, workingMem, workingQuant, Optional.empty(), provider, mr, allocator, settings,
+                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                case "GEMMA4" -> new Gemma4Model(AbstractModel.InferenceType.FULL_GENERATION, config, weightLoader,
+                        tokenizer, workingMem, workingQuant, Optional.empty(), provider, mr, allocator, settings,
+                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                case "GEMMA3_TEXT" -> new Gemma3Model(AbstractModel.InferenceType.FULL_GENERATION, config, weightLoader,
+                        tokenizer, workingMem, workingQuant, Optional.empty(), provider, mr, allocator, settings,
+                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                case "MISTRAL" -> new MistralModel(AbstractModel.InferenceType.FULL_GENERATION, config, weightLoader,
+                        tokenizer, workingMem, workingQuant, Optional.empty(), provider, mr, allocator, settings,
+                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                case "GPT2" -> new Gpt2Model(AbstractModel.InferenceType.FULL_GENERATION, config, weightLoader,
+                        tokenizer, workingMem, workingQuant, Optional.empty(), provider, mr, allocator, settings,
+                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                case "MIXTRAL" -> new MixtralModel(AbstractModel.InferenceType.FULL_GENERATION, config, weightLoader,
+                        tokenizer, workingMem, workingQuant, Optional.empty(), provider, mr, allocator, settings,
+                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                case "GRANITEMOEHYBRID" -> new GraniteMoeHybridModel(AbstractModel.InferenceType.FULL_GENERATION,
+                        config, weightLoader, tokenizer, workingMem, workingQuant, Optional.empty(), provider, mr,
+                        allocator, settings, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives,
+                        outputHeadQuantization);
+                default -> throw new IllegalArgumentException(modelType + " not supported by AutoModelForCausaLm");
+            };
         }
 
         private Map<TensorProviderKind, TensorOperations> hydrateTensorOperations() {
