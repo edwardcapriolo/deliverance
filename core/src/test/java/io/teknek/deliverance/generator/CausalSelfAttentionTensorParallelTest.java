@@ -210,6 +210,8 @@ public class CausalSelfAttentionTensorParallelTest {
                         (Integer) invocation.getArgument(1)));
         when(model.maybeQuantize(Mockito.any(AbstractTensor.class)))
                 .thenAnswer(invocation -> new FloatBufferTensor((AbstractTensor) invocation.getArgument(0)));
+        when(model.prefillProjectionOperations(Mockito.any(AbstractTensor.class), Mockito.any(AbstractTensor.class),
+                Mockito.any(ForwardPhase.class))).thenReturn(new NaiveTensorOperations());
         return model;
     }
 

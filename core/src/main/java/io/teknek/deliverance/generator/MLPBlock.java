@@ -192,7 +192,7 @@ public class MLPBlock implements FeedForward {
             return reduced;
         }
         if (phase == ForwardPhase.DECODE && upProjectionWeights != null && fullyConnectedBias.isEmpty()
-                && model.getWorkingQType() != null) {
+                && model.getWorkingQType() != null && !hasActiveLoraDelta()) {
             return tensorPlanDecodeMlp(lnemb, tensorReducer);
         }
         try (
@@ -314,6 +314,12 @@ public class MLPBlock implements FeedForward {
         projectionBias.ifPresent(bias -> configurableTensorProvider.get().accumulate(result, bias, 0,
                 model.getConfig().embeddingLength));
         return result;
+    }
+
+    private boolean hasActiveLoraDelta() {
+        return model.activeLoraDeltaFor(gateWeightName).isPresent()
+                || model.activeLoraDeltaFor(upWeightName).isPresent()
+                || model.activeLoraDeltaFor(downWeightName).isPresent();
     }
 
     private AbstractTensor downQuantize(AbstractTensor buf) {

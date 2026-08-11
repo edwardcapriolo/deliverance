@@ -1,26 +1,21 @@
 package io.teknek.deliverance.model.qwen;
 
-import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.DoNothingGenerateEvent;
-import io.teknek.deliverance.model.ModelSupport;
-import io.teknek.deliverance.model.qwen2.Qwen2ModelType;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.Function;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.safetensors.prompt.Tool;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
-import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
 import org.junit.jupiter.api.Disabled;
 
-import java.io.File;
 import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
@@ -33,14 +28,16 @@ public class QwenTest {
     @Disabled("Only single file tensors are supported")
     public void sample() throws IOException {
         ModelFetcher fetch = new ModelFetcher("Qwen", "Qwen2.5-7B");
-        File f = fetch.maybeDownload();
-        MetricRegistry mr = new MetricRegistry();
+        com.codahale.metrics.MetricRegistry mr = new com.codahale.metrics.MetricRegistry();
         ArrayQueueTensorAllocator arrayQueueTensorAllocator = new ArrayQueueTensorAllocator(mr);
-        ModelSupport.addModel("QWEN2", new Qwen2ModelType());
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
-            try (AbstractModel m = ModelSupport.loadModel(f, DType.F32, DType.I8, new ConfigurableTensorProvider(arrayQueueTensorAllocator, pool),
-                    new MetricRegistry(), arrayQueueTensorAllocator, new KvBufferCacheSettings(true), fetch,
-                    new DefaultToolCallParser(), pool)) {
+            try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch)
+                    .withWorkingMemoryType(DType.F32)
+                    .withWorkingQuantType(DType.I8)
+                    .withTensorAllocator(arrayQueueTensorAllocator)
+                    .withWrappedForkJoinPool(pool)
+                    .withTensorProvider(new ConfigurableTensorProvider(arrayQueueTensorAllocator, pool))
+                    .buildLocalTransformerModel()) {
                 String prompt = "What is the best season to plant avocados?";
                 PromptContext ctx;
                 {

@@ -423,7 +423,7 @@ public class Gemma4HfTextModelPortedTest implements
         TensorAllocator allocator = new ArrayQueueTensorAllocator(metrics);
         WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
         ConfigurableTensorProvider provider = new ConfigurableTensorProvider(new NaiveTensorOperations());
-        return new Gemma4Model(
+        Gemma4Model model = new Gemma4Model(
                 AbstractModel.InferenceType.FULL_GENERATION,
                 configFromFile(modelDir),
                 new DefaultWeightLoader(modelDir.toFile()),
@@ -441,6 +441,8 @@ public class Gemma4HfTextModelPortedTest implements
                 new SingleRankTensorParallelCollectives(),
                 Optional.empty()
         );
+        model.init();
+        return model;
     }
 
     static Path writeTinyCheckpoint(Path dir, Gemma4Config config, int seed) {

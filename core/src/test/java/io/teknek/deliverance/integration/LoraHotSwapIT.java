@@ -10,6 +10,7 @@ import io.teknek.deliverance.safetensors.LoraAdapter;
 import io.teknek.deliverance.safetensors.fetch.LoraAdapterModelFetcher;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
@@ -24,7 +25,8 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
  * Requires network access, same base/adapter pairing as {@code MergingWeightLoaderIntegrationTest}
  * (Phase 1's equivalent test) so the two are directly comparable.
  */
-public class LoraHotSwapIntegrationTest {
+@Tag("small-model")
+public class LoraHotSwapIT {
 
     private static final String PROMPT = "Hello! Who are you and what can you help me with?";
 

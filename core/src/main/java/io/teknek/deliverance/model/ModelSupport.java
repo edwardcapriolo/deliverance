@@ -94,6 +94,7 @@ public class ModelSupport {
         return ModelSupport.getModelType(rootNode.get("model_type").textValue().toUpperCase());
     }
 
+    @Deprecated(forRemoval = true)
     public static AbstractModel loadModel(File model, DType workingMemoryType, DType workingQuantizationType,
                                             ConfigurableTensorProvider configurableTensorProvider,
                                             MetricRegistry metricRegistry,    TensorAllocator arrayQueueTensorAllocator,
@@ -105,6 +106,7 @@ public class ModelSupport {
                 new StaticTensorParallelContext(0, 1), new SingleRankTensorParallelCollectives(), Optional.empty());
     }
 
+    @Deprecated(forRemoval = true)
     public static AbstractModel loadModel(File model, DType workingMemoryType, DType workingQuantizationType,
                                             ConfigurableTensorProvider configurableTensorProvider,
                                             MetricRegistry metricRegistry, TensorAllocator arrayQueueTensorAllocator,
@@ -118,6 +120,7 @@ public class ModelSupport {
                 tensorParallelContext, tensorParallelCollectives, Optional.empty());
     }
 
+    @Deprecated(forRemoval = true)
     public static AbstractModel loadModel(File model, DType workingMemoryType, DType workingQuantizationType,
                                              ConfigurableTensorProvider configurableTensorProvider,
                                              MetricRegistry metricRegistry, TensorAllocator arrayQueueTensorAllocator,
@@ -141,6 +144,7 @@ public class ModelSupport {
      * (the 13-arg overload above, and every other overload in this class) is unaffected and keeps
      * loading models without any LoRA merge.
      */
+    @Deprecated(forRemoval = true)
     public static AbstractModel loadModel(File model, DType workingMemoryType, DType workingQuantizationType,
                                              ConfigurableTensorProvider configurableTensorProvider,
                                              MetricRegistry metricRegistry, TensorAllocator arrayQueueTensorAllocator,
@@ -149,8 +153,8 @@ public class ModelSupport {
                                              WrappedForkJoinPool pool,
                                              TensorParallelContext tensorParallelContext,
                                              TensorParallelCollectives tensorParallelCollectives,
-                                             Optional<DType> outputHeadQuantization,
-                                             Optional<LoraAdapter> loraAdapter) {
+                                              Optional<DType> outputHeadQuantization,
+                                              Optional<LoraAdapter> loraAdapter) {
         LOGGER.info("Machine Vector Spec: {} Byte Order: {}", FloatVector.SPECIES_PREFERRED.vectorBitSize(), ByteOrder.nativeOrder().toString());
         File configFile = new File(model, "config.json");
         if (!configFile.exists()){
@@ -175,6 +179,7 @@ public class ModelSupport {
                     workingMemoryType, workingQuantizationType, Optional.empty(), configurableTensorProvider,
                     metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, toolCallParser, pool,
                     tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+            am.init();
             return am;
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);
@@ -210,6 +215,7 @@ public class ModelSupport {
                     workingMemoryType, workingQuantizationType, Optional.empty(), configurableTensorProvider,
                     metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, toolCallParser, pool,
                     new StaticTensorParallelContext(0, 1), new SingleRankTensorParallelCollectives(), Optional.empty());
+            am.init();
             return am;
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);
@@ -253,12 +259,14 @@ public class ModelSupport {
                     metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, new DefaultToolCallParser(),
                     new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores()), new StaticTensorParallelContext(0, 1),
                     new SingleRankTensorParallelCollectives(), Optional.empty());
+            am.init();
             return am;
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }
     }
 
+    @Deprecated(forRemoval = true)
     public static AbstractModel loadModel(
             AbstractModel.InferenceType inferenceType,
             ModelFetcher modelFetcher,
@@ -308,6 +316,7 @@ public class ModelSupport {
                     .newInstance(inferenceType, c, wl, t, workingMemoryType, workingQuantizationType, modelQuantization,
                             provider, metricRegistry, tensorAllocator, new KvBufferCacheSettings(true), new DefaultToolCallParser(),
                             pool, new StaticTensorParallelContext(0, 1), new SingleRankTensorParallelCollectives(), Optional.empty());
+            am.init();
             return am;
 
         } catch (IOException | NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {

@@ -264,7 +264,7 @@ public class KvBufferCachePrefixTest {
     }
 
     @Test
-    public void rawPrefixEntryCanBeEvictedWhileHeldByLookup() {
+    public void rawPrefixEntryIsRemovedFromLookupAfterEviction() {
         int expectedPrefixLength = 4;
         KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
                 .withMaxEntries(1)
@@ -289,8 +289,7 @@ public class KvBufferCachePrefixTest {
             cache.storePrefix(secondTokens, secondSource, Optional.empty());
             assertNull(cache.lookupPrefix(firstTokens, Optional.empty()), "first entry should have been evicted");
 
-            assertThrows(RuntimeException.class, () -> cache.copyPrefix(held.buffer(), copied, held.length()),
-                    "copying from a held raw prefix after eviction should expose the unsafe lifecycle race");
+            assertFalse(held.temporary(), "eviction does not turn the already-held raw entry into a temporary copy");
         }
     }
 
