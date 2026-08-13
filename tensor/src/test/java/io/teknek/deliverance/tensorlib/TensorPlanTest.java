@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import java.util.concurrent.ForkJoinPool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TensorPlanTest {
@@ -41,6 +42,26 @@ class TensorPlanTest {
             assertTrue(ascii.contains("up = batchDot"), ascii);
             assertTrue(ascii.contains("activate SILU"), ascii);
             assertTrue(ascii.contains("input [2x3] F32 borrowed"), ascii);
+        }
+    }
+
+    @Test
+    void importedInputRendersUpstreamLineageButUsesMaterializedTensor() {
+        TensorPlan upstream = new TensorPlan(new NaiveTensorOperations(), new WrappedForkJoinPool(new ForkJoinPool(1)));
+        TensorPlan downstream = new TensorPlan(new NaiveTensorOperations(), new WrappedForkJoinPool(new ForkJoinPool(1)));
+        try (AbstractTensor source = TensorTestSupport.tensorOf(1, 2, 1, 2);
+             AbstractTensor materialized = TensorTestSupport.tensorOf(1, 2, 10, 20)) {
+            TensorPlan.Tensor scaled = upstream.input("abc", source).scale(50).as("scaled");
+            TensorPlan.Tensor imported = downstream.input("stage1.input", scaled, materialized).as("stage1.output");
+
+            String ascii = imported.plan();
+
+            assertTrue(ascii.contains("stage1.input <- scaled [1x2] F32 borrowed"), ascii);
+            assertFalse(ascii.contains("scaled = scale"), ascii);
+            try (AbstractTensor actual = imported.materialize()) {
+                assertEquals(10.0f, actual.get(0, 0));
+                assertEquals(20.0f, actual.get(0, 1));
+            }
         }
     }
 

@@ -9,6 +9,8 @@ import java.nio.FloatBuffer;
 import java.util.*;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -48,6 +50,8 @@ import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensorlib.PlannedTensor;
+import io.teknek.deliverance.tensorlib.TensorPlan;
 import io.teknek.deliverance.tensorlib.TensorRuntimeMode;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import jdk.incubator.vector.FloatVector;
@@ -192,8 +196,14 @@ public abstract class AbstractModel implements Generator, Classifier {
     protected WrappedForkJoinPool pool;
     protected PreTrainedTokenizer preTrainedTokenizer;
     protected int maxBatchSize = DEFAULT_MAX_BATCH_SIZE;
+    protected TensorPlan modelLineagePlan;
+    private final ConcurrentMap<String, TensorPlan.ImmutableTensor> modelLineageTensors = new ConcurrentHashMap<>();
+    private final Queue<ModelLineageEntry> modelLineageEntries = new ConcurrentLinkedQueue<>();
     private Optional<TensorRuntimeMode> tensorRuntimeMode = Optional.empty();
     private boolean initialized;
+    private boolean tensorPlanTraceEnabled;
+    private final ConcurrentMap<UUID, TensorPlanTraceContext> tensorPlanTraces = new ConcurrentHashMap<>();
+    private final ThreadLocal<UUID> activeTensorPlanTraceId = new ThreadLocal<>();
     private volatile Consumer<GenerationDebugEvent> generationDebugHook = event -> {};
     private volatile Consumer<LayerDebugEvent> layerDebugHook = event -> {};
 
@@ -267,6 +277,7 @@ public abstract class AbstractModel implements Generator, Classifier {
         if (initialized) {
             return;
         }
+        this.modelLineagePlan = new TensorPlan(configurableTensorProvider.get(), pool, metricRegistry, this);
         logger.debug("model init start config={} inference_type={}", config.getClass().getSimpleName(), inferenceType);
         this.embedInput = inferenceType.isInput ? loadInputWeights() : null;
         this.transformerBlocks = inferenceType.isFwdPass ? loadTransformerBlockWeights() : null;
@@ -962,7 +973,10 @@ public abstract class AbstractModel implements Generator, Classifier {
                     progress.chunkStart = i;
                     progress.chunkTokens = batch.length;
                     AbstractTensor inputEmbeddings = embedInput.batchInputsToEmbeddings(batch, startPos + i);
-                    lastBatchOutput = forward(inputEmbeddings, startPos + i, kvbuf, tensorReducer, io.teknek.deliverance.generator.ForwardPhase.PREFILL);
+                    PlannedTensor plannedEmbeddings = plannedInputEmbeddings("input_embeddings", inputEmbeddings,
+                            io.teknek.deliverance.generator.ForwardPhase.PREFILL);
+                    lastBatchOutput = forward(plannedEmbeddings, startPos + i, kvbuf, tensorReducer,
+                            io.teknek.deliverance.generator.ForwardPhase.PREFILL).tensor();
                     int processed = Math.min(token_ids.length, i + batch.length);
                     long now = System.nanoTime();
                     if (processed < token_ids.length && now >= progress.nextLogNanos) {
@@ -999,7 +1013,9 @@ public abstract class AbstractModel implements Generator, Classifier {
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "abstractmodel.forward_token").time()) {
         AbstractTensor embedding = embedInput.inputTokenToEmbedding(token_id, pos);
-        return forward(embedding, pos, kvbuf, tensorReducer);
+        return forward(plannedInputEmbeddings("input_embedding", embedding,
+                io.teknek.deliverance.generator.ForwardPhase.DECODE), pos, kvbuf, tensorReducer,
+                io.teknek.deliverance.generator.ForwardPhase.DECODE).tensor();
         }
     }
 
@@ -1011,15 +1027,32 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public AbstractTensor forward(AbstractTensor embedding, int startPos, KvBufferCache.KvBuffer kvbuf,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer, io.teknek.deliverance.generator.ForwardPhase phase) {
+        PlannedTensor planned = new PlannedTensor(embedding,
+                modelLineagePlan.input("forward.input", embedding).as("forward.input"));
+        return forward(planned, startPos, kvbuf, tensorReducer, phase).tensor();
+    }
+
+    private PlannedTensor plannedInputEmbeddings(String name, AbstractTensor embeddings,
+            io.teknek.deliverance.generator.ForwardPhase phase) {
+        TensorPlan.Tensor lineage = modelLineageTensor("model.embed_tokens.weight")
+                .map(upstream -> modelLineagePlan.input(name, upstream, embeddings))
+                .orElseGet(() -> modelLineagePlan.input(name, embeddings))
+                .as(name);
+        traceTensorPlan(getClass().getSimpleName(), "embedinput." + name, phase.name(), -1, "N/A", lineage.plan());
+        return new PlannedTensor(embeddings, lineage);
+    }
+
+    public PlannedTensor forward(PlannedTensor embedding, int startPos, KvBufferCache.KvBuffer kvbuf,
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer, io.teknek.deliverance.generator.ForwardPhase phase) {
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "abstractmodel.forward_layers").time()) {
-        emitLayerDebug(-1, "input", embedding);
-        int batchTokens = embedding.shape().first();
+        emitLayerDebug(-1, "input", embedding.tensor());
+        int batchTokens = embedding.tensor().shape().first();
         for (int i = 0; i < config.numberOfLayers; i++) {
             throwIfGenerationInterrupted();
             int relativeLayer = i;
-            AbstractTensor ref = embedding; // reference so we can free
+            AbstractTensor ref = embedding.tensor(); // reference so we can free
             embedding = transformerBlocks[relativeLayer].forward(embedding, startPos, kvbuf, tensorReducer, phase);
-            emitLayerDebug(relativeLayer, "layer_output", embedding);
+            emitLayerDebug(relativeLayer, "layer_output", embedding.tensor());
             ref.close();
             long now = System.nanoTime();
             PrefillProgress progress = PREFILL_PROGRESS.get();
@@ -1136,6 +1169,219 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public void setTensorRuntimeMode(Optional<TensorRuntimeMode> tensorRuntimeMode) {
         this.tensorRuntimeMode = Objects.requireNonNull(tensorRuntimeMode, "tensorRuntimeMode");
+    }
+
+    public void setTensorPlanTraceEnabled(boolean tensorPlanTraceEnabled) {
+        this.tensorPlanTraceEnabled = tensorPlanTraceEnabled;
+    }
+
+    public TensorPlanTraceScope openTensorPlanTrace(UUID generationId) {
+        if (!tensorPlanTraceEnabled) {
+            return () -> {};
+        }
+        TensorPlanTraceContext context = new TensorPlanTraceContext(generationId, tensorPlanTraceHeader(generationId));
+        tensorPlanTraces.put(generationId, context);
+        activeTensorPlanTraceId.set(generationId);
+        context.record(getClass().getSimpleName(), "model.weights", "INIT", -1, "N/A", renderModelLineagePlan());
+        return () -> {
+            activeTensorPlanTraceId.remove();
+            TensorPlanTraceContext finished = tensorPlanTraces.remove(generationId);
+            if (finished != null) {
+                logger.info("\n{}", finished.render());
+            }
+        };
+    }
+
+    public void traceTensorPlan(String ownerClass, String path, String phase, int layerIndex, String runMode,
+            String planText) {
+        UUID generationId = activeTensorPlanTraceId.get();
+        if (generationId == null) {
+            return;
+        }
+        TensorPlanTraceContext context = tensorPlanTraces.get(generationId);
+        if (context != null) {
+            context.record(ownerClass, path, phase, layerIndex, runMode, planText);
+        }
+    }
+
+    protected TensorPlan.ImmutableTensor registerModelLineageTensor(String name, AbstractTensor tensor) {
+        if (modelLineagePlan == null) {
+            return null;
+        }
+        TensorPlan.ImmutableTensor planned = modelLineagePlan.immutable(name, tensor);
+        modelLineageTensors.put(name, planned);
+        modelLineageEntries.add(new ModelLineageEntry(name, tensor.shape().toString(), tensor.dType().name(), planned.plan()));
+        return planned;
+    }
+
+    public Optional<TensorPlan.ImmutableTensor> modelLineageTensor(String name) {
+        return Optional.ofNullable(modelLineageTensors.get(name));
+    }
+
+    private String renderModelLineagePlan() {
+        if (modelLineageEntries.isEmpty()) {
+            return "└─ model.weights empty";
+        }
+        List<String> lines = groupedModelLineageLines();
+        StringBuilder sb = new StringBuilder("└─ model.weights\n");
+        for (int i = 0; i < lines.size(); i++) {
+            boolean last = i + 1 == lines.size();
+            sb.append(last ? "   └─ " : "   ├─ ")
+                    .append(lines.get(i))
+                    .append('\n');
+        }
+        return sb.toString();
+    }
+
+    private List<String> groupedModelLineageLines() {
+        Map<ModelLineageGroupKey, ModelLineageGroup> groups = new LinkedHashMap<>();
+        for (ModelLineageEntry entry : modelLineageEntries) {
+            LayerName layerName = LayerName.parse(entry.name());
+            ModelLineageGroupKey key = new ModelLineageGroupKey(layerName.pattern(), entry.shape(), entry.dtype());
+            groups.computeIfAbsent(key, ignored -> new ModelLineageGroup(layerName.prefix(), layerName.suffix(),
+                    entry.shape(), entry.dtype())).add(layerName.layer());
+        }
+        List<String> lines = new ArrayList<>();
+        for (ModelLineageGroup group : groups.values()) {
+            lines.add(group.render());
+        }
+        return lines;
+    }
+
+    private record ModelLineageEntry(String name, String shape, String dtype, String plan) {
+    }
+
+    private record ModelLineageGroupKey(String pattern, String shape, String dtype) {
+    }
+
+    private static final class ModelLineageGroup {
+        private final String prefix;
+        private final String suffix;
+        private final String shape;
+        private final String dtype;
+        private final List<Integer> layers = new ArrayList<>();
+
+        private ModelLineageGroup(String prefix, String suffix, String shape, String dtype) {
+            this.prefix = prefix;
+            this.suffix = suffix;
+            this.shape = shape;
+            this.dtype = dtype;
+        }
+
+        private void add(OptionalInt layer) {
+            layer.ifPresent(layers::add);
+        }
+
+        private String render() {
+            if (layers.isEmpty()) {
+                return prefix + suffix + " " + shape + " " + dtype;
+            }
+            return prefix + "[" + ranges(layers) + "]" + suffix + " " + shape + " " + dtype
+                    + " count=" + layers.size();
+        }
+
+        private static String ranges(List<Integer> values) {
+            List<Integer> sorted = values.stream().distinct().sorted().toList();
+            List<String> ranges = new ArrayList<>();
+            int start = sorted.get(0);
+            int previous = start;
+            for (int i = 1; i < sorted.size(); i++) {
+                int value = sorted.get(i);
+                if (value == previous + 1) {
+                    previous = value;
+                    continue;
+                }
+                ranges.add(start == previous ? Integer.toString(start) : start + "-" + previous);
+                start = previous = value;
+            }
+            ranges.add(start == previous ? Integer.toString(start) : start + "-" + previous);
+            return String.join(",", ranges);
+        }
+    }
+
+    private record LayerName(String prefix, OptionalInt layer, String suffix) {
+        private String pattern() {
+            return layer.isPresent() ? prefix + "{}" + suffix : prefix + suffix;
+        }
+
+        private static LayerName parse(String name) {
+            String marker = "model.layers.";
+            int markerIndex = name.indexOf(marker);
+            if (markerIndex < 0) {
+                return new LayerName(name, OptionalInt.empty(), "");
+            }
+            int start = markerIndex + marker.length();
+            int end = start;
+            while (end < name.length() && Character.isDigit(name.charAt(end))) {
+                end++;
+            }
+            if (end == start || end >= name.length() || name.charAt(end) != '.') {
+                return new LayerName(name, OptionalInt.empty(), "");
+            }
+            return new LayerName(name.substring(0, start), OptionalInt.of(Integer.parseInt(name.substring(start, end))),
+                    name.substring(end));
+        }
+    }
+
+    public interface TensorPlanTraceScope extends AutoCloseable {
+        @Override
+        void close();
+    }
+
+    private String tensorPlanTraceHeader(UUID generationId) {
+        return "================ TensorPlan Trace ================\n"
+                + "generationId=" + generationId + '\n'
+                + "model.class=" + getClass().getSimpleName() + '\n'
+                + "config.class=" + config.getClass().getSimpleName() + '\n'
+                + "modelDType=" + modelDType + '\n'
+                + "workingDType=" + workingDType + '\n'
+                + "workingQType=" + workingQType + '\n'
+                + "modelQType=" + modelQType + '\n'
+                + "outputHeadQuantization=" + outputHeadQuantization + '\n'
+                + "tensorProvider=" + configurableTensorProvider.get().name() + '\n'
+                + "parallelSplitSize=" + configurableTensorProvider.get().parallelSplitSize() + '\n'
+                + "tensorRuntimeMode=" + tensorRuntimeMode + '\n'
+                + "gpuPrefill=" + gpuPrefillEnabled + '\n'
+                + "gpuDecode=" + gpuDecodeEnabled + '\n'
+                + "gpuDecodeAttention=" + gpuDecodeAttentionEnabled + '\n'
+                + "tensorProviderExplicit=" + tensorProviderExplicit + '\n'
+                + "layers=" + config.numberOfLayers + '\n'
+                + "embeddingLength=" + config.embeddingLength + '\n'
+                + "hiddenLength=" + config.hiddenLength + '\n'
+                + "attentionLength=" + config.attentionLength + '\n'
+                + "kvLength=" + config.kvLength + '\n'
+                + "==================================================\n";
+    }
+
+    private static final class TensorPlanTraceContext {
+        private final String header;
+        private final Set<String> seen = ConcurrentHashMap.newKeySet();
+        private final Queue<String> sections = new ConcurrentLinkedQueue<>();
+
+        private TensorPlanTraceContext(UUID generationId, String header) {
+            this.header = header;
+        }
+
+        private void record(String ownerClass, String path, String phase, int layerIndex, String runMode,
+                String planText) {
+            String key = ownerClass + '|' + path + '|' + phase + '|' + runMode + '|' + planText;
+            if (!seen.add(key)) {
+                return;
+            }
+            String layer = layerIndex < 0 ? "n/a" : Integer.toString(layerIndex);
+            sections.add("[TensorPlan] owner=" + ownerClass + " path=" + path + " phase=" + phase
+                    + " layer=" + layer + " runMode=" + runMode + '\n' + indent(planText) + '\n');
+        }
+
+        private String render() {
+            StringBuilder sb = new StringBuilder(header);
+            sections.forEach(sb::append);
+            return sb.toString();
+        }
+
+        private static String indent(String text) {
+            return text.lines().map(line -> "  " + line).reduce((a, b) -> a + '\n' + b).orElse("");
+        }
     }
 
 }

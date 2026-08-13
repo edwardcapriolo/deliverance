@@ -5,6 +5,7 @@ import com.google.common.base.Preconditions;
 import io.teknek.deliverance.CausualWhisperer;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensorlib.PlannedTensor;
 import io.teknek.deliverance.tensorlib.TensorPlan;
 import net.jafama.FastMath;
 import com.codahale.metrics.MetricRegistry;
@@ -43,6 +44,24 @@ public class LayerNorm {
         return forward(input, 0, model.getConfig().embeddingLength);
     }
 
+    public PlannedTensor forward(PlannedTensor input) {
+        AbstractTensor inputTensor = input.tensor();
+        AbstractTensor output = model.getTensorAllocator().getDirty(inputTensor.dType(), inputTensor.shape());
+        int offset = 0;
+        int length = model.getConfig().embeddingLength;
+        if (model.getConfigurableTensorProvider() == null) {
+            performLayerNorm(inputTensor, output, weights, bias, model.getConfig().layerNormEps, offset, length,
+                    model.getConfig().embeddingLength);
+            return new PlannedTensor(output, input.plan());
+        }
+        TensorPlan.Tensor planned = forwardPlan(inputTensor, input.plan(), output, "layernorm", "input", offset,
+                length).as("layernorm.output");
+        model.traceTensorPlan(plannedPlanOwner(), "layernorm.forward", "UNKNOWN", -1,
+                TensorPlan.RunMode.CALLER_THREAD.name(), planned.plan());
+        planned.materialize();
+        return new PlannedTensor(output, planned);
+    }
+
     public AbstractTensor forward(AbstractTensor input, int offset, int length) {
         long start = System.currentTimeMillis();
         AbstractTensor output = model.getTensorAllocator().getDirty(input.dType(), input.shape());
@@ -53,7 +72,10 @@ public class LayerNorm {
             totalTime.update(end - start);
             return output;
         }
-        forwardPlan(input, output, "layernorm", "input", offset, length).materialize();
+        TensorPlan.Tensor planned = forwardPlan(input, output, "layernorm", "input", offset, length);
+        model.traceTensorPlan(plannedPlanOwner(), "layernorm.forward", "UNKNOWN", -1,
+                TensorPlan.RunMode.CALLER_THREAD.name(), planned.plan());
+        planned.materialize();
         long end = System.currentTimeMillis();
         totalTime.update(end - start);
         return output;
@@ -61,14 +83,22 @@ public class LayerNorm {
 
     public TensorPlan.Tensor forwardPlan(AbstractTensor input, AbstractTensor output, String planName,
             String inputName, int offset, int length) {
+        return forwardPlan(input, null, output, planName, inputName, offset, length);
+    }
+
+    public TensorPlan.Tensor forwardPlan(AbstractTensor input, TensorPlan.Tensor upstreamInput, AbstractTensor output,
+            String planName, String inputName, int offset, int length) {
         // LayerNorm is a tiny row-local operation during decode; TensorRuntime scheduling and locality checks cost more
         // than they save here, so keep TensorPlan diagnostics but execute inline.
         TensorPlan plan = TensorPlanSupport.plan(model, model.getConfigurableTensorProvider().get())
                 .forcedRunMode(TensorPlan.RunMode.CALLER_THREAD);
         int embeddingLength = model.getConfig().embeddingLength;
         int limit = offset + length;
+        TensorPlan.Tensor inputPlan = upstreamInput == null
+                ? plan.input(inputName, input)
+                : plan.input(inputName, upstreamInput, input);
         return plan.fuseRowsIntStream(planName, output.shape())
-                .read("input", plan.input(inputName, input))
+                .read("input", inputPlan)
                 .read("weight", plan.immutable(weightName, weights))
                 .read("bias", plan.immutable(biasName, bias))
                 .write("output", plan.mutable("output", output))
@@ -79,6 +109,10 @@ public class LayerNorm {
                             model.getConfig().layerNormEps, offset, limit, embeddingLength, (int) rowOffset);
                 })
                 .tensor();
+    }
+
+    private String plannedPlanOwner() {
+        return model.getClass().getSimpleName();
     }
 
     public static void performLayerNorm(AbstractTensor input, AbstractTensor output, AbstractTensor weights,

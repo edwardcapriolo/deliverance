@@ -13,6 +13,6 @@ final class TensorPlanSupport {
     static TensorPlan plan(AbstractModel model, TensorOperations operations) {
         TensorRuntime runtime = TensorRuntimeGlobal.get(model.getMetricRegistry(), model.getTensorRuntimeMode(),
                 model.getPool().getCoreCount());
-        return new TensorPlan(operations, model.getPool(), model.getMetricRegistry(), runtime);
+        return new TensorPlan(operations, model.getPool(), model.getMetricRegistry(), model, runtime);
     }
 }

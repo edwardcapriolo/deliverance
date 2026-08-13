@@ -3,12 +3,18 @@ package io.teknek.deliverance.integration.qwen;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.DoNothingGenerateEvent;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
+import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
+import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
+import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
+import io.teknek.deliverance.tensorlib.TensorPlan;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -22,6 +28,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class Qwen06bMaybeQuantizeProfilerIT {
 
     @Test
+    public void aplan(){
+        //TensorPlan tp = new TensorPlan(new NaiveTensorOperations(), new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores()));
+        //TensorPlan.ImmutableTensor something = tp.immutable("something", null);
+        //TensorPlan.Tensor mutable = tp.mutable("abc", null);
+        //TensorPlan.Tensor scaled = mutable.scale(50);
+        //AbstractTensor scaledT = scaled.materialize();
+
+        //TensorPlan stage1 = new TensorPlan(new NaiveTensorOperations(), new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores()));
+        //stage1.input(scaled, scaledT);
+    }
+    @Test
     public void oneCaseHitsReadOnlyMaybeQuantizePaths() {
         boolean previousProfiling = InferenceProfiler.isEnabled();
         InferenceProfiler.setEnabled(true);
@@ -31,6 +48,7 @@ public class Qwen06bMaybeQuantizeProfilerIT {
 
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
                 .withDownload(false)
+                .withTensorPlanTrace(true)
                 .buildLocalTransformerModel()) {
             InferenceProfiler.reset();
             Response response = model.generate(UUID.randomUUID(), PromptContext.of("What is 2+2? Answer briefly."),

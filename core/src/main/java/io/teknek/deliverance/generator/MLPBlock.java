@@ -302,14 +302,25 @@ public class MLPBlock implements FeedForward {
             InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock.down_weight_" + projectionWeights.dType()).inc();
         }
         TensorPlan plan = TensorPlanSupport.plan(model, configurableTensorProvider.get());
-        AbstractTensor result = plan.input("input", lnemb)
-                .mlp(plan.immutable("gateWeight", fullyConnectedWeights),
-                        plan.immutable("upWeight", upProjectionWeights),
-                        plan.immutable("downWeight", projectionWeights),
+        TensorPlan.ImmutableTensor gatePlan = model.modelLineageTensor(gateWeightName).isPresent()
+                ? plan.immutable("gateWeight", model.modelLineageTensor(gateWeightName).orElseThrow(), fullyConnectedWeights)
+                : plan.immutable("gateWeight", fullyConnectedWeights);
+        TensorPlan.ImmutableTensor upPlan = model.modelLineageTensor(upWeightName).isPresent()
+                ? plan.immutable("upWeight", model.modelLineageTensor(upWeightName).orElseThrow(), upProjectionWeights)
+                : plan.immutable("upWeight", upProjectionWeights);
+        TensorPlan.ImmutableTensor downPlan = model.modelLineageTensor(downWeightName).isPresent()
+                ? plan.immutable("downWeight", model.modelLineageTensor(downWeightName).orElseThrow(), projectionWeights)
+                : plan.immutable("downWeight", projectionWeights);
+        TensorPlan.Tensor planned = plan.input("input", lnemb)
+                .mlp(gatePlan,
+                        upPlan,
+                        downPlan,
                         activationFunction,
                         model.getWorkingQType())
-                .as("mlpOutput")
-                .materialize();
+                .as("mlpOutput");
+        model.traceTensorPlan(plan.ownerClass(), "decode_full_mlp", "DECODE", -1, plan.runMode().name(),
+                planned.plan());
+        AbstractTensor result = planned.materialize();
         tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(result)));
         projectionBias.ifPresent(bias -> configurableTensorProvider.get().accumulate(result, bias, 0,
                 model.getConfig().embeddingLength));
@@ -346,12 +357,15 @@ public class MLPBlock implements FeedForward {
                 "mlpblock.fused_activation_multiply_quantize").time()) {
             registerTensorRuntimeCounters();
             TensorPlan plan = TensorPlanSupport.plan(model, configurableTensorProvider.get());
-            return plan.input("gate", gate)
+            TensorPlan.Tensor planned = plan.input("gate", gate)
                     .activate(activationFunction)
                     .multiply(plan.input("up", up))
                     .quantize(model.getWorkingQType())
-                    .as("hiddenQ")
-                    .materialize();
+                    .as("hiddenQ");
+            model.traceTensorPlan(plan.ownerClass(), "fused_activation_multiply_quantize", "PREFILL", -1,
+                    plan.runMode().name(),
+                    planned.plan());
+            return planned.materialize();
         }
     }
 

@@ -81,6 +81,7 @@ final class GenerationEngine {
     Response generate(AbstractModel model, GenerationBackend backend, UUID sessionId, PromptContext promptContext,
             GeneratorParameters generatorParameters, GenerateEvent eventFired) {
         try (Timer.Context ignoredRequest = InferenceProfiler.timer(model.getMetricRegistry(), "generation.request").time()) {
+        try (AbstractModel.TensorPlanTraceScope ignoredTrace = model.openTensorPlanTrace(sessionId)) {
         long generationStartNanos = System.nanoTime();
         long timeToFirstTokenNanos = 0L;
 
@@ -170,6 +171,7 @@ final class GenerationEngine {
                         responseContext.samplerReturnList)),
                 generationStartNanos,
                 timeToFirstTokenNanos);
+        }
         }
     }
 
