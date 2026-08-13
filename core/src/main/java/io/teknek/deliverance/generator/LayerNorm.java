@@ -5,6 +5,7 @@ import com.google.common.base.Preconditions;
 import io.teknek.deliverance.CausualWhisperer;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensorlib.PlannedTensor;
 import io.teknek.deliverance.tensorlib.TensorPlan;
 import net.jafama.FastMath;
 import com.codahale.metrics.MetricRegistry;
@@ -34,6 +35,14 @@ public class LayerNorm {
         return forward(input, 0, model.getConfig().embeddingLength);
     }
 
+    public PlannedTensor forward(PlannedTensor input) {
+        AbstractTensor output = forward(input.tensor());
+        TensorPlan plan = TensorPlanSupport.plan(model, model.getConfigurableTensorProvider().get())
+                .forcedRunMode(TensorPlan.RunMode.CALLER_THREAD);
+        TensorPlan.Tensor outputPlan = plan.input("layernorm.output", input.plan(), output).as("layernorm.output");
+        return new PlannedTensor(output, outputPlan);
+    }
+
     public AbstractTensor forward(AbstractTensor input, int offset, int length) {
         long start = System.currentTimeMillis();
         AbstractTensor output = model.getTensorAllocator().getDirty(input.dType(), input.shape());
@@ -50,7 +59,7 @@ public class LayerNorm {
                 .forcedRunMode(TensorPlan.RunMode.CALLER_THREAD);
         int embeddingLength = model.getConfig().embeddingLength;
         int limit = offset + length;
-        plan.fuseRowsIntStream("layernorm", output.shape())
+        TensorPlan.Tensor planned = plan.fuseRowsIntStream("layernorm", output.shape())
                 .read("input", plan.input("input", input))
                 .write("output", plan.mutable("output", output))
                 .map("output = layernorm(input)", TensorPlan.TensorOp.CUSTOM, (ctx, rowOffset, rowLength) -> {
@@ -59,8 +68,10 @@ public class LayerNorm {
                     performLayerNormRow(in, out, weights, bias, model.getConfig().layerNormEps, offset, limit,
                             embeddingLength, (int) rowOffset);
                 })
-                .tensor()
-                .materialize();
+                .tensor();
+        model.traceTensorPlan(plan.ownerClass(), "layernorm.forward", "UNKNOWN", -1, plan.runMode().name(),
+                planned.plan());
+        planned.materialize();
         long end = System.currentTimeMillis();
         totalTime.update(end - start);
         return output;

@@ -27,6 +27,7 @@ public record AutoModelConfig(
         Optional<Boolean> download,
         Optional<Integer> maxBatchSize,
         Optional<TensorRuntimeMode> tensorRuntimeMode,
+        Optional<Boolean> tensorPlanTrace,
         Optional<KvBufferCache> kvBufferCache,
         Optional<QuantizeOnDemand> quantizeOnDemand) {
 
@@ -40,6 +41,7 @@ public record AutoModelConfig(
         download = download == null ? Optional.empty() : download;
         maxBatchSize = maxBatchSize == null ? Optional.empty() : maxBatchSize;
         tensorRuntimeMode = tensorRuntimeMode == null ? Optional.empty() : tensorRuntimeMode;
+        tensorPlanTrace = tensorPlanTrace == null ? Optional.empty() : tensorPlanTrace;
         kvBufferCache = kvBufferCache == null ? Optional.empty() : kvBufferCache;
         quantizeOnDemand = quantizeOnDemand == null ? Optional.empty() : quantizeOnDemand;
     }
