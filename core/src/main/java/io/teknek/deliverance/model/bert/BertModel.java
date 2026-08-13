@@ -2,7 +2,6 @@
 package io.teknek.deliverance.model.bert;
 
 import com.codahale.metrics.MetricRegistry;
-import io.teknek.deliverance.CausualWhisperer;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.classifier.ClassifyOutput;
 import io.teknek.deliverance.embedding.PoolingLayer;
@@ -16,9 +15,12 @@ import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
+import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensorlib.TensorPlan;
+import io.teknek.deliverance.tensorlib.TensorRuntimeGlobal;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 
 import java.util.Arrays;
@@ -28,6 +30,11 @@ import java.util.Optional;
 public class BertModel extends AbstractModel {
 
     private static final String[] prefixes = new String[] { "", "bert." };
+
+    private AbstractTensor wordEmbeddings;
+    private AbstractTensor tokenTypeEmbeddings;
+    private AbstractTensor positionEmbeddings;
+    private LayerNorm inputLayerNorm;
 
     public BertModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer tokenizer, DType workingDType, DType workingQType,
                         Optional<DType> modelQType, ConfigurableTensorProvider configurableTensorProvider,
@@ -46,41 +53,87 @@ public class BertModel extends AbstractModel {
             if (weights.isWeightPresent(key)) {
                 return weights.load(key);
             }
+            String alias = bertWeightAlias(name);
+            if (!alias.equals(name)) {
+                String aliasKey = prefix + alias;
+                if (weights.isWeightPresent(aliasKey)) {
+                    return weights.load(aliasKey);
+                }
+            }
         }
         throw new NoSuchElementException(Arrays.toString(prefixes) + " " + name + " not found in weights " + weights.tensorInfoMap());
     }
 
+    private static String bertWeightAlias(String name) {
+        if (name.endsWith("LayerNorm.weight")) {
+            return name.substring(0, name.length() - "weight".length()) + "gamma";
+        }
+        if (name.endsWith("LayerNorm.bias")) {
+            return name.substring(0, name.length() - "bias".length()) + "beta";
+        }
+        return name;
+    }
+
     @Override
     protected EmbedInput loadInputWeights() {
-        AbstractTensor we = loadWeight("embeddings.word_embeddings.weight");
-        AbstractTensor wte = loadWeight("embeddings.token_type_embeddings.weight");
-        AbstractTensor wpe = loadWeight("embeddings.position_embeddings.weight");
-
-
-        LayerNorm inputLayerNorm = new LayerNorm(this, loadWeight("embeddings.LayerNorm.bias"),
-                loadWeight("embeddings.LayerNorm.weight"), new MetricRegistry());
+        wordEmbeddings = loadWeight("embeddings.word_embeddings.weight");
+        tokenTypeEmbeddings = loadWeight("embeddings.token_type_embeddings.weight");
+        positionEmbeddings = loadWeight("embeddings.position_embeddings.weight");
+        inputLayerNorm = new LayerNorm(this, loadWeight("embeddings.LayerNorm.bias"),
+                loadWeight("embeddings.LayerNorm.weight"), new MetricRegistry(),
+                "model.weights.embeddings.LayerNorm.bias", "model.weights.embeddings.LayerNorm.weight");
 
         return new EmbedInput(BertModel.this) {
             @Override
             public AbstractTensor inputTokenToEmbedding(int inputToken, int position) {
-                AbstractTensor embedding = makeDenseTensor(config.embeddingLength);
-                if (position == 3){
-                    CausualWhisperer.LOGGER.debug("BertModel.inputTokenToEmbedding {}", embedding.shape());
-                    CausualWhisperer.LOGGER.debug("BertModel.inputTokenToEmbedding inputToken: {} position: {} ", inputToken, position);
-                }
-                for (int i = 0; i < config.embeddingLength; i++) {
-                    float v = we.get(inputToken, i) + wte.get(0, i) + wpe.get(position, i);
-                    if (position==3 && i < 5 && CausualWhisperer.LOGGER.isDebugEnabled()){
-                        CausualWhisperer.LOGGER.debug( "inputTokenToEmbedding[{}] = word_embed_weight {} + type_embed_weight {} + position_embed_weight {} = v {}",
-                        i, we.get(inputToken, i), wte.get(0, i), wpe.get(position, i), v);
-                    }
-                    embedding.set(v, 0, i);
-                }
-                AbstractTensor lnemb = inputLayerNorm.forward(embedding);
-                embedding.close();
-                return lnemb;
+                return bertEmbeddings(new BertInput(new int[] { inputToken }, null, null,
+                        new int[] { position }, 1, 1));
             }
         };
+    }
+
+    /**
+     * HF {@code BertEmbeddings.forward} for {@code input_ids}, {@code token_type_ids}, and {@code position_ids}.
+     * Dropout is intentionally omitted because Deliverance inference corresponds to HF {@code model.eval()}.
+     */
+    public AbstractTensor bertEmbeddings(BertInput input) {
+        if (wordEmbeddings == null || tokenTypeEmbeddings == null || positionEmbeddings == null || inputLayerNorm == null) {
+            throw new IllegalStateException("BertModel.init() must be called before bertEmbeddings");
+        }
+        AbstractTensor embedding = makeDenseTensor(input.flattenedLength(), config.embeddingLength);
+        bertEmbeddingGatherAddPlan(input, embedding).materialize();
+        AbstractTensor normalized = inputLayerNorm.forward(embedding);
+        embedding.close();
+        return normalized;
+    }
+
+    TensorPlan.Tensor bertEmbeddingGatherAddPlan(BertInput input, AbstractTensor embedding) {
+        TensorPlan plan = new TensorPlan(configurableTensorProvider.get(), getPool(), metricRegistry,
+                TensorRuntimeGlobal.get(metricRegistry, getTensorRuntimeMode(), getPool().getCoreCount()));
+        return plan.fuseRowsIntStream("bert_embeddings.gather_add", embedding.shape())
+                .read("word_embeddings", plan.immutable("model.weights.embeddings.word_embeddings.weight", wordEmbeddings))
+                .read("token_type_embeddings", plan.immutable("model.weights.embeddings.token_type_embeddings.weight", tokenTypeEmbeddings))
+                .read("position_embeddings", plan.immutable("model.weights.embeddings.position_embeddings.weight", positionEmbeddings))
+                .write("embedding", plan.mutable("embedding", embedding))
+                .map("embedding = word[input_ids] + token_type[token_type_ids] + position[position_ids]",
+                        TensorPlan.TensorOp.CUSTOM, "bert_embeddings.gather_add",
+                        (ctx, rowOffset, rowCount) -> configurableTensorProvider.get().gatherRowsAdd(
+                                ctx.tensor("embedding"), ctx.tensor("word_embeddings"), input.inputIds(),
+                                ctx.tensor("token_type_embeddings"), input.tokenTypeIds(),
+                                ctx.tensor("position_embeddings"), input.positionIds(), (int) rowOffset,
+                                (int) rowCount))
+                .tensor()
+                .as("bert_embeddings.output");
+    }
+
+    String bertEmbeddingPathPlan(BertInput input) {
+        try (AbstractTensor rawEmbedding = makeDenseTensor(input.flattenedLength(), config.embeddingLength);
+             AbstractTensor normalizedEmbedding = makeDenseTensor(input.flattenedLength(), config.embeddingLength)) {
+            String gatherPlan = bertEmbeddingGatherAddPlan(input, rawEmbedding).plan();
+            String layerNormPlan = inputLayerNorm.forwardPlan(rawEmbedding, normalizedEmbedding,
+                    "bert_embeddings.layernorm", "bert_embeddings.output", 0, config.embeddingLength).plan();
+            return "[1] Gather/Add\n" + gatherPlan + "\n[2] LayerNorm\n" + layerNormPlan;
+        }
     }
 
     @Override
@@ -102,14 +155,14 @@ public class BertModel extends AbstractModel {
 
             AbstractTensor outputBias = loadWeight(prefix + "output.dense.bias");
             AbstractTensor outputWeight = loadWeight(prefix + "output.dense.weight");
-            CausalSelfAttention attention = new CausalSelfAttention(
+            BertSelfAttention attention = new BertSelfAttention(
                     this,
                     i,
-                    Optional.of(keyBias),
                     Optional.of(queryBias),
+                    Optional.of(keyBias),
                     Optional.of(valueBias),
-                    keyWeight,
                     queryWeight,
+                    keyWeight,
                     valueWeight,
                     Optional.of(outputBias),
                     outputWeight,
@@ -134,10 +187,26 @@ public class BertModel extends AbstractModel {
             );
             LayerNorm postMlpNorm = new LayerNorm(this, loadWeight(b + "output.LayerNorm.bias"), loadWeight(b + "output.LayerNorm.weight"), metricRegistry);
 
-            transformerBlocks[i] = new TransformerBlock(this, i, attention, postAttentionNorm, mlpBlock, postMlpNorm, configurableTensorProvider);
+            transformerBlocks[i] = new BertTransformerBlock(this, i, attention, postAttentionNorm, mlpBlock,
+                    postMlpNorm, configurableTensorProvider);
         }
 
         return transformerBlocks;
+    }
+
+    public AbstractTensor batchForward(BertInput input, KvBufferCache.KvBuffer kvbuf) {
+        AbstractTensor embedding = bertEmbeddings(input);
+        for (int i = 0; i < config.numberOfLayers; i++) {
+            AbstractTensor previous = embedding;
+            if (transformerBlocks[i] instanceof BertTransformerBlock bertBlock) {
+                embedding = bertBlock.forward(previous, 0, kvbuf, Optional.empty(), ForwardPhase.PREFILL,
+                        input.batchSize(), input.sequenceLength(), input.attentionMask());
+            } else {
+                embedding = transformerBlocks[i].forward(previous, 0, kvbuf, Optional.empty(), ForwardPhase.PREFILL);
+            }
+            previous.close();
+        }
+        return embedding;
     }
 
     @Override

@@ -437,7 +437,7 @@ public class AutoModelForCausaLm {
             return model;
         }
 
-        private AbstractModel loadLocalTransformerModel(){
+        protected AbstractModel loadLocalTransformerModel(){
             System.setProperty("jdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK", this.oobCheck);
             ModelFetcher fetcherForLoad = resolveModelFetcherForLoad();
             File modelRoot = fetcherForLoad.maybeDownload();
@@ -480,7 +480,7 @@ public class AutoModelForCausaLm {
                 if (loraAdapter.isPresent()) {
                     weightLoader = new MergingWeightLoader(weightLoader, loraAdapter.get(), provider.get());
                 }
-                return newModel(modelType, config, weightLoader, tokenizer);
+                return newModel(modelType, AbstractModel.InferenceType.FULL_GENERATION, config, weightLoader, tokenizer);
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
@@ -504,43 +504,46 @@ public class AutoModelForCausaLm {
             };
         }
 
-        protected AbstractModel newModel(String modelType, Config config, WeightLoader weightLoader,
+        protected AbstractModel newModel(String modelType, AbstractModel.InferenceType inferenceType, Config config, WeightLoader weightLoader,
                 PreTrainedTokenizer tokenizer) {
             return switch (modelType) {
-                case "LLAMA" -> new LlamaModel(AbstractModel.InferenceType.FULL_GENERATION, config, weightLoader,
+                case "LLAMA" -> new LlamaModel(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, Optional.empty(), provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
-                case "QWEN2" -> new Qwen2Model(AbstractModel.InferenceType.FULL_GENERATION, config, weightLoader,
+                case "QWEN2" -> new Qwen2Model(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, Optional.empty(), provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
-                case "QWEN3" -> new Qwen3Model(AbstractModel.InferenceType.FULL_GENERATION, config, weightLoader,
+                case "QWEN3" -> new Qwen3Model(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, Optional.empty(), provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
-                case "QWEN3_MOE" -> new Qwen3MoeModel(AbstractModel.InferenceType.FULL_GENERATION, config, weightLoader,
+                case "QWEN3_MOE" -> new Qwen3MoeModel(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, Optional.empty(), provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
-                case "GEMMA2" -> new Gemma2Model(AbstractModel.InferenceType.FULL_GENERATION, config, weightLoader,
+                case "GEMMA2" -> new Gemma2Model(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, Optional.empty(), provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
-                case "GEMMA4" -> new Gemma4Model(AbstractModel.InferenceType.FULL_GENERATION, config, weightLoader,
+                case "GEMMA4" -> new Gemma4Model(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, Optional.empty(), provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
-                case "GEMMA3_TEXT" -> new Gemma3Model(AbstractModel.InferenceType.FULL_GENERATION, config, weightLoader,
+                case "GEMMA3_TEXT" -> new Gemma3Model(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, Optional.empty(), provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
-                case "MISTRAL" -> new MistralModel(AbstractModel.InferenceType.FULL_GENERATION, config, weightLoader,
+                case "MISTRAL" -> new MistralModel(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, Optional.empty(), provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
-                case "GPT2" -> new Gpt2Model(AbstractModel.InferenceType.FULL_GENERATION, config, weightLoader,
+                case "GPT2" -> new Gpt2Model(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, Optional.empty(), provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
-                case "MIXTRAL" -> new MixtralModel(AbstractModel.InferenceType.FULL_GENERATION, config, weightLoader,
+                case "MIXTRAL" -> new MixtralModel(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, Optional.empty(), provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
-                case "GRANITEMOEHYBRID" -> new GraniteMoeHybridModel(AbstractModel.InferenceType.FULL_GENERATION,
+                case "GRANITEMOEHYBRID" -> new GraniteMoeHybridModel(inferenceType,
                         config, weightLoader, tokenizer, workingMem, workingQuant, Optional.empty(), provider, mr,
                         allocator, settings, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives,
                         outputHeadQuantization);
+                case "BERT" -> new io.teknek.deliverance.model.bert.BertModel(inferenceType, config, weightLoader,
+                        tokenizer, workingMem, workingQuant, Optional.empty(), provider, mr, allocator, settings,
+                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
                 default -> throw new IllegalArgumentException(modelType + " not supported by AutoModelForCausaLm");
             };
         }
