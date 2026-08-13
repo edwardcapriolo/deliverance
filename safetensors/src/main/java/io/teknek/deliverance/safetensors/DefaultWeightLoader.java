@@ -62,6 +62,11 @@ public class DefaultWeightLoader implements WeightLoader {
         return new DefaultWeightLoader(new LoaderStateBuilder(baseDir).openWeights());
     }
 
+    @Override
+    public Optional<Path> modelRoot() {
+        return Optional.of(modelRoot);
+    }
+
     private static LoadedWeights openWeights(File baseDir) {
         return new LoaderStateBuilder(baseDir).openWeights();
     }

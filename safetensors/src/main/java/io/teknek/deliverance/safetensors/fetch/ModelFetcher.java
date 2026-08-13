@@ -117,7 +117,7 @@ public class ModelFetcher {
         Path localModelDir = pathForModel();
         String hfModel = modelOwner.map(mo -> mo + "/" + modelName).orElse(modelName);
         InputStream modelInfoStream = HttpSupport.getResponse(
-                baseUrl + hfModel + "/tree/" + optionalBranch.orElse("main"),
+                baseUrl + hfModel + "/tree/" + optionalBranch.orElse("main") + "?recursive=1",
                 optionalAuthHeader,
                 Optional.empty()
         ).getLeft();
@@ -193,7 +193,7 @@ public class ModelFetcher {
             return false;
         }
         if (Files.exists(localModelDir.resolve(FINISHED_MARKER))) {
-            return true;
+            return !isIncompleteSentenceTransformersDownload(localModelDir);
         }
         if (fetchPolicy == FetchPolicy.TOKENIZER_ONLY) {
             return hasAnyNonEmptyFile(localModelDir,
@@ -241,6 +241,40 @@ public class ModelFetcher {
         return file.isFile() && file.length() > 0;
     }
 
+    private boolean isIncompleteSentenceTransformersDownload(Path localModelDir) {
+        Path readme = localModelDir.resolve("README.md");
+        if (!Files.isRegularFile(readme)) {
+            return false;
+        }
+        try {
+            String text = Files.readString(readme).toLowerCase();
+            if (!text.contains("sentence-transformers")) {
+                return false;
+            }
+            if (!hasNonEmptyFile(localModelDir, "modules.json")) {
+                return true;
+            }
+            return missingSentenceTransformersModuleConfig(localModelDir);
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    private boolean missingSentenceTransformersModuleConfig(Path localModelDir) throws IOException {
+        JsonNode modules = new ObjectMapper().readTree(localModelDir.resolve("modules.json").toFile());
+        if (!modules.isArray()) {
+            return false;
+        }
+        for (JsonNode module : modules) {
+            String type = module.path("type").asText("");
+            String path = module.path("path").asText("");
+            if (type.endsWith(".Pooling") && !hasNonEmptyFile(localModelDir, path + "/config.json")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     protected List<String> filesToDownload(List<String> allFiles, boolean downloadWeights){
         List<String> filesToDownload = new ArrayList<>();
         boolean hasSafetensor = false;
@@ -249,6 +283,11 @@ public class ModelFetcher {
             if ((lowerCaseFile.contains("safetensor") && !lowerCaseFile.contains("consolidated"))
                     || lowerCaseFile.contains("readme")
                     || lowerCaseFile.equals("config.json")
+                    || lowerCaseFile.equals("modules.json")
+                    || lowerCaseFile.equals("config_sentence_transformers.json")
+                    || lowerCaseFile.equals("sentence_bert_config.json")
+                    || lowerCaseFile.endsWith("_pooling/config.json")
+                    || lowerCaseFile.endsWith("_normalize/config.json")
                     || lowerCaseFile.equals("chat_template.jinja")
                     || lowerCaseFile.contains("tokenizer")) {
                 if (lowerCaseFile.contains("safetensor")) {

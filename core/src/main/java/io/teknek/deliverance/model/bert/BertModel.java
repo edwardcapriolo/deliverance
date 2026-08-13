@@ -6,6 +6,7 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.classifier.ClassifyOutput;
 import io.teknek.deliverance.embedding.PoolingLayer;
 import io.teknek.deliverance.embedding.PoolingType;
+import io.teknek.deliverance.embedding.SentenceTransformersEmbeddingRecipe;
 import io.teknek.deliverance.embedding.SentenceTransformersPooling;
 import io.teknek.deliverance.generator.*;
 import io.teknek.deliverance.grace.EncodeOptions;
@@ -39,6 +40,7 @@ public class BertModel extends AbstractModel {
     private AbstractTensor tokenTypeEmbeddings;
     private AbstractTensor positionEmbeddings;
     private LayerNorm inputLayerNorm;
+    private SentenceTransformersEmbeddingRecipe embeddingRecipe = SentenceTransformersEmbeddingRecipe.defaultMeanNormalize();
 
     public BertModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer tokenizer, DType workingDType, DType workingQType,
                         Optional<DType> modelQType, ConfigurableTensorProvider configurableTensorProvider,
@@ -83,6 +85,7 @@ public class BertModel extends AbstractModel {
         wordEmbeddings = loadWeight("embeddings.word_embeddings.weight");
         tokenTypeEmbeddings = loadWeight("embeddings.token_type_embeddings.weight");
         positionEmbeddings = loadWeight("embeddings.position_embeddings.weight");
+        embeddingRecipe = SentenceTransformersEmbeddingRecipe.fromModelRoot(weights.modelRoot());
         inputLayerNorm = new LayerNorm(this, loadWeight("embeddings.LayerNorm.bias"),
                 loadWeight("embeddings.LayerNorm.weight"), new MetricRegistry(),
                 "model.weights.embeddings.LayerNorm.bias", "model.weights.embeddings.LayerNorm.weight");
@@ -226,9 +229,13 @@ public class BertModel extends AbstractModel {
         try (KvBufferCache.KvBuffer kvMem = kvBufferCache.getEphemeralKvBuffer();
              AbstractTensor tokenEmbeddings = batchForward(BertInput.singleSequence(encoding.inputIds(),
                      encoding.attentionMask(), null, null), kvMem)) {
+            SentenceTransformersPooling.Mode[] modes = embeddingRecipe.poolingModes()
+                    .toArray(SentenceTransformersPooling.Mode[]::new);
             float[] embedding = SentenceTransformersPooling.pool(tokenEmbeddings, encoding.attentionMask(), 1,
-                    encoding.length(), SentenceTransformersPooling.Mode.MEAN)[0];
-            SentenceTransformersPooling.normalize(embedding);
+                    encoding.length(), modes)[0];
+            if (embeddingRecipe.normalize()) {
+                SentenceTransformersPooling.normalize(embedding);
+            }
             return embedding;
         }
     }
