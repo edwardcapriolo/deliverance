@@ -5,7 +5,11 @@ import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.classifier.ClassifyOutput;
 import io.teknek.deliverance.embedding.PoolingLayer;
+import io.teknek.deliverance.embedding.PoolingType;
+import io.teknek.deliverance.embedding.SentenceTransformersPooling;
 import io.teknek.deliverance.generator.*;
+import io.teknek.deliverance.grace.EncodeOptions;
+import io.teknek.deliverance.grace.Encoding;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
@@ -207,6 +211,26 @@ public class BertModel extends AbstractModel {
             previous.close();
         }
         return embedding;
+    }
+
+    @Override
+    protected float[] timedEmbedding(String input, PoolingType poolingType) {
+        if (poolingType != PoolingType.AVG) {
+            return super.timedEmbedding(input, poolingType);
+        }
+        Encoding encoding = tokenizer.encode(input, EncodeOptions.defaults());
+        if (encoding.length() >= config.contextLength) {
+            throw new IllegalArgumentException("Encoded input length " + encoding.length()
+                    + " exceeds context length " + config.contextLength);
+        }
+        try (KvBufferCache.KvBuffer kvMem = kvBufferCache.getEphemeralKvBuffer();
+             AbstractTensor tokenEmbeddings = batchForward(BertInput.singleSequence(encoding.inputIds(),
+                     encoding.attentionMask(), null, null), kvMem)) {
+            float[] embedding = SentenceTransformersPooling.pool(tokenEmbeddings, encoding.attentionMask(), 1,
+                    encoding.length(), SentenceTransformersPooling.Mode.MEAN)[0];
+            SentenceTransformersPooling.normalize(embedding);
+            return embedding;
+        }
     }
 
     @Override

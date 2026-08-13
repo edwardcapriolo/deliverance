@@ -32,10 +32,7 @@ public class EmbeddingTest {
             int [] ids = model.getTokenizer().encode(text).inputIds();
             assertEquals("[101, 2023, 2003, 1037, 3231, 6254, 2055, 3698, 4083, 102]", Arrays.toString(ids));
             float[] embedding = model.embed(text, PoolingType.AVG);
-            //  [0] = -9.4317534E-4
-            //  [1] = 0.0065326607
-            //assertEquals(0.023008519783616066, embedding[0], 0.001);
-            //assertEquals(-0.002559984102845192, embedding[1], 0.001);
+            assertEquals(384, embedding.length, "Embedding should have 384 dimensions");
         }
     }
 
