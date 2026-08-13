@@ -13,11 +13,21 @@ public class ActivationFunction {
     public static float eval(Type t, float x) {
         return switch (t) {
             case SILU -> (float) (x * (1.0f / (1.0f + FastMath.exp(-x))));
-            case GELU, GELU_PYTORCH_TANH -> (float) (0.5 * x * (1 + FastMath.tanh(
+            case GELU -> (float) (0.5 * x * (1.0 + erf(x / FastMath.sqrt(2.0))));
+            case GELU_PYTORCH_TANH -> (float) (0.5 * x * (1 + FastMath.tanh(
                     FastMath.sqrt(2 / Math.PI) * (x + 0.044715 * FastMath.pow(x, 3))
             )));
             case TANH -> (float) FastMath.tanh(x);
         };
+    }
+
+    private static double erf(double x) {
+        double sign = Math.copySign(1.0, x);
+        double ax = Math.abs(x);
+        double t = 1.0 / (1.0 + 0.3275911 * ax);
+        double y = 1.0 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t
+                - 0.284496736) * t + 0.254829592) * t * FastMath.exp(-ax * ax);
+        return sign * y;
     }
 
 
