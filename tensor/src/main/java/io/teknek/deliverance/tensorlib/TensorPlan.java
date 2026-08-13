@@ -40,6 +40,7 @@ public final class TensorPlan {
     private final WrappedForkJoinPool pool;
     private final MetricRegistry metricRegistry;
     private final TensorRuntime runtime;
+    private final String ownerClass;
     private RunMode runMode = RunMode.DEFAULT;
 
     public TensorPlan(TensorOperations operations, WrappedForkJoinPool pool) {
@@ -51,11 +52,26 @@ public final class TensorPlan {
     }
 
     public TensorPlan(TensorOperations operations, WrappedForkJoinPool pool, MetricRegistry metricRegistry,
+            Object owner) {
+        this(operations, pool, metricRegistry, owner, null);
+    }
+
+    public TensorPlan(TensorOperations operations, WrappedForkJoinPool pool, MetricRegistry metricRegistry,
             TensorRuntime runtime) {
+        this(operations, pool, metricRegistry, null, runtime);
+    }
+
+    public TensorPlan(TensorOperations operations, WrappedForkJoinPool pool, MetricRegistry metricRegistry,
+            Object owner, TensorRuntime runtime) {
         this.operations = Objects.requireNonNull(operations, "operations");
         this.pool = Objects.requireNonNull(pool, "pool");
         this.metricRegistry = metricRegistry;
         this.runtime = runtime;
+        this.ownerClass = owner == null ? "UNKNOWN" : owner.getClass().getSimpleName();
+    }
+
+    public String ownerClass() {
+        return ownerClass;
     }
 
     public Tensor input(AbstractTensor tensor) {
@@ -67,9 +83,32 @@ public final class TensorPlan {
         return new Tensor(new InputNode(name, tensor, false));
     }
 
+    /**
+     * Adds a normal borrowed input tensor annotated with the TensorPlan node that produced it.
+     *
+     * <p>The upstream tensor is used only for rendering lineage. This plan still executes against {@code materialized};
+     * it does not evaluate, retain, or close the upstream plan.</p>
+     */
+    public Tensor input(String name, Tensor upstream, AbstractTensor materialized) {
+        ensureLocality(materialized);
+        return new Tensor(new ImportedInputNode(name, upstream.node, materialized));
+    }
+
+    /** Adds a borrowed input tensor annotated with the immutable model tensor that produced it. */
+    public Tensor input(String name, ImmutableTensor upstream, AbstractTensor materialized) {
+        ensureLocality(materialized);
+        return new Tensor(new ImportedInputNode(name, upstream.node, materialized));
+    }
+
     public ImmutableTensor immutable(String name, AbstractTensor tensor) {
         ensureLocality(tensor);
         return new ImmutableTensor(new InputNode(name, tensor, false));
+    }
+
+    /** Adds an immutable tensor annotated with the model/plan immutable that produced it. */
+    public ImmutableTensor immutable(String name, ImmutableTensor upstream, AbstractTensor materialized) {
+        ensureLocality(materialized);
+        return new ImmutableTensor(new ImportedInputNode(name, upstream.node, materialized));
     }
 
     public Tensor mutable(AbstractTensor tensor) {
@@ -96,6 +135,10 @@ public final class TensorPlan {
     public TensorPlan forcedRunMode(RunMode runMode) {
         this.runMode = Objects.requireNonNull(runMode, "runMode");
         return this;
+    }
+
+    public RunMode runMode() {
+        return runMode;
     }
 
     public final class Tensor {
@@ -337,6 +380,35 @@ public final class TensorPlan {
         public void render(StringBuilder sb, String indent, boolean last) {
             renderLine(sb, indent, last, name + " " + compactShape(shape()) + " " + tensor.dType()
                     + " " + (mutable ? "mutable" : "borrowed"));
+        }
+
+        @Override
+        public String label() {
+            return name;
+        }
+    }
+
+    private record ImportedInputNode(String name, Node upstream, AbstractTensor tensor) implements Node {
+        private ImportedInputNode {
+            Objects.requireNonNull(name, "name");
+            Objects.requireNonNull(upstream, "upstream");
+            Objects.requireNonNull(tensor, "tensor");
+        }
+
+        @Override
+        public Eval eval() {
+            return new Eval(tensor, false, false);
+        }
+
+        @Override
+        public TensorShape shape() {
+            return tensor.shape();
+        }
+
+        @Override
+        public void render(StringBuilder sb, String indent, boolean last) {
+            renderLine(sb, indent, last, name + " <- " + upstream.label() + " " + compactShape(shape()) + " "
+                    + tensor.dType() + " borrowed");
         }
 
         @Override

@@ -52,6 +52,7 @@ public class LlamaModel extends AbstractModel {
             LOGGER.debug("loading input embeddings weight=model.embed_tokens.weight target_dtype={}", workingDType);
             embedTokenWeights = quantize(weights.load("model.embed_tokens.weight"), workingDType);
             LOGGER.debug("loaded input embeddings shape={} dtype={}", embedTokenWeights.shape(), embedTokenWeights.dType());
+            registerModelLineageTensor("model.embed_tokens.weight", embedTokenWeights);
             configurableTensorProvider.get().registerModelTensor(embedTokenWeights);
         }
 
@@ -101,13 +102,21 @@ public class LlamaModel extends AbstractModel {
             String kName = prefix + "k_proj.weight";
             String vName = prefix + "v_proj.weight";
             String oName = prefix + "o_proj.weight";
+            AbstractTensor qWeight = quantize(weights.load(qName), qType);
+            AbstractTensor kWeight = quantize(weights.load(kName), qType);
+            AbstractTensor vWeight = quantize(weights.load(vName), qType);
+            AbstractTensor oWeight = quantize(weights.load(oName), qType);
+            registerModelLineageTensor(qName, qWeight);
+            registerModelLineageTensor(kName, kWeight);
+            registerModelLineageTensor(vName, vWeight);
+            registerModelLineageTensor(oName, oWeight);
             CausalSelfAttention attention = new CausalSelfAttention(
                     this,
                     relativeLayer,
-                    quantize(weights.load(qName), qType),
-                    quantize(weights.load(kName), qType),
-                    quantize(weights.load(vName), qType),
-                    quantize(weights.load(oName), qType),
+                    qWeight,
+                    kWeight,
+                    vWeight,
+                    oWeight,
                     configurableTensorProvider,
                     metricRegistry,
                     qName, kName, vName, oName
@@ -117,22 +126,33 @@ public class LlamaModel extends AbstractModel {
             String gateName = prefix + "gate_proj.weight";
             String downName = prefix + "down_proj.weight";
             String upName = prefix + "up_proj.weight";
+            AbstractTensor gateWeight = quantize(weights.load(gateName), qType);
+            AbstractTensor downWeight = quantize(weights.load(downName), qType);
+            AbstractTensor upWeight = quantize(weights.load(upName), qType);
+            registerModelLineageTensor(gateName, gateWeight);
+            registerModelLineageTensor(downName, downWeight);
+            registerModelLineageTensor(upName, upWeight);
             MLPBlock mlp = new MLPBlock(
                     this,
                     config.activationFunction,
-                    quantize(weights.load(gateName), qType), // w1
-                    quantize(weights.load(downName), qType), // w2
-                    quantize(weights.load(upName), qType),
+                    gateWeight, // w1
+                    downWeight, // w2
+                    upWeight,
                     configurableTensorProvider,
                     gateName, upName, downName
             ); // w3
 
+            AbstractTensor inputNormWeight = quantize(weights.load(base + "input_layernorm.weight"), qType);
+            AbstractTensor postAttentionNormWeight = quantize(weights.load(base + "post_attention_layernorm.weight"), qType);
+            registerModelLineageTensor(base + "input_layernorm.weight", inputNormWeight);
+            registerModelLineageTensor(base + "post_attention_layernorm.weight", postAttentionNormWeight);
+
             transformerBlocks[relativeLayer] = new TransformerBlock(
                     this,
                     relativeLayer,
-                    new RmsNorm(this, quantize(weights.load(base + "input_layernorm.weight"), qType), metricRegistry),
+                    new RmsNorm(this, inputNormWeight, metricRegistry),
                     attention,
-                    new RmsNorm(this, quantize(weights.load(base + "post_attention_layernorm.weight"), qType), metricRegistry),
+                    new RmsNorm(this, postAttentionNormWeight, metricRegistry),
                     mlp,
                     configurableTensorProvider
             );
@@ -144,7 +164,9 @@ public class LlamaModel extends AbstractModel {
     protected SampleOutput loadOutputWeights() {
         DType qType = modelQType.orElse(this.modelDType);
         LOGGER.debug("loading output norm weight=model.norm.weight target_dtype={}", qType);
-        final LayerNorm outputLayerNorm = new RmsNorm(this, quantize(weights.load("model.norm.weight"), qType), metricRegistry);
+        AbstractTensor outputNormWeight = quantize(weights.load("model.norm.weight"), qType);
+        registerModelLineageTensor("model.norm.weight", outputNormWeight);
+        final LayerNorm outputLayerNorm = new RmsNorm(this, outputNormWeight, metricRegistry);
         DType outputHeadDType = outputHeadQuantization.orElse(workingDType);
         boolean forceOutputHeadQuantization = outputHeadQuantization.isPresent();
         // Some llama models don't have a classification head
@@ -158,6 +180,7 @@ public class LlamaModel extends AbstractModel {
                         embedTokenWeights == null ? weights.load("model.embed_tokens.weight") : embedTokenWeights,
                         outputHeadDType,
                         forceOutputHeadQuantization);
+        registerModelLineageTensor(hasLmHead ? "lm_head.weight" : "model.embed_tokens.weight#output_head", classificationWeights);
         LOGGER.debug("loaded output logits shape={} dtype={}", classificationWeights.shape(), classificationWeights.dType());
         configurableTensorProvider.get().registerModelTensor(classificationWeights);
         return new SampleOutput() {

@@ -10,6 +10,7 @@ import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensorlib.PlannedTensor;
 import io.teknek.deliverance.tensorlib.TensorPlan;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -198,6 +199,50 @@ public class TransformerBlock {
         }
     }
 
+    public PlannedTensor forward(
+            PlannedTensor embedding,
+            int position,
+            KvBufferCache.KvBuffer kvBuffer,
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer,
+            ForwardPhase phase
+    ) {
+        Timer timer = InferenceProfiler.timer(model.getMetricRegistry(), "transformerblock.forward");
+        try (Timer.Context ignored = timer.time()) {
+        PlannedTensor lnemb = preAttentionNorm.map(ln -> ln.forward(embedding)).orElse(embedding);
+        AbstractTensor postAttention;
+        try (AbstractTensor qlnemb = preAttentionProjectionInput(lnemb.tensor())) {
+            postAttention = attention.forward(qlnemb, position, kvBuffer, tensorReducer, phase);
+        }
+        AbstractTensor lnattn = maybeApplyNorm(postAttention, postAttentionNorm);
+        applyResidual(lnattn, embedding.tensor(), "post_attention_residual");
+        model.emitLayerDebug(layerIndex, "post_attention_residual", lnattn);
+
+        TensorPlan residualLineage = TensorPlanSupport.plan(model, configurableTensorProvider.get());
+        PlannedTensor plannedLnattn = new PlannedTensor(lnattn,
+                residualLineage.input("post_attention_residual", lnemb.plan(), lnattn).as("post_attention_residual"));
+        PlannedTensor lnpreFF = preFFNorm.map(ln -> ln.forward(plannedLnattn)).orElse(plannedLnattn);
+        AbstractTensor postFF;
+        try (AbstractTensor qlnemb2 = model.maybeQuantizeReadOnly(lnpreFF.tensor(),
+                "transformerblock.maybe_quantize.pre_ff")) {
+            postFF = ffBlock.forward(qlnemb2, tensorReducer, phase);
+        }
+
+        AbstractTensor lnpostFF = maybeApplyNorm(postFF, preResponseNorm);
+        applyResidual(lnpostFF, lnattn, "post_ff_residual");
+        model.emitLayerDebug(layerIndex, "post_ff_residual", lnpostFF);
+
+        if (lnemb.tensor() != embedding.tensor()) lnemb.tensor().close();
+        if (lnattn != postAttention) lnattn.close();
+        else postAttention.close();
+        if (lnpreFF.tensor() != lnattn) lnpreFF.tensor().close();
+        else lnattn.close();
+
+        TensorPlan outputLineage = TensorPlanSupport.plan(model, configurableTensorProvider.get());
+        return new PlannedTensor(lnpostFF,
+                outputLineage.input("layer_output", lnpreFF.plan(), lnpostFF).as("layer_output"));
+        }
+    }
+
     private AbstractTensor preAttentionProjectionInput(AbstractTensor tensor) {
         return model.maybeQuantizeReadOnly(tensor, "transformerblock.maybe_quantize.pre_attention");
     }
@@ -218,14 +263,15 @@ public class TransformerBlock {
 
     private void applyResidual(AbstractTensor target, AbstractTensor residual, String name) {
         TensorPlan plan = TensorPlanSupport.plan(model, configurableTensorProvider.get());
-        plan.fuse(name, target.shape())
+        TensorPlan.Tensor planned = plan.fuse(name, target.shape())
                 .write("target", plan.mutable("target", target))
                 .read("residual", plan.input("residual", residual))
                 .map(name + " = residual(target, residual)", TensorPlan.TensorOp.CUSTOM,
                         (ctx, offset, length) -> applyResidualRange(ctx.tensor("target"), ctx.tensor("residual"),
                                 model.getConfig().residualMultiplier, offset, length))
-                .tensor()
-                .materialize();
+                .tensor();
+        model.traceTensorPlan(plan.ownerClass(), name, "UNKNOWN", layerIndex, plan.runMode().name(), planned.plan());
+        planned.materialize();
     }
 
     static void applyResidualRange(AbstractTensor target, AbstractTensor residual, Float multiplier, long offset,

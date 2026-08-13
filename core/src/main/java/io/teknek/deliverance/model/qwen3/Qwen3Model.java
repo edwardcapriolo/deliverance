@@ -60,15 +60,29 @@ public class Qwen3Model extends LlamaModel {
             String kName = attn + "k_proj.weight";
             String vName = attn + "v_proj.weight";
             String oName = attn + "o_proj.weight";
+            String qNormName = attn + "q_norm.weight";
+            String kNormName = attn + "k_norm.weight";
+            var qWeight = quantize(weights.load(qName), qType);
+            var kWeight = quantize(weights.load(kName), qType);
+            var vWeight = quantize(weights.load(vName), qType);
+            var oWeight = quantize(weights.load(oName), qType);
+            var qNormWeight = quantize(weights.load(qNormName), qType);
+            var kNormWeight = quantize(weights.load(kNormName), qType);
+            registerModelLineageTensor(qName, qWeight);
+            registerModelLineageTensor(kName, kWeight);
+            registerModelLineageTensor(vName, vWeight);
+            registerModelLineageTensor(oName, oWeight);
+            registerModelLineageTensor(qNormName, qNormWeight);
+            registerModelLineageTensor(kNormName, kNormWeight);
             Qwen3CausalSelfAttention attention = new Qwen3CausalSelfAttention(
                     this,
                     i,
-                    quantize(weights.load(qName), qType),
-                    quantize(weights.load(kName), qType),
-                    quantize(weights.load(vName), qType),
-                    quantize(weights.load(oName), qType),
-                    quantize(weights.load(attn + "q_norm.weight"), qType),
-                    quantize(weights.load(attn + "k_norm.weight"), qType),
+                    qWeight,
+                    kWeight,
+                    vWeight,
+                    oWeight,
+                    qNormWeight,
+                    kNormWeight,
                     configurableTensorProvider,
                     metricRegistry,
                     qName, kName, vName, oName
@@ -78,22 +92,35 @@ public class Qwen3Model extends LlamaModel {
             String gateName = mlpPrefix + "gate_proj.weight";
             String downName = mlpPrefix + "down_proj.weight";
             String upName = mlpPrefix + "up_proj.weight";
+            var gateWeight = quantize(weights.load(gateName), qType);
+            var downWeight = quantize(weights.load(downName), qType);
+            var upWeight = quantize(weights.load(upName), qType);
+            registerModelLineageTensor(gateName, gateWeight);
+            registerModelLineageTensor(downName, downWeight);
+            registerModelLineageTensor(upName, upWeight);
             MLPBlock mlp = new MLPBlock(
                     this,
                     config.activationFunction,
-                    quantize(weights.load(gateName), qType),
-                    quantize(weights.load(downName), qType),
-                    quantize(weights.load(upName), qType),
+                    gateWeight,
+                    downWeight,
+                    upWeight,
                     configurableTensorProvider,
                     gateName, upName, downName
             );
 
+            String inputNormName = base + "input_layernorm.weight";
+            String postAttentionNormName = base + "post_attention_layernorm.weight";
+            var inputNormWeight = quantize(weights.load(inputNormName), qType);
+            var postAttentionNormWeight = quantize(weights.load(postAttentionNormName), qType);
+            registerModelLineageTensor(inputNormName, inputNormWeight);
+            registerModelLineageTensor(postAttentionNormName, postAttentionNormWeight);
+
             blocks[i] = new TransformerBlock(
                     this,
                     i,
-                    new RmsNorm(this, quantize(weights.load(base + "input_layernorm.weight"), qType), 0.0f, metricRegistry),
+                    new RmsNorm(this, inputNormWeight, 0.0f, metricRegistry),
                     attention,
-                    new RmsNorm(this, quantize(weights.load(base + "post_attention_layernorm.weight"), qType), 0.0f, metricRegistry),
+                    new RmsNorm(this, postAttentionNormWeight, 0.0f, metricRegistry),
                     mlp,
                     configurableTensorProvider
             );

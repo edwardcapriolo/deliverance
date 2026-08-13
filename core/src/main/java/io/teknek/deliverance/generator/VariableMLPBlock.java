@@ -90,7 +90,7 @@ public class VariableMLPBlock implements FeedForward {
                     TensorRuntimeGlobal.get(model.getMetricRegistry()));
             applyActivationSparsity(plan, gate, batchSize);
             model.getMetricRegistry().counter("variablemlpblock.tensorplan.intstream_activation_multiply").inc();
-            plan.fuseColumnsIntStream("gate", gate.shape())
+            TensorPlan.Tensor multiplyPlan = plan.fuseColumnsIntStream("gate", gate.shape())
                     .write("gate", plan.mutable("gate", gate))
                     .read("up", plan.input("up", up))
                     .map("gate = " + activationFunction.name().toLowerCase() + "(gate) * up",
@@ -98,8 +98,10 @@ public class VariableMLPBlock implements FeedForward {
                             (ctx, offset, length) -> applyActivationMultiplyColumns(ctx.tensor("gate"),
                                     ctx.tensor("up"), batchSize, (int) offset))
                     .tensor()
-                    .timer("variablemlpblock.multiply")
-                    .materialize();
+                    .timer("variablemlpblock.multiply");
+            model.traceTensorPlan(plan.ownerClass(), "activation_multiply", "UNKNOWN", -1, plan.runMode().name(),
+                    multiplyPlan.plan());
+            multiplyPlan.materialize();
 
             try (AbstractTensor gateQ = model.maybeQuantizeReadOnly(gate,
                     "variablemlpblock.maybe_quantize.down_projection")) {
@@ -118,13 +120,15 @@ public class VariableMLPBlock implements FeedForward {
             return;
         }
         model.getMetricRegistry().counter("variablemlpblock.tensorplan.intstream_activation_sparsity").inc();
-        plan.fuseRowsIntStream("gate", gate.shape())
+        TensorPlan.Tensor sparsityPlan = plan.fuseRowsIntStream("gate", gate.shape())
                 .write("gate", plan.mutable("gate", gate))
                 .map("gate = activation_sparsity(gate)", TensorPlan.TensorOp.ACTIVATION_SPARSITY_IN_PLACE,
                         (ctx, offset, length) -> applyActivationSparsityRow(ctx.tensor("gate"), (int) offset))
                 .tensor()
-                .timer("variablemlpblock.activation_sparsity")
-                .materialize();
+                .timer("variablemlpblock.activation_sparsity");
+        model.traceTensorPlan(plan.ownerClass(), "activation_sparsity", "UNKNOWN", -1, plan.runMode().name(),
+                sparsityPlan.plan());
+        sparsityPlan.materialize();
     }
 
     private void applyActivationMultiplyColumns(AbstractTensor gate, AbstractTensor up, int batchSize, int column) {

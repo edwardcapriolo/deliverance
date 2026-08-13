@@ -129,6 +129,7 @@ public class AutoModelForCausaLm {
         private boolean gpuPrefill;
         private boolean gpuDecode;
         private boolean gpuDecodeAttention;
+        private boolean tensorPlanTrace;
         private Optional<TensorRuntimeMode> tensorRuntimeMode = Optional.empty();
 
         record QuantizeOnDemand(DType targetType, String outputOwner, String outputModel) {
@@ -281,6 +282,11 @@ public class AutoModelForCausaLm {
             return this;
         }
 
+        public Builder withTensorPlanTrace(boolean tensorPlanTrace) {
+            this.tensorPlanTrace = tensorPlanTrace;
+            return this;
+        }
+
         /**
          * Loads a cached quantized target when it exists, otherwise quantizes the source model into
          * the local Deliverance cache and loads that generated target. Source download behavior is
@@ -317,6 +323,7 @@ public class AutoModelForCausaLm {
             config.download().ifPresent(this::withDownload);
             config.maxBatchSize().ifPresent(this::withMaxBatchSize);
             config.tensorRuntimeMode().ifPresent(this::withTensorRuntimeMode);
+            config.tensorPlanTrace().ifPresent(this::withTensorPlanTrace);
             config.kvBufferCache().map(AutoModelConfig.KvBufferCache::toSettings).ifPresent(this::withKvBufferCacheSettings);
             config.quantizeOnDemand().ifPresent(q -> withQuantizeOnDemand(q.targetType(), q.outputOwner(), q.outputModel()));
             return this;
@@ -389,6 +396,7 @@ public class AutoModelForCausaLm {
             copy.gpuPrefill = this.gpuPrefill;
             copy.gpuDecode = this.gpuDecode;
             copy.gpuDecodeAttention = this.gpuDecodeAttention;
+            copy.tensorPlanTrace = this.tensorPlanTrace;
             return copy;
         }
         /** This is a JVM wide property! **/
@@ -451,6 +459,7 @@ public class AutoModelForCausaLm {
             model.setGpuDecodeEnabled(gpuDecode);
             model.setGpuDecodeAttentionEnabled(gpuDecodeAttention);
             model.setTensorRuntimeMode(tensorRuntimeMode);
+            model.setTensorPlanTraceEnabled(tensorPlanTrace);
             if (!tensorProviderExplicit) {
                 model.addTensorOperations(hydrateTensorOperations());
             }
