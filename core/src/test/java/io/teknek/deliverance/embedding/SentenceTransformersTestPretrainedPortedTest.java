@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-/** Compatibility location for the all-MiniLM-L6-v2 port; canonical mirror is TestPretrainedPortedTest. */
+/** Ports selected cases from sentence-transformers/tests/sentence_transformer/test_pretrained.py. */
 class SentenceTransformersTestPretrainedPortedTest {
     private static final String QUERY = "Which planet is known as the Red Planet?";
     private static final String[] DOCUMENTS = {
