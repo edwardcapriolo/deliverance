@@ -1,7 +1,8 @@
-package io.teknek.deliverance.embedding;
+package io.teknek.deliverance.sentence_transformer;
 
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.embedding.PoolingType;
 import io.teknek.deliverance.math.VectorMathUtils;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
@@ -15,8 +16,8 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-/** Compatibility location for the all-MiniLM-L6-v2 port; canonical mirror is TestPretrainedPortedTest. */
-class SentenceTransformersTestPretrainedPortedTest {
+/** Ports selected cases from sentence-transformers/tests/sentence_transformer/test_pretrained.py. */
+class TestPretrainedPortedTest {
     private static final String QUERY = "Which planet is known as the Red Planet?";
     private static final String[] DOCUMENTS = {
             "Venus is often called Earth's twin because of its similar size and proximity.",

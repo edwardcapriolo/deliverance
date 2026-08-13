@@ -13,7 +13,7 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-/** Ports relevant tests from sentence-transformers/tests/sentence_transformer/modules/test_pooling.py. */
+/** Fast local coverage for the SentenceTransformers-compatible pooling helper. */
 class SentenceTransformersPoolingPortedTest {
     private static final int DIM = 2;
     private static final int BATCH = 2;
