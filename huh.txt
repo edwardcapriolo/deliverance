@@ -1,0 +1,66 @@
+You’re right to call that out. apache/cassandra-analytics is the active Apache Cassandra analytics repo.
+
+PR apache/cassandra-analytics#231 confirms it:
+
+Opened Aug 10, 2026.
+Tied to CASSANALYTICS-190.
+Against apache/cassandra-analytics:trunk.
+Recent active branch / CI.
+Adds version/distribution override seams around Cassandra internals.
+But for our exact problem:
+
+apache/cassandra-analytics is the active future-looking repo.
+It appears focused on bulk analytics, SSTable/Sidecar reads/writes, CDC, bridge/version compatibility.
+Its current Spark SQL sink path is not the same as the old row-level Spark Cassandra connector.
+I did not see StreamingWrite, WriteBuilder, OutputMode, or SupportsStreamingUpdateAsAppend in its Java/Scala source.
+So it does not currently look like a drop-in replacement for our low-volume microbatch upsert sink.
+So the corrected answer is:
+
+Canonical active Cassandra analytics repo:
+https://github.com/apache/cassandra-analytics
+
+Canonical old row-level Spark Cassandra connector repo:
+https://github.com/apache/cassandra-spark-connector
+
+For the “update every micro-batch into Cassandra” work, the old connector is still the shortest path because the change is one Spark V2 marker trait on the existing direct row writer.
+
+For a broader “this is where Cassandra Spark work is alive now” effort, cassandra-analytics is the repo to watch or target.
+
+ok search this repo for the update mode
+I’ll search apache/cassandra-analytics specifically for Spark Structured Streaming output/update-mode support and related Jira/PR history.
+
+No direct code/doc hits for Spark streaming update mode in the repo. I’ll broaden to Spark DataSource sink/write classes to see what write APIs this repo actually exposes.
+
+I searched apache/cassandra-analytics for update-mode terms.
+
+No Hits No matches for:
+
+OutputMode
+SupportsStreamingUpdateAsAppend
+StreamingWrite
+WriteBuilder
+buildForStreaming
+STREAMING_WRITE
+writeStream
+outputMode
+Update mode
+What The Repo Has It has a V1 batch bulk sink:
+
+cassandra-analytics-core/src/main/java/org/apache/cassandra/spark/sparksql/CassandraDataSink.java
+
+It implements:
+
+DataSourceRegister, CreatableRelationProvider
+It only supports:
+
+SaveMode.Append
+and throws for overwrite/other modes.
+
+Short name:
+
+cassandraBulkWrite
+The tests all use batch DataFrameWriter.save() with .mode("append").
+
+Conclusion cassandra-analytics currently has no Spark Structured Streaming update-mode support. Its writer path is bulk/SSTable/Sidecar-oriented, not the direct low-volume row upsert streaming sink we need.
+
+For our micro-batch update use case, the old apache/cassandra-spark-connector still has the relevant Spark V2 StreamingWrite implementation.
