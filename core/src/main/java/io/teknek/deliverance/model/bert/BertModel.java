@@ -19,6 +19,8 @@ import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensorlib.TensorPlan;
+import io.teknek.deliverance.tensorlib.TensorRuntimeGlobal;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 
 import java.util.Arrays;
@@ -78,7 +80,8 @@ public class BertModel extends AbstractModel {
         tokenTypeEmbeddings = loadWeight("embeddings.token_type_embeddings.weight");
         positionEmbeddings = loadWeight("embeddings.position_embeddings.weight");
         inputLayerNorm = new LayerNorm(this, loadWeight("embeddings.LayerNorm.bias"),
-                loadWeight("embeddings.LayerNorm.weight"), new MetricRegistry());
+                loadWeight("embeddings.LayerNorm.weight"), new MetricRegistry(),
+                "model.weights.embeddings.LayerNorm.bias", "model.weights.embeddings.LayerNorm.weight");
 
         return new EmbedInput(BertModel.this) {
             @Override
@@ -98,22 +101,39 @@ public class BertModel extends AbstractModel {
             throw new IllegalStateException("BertModel.init() must be called before bertEmbeddings");
         }
         AbstractTensor embedding = makeDenseTensor(input.flattenedLength(), config.embeddingLength);
-        int[] inputIds = input.inputIds();
-        int[] tokenTypeIds = input.tokenTypeIds();
-        int[] positionIds = input.positionIds();
-        for (int row = 0; row < input.flattenedLength(); row++) {
-            int inputToken = inputIds[row];
-            int tokenType = tokenTypeIds[row];
-            int position = positionIds[row];
-            for (int i = 0; i < config.embeddingLength; i++) {
-                embedding.set(wordEmbeddings.get(inputToken, i)
-                        + tokenTypeEmbeddings.get(tokenType, i)
-                        + positionEmbeddings.get(position, i), row, i);
-            }
-        }
+        bertEmbeddingGatherAddPlan(input, embedding).materialize();
         AbstractTensor normalized = inputLayerNorm.forward(embedding);
         embedding.close();
         return normalized;
+    }
+
+    TensorPlan.Tensor bertEmbeddingGatherAddPlan(BertInput input, AbstractTensor embedding) {
+        TensorPlan plan = new TensorPlan(configurableTensorProvider.get(), getPool(), metricRegistry,
+                TensorRuntimeGlobal.get(metricRegistry, getTensorRuntimeMode(), getPool().getCoreCount()));
+        return plan.fuseRowsIntStream("bert_embeddings.gather_add", embedding.shape())
+                .read("word_embeddings", plan.immutable("model.weights.embeddings.word_embeddings.weight", wordEmbeddings))
+                .read("token_type_embeddings", plan.immutable("model.weights.embeddings.token_type_embeddings.weight", tokenTypeEmbeddings))
+                .read("position_embeddings", plan.immutable("model.weights.embeddings.position_embeddings.weight", positionEmbeddings))
+                .write("embedding", plan.mutable("embedding", embedding))
+                .map("embedding = word[input_ids] + token_type[token_type_ids] + position[position_ids]",
+                        TensorPlan.TensorOp.CUSTOM, "bert_embeddings.gather_add",
+                        (ctx, rowOffset, rowCount) -> configurableTensorProvider.get().gatherRowsAdd(
+                                ctx.tensor("embedding"), ctx.tensor("word_embeddings"), input.inputIds(),
+                                ctx.tensor("token_type_embeddings"), input.tokenTypeIds(),
+                                ctx.tensor("position_embeddings"), input.positionIds(), (int) rowOffset,
+                                (int) rowCount))
+                .tensor()
+                .as("bert_embeddings.output");
+    }
+
+    String bertEmbeddingPathPlan(BertInput input) {
+        try (AbstractTensor rawEmbedding = makeDenseTensor(input.flattenedLength(), config.embeddingLength);
+             AbstractTensor normalizedEmbedding = makeDenseTensor(input.flattenedLength(), config.embeddingLength)) {
+            String gatherPlan = bertEmbeddingGatherAddPlan(input, rawEmbedding).plan();
+            String layerNormPlan = inputLayerNorm.forwardPlan(rawEmbedding, normalizedEmbedding,
+                    "bert_embeddings.layernorm", "bert_embeddings.output", 0, config.embeddingLength).plan();
+            return "[1] Gather/Add\n" + gatherPlan + "\n[2] LayerNorm\n" + layerNormPlan;
+        }
     }
 
     @Override

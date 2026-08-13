@@ -11,6 +11,7 @@ import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -233,6 +234,11 @@ public final class TensorPlan {
             return this;
         }
 
+        public FusedBuilder read(String name, ImmutableTensor tensor) {
+            inputs.put(name, tensor.node);
+            return this;
+        }
+
         public FusedBuilder write(String name, Tensor tensor) {
             read(name, tensor);
             outputInputName = name;
@@ -249,7 +255,8 @@ public final class TensorPlan {
         }
 
         public Tensor tensor() {
-            return new Tensor(new FusedNode(name, shape, execution, Map.copyOf(inputs), outputInputName,
+            return new Tensor(new FusedNode(name, shape, execution,
+                    Collections.unmodifiableMap(new LinkedHashMap<>(inputs)), outputInputName,
                     List.copyOf(steps)));
         }
     }

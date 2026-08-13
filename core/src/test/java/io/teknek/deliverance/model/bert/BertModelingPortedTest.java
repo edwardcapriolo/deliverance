@@ -117,6 +117,33 @@ public class BertModelingPortedTest {
     }
 
     @Test
+    public void printsBertEmbeddingTensorPlan() throws Exception {
+        Path modelDir = writeTinyCheckpoint(tempDir.resolve("bert-tiny-embedding-plan"));
+        BertInput input = BertInput.singleSequence(new int[] { 3, 11, 19 }, new int[] { 1, 1, 1 },
+                new int[] { 0, 1, 0 }, new int[] { 0, 2, 4 });
+        try (BertModel model = loadTinyModel(modelDir)) {
+            String plan = model.bertEmbeddingPathPlan(input);
+            Path capture = Path.of("target", "bert-embedding-tensor-plan.txt");
+            Files.createDirectories(capture.getParent());
+            Files.writeString(capture, plan);
+            System.out.println("BERT embedding TensorPlan written to " + capture.toAbsolutePath());
+            System.out.println(plan);
+
+            assertEquals(true, plan.contains("bert_embeddings.gather_add"));
+            assertEquals(true, plan.contains("bert_embeddings.layernorm"));
+            assertEquals(true, plan.contains("model.weights.embeddings.word_embeddings.weight"));
+            assertEquals(true, plan.contains("model.weights.embeddings.token_type_embeddings.weight"));
+            assertEquals(true, plan.contains("model.weights.embeddings.position_embeddings.weight"));
+            assertEquals(true, plan.contains("model.weights.embeddings.LayerNorm.weight"));
+            assertEquals(true, plan.contains("model.weights.embeddings.LayerNorm.bias"));
+            assertEquals(true, plan.contains("word_embeddings"));
+            assertEquals(true, plan.contains("token_type_embeddings"));
+            assertEquals(true, plan.contains("position_embeddings"));
+            assertEquals(true, plan.contains("embedding"));
+        }
+    }
+
+    @Test
     public void bertTransformerBlockAppliesResidualBeforeLayerNorm() throws Exception {
         Path modelDir = writeTinyCheckpoint(tempDir.resolve("bert-tiny-block-order"));
         try (BertModel model = loadTinyModel(modelDir);

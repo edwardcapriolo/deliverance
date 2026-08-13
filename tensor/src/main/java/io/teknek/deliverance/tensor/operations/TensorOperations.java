@@ -5,6 +5,7 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor.TensorMutability;
 import io.teknek.deliverance.tensor.VectorTensorMathUtils;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 
@@ -165,6 +166,52 @@ public interface TensorOperations {
         } catch (RuntimeException | Error e) {
             hidden.close();
             throw e;
+        }
+    }
+
+    /**
+     * Gathers BERT embedding rows and adds word, token-type, and position embeddings into {@code output}.
+     *
+     * <pre>{@code
+     * output[row, col] = wordEmbeddings[inputIds[row], col]
+     *                  + tokenTypeEmbeddings[tokenTypeIds[row], col]
+     *                  + positionEmbeddings[positionIds[row], col]
+     * }</pre>
+     */
+    default void gatherRowsAdd(AbstractTensor output, AbstractTensor wordEmbeddings, int[] inputIds,
+            AbstractTensor tokenTypeEmbeddings, int[] tokenTypeIds, AbstractTensor positionEmbeddings,
+            int[] positionIds, int rowOffset, int rowCount) {
+        TensorMutability.requireWritable(output, "gatherRowsAdd");
+        Preconditions.checkArgument(output.dims() == 2, "output must be 2D");
+        Preconditions.checkArgument(wordEmbeddings.dims() == 2, "wordEmbeddings must be 2D");
+        Preconditions.checkArgument(tokenTypeEmbeddings.dims() == 2, "tokenTypeEmbeddings must be 2D");
+        Preconditions.checkArgument(positionEmbeddings.dims() == 2, "positionEmbeddings must be 2D");
+        int rows = (int) output.shape().first();
+        int hidden = (int) output.shape().last();
+        Preconditions.checkArgument(inputIds.length == rows, "inputIds length must match output rows");
+        Preconditions.checkArgument(tokenTypeIds.length == rows, "tokenTypeIds length must match output rows");
+        Preconditions.checkArgument(positionIds.length == rows, "positionIds length must match output rows");
+        Preconditions.checkArgument(wordEmbeddings.shape().last() == hidden, "word hidden size mismatch");
+        Preconditions.checkArgument(tokenTypeEmbeddings.shape().last() == hidden, "token type hidden size mismatch");
+        Preconditions.checkArgument(positionEmbeddings.shape().last() == hidden, "position hidden size mismatch");
+        Preconditions.checkArgument(rowOffset >= 0 && rowCount >= 0 && rowOffset + rowCount <= rows,
+                "row range out of bounds");
+        int rowLimit = rowOffset + rowCount;
+        for (int row = rowOffset; row < rowLimit; row++) {
+            int inputId = inputIds[row];
+            int tokenTypeId = tokenTypeIds[row];
+            int positionId = positionIds[row];
+            Preconditions.checkArgument(inputId >= 0 && inputId < wordEmbeddings.shape().first(),
+                    "input id out of bounds");
+            Preconditions.checkArgument(tokenTypeId >= 0 && tokenTypeId < tokenTypeEmbeddings.shape().first(),
+                    "token type id out of bounds");
+            Preconditions.checkArgument(positionId >= 0 && positionId < positionEmbeddings.shape().first(),
+                    "position id out of bounds");
+            for (int col = 0; col < hidden; col++) {
+                output.set(wordEmbeddings.get(inputId, col)
+                        + tokenTypeEmbeddings.get(tokenTypeId, col)
+                        + positionEmbeddings.get(positionId, col), row, col);
+            }
         }
     }
 
