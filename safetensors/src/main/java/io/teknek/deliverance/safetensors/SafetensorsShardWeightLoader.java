@@ -29,6 +29,7 @@ public final class SafetensorsShardWeightLoader implements WeightLoader {
     private final Map<String, TensorInfo> allTensorInfoMap;
     private final Map<String, Weights> weightMap;
     private final DType modelDType;
+    private final int dataStartOffset;
 
     public SafetensorsShardWeightLoader(Path shardFile) {
         try {
@@ -37,6 +38,7 @@ public final class SafetensorsShardWeightLoader implements WeightLoader {
             this.metadata = new HashMap<>();
             Map<String, TensorInfo> tensorInfoMap = DefaultWeightLoader.readTensorInfoMap(header, Optional.of(metadata));
             int endOfHeaderPosition = header.position();
+            this.dataStartOffset = endOfHeaderPosition;
             Map<List<Long>, List<String>> splits = DefaultWeightLoader.computeMmapSplits(tensorInfoMap, file.length());
             this.allTensorInfoMap = new ConcurrentHashMap<>(tensorInfoMap);
             this.weightMap = new ConcurrentHashMap<>();
@@ -84,6 +86,32 @@ public final class SafetensorsShardWeightLoader implements WeightLoader {
     @Override
     public DType getModelDType() {
         return modelDType;
+    }
+
+    public void copyRawPayload(String name, FileChannel output, long outputPosition) throws IOException {
+        TensorInfo info = allTensorInfoMap.get(name);
+        if (info == null) {
+            throw new IllegalArgumentException("Unknown tensor " + name);
+        }
+        long sourcePosition = dataStartOffset + info.dataOffsets[0];
+        long remaining = info.dataOffsets[1] - info.dataOffsets[0];
+        long position = outputPosition;
+        while (remaining > 0) {
+            long copied = file.getChannel().transferTo(sourcePosition, remaining, output.position(position));
+            if (copied <= 0) {
+                ByteBuffer buffer = ByteBuffer.allocate((int) Math.min(remaining, 1 << 20));
+                int read = file.getChannel().read(buffer, sourcePosition);
+                if (read < 0) {
+                    throw new IOException("Unexpected EOF while copying " + name);
+                }
+                buffer.flip();
+                output.write(buffer, position);
+                copied = read;
+            }
+            sourcePosition += copied;
+            position += copied;
+            remaining -= copied;
+        }
     }
 
     @Override

@@ -190,6 +190,8 @@
                     <configuration>
                         <additionalOptions>
                             <additionalOption>-Xdoclint:none</additionalOption>
+                            <additionalOption>--add-modules</additionalOption>
+                            <additionalOption>jdk.incubator.vector</additionalOption>
                         </additionalOptions>
                     </configuration>
                 </plugin>

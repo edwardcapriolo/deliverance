@@ -54,6 +54,7 @@ public class ModelQuantizer {
                     && (
                     isAttentionProjection(name)
                             || isDenseMlpProjection(name)
+                            || isBertEncoderProjection(name)
                             || isGraniteMoeHybridProjection(name)
                             || isQwenMoeExpertProjection(name)
                             || isMixtralMoeExpertProjection(name)
@@ -70,6 +71,13 @@ public class ModelQuantizer {
         return name.endsWith("mlp.gate_proj.weight")
                 || name.endsWith("mlp.up_proj.weight")
                 || name.endsWith("mlp.down_proj.weight");
+    }
+
+    static boolean isBertEncoderProjection(String name) {
+        return name.matches(".*encoder\\.layer\\.\\d+\\.attention\\.self\\.(query|key|value)\\.weight$")
+                || name.matches(".*encoder\\.layer\\.\\d+\\.attention\\.output\\.dense\\.weight$")
+                || name.matches(".*encoder\\.layer\\.\\d+\\.intermediate\\.dense\\.weight$")
+                || name.matches(".*encoder\\.layer\\.\\d+\\.output\\.dense\\.weight$");
     }
 
     static boolean isQwenMoeExpertProjection(String name) {
@@ -317,6 +325,14 @@ public class ModelQuantizer {
                 long dataStart = Long.BYTES + headerBytes.length;
                 for (OutputTensorPlan tensor : tensors) {
                     processed[0]++;
+                    TensorInfo tensorInfo = loader.tensorInfoMap().get(tensor.name());
+                    if (!tensor.quantized() && loader instanceof SafetensorsShardWeightLoader shardLoader
+                            && !canLoadAsAbstractTensor(tensorInfo.dType)) {
+                        shardLoader.copyRawPayload(tensor.name(), channel, dataStart + payloadOffsets.get(tensor.name()));
+                        tensorTransforms.add(TensorTransform.from(tensor.name(), tensorInfo));
+                        logProgress(processed[0], total, startedAt);
+                        continue;
+                    }
                     try (AbstractTensor original = loader.load(tensor.name())) {
                         if (tensor.quantized()) {
                             LOGGER.info("Quantizing tensor {}/{} {} from {} to {}", processed[0], total,
@@ -359,6 +375,10 @@ public class ModelQuantizer {
         while (bytes.hasRemaining()) {
             channel.write(bytes, position + bytes.position());
         }
+    }
+
+    private static boolean canLoadAsAbstractTensor(DType dtype) {
+        return dtype == DType.F32 || dtype == DType.F16 || dtype == DType.BF16 || dtype == DType.Q4 || dtype == DType.I8;
     }
 
     private record OutputTensorPlan(String name, boolean quantized, List<OutputPayloadPlan> payloads) {
@@ -748,6 +768,19 @@ public class ModelQuantizer {
                     quantized,
                     sidecarsFor(name, dtype),
                     sourceShape.length == 1 && outputShape.length == 2);
+        }
+
+        static TensorTransform from(String name, TensorInfo source) {
+            int[] outputShape = SafeTensorWriter.canonicalShape(source.shape);
+            return new TensorTransform(
+                    name,
+                    source.dType.name(),
+                    source.dType.name(),
+                    source.shape,
+                    outputShape,
+                    false,
+                    List.of(),
+                    source.shape.length == 1 && outputShape.length == 2);
         }
 
         private static List<String> sidecarsFor(String name, DType dType) {

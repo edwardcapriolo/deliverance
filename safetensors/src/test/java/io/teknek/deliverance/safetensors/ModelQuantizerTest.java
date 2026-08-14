@@ -114,6 +114,26 @@ public class ModelQuantizerTest {
     }
 
     @Test
+    public void defaultFilterCoversBertEncoderProjectionWeightsAndKeepsEmbeddingRecipeDense() {
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("encoder.layer.0.attention.self.query.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("encoder.layer.0.attention.self.key.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("encoder.layer.0.attention.self.value.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("encoder.layer.0.attention.output.dense.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("encoder.layer.0.intermediate.dense.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("encoder.layer.0.output.dense.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("bert.encoder.layer.11.attention.self.query.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("bert.encoder.layer.11.output.dense.weight"));
+
+        assertFalse(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("embeddings.word_embeddings.weight"));
+        assertFalse(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("embeddings.position_embeddings.weight"));
+        assertFalse(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("embeddings.token_type_embeddings.weight"));
+        assertFalse(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("embeddings.LayerNorm.weight"));
+        assertFalse(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("encoder.layer.0.attention.output.LayerNorm.weight"));
+        assertFalse(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("encoder.layer.0.output.LayerNorm.weight"));
+        assertFalse(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("pooler.dense.weight"));
+    }
+
+    @Test
     public void quantizesQwenMoeExpertProjectionWeightsAndKeepsRouterDense() throws Exception {
         Path sourceDir = tempDir.resolve("source-qwen-moe");
         Path outputDir = tempDir.resolve("output-qwen-moe");

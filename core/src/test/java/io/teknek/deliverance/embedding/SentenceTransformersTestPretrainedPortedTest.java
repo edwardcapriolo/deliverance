@@ -10,7 +10,6 @@ import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -26,7 +25,6 @@ class SentenceTransformersTestPretrainedPortedTest {
     };
 
     @Test
-    @Tag("large-model")
     void testPretrainedModelBf16SdpaAllMiniLmL6V2() {
         assertPretrainedSimilarities("sentence-transformers", "all-MiniLM-L6-v2",
                 new float[] { 0.46371f, 0.81205f, 0.72828f, 0.75051f });

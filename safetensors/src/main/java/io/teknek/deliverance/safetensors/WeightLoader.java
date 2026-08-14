@@ -5,6 +5,8 @@ import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorInfo;
 
 import java.util.Map;
+import java.nio.file.Path;
+import java.util.Optional;
 
 public interface WeightLoader extends AutoCloseable {
 
@@ -36,4 +38,8 @@ public interface WeightLoader extends AutoCloseable {
     }
 
     DType getModelDType();
+
+    default Optional<Path> modelRoot() {
+        return Optional.empty();
+    }
 }

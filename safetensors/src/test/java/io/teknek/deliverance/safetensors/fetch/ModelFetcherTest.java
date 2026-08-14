@@ -34,6 +34,27 @@ public class ModelFetcherTest {
     }
 
     @Test
+    void includesSentenceTransformersMetadataInDownloads() {
+        ModelFetcher fetch = new ModelFetcher("BAAI", "bge-small-en-v1.5");
+        List<String> files = fetch.filesToDownload(List.of(
+                "config.json",
+                "modules.json",
+                "config_sentence_transformers.json",
+                "sentence_bert_config.json",
+                "1_Pooling/config.json",
+                "2_Normalize/config.json",
+                "tokenizer.json",
+                "model.safetensors"
+        ), true);
+
+        Assertions.assertTrue(files.contains("modules.json"));
+        Assertions.assertTrue(files.contains("config_sentence_transformers.json"));
+        Assertions.assertTrue(files.contains("sentence_bert_config.json"));
+        Assertions.assertTrue(files.contains("1_Pooling/config.json"));
+        Assertions.assertTrue(files.contains("2_Normalize/config.json"));
+    }
+
+    @Test
     void fileCompletenessUsesMissingZeroAndSizeMismatch() throws Exception {
         ModelFetcher fetch = new ModelFetcher("google", "gemma-4-E2B-it");
         Path temp = Files.createTempDirectory("fetcher-test");
