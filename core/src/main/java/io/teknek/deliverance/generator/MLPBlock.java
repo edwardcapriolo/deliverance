@@ -246,13 +246,16 @@ public class MLPBlock implements FeedForward {
             } else {
                 // Not using pfor because we can use all cores
                 try (Timer.Context ignoredActivation = InferenceProfiler.timer(model.getMetricRegistry(), "mlpblock.activation").time()) {
-                    IntStream.range(0, hiddenLength).parallel().forEach(i -> {
-                    for (int j = 0; j < batchSize; j++) {
-                        float w1 = buf.get(j, i);
-                        float w1a = ActivationFunction.eval(activationFunction, w1);
-                        buf.set(w1a, j, i);
-                    }
-                    });
+                    VectorMath.pchunk(0, hiddenLength, (chunkStart, chunkSize) -> {
+                        int chunkEnd = chunkStart + chunkSize;
+                        for (int i = chunkStart; i < chunkEnd; i++) {
+                            for (int j = 0; j < batchSize; j++) {
+                                float w1 = buf.get(j, i);
+                                float w1a = ActivationFunction.eval(activationFunction, w1);
+                                buf.set(w1a, j, i);
+                            }
+                        }
+                    }, configurableTensorProvider.get().parallelSplitSize(), model.getPool());
                 }
             }
 

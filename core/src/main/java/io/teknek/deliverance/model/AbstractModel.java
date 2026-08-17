@@ -1123,7 +1123,7 @@ public abstract class AbstractModel implements Generator, Classifier {
             return new ReadOnlyTensor(t);
         }
         InferenceProfiler.counter(metricRegistry, counterPrefix + ".copy_or_quantize").inc();
-        return maybeQuantize(t);
+        return quantizeToWorkingQuantizedType(t);
     }
 
     public PreTrainedTokenizer getTokenizer(){
