@@ -21,8 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ModelSupportTest {
 
-    String modelName = "microlama-lidor-finetuned";
-    String modelOwner = "lidoreliya13";
+    String modelName = "Qwen3-0.6B-JQ4";
+    String modelOwner = "edwardcapriolo";
     ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
 
     @Test
@@ -38,14 +38,14 @@ public class ModelSupportTest {
                      .withTensorProvider(new ConfigurableTensorProvider(tc, pool))
                      .buildLocalTransformerModel()) {
 
-            assertEquals(io.teknek.deliverance.grace.LlamaTokenizer.class, abstractModel.getTokenizer().getClass());
+            assertEquals(io.teknek.deliverance.grace.Quen2Tokenizer.class, abstractModel.getTokenizer().getClass());
             {
                 String prompt = "What comes next in the sequence? 1, 2, 3 ";
                 PromptContext ctx = PromptContext.of(prompt);
                 UUID u = UUID.randomUUID();
                 Response r = abstractModel.generate(u, ctx, new GeneratorParameters().withSeed(43)
                         .withNtokens(50), new DoNothingGenerateEvent());
-                assertEquals("1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3", r.responseText);
+                assertEquals("4, 5, 6, 7, 8, 9, 10, 11, 12, 13,", r.responseText);
             }
             //Do it again
             {
@@ -54,7 +54,7 @@ public class ModelSupportTest {
                 UUID u = UUID.randomUUID();
                 Response r = abstractModel.generate(u, ctx, new GeneratorParameters().withSeed(43)
                         .withNtokens(50), new DoNothingGenerateEvent());
-                assertEquals("3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, ", r.responseText);
+                assertEquals("1/2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,", r.responseText);
             }
 
             {
@@ -63,7 +63,7 @@ public class ModelSupportTest {
                 UUID u = UUID.randomUUID();
                 Response r = abstractModel.generate(u, ctx, new GeneratorParameters().withSeed(43)
                         .withNtokens(50), new DoNothingGenerateEvent());
-                assertEquals("1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3", r.responseText);
+                assertEquals("4, 5, 6, 7, 8, 9, 10, 11, 12, 13,", r.responseText);
             }
         }
     }

@@ -3,6 +3,7 @@ package io.teknek.deliverance.safetensors;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.safetensors.fetch.LoraAdapterModelFetcher;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -96,6 +97,7 @@ public class LoraAdapterTest {
      * checked against this adapter's actual safetensors header). Requires network access.
      */
     @Test
+    @Tag("large-model")
     void fromPretrainedDownloadsAndParsesARealPublishedAdapter() {
         // Uses the default ~/.deliverance cache (like the project's other HF-backed tests,
         // e.g. LeafModelExample) rather than an isolated temp dir, so repeated local/CI runs

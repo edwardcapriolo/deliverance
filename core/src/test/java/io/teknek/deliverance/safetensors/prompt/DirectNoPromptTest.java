@@ -2,6 +2,7 @@ package io.teknek.deliverance.safetensors.prompt;
 
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.DoNothingGenerateEvent;
+import io.teknek.deliverance.model.GenerateEvent;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
@@ -16,12 +17,17 @@ public class DirectNoPromptTest {
 
     @Test
     public void noPromptContext() throws IOException {
-        ModelFetcher fetch = new ModelFetcher("lidoreliya13", "microlama-lidor-finetuned");
+        ModelFetcher fetch = new ModelFetcher("edwardcapriolo", "Qwen3-0.6B-JQ4");
         try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch).buildLocalTransformerModel()) {
             String prompt = "What comes next in the sequence? 1, 2 ";
             PromptContext ctx = PromptContext.of(prompt);
             Response r = m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(43).withMaxTokens(15),
-                    new DoNothingGenerateEvent());
+                    new GenerateEvent() {
+                        @Override
+                        public void emit(int next, String nextRaw, String nextCleaned, float timing) {
+                            //System.out.println(nextRaw + " ");
+                        }
+                    });
             //Expected :1 is the next in the sequence. 2 is the next in the
             //Actual   :3, 4, 5, 6, 7,
             //        Assertions.assertEquals("1 is the next in the sequence. 2 is the next in the", r.responseText);

@@ -13,7 +13,7 @@ public class ModelFetcherTest {
     @Test
     void downloadAModel(){
         //given a modelname
-        ModelFetcher fetch = new ModelFetcher("tjake", "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4");
+        ModelFetcher fetch = new ModelFetcher("edwardcapriolo", "Qwen3-0.6B-JQ4");
         //when i try maybe to downlad the model
         File f = fetch.maybeDownload();
         //then the directory exists

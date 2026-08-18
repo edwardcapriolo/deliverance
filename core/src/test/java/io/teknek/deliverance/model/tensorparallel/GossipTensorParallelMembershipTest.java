@@ -7,6 +7,7 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.gemma2.Gemma2Model;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
@@ -22,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 public class GossipTensorParallelMembershipTest {
 
     @Test
+    @Tag("longtest")
     public void twoNodesJoinAndShareTensorParallelDeploymentMetadata() throws Exception {
         String cluster = "deliverance-tp-" + UUID.randomUUID();
         int basePort = 41_000 + Math.floorMod(cluster.hashCode(), 1_000);

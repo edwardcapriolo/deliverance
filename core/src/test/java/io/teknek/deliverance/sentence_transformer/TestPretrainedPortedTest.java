@@ -12,6 +12,7 @@ import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -33,6 +34,7 @@ class TestPretrainedPortedTest {
     };
 
     @ParameterizedTest
+    @Tag("longtest")
     @MethodSource("modelsToSimilaritiesBf16Sdpa")
     void testPretrainedModelBf16Sdpa(ModelCase modelCase) {
         assertPretrainedSimilarities(modelCase.owner(), modelCase.modelName(), modelCase.expected());
