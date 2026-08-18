@@ -21,6 +21,22 @@ public final class TensorTestSupport {
         return tensor;
     }
 
+    public static FloatBufferTensor allOnes(int size) {
+        FloatBufferTensor tensor = new FloatBufferTensor(1, size);
+        for (int i = 0; i < size; i++) {
+            tensor.set(1.0f, 0, i);
+        }
+        return tensor;
+    }
+
+    public static FloatBufferTensor allZeros(int size) {
+        FloatBufferTensor tensor = new FloatBufferTensor(1, size);
+        for (int i = 0; i < size; i++) {
+            tensor.set(0.0f, 0, i);
+        }
+        return tensor;
+    }
+
     /** Creates a deterministic F32 tensor from a small integer hash, useful for repeatable test fixtures. */
     public static FloatBufferTensor deterministicTensor(int rows, int cols, int seed) {
         FloatBufferTensor tensor = new FloatBufferTensor(rows, cols);

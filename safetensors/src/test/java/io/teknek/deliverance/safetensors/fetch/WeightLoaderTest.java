@@ -25,7 +25,7 @@ public class WeightLoaderTest {
         try (DefaultWeightLoader wl = new DefaultWeightLoader(f)) {
             assertTrue(wl.tensorInfoMap().containsKey("model.layers.1.self_attn.o_proj.weight"));
             assertTrue(wl.isWeightPresent("model.layers.1.self_attn.o_proj.weight"));
-            assertEquals(355, wl.tensorInfoMap().size());
+            assertEquals(507, wl.tensorInfoMap().size());
         }
     }
 }
