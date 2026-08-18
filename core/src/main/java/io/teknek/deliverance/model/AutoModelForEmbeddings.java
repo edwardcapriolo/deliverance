@@ -1,5 +1,6 @@
 package io.teknek.deliverance.model;
 
+import io.teknek.deliverance.DType;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
@@ -20,6 +21,16 @@ public final class AutoModelForEmbeddings {
 
         public AbstractModel buildLocalEmbeddingModel() {
             return loadLocalTransformerModel();
+        }
+
+        @Override
+        public Builder withQuantizeOnDemand(DType targetType, String outputOwner, String outputModel) {
+            super.withQuantizeOnDemand(targetType, outputOwner, outputModel);
+            return this;
+        }
+
+        public Builder quantizeOnDemand(DType targetType, String outputOwner, String outputModel) {
+            return withQuantizeOnDemand(targetType, outputOwner, outputModel);
         }
 
         @Override

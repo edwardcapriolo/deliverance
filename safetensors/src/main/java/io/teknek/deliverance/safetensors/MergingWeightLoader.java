@@ -7,6 +7,8 @@ import io.teknek.deliverance.tensor.TensorInfo;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
 
 import java.util.Map;
+import java.nio.file.Path;
+import java.util.Optional;
 
 /**
  * A {@link WeightLoader} decorator that merges a {@link LoraAdapter}'s low-rank deltas into the
@@ -49,6 +51,11 @@ public class MergingWeightLoader implements WeightLoader {
     @Override
     public DType getModelDType() {
         return delegate.getModelDType();
+    }
+
+    @Override
+    public Optional<Path> modelRoot() {
+        return delegate.modelRoot();
     }
 
     @Override

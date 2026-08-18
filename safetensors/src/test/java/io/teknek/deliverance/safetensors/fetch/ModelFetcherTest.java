@@ -13,7 +13,7 @@ public class ModelFetcherTest {
     @Test
     void downloadAModel(){
         //given a modelname
-        ModelFetcher fetch = new ModelFetcher("tjake", "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4");
+        ModelFetcher fetch = new ModelFetcher("edwardcapriolo", "Qwen3-0.6B-JQ4");
         //when i try maybe to downlad the model
         File f = fetch.maybeDownload();
         //then the directory exists
@@ -31,6 +31,27 @@ public class ModelFetcherTest {
                 "model.safetensors"
         ), true);
         Assertions.assertTrue(files.contains("chat_template.jinja"));
+    }
+
+    @Test
+    void includesSentenceTransformersMetadataInDownloads() {
+        ModelFetcher fetch = new ModelFetcher("BAAI", "bge-small-en-v1.5");
+        List<String> files = fetch.filesToDownload(List.of(
+                "config.json",
+                "modules.json",
+                "config_sentence_transformers.json",
+                "sentence_bert_config.json",
+                "1_Pooling/config.json",
+                "2_Normalize/config.json",
+                "tokenizer.json",
+                "model.safetensors"
+        ), true);
+
+        Assertions.assertTrue(files.contains("modules.json"));
+        Assertions.assertTrue(files.contains("config_sentence_transformers.json"));
+        Assertions.assertTrue(files.contains("sentence_bert_config.json"));
+        Assertions.assertTrue(files.contains("1_Pooling/config.json"));
+        Assertions.assertTrue(files.contains("2_Normalize/config.json"));
     }
 
     @Test

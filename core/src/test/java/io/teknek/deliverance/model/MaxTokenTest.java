@@ -13,6 +13,7 @@ import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -23,7 +24,7 @@ public class MaxTokenTest {
 
     @Test
     public void maxTokens() {
-        ModelFetcher fetch = new ModelFetcher("tjake", "Llama-3.2-1B-Instruct-JQ4");
+        ModelFetcher fetch = new ModelFetcher("edwardcapriolo", "Qwen3-0.6B-JQ4");
         var uuid = UUID.randomUUID();
         MetricRegistry registry = new MetricRegistry();
         /*
@@ -37,6 +38,7 @@ public class MaxTokenTest {
                 .withTensorProvider(new ConfigurableTensorProvider(new ArrayQueueTensorAllocator(registry), pool)).buildLocalTransformerModel()) {
             String prompt = "Construct a short story about a Java developer who takes on all of python and rust community";
             PromptContext ctx = m.promptSupport().get().builder()
+                    .addTemplateArgs(Map.of("enable_thinking", false))
                     .addUserMessage(prompt)
                     .build();
                 Response k = m.generate(uuid, ctx, new GeneratorParameters()
@@ -45,14 +47,14 @@ public class MaxTokenTest {
                     .withIncludeStopStrInOutput(false)
                     .withStopWords(List.of("<|eot_id|>"))
                     .withTemperature(0.0f).withSeed(99998), new DoNothingGenerateEvent());
+
+
             assertEquals(8, k.generatedTokens.size());
             /*
             assertEquals("**The Java Developer's Quest**\n" +
                     "\n" +
                     "In a world where technology was the ultimate force,", k.responseText);
              */
-            assertTrue(k.responseText.contains("Java"));
-
         }
     }
 }

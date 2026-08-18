@@ -77,6 +77,8 @@ public class GraniteMoeHybridSharedMlpTest {
             when(this.model.getWorkingDType()).thenReturn(DType.F32);
             when(this.model.getPool()).thenReturn(this.pool);
             when(this.model.maybeQuantize(any(AbstractTensor.class))).thenAnswer(invocation -> invocation.getArgument(0));
+            when(this.model.maybeQuantizeReadOnly(any(AbstractTensor.class), Mockito.anyString()))
+                    .thenAnswer(invocation -> invocation.getArgument(0));
             when(this.model.makeTensor(Mockito.anyInt(), Mockito.anyInt()))
                     .thenAnswer(invocation -> this.allocator.get(DType.F32,
                             io.teknek.deliverance.tensor.TensorShape.of(invocation.getArgument(0), invocation.getArgument(1))));

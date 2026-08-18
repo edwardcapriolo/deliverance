@@ -8,6 +8,7 @@ import io.teknek.deliverance.model.DoNothingGenerateEvent;
 import io.teknek.deliverance.safetensors.fetch.LoraAdapterModelFetcher;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
@@ -33,6 +34,7 @@ public class MergingWeightLoaderIntegrationTest {
     private static final String PROMPT = "Hello! Who are you and what can you help me with?";
 
     @Test
+    @Tag("large-model")
     public void loraAdaptedGenerationDiffersFromBaseModel() {
         ModelFetcher fetcher = new ModelFetcher("unsloth", "Llama-3.2-1B-Instruct");
 

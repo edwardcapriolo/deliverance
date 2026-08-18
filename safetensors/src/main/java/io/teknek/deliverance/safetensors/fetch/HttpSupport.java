@@ -86,6 +86,10 @@ public class HttpSupport {
         }
         CompletableFuture<Long> result = CompletableFuture.supplyAsync(() -> {
             try {
+                Path parent = outputPath.getParent();
+                if (parent != null) {
+                    Files.createDirectories(parent);
+                }
                 return Files.copy(inStream, outputPath, StandardCopyOption.REPLACE_EXISTING);
             } catch (IOException e) {
                 throw new RuntimeException(e);

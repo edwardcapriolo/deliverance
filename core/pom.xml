@@ -28,9 +28,8 @@
 
         <dependency>
             <groupId>io.teknek.deliverance</groupId>
-            <artifactId>tensor</artifactId>
+            <artifactId>tensor-test</artifactId>
             <version>${project.version}</version>
-            <classifier>tests</classifier>
             <scope>test</scope>
         </dependency>
 
@@ -163,6 +162,18 @@
         <dependency>
             <groupId>org.junit.platform</groupId>
             <artifactId>junit-platform-suite</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-embeddings-all-minilm-l6-v2-q</artifactId>
+            <version>1.12.2-beta22</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-embeddings-all-minilm-l6-v2</artifactId>
+            <version>1.12.2-beta22</version>
             <scope>test</scope>
         </dependency>
         <dependency>

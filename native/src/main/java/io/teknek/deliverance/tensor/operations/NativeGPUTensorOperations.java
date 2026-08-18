@@ -402,6 +402,10 @@ public class NativeGPUTensorOperations implements TensorOperations {
         int bRowOffset,
         int rowChunkSize
     ) {
+        if (requiresAlignedQuantizedBlocks(a, b[0]) && columnOffset % Q4ByteBufferTensor.BLOCK_SIZE != 0) {
+            delegate.dotProductBatchChunk(r, a, b, columnOffset, columnLength, bRowOffset, rowChunkSize);
+            return;
+        }
         Long btId = tensorCache.get(b[0].getUid());
         if (gpuSupported(btId, a.dType(), b[0].dType(), r[0].dType())) {
             long resultBytes = r[0].size() * r[0].dType().size();
@@ -483,6 +487,10 @@ public class NativeGPUTensorOperations implements TensorOperations {
                 delegate.dotProductBatchChunk(r, a, b, columnOffset, columnLength, chunkStart, chunkSize);
             }, delegate.parallelSplitSize(), pool);
         }
+    }
+
+    private static boolean requiresAlignedQuantizedBlocks(AbstractTensor a, AbstractTensor b) {
+        return a.dType() == DType.I8 || b.dType() == DType.Q4;
     }
 
     private static LongBuffer directLongBuffer(long[] values) {

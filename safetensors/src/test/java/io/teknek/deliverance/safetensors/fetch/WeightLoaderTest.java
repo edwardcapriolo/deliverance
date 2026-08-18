@@ -13,8 +13,8 @@ public class WeightLoaderTest {
 
     @Test
     void loadUpTest() throws IOException {
-        String modelName = "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4";
-        String modelOwner = "tjake";
+        String modelName = "Qwen3-0.6B-JQ4";
+        String modelOwner = "edwardcapriolo";
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         File f = fetch.maybeDownload();
         try (DefaultWeightLoader wl = new DefaultWeightLoader(f)) {
@@ -25,7 +25,7 @@ public class WeightLoaderTest {
         try (DefaultWeightLoader wl = new DefaultWeightLoader(f)) {
             assertTrue(wl.tensorInfoMap().containsKey("model.layers.1.self_attn.o_proj.weight"));
             assertTrue(wl.isWeightPresent("model.layers.1.self_attn.o_proj.weight"));
-            assertEquals(355, wl.tensorInfoMap().size());
+            assertEquals(507, wl.tensorInfoMap().size());
         }
     }
 }

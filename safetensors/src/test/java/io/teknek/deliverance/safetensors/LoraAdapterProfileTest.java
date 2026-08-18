@@ -3,6 +3,7 @@ package io.teknek.deliverance.safetensors;
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.Timer;
 import io.teknek.deliverance.safetensors.fetch.LoraAdapterModelFetcher;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.Locale;
@@ -30,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class LoraAdapterProfileTest {
 
     @Test
+    @Tag("large-model")
     void profilesAdapterFetchAndLoadPhases() {
         MetricRegistry metricRegistry = new MetricRegistry();
         LoraAdapterModelFetcher fetcher = new LoraAdapterModelFetcher("bunnycore", "Llama-3.2-1b-chatml-lora_model");

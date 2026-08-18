@@ -1,0 +1,57 @@
+name: PR Build
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-glibc-java25:
+    name: Linux glibc Java 25
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Install native build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bash \
+            build-essential \
+            curl \
+            jq \
+            make \
+            unzip
+
+      - name: Cache Deliverance model downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.deliverance
+          key: deliverance-models-${{ runner.os }}-v1
+          restore-keys: |
+            deliverance-models-${{ runner.os }}-
+
+      - name: Compile Java 25 modules
+        run: mvn -B -pl core,safetensors,native -am -DskipTests compile
+
+      - name: Run native and safetensors tests
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: mvn -B -pl safetensors,native -am test

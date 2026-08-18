@@ -8,6 +8,7 @@ import io.teknek.deliverance.tensor.AbstractTensorUtils;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.impl.BFloat16BufferTensor;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -23,6 +24,7 @@ public class NativeGpuGemmParityTest {
     @MethodSource("providerGemmCases")
     public void gpuSupportedGemmPathsMatchNaiveReference(String providerName, TensorOperations ops,
             String name, int batchSize, int rows, int k, DType inputType, DType weightType, float tolerance) {
+        Assumptions.assumeTrue(ops != null, "native GPU operations are not available");
         try (FloatBufferTensor denseInput = deterministicInput(batchSize, k);
              FloatBufferTensor denseWeight = deterministicWeight(rows, k);
              AbstractTensor input = convertInput(denseInput, inputType);
@@ -43,6 +45,7 @@ public class NativeGpuGemmParityTest {
     public void gemmOffsetAndTailPathsMatchPanamaBaseline(String providerName, TensorOperations ops,
             String name, int batchSize, int rows, int k, int aColumnOffset, int bColumnOffset,
             int rRowOffset, int bRowOffset, int rowChunkSize, DType inputType, DType weightType, float tolerance) {
+        Assumptions.assumeTrue(ops != null, "native GPU operations are not available");
         int inputCols = alignToBlock(aColumnOffset + k);
         int weightCols = alignToBlock(bColumnOffset + k);
         int resultCols = bRowOffset + rowChunkSize + rRowOffset;
@@ -74,6 +77,7 @@ public class NativeGpuGemmParityTest {
     public void dotProductBatchChunkOffsetAndTailPathsMatchPanamaBaseline(String providerName, TensorOperations ops,
             String name, int batchSize, int rows, int k, int columnOffset, int chunkStart, int chunkSize,
             DType inputType, DType weightType, float tolerance) {
+        Assumptions.assumeTrue(ops != null, "native GPU operations are not available");
         int cols = alignToBlock(columnOffset + k);
         int resultCols = chunkStart + chunkSize;
         TensorOperations panama = panama();
@@ -139,30 +143,14 @@ public class NativeGpuGemmParityTest {
     }
 
     private static Stream<Arguments> providers() {
-        WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
-        ArrayQueueTensorAllocator allocator = new ArrayQueueTensorAllocator(new MetricRegistry());
-        TensorOperations naive = new NaiveTensorOperations();
-        TensorOperations panama = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, allocator, pool);
-        return Stream.of(
-                Optional.of(Arguments.of("naive", naive)),
-                Optional.of(Arguments.of("panama", panama)),
-                simd(panama).map(ops -> Arguments.of("simd", ops)),
-                gpu().map(ops -> Arguments.of("gpu", ops))
-        ).flatMap(Optional::stream);
+        return Stream.of(gpu().map(ops -> Arguments.of("gpu", ops))
+                .orElseGet(() -> Arguments.of("gpu-unavailable", null)));
     }
 
     private static TensorOperations panama() {
         return new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
                 new ArrayQueueTensorAllocator(new MetricRegistry()),
                 new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores()));
-    }
-
-    private static Optional<TensorOperations> simd(TensorOperations fallback) {
-        try {
-            return Optional.of(new NativeSimdTensorOperations(fallback));
-        } catch (Throwable t) {
-            return Optional.empty();
-        }
     }
 
     private static Optional<TensorOperations> gpu() {

@@ -213,6 +213,8 @@ public class Qwen3MoeFeedForwardCharacterizationTest {
                         (Integer) invocation.getArgument(0), (Integer) invocation.getArgument(1)));
         when(model.maybeQuantize(Mockito.any(AbstractTensor.class)))
                 .thenAnswer(invocation -> new FloatBufferTensor((AbstractTensor) invocation.getArgument(0)));
+        when(model.maybeQuantizeReadOnly(Mockito.any(AbstractTensor.class), Mockito.anyString()))
+                .thenAnswer(invocation -> new FloatBufferTensor((AbstractTensor) invocation.getArgument(0)));
 
         FloatBufferTensor router = tensorOf(3, 2,
                 0.0f, 0.0f,
@@ -262,6 +264,8 @@ public class Qwen3MoeFeedForwardCharacterizationTest {
                 .thenAnswer(invocation -> new FloatBufferTensor(
                         (Integer) invocation.getArgument(0), (Integer) invocation.getArgument(1)));
         when(model.maybeQuantize(Mockito.any(AbstractTensor.class)))
+                .thenAnswer(invocation -> new FloatBufferTensor((AbstractTensor) invocation.getArgument(0)));
+        when(model.maybeQuantizeReadOnly(Mockito.any(AbstractTensor.class), Mockito.anyString()))
                 .thenAnswer(invocation -> new FloatBufferTensor((AbstractTensor) invocation.getArgument(0)));
 
         FloatBufferTensor router = deterministicTensor(config.numExperts, config.embeddingLength, 17);
