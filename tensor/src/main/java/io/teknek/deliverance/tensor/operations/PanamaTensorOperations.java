@@ -168,6 +168,20 @@ public final class PanamaTensorOperations implements TensorOperations {
     private boolean optimizedBatchDotProductSupports(AbstractTensor a, AbstractTensor b,
             int aColumnOffset, int bColumnOffset, int columnLength) {
         if (a.dType() == DType.I8 || a.dType() == DType.Q4 || b.dType() == DType.I8 || b.dType() == DType.Q4) {
+            if (aColumnOffset % Q8ByteBufferTensor.BLOCK_SIZE != 0
+                    || bColumnOffset % Q8ByteBufferTensor.BLOCK_SIZE != 0
+                    || columnLength % Q8ByteBufferTensor.BLOCK_SIZE != 0) {
+                return false;
+            }
+            if (a.dType() == DType.I8 && b.dType() == DType.Q4) {
+                int quantBlocks = columnLength / Q8ByteBufferTensor.BLOCK_SIZE;
+                return switch (vectorType) {
+                    case ARM_128 -> quantBlocks % FloatVector.SPECIES_128.length() == 0;
+                    case AVX_256 -> quantBlocks % FloatVector.SPECIES_256.length() == 0;
+                    case AVX_512 -> quantBlocks % FloatVector.SPECIES_512.length() == 0;
+                    default -> false;
+                };
+            }
             return aColumnOffset % Q8ByteBufferTensor.BLOCK_SIZE == 0
                     && bColumnOffset % Q8ByteBufferTensor.BLOCK_SIZE == 0
                     && columnLength % Q8ByteBufferTensor.BLOCK_SIZE == 0;
@@ -1029,6 +1043,15 @@ public final class PanamaTensorOperations implements TensorOperations {
         }
     }
 
+    private void scalarI8Q4Dot(Q8ByteBufferTensor a, Q4ByteBufferTensor b, AbstractTensor c, int row, int outputColumn,
+            int aColumnOffset, int bColumnOffset, int resultColumnOffset, int length) {
+        float sum = 0.0f;
+        for (int col = 0; col < length; col++) {
+            sum += a.get(row, aColumnOffset + col) * b.get(outputColumn, bColumnOffset + col);
+        }
+        c.set(sum, row, outputColumn + resultColumnOffset);
+    }
+
     private class GemmerI8Q4_arm extends Gemmer {
         final BiIntConsumer matmul1x1;
         final BiIntConsumer matmul1x4;
@@ -1087,11 +1110,7 @@ public final class PanamaTensorOperations implements TensorOperations {
                 final int blocksNeeded = k / Q8ByteBufferTensor.BLOCK_SIZE;
 
                 if (blocksNeeded % FloatVector.SPECIES_128.length() != 0) {
-                    float sum = 0.0f;
-                    for (int col = 0; col < k; col++) {
-                        sum += a.get(i, aColumnOffset + col) * b.get(j, bColumnOffset + col);
-                    }
-                    c.set(sum, i, j + rOffset);
+                    scalarI8Q4Dot(a, b, c, i, j, aColumnOffset, bColumnOffset, rOffset, k);
                     return;
                 }
 
