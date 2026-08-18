@@ -8,9 +8,12 @@ import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.Mockito;
 
 import java.util.Random;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -243,7 +246,7 @@ public class PanamaTensorOperationsTest {
             FloatBufferTensor shardOutput = new FloatBufferTensor(batchSize, shardRows);
 
             try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
-                PanamaTensorOperations ops = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
+                PanamaTensorOperations ops = new PanamaTensorOperations(MachineSpec.Type.AVX_256,
                         Mockito.mock(TensorAllocator.class), pool);
                 ops.batchDotProduct(fullOutput, input, fullWeight, 0, 0, embeddingLength, 0, 0, fullRows);
                 ops.batchDotProduct(shardOutput, input, shardWeight, 0, 0, embeddingLength, 0, 0, shardRows);
@@ -273,7 +276,7 @@ public class PanamaTensorOperationsTest {
             FloatBufferTensor shardOutput1 = new FloatBufferTensor(batchSize, shardRows);
 
             try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
-                PanamaTensorOperations ops = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
+                PanamaTensorOperations ops = new PanamaTensorOperations(MachineSpec.Type.AVX_256,
                         Mockito.mock(TensorAllocator.class), pool);
                 ops.dotProductBatchChunk(new AbstractTensor[]{fullOutput0, fullOutput1}, input,
                         new AbstractTensor[]{fullWeight0, fullWeight1}, 0, embeddingLength, 0, fullRows);
@@ -336,8 +339,9 @@ public class PanamaTensorOperationsTest {
         }
     }
 
-    @Test
-    void dotProductChunkI8Q4ColumnShardMatchesFullProjectionContribution() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("panamaVectorTypes")
+    void dotProductChunkI8Q4ColumnShardMatchesFullProjectionContribution(MachineSpec.Type vectorType) {
         int batchSize = 3;
         int embeddingLength = 128;
         int hiddenLength = 256;
@@ -355,7 +359,7 @@ public class PanamaTensorOperationsTest {
             FloatBufferTensor actual = new FloatBufferTensor(batchSize, embeddingLength);
 
             try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
-                PanamaTensorOperations ops = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
+                PanamaTensorOperations ops = new PanamaTensorOperations(vectorType,
                         Mockito.mock(TensorAllocator.class), pool);
                 ops.dotProductChunk(expected, fullInput, fullWeight, shardStart, shardLength, 0, embeddingLength);
                 ops.dotProductChunk(actual, shardInput, shardWeight, 0, shardLength, 0, embeddingLength);
@@ -368,6 +372,14 @@ public class PanamaTensorOperationsTest {
                 }
             }
         }
+    }
+
+    private static Stream<MachineSpec.Type> panamaVectorTypes() {
+        return Stream.of(
+                MachineSpec.Type.ARM_128,
+                MachineSpec.Type.AVX_128,
+                MachineSpec.Type.AVX_256,
+                MachineSpec.Type.AVX_512);
     }
 
     private static FloatBufferTensor deterministicInput(int rows, int cols) {
