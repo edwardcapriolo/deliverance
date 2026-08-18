@@ -2,7 +2,7 @@
     <parent>
         <groupId>io.teknek.deliverance</groupId>
         <artifactId>deliverance-parent</artifactId>
-        <version>0.0.12</version>
+        <version>0.0.13-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
     <artifactId>vibrant-maven-plugin</artifactId>
@@ -125,14 +125,16 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-deploy-plugin</artifactId>
                 <configuration>
-                    <skip>true</skip>
+                    <!-- If this plugin must be kept out of Maven deploy again, set this to true. -->
+                    <skip>false</skip>
                 </configuration>
             </plugin>
             <plugin>
                 <groupId>org.sonatype.central</groupId>
                 <artifactId>central-publishing-maven-plugin</artifactId>
                 <configuration>
-                    <skipPublishing>true</skipPublishing>
+                    <!-- If this plugin must be kept out of Central publishing again, set this to true. -->
+                    <skipPublishing>false</skipPublishing>
                 </configuration>
             </plugin>
             <plugin>
@@ -160,37 +162,6 @@
                 </dependencies>
             </plugin>
 
-            <plugin>
-                <groupId>io.teknek.deliverance</groupId>
-                <artifactId>vibrant-maven-plugin</artifactId>
-                <configuration>
-
-                    <vibeSpecs>
-                        <vibeSpec>
-                            <id>shape</id>
-                            <enabled>true</enabled>
-                            <overwrite>true</overwrite>
-                            <systemMessages>
-                                <systemMessage>You are an assistant that produces concise, production-grade software.</systemMessage>
-                                <systemMessage>Output java code.</systemMessage>
-                                <systemMessage>Generate java code into the package 'io.teknek.shape' .</systemMessage>
-                            </systemMessages>
-                            <userMessages>
-                                <userMessage>Generate a java interface named Shape with a method named area that returns a double.</userMessage>
-                                <userMessage>Generate a java class named Circle that implements the Shape interface.</userMessage>
-                            </userMessages>
-                            <generateTo>generated-source</generateTo>
-                        </vibeSpec>
-                        <vibeSpec>
-                            <id>shape</id>
-                            <enabled>false</enabled>
-                            <userMessages>
-                                <userMessage>Hello</userMessage>
-                            </userMessages>
-                        </vibeSpec>
-                    </vibeSpecs>
-                </configuration>
-            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-plugin-plugin</artifactId>

@@ -23,7 +23,7 @@ public class EmbeddingTest {
 
     @Test
     void embeddingAvg(){
-        ModelFetcher fetch = new ModelFetcher("sentence-transformers", "all-MiniLM-L6-v2");
+        ModelFetcher fetch = new ModelFetcher("edwardcapriolo", "all-MiniLM-L6-v2-JQ4");
         File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
         ArrayQueueTensorAllocator arrayQueueTensorAllocator = new ArrayQueueTensorAllocator(mr);
@@ -39,7 +39,7 @@ public class EmbeddingTest {
 
     @Test
     void embeddingModel(){
-        ModelFetcher fetch = new ModelFetcher("sentence-transformers", "all-MiniLM-L6-v2");
+        ModelFetcher fetch = new ModelFetcher("edwardcapriolo", "all-MiniLM-L6-v2-JQ4");
         File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
         ArrayQueueTensorAllocator arrayQueueTensorAllocator = new ArrayQueueTensorAllocator(mr);
@@ -55,7 +55,7 @@ public class EmbeddingTest {
 /*
     public static void main (String [] args){
         String text = "This is a test document about machine learning";
-        ModelFetcher fetch = new ModelFetcher("sentence-transformers", "all-MiniLM-L6-v2");
+        ModelFetcher fetch = new ModelFetcher("edwardcapriolo", "all-MiniLM-L6-v2-JQ4");
         File f = fetch.maybeDownload();
         MetricRegistry mr = new MetricRegistry();
         TensorCache tensorCache = new TensorCache(mr);

@@ -72,7 +72,8 @@
         <module>spring-ai-deliverance-demo</module>
         <module>nanocode-deliverance</module>
         <module>deliverance-antares-cli</module>
-        <!-- <module>vibrant-maven-plugin</module> -->
+        <module>vibrant-maven-plugin</module>
+        <module>vibrant-maven-plugin-demo</module>
     </modules>
     <build>
         <extensions>
@@ -156,9 +157,12 @@
                 <extensions>true</extensions>
                 <configuration>
                     <publishingServerId>central</publishingServerId>
+                    <!-- If the plugin needs to be disabled from Central publishing again, uncomment this block.
                     <excludeArtifacts>
                         <excludeArtifact>vibrant-maven-plugin</excludeArtifact>
+                        <excludeArtifact>vibrant-maven-plugin-demo</excludeArtifact>
                     </excludeArtifacts>
+                    -->
                 </configuration>
             </plugin>
 

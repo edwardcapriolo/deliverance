@@ -84,8 +84,7 @@ class EmbeddingInferenceProfilerBenchmarkTest {
     private static AbstractModel buildDeliveranceModel(MetricRegistry metrics, ArrayQueueTensorAllocator allocator,
             WrappedForkJoinPool pool) {
         AutoModelForEmbeddings.Builder builder = AutoModelForEmbeddings.newBuilder(
-                new ModelFetcher("sentence-transformers", "all-MiniLM-L6-v2"));
-        builder.quantizeOnDemand(DType.Q4, "sentence-transformers", "all-MiniLM-L6-v2-JQ4");
+                new ModelFetcher("edwardcapriolo", "all-MiniLM-L6-v2-JQ4"));
         builder.withWorkingMemoryType(DType.F32);
         builder.withWorkingQuantType(DType.F32);
         builder.withMetricRegistry(metrics);
