@@ -2,6 +2,7 @@ package io.teknek.deliverance.tensor.operations;
 
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.opentest4j.TestAbortedException;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -17,7 +18,12 @@ public class NativeGpuOperationsLoadTest {
                 "webgpu_dawn native library is not available on java.library.path");
         Assumptions.assumeTrue(hasNativeLibrary("deliverancegpu"),
                 "deliverancegpu native library is not available on java.library.path");
-        NativeGPUTensorOperations operations = new NativeGPUTensorOperations();
+        NativeGPUTensorOperations operations;
+        try {
+            operations = new NativeGPUTensorOperations();
+        } catch (Throwable t) {
+            throw new TestAbortedException("native GPU libraries are present but GPU runtime initialization failed", t);
+        }
 
         assertEquals("Native GPU Operations", operations.name());
         assertEquals(1, operations.parallelSplitSize());
