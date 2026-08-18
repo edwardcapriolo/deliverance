@@ -22,12 +22,19 @@ public class InProcessTensorParallelRankService implements TensorParallelRankSer
 
     @Override
     public AbstractTensor batchForward(UUID sessionId, int[] tokenIds, int startPosition) {
-        return model.batchForward(tokenIds, startPosition, kvBuffer(sessionId));
+        KvBufferCache.KvBuffer buffer = kvBuffer(sessionId);
+        buffer.setCurrentContextPosition(startPosition);
+        return model.batchForward(tokenIds, startPosition, buffer);
     }
 
     @Override
     public AbstractTensor forward(UUID sessionId, int tokenId, int position) {
-        return model.forward(tokenId, position, kvBuffer(sessionId), java.util.Optional.empty());
+        KvBufferCache.KvBuffer buffer = kvBuffer(sessionId);
+        try {
+            return model.forward(tokenId, position, buffer, java.util.Optional.empty());
+        } finally {
+            buffer.incrementContextPosition();
+        }
     }
 
     public void closeSession(UUID sessionId) {

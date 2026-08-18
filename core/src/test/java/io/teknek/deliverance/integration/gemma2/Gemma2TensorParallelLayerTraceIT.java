@@ -8,9 +8,14 @@ import io.teknek.deliverance.generator.TransformerBlock;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
+import io.teknek.deliverance.model.DoNothingGenerateEvent;
 import io.teknek.deliverance.model.tensorparallel.InProcessTensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.StaticTensorParallelContext;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelGenerationGroup;
+import io.teknek.deliverance.model.tensorparallel.transport.HttpTensorParallelCollectiveServer;
+import io.teknek.deliverance.model.tensorparallel.transport.HttpTensorParallelCollectives;
+import io.teknek.deliverance.model.tensorparallel.transport.HttpTensorParallelRankClient;
+import io.teknek.deliverance.model.tensorparallel.transport.HttpTensorParallelRankServer;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
@@ -28,6 +33,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.lang.reflect.Field;
+import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -51,6 +57,201 @@ public class Gemma2TensorParallelLayerTraceIT {
     @Test
     public void traceSingleVsTensorParallelPrefillLayerOutputs() {
         traceSingleVsTensorParallelPrefillLayerOutputs(TensorProviderMode.PANAMA);
+    }
+
+    @Test
+    public void inProcessTensorParallelFirstTokenMatchesSingleModel() {
+        inProcessTensorParallelTokensMatchSingleModel("What is tensor parallelism?", 1);
+    }
+
+    @Test
+    public void inProcessTensorParallelAlbanyTokensMatchSingleModel() {
+        inProcessTensorParallelTokensMatchSingleModel("What is the capital of New York, USA?", 3);
+    }
+
+    private void inProcessTensorParallelTokensMatchSingleModel(String userMessage, int maxTokens) {
+        ModelFetcher fetcher = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
+        MetricRegistry metrics = new MetricRegistry();
+        ArrayQueueTensorAllocator allocator = new ArrayQueueTensorAllocator(metrics);
+        WrappedForkJoinPool pool = new WrappedForkJoinPool(new ForkJoinPool(Math.min(4,
+                Runtime.getRuntime().availableProcessors())));
+
+        try (pool;
+              AbstractModel single = AutoModelForCausaLm.newBuilder(fetcher)
+                      .withMetricRegistry(metrics)
+                      .withTensorAllocator(allocator)
+                      .withWrappedForkJoinPool(pool)
+                      .withWorkingQuantType(DType.F32)
+                      .withTensorProvider(tensorProvider(TensorProviderMode.PANAMA, allocator, pool))
+                      .buildLocalTransformerModel()) {
+            InProcessTensorParallelCollectives.Group collectiveGroup = new InProcessTensorParallelCollectives.Group(
+                    Duration.ofSeconds(30));
+            List<AbstractModel> rankModels = new ArrayList<>();
+            for (int rank = 0; rank < TP_SIZE; rank++) {
+                rankModels.add(AutoModelForCausaLm.newBuilder(fetcher)
+                        .withMetricRegistry(metrics)
+                        .withTensorAllocator(allocator)
+                        .withWrappedForkJoinPool(pool)
+                        .withWorkingQuantType(DType.F32)
+                        .withTensorProvider(tensorProvider(TensorProviderMode.PANAMA, allocator, pool))
+                        .withTensorParallelContext(new StaticTensorParallelContext(rank, TP_SIZE))
+                        .withTensorParallelCollectives(new InProcessTensorParallelCollectives(
+                                new StaticTensorParallelContext(rank, TP_SIZE), collectiveGroup))
+                        .buildLocalTransformerModel());
+            }
+            try (TensorParallelGenerationGroup group = new TensorParallelGenerationGroup(rankModels)) {
+                var prompt = single.promptSupport().get().builder()
+                        .addUserMessage(userMessage)
+                        .build();
+                var params = new io.teknek.deliverance.generator.GeneratorParameters()
+                        .withNtokens(64)
+                        .withMaxTokens(maxTokens)
+                        .withTemperature(0.0f)
+                        .withSeed(123);
+                var singleResponse = single.generate(java.util.UUID.randomUUID(), prompt, params, new DoNothingGenerateEvent());
+                    var tpResponse = group.generate(single, prompt, new io.teknek.deliverance.generator.GeneratorParameters()
+                                    .withNtokens(64)
+                                    .withMaxTokens(maxTokens)
+                                    .withTemperature(0.0f)
+                                    .withSeed(123),
+                            new DoNothingGenerateEvent());
+                assertEquals(singleResponse.generatedTokens, tpResponse.generatedTokens,
+                        "single=" + singleResponse + " tp=" + tpResponse);
+            }
+        }
+    }
+
+    @Test
+    public void httpRankTransportWithInProcessCollectivesFirstTokenMatchesSingleModel() {
+        ModelFetcher fetcher = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
+        MetricRegistry metrics = new MetricRegistry();
+        ArrayQueueTensorAllocator allocator = new ArrayQueueTensorAllocator(metrics);
+        WrappedForkJoinPool pool = new WrappedForkJoinPool(new ForkJoinPool(Math.min(4,
+                Runtime.getRuntime().availableProcessors())));
+
+        try (pool;
+             AbstractModel single = AutoModelForCausaLm.newBuilder(fetcher)
+                     .withMetricRegistry(metrics)
+                     .withTensorAllocator(allocator)
+                     .withWrappedForkJoinPool(pool)
+                     .withWorkingQuantType(DType.F32)
+                     .withTensorProvider(tensorProvider(TensorProviderMode.PANAMA, allocator, pool))
+                     .buildLocalTransformerModel()) {
+            InProcessTensorParallelCollectives.Group collectiveGroup = new InProcessTensorParallelCollectives.Group(
+                    Duration.ofSeconds(30));
+            List<HttpTensorParallelRankServer> servers = new ArrayList<>();
+            List<TensorParallelGenerationGroup.RankEndpoint> endpoints = new ArrayList<>();
+            try {
+                for (int rank = 0; rank < TP_SIZE; rank++) {
+                    AbstractModel rankModel = AutoModelForCausaLm.newBuilder(fetcher)
+                            .withMetricRegistry(metrics)
+                            .withTensorAllocator(allocator)
+                            .withWrappedForkJoinPool(pool)
+                            .withWorkingQuantType(DType.F32)
+                            .withTensorProvider(tensorProvider(TensorProviderMode.PANAMA, allocator, pool))
+                            .withTensorParallelContext(new StaticTensorParallelContext(rank, TP_SIZE))
+                            .withTensorParallelCollectives(new InProcessTensorParallelCollectives(
+                                    new StaticTensorParallelContext(rank, TP_SIZE), collectiveGroup))
+                            .buildLocalTransformerModel();
+                    HttpTensorParallelRankServer server = new HttpTensorParallelRankServer(
+                            new InetSocketAddress("127.0.0.1", 0), new io.teknek.deliverance.model.tensorparallel.InProcessTensorParallelRankService(rankModel));
+                    server.start();
+                    servers.add(server);
+                    endpoints.add(new TensorParallelGenerationGroup.RankEndpoint(rank, TP_SIZE,
+                            new HttpTensorParallelRankClient(server.uri()), false));
+                }
+                try (TensorParallelGenerationGroup group = TensorParallelGenerationGroup.fromEndpoints(endpoints)) {
+                    var prompt = single.promptSupport().get().builder()
+                            .addUserMessage("What is tensor parallelism?")
+                            .build();
+                    var params = new io.teknek.deliverance.generator.GeneratorParameters()
+                            .withNtokens(64)
+                            .withMaxTokens(1)
+                            .withTemperature(0.0f)
+                            .withSeed(123);
+                    var singleResponse = single.generate(java.util.UUID.randomUUID(), prompt, params, new DoNothingGenerateEvent());
+                    var tpResponse = group.generate(single, prompt, new io.teknek.deliverance.generator.GeneratorParameters()
+                                    .withNtokens(64)
+                                    .withMaxTokens(1)
+                                    .withTemperature(0.0f)
+                                    .withSeed(123),
+                            new DoNothingGenerateEvent());
+                    assertEquals(singleResponse.generatedTokens.getFirst(), tpResponse.generatedTokens.getFirst(),
+                            "single=" + singleResponse + " tp=" + tpResponse);
+                }
+            } finally {
+                for (HttpTensorParallelRankServer server : servers) {
+                    server.close();
+                }
+            }
+        }
+    }
+
+    @Test
+    public void httpRankTransportWithHttpCollectivesFirstTokenMatchesSingleModel() {
+        ModelFetcher fetcher = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
+        MetricRegistry metrics = new MetricRegistry();
+        ArrayQueueTensorAllocator allocator = new ArrayQueueTensorAllocator(metrics);
+        WrappedForkJoinPool pool = new WrappedForkJoinPool(new ForkJoinPool(Math.min(4,
+                Runtime.getRuntime().availableProcessors())));
+
+        try (pool;
+             HttpTensorParallelCollectiveServer collectiveServer = new HttpTensorParallelCollectiveServer(
+                     new InetSocketAddress("127.0.0.1", 0), Duration.ofSeconds(30));
+             AbstractModel single = AutoModelForCausaLm.newBuilder(fetcher)
+                     .withMetricRegistry(metrics)
+                     .withTensorAllocator(allocator)
+                     .withWrappedForkJoinPool(pool)
+                     .withWorkingQuantType(DType.F32)
+                     .withTensorProvider(tensorProvider(TensorProviderMode.PANAMA, allocator, pool))
+                     .buildLocalTransformerModel()) {
+            collectiveServer.start();
+            List<HttpTensorParallelRankServer> servers = new ArrayList<>();
+            List<TensorParallelGenerationGroup.RankEndpoint> endpoints = new ArrayList<>();
+            try {
+                for (int rank = 0; rank < TP_SIZE; rank++) {
+                    StaticTensorParallelContext context = new StaticTensorParallelContext(rank, TP_SIZE);
+                    AbstractModel rankModel = AutoModelForCausaLm.newBuilder(fetcher)
+                            .withMetricRegistry(metrics)
+                            .withTensorAllocator(allocator)
+                            .withWrappedForkJoinPool(pool)
+                            .withWorkingQuantType(DType.F32)
+                            .withTensorProvider(tensorProvider(TensorProviderMode.PANAMA, allocator, pool))
+                            .withTensorParallelContext(context)
+                            .withTensorParallelCollectives(new HttpTensorParallelCollectives(context, collectiveServer.uri()))
+                            .buildLocalTransformerModel();
+                    HttpTensorParallelRankServer server = new HttpTensorParallelRankServer(
+                            new InetSocketAddress("127.0.0.1", 0), new io.teknek.deliverance.model.tensorparallel.InProcessTensorParallelRankService(rankModel));
+                    server.start();
+                    servers.add(server);
+                    endpoints.add(new TensorParallelGenerationGroup.RankEndpoint(rank, TP_SIZE,
+                            new HttpTensorParallelRankClient(server.uri()), false));
+                }
+                try (TensorParallelGenerationGroup group = TensorParallelGenerationGroup.fromEndpoints(endpoints)) {
+                    var prompt = single.promptSupport().get().builder()
+                            .addUserMessage("What is tensor parallelism?")
+                            .build();
+                    var params = new io.teknek.deliverance.generator.GeneratorParameters()
+                            .withNtokens(64)
+                            .withMaxTokens(1)
+                            .withTemperature(0.0f)
+                            .withSeed(123);
+                    var singleResponse = single.generate(java.util.UUID.randomUUID(), prompt, params, new DoNothingGenerateEvent());
+                    var tpResponse = group.generate(single, prompt, new io.teknek.deliverance.generator.GeneratorParameters()
+                                    .withNtokens(64)
+                                    .withMaxTokens(1)
+                                    .withTemperature(0.0f)
+                                    .withSeed(123),
+                            new DoNothingGenerateEvent());
+                    assertEquals(singleResponse.generatedTokens.getFirst(), tpResponse.generatedTokens.getFirst(),
+                            "single=" + singleResponse + " tp=" + tpResponse);
+                }
+            } finally {
+                for (HttpTensorParallelRankServer server : servers) {
+                    server.close();
+                }
+            }
+        }
     }
 
     @Disabled("takes 30 seconds to run")

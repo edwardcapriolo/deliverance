@@ -129,6 +129,7 @@ public class AutoModelForCausaLm {
         private boolean gpuPrefill;
         private boolean gpuDecode;
         private boolean gpuDecodeAttention;
+        private boolean packedPrefill = true;
         private boolean tensorPlanTrace;
         private Optional<TensorRuntimeMode> tensorRuntimeMode = Optional.empty();
 
@@ -277,6 +278,11 @@ public class AutoModelForCausaLm {
             return this;
         }
 
+        public Builder withPackedPrefill(boolean packedPrefill) {
+            this.packedPrefill = packedPrefill;
+            return this;
+        }
+
         public Builder withTensorRuntimeMode(TensorRuntimeMode tensorRuntimeMode) {
             this.tensorRuntimeMode = Optional.of(Objects.requireNonNull(tensorRuntimeMode, "tensorRuntimeMode"));
             return this;
@@ -320,6 +326,7 @@ public class AutoModelForCausaLm {
             config.gpuPrefill().ifPresent(this::withGpuPrefill);
             config.gpuDecode().ifPresent(this::withGpuDecode);
             config.gpuDecodeAttention().ifPresent(this::withGpuDecodeAttention);
+            config.packedPrefill().ifPresent(this::withPackedPrefill);
             config.download().ifPresent(this::withDownload);
             config.maxBatchSize().ifPresent(this::withMaxBatchSize);
             config.tensorRuntimeMode().ifPresent(this::withTensorRuntimeMode);
@@ -396,6 +403,7 @@ public class AutoModelForCausaLm {
             copy.gpuPrefill = this.gpuPrefill;
             copy.gpuDecode = this.gpuDecode;
             copy.gpuDecodeAttention = this.gpuDecodeAttention;
+            copy.packedPrefill = this.packedPrefill;
             copy.tensorPlanTrace = this.tensorPlanTrace;
             return copy;
         }
@@ -458,6 +466,7 @@ public class AutoModelForCausaLm {
             model.setGpuPrefillEnabled(gpuPrefill);
             model.setGpuDecodeEnabled(gpuDecode);
             model.setGpuDecodeAttentionEnabled(gpuDecodeAttention);
+            model.setPackedPrefillEnabled(packedPrefill);
             model.setTensorRuntimeMode(tensorRuntimeMode);
             model.setTensorPlanTraceEnabled(tensorPlanTrace);
             if (!tensorProviderExplicit) {

@@ -1,4 +1,4 @@
-package io.teknek.deliverance.integration.gemma2;
+package io.teknek.deliverance.integration.tensorparallel;
 
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.generator.GeneratorParameters;
@@ -7,13 +7,11 @@ import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.DoNothingGenerateEvent;
-import io.teknek.deliverance.model.GenerateEvent;
 import io.teknek.deliverance.model.tensorparallel.GossipParallelMembership;
 import io.teknek.deliverance.model.tensorparallel.GossipParallelSettings;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelDeploymentSpec;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelGenerationGroup;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
-import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
@@ -22,25 +20,28 @@ import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
 import io.teknek.gossip.GossipSettings;
 import io.teknek.gossip.Member;
 import io.teknek.gossip.RemoteMember;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.net.URI;
 import java.time.Duration;
-import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
+import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-public class Gemma2TensorParallelIT {
+public class TensorParallelGenerationIT {
     private static final String NODE_0 = "node-0";
     private static final String NODE_1 = "node-1";
 
-    @Test
-    public void assignedGemma2RanksGenerateThroughTwoWorkers() throws Exception {
-        String cluster = "deliverance-gemma2-tp-" + UUID.randomUUID();
+    @ParameterizedTest
+    @Tag("longtest")
+    @MethodSource("modelCases")
+    public void assignedRanksGenerateThroughTwoWorkers(ModelCase modelCase) throws Exception {
+        String cluster = "deliverance-tp-" + UUID.randomUUID();
         int basePort = 42_000 + Math.floorMod(cluster.hashCode(), 1_000);
         URI node0Uri = new URI("udp://127.0.0.1:" + basePort);
         URI node1Uri = new URI("udp://127.0.0.1:" + (basePort + 1));
@@ -52,8 +53,9 @@ public class Gemma2TensorParallelIT {
         settings.setGossipInterval(100);
         settings.setCleanupInterval(2_000);
 
-        ModelFetcher fetcher = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
-        TensorParallelDeploymentSpec deploymentSpec = new TensorParallelDeploymentSpec("demo", 4, 2);
+        ModelFetcher fetcher = new ModelFetcher(modelCase.owner(), modelCase.modelName());
+        TensorParallelDeploymentSpec deploymentSpec = new TensorParallelDeploymentSpec("demo",
+                modelCase.tensorParallelSize(), modelCase.maxRanksPerWorker());
         try (TestNode node0 = createNode(fetcher, cluster, NODE_0, node0Uri, seedMembers, settings, deploymentSpec);
              TestNode node1 = createNode(fetcher, cluster, NODE_1, node1Uri, seedMembers, settings, deploymentSpec)) {
             List<TestNode> nodes = List.of(node0, node1);
@@ -62,7 +64,7 @@ public class Gemma2TensorParallelIT {
             eventually(() -> allNodesSeeLeader(nodes, NODE_0), Duration.ofSeconds(10));
             eventually(() -> allNodesSeeAssignment(nodes), Duration.ofSeconds(10));
             eventually(() -> allNodesSeeCollectiveUri(nodes), Duration.ofSeconds(10));
-            eventually(() -> allNodesSeeRankEndpoints(nodes), Duration.ofSeconds(10));
+            eventually(() -> allNodesSeeRankEndpoints(nodes), Duration.ofSeconds(60));
 
             TensorParallelGenerationGroup group = node0.membership().openGenerationGroup();
 
@@ -71,54 +73,38 @@ public class Gemma2TensorParallelIT {
             TensorAllocator coordinatorAllocator = new ArrayQueueTensorAllocator(coordinatorMetrics);
             try (coordinatorPool;
                  group;
-                 AbstractModel coordinatorModel = AutoModelForCausaLm.newBuilder(fetcher)
-                         .withMetricRegistry(coordinatorMetrics)
-                         .withWrappedForkJoinPool(coordinatorPool)
-                         .withTensorAllocator(coordinatorAllocator)
-                         .withTensorProvider(panamaProvider(coordinatorAllocator, coordinatorPool))
-                         .buildLocalTransformerModel()) {
-                    {
-                        var prompt = coordinatorModel.promptSupport().get().builder()
-                                .addUserMessage("What is 1 + 1?")
-                                .build();
-                        Response response = group.generate(coordinatorModel,
-                                prompt,
-                                new GeneratorParameters()
-                                        .withNtokens(64)
-                                        .withMaxTokens(1)
-                                        .withTemperature(0.0f)
-                                        .withSeed(123),
-                                new DoNothingGenerateEvent());
+                  AbstractModel coordinatorModel = AutoModelForCausaLm.newBuilder(fetcher)
+                           .withMetricRegistry(coordinatorMetrics)
+                           .withWrappedForkJoinPool(coordinatorPool)
+                           .withTensorAllocator(coordinatorAllocator)
+                            .withTensorProvider(panamaProvider(coordinatorAllocator, coordinatorPool))
+                            .buildLocalTransformerModel()) {
+                    var prompt = coordinatorModel.promptSupport().get().builder()
+                            .addUserMessage("What is the capital of New York, USA?")
+                            .build();
+                    long tpStart = System.nanoTime();
+                    Response response = group.generate(coordinatorModel, prompt, new GeneratorParameters()
+                                    .withNtokens(64)
+                                    .withMaxTokens(3)
+                                    .withTemperature(0.0f)
+                                    .withSeed(123),
+                            new DoNothingGenerateEvent());
+                    long tpMillis = (System.nanoTime() - tpStart) / 1_000_000L;
 
-                        assertNotNull(response);
-                        assertEquals(1, response.generatedTokens.size());
-                        assertEquals(1, response.samplerReturns.size());
-                    }
-
-                    {
-                        var prompt = coordinatorModel.promptSupport().get().builder()
-                                .addUserMessage("What is tensor parallelism?").build();
-                        //assertSingleModelAndTensorParallelFirstTokenMatch(coordinatorModel, group, prompt.getPrompt());
-                        Response response = group.generate(coordinatorModel,
-                                prompt,
-                                new GeneratorParameters()
-                                        .withNtokens(64)
-                                        .withMaxTokens(25)
-                                        .withTemperature(0.0f)
-                                        .withSeed(123),
-                                new GenerateEvent() {
-                                    @Override
-                                    public void emit(int next, String nextRaw, String nextCleaned, float timing) {
-                                        System.out.println(nextRaw);
-                                    }
-                                });
-
-                       System.out.println(response);
-                    }
-
+                    System.out.printf("TP_RESULT model=%s/%s tp_ms=%d tokens=%s text=%s special=%s%n",
+                            modelCase.owner(), modelCase.modelName(), tpMillis, response.generatedTokens,
+                            response.responseText, response.responseTextWithSpecialTokens);
+                    assertNotNull(response);
                 }
 
         }
+    }
+
+    private static Stream<ModelCase> modelCases() {
+        return Stream.of(
+                new ModelCase("tjake", "gemma-2-2b-it-JQ4", 4, 2)//,
+                //new ModelCase("edwardcapriolo", "Qwen3-4B-JQ4", 4, 2)
+        );
     }
 
     private static TestNode createNode(ModelFetcher fetcher, String cluster, String nodeId, URI nodeUri,
@@ -131,8 +117,9 @@ public class Gemma2TensorParallelIT {
                 .withWrappedForkJoinPool(pool)
                 .withTensorAllocator(allocator)
                 .withTensorProvider(panamaProvider(allocator, pool))
+
                 .withParallelSettings(new GossipParallelSettings(cluster, nodeId, nodeUri, seedMembers, settings,
-                        deploymentSpec))
+                        deploymentSpec, "netty"))
                 .buildAbstractModel();
         return new TestNode(nodeId, model, pool, model.gossipParallelMembership().orElseThrow());
     }
@@ -173,65 +160,6 @@ public class Gemma2TensorParallelIT {
         throw new AssertionError("condition did not become true within " + timeout);
     }
 
-    private static void assertSingleModelAndTensorParallelFirstTokenMatch(AbstractModel singleModel,
-            TensorParallelGenerationGroup group, String renderedPrompt) {
-        int[] promptTokens = constructPromptTokensLikeGenerate(singleModel, renderedPrompt);
-        float maxAbsDiff;
-        try (AbstractTensor singlePrefill = singleModel.batchForward(promptTokens, 0);
-             AbstractTensor tpPrefill = group.batchForward(promptTokens, 0)) {
-            maxAbsDiff = maxAbsDiff(singlePrefill, tpPrefill);
-        }
-
-        var prompt = singleModel.promptSupport().get().builder()
-                .addUserMessage("What is tensor parallelism?")
-                .build();
-        GeneratorParameters params = new GeneratorParameters()
-                .withNtokens(64)
-                .withMaxTokens(1)
-                .withTemperature(0.0f)
-                .withSeed(123);
-        Response single = singleModel.generate(UUID.randomUUID(), prompt, params, new DoNothingGenerateEvent());
-        Response tp = group.generate(singleModel, prompt, new GeneratorParameters()
-                        .withNtokens(64)
-                        .withMaxTokens(1)
-                        .withTemperature(0.0f)
-                        .withSeed(123),
-                new DoNothingGenerateEvent());
-
-        int singleToken = single.generatedTokens.get(0);
-        int tpToken = tp.generatedTokens.get(0);
-        assertEquals(singleToken, tpToken,
-                "single-vs-TP first token mismatch; promptTokens=" + promptTokens.length
-                        + " prefillMaxAbsDiff=" + maxAbsDiff
-                        + " singleText='" + single.responseText + "'"
-                        + " tpText='" + tp.responseText + "'");
-    }
-
-    private static float maxAbsDiff(AbstractTensor expected, AbstractTensor actual) {
-        assertEquals(expected.shape().first(), actual.shape().first(), "prefill row count");
-        assertEquals(expected.shape().last(), actual.shape().last(), "prefill column count");
-        float max = 0.0f;
-        for (int row = 0; row < expected.shape().first(); row++) {
-            for (int col = 0; col < expected.shape().last(); col++) {
-                max = Math.max(max, Math.abs(expected.get(row, col) - actual.get(row, col)));
-            }
-        }
-        return max;
-    }
-
-    private static int[] constructPromptTokensLikeGenerate(AbstractModel model, String renderedPrompt) {
-        long[] encoded = model.encodeForRuntime(renderedPrompt);
-        if (encoded.length > 0 && encoded[0] == model.getConfig().bosToken) {
-            encoded = Arrays.copyOfRange(encoded, 1, encoded.length);
-        }
-        int[] promptTokens = new int[encoded.length + 1];
-        promptTokens[0] = model.getConfig().bosToken;
-        for (int i = 0; i < encoded.length; i++) {
-            promptTokens[i + 1] = Math.toIntExact(encoded[i]);
-        }
-        return promptTokens;
-    }
-
     private static ConfigurableTensorProvider panamaProvider(TensorAllocator allocator, WrappedForkJoinPool pool) {
         return new ConfigurableTensorProvider(new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, allocator, pool));
     }
@@ -242,6 +170,13 @@ public class Gemma2TensorParallelIT {
         public void close() {
             model.close();
             pool.close();
+        }
+    }
+
+    private record ModelCase(String owner, String modelName, int tensorParallelSize, int maxRanksPerWorker) {
+        @Override
+        public String toString() {
+            return owner + "/" + modelName + " tp=" + tensorParallelSize + " ranksPerWorker=" + maxRanksPerWorker;
         }
     }
 

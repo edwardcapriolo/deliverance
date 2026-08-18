@@ -229,6 +229,147 @@ public class PanamaTensorOperationsTest {
         assertRowShardProjectionEquals(fullOutput, shardOutput, batchSize - 1, 0.0001f);
     }
 
+    @Test
+    void batchDotProductI8Q4RowShardMatchesFullProjectionForRemainderBatchRow() {
+        int batchSize = 13;
+        int embeddingLength = 2304;
+        int fullRows = 2048;
+        int shardRows = 512;
+        FloatBufferTensor weightSource = deterministicWeight(fullRows, embeddingLength);
+        try (AbstractTensor input = AbstractTensorUtils.quantize(deterministicInput(batchSize, embeddingLength), DType.I8, true);
+             AbstractTensor fullWeight = AbstractTensorUtils.quantize(weightSource, DType.Q4, true);
+             AbstractTensor shardWeight = AbstractTensorUtils.quantize(rowShard(weightSource, 0, shardRows), DType.Q4, true)) {
+            FloatBufferTensor fullOutput = new FloatBufferTensor(batchSize, fullRows);
+            FloatBufferTensor shardOutput = new FloatBufferTensor(batchSize, shardRows);
+
+            try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
+                PanamaTensorOperations ops = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
+                        Mockito.mock(TensorAllocator.class), pool);
+                ops.batchDotProduct(fullOutput, input, fullWeight, 0, 0, embeddingLength, 0, 0, fullRows);
+                ops.batchDotProduct(shardOutput, input, shardWeight, 0, 0, embeddingLength, 0, 0, shardRows);
+            }
+
+            assertRowShardProjectionEquals(fullOutput, shardOutput, batchSize - 1, 0.0001f);
+        }
+    }
+
+    @Test
+    void dotProductBatchChunkI8Q4RowShardsMatchFullProjection() {
+        int batchSize = 5;
+        int embeddingLength = 256;
+        int fullRows = 512;
+        int shardStart = 128;
+        int shardRows = 128;
+        FloatBufferTensor weight0Source = deterministicWeight(fullRows, embeddingLength);
+        FloatBufferTensor weight1Source = deterministicWeight(fullRows, embeddingLength, 7);
+        try (AbstractTensor input = AbstractTensorUtils.quantize(deterministicInput(batchSize, embeddingLength), DType.I8, true);
+             AbstractTensor fullWeight0 = AbstractTensorUtils.quantize(weight0Source, DType.Q4, true);
+             AbstractTensor fullWeight1 = AbstractTensorUtils.quantize(weight1Source, DType.Q4, true);
+             AbstractTensor shardWeight0 = AbstractTensorUtils.quantize(rowShard(weight0Source, shardStart, shardRows), DType.Q4, true);
+             AbstractTensor shardWeight1 = AbstractTensorUtils.quantize(rowShard(weight1Source, shardStart, shardRows), DType.Q4, true)) {
+            FloatBufferTensor fullOutput0 = new FloatBufferTensor(batchSize, fullRows);
+            FloatBufferTensor fullOutput1 = new FloatBufferTensor(batchSize, fullRows);
+            FloatBufferTensor shardOutput0 = new FloatBufferTensor(batchSize, shardRows);
+            FloatBufferTensor shardOutput1 = new FloatBufferTensor(batchSize, shardRows);
+
+            try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
+                PanamaTensorOperations ops = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
+                        Mockito.mock(TensorAllocator.class), pool);
+                ops.dotProductBatchChunk(new AbstractTensor[]{fullOutput0, fullOutput1}, input,
+                        new AbstractTensor[]{fullWeight0, fullWeight1}, 0, embeddingLength, 0, fullRows);
+                ops.dotProductBatchChunk(new AbstractTensor[]{shardOutput0, shardOutput1}, input,
+                        new AbstractTensor[]{shardWeight0, shardWeight1}, 0, embeddingLength, 0, shardRows);
+            }
+
+            assertRowShardProjectionEquals(fullOutput0, shardOutput0, batchSize - 1, shardStart, 0.0001f);
+            assertRowShardProjectionEquals(fullOutput1, shardOutput1, batchSize - 1, shardStart, 0.0001f);
+        }
+    }
+
+    @Test
+    void dotProductChunkF32Q4ChunkedOneDimensionalLogitsMatchWholeProjection() {
+        int embeddingLength = 256;
+        int vocabularySize = 1024;
+        FloatBufferTensor embedding = deterministicInput(1, embeddingLength);
+        try (AbstractTensor weights = AbstractTensorUtils.quantize(deterministicWeight(vocabularySize, embeddingLength),
+                DType.Q4, true)) {
+            FloatBufferTensor whole = new FloatBufferTensor(vocabularySize);
+            FloatBufferTensor chunked = new FloatBufferTensor(vocabularySize);
+
+            try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
+                PanamaTensorOperations ops = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
+                        Mockito.mock(TensorAllocator.class), pool);
+                ops.dotProductChunk(whole, embedding, weights, 0, embeddingLength, 0, vocabularySize);
+                for (int start = 0; start < vocabularySize; start += 128) {
+                    ops.dotProductChunk(chunked, embedding, weights, 0, embeddingLength, start, 128);
+                }
+            }
+
+            for (int i = 0; i < vocabularySize; i++) {
+                assertEquals(whole.get(0, i), chunked.get(0, i), 0.0001f, "token=" + i);
+            }
+        }
+    }
+
+    @Test
+    void dotProductChunkI8Q4ChunkedOneDimensionalLogitsMatchWholeProjection() {
+        int embeddingLength = 256;
+        int vocabularySize = 1024;
+        try (AbstractTensor embedding = AbstractTensorUtils.quantize(deterministicInput(1, embeddingLength), DType.I8, true);
+             AbstractTensor weights = AbstractTensorUtils.quantize(deterministicWeight(vocabularySize, embeddingLength),
+                     DType.Q4, true)) {
+            FloatBufferTensor whole = new FloatBufferTensor(vocabularySize);
+            FloatBufferTensor chunked = new FloatBufferTensor(vocabularySize);
+
+            try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
+                PanamaTensorOperations ops = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
+                        Mockito.mock(TensorAllocator.class), pool);
+                ops.dotProductChunk(whole, embedding, weights, 0, embeddingLength, 0, vocabularySize);
+                for (int start = 0; start < vocabularySize; start += 128) {
+                    ops.dotProductChunk(chunked, embedding, weights, 0, embeddingLength, start, 128);
+                }
+            }
+
+            for (int i = 0; i < vocabularySize; i++) {
+                assertEquals(whole.get(0, i), chunked.get(0, i), 0.0001f, "token=" + i);
+            }
+        }
+    }
+
+    @Test
+    void dotProductChunkI8Q4ColumnShardMatchesFullProjectionContribution() {
+        int batchSize = 3;
+        int embeddingLength = 128;
+        int hiddenLength = 256;
+        int shardStart = 64;
+        int shardLength = 96;
+        FloatBufferTensor inputSource = deterministicInput(batchSize, hiddenLength);
+        FloatBufferTensor weightSource = deterministicWeight(embeddingLength, hiddenLength);
+        try (AbstractTensor fullInput = AbstractTensorUtils.quantize(inputSource, DType.I8, true);
+             AbstractTensor shardInput = AbstractTensorUtils.quantize(columnShard(inputSource,
+                     shardStart, shardLength), DType.I8, true);
+             AbstractTensor fullWeight = AbstractTensorUtils.quantize(weightSource, DType.Q4, true);
+             AbstractTensor shardWeight = AbstractTensorUtils.quantize(columnShard(weightSource,
+                     shardStart, shardLength), DType.Q4, true)) {
+            FloatBufferTensor expected = new FloatBufferTensor(batchSize, embeddingLength);
+            FloatBufferTensor actual = new FloatBufferTensor(batchSize, embeddingLength);
+
+            try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
+                PanamaTensorOperations ops = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
+                        Mockito.mock(TensorAllocator.class), pool);
+                ops.dotProductChunk(expected, fullInput, fullWeight, shardStart, shardLength, 0, embeddingLength);
+                ops.dotProductChunk(actual, shardInput, shardWeight, 0, shardLength, 0, embeddingLength);
+            }
+
+            for (int row = 0; row < batchSize; row++) {
+                for (int col = 0; col < embeddingLength; col++) {
+                    assertEquals(expected.get(row, col), actual.get(row, col), 0.0001f,
+                            "row=" + row + " col=" + col);
+                }
+            }
+        }
+    }
+
     private static FloatBufferTensor deterministicInput(int rows, int cols) {
         FloatBufferTensor tensor = new FloatBufferTensor(rows, cols);
         for (int row = 0; row < rows; row++) {
@@ -240,10 +381,14 @@ public class PanamaTensorOperationsTest {
     }
 
     private static FloatBufferTensor deterministicWeight(int rows, int cols) {
+        return deterministicWeight(rows, cols, 0);
+    }
+
+    private static FloatBufferTensor deterministicWeight(int rows, int cols, int salt) {
         FloatBufferTensor tensor = new FloatBufferTensor(rows, cols);
         for (int row = 0; row < rows; row++) {
             for (int col = 0; col < cols; col++) {
-                tensor.set(((row * 43 + col * 19) % 251 - 125) / 80.0f, row, col);
+                tensor.set(((row * 43 + col * 19 + salt) % 251 - 125) / 80.0f, row, col);
             }
         }
         return tensor;
@@ -258,10 +403,23 @@ public class PanamaTensorOperationsTest {
         return shard;
     }
 
+    private static FloatBufferTensor columnShard(AbstractTensor source, int startInclusive, int length) {
+        FloatBufferTensor shard = new FloatBufferTensor(source.shape().first(), length);
+        for (int row = 0; row < source.shape().first(); row++) {
+            shard.copyFrom(source, source.getOffset(row, startInclusive), shard.getOffset(row, 0), length);
+        }
+        return shard;
+    }
+
     private static void assertRowShardProjectionEquals(AbstractTensor full, AbstractTensor shard, int batchRow,
             float tolerance) {
+        assertRowShardProjectionEquals(full, shard, batchRow, 0, tolerance);
+    }
+
+    private static void assertRowShardProjectionEquals(AbstractTensor full, AbstractTensor shard, int batchRow,
+            int fullColumnOffset, float tolerance) {
         for (int col = 0; col < shard.shape().last(); col++) {
-            float expected = full.get(batchRow, col);
+            float expected = full.get(batchRow, fullColumnOffset + col);
             float actual = shard.get(batchRow, col);
             assertEquals(expected, actual, tolerance,
                     "batchRow=" + batchRow + " col=" + col + " expected=" + expected + " actual=" + actual);

@@ -1086,6 +1086,15 @@ public final class PanamaTensorOperations implements TensorOperations {
                 final int blockSize = Q8ByteBufferTensor.BLOCK_SIZE;
                 final int blocksNeeded = k / Q8ByteBufferTensor.BLOCK_SIZE;
 
+                if (blocksNeeded % FloatVector.SPECIES_128.length() != 0) {
+                    float sum = 0.0f;
+                    for (int col = 0; col < k; col++) {
+                        sum += a.get(i, aColumnOffset + col) * b.get(j, bColumnOffset + col);
+                    }
+                    c.set(sum, i, j + rOffset);
+                    return;
+                }
+
                 int aoffset = aColumnOffset;
                 int boffset = bColumnOffset;
 

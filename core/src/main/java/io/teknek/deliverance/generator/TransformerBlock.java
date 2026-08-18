@@ -227,7 +227,7 @@ public class TransformerBlock {
             postFF = ffBlock.forward(qlnemb2, tensorReducer, phase);
         }
 
-        AbstractTensor lnpostFF = maybeApplyNorm(postFF, preResponseNorm);
+        AbstractTensor lnpostFF = maybeApplyNorm(postFF, postFFNorm);
         applyResidual(lnpostFF, lnattn, "post_ff_residual");
         model.emitLayerDebug(layerIndex, "post_ff_residual", lnpostFF);
 
@@ -237,9 +237,10 @@ public class TransformerBlock {
         if (lnpreFF.tensor() != lnattn) lnpreFF.tensor().close();
         else lnattn.close();
 
+        AbstractTensor output = maybeApplyNorm(lnpostFF, preResponseNorm);
         TensorPlan outputLineage = TensorPlanSupport.plan(model, configurableTensorProvider.get());
-        return new PlannedTensor(lnpostFF,
-                outputLineage.input("layer_output", lnpreFF.plan(), lnpostFF).as("layer_output"));
+        return new PlannedTensor(output,
+                outputLineage.input("layer_output", lnpreFF.plan(), output).as("layer_output"));
         }
     }
 

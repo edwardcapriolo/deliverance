@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "deliverance-tp.coordinatorName" . }}-config
+  labels:
+    app.kubernetes.io/name: {{ include "deliverance-tp.name" . }}
+    app.kubernetes.io/component: coordinator
+data:
+  application.properties: |
+    server.port={{ .Values.coordinator.service.port }}
+    deliverance.tensor.operations.type=simd
+    deliverance-model.configs[0].model-owner={{ .Values.model.owner }}
+    deliverance-model.configs[0].model-name={{ .Values.model.name }}
+    deliverance-model.configs[0].inference-type=GENERATION
+    deliverance-model.configs[0].output-head-quantization={{ .Values.model.outputHeadQuantization }}
+    deliverance-model.configs[0].tensor-parallel.enabled=true
+    deliverance-model.configs[0].tensor-parallel.cluster={{ .Values.tensorParallel.cluster }}
+    deliverance-model.configs[0].tensor-parallel.node-id=coordinator
+    deliverance-model.configs[0].tensor-parallel.uri=udp://{{ include "deliverance-tp.coordinatorName" . }}:{{ .Values.tensorParallel.gossipPort }}
+    deliverance-model.configs[0].tensor-parallel.deployment={{ .Values.tensorParallel.deployment }}
+    deliverance-model.configs[0].tensor-parallel.collective-transport={{ .Values.tensorParallel.collectiveTransport }}
+    deliverance-model.configs[0].tensor-parallel.size={{ .Values.tensorParallel.size }}
+    deliverance-model.configs[0].tensor-parallel.max-ranks-per-worker={{ .Values.tensorParallel.maxRanksPerWorker }}
+    deliverance-model.configs[0].tensor-parallel.ready-timeout-seconds={{ .Values.tensorParallel.readyTimeoutSeconds }}
+    deliverance-model.configs[0].tensor-parallel.rank-endpoint-timeout-seconds={{ .Values.tensorParallel.rankEndpointTimeoutSeconds }}
+{{- range $i := until (int .Values.workers.replicas) }}
+    deliverance-model.configs[0].tensor-parallel.seeds[{{ $i }}]=worker-{{ $i }}=udp://{{ include "deliverance-tp.workerName" $ }}-{{ $i }}.{{ include "deliverance-tp.workerName" $ }}.{{ $.Release.Namespace }}.svc.cluster.local:{{ $.Values.tensorParallel.gossipPort }}
+{{- end }}
+    deliverance.kv.prefix.max-entries=0
+    deliverance.kv.prefix.max-tokens=0

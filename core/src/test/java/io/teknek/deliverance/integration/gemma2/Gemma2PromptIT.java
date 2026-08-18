@@ -156,6 +156,62 @@ public class Gemma2PromptIT {
 
     }
 
+    @Test
+    public void gemmaAlbanyFirstTokens() {
+        AbstractModel m = Gemma2Suite.getOrCreate();
+        PromptContext prompt = m.promptSupport().get().builder()
+                .addUserMessage("What is the capital of New York, USA?")
+                .build();
+        Response response = m.generate(UUID.randomUUID(), prompt, new GeneratorParameters()
+                        .withMaxTokens(3)
+                        .withTemperature(0.0f)
+                        .withSeed(123),
+                new DoNothingGenerateEvent());
+        System.out.printf("GEMMA_SUITE_RESULT tokens=%s text=%s special=%s%n",
+                response.generatedTokens, response.responseText, response.responseTextWithSpecialTokens);
+        assertEquals(List.of(651, 6037, 576), response.generatedTokens, "Gemma2 Albany first tokens");
+    }
+
+    @Test
+    public void packedPrefillMatchesPagedAttentionForFirstGemmaTokens() {
+        ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
+        try (AbstractModel pagedModel = AutoModelForCausaLm.newBuilder(fetch)
+                .withOutputHeadQuantization(DType.Q4)
+                .withKvBufferCacheSettings(new KvBufferCacheSettings(true).withBlockSize(8))
+                .withPackedPrefill(false)
+                .buildLocalTransformerModel();
+             AbstractModel packedModel = AutoModelForCausaLm.newBuilder(fetch)
+                     .withOutputHeadQuantization(DType.Q4)
+                     .withKvBufferCacheSettings(new KvBufferCacheSettings(true).withBlockSize(8))
+                     .withPackedPrefill(true)
+                     .buildLocalTransformerModel()) {
+            PromptContext pagedPrompt = pagedModel.promptSupport().get().builder()
+                    .addUserMessage("What is the capital of New York, USA?")
+                    .build();
+            PromptContext packedPrompt = packedModel.promptSupport().get().builder()
+                    .addUserMessage("What is the capital of New York, USA?")
+                    .build();
+
+            Response paged = pagedModel.generate(UUID.randomUUID(), pagedPrompt, new GeneratorParameters()
+                    .withMaxTokens(2)
+                    .withTemperature(0.0f)
+                    .withSeed(123),
+                    new DoNothingGenerateEvent());
+
+            Response packed = packedModel.generate(UUID.randomUUID(), packedPrompt, new GeneratorParameters()
+                    .withMaxTokens(2)
+                    .withTemperature(0.0f)
+                    .withSeed(123),
+                    new DoNothingGenerateEvent());
+
+            assertEquals(paged.generatedTokens, packed.generatedTokens,
+                    "packed prefill should choose the same first Gemma2 tokens as paged attention; paged="
+                            + paged + " packed=" + packed);
+            assertEquals(paged.responseText, packed.responseText,
+                    "packed prefill should produce the same first Gemma2 text as paged attention");
+        }
+    }
+
 
    // "What is tensor parallelism?"
    @Test

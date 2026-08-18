@@ -47,7 +47,7 @@ class TestPretrainedPortedTest {
                 new ModelCase("intfloat", "e5-small-v2",
                         new float[] { 0.8147f, 0.91502f, 0.86984f, 0.87874f }),
                 new ModelCase("edwardcapriolo", "all-MiniLM-L6-v2-JQ4",
-                        new float[] { 0.46371f, 0.81205f, 0.72828f, 0.75051f }));
+                        new float[] { 0.46784f, 0.82885f, 0.73698f, 0.75143f }));
     }
 
     @Test

@@ -1,0 +1,64 @@
+image:
+  repository: edwardcapriolo/deliverance
+  tag: latest
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+model:
+  owner: tjake
+  name: gemma-2-2b-it-JQ4
+  outputHeadQuantization: Q4
+
+tensorParallel:
+  cluster: deliverance-gemma2-tp
+  deployment: gemma2-demo
+  size: 4
+  maxRanksPerWorker: 1
+  collectiveTransport: http
+  gossipPort: 42606
+  readyTimeoutSeconds: 180
+  rankEndpointTimeoutSeconds: 300
+
+workers:
+  replicas: 4
+  poolSize: 16
+  workingDType: F32
+  workingQType: I8
+  profileStages: true
+  resources: {}
+  # The image must be able to run this class with all Deliverance runtime dependencies on the classpath.
+  command:
+    - java
+  baseArgs:
+    - --add-modules
+    - jdk.incubator.vector
+    - -cp
+    - /deliverance/lib/*:/deliverance/web.jar
+    - io.teknek.deliverance.benchmark.TpLocalCluster
+
+coordinator:
+  replicas: 1
+  service:
+    type: ClusterIP
+    port: 8080
+  resources: {}
+  command:
+    - java
+  args:
+    - --add-modules
+    - jdk.incubator.vector
+    - -jar
+    - /deliverance/web.jar
+
+cache:
+  enabled: true
+  mountPath: /home/deliverance/.deliverance
+  storageClassName: ""
+  size: 20Gi
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
