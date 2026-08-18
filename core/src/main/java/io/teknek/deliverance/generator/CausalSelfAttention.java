@@ -25,7 +25,6 @@ import static io.teknek.deliverance.tensor.DebugSupport.debug;
 
 public class CausalSelfAttention extends BaseCausalSelfAttention {
     private static final Logger logger = LoggerFactory.getLogger(CausalSelfAttention.class);
-    private static final String PACKED_PREFILL_PROPERTY = "deliverance.attention.packed-prefill";
 
     private final AbstractModel m;
     private final Config config;
@@ -453,7 +452,7 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
     }
 
     private boolean usePackedPrefill(int batchSize) {
-        return batchSize > 1 && Boolean.parseBoolean(System.getProperty(PACKED_PREFILL_PROPERTY, "true"));
+        return batchSize > 1 && m.isPackedPrefillEnabled();
     }
 
     private void prefillAttention(AbstractTensor queryBatch, AbstractTensor valueBatch, KvBufferCache.KvBuffer kvMem,

@@ -5,7 +5,7 @@ import io.teknek.gossip.Member;
 import io.teknek.gossip.RemoteMember;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
-import io.teknek.deliverance.model.gemma2.Gemma2Model;
+import io.teknek.deliverance.model.qwen3.Qwen3Model;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -38,8 +38,8 @@ public class GossipTensorParallelMembershipTest {
         settings.setPersistDataState(false);
         settings.setGossipInterval(100);
         settings.setCleanupInterval(2_000);
-        ModelFetcher fetcher = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
-        int tensorParallelRanks = assertGemma2TensorParallelRankCapacity(fetcher, 10);
+        ModelFetcher fetcher = new ModelFetcher("edwardcapriolo", "Qwen3-4B-JQ4");
+        int tensorParallelRanks = assertQwen3TensorParallelRankCapacity(fetcher, 4);
         TensorParallelDeploymentSpec deploymentSpec = new TensorParallelDeploymentSpec("demo", tensorParallelRanks, 2);
 
         AutoModelForCausaLm.Builder node0Builder = AutoModelForCausaLm.newBuilder(fetcher)
@@ -105,11 +105,11 @@ public class GossipTensorParallelMembershipTest {
         }
     }
 
-    private static int assertGemma2TensorParallelRankCapacity(ModelFetcher fetcher, int requestedNodes) {
+    private static int assertQwen3TensorParallelRankCapacity(ModelFetcher fetcher, int requestedNodes) {
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetcher).buildLocalTransformerModel()) {
-            assertInstanceOf(Gemma2Model.class, model);
-            assertEquals(8, model.getConfig().numberOfHeads);
-            assertEquals(4, model.getConfig().numberOfKeyValueHeads);
+            assertInstanceOf(Qwen3Model.class, model);
+            assertEquals(32, model.getConfig().numberOfHeads);
+            assertEquals(8, model.getConfig().numberOfKeyValueHeads);
             int tensorParallelRanks = TensorParallelPlanner.chooseSize(model.getConfig(), requestedNodes);
             assertEquals(4, tensorParallelRanks);
             return tensorParallelRanks;

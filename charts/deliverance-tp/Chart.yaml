@@ -1,0 +1,6 @@
+apiVersion: v2
+name: deliverance-tp
+description: Tensor-parallel Deliverance deployment with Gemma2 workers and a web coordinator.
+type: application
+version: 0.1.0
+appVersion: "0.0.13-SNAPSHOT"

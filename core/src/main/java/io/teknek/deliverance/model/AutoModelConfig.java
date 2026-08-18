@@ -24,6 +24,7 @@ public record AutoModelConfig(
         Optional<Boolean> gpuPrefill,
         Optional<Boolean> gpuDecode,
         Optional<Boolean> gpuDecodeAttention,
+        Optional<Boolean> packedPrefill,
         Optional<Boolean> download,
         Optional<Integer> maxBatchSize,
         Optional<TensorRuntimeMode> tensorRuntimeMode,
@@ -38,6 +39,7 @@ public record AutoModelConfig(
         gpuPrefill = gpuPrefill == null ? Optional.empty() : gpuPrefill;
         gpuDecode = gpuDecode == null ? Optional.empty() : gpuDecode;
         gpuDecodeAttention = gpuDecodeAttention == null ? Optional.empty() : gpuDecodeAttention;
+        packedPrefill = packedPrefill == null ? Optional.empty() : packedPrefill;
         download = download == null ? Optional.empty() : download;
         maxBatchSize = maxBatchSize == null ? Optional.empty() : maxBatchSize;
         tensorRuntimeMode = tensorRuntimeMode == null ? Optional.empty() : tensorRuntimeMode;

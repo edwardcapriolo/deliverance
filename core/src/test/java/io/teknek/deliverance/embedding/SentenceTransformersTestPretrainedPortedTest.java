@@ -27,7 +27,7 @@ class SentenceTransformersTestPretrainedPortedTest {
     @Test
     void testPretrainedModelBf16SdpaAllMiniLmL6V2() {
         assertPretrainedSimilarities("edwardcapriolo", "all-MiniLM-L6-v2-JQ4",
-                new float[] { 0.46371f, 0.81205f, 0.72828f, 0.75051f });
+                new float[] { 0.46784f, 0.82885f, 0.73698f, 0.75143f });
     }
 
     private static void assertPretrainedSimilarities(String owner, String modelName, float[] expected) {

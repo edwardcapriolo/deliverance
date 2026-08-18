@@ -87,11 +87,14 @@ public final class TensorParallelMlp {
             }
 
             try (Timer.Context ignoredActivation = InferenceProfiler.timer(model.getMetricRegistry(), "tensorparallelmlp.activation").time()) {
-                IntStream.range(0, localHiddenLength).parallel().forEach(i -> {
-                for (int row = 0; row < batchSize; row++) {
-                    gate.set(ActivationFunction.eval(activationFunction, gate.get(row, i)), row, i);
-                }
-                });
+                VectorMath.pchunk(0, localHiddenLength, (chunkStart, chunkSize) -> {
+                    int chunkEnd = chunkStart + chunkSize;
+                    for (int i = chunkStart; i < chunkEnd; i++) {
+                        for (int row = 0; row < batchSize; row++) {
+                            gate.set(ActivationFunction.eval(activationFunction, gate.get(row, i)), row, i);
+                        }
+                    }
+                }, tensorProvider.get().parallelSplitSize(), model.getPool());
             }
             try (Timer.Context ignoredMultiply = InferenceProfiler.timer(model.getMetricRegistry(), "tensorparallelmlp.multiply").time()) {
                 tensorProvider.get().maccumulate(gate, up, 0, localHiddenLength);

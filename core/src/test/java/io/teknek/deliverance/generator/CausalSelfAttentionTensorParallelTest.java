@@ -152,6 +152,58 @@ public class CausalSelfAttentionTensorParallelTest {
         }
     }
 
+    @Test
+    public void fourRankPrefillAndDecodeMatchFullProductionAttentionOutput() throws Exception {
+        Config config = fourRankConfig();
+        ConfigurableTensorProvider provider = new ConfigurableTensorProvider(new NaiveTensorOperations());
+        TensorAllocator tensorAllocator = new ArrayQueueTensorAllocator(new MetricRegistry());
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(new ForkJoinPool(1));
+             AbstractTensor prefillInput = fourRankPrefillInput();
+             AbstractTensor decodeInput = fourRankDecodeInput();
+             AbstractTensor q = identity(8);
+             AbstractTensor k = matrix(8, 8, 0.03f);
+             AbstractTensor v = matrix(8, 8, -0.04f);
+             AbstractTensor o = identity(8);
+             AbstractTensor expected = prefillThenDecode(config, provider, tensorAllocator, pool,
+                     new StaticTensorParallelContext(0, 1), new SingleRankTensorParallelCollectives(), prefillInput,
+                     decodeInput, q, k, v, o)) {
+
+            InProcessTensorParallelCollectives.Group group = new InProcessTensorParallelCollectives.Group(Duration.ofSeconds(5));
+            try (ExecutorService executor = Executors.newFixedThreadPool(4)) {
+                Future<AbstractTensor> rank0Future = executor.submit(() -> prefillThenDecode(config, provider,
+                        tensorAllocator, pool, new StaticTensorParallelContext(0, 4),
+                        new InProcessTensorParallelCollectives(new StaticTensorParallelContext(0, 4), group),
+                        prefillInput, decodeInput, rowShard(q, 0, 2), rowShard(k, 0, 2), rowShard(v, 0, 2),
+                        columnShard(o, 0, 2)));
+                Future<AbstractTensor> rank1Future = executor.submit(() -> prefillThenDecode(config, provider,
+                        tensorAllocator, pool, new StaticTensorParallelContext(1, 4),
+                        new InProcessTensorParallelCollectives(new StaticTensorParallelContext(1, 4), group),
+                        prefillInput, decodeInput, rowShard(q, 2, 4), rowShard(k, 2, 4), rowShard(v, 2, 4),
+                        columnShard(o, 2, 4)));
+                Future<AbstractTensor> rank2Future = executor.submit(() -> prefillThenDecode(config, provider,
+                        tensorAllocator, pool, new StaticTensorParallelContext(2, 4),
+                        new InProcessTensorParallelCollectives(new StaticTensorParallelContext(2, 4), group),
+                        prefillInput, decodeInput, rowShard(q, 4, 6), rowShard(k, 4, 6), rowShard(v, 4, 6),
+                        columnShard(o, 4, 6)));
+                Future<AbstractTensor> rank3Future = executor.submit(() -> prefillThenDecode(config, provider,
+                        tensorAllocator, pool, new StaticTensorParallelContext(3, 4),
+                        new InProcessTensorParallelCollectives(new StaticTensorParallelContext(3, 4), group),
+                        prefillInput, decodeInput, rowShard(q, 6, 8), rowShard(k, 6, 8), rowShard(v, 6, 8),
+                        columnShard(o, 6, 8)));
+
+                try (AbstractTensor rank0 = rank0Future.get();
+                     AbstractTensor rank1 = rank1Future.get();
+                     AbstractTensor rank2 = rank2Future.get();
+                     AbstractTensor rank3 = rank3Future.get()) {
+                    assertTensorClose(expected, rank0, 0.0001f);
+                    assertTensorClose(expected, rank1, 0.0001f);
+                    assertTensorClose(expected, rank2, 0.0001f);
+                    assertTensorClose(expected, rank3, 0.0001f);
+                }
+            }
+        }
+    }
+
     private static AbstractTensor forward(Config config, ConfigurableTensorProvider provider,
             TensorAllocator tensorAllocator, WrappedForkJoinPool pool, TensorParallelContext context,
             TensorParallelCollectives collectives, AbstractTensor input, AbstractTensor q, AbstractTensor k,
@@ -183,6 +235,23 @@ public class CausalSelfAttentionTensorParallelTest {
                 }
             }
             return result;
+        } finally {
+            cache.close();
+        }
+    }
+
+    private static AbstractTensor prefillThenDecode(Config config, ConfigurableTensorProvider provider,
+            TensorAllocator tensorAllocator, WrappedForkJoinPool pool, TensorParallelContext context,
+            TensorParallelCollectives collectives, AbstractTensor prefillInput, AbstractTensor decodeInput,
+            AbstractTensor q, AbstractTensor k, AbstractTensor v, AbstractTensor o) {
+        AbstractModel model = model(config, tensorAllocator, pool, context, collectives);
+        CausalSelfAttention attention = new CausalSelfAttention(model, 0, q, k, v, o, provider, new MetricRegistry());
+        KvBufferCache cache = new KvBufferCache(model, new KvBufferCacheSettings(true));
+        try (KvBufferCache.KvBuffer kv = cache.getEphemeralKvBuffer();
+             AbstractTensor ignoredPrefill = attention.forward(new FloatBufferTensor(prefillInput), 0, kv,
+                     java.util.Optional.empty())) {
+            return attention.forward(new FloatBufferTensor(decodeInput), prefillInput.shape().first(), kv,
+                    java.util.Optional.empty());
         } finally {
             cache.close();
         }
@@ -227,6 +296,11 @@ public class CausalSelfAttentionTensorParallelTest {
                 1.0e-6f, 32, 2, List.of(1), ActivationFunction.Type.GELU_PYTORCH_TANH, 10_000.0, null);
     }
 
+    private static Config fourRankConfig() {
+        return new Config(16, 8, 16, 4, 4, 1,
+                1.0e-6f, 32, 2, List.of(1), ActivationFunction.Type.GELU_PYTORCH_TANH, null, null);
+    }
+
     private static AbstractTensor input() {
         AbstractTensor input = new FloatBufferTensor(2, 4);
         input.set(1.0f, 0, 0);
@@ -248,6 +322,26 @@ public class CausalSelfAttentionTensorParallelTest {
                 input.set(value, row, col);
                 value += 0.17f;
             }
+        }
+        return input;
+    }
+
+    private static AbstractTensor fourRankPrefillInput() {
+        AbstractTensor input = new FloatBufferTensor(3, 8);
+        float value = -0.4f;
+        for (int row = 0; row < input.shape().first(); row++) {
+            for (int col = 0; col < input.shape().last(); col++) {
+                input.set(value, row, col);
+                value += 0.05f;
+            }
+        }
+        return input;
+    }
+
+    private static AbstractTensor fourRankDecodeInput() {
+        AbstractTensor input = new FloatBufferTensor(1, 8);
+        for (int col = 0; col < input.shape().last(); col++) {
+            input.set(0.3f - col * 0.04f, 0, col);
         }
         return input;
     }
