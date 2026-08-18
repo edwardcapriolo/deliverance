@@ -57,6 +57,7 @@
     <modules>
         <module>math</module>
         <module>tensor</module>
+        <module>tensor-test</module>
         <module>safetensors</module>
         <module>core</module>
         <module>native</module>
