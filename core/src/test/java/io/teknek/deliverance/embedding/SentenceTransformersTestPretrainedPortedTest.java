@@ -26,7 +26,7 @@ class SentenceTransformersTestPretrainedPortedTest {
 
     @Test
     void testPretrainedModelBf16SdpaAllMiniLmL6V2() {
-        assertPretrainedSimilarities("sentence-transformers", "all-MiniLM-L6-v2",
+        assertPretrainedSimilarities("edwardcapriolo", "all-MiniLM-L6-v2-JQ4",
                 new float[] { 0.46371f, 0.81205f, 0.72828f, 0.75051f });
     }
 
