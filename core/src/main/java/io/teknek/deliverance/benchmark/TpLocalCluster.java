@@ -107,6 +107,12 @@ public final class TpLocalCluster {
                 response.promptTokens, response.generatedTokens.size(),
                 String.format(Locale.ROOT, "%.1f", response.totalTimeMs), response.finishReason, response.responseText);
         InferenceProfiler.printSummary("tp-local-coordinator-probe", 40);
+        if (options.exitAfterProbe) {
+            group.close();
+            coordinatorModel.close();
+            membership.close();
+            return;
+        }
         waitForever();
     }
 
@@ -201,6 +207,7 @@ public final class TpLocalCluster {
         private int maxTokens = 64;
         private float temperature = 0.0f;
         private boolean profileStages = true;
+        private boolean exitAfterProbe;
         private Duration readyTimeout = Duration.ofSeconds(120);
         private Duration rankEndpointTimeout = Duration.ofSeconds(300);
         private String prompt = "Explain tensor parallel inference in one short paragraph.";
@@ -228,6 +235,7 @@ public final class TpLocalCluster {
                     case "--temperature" -> options.temperature = Float.parseFloat(args[++i]);
                     case "--profile-stages" -> options.profileStages = true;
                     case "--no-profile-stages" -> options.profileStages = false;
+                    case "--exit-after-probe" -> options.exitAfterProbe = true;
                     case "--ready-timeout-seconds" -> options.readyTimeout = Duration.ofSeconds(Long.parseLong(args[++i]));
                     case "--rank-endpoint-timeout-seconds" -> options.rankEndpointTimeout = Duration.ofSeconds(Long.parseLong(args[++i]));
                     case "--prompt" -> options.prompt = args[++i];

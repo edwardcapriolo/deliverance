@@ -3,6 +3,15 @@ image:
   tag: latest
   pullPolicy: IfNotPresent
 
+java:
+  args:
+    - -Djava.library.path=/deliverance/native-lib-only/linux-aarch_64
+    - --add-modules
+    - jdk.incubator.vector,jdk.httpserver,java.net.http
+    - --add-opens
+    - java.base/java.nio=ALL-UNNAMED
+    - --enable-native-access=ALL-UNNAMED
+
 nameOverride: ""
 fullnameOverride: ""
 
@@ -32,8 +41,6 @@ workers:
   command:
     - java
   baseArgs:
-    - --add-modules
-    - jdk.incubator.vector
     - -cp
     - /deliverance/lib/*:/deliverance/web.jar
     - io.teknek.deliverance.benchmark.TpLocalCluster
@@ -47,16 +54,28 @@ coordinator:
   command:
     - java
   args:
-    - --add-modules
-    - jdk.incubator.vector
     - -jar
     - /deliverance/web.jar
 
+benchmark:
+  enabled: false
+  prompt: "What is the capital of New York, USA? Answer with just the city."
+  maxTokens: 24
+  temperature: 0.0
+  command:
+    - java
+  baseArgs:
+    - -cp
+    - /deliverance/lib/*:/deliverance/web.jar
+    - io.teknek.deliverance.benchmark.TpLocalCluster
+
 cache:
   enabled: true
+  type: pvc # pvc, emptyDir, or hostPath
   mountPath: /home/deliverance/.deliverance
   storageClassName: ""
   size: 20Gi
+  hostPath: /models/.deliverance
 
 podAnnotations: {}
 nodeSelector: {}

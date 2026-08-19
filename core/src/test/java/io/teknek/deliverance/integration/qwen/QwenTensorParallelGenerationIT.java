@@ -1,4 +1,4 @@
-package io.teknek.deliverance.integration.tensorparallel;
+package io.teknek.deliverance.integration.qwen;
 
 import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.generator.GeneratorParameters;
@@ -12,6 +12,7 @@ import io.teknek.deliverance.model.tensorparallel.GossipParallelSettings;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelDeploymentSpec;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelGenerationGroup;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
+import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
@@ -27,21 +28,25 @@ import org.junit.jupiter.params.provider.MethodSource;
 import java.net.URI;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-public class TensorParallelGenerationIT {
+@Tag("longtest")
+public class QwenTensorParallelGenerationIT {
     private static final String NODE_0 = "node-0";
     private static final String NODE_1 = "node-1";
 
-    @ParameterizedTest
-    @Tag("longtest")
+    @ParameterizedTest(name = "{0}")
     @MethodSource("modelCases")
-    public void assignedRanksGenerateThroughTwoWorkers(ModelCase modelCase) throws Exception {
-        String cluster = "deliverance-tp-" + UUID.randomUUID();
+    public void tensorParallelMatchesSingleModel(ModelCase modelCase) throws Exception {
+        assumeTrue(modelCase.enabled(), modelCase + " is disabled");
+        String cluster = "deliverance-qwen-tp-" + UUID.randomUUID();
         int basePort = 42_000 + Math.floorMod(cluster.hashCode(), 1_000);
         URI node0Uri = new URI("udp://127.0.0.1:" + basePort);
         URI node1Uri = new URI("udp://127.0.0.1:" + (basePort + 1));
@@ -54,7 +59,7 @@ public class TensorParallelGenerationIT {
         settings.setCleanupInterval(2_000);
 
         ModelFetcher fetcher = new ModelFetcher(modelCase.owner(), modelCase.modelName());
-        TensorParallelDeploymentSpec deploymentSpec = new TensorParallelDeploymentSpec("demo",
+        TensorParallelDeploymentSpec deploymentSpec = new TensorParallelDeploymentSpec("qwen",
                 modelCase.tensorParallelSize(), modelCase.maxRanksPerWorker());
         try (TestNode node0 = createNode(fetcher, cluster, NODE_0, node0Uri, seedMembers, settings, deploymentSpec);
              TestNode node1 = createNode(fetcher, cluster, NODE_1, node1Uri, seedMembers, settings, deploymentSpec)) {
@@ -67,43 +72,51 @@ public class TensorParallelGenerationIT {
             eventually(() -> allNodesSeeRankEndpoints(nodes), Duration.ofSeconds(60));
 
             TensorParallelGenerationGroup group = node0.membership().openGenerationGroup();
-
             MetricRegistry coordinatorMetrics = new MetricRegistry();
             WrappedForkJoinPool coordinatorPool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
             TensorAllocator coordinatorAllocator = new ArrayQueueTensorAllocator(coordinatorMetrics);
             try (coordinatorPool;
                  group;
-                  AbstractModel coordinatorModel = AutoModelForCausaLm.newBuilder(fetcher)
-                           .withMetricRegistry(coordinatorMetrics)
-                           .withWrappedForkJoinPool(coordinatorPool)
-                           .withTensorAllocator(coordinatorAllocator)
-                            .withTensorProvider(panamaProvider(coordinatorAllocator, coordinatorPool))
-                            .buildLocalTransformerModel()) {
-                    var prompt = coordinatorModel.promptSupport().get().builder()
-                            .addUserMessage("What is the capital of New York, USA?")
-                            .build();
-                    long tpStart = System.nanoTime();
-                    Response response = group.generate(coordinatorModel, prompt, new GeneratorParameters()
-                                    .withNtokens(64)
-                                    .withMaxTokens(3)
-                                    .withTemperature(0.0f)
-                                    .withSeed(123),
-                            new DoNothingGenerateEvent());
-                    long tpMillis = (System.nanoTime() - tpStart) / 1_000_000L;
+                 AbstractModel coordinatorModel = AutoModelForCausaLm.newBuilder(fetcher)
+                         .withMetricRegistry(coordinatorMetrics)
+                         .withWrappedForkJoinPool(coordinatorPool)
+                         .withTensorAllocator(coordinatorAllocator)
+                         .withTensorProvider(panamaProvider(coordinatorAllocator, coordinatorPool))
+                         .buildLocalTransformerModel()) {
+                PromptContext prompt = coordinatorModel.promptSupport().orElseThrow().builder()
+                        .addTemplateArgs(modelCase.templateArgs())
+                        .addUserMessage(modelCase.prompt())
+                        .build();
+                GeneratorParameters params = new GeneratorParameters()
+                        .withNtokens(modelCase.ntokens())
+                        .withMaxTokens(modelCase.maxTokens())
+                        .withTemperature(0.0f)
+                        .withSeed(123);
 
-                    System.out.printf("TP_RESULT model=%s/%s tp_ms=%d tokens=%s text=%s special=%s%n",
-                            modelCase.owner(), modelCase.modelName(), tpMillis, response.generatedTokens,
-                            response.responseText, response.responseTextWithSpecialTokens);
-                    assertNotNull(response);
-                }
+                Response single = coordinatorModel.generate(UUID.randomUUID(), prompt, params, new DoNothingGenerateEvent());
+                Response tp = group.generate(coordinatorModel, prompt, new GeneratorParameters()
+                                .withNtokens(modelCase.ntokens())
+                                .withMaxTokens(modelCase.maxTokens())
+                                .withTemperature(0.0f)
+                                .withSeed(123),
+                        new DoNothingGenerateEvent());
 
+                System.out.printf("QWEN_TP_RESULT single_tokens=%s tp_tokens=%s single_text=%s tp_text=%s%n",
+                        single.generatedTokens, tp.generatedTokens, single.responseText, tp.responseText);
+                assertNotNull(tp);
+                assertEquals(single.generatedTokens, tp.generatedTokens,
+                        "single=" + single + " tp=" + tp);
+            }
         }
     }
 
     private static Stream<ModelCase> modelCases() {
         return Stream.of(
-                new ModelCase("tjake", "gemma-2-2b-it-JQ4", 4, 2)//,
-                //new ModelCase("edwardcapriolo", "Qwen3-4B-JQ4", 4, 2)
+                new ModelCase(true, "edwardcapriolo", "Qwen3-0.6B-JQ4", 4, 2, 128, 24,
+                        "What is the capital of New York, USA? Answer with just the city.",
+                        Map.of("enable_thinking", false)),
+                new ModelCase(false, "tjake", "gemma-2-2b-it-JQ4", 4, 2, 64, 24,
+                        "What is the capital of New York, USA?", Map.of())
         );
     }
 
@@ -117,7 +130,6 @@ public class TensorParallelGenerationIT {
                 .withWrappedForkJoinPool(pool)
                 .withTensorAllocator(allocator)
                 .withTensorProvider(panamaProvider(allocator, pool))
-
                 .withParallelSettings(new GossipParallelSettings(cluster, nodeId, nodeUri, seedMembers, settings,
                         deploymentSpec, "netty"))
                 .buildAbstractModel();
@@ -173,11 +185,12 @@ public class TensorParallelGenerationIT {
         }
     }
 
-    private record ModelCase(String owner, String modelName, int tensorParallelSize, int maxRanksPerWorker) {
+    private record ModelCase(boolean enabled, String owner, String modelName, int tensorParallelSize,
+            int maxRanksPerWorker, int ntokens, int maxTokens, String prompt, Map<String, Object> templateArgs) {
         @Override
         public String toString() {
-            return owner + "/" + modelName + " tp=" + tensorParallelSize + " ranksPerWorker=" + maxRanksPerWorker;
+            return owner + "/" + modelName + " tp=" + tensorParallelSize + " ranksPerWorker=" + maxRanksPerWorker
+                    + (enabled ? "" : " disabled");
         }
     }
-
 }

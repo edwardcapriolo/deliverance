@@ -1,0 +1,58 @@
+{{- if .Values.benchmark.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "deliverance-tp.fullname" . }}-benchmark
+  labels:
+    app.kubernetes.io/name: {{ include "deliverance-tp.name" . }}
+    app.kubernetes.io/component: benchmark
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "deliverance-tp.name" . }}
+        app.kubernetes.io/component: benchmark
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: benchmark
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+{{ toYaml .Values.benchmark.command | indent 12 }}
+          args:
+{{ toYaml .Values.java.args | indent 12 }}
+{{ toYaml .Values.benchmark.baseArgs | indent 12 }}
+            - --role
+            - coordinator
+            - --node-id
+            - benchmark
+            - --uri
+            - udp://{{ include "deliverance-tp.fullname" . }}-benchmark.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.tensorParallel.gossipPort }}
+{{ include "deliverance-tp.workerSeedArgs" . | indent 12 }}
+{{ include "deliverance-tp.workerCommonArgs" . | indent 12 }}
+            - --max-tokens
+            - {{ .Values.benchmark.maxTokens | quote }}
+            - --temperature
+            - {{ .Values.benchmark.temperature | quote }}
+            - --prompt
+            - {{ .Values.benchmark.prompt | quote }}
+            - --exit-after-probe
+          volumeMounts:
+{{- if .Values.cache.enabled }}
+            - name: model-cache
+              mountPath: {{ .Values.cache.mountPath }}
+{{- end }}
+      volumes:
+{{- if .Values.cache.enabled }}
+        - name: model-cache
+{{- if eq .Values.cache.type "hostPath" }}
+          hostPath:
+            path: {{ .Values.cache.hostPath | quote }}
+            type: DirectoryOrCreate
+{{- else }}
+          emptyDir: {}
+{{- end }}
+{{- end }}
+{{- end }}

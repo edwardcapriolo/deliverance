@@ -27,6 +27,7 @@ spec:
           command:
 {{ toYaml .Values.workers.command | indent 12 }}
           args:
+{{ toYaml .Values.java.args | indent 12 }}
 {{ toYaml .Values.workers.baseArgs | indent 12 }}
             - --role
             - worker
@@ -66,7 +67,18 @@ spec:
 {{ toYaml .Values.tolerations | indent 8 }}
       affinity:
 {{ toYaml .Values.affinity | indent 8 }}
-{{- if .Values.cache.enabled }}
+{{- if and .Values.cache.enabled (ne .Values.cache.type "pvc") }}
+      volumes:
+        - name: model-cache
+{{- if eq .Values.cache.type "hostPath" }}
+          hostPath:
+            path: {{ .Values.cache.hostPath | quote }}
+            type: DirectoryOrCreate
+{{- else }}
+          emptyDir: {}
+{{- end }}
+{{- end }}
+{{- if and .Values.cache.enabled (eq .Values.cache.type "pvc") }}
   volumeClaimTemplates:
     - metadata:
         name: model-cache

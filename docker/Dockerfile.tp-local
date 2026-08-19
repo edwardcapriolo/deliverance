@@ -1,0 +1,21 @@
+FROM ecapriolo/jdk-25:0.0.6
+
+RUN apk add --no-cache bash
+
+RUN addgroup -S deliverance && adduser -S -G deliverance -h /home/deliverance -D deliverance
+RUN mkdir -p /deliverance/lib /deliverance/native-lib-only /home/deliverance/.deliverance \
+    && chown -R deliverance:deliverance /deliverance /home/deliverance
+
+COPY math/target/math-*.jar /deliverance/lib/
+COPY tensor/target/tensor-*.jar /deliverance/lib/
+COPY safetensors/target/safetensors-*.jar /deliverance/lib/
+COPY grace/target/grace-*.jar /deliverance/lib/
+COPY sketches-core/target/sketches-core-*.jar /deliverance/lib/
+COPY native/target/native-*.jar /deliverance/lib/
+COPY core/target/core-*.jar /deliverance/lib/
+COPY web/target/web-*.jar /deliverance/web.jar
+COPY core/target/tp-runtime-deps/*.jar /deliverance/lib/
+COPY native/target/native-lib-only /deliverance/native-lib-only
+
+USER deliverance
+WORKDIR /deliverance

@@ -26,6 +26,7 @@ spec:
           command:
 {{ toYaml .Values.coordinator.command | indent 12 }}
           args:
+{{ toYaml .Values.java.args | indent 12 }}
 {{ toYaml .Values.coordinator.args | indent 12 }}
             - --spring.config.additional-location=file:/config/application.properties
           ports:
@@ -50,7 +51,13 @@ spec:
             name: {{ include "deliverance-tp.coordinatorName" . }}-config
 {{- if .Values.cache.enabled }}
         - name: model-cache
+{{- if eq .Values.cache.type "hostPath" }}
+          hostPath:
+            path: {{ .Values.cache.hostPath | quote }}
+            type: DirectoryOrCreate
+{{- else }}
           emptyDir: {}
+{{- end }}
 {{- end }}
       nodeSelector:
 {{ toYaml .Values.nodeSelector | indent 8 }}

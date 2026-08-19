@@ -12,8 +12,18 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.concurrent.ForkJoinPool;
+
 @Configuration
 public class Config {
+    private static volatile Integer localLauncherPoolSize;
+
+    public static void useLocalLauncherPoolSize(int poolSize) {
+        if (poolSize < 1) {
+            throw new IllegalArgumentException("poolSize must be >= 1");
+        }
+        localLauncherPoolSize = poolSize;
+    }
 
     @Bean
     public MetricRegistry metricRegistry(){
@@ -27,7 +37,10 @@ public class Config {
 
     @Bean
     public WrappedForkJoinPool pool(){
-        WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+        WrappedForkJoinPool pool = localLauncherPoolSize == null
+                ? new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())
+                : new WrappedForkJoinPool(new ForkJoinPool(localLauncherPoolSize,
+                        ForkJoinPool.defaultForkJoinWorkerThreadFactory, null, true));
         return pool;
     }
 

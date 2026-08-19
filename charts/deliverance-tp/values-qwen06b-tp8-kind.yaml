@@ -1,0 +1,42 @@
+image:
+  repository: deliverance-tp-local
+  tag: dev
+  pullPolicy: IfNotPresent
+
+model:
+  owner: edwardcapriolo
+  name: Qwen3-0.6B-JQ4
+  outputHeadQuantization: Q4
+
+tensorParallel:
+  cluster: deliverance-qwen06b-tp8
+  deployment: qwen06b-kind
+  size: 8
+  maxRanksPerWorker: 1
+  collectiveTransport: netty
+  gossipPort: 42606
+  readyTimeoutSeconds: 240
+  rankEndpointTimeoutSeconds: 600
+
+workers:
+  replicas: 8
+  poolSize: 2
+  workingDType: F32
+  workingQType: I8
+  profileStages: true
+
+benchmark:
+  enabled: true
+  maxTokens: 24
+  temperature: 0.0
+  prompt: "What is the capital of New York, USA? Answer with just the city."
+
+cache:
+  enabled: true
+  type: hostPath
+  mountPath: /home/deliverance/.deliverance
+  hostPath: /models/.deliverance
+
+resources:
+  requests: {}
+  limits: {}

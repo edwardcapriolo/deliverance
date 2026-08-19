@@ -32,12 +32,16 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BooleanSupplier;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 @Component
 @ConfigurationProperties(prefix = "deliverance-model")
@@ -271,7 +275,64 @@ class TensorParallelSpringCausalLanguageModel implements CausalLanguageModel {
             io.teknek.deliverance.safetensors.prompt.PromptContext promptContext,
             io.teknek.deliverance.generator.GeneratorParameters generatorParameters,
             io.teknek.deliverance.model.GenerateEvent onTokenWithTimings) {
+        assertTensorParallelReady();
         return group.generate(session, coordinatorModel, promptContext, generatorParameters, onTokenWithTimings);
+    }
+
+    private void assertTensorParallelReady() {
+        var assignment = membership.findAssignment();
+        if (assignment == null) {
+            throw notReady("assignment is not visible in gossip");
+        }
+        if (membership.findCollectiveUri() == null) {
+            throw notReady("collective URI is not visible in gossip");
+        }
+        List<io.teknek.deliverance.model.tensorparallel.TensorParallelRankEndpoint> endpoints;
+        try {
+            endpoints = membership.rankEndpointsForAssignment();
+        } catch (RuntimeException e) {
+            throw notReady(e.getMessage());
+        }
+        Set<Integer> ranks = new HashSet<>();
+        List<Integer> duplicateRanks = new ArrayList<>();
+        List<Integer> missingRanks = new ArrayList<>();
+        for (var endpoint : endpoints) {
+            if (!ranks.add(endpoint.rank())) {
+                duplicateRanks.add(endpoint.rank());
+            }
+            if (endpoint.uri() == null || endpoint.uri().isBlank()) {
+                throw notReady("rank " + endpoint.rank() + " has no endpoint URI");
+            }
+        }
+        for (int rank = 0; rank < assignment.tensorParallelSize(); rank++) {
+            if (!ranks.contains(rank)) {
+                missingRanks.add(rank);
+            }
+        }
+        if (!missingRanks.isEmpty() || !duplicateRanks.isEmpty() || endpoints.size() != assignment.tensorParallelSize()) {
+            throw notReady("expected ranks 0.." + (assignment.tensorParallelSize() - 1)
+                    + " but found endpoints=" + endpoints
+                    + " missing=" + missingRanks
+                    + " duplicates=" + duplicateRanks);
+        }
+        Set<String> liveNodeIds = new HashSet<>();
+        liveNodeIds.add(membership.localNodeId());
+        for (var member : membership.liveMembers()) {
+            liveNodeIds.add(member.getId());
+        }
+        List<String> downOwners = endpoints.stream()
+                .map(io.teknek.deliverance.model.tensorparallel.TensorParallelRankEndpoint::nodeId)
+                .distinct()
+                .filter(nodeId -> !liveNodeIds.contains(nodeId))
+                .toList();
+        if (!downOwners.isEmpty()) {
+            throw notReady("gossip reports rank owner nodes down: " + downOwners);
+        }
+    }
+
+    private ResponseStatusException notReady(String reason) {
+        return new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                "Tensor-parallel deployment is not ready: " + reason);
     }
 
     @Override
