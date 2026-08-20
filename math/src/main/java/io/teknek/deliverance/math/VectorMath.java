@@ -24,6 +24,12 @@ public class VectorMath {
      * @param splitSize split the list into this many parts
      */
     public static void pchunk(int offset, int length, BiIntConsumer action, int splitSize, WrappedForkJoinPool pool) {
+        // Very small tensor ranges are common after tensor-parallel sharding. Splitting them into many tiny chunks
+        // is slower and previously exposed bad tail coverage for projection outputs such as Qwen local heads.
+        if (splitSize <= 1 || length <= splitSize * 2) {
+            action.accept(offset, length);
+            return;
+        }
         int splits = Math.min(length, splitSize);
         int chunkSize = length / splits;
 
@@ -60,6 +66,14 @@ public class VectorMath {
      */
     public static void pchunkMetrics(int offset, int length, BiIntConsumer action, int splitSize,
                                      Timer timer, WrappedForkJoinPool pool) {
+        // Very small tensor ranges are common after tensor-parallel sharding. Keep them as one chunk for correctness
+        // and to avoid scheduling overhead dominating tiny projection slices.
+        if (splitSize <= 1 || length <= splitSize * 2) {
+            try (Timer.Context c = timer.time()) {
+                action.accept(offset, length);
+            }
+            return;
+        }
         int splits = Math.min(length, splitSize);
         int chunkSize = length / splits;
 

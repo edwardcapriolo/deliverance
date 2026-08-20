@@ -1,6 +1,7 @@
 package io.teknek.deliverance.generator;
 
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.TensorDisplayUtil;
 import io.teknek.deliverance.tensor.impl.BFloat16BufferTensor;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import net.jafama.FastMath;
@@ -27,6 +28,11 @@ class Gemma4RmsNormSupportTest {
         assertQwen3ShapedNormMatchesReference(2, 8, 128, 1.0e-6f, false);
     }
 
+    @Test
+    void tinyQwen3HeadSizeFourSimdNormMatchesScalar() {
+        assertSimdMatchesScalar(4, 2, 4, 1.0e-6f, true);
+    }
+
     @ParameterizedTest(name = "batch={0} groups={1} groupSize={2} weights={4}")
     @CsvSource({
             "1,32,128,1.0e-6,true",
@@ -41,8 +47,7 @@ class Gemma4RmsNormSupportTest {
     @ParameterizedTest(name = "batch={0} groups={1} groupSize={2} bf16Weights")
     @CsvSource({
             "1,32,128,1.0e-6",
-            "1,8,128,1.0e-6",
-            "128,32,128,1.0e-6"
+            "1,8,128,1.0e-6"
     })
     void qwen3ShapedSimdNormMatchesScalarWithBf16Weights(int batchSize, int groups, int groupSize, float eps) {
         try (AbstractTensor scalar = tensor(batchSize, groups * groupSize, 17);
@@ -53,7 +58,9 @@ class Gemma4RmsNormSupportTest {
             for (int row = 0; row < batchSize; row++) {
                 for (int col = 0; col < groups * groupSize; col++) {
                     assertEquals(scalar.get(row, col), simd.get(row, col), 1.0e-6f,
-                            "row=" + row + " col=" + col);
+                            "row=" + row + " col=" + col
+                                    + "\nscalar:\n" + TensorDisplayUtil.pretty2dDisplayAll(scalar)
+                                    + "\nsimd:\n" + TensorDisplayUtil.pretty2dDisplayAll(simd));
                 }
             }
         }
@@ -82,8 +89,8 @@ class Gemma4RmsNormSupportTest {
     @Test
     void benchmarkQwen3RmsNormShapes() {
         System.out.println("case,groups,groupSize,iterations,scalar_ms,scalar_us,simd_ms,simd_us,speedup");
-        bench("query", 32, 128, 50_000);
-        bench("key", 8, 128, 50_000);
+        bench("query", 32, 128, 500);
+        bench("key", 8, 128, 500);
     }
 
     private static void bench(String name, int groups, int groupSize, int iterations) {

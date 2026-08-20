@@ -290,6 +290,30 @@ public class PanamaTensorOperationsTest {
     }
 
     @Test
+    void dotProductChunkF32F32SmallOutputChunksMatchWholeProjection() {
+        int batchSize = 4;
+        int inputWidth = 16;
+        int outputRows = 8;
+        FloatBufferTensor input = deterministicInput(batchSize, inputWidth);
+        FloatBufferTensor weight = deterministicWeight(outputRows, inputWidth);
+        FloatBufferTensor whole = new FloatBufferTensor(batchSize, outputRows);
+        FloatBufferTensor chunked = new FloatBufferTensor(batchSize, outputRows);
+
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
+            PanamaTensorOperations ops = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
+                    Mockito.mock(TensorAllocator.class), pool);
+            ops.dotProductChunk(whole, input, weight, 0, inputWidth, 0, outputRows);
+            ops.dotProductChunk(chunked, input, weight, 0, inputWidth, 0, 1);
+            ops.dotProductChunk(chunked, input, weight, 0, inputWidth, 1, 1);
+            ops.dotProductChunk(chunked, input, weight, 0, inputWidth, 2, 1);
+            ops.dotProductChunk(chunked, input, weight, 0, inputWidth, 3, 1);
+            ops.dotProductChunk(chunked, input, weight, 0, inputWidth, 4, 4);
+        }
+
+        assertProjectionEquals(whole, chunked, 0.0001f);
+    }
+
+    @Test
     void dotProductChunkF32Q4ChunkedOneDimensionalLogitsMatchWholeProjection() {
         int embeddingLength = 256;
         int vocabularySize = 1024;
@@ -436,5 +460,30 @@ public class PanamaTensorOperationsTest {
             assertEquals(expected, actual, tolerance,
                     "batchRow=" + batchRow + " col=" + col + " expected=" + expected + " actual=" + actual);
         }
+    }
+
+    private static void assertProjectionEquals(AbstractTensor expected, AbstractTensor actual, float tolerance) {
+        float max = 0.0f;
+        int maxRow = -1;
+        int maxCol = -1;
+        for (int row = 0; row < expected.shape().first(); row++) {
+            for (int col = 0; col < expected.shape().last(); col++) {
+                float diff = Math.abs(expected.get(row, col) - actual.get(row, col));
+                if (diff > max) {
+                    max = diff;
+                    maxRow = row;
+                    maxCol = col;
+                }
+            }
+        }
+        float maxDiff = max;
+        int row = maxRow;
+        int col = maxCol;
+        assertEquals(0.0f, maxDiff, tolerance,
+                () -> "maxAbsDiff=" + maxDiff + " row=" + row + " col=" + col
+                        + " expected=" + expected.get(row, col)
+                        + " actual=" + actual.get(row, col)
+                        + "\nexpected:\n" + TensorDisplayUtil.pretty2dDisplayAll(expected)
+                        + "\nactual:\n" + TensorDisplayUtil.pretty2dDisplayAll(actual));
     }
 }

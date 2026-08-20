@@ -17,6 +17,7 @@ import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.gossip.GossipSettings;
 import io.teknek.gossip.Member;
+import io.teknek.gossip.event.GossipState;
 import io.teknek.gossip.RemoteMember;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +40,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -259,15 +262,34 @@ class MultiModelConfiguration {
 }
 
 class TensorParallelSpringCausalLanguageModel implements CausalLanguageModel {
+    private static final Logger LOGGER = LoggerFactory.getLogger(TensorParallelSpringCausalLanguageModel.class);
     private final AbstractModel coordinatorModel;
     private final TensorParallelGenerationGroup group;
     private final GossipParallelMembership membership;
+    private final AtomicReference<Readiness> readiness = new AtomicReference<>(Readiness.ready());
+    private final AtomicBoolean groupClosed = new AtomicBoolean(false);
 
     TensorParallelSpringCausalLanguageModel(AbstractModel coordinatorModel, TensorParallelGenerationGroup group,
             GossipParallelMembership membership) {
         this.coordinatorModel = coordinatorModel;
         this.group = group;
         this.membership = membership;
+        this.membership.registerGossipListener(this::handleGossipEvent);
+        LOGGER.info("Tensor-parallel web coordinator registered gossip listener node={} assignment={}",
+                membership.localNodeId(), membership.findAssignment());
+    }
+
+    private void handleGossipEvent(Member member, GossipState state) {
+        LOGGER.info("Tensor-parallel web coordinator observed gossip event member={} state={}", member.getId(), state);
+        if (state != GossipState.DOWN || !ownsAssignedRank(member)) {
+            return;
+        }
+        String reason = "gossip reports assigned rank owner down: " + member.getId();
+        readiness.set(Readiness.notReady(reason));
+        if (groupClosed.compareAndSet(false, true)) {
+            LOGGER.warn("Invalidating tensor-parallel generation group: {}", reason);
+            group.close();
+        }
     }
 
     @Override
@@ -280,11 +302,19 @@ class TensorParallelSpringCausalLanguageModel implements CausalLanguageModel {
     }
 
     private void assertTensorParallelReady() {
+        Readiness current = readiness.get();
+        if (current.state() == ReadinessState.NOT_READY) {
+            LOGGER.info("Rejecting tensor-parallel request because readiness state is {} diagnostics={}",
+                    current.state(), current.diagnostics());
+            throw notReady(current.diagnostics());
+        }
         var assignment = membership.findAssignment();
         if (assignment == null) {
+            LOGGER.info("Rejecting tensor-parallel request because assignment is not visible in gossip");
             throw notReady("assignment is not visible in gossip");
         }
         if (membership.findCollectiveUri() == null) {
+            LOGGER.info("Rejecting tensor-parallel request because collective URI is not visible in gossip");
             throw notReady("collective URI is not visible in gossip");
         }
         List<io.teknek.deliverance.model.tensorparallel.TensorParallelRankEndpoint> endpoints;
@@ -310,6 +340,8 @@ class TensorParallelSpringCausalLanguageModel implements CausalLanguageModel {
             }
         }
         if (!missingRanks.isEmpty() || !duplicateRanks.isEmpty() || endpoints.size() != assignment.tensorParallelSize()) {
+            LOGGER.info("Rejecting tensor-parallel request because rank endpoints are incomplete assignment={} endpoints={} missing={} duplicates={}",
+                    assignment, endpoints, missingRanks, duplicateRanks);
             throw notReady("expected ranks 0.." + (assignment.tensorParallelSize() - 1)
                     + " but found endpoints=" + endpoints
                     + " missing=" + missingRanks
@@ -326,13 +358,45 @@ class TensorParallelSpringCausalLanguageModel implements CausalLanguageModel {
                 .filter(nodeId -> !liveNodeIds.contains(nodeId))
                 .toList();
         if (!downOwners.isEmpty()) {
+            LOGGER.info("Rejecting tensor-parallel request because gossip reports rank owners down assignment={} endpoints={} downOwners={}",
+                    assignment, endpoints, downOwners);
             throw notReady("gossip reports rank owner nodes down: " + downOwners);
         }
+        LOGGER.info("Tensor-parallel request readiness OK assignmentHash={} ranks={} endpoints={}",
+                assignment.assignmentHash(), assignment.ranks(), endpoints);
+    }
+
+    private boolean ownsAssignedRank(Member member) {
+        var assignment = membership.findAssignment();
+        if (assignment == null) {
+            return false;
+        }
+        for (var rank : assignment.ranks()) {
+            if (rank.nodeId().equals(member.getId())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private ResponseStatusException notReady(String reason) {
         return new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                 "Tensor-parallel deployment is not ready: " + reason);
+    }
+
+    enum ReadinessState {
+        READY,
+        NOT_READY
+    }
+
+    record Readiness(ReadinessState state, String diagnostics) {
+        static Readiness ready() {
+            return new Readiness(ReadinessState.READY, "ready");
+        }
+
+        static Readiness notReady(String diagnostics) {
+            return new Readiness(ReadinessState.NOT_READY, diagnostics);
+        }
     }
 
     @Override
@@ -383,7 +447,9 @@ class TensorParallelSpringCausalLanguageModel implements CausalLanguageModel {
     @Override
     public void close() throws IOException {
         try {
-            group.close();
+            if (groupClosed.compareAndSet(false, true)) {
+                group.close();
+            }
             coordinatorModel.close();
         } finally {
             membership.close();

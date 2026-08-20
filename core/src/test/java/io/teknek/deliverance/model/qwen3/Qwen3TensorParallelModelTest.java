@@ -15,6 +15,8 @@ import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorAllocator;
+import io.teknek.deliverance.tensor.TensorDisplayUtil;
+import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.TensorTestSupport;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.MachineSpec;
@@ -39,6 +41,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.BiFunction;
 import java.util.stream.Stream;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -71,7 +74,7 @@ public class Qwen3TensorParallelModelTest {
             Assumptions.assumeTrue(nativeSimdUsable(), "Native SIMD unavailable");
         }
         Qwen3Config config = tensorParallelTinyConfig();
-        Path modelDir = Qwen3HfTextModelPortedTest.writeTinyCheckpoint(tempDir.resolve("qwen3-tp-forward"),
+        Path modelDir = Qwen3HfTextModelPortedTest.writeTinyCheckpoint(tempDir.resolve("qwen3-tp-forward-" + providerName),
                 config, 2234);
         int[] tokens = new int[] {3, 4, 5, 6};
         InProcessTensorParallelCollectives.Group group = new InProcessTensorParallelCollectives.Group(Duration.ofSeconds(5));
@@ -81,7 +84,110 @@ public class Qwen3TensorParallelModelTest {
              TensorParallelGenerationGroup tp = new TensorParallelGenerationGroup(List.of(rank0, rank1));
              AbstractTensor singleOutput = single.batchForward(tokens, 0);
              AbstractTensor tpOutput = tp.batchForward(tokens, 0)) {
-            assertTensorClose(singleOutput, tpOutput, 1.0e-4f);
+            try {
+                assertTensorClose(providerName, singleOutput, tpOutput, 1.0e-4f);
+            } catch (AssertionError e) {
+                printTinyQwen3Diagnostics(providerName, modelDir, providerFactory, tokens);
+                throw e;
+            }
+        }
+    }
+
+    @Test
+    void printTinyQwen3PanamaSingleVsTensorParallelLayerZeroTensors() {
+        Qwen3Config config = tensorParallelTinyConfig();
+        Path modelDir = Qwen3HfTextModelPortedTest.writeTinyCheckpoint(tempDir.resolve("qwen3-tp-print"),
+                config, 2234);
+        ProviderFactory providerFactory = (allocator, pool) -> new ConfigurableTensorProvider(
+                new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, allocator, pool));
+        int[] tokens = new int[] {3, 4, 5, 6};
+        InProcessTensorParallelCollectives.Group group = new InProcessTensorParallelCollectives.Group(Duration.ofSeconds(5));
+        try (Qwen3Model single = loadRank(modelDir, 0, 1, providerFactory);
+             Qwen3Model rank0 = loadRank(modelDir, 0, 2, group, providerFactory);
+             Qwen3Model rank1 = loadRank(modelDir, 1, 2, group, providerFactory);
+             TensorParallelGenerationGroup tp = new TensorParallelGenerationGroup(List.of(rank0, rank1))) {
+            AtomicReference<AbstractTensor> singleQuery = new AtomicReference<>();
+            AtomicReference<AbstractTensor> rank0Query = new AtomicReference<>();
+            AtomicReference<AbstractTensor> rank1Query = new AtomicReference<>();
+            AtomicReference<AbstractTensor> singleAttentionOutput = new AtomicReference<>();
+            AtomicReference<AbstractTensor> rank0AttentionOutput = new AtomicReference<>();
+
+            single.setLayerDebugHook(event -> capture(event, "query_projection", singleQuery));
+            single.setLayerDebugHook(event -> {
+                capture(event, "query_projection", singleQuery);
+                capture(event, "attention_output", singleAttentionOutput);
+            });
+            rank0.setLayerDebugHook(event -> {
+                capture(event, "query_projection", rank0Query);
+                capture(event, "attention_output", rank0AttentionOutput);
+            });
+            rank1.setLayerDebugHook(event -> capture(event, "query_projection", rank1Query));
+
+            try (AbstractTensor singleOutput = single.batchForward(tokens, 0);
+                 AbstractTensor tpOutput = tp.batchForward(tokens, 0)) {
+                printTensor("single.layer0.query_projection", singleQuery.get());
+                printTensor("rank0.layer0.query_projection", rank0Query.get());
+                printTensor("rank1.layer0.query_projection", rank1Query.get());
+                printTensor("single.layer0.attention_output", singleAttentionOutput.get());
+                printTensor("rank0.layer0.attention_output", rank0AttentionOutput.get());
+                printTensor("single.final", singleOutput);
+                printTensor("tp.final", tpOutput);
+                printDiff("final.diff", singleOutput, tpOutput);
+            } finally {
+                single.clearLayerDebugHook();
+                rank0.clearLayerDebugHook();
+                rank1.clearLayerDebugHook();
+                close(singleQuery.get());
+                close(rank0Query.get());
+                close(rank1Query.get());
+                close(singleAttentionOutput.get());
+                close(rank0AttentionOutput.get());
+            }
+        }
+    }
+
+    private static void printTinyQwen3Diagnostics(String providerName, Path modelDir, ProviderFactory providerFactory,
+            int[] tokens) {
+        System.out.println("==== diagnostics provider=" + providerName + " ====");
+        InProcessTensorParallelCollectives.Group group = new InProcessTensorParallelCollectives.Group(Duration.ofSeconds(5));
+        try (Qwen3Model single = loadRank(modelDir, 0, 1, providerFactory);
+             Qwen3Model rank0 = loadRank(modelDir, 0, 2, group, providerFactory);
+             Qwen3Model rank1 = loadRank(modelDir, 1, 2, group, providerFactory);
+             TensorParallelGenerationGroup tp = new TensorParallelGenerationGroup(List.of(rank0, rank1))) {
+            AtomicReference<AbstractTensor> singleQuery = new AtomicReference<>();
+            AtomicReference<AbstractTensor> rank0Query = new AtomicReference<>();
+            AtomicReference<AbstractTensor> rank1Query = new AtomicReference<>();
+            AtomicReference<AbstractTensor> singleAttentionOutput = new AtomicReference<>();
+            AtomicReference<AbstractTensor> rank0AttentionOutput = new AtomicReference<>();
+            single.setLayerDebugHook(event -> {
+                capture(event, "query_projection", singleQuery);
+                capture(event, "attention_output", singleAttentionOutput);
+            });
+            rank0.setLayerDebugHook(event -> {
+                capture(event, "query_projection", rank0Query);
+                capture(event, "attention_output", rank0AttentionOutput);
+            });
+            rank1.setLayerDebugHook(event -> capture(event, "query_projection", rank1Query));
+            try (AbstractTensor singleOutput = single.batchForward(tokens, 0);
+                 AbstractTensor tpOutput = tp.batchForward(tokens, 0)) {
+                printTensor(providerName + ".single.layer0.query_projection", singleQuery.get());
+                printTensor(providerName + ".rank0.layer0.query_projection", rank0Query.get());
+                printTensor(providerName + ".rank1.layer0.query_projection", rank1Query.get());
+                printTensor(providerName + ".single.layer0.attention_output", singleAttentionOutput.get());
+                printTensor(providerName + ".rank0.layer0.attention_output", rank0AttentionOutput.get());
+                printTensor(providerName + ".single.final", singleOutput);
+                printTensor(providerName + ".tp.final", tpOutput);
+                printDiff(providerName + ".final.diff", singleOutput, tpOutput);
+            } finally {
+                single.clearLayerDebugHook();
+                rank0.clearLayerDebugHook();
+                rank1.clearLayerDebugHook();
+                close(singleQuery.get());
+                close(rank0Query.get());
+                close(rank1Query.get());
+                close(singleAttentionOutput.get());
+                close(rank0AttentionOutput.get());
+            }
         }
     }
 
@@ -168,16 +274,63 @@ public class Qwen3TensorParallelModelTest {
         return field(attention, CausalSelfAttention.class, name);
     }
 
-    private static void assertTensorClose(AbstractTensor expected, AbstractTensor actual, float tolerance) {
+    private static void assertTensorClose(String label, AbstractTensor expected, AbstractTensor actual, float tolerance) {
         assertEquals(expected.shape().first(), actual.shape().first(), "row count");
         assertEquals(expected.shape().last(), actual.shape().last(), "column count");
         float max = 0.0f;
+        int maxRow = -1;
+        int maxCol = -1;
         for (int row = 0; row < expected.shape().first(); row++) {
             for (int col = 0; col < expected.shape().last(); col++) {
-                max = Math.max(max, Math.abs(expected.get(row, col) - actual.get(row, col)));
+                float diff = Math.abs(expected.get(row, col) - actual.get(row, col));
+                if (diff > max) {
+                    max = diff;
+                    maxRow = row;
+                    maxCol = col;
+                }
             }
         }
-        assertTrue(max <= tolerance, "maxAbsDiff=" + max);
+        int row = maxRow;
+        int col = maxCol;
+        float maxDiff = max;
+        assertTrue(maxDiff <= tolerance, () -> label + " maxAbsDiff=" + maxDiff
+                + " row=" + row
+                + " col=" + col
+                + " expected=" + expected.get(row, col)
+                + " actual=" + actual.get(row, col));
+    }
+
+    private static void assertTensorClose(AbstractTensor expected, AbstractTensor actual, float tolerance) {
+        assertTensorClose("tensor", expected, actual, tolerance);
+    }
+
+    private static void capture(AbstractModel.LayerDebugEvent event, String stage, AtomicReference<AbstractTensor> ref) {
+        if (event.layerIndex() == 0 && event.stage().equals(stage)) {
+            close(ref.getAndSet(new FloatBufferTensor(event.hiddenStates())));
+        }
+    }
+
+    private static void printTensor(String label, AbstractTensor tensor) {
+        System.out.println("==== " + label + " ====");
+        System.out.println(tensor == null ? "<missing>" : TensorDisplayUtil.pretty2dDisplayAll(tensor));
+    }
+
+    private static void printDiff(String label, AbstractTensor expected, AbstractTensor actual) {
+        FloatBufferTensor diff = new FloatBufferTensor(expected.shape().first(), expected.shape().last());
+        try (diff) {
+            for (int row = 0; row < expected.shape().first(); row++) {
+                for (int col = 0; col < expected.shape().last(); col++) {
+                    diff.set(actual.get(row, col) - expected.get(row, col), row, col);
+                }
+            }
+            printTensor(label, diff);
+        }
+    }
+
+    private static void close(AbstractTensor tensor) {
+        if (tensor != null) {
+            tensor.close();
+        }
     }
 
     @SuppressWarnings("unchecked")
