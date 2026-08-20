@@ -3,6 +3,7 @@ package io.teknek.deliverance.model.tensorparallel;
 import io.teknek.gossip.LocalMember;
 import io.teknek.gossip.crdt.Crdt;
 import io.teknek.gossip.crdt.OrSet;
+import io.teknek.gossip.event.GossipListener;
 import io.teknek.gossip.lock.vote.MajorityVote;
 import io.teknek.gossip.lock.vote.Vote;
 import io.teknek.gossip.lock.vote.VoteCandidate;
@@ -100,6 +101,10 @@ public class GossipParallelMembership implements AutoCloseable {
 
     public List<LocalMember> liveMembers() {
         return gossipManager.getLiveMembers();
+    }
+
+    public void registerGossipListener(GossipListener listener) {
+        gossipManager.registerGossipListener(listener);
     }
 
     public void publishSharedData(String key, Object payload) {
