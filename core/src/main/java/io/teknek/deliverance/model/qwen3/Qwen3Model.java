@@ -113,7 +113,8 @@ public class Qwen3Model extends LlamaModel {
                     upWeight,
                     configurableTensorProvider,
                     "layer." + i + ".mlp.down_proj",
-                    gateName, upName, downName
+                    gateName, upName, downName,
+                    i
             );
 
             String inputNormName = base + "input_layernorm.weight";

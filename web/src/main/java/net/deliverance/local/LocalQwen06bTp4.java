@@ -35,7 +35,7 @@ final class LocalQwen06bTp4 {
                 "--owner", OWNER,
                 "--model", MODEL,
                 "--pool-size", "1",
-                "--tensor-operations", "jvector",
+                "--tensor-operations", "simd",
                 "--working-dtype", "F32",
                 "--working-qtype", "I8",
                 "--output-head-quantization", "Q4",
@@ -46,7 +46,7 @@ final class LocalQwen06bTp4 {
     static String[] webArgs(String[] args) {
         List<String> springArgs = new ArrayList<>();
         springArgs.add("--server.port=" + WEB_PORT);
-        springArgs.add("--deliverance.tensor.operations.type=jvector");
+        springArgs.add("--deliverance.tensor.operations.type=simd");
         springArgs.add("--deliverance-model.configs[0].model-owner=" + OWNER);
         springArgs.add("--deliverance-model.configs[0].model-name=" + MODEL);
         springArgs.add("--deliverance-model.configs[0].inference-type=GENERATION");

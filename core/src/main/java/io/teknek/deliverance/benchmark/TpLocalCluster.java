@@ -127,8 +127,8 @@ public final class TpLocalCluster {
             builder.withMetricRegistry(metrics)
                     .withTensorAllocator(allocator)
                     .withTensorProvider(new ConfigurableTensorProvider(allocator, pool));
-        } else if (!"auto".equals(options.tensorOperations)) {
-            throw new IllegalArgumentException("--tensor-operations must be auto or jvector");
+        } else if (!"auto".equals(options.tensorOperations) && !"simd".equals(options.tensorOperations)) {
+            throw new IllegalArgumentException("--tensor-operations must be auto, simd, or jvector");
         }
         if (options.outputHeadQuantization != null) {
             builder.withOutputHeadQuantization(options.outputHeadQuantization);

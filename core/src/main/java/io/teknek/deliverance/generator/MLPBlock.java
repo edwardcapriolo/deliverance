@@ -47,6 +47,7 @@ public class MLPBlock implements FeedForward {
     private final String gateWeightName;
     private final String upWeightName;
     private final String downWeightName;
+    private final int layerDebugIndex;
 
     public MLPBlock(AbstractModel model, ActivationFunction.Type activationFunction, AbstractTensor fullyConnectedWeights,
             AbstractTensor projectionWeights, AbstractTensor upProjectionWeights, ConfigurableTensorProvider configurableTensorProvider) {
@@ -76,7 +77,17 @@ public class MLPBlock implements FeedForward {
             String tensorParallelCollectiveKey, String gateWeightName, String upWeightName, String downWeightName) {
         this(model, activationFunction, Optional.empty(), fullyConnectedWeights,
                 Optional.empty(), projectionWeights, upProjectionWeights, configurableTensorProvider, tensorParallelCollectiveKey,
-                gateWeightName, upWeightName, downWeightName);
+                gateWeightName, upWeightName, downWeightName, -1);
+    }
+
+    /** Variant carrying base tensor names and layer debug identity, with a tensor-parallel collective key. */
+    public MLPBlock(AbstractModel model, ActivationFunction.Type activationFunction, AbstractTensor fullyConnectedWeights,
+            AbstractTensor projectionWeights, AbstractTensor upProjectionWeights, ConfigurableTensorProvider configurableTensorProvider,
+            String tensorParallelCollectiveKey, String gateWeightName, String upWeightName, String downWeightName,
+            int layerDebugIndex) {
+        this(model, activationFunction, Optional.empty(), fullyConnectedWeights,
+                Optional.empty(), projectionWeights, upProjectionWeights, configurableTensorProvider, tensorParallelCollectiveKey,
+                gateWeightName, upWeightName, downWeightName, layerDebugIndex);
     }
 
     public MLPBlock(
@@ -133,6 +144,27 @@ public class MLPBlock implements FeedForward {
             String upWeightName,
             String downWeightName
     ) {
+        this(model, activationFunction, fullyConnectedBias, fullyConnectedWeights, projectionBias, projectionWeights,
+                upProjectionWeights, configurableTensorProvider, tensorParallelCollectiveKey, gateWeightName, upWeightName,
+                downWeightName, -1);
+    }
+
+    /** Canonical constructor, carrying base tensor names and layer debug identity for trace/profiler hooks. */
+    public MLPBlock(
+            AbstractModel model,
+            ActivationFunction.Type activationFunction,
+            Optional<AbstractTensor> fullyConnectedBias,
+            AbstractTensor fullyConnectedWeights,
+            Optional<AbstractTensor> projectionBias,
+            AbstractTensor projectionWeights,
+            AbstractTensor upProjectionWeights,
+            ConfigurableTensorProvider configurableTensorProvider,
+            String tensorParallelCollectiveKey,
+            String gateWeightName,
+            String upWeightName,
+            String downWeightName,
+            int layerDebugIndex
+    ) {
         this.model = model;
         this.activationFunction = activationFunction;
         this.fullyConnectedBias = fullyConnectedBias;
@@ -147,6 +179,7 @@ public class MLPBlock implements FeedForward {
         this.gateWeightName = gateWeightName;
         this.upWeightName = upWeightName;
         this.downWeightName = downWeightName;
+        this.layerDebugIndex = layerDebugIndex;
 
         configurableTensorProvider.get().registerModelTensor(fullyConnectedWeights);
         if (upProjectionWeights != null) {
@@ -184,8 +217,8 @@ public class MLPBlock implements FeedForward {
                 reduced = TensorParallelMlp.forward(lnemb, fullyConnectedWeights, upProjectionWeights,
                     projectionWeights, activationFunction, configurableTensorProvider,
                     model,
-                    shape -> model.getTensorAllocator().getDirty(model.getWorkingDType(), shape),
-                    model.getTensorParallelCollectives(), tensorParallelCollectiveKey);
+                    shape -> model.getTensorAllocator().get(model.getWorkingDType(), shape),
+                    model.getTensorParallelCollectives(), tensorParallelCollectiveKey, layerDebugIndex);
             }
             projectionBias.ifPresent(bias -> configurableTensorProvider.get().accumulate(reduced, bias, 0,
                     model.getConfig().embeddingLength));

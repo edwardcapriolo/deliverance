@@ -3,9 +3,10 @@ package io.teknek.deliverance.tensor.operations;
 
 import io.teknek.deliverance.tensor.operations.cnative.NativeSimd;
 import io.teknek.deliverance.tensor.operations.util.JarSupport;
-import io.teknek.deliverance.tensor.operations.util.MemorySegmentSupport;
 
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.ActivationFunction;
@@ -268,17 +269,6 @@ public class NativeSimdTensorOperations implements TensorOperations {
         int bRowOffset,
         int rowChunkSize
     ) {
-
-        MemorySegment[] tmp = MemorySegmentSupport.setupBatch(
-            i -> r[i].getMemorySegment(),
-            i -> b[i].getMemorySegment(),
-            i -> b[i] instanceof Q4ByteBufferTensor ? ((Q4ByteBufferTensor) b[i]).getBlockF().getMemorySegment() : MemorySegment.NULL,
-            r.length
-        );
-        MemorySegment ra = tmp[0];
-        MemorySegment rb = tmp[1];
-        MemorySegment rc = tmp[2];
-
         int M = a.shape().dim(0);
         int N = rowChunkSize; // b.shape().dim(0);
         int K = columnLength; // a.shape().dim(1);
@@ -294,6 +284,18 @@ public class NativeSimdTensorOperations implements TensorOperations {
         if (!optimizedBatchDotProductSupports(a, b[0], columnOffset, columnOffset, columnLength)) {
             delegate.dotProductBatchChunk(r, a, b, columnOffset, columnLength, bRowOffset, rowChunkSize);
             return;
+        }
+
+        try (Arena arena = Arena.ofConfined()) {
+        MemorySegment ra = arena.allocate(ValueLayout.ADDRESS, r.length);
+        MemorySegment rb = arena.allocate(ValueLayout.ADDRESS, r.length);
+        MemorySegment rc = arena.allocate(ValueLayout.ADDRESS, r.length);
+        for (int i = 0; i < r.length; i++) {
+            ra.setAtIndex(ValueLayout.ADDRESS, i, r[i].getMemorySegment());
+            rb.setAtIndex(ValueLayout.ADDRESS, i, b[i].getMemorySegment());
+            rc.setAtIndex(ValueLayout.ADDRESS, i, b[i] instanceof Q4ByteBufferTensor q4
+                    ? q4.getBlockF().getMemorySegment()
+                    : MemorySegment.NULL);
         }
 
         switch (a.dType()) {
@@ -445,6 +447,7 @@ public class NativeSimdTensorOperations implements TensorOperations {
                 break;
             default:
                 throw new UnsupportedOperationException(a.dType().name());
+        }
         }
     }
 
