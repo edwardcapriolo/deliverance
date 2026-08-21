@@ -252,6 +252,18 @@ final class GenerationEngine {
         double timeToFirstTokenMs = timeToFirstTokenNanos / 1_000_000.0;
         int generatedTokenCount = response.generatedTokens == null ? 0 : response.generatedTokens.size();
         double avgTimePerTokenMs = generatedTokenCount == 0 ? 0.0 : totalTimeMs / generatedTokenCount;
+        double totalTokensPerSecond = totalTimeMs <= 0.0 ? 0.0 : generatedTokenCount * 1_000.0 / totalTimeMs;
+        double decodeTimeMs = Math.max(0.0, totalTimeMs - timeToFirstTokenMs);
+        int decodeTokenCount = Math.max(0, generatedTokenCount - 1);
+        double decodeTokensPerSecond = decodeTimeMs <= 0.0 ? 0.0 : decodeTokenCount * 1_000.0 / decodeTimeMs;
+        AbstractModel.logger.info("generation_complete prompt_tokens={} generated_tokens={} total_ms={} ttft_ms={} tokens_per_second={} decode_tokens_per_second={} finish_reason={}",
+                response.promptTokens,
+                generatedTokenCount,
+                String.format(java.util.Locale.ROOT, "%.3f", totalTimeMs),
+                String.format(java.util.Locale.ROOT, "%.3f", timeToFirstTokenMs),
+                String.format(java.util.Locale.ROOT, "%.3f", totalTokensPerSecond),
+                String.format(java.util.Locale.ROOT, "%.3f", decodeTokensPerSecond),
+                response.finishReason);
         return response.copyWithTiming(timeToFirstTokenMs, avgTimePerTokenMs, totalTimeMs);
     }
 }
