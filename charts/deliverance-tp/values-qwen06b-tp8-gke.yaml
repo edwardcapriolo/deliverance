@@ -1,0 +1,23 @@
+# Overlay for running Qwen3 0.6B TP8 on GKE with the published amd64 image.
+
+nameOverride: model-testing
+fullnameOverride: model-testing
+
+tensorParallel:
+  cluster: model-testing
+  deployment: model-testing
+  readyTimeoutSeconds: 1800
+  rankEndpointTimeoutSeconds: 1800
+
+nodeSelector:
+  kubernetes.io/arch: amd64
+
+podSecurityContext:
+  runAsUser: 101
+  runAsGroup: 102
+  fsGroup: 102
+  fsGroupChangePolicy: OnRootMismatch
+
+cache:
+  # GKE Persistent Disk CSI RWO storage class. Leave this empty if your cluster has a different default.
+  storageClassName: standard-rwo

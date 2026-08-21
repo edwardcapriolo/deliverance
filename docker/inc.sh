@@ -1,0 +1,6 @@
+VERSION="${VERSION:-0.0.14-SNAPSHOT}"
+IMAGE_REPO="${IMAGE_REPO:-ecapriolo/deliverance}"
+JDK_IMAGE_REPO="${JDK_IMAGE_REPO:-ecapriolo/jdk-25}"
+JDK_VERSION="${JDK_VERSION:-0.0.6}"
+REPO_URL="${REPO_URL:-https://github.com/edwardcapriolo/deliverance.git}"
+REPO_COMMIT_SHA="${REPO_COMMIT_SHA:-main}"

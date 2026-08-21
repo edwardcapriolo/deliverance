@@ -1,0 +1,37 @@
+model:
+  owner: edwardcapriolo
+  name: Qwen3-0.6B-JQ4
+  outputHeadQuantization: Q4
+
+tensorOperations:
+  type: simd
+
+tensorParallel:
+  cluster: deliverance-qwen06b-tp8
+  deployment: qwen06b-tp8
+  size: 8
+  maxRanksPerWorker: 1
+  collectiveTransport: netty
+  readyTimeoutSeconds: 300
+  rankEndpointTimeoutSeconds: 600
+
+workers:
+  replicas: 8
+  poolSize: 16
+  workingDType: F32
+  workingQType: I8
+  profileStages: true
+  resources: {}
+
+coordinator:
+  replicas: 1
+  service:
+    type: ClusterIP
+    port: 8080
+  resources: {}
+
+cache:
+  enabled: true
+  mountPath: /home/deliverance/.deliverance
+  storageClassName: ""
+  size: 20Gi

@@ -1,65 +1,87 @@
-#!/bin/bash -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-cat << EOF > Dockerfile
-##################STAGE1#################
-FROM ecapriolo/jdk-25:0.0.6-devel AS deliverance-base
-RUN apk add git
-RUN apk add maven
+ARM_CONTEXT="${ARM_CONTEXT:-default}"
+AMD_CONTEXT="${AMD_CONTEXT:-colima-x86}"
+ARM_COLIMA_PROFILE="${ARM_COLIMA_PROFILE:-default}"
+AMD_COLIMA_PROFILE="${AMD_COLIMA_PROFILE:-x86}"
+CHECK_COLIMA_PROFILES="${CHECK_COLIMA_PROFILES:-false}"
+NO_CACHE="${NO_CACHE:-false}"
+BUILD_ARM="${BUILD_ARM:-true}"
+BUILD_AMD="${BUILD_AMD:-true}"
 
-#native module
-RUN apk add curl jq unzip bash make clang
+if [ -f ./inc.sh ]; then
+  . ./inc.sh
+fi
 
-RUN mkdir /build
-WORKDIR /build
-RUN cd /build
-RUN git clone https://github.com/edwardcapriolo/deliverance.git
+check_colima_profile() {
+  local profile="$1"
+  local arch="$2"
 
-RUN cd /build/deliverance
-WORKDIR /build/deliverance
-#RUN --mount=type=cache,target=/root/.m2 cd /build/deliverance && mvn install -Dmaven.test.skip.exec=true -Dgpg.skip=true
-RUN --mount=type=cache,target=/root/.m2 cd /build/deliverance && mvn dependency:go-offline
+  if [ "$CHECK_COLIMA_PROFILES" != "true" ]; then
+    return 0
+  fi
+  if ! command -v colima >/dev/null 2>&1; then
+    echo "colima is not installed or not on PATH; set CHECK_COLIMA_PROFILES=false to skip this check" >&2
+    exit 1
+  fi
+  local status
+  if ! status="$(colima list 2>/dev/null | awk -v profile="$profile" 'NR > 1 && $1 == profile { print $2; found=1 } END { if (!found) exit 1 }')"; then
+    echo "Colima profile '$profile' for $arch was not found" >&2
+    exit 1
+  fi
+  if [ "$status" != "Running" ]; then
+    echo "Colima profile '$profile' for $arch is $status" >&2
+    exit 1
+  fi
+}
 
-##################STAGE2#################
-FROM deliverance-base AS deliverance-sha
-ARG REPO_COMMIT_SHA=LATEST
-RUN cd /build/deliverance
-RUN git checkout $REPO_COMMIT_SHA
-RUN --mount=type=cache,target=/root/.m2 cd /build/deliverance && mvn install -Dmaven.test.skip.exec=true -Dgpg.skip=true
+check_docker_context() {
+  local context="$1"
+  local arch="$2"
 
+  if ! docker --context "$context" info >/dev/null 2>&1; then
+    echo "Docker context '$context' for $arch is not reachable" >&2
+    exit 1
+  fi
+  if ! docker --context "$context" buildx inspect >/dev/null 2>&1; then
+    echo "Docker context '$context' for $arch is not usable with buildx" >&2
+    exit 1
+  fi
+}
 
-##################STAGE3#################
-FROM ecapriolo/jdk-25:0.0.6-devel AS deliverance
-RUN mkdir /deliverance
-RUN apk add bash
+build_one() {
+  local platform="$1"
+  local context="$2"
+  local suffix="$3"
+  local cmd=(
+    docker --context "$context" buildx build
+    --platform "$platform"
+    --build-arg "JDK_IMAGE_REPO=$JDK_IMAGE_REPO"
+    --build-arg "JDK_DEVEL_TAG=$JDK_VERSION-devel-$suffix"
+    --build-arg "JDK_RUNTIME_TAG=$JDK_VERSION-devel-$suffix"
+    --build-arg "REPO_URL=$REPO_URL"
+    --build-arg "REPO_COMMIT_SHA=$REPO_COMMIT_SHA"
+    --target deliverance
+    -t "$IMAGE_REPO:$VERSION-$suffix"
+    -t "$IMAGE_REPO:latest-$suffix"
+    --load
+    .
+  )
+  if [ "$NO_CACHE" = "true" ]; then
+    cmd=("${cmd[@]:0:${#cmd[@]}-1}" --no-cache "${cmd[-1]}")
+  fi
+  "${cmd[@]}"
+}
 
-RUN addgroup -S deliverance && adduser -S -G deliverance -H -D deliverance
-RUN mkdir /deliverance/logs && chown deliverance:deliverance /deliverance/logs
-COPY --from=deliverance-sha /build/deliverance/web/target/web-0.0.14-SNAPSHOT.jar /deliverance/web.jar
-COPY entry_point.sh /deliverance/entry_point.sh
-COPY inlinerules.json /deliverance/inlinerules.json
-COPY simple.properties /deliverance/
+if [ "$BUILD_ARM" = "true" ]; then
+  check_colima_profile "$ARM_COLIMA_PROFILE" ARM
+  check_docker_context "$ARM_CONTEXT" ARM
+  build_one linux/arm64 "$ARM_CONTEXT" arm64
+fi
 
-RUN chmod u+x /deliverance/entry_point.sh
-WORKDIR /deliverance
-USER deliverance
-ENTRYPOINT ["/deliverance/entry_point.sh"]
-EOF
-
-#SHA=$(curl -s 'https://api.github.com/repos/<you>/<your-repo>/commits' | jq -r '.[0].sha')
-SHA=v0.0.13
-
-DOCKER_BUILDKIT=1 docker build \
---target deliverance-base \
---no-cache \
--t deliverance-base .
-
-DOCKER_BUILDKIT=1 docker build \
---build-arg REPO_COMMIT_SHA=$SHA \
---target deliverance-sha \
---no-cache \
--t deliverance-sha .
-
-DOCKER_BUILDKIT=1 docker build \
---target deliverance \
---no-cache \
--t deliverance .
+if [ "$BUILD_AMD" = "true" ]; then
+  check_colima_profile "$AMD_COLIMA_PROFILE" AMD
+  check_docker_context "$AMD_CONTEXT" AMD
+  build_one linux/amd64 "$AMD_CONTEXT" amd64
+fi

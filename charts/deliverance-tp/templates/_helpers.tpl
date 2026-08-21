@@ -22,7 +22,7 @@
 {{- $workerName := include "deliverance-tp.workerName" . -}}
 {{- range $i := until (int .Values.workers.replicas) }}
 - --seed
-- worker-{{ $i }}=udp://{{ $workerName }}-{{ $i }}.{{ $workerName }}.$(POD_NAMESPACE).svc.cluster.local:{{ $.Values.tensorParallel.gossipPort }}
+- {{ $workerName }}-{{ $i }}=udp://{{ $workerName }}-{{ $i }}.{{ $workerName }}.$(POD_NAMESPACE).svc.cluster.local:{{ $.Values.tensorParallel.gossipPort }}
 {{- end -}}
 {{- end -}}
 
@@ -37,6 +37,8 @@
 - {{ .Values.tensorParallel.maxRanksPerWorker | quote }}
 - --collective-transport
 - {{ .Values.tensorParallel.collectiveTransport | quote }}
+- --tensor-operations
+- {{ .Values.tensorOperations.type | quote }}
 - --owner
 - {{ .Values.model.owner | quote }}
 - --model
