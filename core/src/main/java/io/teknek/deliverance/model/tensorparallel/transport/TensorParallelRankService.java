@@ -12,5 +12,16 @@ public interface TensorParallelRankService {
 
     AbstractTensor forward(UUID sessionId, int tokenId, int position);
 
+    default PrefixCacheProbeResult probePrefix(PrefixCacheProbeRequest request) {
+        return new PrefixCacheProbeResult(false, 0);
+    }
+
+    default PrefixCacheRestoreResult restorePrefix(PrefixCacheRestoreRequest request) {
+        return new PrefixCacheRestoreResult(false, 0);
+    }
+
+    default void storePrefix(PrefixCacheStoreRequest request) {
+    }
+
     void closeSession(UUID sessionId);
 }

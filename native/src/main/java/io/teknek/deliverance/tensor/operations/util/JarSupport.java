@@ -44,7 +44,7 @@ public class JarSupport {
                 System.load(libfile.getAbsolutePath());
                 LOGGER.debug("Loaded {} library: {}", libname, libfile.getAbsolutePath());
                 return true;
-            } catch (IOException e) {
+            } catch (IOException | UnsatisfiedLinkError e) {
                 LOGGER.warn("Error loading {} library", libname);
             }
         }

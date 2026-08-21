@@ -37,6 +37,21 @@ public class HttpTensorParallelRankClient implements TensorParallelRankService {
         postNoBody("/closeSession", new CloseSessionRequest(sessionId));
     }
 
+    @Override
+    public PrefixCacheProbeResult probePrefix(PrefixCacheProbeRequest request) {
+        return postJson("/probePrefix", request, PrefixCacheProbeResult.class);
+    }
+
+    @Override
+    public PrefixCacheRestoreResult restorePrefix(PrefixCacheRestoreRequest request) {
+        return postJson("/restorePrefix", request, PrefixCacheRestoreResult.class);
+    }
+
+    @Override
+    public void storePrefix(PrefixCacheStoreRequest request) {
+        postNoBody("/storePrefix", request);
+    }
+
     private AbstractTensor post(String path, Object requestBody) {
         try {
             byte[] json = JsonUtils.om.writeValueAsBytes(requestBody);
@@ -68,6 +83,26 @@ public class HttpTensorParallelRankClient implements TensorParallelRankService {
             if (response.statusCode() != 204) {
                 throw new IllegalStateException("Rank server returned HTTP " + response.statusCode());
             }
+        } catch (IOException e) {
+            throw new RuntimeException("HTTP tensor-parallel request failed", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("HTTP tensor-parallel request interrupted", e);
+        }
+    }
+
+    private <T> T postJson(String path, Object requestBody, Class<T> responseType) {
+        try {
+            byte[] json = JsonUtils.om.writeValueAsBytes(requestBody);
+            HttpRequest request = HttpRequest.newBuilder(baseUri.resolve(path))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(json))
+                    .build();
+            HttpResponse<byte[]> response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            if (response.statusCode() != 200) {
+                throw new IllegalStateException("Rank server returned HTTP " + response.statusCode());
+            }
+            return JsonUtils.om.readValue(response.body(), responseType);
         } catch (IOException e) {
             throw new RuntimeException("HTTP tensor-parallel request failed", e);
         } catch (InterruptedException e) {

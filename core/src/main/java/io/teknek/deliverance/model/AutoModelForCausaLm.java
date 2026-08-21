@@ -158,6 +158,7 @@ public class AutoModelForCausaLm {
         }
         public Builder withKvBufferCacheSettings(KvBufferCacheSettings settings){
             this.settings = settings;
+            validatePrefixCacheSettingsForModel();
             return this;
         }
         public Builder withSketchesSettings(SketchesSettings sketchesSettings){
@@ -446,6 +447,7 @@ public class AutoModelForCausaLm {
         }
 
         protected AbstractModel loadLocalTransformerModel(){
+            validatePrefixCacheSettingsForModel();
             System.setProperty("jdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK", this.oobCheck);
             ModelFetcher fetcherForLoad = resolveModelFetcherForLoad();
             File modelRoot = fetcherForLoad.maybeDownload();
@@ -474,6 +476,20 @@ public class AutoModelForCausaLm {
             }
             model.init();
             return model;
+        }
+
+        private void validatePrefixCacheSettingsForModel() {
+            if (settings == null) {
+                return;
+            }
+            if (settings.getPrefixCompression() == KvBufferCacheSettings.PrefixCompression.MSE_TURBOQUANT
+                    && "edwardcapriolo".equalsIgnoreCase(fetch.owner())
+                    && "Qwen3-0.6B-JQ4".equalsIgnoreCase(fetch.name())) {
+                throw new IllegalArgumentException("MSE_TURBOQUANT prefix cache is disabled for "
+                        + fetch.owner() + "/" + fetch.name()
+                        + ": TurboQuant degrades with super small models, especially Qwen3-0.6B-JQ4. "
+                        + "Use prefixCompression=NONE for exact KV prefix cache.");
+            }
         }
 
         protected AbstractModel constructModel(File modelRoot, Optional<LoraAdapter> loraAdapter) {

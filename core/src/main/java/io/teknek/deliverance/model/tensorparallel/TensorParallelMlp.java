@@ -63,6 +63,19 @@ public final class TensorParallelMlp {
             ConfigurableTensorProvider tensorProvider,
             AbstractModel model,
             Function<TensorShape, AbstractTensor> tensorFactory) {
+        return forwardPartial(input, gateProjectionWeights, upProjectionWeights, downProjectionWeights,
+                activationFunction, tensorProvider, model, tensorFactory, -1);
+    }
+
+    public static AbstractTensor forwardPartial(AbstractTensor input,
+            AbstractTensor gateProjectionWeights,
+            AbstractTensor upProjectionWeights,
+            AbstractTensor downProjectionWeights,
+            ActivationFunction.Type activationFunction,
+            ConfigurableTensorProvider tensorProvider,
+            AbstractModel model,
+            Function<TensorShape, AbstractTensor> tensorFactory,
+            int layerIndex) {
         int batchSize = input.shape().first();
         int embeddingLength = input.shape().last();
         int localHiddenLength = gateProjectionWeights.shape().first();
@@ -72,6 +85,7 @@ public final class TensorParallelMlp {
              AbstractTensor up = tensorFactory.apply(TensorShape.of(batchSize, localHiddenLength))) {
             AbstractTensor[] results = new AbstractTensor[]{gate, up};
             AbstractTensor[] weights = new AbstractTensor[]{gateProjectionWeights, upProjectionWeights};
+            model.emitLayerDebug(layerIndex, "mlp_projection_input", input);
             try (Timer.Context ignoredGate = InferenceProfiler.timer(model.getMetricRegistry(), "tensorparallelmlp.gate_up_projection").time()) {
                 if (model.isInWorkingQuantizedType(input)) {
                     VectorMath.pchunk(0, localHiddenLength, (chunkStart, chunkSize) ->
@@ -85,6 +99,8 @@ public final class TensorParallelMlp {
                     }
                 }
             }
+            model.emitLayerDebug(layerIndex, "mlp_gate_projection", gate);
+            model.emitLayerDebug(layerIndex, "mlp_up_projection", up);
 
             try (Timer.Context ignoredActivation = InferenceProfiler.timer(model.getMetricRegistry(), "tensorparallelmlp.activation").time()) {
                 VectorMath.pchunk(0, localHiddenLength, (chunkStart, chunkSize) -> {
@@ -96,9 +112,11 @@ public final class TensorParallelMlp {
                     }
                 }, tensorProvider.get().parallelSplitSize(), model.getPool());
             }
+            model.emitLayerDebug(layerIndex, "mlp_after_activation", gate);
             try (Timer.Context ignoredMultiply = InferenceProfiler.timer(model.getMetricRegistry(), "tensorparallelmlp.multiply").time()) {
                 tensorProvider.get().maccumulate(gate, up, 0, localHiddenLength);
             }
+            model.emitLayerDebug(layerIndex, "mlp_after_multiply", gate);
 
             AbstractTensor partial = tensorFactory.apply(TensorShape.of(batchSize, embeddingLength));
             try (Timer.Context ignoredDown = InferenceProfiler.timer(model.getMetricRegistry(), "tensorparallelmlp.down_projection").time()) {
@@ -122,6 +140,7 @@ public final class TensorParallelMlp {
                     }
                 }
             }
+            model.emitLayerDebug(layerIndex, "mlp_down_partial", partial);
             return partial;
         }
     }
@@ -166,12 +185,28 @@ public final class TensorParallelMlp {
             Function<TensorShape, AbstractTensor> tensorFactory,
             TensorParallelCollectives collectives,
             String collectiveKey) {
+        return forward(input, gateProjectionWeights, upProjectionWeights, downProjectionWeights, activationFunction,
+                tensorProvider, model, tensorFactory, collectives, collectiveKey, -1);
+    }
+
+    public static AbstractTensor forward(AbstractTensor input,
+            AbstractTensor gateProjectionWeights,
+            AbstractTensor upProjectionWeights,
+            AbstractTensor downProjectionWeights,
+            ActivationFunction.Type activationFunction,
+            ConfigurableTensorProvider tensorProvider,
+            AbstractModel model,
+            Function<TensorShape, AbstractTensor> tensorFactory,
+            TensorParallelCollectives collectives,
+            String collectiveKey,
+            int layerIndex) {
         AbstractTensor partial = forwardPartial(input, gateProjectionWeights, upProjectionWeights, downProjectionWeights,
-                activationFunction, tensorProvider, model, tensorFactory);
+                activationFunction, tensorProvider, model, tensorFactory, layerIndex);
         AbstractTensor reduced;
         try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), "tensorparallelmlp.all_reduce").time()) {
             reduced = collectives.allReduceSum(collectiveKey, partial);
         }
+        model.emitLayerDebug(layerIndex, "mlp_down_reduced", reduced);
         if (reduced != partial) {
             partial.close();
         }

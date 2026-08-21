@@ -11,12 +11,14 @@ import io.teknek.deliverance.model.tensorparallel.GossipParallelMembership;
 import io.teknek.deliverance.model.tensorparallel.GossipParallelSettings;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelDeploymentSpec;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelGenerationGroup;
+import io.teknek.deliverance.model.tensorparallel.TensorParallelRankEndpoint;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.gossip.GossipSettings;
 import io.teknek.gossip.Member;
+import io.teknek.gossip.event.GossipState;
 import io.teknek.gossip.RemoteMember;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,12 +34,22 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 @Component
 @ConfigurationProperties(prefix = "deliverance-model")
@@ -255,15 +267,90 @@ class MultiModelConfiguration {
 }
 
 class TensorParallelSpringCausalLanguageModel implements CausalLanguageModel {
+    private static final Logger LOGGER = LoggerFactory.getLogger(TensorParallelSpringCausalLanguageModel.class);
+    private static final long RECONCILE_INTERVAL_MILLIS = 500;
     private final AbstractModel coordinatorModel;
-    private final TensorParallelGenerationGroup group;
+    private final AtomicReference<TensorParallelGenerationGroup> group;
     private final GossipParallelMembership membership;
+    private final AtomicReference<Readiness> readiness = new AtomicReference<>(Readiness.ready());
+    private final Set<String> gossipUpAssignedNodes = ConcurrentHashMap.newKeySet();
+    private final AtomicInteger activeGenerations = new AtomicInteger();
+    private final ScheduledExecutorService readinessReconciler;
+    private final Object groupLock = new Object();
 
     TensorParallelSpringCausalLanguageModel(AbstractModel coordinatorModel, TensorParallelGenerationGroup group,
             GossipParallelMembership membership) {
+        this(coordinatorModel, group, membership, true);
+    }
+
+    TensorParallelSpringCausalLanguageModel(AbstractModel coordinatorModel, TensorParallelGenerationGroup group,
+            GossipParallelMembership membership, boolean startReadinessReconciler) {
         this.coordinatorModel = coordinatorModel;
-        this.group = group;
+        this.group = new AtomicReference<>(group);
         this.membership = membership;
+        this.membership.registerGossipListener(this::handleGossipEvent);
+        if (startReadinessReconciler) {
+            this.readinessReconciler = Executors.newSingleThreadScheduledExecutor(task -> {
+                Thread thread = new Thread(task, "deliverance-tp-readiness-" + membership.localNodeId());
+                thread.setDaemon(true);
+                return thread;
+            });
+            this.readinessReconciler.scheduleWithFixedDelay(this::reconcileReadinessSafely,
+                    RECONCILE_INTERVAL_MILLIS, RECONCILE_INTERVAL_MILLIS, TimeUnit.MILLISECONDS);
+        } else {
+            this.readinessReconciler = null;
+        }
+        LOGGER.info("Tensor-parallel web coordinator registered gossip listener node={} assignment={}",
+                membership.localNodeId(), membership.findAssignment());
+    }
+
+    private void handleGossipEvent(Member member, GossipState state) {
+        LOGGER.info("Tensor-parallel web coordinator observed gossip event member={} state={}", member.getId(), state);
+        if (!ownsAssignedRank(member)) {
+            return;
+        }
+        if (state == GossipState.DOWN) {
+            gossipUpAssignedNodes.remove(member.getId());
+        } else if (state == GossipState.UP) {
+            gossipUpAssignedNodes.add(member.getId());
+        }
+    }
+
+    private void reconcileReadinessSafely() {
+        try {
+            reconcileReadiness();
+        } catch (RuntimeException e) {
+            readiness.set(Readiness.notReady(e.getMessage()));
+            LOGGER.warn("Tensor-parallel readiness reconciliation failed", e);
+        }
+    }
+
+    void reconcileReadiness() {
+        synchronized (groupLock) {
+            ReadinessCheck check = checkReadiness(null);
+            if (!check.ready()) {
+                readiness.set(Readiness.notReady(check.diagnostics()));
+                TensorParallelGenerationGroup current = group.get();
+                if (current != null && activeGenerations.get() == 0) {
+                    LOGGER.warn("Invalidating tensor-parallel generation group: {}", check.diagnostics());
+                    group.set(null);
+                    current.close();
+                } else if (current != null) {
+                    LOGGER.info("Leaving tensor-parallel generation group open until active requests finish diagnostics={} activeGenerations={}",
+                            check.diagnostics(), activeGenerations.get());
+                }
+                return;
+            }
+            if (group.get() != null) {
+                readiness.set(Readiness.ready());
+                return;
+            }
+            TensorParallelGenerationGroup reopened = membership.openGenerationGroup();
+            group.set(reopened);
+            readiness.set(Readiness.ready());
+            LOGGER.info("Reactivated tensor-parallel generation group assignmentHash={} endpoints={}",
+                    check.assignmentHash(), check.endpoints());
+        }
     }
 
     @Override
@@ -271,7 +358,138 @@ class TensorParallelSpringCausalLanguageModel implements CausalLanguageModel {
             io.teknek.deliverance.safetensors.prompt.PromptContext promptContext,
             io.teknek.deliverance.generator.GeneratorParameters generatorParameters,
             io.teknek.deliverance.model.GenerateEvent onTokenWithTimings) {
-        return group.generate(session, coordinatorModel, promptContext, generatorParameters, onTokenWithTimings);
+        TensorParallelGenerationGroup current;
+        synchronized (groupLock) {
+            current = assertTensorParallelReady();
+            activeGenerations.incrementAndGet();
+        }
+        try {
+            return current.generate(session, coordinatorModel, promptContext, generatorParameters, onTokenWithTimings);
+        } finally {
+            activeGenerations.decrementAndGet();
+        }
+    }
+
+    private TensorParallelGenerationGroup assertTensorParallelReady() {
+        Readiness current = readiness.get();
+        if (current.state() == ReadinessState.NOT_READY) {
+            LOGGER.info("Rejecting tensor-parallel request because readiness state is {} diagnostics={}",
+                    current.state(), current.diagnostics());
+            throw notReady(current.diagnostics());
+        }
+        TensorParallelGenerationGroup currentGroup = group.get();
+        if (currentGroup == null) {
+            LOGGER.info("Rejecting tensor-parallel request because generation group is not open");
+            throw notReady("generation group is not open");
+        }
+        ReadinessCheck check = checkReadiness(null);
+        if (!check.ready()) {
+            LOGGER.info("Rejecting tensor-parallel request because {}", check.diagnostics());
+            throw notReady(check.diagnostics());
+        }
+        LOGGER.info("Tensor-parallel request readiness OK assignmentHash={} endpoints={}",
+                check.assignmentHash(), check.endpoints());
+        return currentGroup;
+    }
+
+    private ReadinessCheck checkReadiness(String additionallyLiveNodeId) {
+        var assignment = membership.findAssignment();
+        if (assignment == null) {
+            return ReadinessCheck.notReady("assignment is not visible in gossip");
+        }
+        if (membership.findCollectiveUri() == null) {
+            return ReadinessCheck.notReady("collective URI is not visible in gossip");
+        }
+        List<TensorParallelRankEndpoint> endpoints;
+        try {
+            endpoints = membership.rankEndpointsForAssignment();
+        } catch (RuntimeException e) {
+            return ReadinessCheck.notReady(e.getMessage());
+        }
+        Set<Integer> ranks = new HashSet<>();
+        List<Integer> duplicateRanks = new ArrayList<>();
+        List<Integer> missingRanks = new ArrayList<>();
+        for (var endpoint : endpoints) {
+            if (!ranks.add(endpoint.rank())) {
+                duplicateRanks.add(endpoint.rank());
+            }
+            if (endpoint.uri() == null || endpoint.uri().isBlank()) {
+                return ReadinessCheck.notReady("rank " + endpoint.rank() + " has no endpoint URI");
+            }
+        }
+        for (int rank = 0; rank < assignment.tensorParallelSize(); rank++) {
+            if (!ranks.contains(rank)) {
+                missingRanks.add(rank);
+            }
+        }
+        if (!missingRanks.isEmpty() || !duplicateRanks.isEmpty() || endpoints.size() != assignment.tensorParallelSize()) {
+            return ReadinessCheck.notReady("expected ranks 0.." + (assignment.tensorParallelSize() - 1)
+                    + " but found endpoints=" + endpoints
+                    + " missing=" + missingRanks
+                    + " duplicates=" + duplicateRanks);
+        }
+        Set<String> liveNodeIds = new HashSet<>();
+        liveNodeIds.add(membership.localNodeId());
+        if (additionallyLiveNodeId != null) {
+            liveNodeIds.add(additionallyLiveNodeId);
+        }
+        liveNodeIds.addAll(gossipUpAssignedNodes);
+        for (var member : membership.liveMembers()) {
+            liveNodeIds.add(member.getId());
+        }
+        List<String> downOwners = endpoints.stream()
+                .map(TensorParallelRankEndpoint::nodeId)
+                .distinct()
+                .filter(nodeId -> !liveNodeIds.contains(nodeId))
+                .toList();
+        if (!downOwners.isEmpty()) {
+            return ReadinessCheck.notReady("gossip reports rank owner nodes down: " + downOwners);
+        }
+        return ReadinessCheck.ready(assignment.assignmentHash(), endpoints);
+    }
+
+    private boolean ownsAssignedRank(Member member) {
+        var assignment = membership.findAssignment();
+        if (assignment == null) {
+            return false;
+        }
+        for (var rank : assignment.ranks()) {
+            if (rank.nodeId().equals(member.getId())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private ResponseStatusException notReady(String reason) {
+        return new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                "Tensor-parallel deployment is not ready: " + reason);
+    }
+
+    enum ReadinessState {
+        READY,
+        NOT_READY
+    }
+
+    record Readiness(ReadinessState state, String diagnostics) {
+        static Readiness ready() {
+            return new Readiness(ReadinessState.READY, "ready");
+        }
+
+        static Readiness notReady(String diagnostics) {
+            return new Readiness(ReadinessState.NOT_READY, diagnostics);
+        }
+    }
+
+    record ReadinessCheck(boolean ready, String diagnostics, String assignmentHash,
+            List<TensorParallelRankEndpoint> endpoints) {
+        static ReadinessCheck ready(String assignmentHash, List<TensorParallelRankEndpoint> endpoints) {
+            return new ReadinessCheck(true, "ready", assignmentHash, endpoints);
+        }
+
+        static ReadinessCheck notReady(String diagnostics) {
+            return new ReadinessCheck(false, diagnostics, null, List.of());
+        }
     }
 
     @Override
@@ -322,7 +540,15 @@ class TensorParallelSpringCausalLanguageModel implements CausalLanguageModel {
     @Override
     public void close() throws IOException {
         try {
-            group.close();
+            if (readinessReconciler != null) {
+                readinessReconciler.shutdownNow();
+            }
+            synchronized (groupLock) {
+                TensorParallelGenerationGroup current = group.getAndSet(null);
+                if (current != null) {
+                    current.close();
+                }
+            }
             coordinatorModel.close();
         } finally {
             membership.close();

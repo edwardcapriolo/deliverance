@@ -10,8 +10,12 @@ import io.teknek.deliverance.generator.TransformerBlock;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.llama.LlamaModel;
+import io.teknek.deliverance.model.tensorparallel.DefaultTransformerWeightPolicyResolver;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelContext;
+import io.teknek.deliverance.model.tensorparallel.TensorParallelPlanner;
+import io.teknek.deliverance.model.tensorparallel.TensorParallelShardPlan;
+import io.teknek.deliverance.model.tensorparallel.TensorParallelWeightLoader;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
@@ -52,6 +56,9 @@ public class Qwen3Model extends LlamaModel {
     @Override
     protected TransformerBlock[] loadTransformerBlockWeights() {
         DType qType = modelQType.orElse(this.modelDType);
+        TensorParallelShardPlan tensorParallelPlan = TensorParallelPlanner.plan(config, tensorParallelContext);
+        TensorParallelWeightLoader tensorParallelWeights = new TensorParallelWeightLoader(weights,
+                tensorParallelContext, tensorParallelPlan, new DefaultTransformerWeightPolicyResolver());
         TransformerBlock[] blocks = new TransformerBlock[config.numberOfLayers];
         IntStream.range(0, config.numberOfLayers).parallel().forEach(i -> {
             String base = "model.layers." + i + ".";
@@ -62,10 +69,10 @@ public class Qwen3Model extends LlamaModel {
             String oName = attn + "o_proj.weight";
             String qNormName = attn + "q_norm.weight";
             String kNormName = attn + "k_norm.weight";
-            var qWeight = quantize(weights.load(qName), qType);
-            var kWeight = quantize(weights.load(kName), qType);
-            var vWeight = quantize(weights.load(vName), qType);
-            var oWeight = quantize(weights.load(oName), qType);
+            var qWeight = quantize(tensorParallelWeights.load(qName), qType);
+            var kWeight = quantize(tensorParallelWeights.load(kName), qType);
+            var vWeight = quantize(tensorParallelWeights.load(vName), qType);
+            var oWeight = quantize(tensorParallelWeights.load(oName), qType);
             var qNormWeight = quantize(weights.load(qNormName), qType);
             var kNormWeight = quantize(weights.load(kNormName), qType);
             registerModelLineageTensor(qName, qWeight);
@@ -92,9 +99,9 @@ public class Qwen3Model extends LlamaModel {
             String gateName = mlpPrefix + "gate_proj.weight";
             String downName = mlpPrefix + "down_proj.weight";
             String upName = mlpPrefix + "up_proj.weight";
-            var gateWeight = quantize(weights.load(gateName), qType);
-            var downWeight = quantize(weights.load(downName), qType);
-            var upWeight = quantize(weights.load(upName), qType);
+            var gateWeight = quantize(tensorParallelWeights.load(gateName), qType);
+            var downWeight = quantize(tensorParallelWeights.load(downName), qType);
+            var upWeight = quantize(tensorParallelWeights.load(upName), qType);
             registerModelLineageTensor(gateName, gateWeight);
             registerModelLineageTensor(downName, downWeight);
             registerModelLineageTensor(upName, upWeight);
@@ -105,7 +112,9 @@ public class Qwen3Model extends LlamaModel {
                     downWeight,
                     upWeight,
                     configurableTensorProvider,
-                    gateName, upName, downName
+                    "layer." + i + ".mlp.down_proj",
+                    gateName, upName, downName,
+                    i
             );
 
             String inputNormName = base + "input_layernorm.weight";

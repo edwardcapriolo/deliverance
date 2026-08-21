@@ -6,6 +6,7 @@ import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import org.junit.jupiter.api.Test;
 
 import java.net.InetSocketAddress;
+import java.util.Arrays;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -16,6 +17,7 @@ public class HttpTensorParallelRankTransportTest {
     @Test
     public void clientCallsBatchAndSingleTokenForwardOverHttp() {
         AtomicReference<UUID> closedSession = new AtomicReference<>();
+        AtomicReference<PrefixCacheStoreRequest> storedPrefix = new AtomicReference<>();
         TensorParallelRankService service = new TensorParallelRankService() {
             @Override
             public AbstractTensor batchForward(UUID sessionId, int[] tokenIds, int startPosition) {
@@ -39,6 +41,21 @@ public class HttpTensorParallelRankTransportTest {
             public void closeSession(UUID sessionId) {
                 closedSession.set(sessionId);
             }
+
+            @Override
+            public PrefixCacheProbeResult probePrefix(PrefixCacheProbeRequest request) {
+                return new PrefixCacheProbeResult(Arrays.equals(new int[]{1, 2, 3, 4}, request.tokenIds()), 4);
+            }
+
+            @Override
+            public PrefixCacheRestoreResult restorePrefix(PrefixCacheRestoreRequest request) {
+                return new PrefixCacheRestoreResult(request.prefixLength() == 4, request.prefixLength());
+            }
+
+            @Override
+            public void storePrefix(PrefixCacheStoreRequest request) {
+                storedPrefix.set(request);
+            }
         };
 
         try (HttpTensorParallelRankServer server = new HttpTensorParallelRankServer(
@@ -55,6 +72,15 @@ public class HttpTensorParallelRankTransportTest {
                         TensorDisplayUtil.pretty2dDisplayAll(single).trim());
             }
             UUID sessionId = UUID.randomUUID();
+            PrefixCacheProbeResult probe = client.probePrefix(new PrefixCacheProbeRequest(new int[]{1, 2, 3, 4}, "salt"));
+            assertEquals(true, probe.hit());
+            assertEquals(4, probe.prefixLength());
+            PrefixCacheRestoreResult restore = client.restorePrefix(
+                    new PrefixCacheRestoreRequest(sessionId, new int[]{1, 2, 3, 4}, "salt", 4));
+            assertEquals(true, restore.restored());
+            assertEquals(4, restore.prefixLength());
+            client.storePrefix(new PrefixCacheStoreRequest(sessionId, new int[]{1, 2, 3, 4}, "salt"));
+            assertEquals(sessionId, storedPrefix.get().sessionId());
             client.closeSession(sessionId);
             assertEquals(sessionId, closedSession.get());
         }
