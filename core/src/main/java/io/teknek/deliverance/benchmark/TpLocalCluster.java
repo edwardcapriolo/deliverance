@@ -1,5 +1,6 @@
 package io.teknek.deliverance.benchmark;
 
+import com.codahale.metrics.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
@@ -14,6 +15,9 @@ import io.teknek.deliverance.model.tensorparallel.TensorParallelDeploymentSpec;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelGenerationGroup;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
+import io.teknek.deliverance.tensor.TensorAllocator;
+import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.gossip.GossipSettings;
 import io.teknek.gossip.Member;
 import io.teknek.gossip.RemoteMember;
@@ -111,11 +115,21 @@ public final class TpLocalCluster {
     }
 
     private static AutoModelForCausaLm.Builder configuredBuilder(Options options, ModelFetcher fetcher) {
+        WrappedForkJoinPool pool = new WrappedForkJoinPool(new ForkJoinPool(options.poolSize,
+                ForkJoinPool.defaultForkJoinWorkerThreadFactory, null, true));
         AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(fetcher)
                 .withWorkingMemoryType(options.workingDType)
                 .withWorkingQuantType(options.workingQType)
-                .withWrappedForkJoinPool(new WrappedForkJoinPool(new ForkJoinPool(options.poolSize,
-                        ForkJoinPool.defaultForkJoinWorkerThreadFactory, null, true)));
+                .withWrappedForkJoinPool(pool);
+        if ("jvector".equals(options.tensorOperations)) {
+            MetricRegistry metrics = new MetricRegistry();
+            TensorAllocator allocator = new ArrayQueueTensorAllocator(metrics);
+            builder.withMetricRegistry(metrics)
+                    .withTensorAllocator(allocator)
+                    .withTensorProvider(new ConfigurableTensorProvider(allocator, pool));
+        } else if (!"auto".equals(options.tensorOperations)) {
+            throw new IllegalArgumentException("--tensor-operations must be auto or jvector");
+        }
         if (options.outputHeadQuantization != null) {
             builder.withOutputHeadQuantization(options.outputHeadQuantization);
         }
@@ -195,6 +209,7 @@ public final class TpLocalCluster {
         private String owner = "tjake";
         private String model = "gemma-2-2b-it-JQ4";
         private int poolSize = 16;
+        private String tensorOperations = "auto";
         private DType workingDType = DType.F32;
         private DType workingQType = DType.I8;
         private DType outputHeadQuantization = DType.Q4;
@@ -221,6 +236,7 @@ public final class TpLocalCluster {
                     case "--owner" -> options.owner = args[++i];
                     case "--model" -> options.model = args[++i];
                     case "--pool-size" -> options.poolSize = Integer.parseInt(args[++i]);
+                    case "--tensor-operations" -> options.tensorOperations = args[++i].toLowerCase(Locale.ROOT);
                     case "--working-dtype" -> options.workingDType = DType.valueOf(args[++i]);
                     case "--working-qtype" -> options.workingQType = DType.valueOf(args[++i]);
                     case "--output-head-quantization" -> options.outputHeadQuantization = parseOptionalDType(args[++i]);

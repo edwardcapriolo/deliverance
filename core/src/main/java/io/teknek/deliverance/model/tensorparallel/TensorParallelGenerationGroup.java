@@ -2,17 +2,27 @@ package io.teknek.deliverance.model.tensorparallel;
 
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.GenerateEvent;
+import io.teknek.deliverance.model.GenerationBackend;
+import io.teknek.deliverance.model.GenerationCursor;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
+import io.teknek.deliverance.model.tensorparallel.transport.PrefixCacheProbeRequest;
+import io.teknek.deliverance.model.tensorparallel.transport.PrefixCacheProbeResult;
+import io.teknek.deliverance.model.tensorparallel.transport.PrefixCacheRestoreRequest;
+import io.teknek.deliverance.model.tensorparallel.transport.PrefixCacheRestoreResult;
+import io.teknek.deliverance.model.tensorparallel.transport.PrefixCacheStoreRequest;
 import io.teknek.deliverance.model.tensorparallel.transport.TensorParallelRankService;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -27,6 +37,7 @@ import java.util.concurrent.Future;
  * rank execution.</p>
  */
 public class TensorParallelGenerationGroup implements AutoCloseable {
+    private static final Logger LOGGER = LoggerFactory.getLogger(TensorParallelGenerationGroup.class);
     private final UUID sessionId = UUID.randomUUID();
     private final List<RankEndpoint> endpoints;
     private final ExecutorService executor;
@@ -116,22 +127,68 @@ public class TensorParallelGenerationGroup implements AutoCloseable {
     }
 
     public Response generate(UUID sessionId, AbstractModel coordinatorModel, PromptContext promptContext,
-                             GeneratorParameters generatorParameters, GenerateEvent eventFired) {
+                              GeneratorParameters generatorParameters, GenerateEvent eventFired) {
         Objects.requireNonNull(coordinatorModel, "coordinatorModel");
-        try {
-            return coordinatorModel.generateWithForwarder(sessionId, promptContext, generatorParameters, eventFired,
-                    new AbstractModel.GenerationForwarder() {
-                        @Override
-                        public AbstractTensor batchForward(int[] tokenIds, int startPosition) {
-                            return TensorParallelGenerationGroup.this.batchForward(sessionId, tokenIds, startPosition);
-                        }
+        return coordinatorModel.generateWithBackend(sessionId, promptContext, generatorParameters, eventFired,
+                new TensorParallelGenerationBackend(promptContext));
+    }
 
-                        @Override
-                        public AbstractTensor forward(int tokenId, int position) {
-                            return TensorParallelGenerationGroup.this.forward(sessionId, tokenId, position);
-                        }
-                    });
-        } finally {
+    private final class TensorParallelGenerationBackend implements GenerationBackend {
+        private TensorParallelGenerationBackend(PromptContext ignoredPromptContext) {
+        }
+
+        @Override
+        public GenerationSession open(UUID sessionId, int[] promptTokens, GeneratorParameters parameters) {
+            String cacheSalt = effectiveCacheSalt(parameters.cacheSalt);
+            int prefixLength = probePrefix(promptTokens, cacheSalt);
+            if (prefixLength > 0 && !restorePrefix(sessionId, promptTokens, cacheSalt, prefixLength)) {
+                prefixLength = 0;
+            }
+            return new TensorParallelGenerationSession(sessionId, promptTokens, cacheSalt, prefixLength);
+        }
+
+        private String effectiveCacheSalt(Optional<String> requestSalt) {
+            return requestSalt.orElse("");
+        }
+    }
+
+    private final class TensorParallelGenerationSession implements GenerationBackend.GenerationSession {
+        private final UUID sessionId;
+        private final int[] promptTokens;
+        private final String cacheSalt;
+        private final int prefixLength;
+
+        private TensorParallelGenerationSession(UUID sessionId, int[] promptTokens, String cacheSalt, int prefixLength) {
+            this.sessionId = sessionId;
+            this.promptTokens = promptTokens;
+            this.cacheSalt = cacheSalt;
+            this.prefixLength = prefixLength;
+        }
+
+        @Override
+        public int prefixLength() {
+            return prefixLength;
+        }
+
+        @Override
+        public AbstractTensor prefill(GenerationCursor cursor) {
+            AbstractTensor output;
+            if (cursor.hasTokensToProcess()) {
+                output = TensorParallelGenerationGroup.this.batchForward(sessionId, cursor.tokensToProcess(), cursor.startPosition());
+                storePrefix(sessionId, promptTokens, cacheSalt);
+            } else {
+                output = TensorParallelGenerationGroup.this.forward(sessionId, cursor.replayToken(), cursor.replayPosition());
+            }
+            return output;
+        }
+
+        @Override
+        public AbstractTensor decode(int tokenId, int position) {
+            return TensorParallelGenerationGroup.this.forward(sessionId, tokenId, position);
+        }
+
+        @Override
+        public void close() {
             closeSession(sessionId);
         }
     }
@@ -158,6 +215,76 @@ public class TensorParallelGenerationGroup implements AutoCloseable {
             return outputs;
         } catch (Exception e) {
             throw new RuntimeException("Tensor-parallel forward failed", e);
+        }
+    }
+
+    int probePrefix(int[] promptTokens, String cacheSalt) {
+        try {
+            List<Future<PrefixCacheProbeResult>> futures = new ArrayList<>();
+            for (RankEndpoint endpoint : endpoints) {
+                futures.add(executor.submit(() -> endpoint.service()
+                        .probePrefix(new PrefixCacheProbeRequest(promptTokens, cacheSalt))));
+            }
+            Integer agreedLength = null;
+            for (int i = 0; i < futures.size(); i++) {
+                PrefixCacheProbeResult result = futures.get(i).get();
+                if (!result.hit() || result.prefixLength() <= 0) {
+                    LOGGER.info("TP prefix probe miss reason=rank_miss rank={}", endpoints.get(i).rank());
+                    return 0;
+                }
+                if (agreedLength == null) {
+                    agreedLength = result.prefixLength();
+                } else if (agreedLength != result.prefixLength()) {
+                    LOGGER.info("TP prefix probe miss reason=rank_prefix_mismatch expected={} actual={} rank={}",
+                            agreedLength, result.prefixLength(), endpoints.get(i).rank());
+                    return 0;
+                }
+            }
+            int prefixLength = agreedLength == null ? 0 : agreedLength;
+            if (prefixLength > 0) {
+                LOGGER.info("TP prefix probe hit prefixLength={} ranks={}", prefixLength, endpoints.size());
+            }
+            return prefixLength;
+        } catch (Exception e) {
+            throw new RuntimeException("Tensor-parallel prefix probe failed", e);
+        }
+    }
+
+    boolean restorePrefix(UUID sessionId, int[] promptTokens, String cacheSalt, int prefixLength) {
+        try {
+            List<Future<PrefixCacheRestoreResult>> futures = new ArrayList<>();
+            for (RankEndpoint endpoint : endpoints) {
+                futures.add(executor.submit(() -> endpoint.service()
+                        .restorePrefix(new PrefixCacheRestoreRequest(sessionId, promptTokens, cacheSalt, prefixLength))));
+            }
+            for (int i = 0; i < futures.size(); i++) {
+                PrefixCacheRestoreResult result = futures.get(i).get();
+                if (!result.restored() || result.prefixLength() != prefixLength) {
+                    LOGGER.info("TP prefix restore failed rank={} expectedPrefixLength={} actualPrefixLength={}",
+                            endpoints.get(i).rank(), prefixLength, result.prefixLength());
+                    return false;
+                }
+            }
+            LOGGER.info("TP prefix restored session={} prefixLength={} ranks={}", sessionId, prefixLength, endpoints.size());
+            return true;
+        } catch (Exception e) {
+            throw new RuntimeException("Tensor-parallel prefix restore failed", e);
+        }
+    }
+
+    void storePrefix(UUID sessionId, int[] promptTokens, String cacheSalt) {
+        try {
+            List<Future<?>> futures = new ArrayList<>();
+            for (RankEndpoint endpoint : endpoints) {
+                futures.add(executor.submit(() -> endpoint.service()
+                        .storePrefix(new PrefixCacheStoreRequest(sessionId, promptTokens, cacheSalt))));
+            }
+            for (Future<?> future : futures) {
+                future.get();
+            }
+            LOGGER.info("TP prefix stored session={} promptLength={} ranks={}", sessionId, promptTokens.length, endpoints.size());
+        } catch (Exception e) {
+            throw new RuntimeException("Tensor-parallel prefix store failed", e);
         }
     }
 

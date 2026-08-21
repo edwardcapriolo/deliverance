@@ -94,6 +94,14 @@ public class ModelFetcher {
         return Paths.get(baseDir.toString(), owner + "_" + name);
     }
 
+    public String owner() {
+        return owner;
+    }
+
+    public String name() {
+        return name;
+    }
+
     /**
      * Download a model from HuggingFace and return the path to the model directory
      *

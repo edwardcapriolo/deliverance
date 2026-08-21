@@ -369,6 +369,7 @@ void __attribute__((noinline)) gemm_q8_q4_128_arm(int m0, int m, int n0, int n, 
             int bo = params.boffset;
 
             for (int i = 0; i < numBlocks; i += 4) { //128bits == 4floats
+                int remainingBlocks = MIN(4, numBlocks - i);
                 int aoo = ao;
                 int boo = bo;
 
@@ -377,12 +378,12 @@ void __attribute__((noinline)) gemm_q8_q4_128_arm(int m0, int m, int n0, int n, 
                     bo = boo;
 
                     // Load float32
-                    float32x4_t ablock = vld1q_f32(params.af + (params.ldaf * (ii + mi) + (ao / Q4_BLOCK_SIZE)));
-                    float32x4_t bblock = vld1q_f32(params.bf + (params.ldbf * (jj + ni) + ((bo*2) / Q4_BLOCK_SIZE)));
-                    float32x4_t scaled = vmulq_f32(ablock, bblock);
-                    vst1q_f32(scalef, scaled);
+                    for (int sf = 0; sf < remainingBlocks; sf++) {
+                        scalef[sf] = params.af[params.ldaf * (ii + mi) + ((ao + sf * Q4_BLOCK_SIZE) / Q4_BLOCK_SIZE)]
+                                * params.bf[params.ldbf * (jj + ni) + (((bo + sf * (Q4_BLOCK_SIZE / 2)) * 2) / Q4_BLOCK_SIZE)];
+                    }
 
-                    for(int j = 0; j < 4; j++, ao += 32, bo += 16) {
+                    for(int j = 0; j < remainingBlocks; j++, ao += 32, bo += 16) {
                         // Load 4 bytes into a 128-bit integer register
                         int8x16_t int_va0 = vld1q_s8((const signed char *)(params.a + params.lda * (ii + mi) + ao));
                         int8x16_t int_va1 = vld1q_s8((const signed char *)(params.a + params.lda * (ii + mi) + ao + 16));
@@ -1118,8 +1119,34 @@ void gemm_f32_q4_512(int m0, int m, int n0, int n, int RM, int RN, struct gemm_p
 }
 #endif //!ARM_NEON
 
+static void gemm_f32_q4_scalar(const float *a, int aoffset, const float *bf, const char* b, int boffset, float *r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf, int ldc) {
+    for (int row = 0; row < m; row++) {
+        for (int out_col = 0; out_col < n; out_col++) {
+            int weight_row = n0 + out_col;
+            float sum = 0.0f;
+            for (int col = 0; col < k; col++) {
+                int logical_col = (boffset * 2) + col;
+                int within_block = logical_col % Q4_BLOCK_SIZE;
+                size_t byte_index = ((size_t) weight_row * (size_t) ldb)
+                        + ((size_t) logical_col / Q4_BLOCK_SIZE) * (Q4_BLOCK_SIZE / 2)
+                        + (within_block % (Q4_BLOCK_SIZE / 2));
+                unsigned char packed = (unsigned char) b[byte_index];
+                int nibble = within_block < (Q4_BLOCK_SIZE / 2) ? (packed & 0x0f) : ((packed >> 4) & 0x0f);
+                int q = nibble - 8;
+                float scale = bf[(size_t) weight_row * (size_t) ldbf + ((size_t) logical_col / Q4_BLOCK_SIZE)];
+                sum += a[row * lda + aoffset + col] * q * scale;
+            }
+            ptrdiff_t r_index = (ptrdiff_t) row * (ptrdiff_t) ldc + (ptrdiff_t) weight_row - (ptrdiff_t) roffset;
+            r[r_index] = sum;
+        }
+    }
+}
+
 void gemm_f32_q4(int flags, const float *a, int aoffset, const float *bf, const char* b, int boffset, float *r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf, int ldc)
 {
+    gemm_f32_q4_scalar(a, aoffset, bf, b, boffset, r, roffset, m, n0, n, k, lda, ldb, ldbf, ldc);
+    return;
+
     struct gemm_params p = {
                         .flags = flags,
                         .af = a,
@@ -1197,15 +1224,18 @@ void __attribute__((noinline)) gemm_bf16_q4_128_arm(int m0, int m, int n0, int n
         for (int ni = 0; ni < RN; ++ni) {
             int ao = params.aoffset;
             int bo = params.boffset;
-            for (int i = 0; i < params.k / Q4_BLOCK_SIZE; i += 4) {
+            int numBlocks = params.k / Q4_BLOCK_SIZE;
+            for (int i = 0; i < numBlocks; i += 4) {
+                int remainingBlocks = MIN(4, numBlocks - i);
                 int aoo = ao;
                 int boo = bo;
                 for (int mi = 0; mi < RM; ++mi) {
                     ao = aoo;
                     bo = boo;
-                    float32x4_t bblock = vld1q_f32(params.bf + (params.ldbf * (jj + ni) + ((bo*2) / Q4_BLOCK_SIZE)));
-                    vst1q_f32(scalef, bblock);
-                    for(int j = 0; j < 4; j++, ao += 32, bo += 16) {
+                    for (int sf = 0; sf < remainingBlocks; sf++) {
+                        scalef[sf] = params.bf[params.ldbf * (jj + ni) + (((bo + sf * (Q4_BLOCK_SIZE / 2)) * 2) / Q4_BLOCK_SIZE)];
+                    }
+                    for(int j = 0; j < remainingBlocks; j++, ao += 32, bo += 16) {
                         float32x4_t vb_f32 = vdupq_n_f32(scalef[j]);
                         float32x4_t f_va0 = load_bf16x4_as_f32(params.as + params.lda * (ii + mi) + ao);
                         float32x4_t f_va1 = load_bf16x4_as_f32(params.as + params.lda * (ii + mi) + ao + 4);

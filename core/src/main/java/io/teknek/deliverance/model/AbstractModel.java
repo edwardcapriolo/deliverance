@@ -434,6 +434,42 @@ public abstract class AbstractModel implements Generator, Classifier {
         return kvBufferCache.getEphemeralKvBuffer();
     }
 
+    public int restorePrefixToKvBuffer(int[] promptTokens, Optional<String> cacheSalt,
+            KvBufferCache.KvBuffer destination) {
+        KvBufferCache.PrefixEntry prefixHit = kvBufferCache.lookupPrefix(promptTokens, cacheSalt);
+        if (prefixHit == null) {
+            return 0;
+        }
+        try {
+            kvBufferCache.copyPrefix(prefixHit.buffer(), destination, prefixHit.length());
+            generationDebugHook.accept(new GenerationDebugEvent(
+                    GenerationDebugEventType.AFTER_PREFIX_COPY,
+                    promptTokens,
+                    prefixHit.length(),
+                    prefixHit.length(),
+                    promptTokens.length - prefixHit.length(),
+                    destination));
+            return prefixHit.length();
+        } finally {
+            prefixHit.closeIfTemporary();
+        }
+    }
+
+    public void storePrefixFromKvBuffer(int[] promptTokens, KvBufferCache.KvBuffer source, Optional<String> cacheSalt) {
+        kvBufferCache.storePrefix(promptTokens, source, cacheSalt);
+    }
+
+    public void emitPromptPrefillDebug(int[] promptTokens, int prefixLength, int startPosition,
+            int tokensToProcessLength, KvBufferCache.KvBuffer kvBuffer) {
+        generationDebugHook.accept(new GenerationDebugEvent(
+                GenerationDebugEventType.AFTER_PROMPT_PREFILL,
+                promptTokens,
+                prefixLength,
+                startPosition,
+                tokensToProcessLength,
+                kvBuffer));
+    }
+
     public int getLocalNumberOfHeads() {
         return config.numberOfHeads / tensorParallelContext.size();
     }
@@ -851,11 +887,18 @@ public abstract class AbstractModel implements Generator, Classifier {
      * GenerateEvent)} because this method's KV state lives behind the supplied forwarder.</p>
      */
     public Response generateWithForwarder(UUID sessionId, PromptContext promptContext, GeneratorParameters generatorParameters,
-                                          GenerateEvent eventFired, GenerationForwarder forwarder) {
+                                           GenerateEvent eventFired, GenerationForwarder forwarder) {
         Objects.requireNonNull(sessionId, "sessionId");
         Objects.requireNonNull(forwarder, "forwarder");
         return new GenerationEngine().generate(this, new ForwarderGenerationBackend(forwarder), sessionId, promptContext,
                 generatorParameters, eventFired);
+    }
+
+    public Response generateWithBackend(UUID sessionId, PromptContext promptContext, GeneratorParameters generatorParameters,
+            GenerateEvent eventFired, GenerationBackend backend) {
+        Objects.requireNonNull(sessionId, "sessionId");
+        Objects.requireNonNull(backend, "backend");
+        return new GenerationEngine().generate(this, backend, sessionId, promptContext, generatorParameters, eventFired);
     }
 
     @Override

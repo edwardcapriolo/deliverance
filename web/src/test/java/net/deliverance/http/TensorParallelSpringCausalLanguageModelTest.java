@@ -51,7 +51,7 @@ class TensorParallelSpringCausalLanguageModelTest {
                 () -> fixture.model().generate(UUID.randomUUID(), PromptContext.of("hi"), new GeneratorParameters(),
                         new DoNothingGenerateEvent()));
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, thrown.getStatusCode());
-        assertTrue(thrown.getReason().contains("gossip reports assigned rank owner down: node-1"));
+        assertTrue(thrown.getReason().contains("gossip reports rank owner nodes down: [node-1]"));
     }
 
     @Test
