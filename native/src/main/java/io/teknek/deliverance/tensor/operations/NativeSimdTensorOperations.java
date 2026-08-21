@@ -97,7 +97,8 @@ public class NativeSimdTensorOperations implements TensorOperations {
 
         // Native kernels are fast only for shapes they can cover without reading past a vector/quantization block.
         // Delegate valid tail/offset cases to the Java provider so correctness does not depend on caller alignment.
-        if (!optimizedBatchDotProductSupports(at, bt, aColumnOffset, bColumnOffset, columnLength)) {
+        if (!optimizedBatchDotProductSupports(at, bt, aColumnOffset, bColumnOffset, columnLength,
+                bRowOffset, rowChunkSize)) {
             delegate.batchDotProduct(result, at, bt, aColumnOffset, bColumnOffset, columnLength,
                     rRowOffset, bRowOffset, rowChunkSize);
             return;
@@ -250,8 +251,12 @@ public class NativeSimdTensorOperations implements TensorOperations {
     }
 
     private boolean optimizedBatchDotProductSupports(AbstractTensor a, AbstractTensor b,
-            int aColumnOffset, int bColumnOffset, int columnLength) {
+            int aColumnOffset, int bColumnOffset, int columnLength, int bRowOffset, int rowChunkSize) {
         if (a.dType() == DType.I8 || a.dType() == DType.Q4 || b.dType() == DType.I8 || b.dType() == DType.Q4) {
+            if (a.dType() == DType.I8 && b.dType() == DType.Q4
+                    && (rowChunkSize < 16 || bRowOffset % 16 != 0)) {
+                return false;
+            }
             return aColumnOffset % Q8ByteBufferTensor.BLOCK_SIZE == 0
                     && bColumnOffset % Q8ByteBufferTensor.BLOCK_SIZE == 0
                     && columnLength % Q8ByteBufferTensor.BLOCK_SIZE == 0;
@@ -281,7 +286,8 @@ public class NativeSimdTensorOperations implements TensorOperations {
         // Adjusts for both sparse columns and rows
         int rOffset = r[0].shape().sparseColumnOffset() - b[0].shape().sparseRowOffset();
 
-        if (!optimizedBatchDotProductSupports(a, b[0], columnOffset, columnOffset, columnLength)) {
+        if (!optimizedBatchDotProductSupports(a, b[0], columnOffset, columnOffset, columnLength,
+                bRowOffset, rowChunkSize)) {
             delegate.dotProductBatchChunk(r, a, b, columnOffset, columnLength, bRowOffset, rowChunkSize);
             return;
         }
