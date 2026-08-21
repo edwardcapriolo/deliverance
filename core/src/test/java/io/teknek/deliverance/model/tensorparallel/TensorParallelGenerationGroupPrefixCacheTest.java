@@ -12,10 +12,13 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.time.Duration;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TensorParallelGenerationGroupPrefixCacheTest {
@@ -57,6 +60,22 @@ class TensorParallelGenerationGroupPrefixCacheTest {
 
             assertEquals(1, rank0.storeCalls.get());
             assertEquals(1, rank1.storeCalls.get());
+        }
+    }
+
+    @Test
+    void probePrefixTimesOutAndCancelsHungRank() {
+        HangingRankService hung = new HangingRankService(1);
+        TensorParallelTimeoutSettings timeouts = new TensorParallelTimeoutSettings(Duration.ofMillis(100),
+                Duration.ofMillis(100), Duration.ofMillis(100), Duration.ofMillis(100));
+        try (TensorParallelGenerationGroup group = TensorParallelGenerationGroup.fromEndpoints(List.of(
+                new TensorParallelGenerationGroup.RankEndpoint(0, 2, rank(0, true, 32), false),
+                new TensorParallelGenerationGroup.RankEndpoint(1, 2, hung, false)), timeouts)) {
+            RuntimeException thrown = assertThrows(RuntimeException.class,
+                    () -> group.probePrefix(new int[]{1, 2, 3}, "salt"));
+
+            assertTrue(thrown.getMessage().contains("Tensor-parallel prefix probe failed"));
+            assertTrue(hung.interrupted.get() > 0, "hung rank should be interrupted after timeout");
         }
     }
 
@@ -107,6 +126,50 @@ class TensorParallelGenerationGroupPrefixCacheTest {
         @Override
         public void storePrefix(PrefixCacheStoreRequest request) {
             storeCalls.incrementAndGet();
+        }
+
+        @Override
+        public void closeSession(UUID sessionId) {
+        }
+    }
+
+    private static final class HangingRankService implements TensorParallelRankService {
+        private final int rank;
+        private final AtomicInteger interrupted = new AtomicInteger();
+
+        private HangingRankService(int rank) {
+            this.rank = rank;
+        }
+
+        @Override
+        public AbstractTensor batchForward(UUID sessionId, int[] tokenIds, int startPosition) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public AbstractTensor forward(UUID sessionId, int tokenId, int position) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public PrefixCacheProbeResult probePrefix(PrefixCacheProbeRequest request) {
+            try {
+                new CountDownLatch(1).await();
+            } catch (InterruptedException e) {
+                interrupted.incrementAndGet();
+                Thread.currentThread().interrupt();
+            }
+            return new PrefixCacheProbeResult(false, 0);
+        }
+
+        @Override
+        public PrefixCacheRestoreResult restorePrefix(PrefixCacheRestoreRequest request) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public void storePrefix(PrefixCacheStoreRequest request) {
+            throw new UnsupportedOperationException();
         }
 
         @Override

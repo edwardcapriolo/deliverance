@@ -12,6 +12,7 @@ import io.teknek.deliverance.model.tensorparallel.GossipParallelSettings;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelDeploymentSpec;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelGenerationGroup;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelRankEndpoint;
+import io.teknek.deliverance.model.tensorparallel.TensorParallelTimeoutSettings;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorAllocator;
@@ -179,24 +180,13 @@ class MultiModelConfiguration {
                 tp.getSize(), tp.getMaxRanksPerWorker());
         GossipParallelMembership membership = GossipParallelMembership.startObserver(new GossipParallelSettings(
                 tp.getCluster(), tp.getNodeId(), URI.create(tp.getUri()), seedMembers(tp), gossipSettings(), deploymentSpec,
-                tp.getCollectiveTransport()));
-        eventually("tensor-parallel candidates visible", () -> membership.candidateNodeIds().size() >= deploymentSpec.minimumPhysicalNodes(),
-                Duration.ofSeconds(tp.getReadyTimeoutSeconds()));
-        eventually("tensor-parallel leader elected", () -> membership.electedLeader() != null,
-                Duration.ofSeconds(tp.getReadyTimeoutSeconds()));
-        eventually("tensor-parallel assignment visible", () -> membership.findAssignment() != null,
-                Duration.ofSeconds(tp.getReadyTimeoutSeconds()));
-        LOGGER.info("Spring coordinator observed tensor-parallel assignment model={} leader={} assignment={}",
-                config.getModelName(), membership.electedLeader(), membership.findAssignment());
-        eventually("tensor-parallel collective uri visible", () -> membership.findCollectiveUri() != null,
-                Duration.ofSeconds(tp.getReadyTimeoutSeconds()));
-        eventually("tensor-parallel rank endpoints visible", () -> hasAllRankEndpoints(membership),
-                Duration.ofSeconds(tp.getRankEndpointTimeoutSeconds()));
-        LOGGER.info("Spring coordinator observed tensor-parallel rank endpoints model={} endpoints={}",
-                config.getModelName(), membership.rankEndpointsForAssignment());
+                tp.getCollectiveTransport(), tp.getAdvertiseHost(), TensorParallelTimeoutSettings.ofSeconds(
+                tp.getRankConnectTimeoutSeconds(), tp.getRankRequestTimeoutSeconds(),
+                tp.getRankOperationTimeoutSeconds(), tp.getRankCloseTimeoutSeconds())));
         AbstractModel coordinatorModel = builder.buildLocalTransformerModel();
-        TensorParallelGenerationGroup group = membership.openGenerationGroup();
-        return new TensorParallelSpringCausalLanguageModel(coordinatorModel, group, membership);
+        LOGGER.info("Spring tensor-parallel coordinator model loaded model={} deployment={} size={} initialState=NOT_READY",
+                config.getModelName(), tp.getDeployment(), tp.getSize());
+        return new TensorParallelSpringCausalLanguageModel(coordinatorModel, null, membership);
     }
 
     private static List<Member> seedMembers(MultiModelConfig.TensorParallelConfig config) {
@@ -272,8 +262,7 @@ class TensorParallelSpringCausalLanguageModel implements CausalLanguageModel {
     private final AbstractModel coordinatorModel;
     private final AtomicReference<TensorParallelGenerationGroup> group;
     private final GossipParallelMembership membership;
-    private final AtomicReference<Readiness> readiness = new AtomicReference<>(Readiness.ready());
-    private final Set<String> gossipUpAssignedNodes = ConcurrentHashMap.newKeySet();
+    private final AtomicReference<Readiness> readiness;
     private final AtomicInteger activeGenerations = new AtomicInteger();
     private final ScheduledExecutorService readinessReconciler;
     private final Object groupLock = new Object();
@@ -288,7 +277,9 @@ class TensorParallelSpringCausalLanguageModel implements CausalLanguageModel {
         this.coordinatorModel = coordinatorModel;
         this.group = new AtomicReference<>(group);
         this.membership = membership;
-        this.membership.registerGossipListener(this::handleGossipEvent);
+        this.readiness = new AtomicReference<>(group == null
+                ? Readiness.notReady("generation group is not open")
+                : Readiness.ready());
         if (startReadinessReconciler) {
             this.readinessReconciler = Executors.newSingleThreadScheduledExecutor(task -> {
                 Thread thread = new Thread(task, "deliverance-tp-readiness-" + membership.localNodeId());
@@ -302,18 +293,6 @@ class TensorParallelSpringCausalLanguageModel implements CausalLanguageModel {
         }
         LOGGER.info("Tensor-parallel web coordinator registered gossip listener node={} assignment={}",
                 membership.localNodeId(), membership.findAssignment());
-    }
-
-    private void handleGossipEvent(Member member, GossipState state) {
-        LOGGER.info("Tensor-parallel web coordinator observed gossip event member={} state={}", member.getId(), state);
-        if (!ownsAssignedRank(member)) {
-            return;
-        }
-        if (state == GossipState.DOWN) {
-            gossipUpAssignedNodes.remove(member.getId());
-        } else if (state == GossipState.UP) {
-            gossipUpAssignedNodes.add(member.getId());
-        }
     }
 
     private void reconcileReadinessSafely() {
@@ -433,7 +412,6 @@ class TensorParallelSpringCausalLanguageModel implements CausalLanguageModel {
         if (additionallyLiveNodeId != null) {
             liveNodeIds.add(additionallyLiveNodeId);
         }
-        liveNodeIds.addAll(gossipUpAssignedNodes);
         for (var member : membership.liveMembers()) {
             liveNodeIds.add(member.getId());
         }
@@ -446,19 +424,6 @@ class TensorParallelSpringCausalLanguageModel implements CausalLanguageModel {
             return ReadinessCheck.notReady("gossip reports rank owner nodes down: " + downOwners);
         }
         return ReadinessCheck.ready(assignment.assignmentHash(), endpoints);
-    }
-
-    private boolean ownsAssignedRank(Member member) {
-        var assignment = membership.findAssignment();
-        if (assignment == null) {
-            return false;
-        }
-        for (var rank : assignment.ranks()) {
-            if (rank.nodeId().equals(member.getId())) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private ResponseStatusException notReady(String reason) {

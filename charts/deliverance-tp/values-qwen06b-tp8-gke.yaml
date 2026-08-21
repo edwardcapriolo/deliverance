@@ -8,6 +8,10 @@ tensorParallel:
   deployment: model-testing
   readyTimeoutSeconds: 1800
   rankEndpointTimeoutSeconds: 1800
+  rankConnectTimeoutSeconds: 5
+  rankRequestTimeoutSeconds: 30
+  rankOperationTimeoutSeconds: 60
+  rankCloseTimeoutSeconds: 10
 
 nodeSelector:
   kubernetes.io/arch: amd64

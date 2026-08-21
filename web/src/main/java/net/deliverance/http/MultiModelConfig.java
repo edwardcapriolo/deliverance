@@ -60,6 +60,7 @@ public class MultiModelConfig {
         private String cluster = "deliverance-tp-local";
         private String nodeId = "coordinator";
         private String uri = "udp://127.0.0.1:42606";
+        private String advertiseHost;
         private List<String> seeds = new ArrayList<>();
         private String deployment = "benchmark";
         private String collectiveTransport = "http";
@@ -67,6 +68,10 @@ public class MultiModelConfig {
         private int maxRanksPerWorker = 2;
         private int readyTimeoutSeconds = 120;
         private int rankEndpointTimeoutSeconds = 300;
+        private long rankConnectTimeoutSeconds = 5;
+        private long rankRequestTimeoutSeconds = 30;
+        private long rankOperationTimeoutSeconds = 60;
+        private long rankCloseTimeoutSeconds = 10;
         private String outputHeadQuantization = "Q4";
 
         public boolean isEnabled() {
@@ -99,6 +104,14 @@ public class MultiModelConfig {
 
         public void setUri(String uri) {
             this.uri = uri;
+        }
+
+        public String getAdvertiseHost() {
+            return advertiseHost;
+        }
+
+        public void setAdvertiseHost(String advertiseHost) {
+            this.advertiseHost = advertiseHost;
         }
 
         public List<String> getSeeds() {
@@ -155,6 +168,38 @@ public class MultiModelConfig {
 
         public void setRankEndpointTimeoutSeconds(int rankEndpointTimeoutSeconds) {
             this.rankEndpointTimeoutSeconds = rankEndpointTimeoutSeconds;
+        }
+
+        public long getRankConnectTimeoutSeconds() {
+            return rankConnectTimeoutSeconds;
+        }
+
+        public void setRankConnectTimeoutSeconds(long rankConnectTimeoutSeconds) {
+            this.rankConnectTimeoutSeconds = rankConnectTimeoutSeconds;
+        }
+
+        public long getRankRequestTimeoutSeconds() {
+            return rankRequestTimeoutSeconds;
+        }
+
+        public void setRankRequestTimeoutSeconds(long rankRequestTimeoutSeconds) {
+            this.rankRequestTimeoutSeconds = rankRequestTimeoutSeconds;
+        }
+
+        public long getRankOperationTimeoutSeconds() {
+            return rankOperationTimeoutSeconds;
+        }
+
+        public void setRankOperationTimeoutSeconds(long rankOperationTimeoutSeconds) {
+            this.rankOperationTimeoutSeconds = rankOperationTimeoutSeconds;
+        }
+
+        public long getRankCloseTimeoutSeconds() {
+            return rankCloseTimeoutSeconds;
+        }
+
+        public void setRankCloseTimeoutSeconds(long rankCloseTimeoutSeconds) {
+            this.rankCloseTimeoutSeconds = rankCloseTimeoutSeconds;
         }
 
         public String getOutputHeadQuantization() {

@@ -39,20 +39,24 @@ public class GossipParallelMembership implements AutoCloseable {
     private final GossipManager gossipManager;
     private final TensorParallelDeploymentSpec deploymentSpec;
     private final String collectiveTransport;
+    private final URI gossipUri;
     private volatile boolean closed;
     private Thread assignmentCoordinator;
     private AutoCloseable collectiveServer;
     private URI collectiveServerUri;
     private AutoModelForCausaLm.Builder rankBuilder;
     private TensorParallelWorker worker;
-    private final String rankBindHost;
+    private final String advertiseHost;
+    private final TensorParallelTimeoutSettings timeoutSettings;
 
     private GossipParallelMembership(GossipManager gossipManager, TensorParallelDeploymentSpec deploymentSpec,
-            String rankBindHost, String collectiveTransport) {
+            String advertiseHost, String collectiveTransport, TensorParallelTimeoutSettings timeoutSettings) {
         this.gossipManager = gossipManager;
         this.deploymentSpec = deploymentSpec;
-        this.rankBindHost = rankBindHost;
+        this.gossipUri = gossipManager.getMyself().getUri();
+        this.advertiseHost = advertiseHost;
         this.collectiveTransport = collectiveTransport;
+        this.timeoutSettings = timeoutSettings;
     }
 
     public static GossipParallelMembership start(GossipParallelSettings settings) {
@@ -82,7 +86,7 @@ public class GossipParallelMembership implements AutoCloseable {
                 .build();
         manager.init();
         GossipParallelMembership membership = new GossipParallelMembership(manager, settings.deploymentSpec(),
-                settings.uri().getHost(), settings.collectiveTransport());
+                settings.advertiseHost(), settings.collectiveTransport(), settings.timeoutSettings());
         if (candidate) {
             membership.publishDeploymentSpec();
             membership.publishCandidate();
@@ -101,6 +105,38 @@ public class GossipParallelMembership implements AutoCloseable {
 
     public List<LocalMember> liveMembers() {
         return gossipManager.getLiveMembers();
+    }
+
+    public Map<String, Object> diagnostics() {
+        TensorParallelAssignment assignment = findAssignment();
+        URI collectiveUri = findCollectiveUri();
+        List<TensorParallelRankEndpoint> localEndpoints = findRankEndpoints(localNodeId());
+        Map<String, Object> workerDiagnostics = worker == null ? Map.of(
+                "started", false,
+                "activeRequests", 0,
+                "recentErrors", List.of(),
+                "servers", List.of()) : Map.of(
+                "started", true,
+                "activeRequests", worker.activeRequests(),
+                "recentErrors", worker.recentErrors(),
+                "servers", worker.serverDiagnostics());
+        return new LinkedHashMap<>(Map.ofEntries(
+                Map.entry("nodeId", localNodeId()),
+                Map.entry("deployment", deploymentSpec.deploymentId()),
+                Map.entry("gossipUri", gossipUri.toString()),
+                Map.entry("advertiseHost", advertiseHost),
+                Map.entry("collectiveTransport", collectiveTransport),
+                Map.entry("closed", closed),
+                Map.entry("candidate", candidateNodeIds().contains(localNodeId())),
+                Map.entry("liveMembers", liveMembers().stream().map(LocalMember::getId).sorted().toList()),
+                Map.entry("candidates", candidateNodeIds()),
+                Map.entry("leader", electedLeader() == null ? "" : electedLeader()),
+                Map.entry("assignment", assignment == null ? "" : assignment.toString()),
+                Map.entry("localRanks", assignment == null ? List.of() : assignment.ranksForNode(localNodeId())),
+                Map.entry("collectiveUri", collectiveUri == null ? "" : collectiveUri.toString()),
+                Map.entry("publishedRankEndpoints", localEndpoints),
+                Map.entry("worker", workerDiagnostics)
+        ));
     }
 
     public void registerGossipListener(GossipListener listener) {
@@ -239,13 +275,13 @@ public class GossipParallelMembership implements AutoCloseable {
         }
         if (collectiveTransport.equals("netty")) {
             NettyTensorParallelCollectiveServer server = new NettyTensorParallelCollectiveServer(
-                    new InetSocketAddress(rankBindHost, 0), Duration.ofSeconds(30));
+                    new InetSocketAddress(advertiseHost, 0), Duration.ofSeconds(30));
             server.start();
             collectiveServer = server;
             collectiveServerUri = server.uri();
         } else {
             HttpTensorParallelCollectiveServer server = new HttpTensorParallelCollectiveServer(
-                    new InetSocketAddress(rankBindHost, 0), Duration.ofSeconds(30));
+                    new InetSocketAddress(advertiseHost, 0), Duration.ofSeconds(30));
             server.start();
             collectiveServer = server;
             collectiveServerUri = server.uri();
@@ -262,9 +298,9 @@ public class GossipParallelMembership implements AutoCloseable {
         if (closed || worker != null || rankBuilder == null) {
             return;
         }
-        LOGGER.info("Starting tensor-parallel worker node={} deployment={} localRanks={} bindHost={}",
-                localNodeId(), deploymentSpec.deploymentId(), localRanks(), rankBindHost);
-        worker = TensorParallelWorker.start(rankBuilder, this, tensorParallelCollectivesFactory(), rankBindHost);
+        LOGGER.info("Starting tensor-parallel worker node={} deployment={} localRanks={} advertiseHost={}",
+                localNodeId(), deploymentSpec.deploymentId(), localRanks(), advertiseHost);
+        worker = TensorParallelWorker.start(rankBuilder, this, tensorParallelCollectivesFactory(), advertiseHost);
         LOGGER.info("Started tensor-parallel worker node={} deployment={} endpoints={}",
                 localNodeId(), deploymentSpec.deploymentId(), worker.endpoints());
     }
@@ -341,9 +377,10 @@ public class GossipParallelMembership implements AutoCloseable {
                 localNodeId(), deploymentSpec.deploymentId(), assignment.tensorParallelSize(), endpoints);
         return TensorParallelGenerationGroup.fromEndpoints(endpoints.stream()
                 .map(endpoint -> new TensorParallelGenerationGroup.RankEndpoint(endpoint.rank(),
-                        assignment.tensorParallelSize(), new HttpTensorParallelRankClient(URI.create(endpoint.uri())),
+                        assignment.tensorParallelSize(), new HttpTensorParallelRankClient(URI.create(endpoint.uri()),
+                                timeoutSettings.rankConnectTimeout(), timeoutSettings.rankRequestTimeout()),
                         false))
-                .toList());
+                .toList(), timeoutSettings);
     }
 
     public List<Integer> localRanks() {

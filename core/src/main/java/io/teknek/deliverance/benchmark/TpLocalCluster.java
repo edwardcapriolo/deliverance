@@ -1,7 +1,10 @@
 package io.teknek.deliverance.benchmark;
 
 import com.codahale.metrics.MetricRegistry;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
@@ -13,6 +16,7 @@ import io.teknek.deliverance.model.tensorparallel.GossipParallelMembership;
 import io.teknek.deliverance.model.tensorparallel.GossipParallelSettings;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelDeploymentSpec;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelGenerationGroup;
+import io.teknek.deliverance.model.tensorparallel.TensorParallelTimeoutSettings;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
@@ -25,10 +29,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.URI;
+import java.net.InetSocketAddress;
+import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -61,9 +69,13 @@ public final class TpLocalCluster {
         TensorParallelDeploymentSpec deploymentSpec = deploymentSpec(options);
         AutoModelForCausaLm.Builder builder = configuredBuilder(options, fetcher)
                 .withParallelSettings(new GossipParallelSettings(options.cluster, options.nodeId, options.uri,
-                        seedMembers(options), gossipSettings(), deploymentSpec, options.collectiveTransport));
+                        seedMembers(options), gossipSettings(), deploymentSpec, options.collectiveTransport,
+                        options.advertiseHost, options.timeoutSettings()));
         AbstractModel model = builder.buildAbstractModel();
+        WorkerAdminServer adminServer = WorkerAdminServer.start(options.adminPort, options.nodeId,
+                model.gossipParallelMembership().orElseThrow());
         Runtime.getRuntime().addShutdownHook(new Thread(model::close, "tp-local-worker-shutdown-" + options.nodeId));
+        Runtime.getRuntime().addShutdownHook(new Thread(adminServer::close, "tp-local-worker-admin-shutdown-" + options.nodeId));
         LOGGER.info("Worker started node={} provider={} splitSize={} dtype={} workingDtype={} workingQtype={}",
                 options.nodeId, model.getTensorProviderName(), model.getTensorProviderParallelSplitSize(),
                 model.getModelDType(), model.getWorkingDType(), model.getWorkingQType());
@@ -74,7 +86,7 @@ public final class TpLocalCluster {
         TensorParallelDeploymentSpec deploymentSpec = deploymentSpec(options);
         GossipParallelMembership membership = GossipParallelMembership.startObserver(new GossipParallelSettings(
                 options.cluster, options.nodeId, options.uri, seedMembers(options), gossipSettings(), deploymentSpec,
-                options.collectiveTransport));
+                options.collectiveTransport, options.advertiseHost, options.timeoutSettings()));
         Runtime.getRuntime().addShutdownHook(new Thread(membership::close,
                 "tp-local-coordinator-membership-shutdown-" + options.nodeId));
 
@@ -201,6 +213,7 @@ public final class TpLocalCluster {
         private String cluster = "deliverance-tp-local";
         private String nodeId;
         private URI uri;
+        private String advertiseHost;
         private final List<Seed> seeds = new ArrayList<>();
         private String deploymentId = "benchmark";
         private String collectiveTransport = "http";
@@ -210,6 +223,7 @@ public final class TpLocalCluster {
         private String model = "gemma-2-2b-it-JQ4";
         private int poolSize = 16;
         private String tensorOperations = "auto";
+        private int adminPort = 8081;
         private DType workingDType = DType.F32;
         private DType workingQType = DType.I8;
         private DType outputHeadQuantization = DType.Q4;
@@ -218,6 +232,10 @@ public final class TpLocalCluster {
         private boolean profileStages = true;
         private Duration readyTimeout = Duration.ofSeconds(120);
         private Duration rankEndpointTimeout = Duration.ofSeconds(300);
+        private long rankConnectTimeoutSeconds = 5;
+        private long rankRequestTimeoutSeconds = 30;
+        private long rankOperationTimeoutSeconds = 60;
+        private long rankCloseTimeoutSeconds = 10;
         private String prompt = "Explain tensor parallel inference in one short paragraph.";
 
         private static Options parse(String[] args) {
@@ -228,6 +246,7 @@ public final class TpLocalCluster {
                     case "--cluster" -> options.cluster = args[++i];
                     case "--node-id" -> options.nodeId = args[++i];
                     case "--uri" -> options.uri = URI.create(args[++i]);
+                    case "--advertise-host" -> options.advertiseHost = args[++i];
                     case "--seed" -> options.seeds.add(parseSeed(args[++i]));
                     case "--deployment" -> options.deploymentId = args[++i];
                     case "--collective-transport" -> options.collectiveTransport = args[++i].toLowerCase(Locale.ROOT);
@@ -237,6 +256,7 @@ public final class TpLocalCluster {
                     case "--model" -> options.model = args[++i];
                     case "--pool-size" -> options.poolSize = Integer.parseInt(args[++i]);
                     case "--tensor-operations" -> options.tensorOperations = args[++i].toLowerCase(Locale.ROOT);
+                    case "--admin-port" -> options.adminPort = Integer.parseInt(args[++i]);
                     case "--working-dtype" -> options.workingDType = DType.valueOf(args[++i]);
                     case "--working-qtype" -> options.workingQType = DType.valueOf(args[++i]);
                     case "--output-head-quantization" -> options.outputHeadQuantization = parseOptionalDType(args[++i]);
@@ -246,6 +266,10 @@ public final class TpLocalCluster {
                     case "--no-profile-stages" -> options.profileStages = false;
                     case "--ready-timeout-seconds" -> options.readyTimeout = Duration.ofSeconds(Long.parseLong(args[++i]));
                     case "--rank-endpoint-timeout-seconds" -> options.rankEndpointTimeout = Duration.ofSeconds(Long.parseLong(args[++i]));
+                    case "--rank-connect-timeout-seconds" -> options.rankConnectTimeoutSeconds = Long.parseLong(args[++i]);
+                    case "--rank-request-timeout-seconds" -> options.rankRequestTimeoutSeconds = Long.parseLong(args[++i]);
+                    case "--rank-operation-timeout-seconds" -> options.rankOperationTimeoutSeconds = Long.parseLong(args[++i]);
+                    case "--rank-close-timeout-seconds" -> options.rankCloseTimeoutSeconds = Long.parseLong(args[++i]);
                     case "--prompt" -> options.prompt = args[++i];
                     default -> throw new IllegalArgumentException("Unknown argument " + args[i]);
                 }
@@ -253,6 +277,9 @@ public final class TpLocalCluster {
             Objects.requireNonNull(options.role, "--role is required");
             Objects.requireNonNull(options.nodeId, "--node-id is required");
             Objects.requireNonNull(options.uri, "--uri is required");
+            if (options.advertiseHost == null || options.advertiseHost.isBlank()) {
+                options.advertiseHost = options.uri.getHost();
+            }
             if (options.seeds.isEmpty()) {
                 throw new IllegalArgumentException("At least one --seed node=udp://host:port is required");
             }
@@ -275,6 +302,57 @@ public final class TpLocalCluster {
                 return null;
             }
             return DType.valueOf(raw);
+        }
+
+        private TensorParallelTimeoutSettings timeoutSettings() {
+            return TensorParallelTimeoutSettings.ofSeconds(rankConnectTimeoutSeconds, rankRequestTimeoutSeconds,
+                    rankOperationTimeoutSeconds, rankCloseTimeoutSeconds);
+        }
+    }
+
+    private static final class WorkerAdminServer implements AutoCloseable {
+        private final HttpServer server;
+
+        private WorkerAdminServer(HttpServer server) {
+            this.server = server;
+        }
+
+        private static WorkerAdminServer start(int port, String nodeId, GossipParallelMembership membership) {
+            try {
+                HttpServer server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
+                WorkerAdminServer admin = new WorkerAdminServer(server);
+                server.createContext("/health", exchange -> admin.writeJson(exchange, Map.of(
+                        "status", "UP",
+                        "nodeId", nodeId)));
+                server.createContext("/tp/status", exchange -> admin.writeJson(exchange, membership.diagnostics()));
+                server.createContext("/tp/gossip", exchange -> admin.writeJson(exchange, Map.of(
+                        "nodeId", membership.localNodeId(),
+                        "liveMembers", membership.liveMembers().stream().map(Member::getId).sorted().toList(),
+                        "candidates", membership.candidateNodeIds(),
+                        "leader", membership.electedLeader() == null ? "" : membership.electedLeader())));
+                server.createContext("/tp/endpoints", exchange -> admin.writeJson(exchange, Map.of(
+                        "nodeId", membership.localNodeId(),
+                        "rankEndpoints", membership.findRankEndpoints(membership.localNodeId()),
+                        "collectiveUri", membership.findCollectiveUri() == null ? "" : membership.findCollectiveUri().toString())));
+                server.start();
+                LOGGER.info("Started tensor-parallel worker admin server node={} uri=http://0.0.0.0:{}", nodeId, port);
+                return admin;
+            } catch (IOException e) {
+                throw new RuntimeException("Unable to start tensor-parallel worker admin server port=" + port, e);
+            }
+        }
+
+        private void writeJson(HttpExchange exchange, Object payload) throws IOException {
+            byte[] response = JsonUtils.om.writeValueAsBytes(payload);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        }
+
+        @Override
+        public void close() {
+            server.stop(0);
         }
     }
 }

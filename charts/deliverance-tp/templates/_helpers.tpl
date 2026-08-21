@@ -19,11 +19,8 @@
 {{- end -}}
 
 {{- define "deliverance-tp.workerSeedArgs" -}}
-{{- $workerName := include "deliverance-tp.workerName" . -}}
-{{- range $i := until (int .Values.workers.replicas) }}
 - --seed
-- {{ $workerName }}-{{ $i }}=udp://{{ $workerName }}-{{ $i }}.{{ $workerName }}.$(POD_NAMESPACE).svc.cluster.local:{{ $.Values.tensorParallel.gossipPort }}
-{{- end -}}
+- coordinator=udp://{{ include "deliverance-tp.coordinatorName" . }}.$(POD_NAMESPACE).svc.cluster.local:{{ .Values.tensorParallel.gossipPort }}
 {{- end -}}
 
 {{- define "deliverance-tp.workerCommonArgs" -}}
@@ -56,4 +53,14 @@
 {{- else }}
 - --no-profile-stages
 {{- end }}
+- --rank-connect-timeout-seconds
+- {{ .Values.tensorParallel.rankConnectTimeoutSeconds | quote }}
+- --rank-request-timeout-seconds
+- {{ .Values.tensorParallel.rankRequestTimeoutSeconds | quote }}
+- --rank-operation-timeout-seconds
+- {{ .Values.tensorParallel.rankOperationTimeoutSeconds | quote }}
+- --rank-close-timeout-seconds
+- {{ .Values.tensorParallel.rankCloseTimeoutSeconds | quote }}
+- --admin-port
+- {{ .Values.workers.adminPort | quote }}
 {{- end -}}
