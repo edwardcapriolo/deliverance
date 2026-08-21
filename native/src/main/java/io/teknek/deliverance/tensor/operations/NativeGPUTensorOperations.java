@@ -69,6 +69,7 @@ public class NativeGPUTensorOperations implements TensorOperations {
     private int params_size;
 
     private static volatile GpuRuntime gpuRuntime;
+    private static volatile Throwable gpuUnavailable;
 
     private final AtomicLong totalBytesAllocated = new AtomicLong(0);
     private final AtomicBoolean limitReached = new AtomicBoolean(false);
@@ -211,10 +212,18 @@ public class NativeGPUTensorOperations implements TensorOperations {
         if (local != null) {
             return local;
         }
+        Throwable unavailable = gpuUnavailable;
+        if (unavailable != null) {
+            throw new RuntimeException("Native GPU operations unavailable", unavailable);
+        }
         synchronized (NativeGPUTensorOperations.class) {
             local = gpuRuntime;
             if (local != null) {
                 return local;
+            }
+            unavailable = gpuUnavailable;
+            if (unavailable != null) {
+                throw new RuntimeException("Native GPU operations unavailable", unavailable);
             }
             gpuRuntime = initializeGpuRuntime();
             return gpuRuntime;
@@ -250,7 +259,9 @@ public class NativeGPUTensorOperations implements TensorOperations {
                     decodePagedAttentionF32Id);
 
         } catch (Throwable t) {
-            logger.error("Failed to load native GPU operations", t);
+            gpuUnavailable = t;
+            logger.warn("Native GPU operations unavailable: {}", t.toString());
+            logger.debug("Native GPU initialization failure", t);
             throw new RuntimeException(t);
         }
     }
@@ -290,7 +301,8 @@ public class NativeGPUTensorOperations implements TensorOperations {
         bt = TensorMutability.unwrapReadOnly(bt);
         Long btId = tensorCache.get(bt.getUid());
 
-        if (rRowOffset == 0 && bRowOffset == 0 && gpuSupported(btId, at.dType(), bt.dType(), result.dType())) {
+        if (gpuGemmSupported(btId, at, bt, result, aColumnOffset, bColumnOffset, columnLength,
+                rRowOffset, bRowOffset, rowChunkSize)) {
             long scratchId = gpuBuffers();
 
             int M = at.shape().dim(0);
@@ -402,7 +414,7 @@ public class NativeGPUTensorOperations implements TensorOperations {
         int bRowOffset,
         int rowChunkSize
     ) {
-        if (requiresAlignedQuantizedBlocks(a, b[0]) && columnOffset % Q4ByteBufferTensor.BLOCK_SIZE != 0) {
+        if (!gpuBatchGemmSupported(a, b, r, columnOffset, columnLength, bRowOffset, rowChunkSize)) {
             delegate.dotProductBatchChunk(r, a, b, columnOffset, columnLength, bRowOffset, rowChunkSize);
             return;
         }
@@ -491,6 +503,44 @@ public class NativeGPUTensorOperations implements TensorOperations {
 
     private static boolean requiresAlignedQuantizedBlocks(AbstractTensor a, AbstractTensor b) {
         return a.dType() == DType.I8 || b.dType() == DType.Q4;
+    }
+
+    private boolean gpuGemmSupported(Long btId, AbstractTensor a, AbstractTensor b, AbstractTensor result,
+            int aColumnOffset, int bColumnOffset, int columnLength, int rRowOffset, int bRowOffset,
+            int rowChunkSize) {
+        return gpuSupported(btId, a.dType(), b.dType(), result.dType())
+                && aColumnOffset == 0
+                && bColumnOffset == 0
+                && rRowOffset == 0
+                && bRowOffset == 0
+                && rowChunkSize == b.shape().first()
+                && columnLength == a.shape().last()
+                && (!requiresAlignedQuantizedBlocks(a, b)
+                        || columnLength % Q4ByteBufferTensor.BLOCK_SIZE == 0);
+    }
+
+    private boolean gpuBatchGemmSupported(AbstractTensor a, AbstractTensor[] b, AbstractTensor[] r,
+            int columnOffset, int columnLength, int bRowOffset, int rowChunkSize) {
+        if (b.length == 0 || b.length != r.length) {
+            return false;
+        }
+        if (!gpuSupported(tensorCache.get(b[0].getUid()), a.dType(), b[0].dType(), r[0].dType())) {
+            return false;
+        }
+        if (columnOffset != 0 || bRowOffset != 0 || rowChunkSize != b[0].shape().first()
+                || columnLength != a.shape().last()) {
+            return false;
+        }
+        if (requiresAlignedQuantizedBlocks(a, b[0]) && columnLength % Q4ByteBufferTensor.BLOCK_SIZE != 0) {
+            return false;
+        }
+        for (int i = 0; i < b.length; i++) {
+            if (b[i].dType() != b[0].dType() || r[i].dType() != r[0].dType()
+                    || tensorCache.get(b[i].getUid()) == null) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static LongBuffer directLongBuffer(long[] values) {
