@@ -355,12 +355,20 @@ public class AutoModelForCausaLm {
                 Function<TensorParallelContext, TensorParallelCollectives> collectivesFactory) {
             Objects.requireNonNull(membership, "membership");
             Objects.requireNonNull(collectivesFactory, "collectivesFactory");
-            if (!membership.assignmentMatchesLocalTopology()) {
-                throw new IllegalStateException("Committed tensor-parallel assignment does not match local topology");
+            var assignment = membership.requireAssignment();
+            if (!assignment.assignsEveryRank()) {
+                throw new IllegalStateException("Committed tensor-parallel assignment does not assign every rank: "
+                        + assignment);
             }
-            int tensorParallelSize = membership.requireAssignment().tensorParallelSize();
+            List<Integer> localRanks = membership.localRanks();
+            if (localRanks.size() > membership.deploymentSpec().maxRanksPerNode()) {
+                throw new IllegalStateException("Committed tensor-parallel assignment gives node "
+                        + membership.localNodeId() + " " + localRanks.size() + " ranks, maxRanksPerNode="
+                        + membership.deploymentSpec().maxRanksPerNode());
+            }
+            int tensorParallelSize = assignment.tensorParallelSize();
             List<Builder> builders = new ArrayList<>();
-            for (int rank : membership.localRanks()) {
+            for (int rank : localRanks) {
                 TensorParallelContext context = new StaticTensorParallelContext(rank, tensorParallelSize);
                 builders.add(copyForRank(context, collectivesFactory.apply(context)));
             }

@@ -11,8 +11,10 @@ import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class NettyTensorParallelCollectivesTest {
 
@@ -30,6 +32,37 @@ public class NettyTensorParallelCollectivesTest {
                 Future<AbstractTensor> second = executor.submit(() -> rank1.allReduceSum("test", tensor(10, 20)));
 
                 try (AbstractTensor firstResult = first.get(); AbstractTensor secondResult = second.get()) {
+                    assertReduced(firstResult);
+                    assertReduced(secondResult);
+                }
+            }
+        }
+    }
+
+    @Test
+    public void timedOutRoundIsCleanedSoSameCollectiveKeyCanBeReused() throws Exception {
+        try (NettyTensorParallelCollectiveServer server = new NettyTensorParallelCollectiveServer(
+                new InetSocketAddress("127.0.0.1", 0), Duration.ofMillis(100))) {
+            server.start();
+
+            try (NettyTensorParallelCollectives rank0 = new NettyTensorParallelCollectives(
+                    new StaticTensorParallelContext(0, 2), server.uri());
+                 ExecutorService executor = Executors.newSingleThreadExecutor()) {
+                Future<AbstractTensor> timedOut = executor.submit(() -> rank0.allReduceSum("reused-key", tensor(1, 2)));
+
+                assertThrows(Exception.class, () -> timedOut.get(2, TimeUnit.SECONDS));
+            }
+
+            try (NettyTensorParallelCollectives rank0 = new NettyTensorParallelCollectives(
+                    new StaticTensorParallelContext(0, 2), server.uri());
+                 NettyTensorParallelCollectives rank1 = new NettyTensorParallelCollectives(
+                         new StaticTensorParallelContext(1, 2), server.uri());
+                 ExecutorService executor = Executors.newFixedThreadPool(2)) {
+                Future<AbstractTensor> first = executor.submit(() -> rank0.allReduceSum("reused-key", tensor(1, 2)));
+                Future<AbstractTensor> second = executor.submit(() -> rank1.allReduceSum("reused-key", tensor(10, 20)));
+
+                try (AbstractTensor firstResult = first.get(2, TimeUnit.SECONDS);
+                     AbstractTensor secondResult = second.get(2, TimeUnit.SECONDS)) {
                     assertReduced(firstResult);
                     assertReduced(secondResult);
                 }

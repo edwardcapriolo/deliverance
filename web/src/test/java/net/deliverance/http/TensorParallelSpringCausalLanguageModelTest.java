@@ -9,16 +9,15 @@ import io.teknek.deliverance.model.tensorparallel.TensorParallelGenerationGroup;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelRankAssignment;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelRankEndpoint;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
+import io.teknek.gossip.LocalMember;
 import io.teknek.gossip.RemoteMember;
-import io.teknek.gossip.event.GossipListener;
-import io.teknek.gossip.event.GossipState;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.net.URI;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -40,10 +39,8 @@ class TensorParallelSpringCausalLanguageModelTest {
 
     @Test
     void assignedNodeDownEventClosesGroupAndRejectsGeneration() {
-        Fixture fixture = fixture();
+        Fixture fixture = fixture(true, false);
 
-        fixture.listener().gossipEvent(new RemoteMember("cluster", URI.create("udp://127.0.0.1:42605"),
-                "node-1"), GossipState.DOWN);
         fixture.model().reconcileReadiness();
 
         verify(fixture.group()).close();
@@ -58,20 +55,16 @@ class TensorParallelSpringCausalLanguageModelTest {
     void unassignedNodeDownEventDoesNotCloseGroup() {
         Fixture fixture = fixture();
 
-        fixture.listener().gossipEvent(new RemoteMember("cluster", URI.create("udp://127.0.0.1:42607"),
-                "node-9"), GossipState.DOWN);
+        fixture.model().reconcileReadiness();
 
         verify(fixture.group(), never()).close();
     }
 
     @Test
     void duplicateAssignedNodeDownEventsCloseGroupOnce() {
-        Fixture fixture = fixture();
-        RemoteMember node = new RemoteMember("cluster", URI.create("udp://127.0.0.1:42605"), "node-1");
+        Fixture fixture = fixture(true, false);
 
-        fixture.listener().gossipEvent(node, GossipState.DOWN);
         fixture.model().reconcileReadiness();
-        fixture.listener().gossipEvent(node, GossipState.DOWN);
         fixture.model().reconcileReadiness();
 
         verify(fixture.group()).close();
@@ -79,14 +72,12 @@ class TensorParallelSpringCausalLanguageModelTest {
 
     @Test
     void assignedNodeUpEventReopensGroupWhenAllRanksArePresent() {
-        Fixture fixture = fixture();
+        Fixture fixture = fixture(true, false);
         TensorParallelGenerationGroup reopened = mock(TensorParallelGenerationGroup.class);
         when(fixture.membership().openGenerationGroup()).thenReturn(reopened);
-        RemoteMember node = new RemoteMember("cluster", URI.create("udp://127.0.0.1:42605"), "node-1");
 
-        fixture.listener().gossipEvent(node, GossipState.DOWN);
         fixture.model().reconcileReadiness();
-        fixture.listener().gossipEvent(node, GossipState.UP);
+        when(fixture.membership().liveMembers()).thenReturn(List.of(member("node-1")));
         fixture.model().reconcileReadiness();
 
         assertDoesNotThrow(() -> fixture.model().generate(UUID.randomUUID(), PromptContext.of("hi"),
@@ -98,12 +89,8 @@ class TensorParallelSpringCausalLanguageModelTest {
 
     @Test
     void assignedNodeUpEventDoesNotReopenGroupUntilAllRanksArePresent() {
-        Fixture fixture = fixture(false);
-        RemoteMember node = new RemoteMember("cluster", URI.create("udp://127.0.0.1:42605"), "node-1");
+        Fixture fixture = fixture(false, true);
 
-        fixture.listener().gossipEvent(node, GossipState.DOWN);
-        fixture.model().reconcileReadiness();
-        fixture.listener().gossipEvent(node, GossipState.UP);
         fixture.model().reconcileReadiness();
 
         ResponseStatusException thrown = assertThrows(ResponseStatusException.class,
@@ -125,15 +112,13 @@ class TensorParallelSpringCausalLanguageModelTest {
             assertTrue(finishGeneration.await(5, TimeUnit.SECONDS));
             return null;
         });
-        RemoteMember node = new RemoteMember("cluster", URI.create("udp://127.0.0.1:42605"), "node-1");
-        fixture.listener().gossipEvent(node, GossipState.UP);
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
             Future<?> generation = executor.submit(() -> fixture.model().generate(UUID.randomUUID(), PromptContext.of("hi"),
                     new GeneratorParameters(), new DoNothingGenerateEvent()));
             assertTrue(generationEntered.await(5, TimeUnit.SECONDS));
 
-            fixture.listener().gossipEvent(node, GossipState.DOWN);
+            when(fixture.membership().liveMembers()).thenReturn(List.of());
             fixture.model().reconcileReadiness();
             verify(fixture.group(), never()).close();
 
@@ -147,10 +132,10 @@ class TensorParallelSpringCausalLanguageModelTest {
     }
 
     private static Fixture fixture() {
-        return fixture(true);
+        return fixture(true, true);
     }
 
-    private static Fixture fixture(boolean allRankEndpointsPresent) {
+    private static Fixture fixture(boolean allRankEndpointsPresent, boolean assignedNodeLive) {
         AbstractModel coordinator = mock(AbstractModel.class);
         TensorParallelGenerationGroup group = mock(TensorParallelGenerationGroup.class);
         GossipParallelMembership membership = mock(GossipParallelMembership.class);
@@ -159,7 +144,7 @@ class TensorParallelSpringCausalLanguageModelTest {
                 new TensorParallelRankAssignment(1, "node-1"))));
         when(membership.findCollectiveUri()).thenReturn(URI.create("netty://127.0.0.1:42699"));
         when(membership.localNodeId()).thenReturn("node-0");
-        when(membership.liveMembers()).thenReturn(List.of());
+        when(membership.liveMembers()).thenReturn(assignedNodeLive ? List.of(member("node-1")) : List.of());
         List<TensorParallelRankEndpoint> endpoints = allRankEndpointsPresent
                 ? List.of(new TensorParallelRankEndpoint(0, "node-0", "http://127.0.0.1:42600"),
                 new TensorParallelRankEndpoint(1, "node-1", "http://127.0.0.1:42601"))
@@ -172,12 +157,15 @@ class TensorParallelSpringCausalLanguageModelTest {
         });
         TensorParallelSpringCausalLanguageModel model = new TensorParallelSpringCausalLanguageModel(coordinator, group,
                 membership, false);
-        ArgumentCaptor<GossipListener> listener = ArgumentCaptor.forClass(GossipListener.class);
-        verify(membership).registerGossipListener(listener.capture());
-        return new Fixture(model, group, membership, listener.getValue());
+        return new Fixture(model, group, membership);
+    }
+
+    private static LocalMember member(String nodeId) {
+        return new LocalMember("cluster", URI.create("udp://127.0.0.1:42605"), nodeId, System.nanoTime(),
+                Map.of(), 100, 2_000, "exponential");
     }
 
     private record Fixture(TensorParallelSpringCausalLanguageModel model, TensorParallelGenerationGroup group,
-            GossipParallelMembership membership, GossipListener listener) {
+            GossipParallelMembership membership) {
     }
 }

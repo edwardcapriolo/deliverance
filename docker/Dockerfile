@@ -1,42 +1,32 @@
-##################STAGE1#################
-FROM ecapriolo/jdk-25:0.0.6-devel AS deliverance-base
-RUN apk add git
-RUN apk add maven
+ARG JDK_DEVEL_TAG=0.0.6-devel
+ARG JDK_RUNTIME_TAG=0.0.6-devel
+ARG JDK_IMAGE_REPO=ecapriolo/jdk-25
 
-#native module
-RUN apk add curl jq unzip bash make clang
+FROM ${JDK_IMAGE_REPO}:${JDK_DEVEL_TAG} AS deliverance-build
+ARG REPO_URL=https://github.com/edwardcapriolo/deliverance.git
+ARG REPO_COMMIT_SHA=main
 
-RUN mkdir /build
+RUN apk add --no-cache git maven curl jq unzip bash make clang gcc g++ libc-dev linux-headers
 WORKDIR /build
-RUN cd /build
-RUN git clone https://github.com/edwardcapriolo/deliverance.git
-
-RUN cd /build/deliverance
+RUN git clone "$REPO_URL" deliverance
 WORKDIR /build/deliverance
-#RUN --mount=type=cache,target=/root/.m2 cd /build/deliverance && mvn install -Dmaven.test.skip.exec=true -Dgpg.skip=true
-RUN --mount=type=cache,target=/root/.m2 cd /build/deliverance && mvn dependency:go-offline
+RUN git checkout "$REPO_COMMIT_SHA"
+RUN --mount=type=cache,target=/root/.m2 mvn install -Dmaven.test.skip.exec=true -Dgpg.skip=true
 
-##################STAGE2#################
-FROM deliverance-base AS deliverance-sha
-ARG REPO_COMMIT_SHA=LATEST
-RUN cd /build/deliverance
-RUN git checkout 
-RUN --mount=type=cache,target=/root/.m2 cd /build/deliverance && mvn install -Dmaven.test.skip.exec=true -Dgpg.skip=true
+FROM ${JDK_IMAGE_REPO}:${JDK_RUNTIME_TAG} AS deliverance
+RUN apk add --no-cache bash libstdc++ \
+ && mkdir /deliverance \
+ && addgroup -S deliverance \
+ && adduser -S -G deliverance -H -D deliverance \
+ && mkdir /deliverance/logs \
+ && chown deliverance:deliverance /deliverance/logs
 
-
-##################STAGE3#################
-FROM ecapriolo/jdk-25:0.0.6-devel AS deliverance
-RUN mkdir /deliverance
-RUN apk add bash
-
-RUN addgroup -S deliverance && adduser -S -G deliverance -H -D deliverance
-RUN mkdir /deliverance/logs && chown deliverance:deliverance /deliverance/logs
-COPY --from=deliverance-sha /build/deliverance/web/target/web-0.0.14-SNAPSHOT.jar /deliverance/web.jar
+COPY --from=deliverance-build /build/deliverance/web/target/web-*.jar /deliverance/web.jar
 COPY entry_point.sh /deliverance/entry_point.sh
 COPY inlinerules.json /deliverance/inlinerules.json
 COPY simple.properties /deliverance/
 
-RUN chmod u+x /deliverance/entry_point.sh
+RUN chmod 755 /deliverance/entry_point.sh
 WORKDIR /deliverance
 USER deliverance
 ENTRYPOINT ["/deliverance/entry_point.sh"]

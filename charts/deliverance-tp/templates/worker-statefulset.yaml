@@ -20,6 +20,8 @@ spec:
         app.kubernetes.io/name: {{ include "deliverance-tp.name" . }}
         app.kubernetes.io/component: worker
     spec:
+      securityContext:
+{{ toYaml .Values.podSecurityContext | indent 8 }}
       containers:
         - name: worker
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -33,7 +35,7 @@ spec:
             - --node-id
             - $(NODE_ID)
             - --uri
-            - udp://$(POD_NAME).{{ include "deliverance-tp.workerName" . }}.$(POD_NAMESPACE).svc.cluster.local:{{ .Values.tensorParallel.gossipPort }}
+            - udp://$(POD_IP):{{ .Values.tensorParallel.gossipPort }}
 {{ include "deliverance-tp.workerSeedArgs" . | indent 12 }}
 {{ include "deliverance-tp.workerCommonArgs" . | indent 12 }}
           env:
@@ -45,6 +47,10 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
             - name: NODE_ID
               valueFrom:
                 fieldRef:
@@ -53,6 +59,9 @@ spec:
             - name: gossip
               containerPort: {{ .Values.tensorParallel.gossipPort }}
               protocol: UDP
+            - name: admin
+              containerPort: {{ .Values.workers.adminPort }}
+              protocol: TCP
           volumeMounts:
 {{- if .Values.cache.enabled }}
             - name: model-cache

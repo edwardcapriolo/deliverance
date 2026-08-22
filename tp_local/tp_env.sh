@@ -19,13 +19,19 @@
 : "${TP_TEMPERATURE:=0.0}"
 : "${TP_READY_TIMEOUT_SECONDS:=120}"
 : "${TP_RANK_ENDPOINT_TIMEOUT_SECONDS:=300}"
+: "${TP_RANK_CONNECT_TIMEOUT_SECONDS:=5}"
+: "${TP_RANK_REQUEST_TIMEOUT_SECONDS:=30}"
+: "${TP_RANK_OPERATION_TIMEOUT_SECONDS:=60}"
+: "${TP_RANK_CLOSE_TIMEOUT_SECONDS:=10}"
 : "${TP_LOG_LEVEL:=info}"
 : "${TP_PROMPT:=Explain tensor parallel inference in one short paragraph.}"
+: "${TP_ADMIN_PORT:=8081}"
 
 TP_LOCAL_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 DELIVERANCE_ROOT=$(CDPATH= cd -- "$TP_LOCAL_DIR/.." && pwd)
 TP_RUN_DIR="$TP_LOCAL_DIR/run"
 TP_LOG_DIR="$TP_LOCAL_DIR/logs"
+TP_TMP_DIR="$TP_RUN_DIR/tmp"
 TP_MAIN_CLASS="io.teknek.deliverance.benchmark.TpLocalCluster"
 TP_COORDINATOR_CONFIG="$TP_LOCAL_DIR/coordinator.properties"
 OS_NAME=$(uname -s)
@@ -45,17 +51,24 @@ tp_seed_args() {
 }
 
 tp_common_args() {
-  printf '%s' "--cluster $TP_CLUSTER --deployment $TP_DEPLOYMENT --collective-transport $TP_COLLECTIVE_TRANSPORT --owner $TP_OWNER --model $TP_MODEL --tensor-parallel-size $TP_SIZE --max-ranks-per-worker $TP_MAX_RANKS_PER_WORKER --pool-size $TP_POOL_SIZE --working-dtype $TP_WORKING_DTYPE --working-qtype $TP_WORKING_QTYPE --output-head-quantization $TP_OUTPUT_HEAD_QUANTIZATION --max-tokens $TP_MAX_TOKENS --temperature $TP_TEMPERATURE --ready-timeout-seconds $TP_READY_TIMEOUT_SECONDS --rank-endpoint-timeout-seconds $TP_RANK_ENDPOINT_TIMEOUT_SECONDS"
+  printf '%s' "--cluster $TP_CLUSTER --deployment $TP_DEPLOYMENT --collective-transport $TP_COLLECTIVE_TRANSPORT --owner $TP_OWNER --model $TP_MODEL --tensor-parallel-size $TP_SIZE --max-ranks-per-worker $TP_MAX_RANKS_PER_WORKER --pool-size $TP_POOL_SIZE --working-dtype $TP_WORKING_DTYPE --working-qtype $TP_WORKING_QTYPE --output-head-quantization $TP_OUTPUT_HEAD_QUANTIZATION --max-tokens $TP_MAX_TOKENS --temperature $TP_TEMPERATURE --ready-timeout-seconds $TP_READY_TIMEOUT_SECONDS --rank-endpoint-timeout-seconds $TP_RANK_ENDPOINT_TIMEOUT_SECONDS --rank-connect-timeout-seconds $TP_RANK_CONNECT_TIMEOUT_SECONDS --rank-request-timeout-seconds $TP_RANK_REQUEST_TIMEOUT_SECONDS --rank-operation-timeout-seconds $TP_RANK_OPERATION_TIMEOUT_SECONDS --rank-close-timeout-seconds $TP_RANK_CLOSE_TIMEOUT_SECONDS --admin-port $TP_ADMIN_PORT"
 }
 
 tp_classpath() {
-  mkdir -p "$TP_RUN_DIR"
+  mkdir -p "$TP_RUN_DIR" "$TP_TMP_DIR"
   if [ ! -d "$DELIVERANCE_ROOT/core/target/classes" ]; then
     printf '%s\n' "core/target/classes not found. Compile first: mvn -pl core -am -DskipTests compile" >&2
     exit 1
   fi
-  mvn -q -f "$DELIVERANCE_ROOT/pom.xml" -pl core -DincludeScope=test dependency:build-classpath -Dmdep.outputFile="$TP_RUN_DIR/classpath.txt"
+  MAVEN_OPTS="${MAVEN_OPTS:-} -Djansi.tmpdir=$TP_TMP_DIR" \
+    mvn -q -f "$DELIVERANCE_ROOT/pom.xml" -pl core -am -DincludeScope=test dependency:build-classpath \
+      -Dmdep.outputFile="$TP_RUN_DIR/classpath.txt"
+  if [ ! -s "$TP_RUN_DIR/classpath.txt" ]; then
+    printf '%s\n' "dependency classpath was not generated: $TP_RUN_DIR/classpath.txt" >&2
+    exit 1
+  fi
   printf '%s:%s:%s:%s:%s:%s:%s' \
+    "$DELIVERANCE_ROOT/core/target/test-classes" \
     "$DELIVERANCE_ROOT/core/target/classes" \
     "$DELIVERANCE_ROOT/native/target/classes" \
     "$DELIVERANCE_ROOT/grace/target/classes" \

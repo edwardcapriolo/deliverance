@@ -9,8 +9,14 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,6 +29,8 @@ public class HttpTensorParallelRankServer implements AutoCloseable {
     private final ExecutorService executor;
     private final TensorParallelRankService service;
     private final TensorPayloadCodec codec = new BinaryTensorPayloadCodec();
+    private final AtomicInteger activeRequests = new AtomicInteger();
+    private final ConcurrentLinkedDeque<String> recentErrors = new ConcurrentLinkedDeque<>();
 
     public HttpTensorParallelRankServer(InetSocketAddress address, TensorParallelRankService service) {
         this.service = service;
@@ -33,12 +41,12 @@ public class HttpTensorParallelRankServer implements AutoCloseable {
         }
         this.executor = Executors.newCachedThreadPool();
         server.setExecutor(executor);
-        server.createContext("/batchForward", exchange -> handleBatchForward(exchange, service));
-        server.createContext("/forward", exchange -> handleForward(exchange, service));
-        server.createContext("/probePrefix", exchange -> handleProbePrefix(exchange, service));
-        server.createContext("/restorePrefix", exchange -> handleRestorePrefix(exchange, service));
-        server.createContext("/storePrefix", exchange -> handleStorePrefix(exchange, service));
-        server.createContext("/closeSession", exchange -> handleCloseSession(exchange, service));
+        server.createContext("/batchForward", exchange -> tracked(exchange, "/batchForward", () -> handleBatchForward(exchange, service)));
+        server.createContext("/forward", exchange -> tracked(exchange, "/forward", () -> handleForward(exchange, service)));
+        server.createContext("/probePrefix", exchange -> tracked(exchange, "/probePrefix", () -> handleProbePrefix(exchange, service)));
+        server.createContext("/restorePrefix", exchange -> tracked(exchange, "/restorePrefix", () -> handleRestorePrefix(exchange, service)));
+        server.createContext("/storePrefix", exchange -> tracked(exchange, "/storePrefix", () -> handleStorePrefix(exchange, service)));
+        server.createContext("/closeSession", exchange -> tracked(exchange, "/closeSession", () -> handleCloseSession(exchange, service)));
     }
 
     public void start() {
@@ -49,6 +57,18 @@ public class HttpTensorParallelRankServer implements AutoCloseable {
     public URI uri() {
         InetSocketAddress address = server.getAddress();
         return URI.create("http://" + address.getHostString() + ":" + address.getPort());
+    }
+
+    public int activeRequests() {
+        return activeRequests.get();
+    }
+
+    public List<String> recentErrors() {
+        return List.copyOf(recentErrors);
+    }
+
+    public Map<String, Object> diagnostics() {
+        return Map.of("uri", uri().toString(), "activeRequests", activeRequests(), "recentErrors", recentErrors());
     }
 
     @Override
@@ -70,6 +90,31 @@ public class HttpTensorParallelRankServer implements AutoCloseable {
         try (AbstractTensor output = service.batchForward(request.sessionId(), request.tokenIds(), request.startPosition())) {
             writeTensor(exchange, output);
         }
+    }
+
+    private void tracked(HttpExchange exchange, String path, ThrowingHandler handler) throws IOException {
+        activeRequests.incrementAndGet();
+        try {
+            handler.handle();
+        } catch (IOException | RuntimeException e) {
+            recordError(path, e);
+            throw e;
+        } finally {
+            activeRequests.decrementAndGet();
+        }
+    }
+
+    private void recordError(String path, Exception e) {
+        recentErrors.addFirst(Instant.now() + " path=" + path + " error=" + e.getClass().getSimpleName()
+                + " message=" + e.getMessage());
+        while (recentErrors.size() > 32) {
+            recentErrors.pollLast();
+        }
+        LOGGER.warn("Tensor-parallel rank request failed path={} uri={}", path, uri(), e);
+    }
+
+    private interface ThrowingHandler {
+        void handle() throws IOException;
     }
 
     private void handleForward(HttpExchange exchange, TensorParallelRankService service) throws IOException {

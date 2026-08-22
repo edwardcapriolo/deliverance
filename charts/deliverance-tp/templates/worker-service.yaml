@@ -16,3 +16,7 @@ spec:
       port: {{ .Values.tensorParallel.gossipPort }}
       targetPort: gossip
       protocol: UDP
+    - name: admin
+      port: {{ .Values.workers.adminPort }}
+      targetPort: admin
+      protocol: TCP

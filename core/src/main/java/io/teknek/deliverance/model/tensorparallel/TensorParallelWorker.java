@@ -8,6 +8,7 @@ import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,6 +62,18 @@ public class TensorParallelWorker implements AutoCloseable {
 
     public List<TensorParallelRankEndpoint> endpoints() {
         return endpoints;
+    }
+
+    public int activeRequests() {
+        return servers.stream().mapToInt(HttpTensorParallelRankServer::activeRequests).sum();
+    }
+
+    public List<String> recentErrors() {
+        return servers.stream().flatMap(server -> server.recentErrors().stream()).toList();
+    }
+
+    public List<Map<String, Object>> serverDiagnostics() {
+        return servers.stream().map(HttpTensorParallelRankServer::diagnostics).toList();
     }
 
     @Override

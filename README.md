@@ -83,7 +83,7 @@ The class AutoModelForCasualLm will fetch and load a given model.
 
 ```java
 ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
-try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch).build()) {
+try (AbstractModel model =  AutoModelForCausaLm.newBuilder(fetch).build()) {
     PromptSupport.Builder g = model.promptSupport().get().builder()
             .addUserMessage("Who is Edward Capriolo");
     Response response = model.generate(UUID.randomUUID(), g.build(), new GeneratorParameters()

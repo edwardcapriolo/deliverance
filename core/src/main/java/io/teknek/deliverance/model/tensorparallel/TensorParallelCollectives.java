@@ -2,6 +2,8 @@ package io.teknek.deliverance.model.tensorparallel;
 
 import io.teknek.deliverance.tensor.AbstractTensor;
 
+import java.util.UUID;
+
 /**
  * Collective communication operations used by tensor-parallel model execution.
  *
@@ -39,4 +41,18 @@ public interface TensorParallelCollectives {
      * @return tensor containing the element-wise sum across all ranks
      */
     AbstractTensor allReduceSum(String key, AbstractTensor local);
+
+    default SessionScope enterSession(UUID sessionId) {
+        return SessionScope.NOOP;
+    }
+
+    default void closeSession(UUID sessionId) {
+    }
+
+    interface SessionScope extends AutoCloseable {
+        SessionScope NOOP = () -> { };
+
+        @Override
+        void close();
+    }
 }

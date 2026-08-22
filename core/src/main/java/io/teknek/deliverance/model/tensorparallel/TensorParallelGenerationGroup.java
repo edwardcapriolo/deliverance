@@ -25,9 +25,12 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Coordinates tensor-parallel rank endpoints for generation building blocks and full generation.
@@ -41,6 +44,7 @@ public class TensorParallelGenerationGroup implements AutoCloseable {
     private final UUID sessionId = UUID.randomUUID();
     private final List<RankEndpoint> endpoints;
     private final ExecutorService executor;
+    private final TensorParallelTimeoutSettings timeoutSettings;
 
     public TensorParallelGenerationGroup(List<AbstractModel> models) {
         if (models.isEmpty()) {
@@ -55,19 +59,27 @@ public class TensorParallelGenerationGroup implements AutoCloseable {
                         new InProcessTensorParallelRankService(model), true))
                 .toList();
         this.executor = Executors.newFixedThreadPool(this.endpoints.size());
+        this.timeoutSettings = TensorParallelTimeoutSettings.DEFAULT;
     }
 
     public static TensorParallelGenerationGroup fromEndpoints(List<RankEndpoint> endpoints) {
-        return new TensorParallelGenerationGroup(endpoints, EndpointConstructor.INSTANCE);
+        return fromEndpoints(endpoints, TensorParallelTimeoutSettings.DEFAULT);
     }
 
-    private TensorParallelGenerationGroup(List<RankEndpoint> endpoints, EndpointConstructor ignored) {
+    public static TensorParallelGenerationGroup fromEndpoints(List<RankEndpoint> endpoints,
+            TensorParallelTimeoutSettings timeoutSettings) {
+        return new TensorParallelGenerationGroup(endpoints, EndpointConstructor.INSTANCE, timeoutSettings);
+    }
+
+    private TensorParallelGenerationGroup(List<RankEndpoint> endpoints, EndpointConstructor ignored,
+            TensorParallelTimeoutSettings timeoutSettings) {
         if (endpoints.isEmpty()) {
             throw new IllegalArgumentException("endpoints must not be empty");
         }
         this.endpoints = endpoints.stream().sorted(Comparator.comparingInt(RankEndpoint::rank)).toList();
         validateEndpointRanks(this.endpoints);
         this.executor = Executors.newFixedThreadPool(this.endpoints.size());
+        this.timeoutSettings = timeoutSettings == null ? TensorParallelTimeoutSettings.DEFAULT : timeoutSettings;
     }
 
     /**
@@ -202,32 +214,37 @@ public class TensorParallelGenerationGroup implements AutoCloseable {
     }
 
     private List<AbstractTensor> forwardAllRanks(RankForward forward) {
+        List<Future<AbstractTensor>> futures = new ArrayList<>();
+        List<AbstractTensor> outputs = new ArrayList<>();
         try {
-            List<Future<AbstractTensor>> futures = new ArrayList<>();
             for (int i = 0; i < endpoints.size(); i++) {
                 int index = i;
                 futures.add(executor.submit(() -> forward.apply(index, endpoints.get(index).service())));
             }
-            List<AbstractTensor> outputs = new ArrayList<>();
-            for (Future<AbstractTensor> future : futures) {
-                outputs.add(future.get());
+            for (int i = 0; i < futures.size(); i++) {
+                outputs.add(await("forward", endpoints.get(i), futures.get(i), timeoutSettings.rankOperationTimeout()));
             }
             return outputs;
         } catch (Exception e) {
+            cancelAll(futures);
+            for (AbstractTensor output : outputs) {
+                output.close();
+            }
             throw new RuntimeException("Tensor-parallel forward failed", e);
         }
     }
 
     int probePrefix(int[] promptTokens, String cacheSalt) {
+        List<Future<PrefixCacheProbeResult>> futures = new ArrayList<>();
         try {
-            List<Future<PrefixCacheProbeResult>> futures = new ArrayList<>();
             for (RankEndpoint endpoint : endpoints) {
                 futures.add(executor.submit(() -> endpoint.service()
                         .probePrefix(new PrefixCacheProbeRequest(promptTokens, cacheSalt))));
             }
             Integer agreedLength = null;
             for (int i = 0; i < futures.size(); i++) {
-                PrefixCacheProbeResult result = futures.get(i).get();
+                PrefixCacheProbeResult result = await("probePrefix", endpoints.get(i), futures.get(i),
+                        timeoutSettings.rankOperationTimeout());
                 if (!result.hit() || result.prefixLength() <= 0) {
                     LOGGER.info("TP prefix probe miss reason=rank_miss rank={}", endpoints.get(i).rank());
                     return 0;
@@ -246,19 +263,21 @@ public class TensorParallelGenerationGroup implements AutoCloseable {
             }
             return prefixLength;
         } catch (Exception e) {
+            cancelAll(futures);
             throw new RuntimeException("Tensor-parallel prefix probe failed", e);
         }
     }
 
     boolean restorePrefix(UUID sessionId, int[] promptTokens, String cacheSalt, int prefixLength) {
+        List<Future<PrefixCacheRestoreResult>> futures = new ArrayList<>();
         try {
-            List<Future<PrefixCacheRestoreResult>> futures = new ArrayList<>();
             for (RankEndpoint endpoint : endpoints) {
                 futures.add(executor.submit(() -> endpoint.service()
                         .restorePrefix(new PrefixCacheRestoreRequest(sessionId, promptTokens, cacheSalt, prefixLength))));
             }
             for (int i = 0; i < futures.size(); i++) {
-                PrefixCacheRestoreResult result = futures.get(i).get();
+                PrefixCacheRestoreResult result = await("restorePrefix", endpoints.get(i), futures.get(i),
+                        timeoutSettings.rankOperationTimeout());
                 if (!result.restored() || result.prefixLength() != prefixLength) {
                     LOGGER.info("TP prefix restore failed rank={} expectedPrefixLength={} actualPrefixLength={}",
                             endpoints.get(i).rank(), prefixLength, result.prefixLength());
@@ -268,22 +287,24 @@ public class TensorParallelGenerationGroup implements AutoCloseable {
             LOGGER.info("TP prefix restored session={} prefixLength={} ranks={}", sessionId, prefixLength, endpoints.size());
             return true;
         } catch (Exception e) {
+            cancelAll(futures);
             throw new RuntimeException("Tensor-parallel prefix restore failed", e);
         }
     }
 
     void storePrefix(UUID sessionId, int[] promptTokens, String cacheSalt) {
+        List<Future<?>> futures = new ArrayList<>();
         try {
-            List<Future<?>> futures = new ArrayList<>();
             for (RankEndpoint endpoint : endpoints) {
                 futures.add(executor.submit(() -> endpoint.service()
                         .storePrefix(new PrefixCacheStoreRequest(sessionId, promptTokens, cacheSalt))));
             }
-            for (Future<?> future : futures) {
-                future.get();
+            for (int i = 0; i < futures.size(); i++) {
+                await("storePrefix", endpoints.get(i), futures.get(i), timeoutSettings.rankOperationTimeout());
             }
             LOGGER.info("TP prefix stored session={} promptLength={} ranks={}", sessionId, promptTokens.length, endpoints.size());
         } catch (Exception e) {
+            cancelAll(futures);
             throw new RuntimeException("Tensor-parallel prefix store failed", e);
         }
     }
@@ -368,11 +389,33 @@ public class TensorParallelGenerationGroup implements AutoCloseable {
             futures.add(executor.submit(() -> endpoint.service().closeSession(sessionId)));
         }
         try {
-            for (Future<?> future : futures) {
-                future.get();
+            for (int i = 0; i < futures.size(); i++) {
+                await("closeSession", endpoints.get(i), futures.get(i), timeoutSettings.rankCloseTimeout());
             }
         } catch (Exception e) {
+            cancelAll(futures);
             throw new RuntimeException("Tensor-parallel session cleanup failed", e);
+        }
+    }
+
+    private static void cancelAll(List<? extends Future<?>> futures) {
+        for (Future<?> future : futures) {
+            future.cancel(true);
+        }
+    }
+
+    private <T> T await(String operation, RankEndpoint endpoint, Future<T> future, Duration timeout) throws Exception {
+        try {
+            return future.get(timeout.toNanos(), TimeUnit.NANOSECONDS);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            throw new TimeoutException("Timed out waiting for tensor-parallel rank operation=" + operation
+                    + " rank=" + endpoint.rank() + " size=" + endpoint.size()
+                    + " timeout=" + timeout);
+        } catch (Exception e) {
+            future.cancel(true);
+            throw new RuntimeException("Tensor-parallel rank operation failed operation=" + operation
+                    + " rank=" + endpoint.rank() + " size=" + endpoint.size(), e);
         }
     }
 

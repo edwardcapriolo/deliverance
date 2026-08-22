@@ -32,12 +32,20 @@ public record TensorParallelDeploymentSpec(String deploymentId, int requestedNod
         return "deliverance.tp.candidates." + deploymentId;
     }
 
+    public String capacityKey() {
+        return "deliverance.tp.capacity." + deploymentId;
+    }
+
     public String leaderVoteKey() {
         return "deliverance.tp.leaderVote." + deploymentId;
     }
 
     public String assignmentKey() {
         return "deliverance.tp.assignment." + deploymentId;
+    }
+
+    public String manualAssignmentKey() {
+        return "deliverance.tp.manualAssignment." + deploymentId;
     }
 
     public String rankEndpointsKey() {

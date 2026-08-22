@@ -19,6 +19,8 @@ spec:
         app.kubernetes.io/name: {{ include "deliverance-tp.name" . }}
         app.kubernetes.io/component: coordinator
     spec:
+      securityContext:
+{{ toYaml .Values.podSecurityContext | indent 8 }}
       containers:
         - name: coordinator
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -28,6 +30,11 @@ spec:
           args:
 {{ toYaml .Values.coordinator.args | indent 12 }}
             - --spring.config.additional-location=file:/config/application.properties
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
           ports:
             - name: http
               containerPort: {{ .Values.coordinator.service.port }}

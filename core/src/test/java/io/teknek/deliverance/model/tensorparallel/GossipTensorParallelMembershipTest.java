@@ -19,8 +19,91 @@ import java.util.function.BooleanSupplier;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 public class GossipTensorParallelMembershipTest {
+
+    @Test
+    public void manualAssignmentUsesGossipLivenessAndPublishesCompleteAssignment() throws Exception {
+        String cluster = "deliverance-tp-manual-" + UUID.randomUUID();
+        int basePort = 42_000 + Math.floorMod(cluster.hashCode(), 1_000);
+        URI coordinatorUri = new URI("udp://127.0.0.1:" + basePort);
+        URI worker0Uri = new URI("udp://127.0.0.1:" + (basePort + 1));
+        URI worker1Uri = new URI("udp://127.0.0.1:" + (basePort + 2));
+        List<Member> seedMembers = List.of(
+                new RemoteMember(cluster, coordinatorUri, "coordinator"),
+                new RemoteMember(cluster, worker0Uri, "worker-0"),
+                new RemoteMember(cluster, worker1Uri, "worker-1")
+        );
+        GossipSettings settings = new GossipSettings();
+        settings.setPersistRingState(false);
+        settings.setPersistDataState(false);
+        settings.setGossipInterval(100);
+        settings.setCleanupInterval(1_000);
+        TensorParallelDeploymentSpec deploymentSpec = new TensorParallelDeploymentSpec("manual-demo", 2, 2);
+
+        try (GossipParallelMembership coordinator = GossipParallelMembership.startObserver(new GossipParallelSettings(
+                cluster, "coordinator", coordinatorUri, seedMembers, settings, deploymentSpec, "http",
+                TensorParallelTimeoutSettings.DEFAULT, TensorParallelAssignmentMode.MANUAL));
+             GossipParallelMembership worker0 = GossipParallelMembership.start(new GossipParallelSettings(cluster,
+                     "worker-0", worker0Uri, seedMembers, settings, deploymentSpec, "http",
+                     TensorParallelTimeoutSettings.DEFAULT, TensorParallelAssignmentMode.MANUAL));
+             GossipParallelMembership worker1 = GossipParallelMembership.start(new GossipParallelSettings(cluster,
+                     "worker-1", worker1Uri, seedMembers, settings, deploymentSpec, "http",
+                     TensorParallelTimeoutSettings.DEFAULT, TensorParallelAssignmentMode.MANUAL))) {
+
+            eventually(() -> coordinator.candidateNodeIds().equals(List.of("worker-0", "worker-1")),
+                    Duration.ofSeconds(10));
+            assertNull(coordinator.findAssignment());
+
+            coordinator.assignRankManually("worker-0", 0);
+            assertEquals(List.of(new TensorParallelRankAssignment(0, "worker-0")),
+                    coordinator.findManualAssignment().ranks());
+            assertNull(coordinator.findAssignment());
+
+            coordinator.assignRankManually("worker-1", 1);
+            eventually(() -> worker0.findAssignment() != null && worker1.findAssignment() != null,
+                    Duration.ofSeconds(10));
+            eventually(() -> coordinator.findCollectiveUri() != null, Duration.ofSeconds(10));
+
+            TensorParallelAssignment assignment = coordinator.findAssignment();
+            assertNotNull(assignment);
+            assertEquals("coordinator", assignment.leaderNodeId());
+            assertEquals(List.of(
+                    new TensorParallelRankAssignment(0, "worker-0"),
+                    new TensorParallelRankAssignment(1, "worker-1")
+            ), assignment.ranks());
+            assertEquals(List.of(0), worker0.localRanks());
+            assertEquals(List.of(1), worker1.localRanks());
+
+            worker0.publishRankEndpoints(List.of(new TensorParallelRankEndpoint(0, "worker-0", "http://127.0.0.1:51000")));
+            worker1.publishRankEndpoints(List.of(new TensorParallelRankEndpoint(1, "worker-1", "http://127.0.0.1:51001")));
+            eventually(() -> hasAllRankEndpoints(coordinator), Duration.ofSeconds(10));
+            assertEquals(List.of(
+                    new TensorParallelRankEndpoint(0, "worker-0", "http://127.0.0.1:51000"),
+                    new TensorParallelRankEndpoint(1, "worker-1", "http://127.0.0.1:51001")
+            ), coordinator.rankEndpointsForAssignment());
+
+            coordinator.assignRankManually("worker-1", 0);
+            eventually(() -> coordinator.findAssignment() != null
+                            && coordinator.findAssignment().ranks().equals(List.of(
+                            new TensorParallelRankAssignment(0, "worker-1"),
+                            new TensorParallelRankAssignment(1, "worker-1"))),
+                    Duration.ofSeconds(10));
+            assertTrue(!hasAllRankEndpoints(coordinator));
+
+            worker0.publishRankEndpoints(List.of());
+            worker1.publishRankEndpoints(List.of(
+                    new TensorParallelRankEndpoint(0, "worker-1", "http://127.0.0.1:51002"),
+                    new TensorParallelRankEndpoint(1, "worker-1", "http://127.0.0.1:51001")));
+            eventually(() -> hasAllRankEndpoints(coordinator), Duration.ofSeconds(10));
+            assertEquals(List.of(
+                    new TensorParallelRankEndpoint(0, "worker-1", "http://127.0.0.1:51002"),
+                    new TensorParallelRankEndpoint(1, "worker-1", "http://127.0.0.1:51001")
+            ), coordinator.rankEndpointsForAssignment());
+        }
+    }
 
     @Test
     @Tag("longtest")
@@ -144,5 +227,14 @@ public class GossipTensorParallelMembershipTest {
             Thread.sleep(100);
         }
         throw new AssertionError("condition did not become true within " + timeout);
+    }
+
+    private static boolean hasAllRankEndpoints(GossipParallelMembership membership) {
+        try {
+            membership.rankEndpointsForAssignment();
+            return true;
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 }

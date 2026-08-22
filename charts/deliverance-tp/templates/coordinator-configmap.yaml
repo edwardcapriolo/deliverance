@@ -8,7 +8,7 @@ metadata:
 data:
   application.properties: |
     server.port={{ .Values.coordinator.service.port }}
-    deliverance.tensor.operations.type=simd
+    deliverance.tensor.operations.type={{ .Values.tensorOperations.type }}
     deliverance-model.configs[0].model-owner={{ .Values.model.owner }}
     deliverance-model.configs[0].model-name={{ .Values.model.name }}
     deliverance-model.configs[0].inference-type=GENERATION
@@ -16,15 +16,18 @@ data:
     deliverance-model.configs[0].tensor-parallel.enabled=true
     deliverance-model.configs[0].tensor-parallel.cluster={{ .Values.tensorParallel.cluster }}
     deliverance-model.configs[0].tensor-parallel.node-id=coordinator
-    deliverance-model.configs[0].tensor-parallel.uri=udp://{{ include "deliverance-tp.coordinatorName" . }}:{{ .Values.tensorParallel.gossipPort }}
+    deliverance-model.configs[0].tensor-parallel.uri=udp://${POD_IP}:{{ .Values.tensorParallel.gossipPort }}
     deliverance-model.configs[0].tensor-parallel.deployment={{ .Values.tensorParallel.deployment }}
     deliverance-model.configs[0].tensor-parallel.collective-transport={{ .Values.tensorParallel.collectiveTransport }}
+    deliverance-model.configs[0].tensor-parallel.assignment-mode={{ .Values.tensorParallel.assignmentMode }}
     deliverance-model.configs[0].tensor-parallel.size={{ .Values.tensorParallel.size }}
     deliverance-model.configs[0].tensor-parallel.max-ranks-per-worker={{ .Values.tensorParallel.maxRanksPerWorker }}
     deliverance-model.configs[0].tensor-parallel.ready-timeout-seconds={{ .Values.tensorParallel.readyTimeoutSeconds }}
     deliverance-model.configs[0].tensor-parallel.rank-endpoint-timeout-seconds={{ .Values.tensorParallel.rankEndpointTimeoutSeconds }}
-{{- range $i := until (int .Values.workers.replicas) }}
-    deliverance-model.configs[0].tensor-parallel.seeds[{{ $i }}]=worker-{{ $i }}=udp://{{ include "deliverance-tp.workerName" $ }}-{{ $i }}.{{ include "deliverance-tp.workerName" $ }}.{{ $.Release.Namespace }}.svc.cluster.local:{{ $.Values.tensorParallel.gossipPort }}
-{{- end }}
+    deliverance-model.configs[0].tensor-parallel.rank-connect-timeout-seconds={{ .Values.tensorParallel.rankConnectTimeoutSeconds }}
+    deliverance-model.configs[0].tensor-parallel.rank-request-timeout-seconds={{ .Values.tensorParallel.rankRequestTimeoutSeconds }}
+    deliverance-model.configs[0].tensor-parallel.rank-operation-timeout-seconds={{ .Values.tensorParallel.rankOperationTimeoutSeconds }}
+    deliverance-model.configs[0].tensor-parallel.rank-close-timeout-seconds={{ .Values.tensorParallel.rankCloseTimeoutSeconds }}
+    deliverance-model.configs[0].tensor-parallel.seeds[0]=coordinator=udp://${POD_IP}:{{ .Values.tensorParallel.gossipPort }}
     deliverance.kv.prefix.max-entries=0
     deliverance.kv.prefix.max-tokens=0

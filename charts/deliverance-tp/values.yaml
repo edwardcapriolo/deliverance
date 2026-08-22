@@ -1,6 +1,6 @@
 image:
-  repository: edwardcapriolo/deliverance
-  tag: latest
+  repository: ecapriolo/deliverance
+  tag: 0.0.13
   pullPolicy: IfNotPresent
 
 nameOverride: ""
@@ -11,18 +11,27 @@ model:
   name: gemma-2-2b-it-JQ4
   outputHeadQuantization: Q4
 
+tensorOperations:
+  type: simd
+
 tensorParallel:
   cluster: deliverance-gemma2-tp
   deployment: gemma2-demo
   size: 4
   maxRanksPerWorker: 1
   collectiveTransport: http
+  assignmentMode: automatic
   gossipPort: 42606
   readyTimeoutSeconds: 180
   rankEndpointTimeoutSeconds: 300
+  rankConnectTimeoutSeconds: 5
+  rankRequestTimeoutSeconds: 30
+  rankOperationTimeoutSeconds: 60
+  rankCloseTimeoutSeconds: 10
 
 workers:
   replicas: 4
+  adminPort: 8081
   poolSize: 16
   workingDType: F32
   workingQType: I8
@@ -30,13 +39,20 @@ workers:
   resources: {}
   # The image must be able to run this class with all Deliverance runtime dependencies on the classpath.
   command:
-    - java
+    - sh
+    - -lc
   baseArgs:
-    - --add-modules
-    - jdk.incubator.vector
-    - -cp
-    - /deliverance/lib/*:/deliverance/web.jar
-    - io.teknek.deliverance.benchmark.TpLocalCluster
+    - >-
+      cp_dir=${DELIVERANCE_CLASSPATH_DIR:-/tmp/deliverance-cp};
+      mkdir -p "$cp_dir";
+      cd "$cp_dir";
+      jar xf /deliverance/web.jar BOOT-INF/classes BOOT-INF/lib;
+      exec java --add-modules jdk.incubator.vector
+      --add-opens java.base/java.nio=ALL-UNNAMED
+      --enable-native-access=ALL-UNNAMED
+      -cp BOOT-INF/classes:BOOT-INF/lib/*
+      io.teknek.deliverance.benchmark.TpLocalCluster "$@"
+    - tp-worker
 
 coordinator:
   replicas: 1
@@ -49,6 +65,9 @@ coordinator:
   args:
     - --add-modules
     - jdk.incubator.vector
+    - --add-opens
+    - java.base/java.nio=ALL-UNNAMED
+    - --enable-native-access=ALL-UNNAMED
     - -jar
     - /deliverance/web.jar
 
@@ -59,6 +78,7 @@ cache:
   size: 20Gi
 
 podAnnotations: {}
+podSecurityContext: {}
 nodeSelector: {}
 tolerations: []
 affinity: {}
