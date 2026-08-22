@@ -9,6 +9,7 @@ CHECK_COLIMA_PROFILES="${CHECK_COLIMA_PROFILES:-false}"
 NO_CACHE="${NO_CACHE:-false}"
 BUILD_ARM="${BUILD_ARM:-true}"
 BUILD_AMD="${BUILD_AMD:-true}"
+MAVEN_OPTS="${MAVEN_OPTS:--XX:TieredStopAtLevel=1}"
 
 if [ -f ./inc.sh ]; then
   . ./inc.sh
@@ -62,6 +63,7 @@ build_one() {
     --build-arg "JDK_RUNTIME_TAG=$JDK_VERSION-devel-$suffix"
     --build-arg "REPO_URL=$REPO_URL"
     --build-arg "REPO_COMMIT_SHA=$REPO_COMMIT_SHA"
+    --build-arg "MAVEN_OPTS=$MAVEN_OPTS"
     --target deliverance
     -t "$IMAGE_REPO:$VERSION-$suffix"
     -t "$IMAGE_REPO:latest-$suffix"

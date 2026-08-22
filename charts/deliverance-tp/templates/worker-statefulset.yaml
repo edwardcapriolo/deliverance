@@ -33,7 +33,7 @@ spec:
             - --role
             - worker
             - --node-id
-            - $(NODE_ID)
+            - $(POD_IP)
             - --uri
             - udp://$(POD_IP):{{ .Values.tensorParallel.gossipPort }}
 {{ include "deliverance-tp.workerSeedArgs" . | indent 12 }}
@@ -55,6 +55,10 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            - name: DELIVERANCE_COORDINATOR_GOSSIP_HOST
+              value: {{ include "deliverance-tp.coordinatorName" . }}.$(POD_NAMESPACE).svc.cluster.local
+            - name: DELIVERANCE_GOSSIP_PORT
+              value: {{ .Values.tensorParallel.gossipPort | quote }}
           ports:
             - name: gossip
               containerPort: {{ .Values.tensorParallel.gossipPort }}
@@ -76,15 +80,8 @@ spec:
       affinity:
 {{ toYaml .Values.affinity | indent 8 }}
 {{- if .Values.cache.enabled }}
-  volumeClaimTemplates:
-    - metadata:
-        name: model-cache
-      spec:
-        accessModes: ["ReadWriteOnce"]
-{{- if .Values.cache.storageClassName }}
-        storageClassName: {{ .Values.cache.storageClassName | quote }}
-{{- end }}
-        resources:
-          requests:
-            storage: {{ .Values.cache.size }}
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: {{ include "deliverance-tp.cachePvcName" . }}
 {{- end }}

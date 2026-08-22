@@ -15,7 +15,7 @@ data:
     deliverance-model.configs[0].output-head-quantization={{ .Values.model.outputHeadQuantization }}
     deliverance-model.configs[0].tensor-parallel.enabled=true
     deliverance-model.configs[0].tensor-parallel.cluster={{ .Values.tensorParallel.cluster }}
-    deliverance-model.configs[0].tensor-parallel.node-id=coordinator
+    deliverance-model.configs[0].tensor-parallel.node-id=${POD_IP}
     deliverance-model.configs[0].tensor-parallel.uri=udp://${POD_IP}:{{ .Values.tensorParallel.gossipPort }}
     deliverance-model.configs[0].tensor-parallel.deployment={{ .Values.tensorParallel.deployment }}
     deliverance-model.configs[0].tensor-parallel.collective-transport={{ .Values.tensorParallel.collectiveTransport }}
@@ -28,6 +28,5 @@ data:
     deliverance-model.configs[0].tensor-parallel.rank-request-timeout-seconds={{ .Values.tensorParallel.rankRequestTimeoutSeconds }}
     deliverance-model.configs[0].tensor-parallel.rank-operation-timeout-seconds={{ .Values.tensorParallel.rankOperationTimeoutSeconds }}
     deliverance-model.configs[0].tensor-parallel.rank-close-timeout-seconds={{ .Values.tensorParallel.rankCloseTimeoutSeconds }}
-    deliverance-model.configs[0].tensor-parallel.seeds[0]=coordinator=udp://${POD_IP}:{{ .Values.tensorParallel.gossipPort }}
     deliverance.kv.prefix.max-entries=0
     deliverance.kv.prefix.max-tokens=0

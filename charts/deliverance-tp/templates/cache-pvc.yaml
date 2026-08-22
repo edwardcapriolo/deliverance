@@ -1,0 +1,16 @@
+{{- if .Values.cache.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "deliverance-tp.cachePvcName" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "deliverance-tp.name" . }}
+    app.kubernetes.io/component: model-cache
+spec:
+  accessModes:
+{{ toYaml .Values.cache.accessModes | indent 4 }}
+  storageClassName: {{ include "deliverance-tp.cacheStorageClassName" . | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.cache.size }}
+{{- end }}

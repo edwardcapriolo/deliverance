@@ -33,5 +33,4 @@ coordinator:
 cache:
   enabled: true
   mountPath: /home/deliverance/.deliverance
-  storageClassName: ""
-  size: 20Gi
+  size: 1Ti

@@ -18,9 +18,15 @@
 {{- printf "%s-coordinator" (include "deliverance-tp.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "deliverance-tp.cachePvcName" -}}
+{{- printf "%s-model-cache" (include "deliverance-tp.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "deliverance-tp.cacheStorageClassName" -}}
+{{- default (printf "%s-filestore-rwx" (include "deliverance-tp.fullname" .) | trunc 63 | trimSuffix "-") .Values.cache.storageClassName -}}
+{{- end -}}
+
 {{- define "deliverance-tp.workerSeedArgs" -}}
-- --seed
-- coordinator=udp://{{ include "deliverance-tp.coordinatorName" . }}.$(POD_NAMESPACE).svc.cluster.local:{{ .Values.tensorParallel.gossipPort }}
 {{- end -}}
 
 {{- define "deliverance-tp.workerCommonArgs" -}}

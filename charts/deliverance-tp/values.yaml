@@ -1,6 +1,6 @@
 image:
   repository: ecapriolo/deliverance
-  tag: 0.0.13
+  tag: 0.0.14-SNAPSHOT
   pullPolicy: IfNotPresent
 
 nameOverride: ""
@@ -47,6 +47,11 @@ workers:
       mkdir -p "$cp_dir";
       cd "$cp_dir";
       jar xf /deliverance/web.jar BOOT-INF/classes BOOT-INF/lib;
+      if [ -n "${DELIVERANCE_COORDINATOR_GOSSIP_HOST:-}" ]; then
+      coordinator_ip=$(getent hosts "$DELIVERANCE_COORDINATOR_GOSSIP_HOST" | awk 'NR == 1 { print $1 }');
+      if [ -z "$coordinator_ip" ]; then echo "Unable to resolve coordinator gossip host $DELIVERANCE_COORDINATOR_GOSSIP_HOST" >&2; exit 1; fi;
+      set -- "$@" --seed "$coordinator_ip=udp://$coordinator_ip:${DELIVERANCE_GOSSIP_PORT:-42606}";
+      fi;
       exec java --add-modules jdk.incubator.vector
       --add-opens java.base/java.nio=ALL-UNNAMED
       --enable-native-access=ALL-UNNAMED
@@ -58,6 +63,7 @@ coordinator:
   replicas: 1
   service:
     type: ClusterIP
+    clusterIP: None
     port: 8080
   resources: {}
   command:
@@ -75,7 +81,13 @@ cache:
   enabled: true
   mountPath: /home/deliverance/.deliverance
   storageClassName: ""
-  size: 20Gi
+  accessModes:
+    - ReadWriteMany
+  size: 1Ti
+  filestore:
+    createStorageClass: true
+    tier: standard
+    network: default
 
 podAnnotations: {}
 podSecurityContext: {}

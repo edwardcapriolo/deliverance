@@ -7,6 +7,9 @@ metadata:
     app.kubernetes.io/component: coordinator
 spec:
   type: {{ .Values.coordinator.service.type }}
+{{- if .Values.coordinator.service.clusterIP }}
+  clusterIP: {{ .Values.coordinator.service.clusterIP | quote }}
+{{- end }}
   selector:
     app.kubernetes.io/name: {{ include "deliverance-tp.name" . }}
     app.kubernetes.io/component: coordinator

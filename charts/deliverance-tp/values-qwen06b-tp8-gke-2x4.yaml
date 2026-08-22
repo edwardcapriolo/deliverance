@@ -1,4 +1,4 @@
-# Overlay for running Qwen3 0.6B TP8 on GKE with the published multi-arch image.
+# Overlay for running Qwen3 0.6B TP8 on GKE with 2 workers serving 4 ranks each.
 
 nameOverride: model-testing
 fullnameOverride: model-testing
@@ -6,12 +6,16 @@ fullnameOverride: model-testing
 tensorParallel:
   cluster: model-testing
   deployment: model-testing
+  maxRanksPerWorker: 4
   readyTimeoutSeconds: 1800
   rankEndpointTimeoutSeconds: 1800
   rankConnectTimeoutSeconds: 5
   rankRequestTimeoutSeconds: 30
   rankOperationTimeoutSeconds: 60
   rankCloseTimeoutSeconds: 10
+
+workers:
+  replicas: 2
 
 nodeSelector:
   kubernetes.io/arch: amd64

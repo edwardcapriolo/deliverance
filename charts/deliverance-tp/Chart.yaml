@@ -3,4 +3,4 @@ name: deliverance-tp
 description: Tensor-parallel Deliverance deployment with worker ranks and a web coordinator.
 type: application
 version: 0.1.0
-appVersion: "0.0.13"
+appVersion: "0.0.14-SNAPSHOT"

@@ -57,7 +57,8 @@ spec:
             name: {{ include "deliverance-tp.coordinatorName" . }}-config
 {{- if .Values.cache.enabled }}
         - name: model-cache
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: {{ include "deliverance-tp.cachePvcName" . }}
 {{- end }}
       nodeSelector:
 {{ toYaml .Values.nodeSelector | indent 8 }}
