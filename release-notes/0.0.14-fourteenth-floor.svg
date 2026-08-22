@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">Deliverance 0.0.14 - The Fourteenth Floor</title>
+  <desc id="desc">Release artwork for Deliverance 0.0.14, codename The Fourteenth Floor, showing an elevator arriving at floor 14 with tensor-parallel ranks, LoRA, embeddings, Spring AI, Helm, and multi-arch images.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07111f"/>
+      <stop offset="0.52" stop-color="#111b31"/>
+      <stop offset="1" stop-color="#05070d"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffe082"/>
+      <stop offset="0.55" stop-color="#f7b733"/>
+      <stop offset="1" stop-color="#ff7b54"/>
+    </linearGradient>
+    <linearGradient id="car" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2c3854"/>
+      <stop offset="0.55" stop-color="#172033"/>
+      <stop offset="1" stop-color="#0b1020"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#b6f3ff" stop-opacity="0.72"/>
+      <stop offset="0.55" stop-color="#38bdf8" stop-opacity="0.24"/>
+      <stop offset="1" stop-color="#0f172a" stop-opacity="0.62"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000" flood-opacity="0.48"/>
+    </filter>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <pattern id="grid" width="44" height="44" patternUnits="userSpaceOnUse">
+      <path d="M44 0 H0 V44" fill="none" stroke="#94a3b8" stroke-width="1" opacity="0.08"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+  <path d="M0 498 C170 458, 316 520, 496 474 C690 424, 813 492, 1000 452 C1100 431, 1158 438, 1200 420 L1200 630 L0 630 Z" fill="#070b14" opacity="0.92"/>
+
+  <g transform="translate(86 88)">
+    <text x="0" y="0" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="30" font-weight="800" fill="#f8fafc" letter-spacing="3">DELIVERANCE</text>
+    <text x="0" y="56" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="84" font-weight="900" fill="#ffffff">0.0.14</text>
+    <text x="4" y="116" font-family="Georgia, Times New Roman, serif" font-size="45" font-weight="800" fill="url(#gold)">The Fourteenth Floor</text>
+    <rect x="6" y="142" width="430" height="3" rx="1.5" fill="url(#gold)"/>
+    <text x="6" y="182" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="20" fill="#cbd5e1">LoRA hot-swap, embeddings, Spring AI integration,</text>
+    <text x="6" y="212" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="20" fill="#cbd5e1">NUMA-aware tensor processing, Helm charts,</text>
+    <text x="6" y="242" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="20" fill="#cbd5e1">multi-architecture images, multi-node distributed inference (TP).</text>
+  </g>
+
+  <g transform="translate(650 64)" filter="url(#shadow)">
+    <rect x="60" y="0" width="452" height="520" rx="26" fill="#0b1221" stroke="#334155" stroke-width="3"/>
+    <rect x="84" y="28" width="404" height="74" rx="14" fill="#090d18" stroke="#475569" stroke-width="2"/>
+    <g transform="translate(126 50)" font-family="Inter, Segoe UI, Arial, sans-serif" font-weight="900">
+      <text x="0" y="31" font-size="28" fill="#64748b">11</text>
+      <text x="78" y="31" font-size="28" fill="#94a3b8">12</text>
+      <rect x="153" y="-6" width="42" height="42" rx="10" fill="#2a1320" stroke="#7f1d1d" stroke-dasharray="5 4"/>
+      <text x="174" y="27" text-anchor="middle" font-size="28" fill="#fca5a5">X</text>
+      <rect x="248" y="-10" width="76" height="50" rx="14" fill="url(#gold)" filter="url(#glow)"/>
+      <text x="286" y="28" text-anchor="middle" font-size="32" fill="#111827">14</text>
+    </g>
+
+    <g transform="translate(104 132)">
+      <rect x="0" y="0" width="344" height="320" rx="22" fill="url(#car)" stroke="#64748b" stroke-width="3"/>
+      <rect x="28" y="76" width="288" height="208" fill="#0f172a" stroke="#475569" stroke-width="2"/>
+      <path d="M172 76 V284" stroke="#64748b" stroke-width="2"/>
+      <text x="172" y="170" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="58" font-weight="900" fill="#f8fafc">TP8</text>
+      <text x="172" y="214" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18" font-weight="800" fill="#94a3b8" letter-spacing="1.1">MULTINODE TENSORS</text>
+    </g>
+
+    <g transform="translate(18 500)">
+      <path d="M0 0 H536" stroke="#f7b733" stroke-width="5" opacity="0.9"/>
+      <circle cx="84" cy="0" r="8" fill="#f7b733"/>
+      <circle cx="226" cy="0" r="8" fill="#f7b733"/>
+      <circle cx="368" cy="0" r="8" fill="#f7b733"/>
+      <circle cx="508" cy="0" r="8" fill="#f7b733"/>
+    </g>
+  </g>
+
+  <g transform="translate(92 385)">
+    <path d="M0 56 H120 C152 56, 152 16, 186 16 H308 C344 16, 344 78, 382 78 H514" fill="none" stroke="#38bdf8" stroke-width="3" opacity="0.62" stroke-linecap="round"/>
+    <path d="M18 118 H142 C172 118, 172 88, 204 88 H318 C358 88, 358 134, 400 134 H534" fill="none" stroke="#f7b733" stroke-width="3" opacity="0.58" stroke-linecap="round"/>
+    <g font-family="Inter, Segoe UI, Arial, sans-serif" font-weight="800">
+      <rect x="0" y="28" width="118" height="56" rx="14" fill="#0f172a" stroke="#38bdf8"/>
+      <text x="59" y="63" text-anchor="middle" font-size="19" fill="#e0f2fe">LoRA</text>
+      <rect x="154" y="-12" width="154" height="56" rx="14" fill="#0f172a" stroke="#a78bfa"/>
+      <text x="231" y="23" text-anchor="middle" font-size="18" fill="#ede9fe">EMBEDDINGS</text>
+      <rect x="382" y="50" width="132" height="56" rx="14" fill="#0f172a" stroke="#f7b733"/>
+      <text x="448" y="85" text-anchor="middle" font-size="18" fill="#fef3c7">SPRING AI</text>
+      <rect x="30" y="90" width="132" height="56" rx="14" fill="#0f172a" stroke="#34d399"/>
+      <text x="96" y="125" text-anchor="middle" font-size="18" fill="#dcfce7">NUMA</text>
+      <rect x="224" y="108" width="146" height="56" rx="14" fill="#0f172a" stroke="#fb7185"/>
+      <text x="297" y="143" text-anchor="middle" font-size="18" fill="#ffe4e6">GOSSIP</text>
+    </g>
+  </g>
+</svg>
