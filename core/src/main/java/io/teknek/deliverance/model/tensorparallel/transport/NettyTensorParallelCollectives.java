@@ -25,6 +25,8 @@ import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -42,7 +44,9 @@ public class NettyTensorParallelCollectives implements TensorParallelCollectives
     private final TensorParallelContext context;
     private final URI baseUri;
     private final TensorPayloadCodec codec = new BinaryTensorPayloadCodec();
-    private final AtomicLong collectiveSequence = new AtomicLong();
+    private final AtomicLong unscopedSequence = new AtomicLong();
+    private final ConcurrentHashMap<UUID, AtomicLong> sessionSequences = new ConcurrentHashMap<>();
+    private UUID activeSession;
     private final NioEventLoopGroup group = new NioEventLoopGroup(1);
     private volatile Channel channel;
     private volatile CompletableFuture<byte[]> pendingResponse;
@@ -54,7 +58,7 @@ public class NettyTensorParallelCollectives implements TensorParallelCollectives
 
     @Override
     public synchronized AbstractTensor allReduceSum(String key, AbstractTensor local) {
-        String wireKey = collectiveSequence.getAndIncrement() + ":" + key;
+        String wireKey = wireKey(key);
         byte[] body;
         try (Timer.Context ignored = InferenceProfiler.timer(METRICS, "collective.client.serialize").time()) {
             try {
@@ -87,6 +91,26 @@ public class NettyTensorParallelCollectives implements TensorParallelCollectives
                 pendingResponse = null;
             }
         }
+    }
+
+    private String wireKey(String key) {
+        UUID session = activeSession;
+        if (session == null) {
+            return "unscoped:" + unscopedSequence.getAndIncrement() + ":" + key;
+        }
+        long sequence = sessionSequences.computeIfAbsent(session, ignored -> new AtomicLong()).getAndIncrement();
+        return "session:" + session + ":" + sequence + ":" + key;
+    }
+
+    @Override
+    public synchronized SessionScope enterSession(UUID sessionId) {
+        UUID previous = activeSession;
+        activeSession = sessionId;
+        return () -> {
+            synchronized (NettyTensorParallelCollectives.this) {
+                activeSession = previous;
+            }
+        };
     }
 
     private Channel channel() {
@@ -124,6 +148,11 @@ public class NettyTensorParallelCollectives implements TensorParallelCollectives
             channel = null;
         }
         group.shutdownGracefully();
+    }
+
+    @Override
+    public void closeSession(UUID sessionId) {
+        sessionSequences.remove(sessionId);
     }
 
     private final class Handler extends SimpleChannelInboundHandler<ByteBuf> {

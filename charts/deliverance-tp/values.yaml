@@ -20,6 +20,7 @@ tensorParallel:
   size: 4
   maxRanksPerWorker: 1
   collectiveTransport: http
+  assignmentMode: automatic
   gossipPort: 42606
   readyTimeoutSeconds: 180
   rankEndpointTimeoutSeconds: 300

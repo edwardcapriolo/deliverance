@@ -60,10 +60,10 @@ public class MultiModelConfig {
         private String cluster = "deliverance-tp-local";
         private String nodeId = "coordinator";
         private String uri = "udp://127.0.0.1:42606";
-        private String advertiseHost;
         private List<String> seeds = new ArrayList<>();
         private String deployment = "benchmark";
         private String collectiveTransport = "http";
+        private String assignmentMode = "automatic";
         private int size = 4;
         private int maxRanksPerWorker = 2;
         private int readyTimeoutSeconds = 120;
@@ -106,14 +106,6 @@ public class MultiModelConfig {
             this.uri = uri;
         }
 
-        public String getAdvertiseHost() {
-            return advertiseHost;
-        }
-
-        public void setAdvertiseHost(String advertiseHost) {
-            this.advertiseHost = advertiseHost;
-        }
-
         public List<String> getSeeds() {
             return seeds;
         }
@@ -136,6 +128,14 @@ public class MultiModelConfig {
 
         public void setCollectiveTransport(String collectiveTransport) {
             this.collectiveTransport = collectiveTransport;
+        }
+
+        public String getAssignmentMode() {
+            return assignmentMode;
+        }
+
+        public void setAssignmentMode(String assignmentMode) {
+            this.assignmentMode = assignmentMode;
         }
 
         public int getSize() {

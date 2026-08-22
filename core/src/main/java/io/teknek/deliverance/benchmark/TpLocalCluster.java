@@ -14,6 +14,7 @@ import io.teknek.deliverance.model.DoNothingGenerateEvent;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.model.tensorparallel.GossipParallelMembership;
 import io.teknek.deliverance.model.tensorparallel.GossipParallelSettings;
+import io.teknek.deliverance.model.tensorparallel.TensorParallelAssignmentMode;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelDeploymentSpec;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelGenerationGroup;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelTimeoutSettings;
@@ -70,7 +71,7 @@ public final class TpLocalCluster {
         AutoModelForCausaLm.Builder builder = configuredBuilder(options, fetcher)
                 .withParallelSettings(new GossipParallelSettings(options.cluster, options.nodeId, options.uri,
                         seedMembers(options), gossipSettings(), deploymentSpec, options.collectiveTransport,
-                        options.advertiseHost, options.timeoutSettings()));
+                        options.timeoutSettings(), options.assignmentMode));
         AbstractModel model = builder.buildAbstractModel();
         WorkerAdminServer adminServer = WorkerAdminServer.start(options.adminPort, options.nodeId,
                 model.gossipParallelMembership().orElseThrow());
@@ -86,7 +87,7 @@ public final class TpLocalCluster {
         TensorParallelDeploymentSpec deploymentSpec = deploymentSpec(options);
         GossipParallelMembership membership = GossipParallelMembership.startObserver(new GossipParallelSettings(
                 options.cluster, options.nodeId, options.uri, seedMembers(options), gossipSettings(), deploymentSpec,
-                options.collectiveTransport, options.advertiseHost, options.timeoutSettings()));
+                options.collectiveTransport, options.timeoutSettings(), options.assignmentMode));
         Runtime.getRuntime().addShutdownHook(new Thread(membership::close,
                 "tp-local-coordinator-membership-shutdown-" + options.nodeId));
 
@@ -213,10 +214,10 @@ public final class TpLocalCluster {
         private String cluster = "deliverance-tp-local";
         private String nodeId;
         private URI uri;
-        private String advertiseHost;
         private final List<Seed> seeds = new ArrayList<>();
         private String deploymentId = "benchmark";
         private String collectiveTransport = "http";
+        private TensorParallelAssignmentMode assignmentMode = TensorParallelAssignmentMode.AUTOMATIC;
         private int tensorParallelSize = 4;
         private int maxRanksPerWorker = 2;
         private String owner = "tjake";
@@ -246,10 +247,10 @@ public final class TpLocalCluster {
                     case "--cluster" -> options.cluster = args[++i];
                     case "--node-id" -> options.nodeId = args[++i];
                     case "--uri" -> options.uri = URI.create(args[++i]);
-                    case "--advertise-host" -> options.advertiseHost = args[++i];
                     case "--seed" -> options.seeds.add(parseSeed(args[++i]));
                     case "--deployment" -> options.deploymentId = args[++i];
                     case "--collective-transport" -> options.collectiveTransport = args[++i].toLowerCase(Locale.ROOT);
+                    case "--assignment-mode" -> options.assignmentMode = TensorParallelAssignmentMode.fromString(args[++i]);
                     case "--tensor-parallel-size" -> options.tensorParallelSize = Integer.parseInt(args[++i]);
                     case "--max-ranks-per-worker" -> options.maxRanksPerWorker = Integer.parseInt(args[++i]);
                     case "--owner" -> options.owner = args[++i];
@@ -277,9 +278,6 @@ public final class TpLocalCluster {
             Objects.requireNonNull(options.role, "--role is required");
             Objects.requireNonNull(options.nodeId, "--node-id is required");
             Objects.requireNonNull(options.uri, "--uri is required");
-            if (options.advertiseHost == null || options.advertiseHost.isBlank()) {
-                options.advertiseHost = options.uri.getHost();
-            }
             if (options.seeds.isEmpty()) {
                 throw new IllegalArgumentException("At least one --seed node=udp://host:port is required");
             }

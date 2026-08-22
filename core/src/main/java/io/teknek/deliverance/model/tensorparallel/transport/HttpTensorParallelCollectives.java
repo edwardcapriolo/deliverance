@@ -15,6 +15,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -26,7 +28,9 @@ public class HttpTensorParallelCollectives implements TensorParallelCollectives 
     private final TensorParallelContext context;
     private final URI baseUri;
     private final TensorPayloadCodec codec = new BinaryTensorPayloadCodec();
-    private final AtomicLong collectiveSequence = new AtomicLong();
+    private final AtomicLong unscopedSequence = new AtomicLong();
+    private final ConcurrentHashMap<UUID, AtomicLong> sessionSequences = new ConcurrentHashMap<>();
+    private UUID activeSession;
 
     public HttpTensorParallelCollectives(TensorParallelContext context, URI baseUri) {
         this.context = context;
@@ -35,7 +39,7 @@ public class HttpTensorParallelCollectives implements TensorParallelCollectives 
 
     @Override
     public AbstractTensor allReduceSum(String key, AbstractTensor local) {
-        String wireKey = collectiveSequence.getAndIncrement() + ":" + key;
+        String wireKey = wireKey(key);
         byte[] body;
         try (Timer.Context ignored = InferenceProfiler.timer(METRICS, "collective.client.serialize").time()) {
             try {
@@ -72,5 +76,30 @@ public class HttpTensorParallelCollectives implements TensorParallelCollectives 
         try (Timer.Context ignored = InferenceProfiler.timer(METRICS, "collective.client.deserialize").time()) {
             return codec.decode(response.body());
         }
+    }
+
+    private String wireKey(String key) {
+        UUID session = activeSession;
+        if (session == null) {
+            return "unscoped:" + unscopedSequence.getAndIncrement() + ":" + key;
+        }
+        long sequence = sessionSequences.computeIfAbsent(session, ignored -> new AtomicLong()).getAndIncrement();
+        return "session:" + session + ":" + sequence + ":" + key;
+    }
+
+    @Override
+    public synchronized SessionScope enterSession(UUID sessionId) {
+        UUID previous = activeSession;
+        activeSession = sessionId;
+        return () -> {
+            synchronized (HttpTensorParallelCollectives.this) {
+                activeSession = previous;
+            }
+        };
+    }
+
+    @Override
+    public void closeSession(UUID sessionId) {
+        sessionSequences.remove(sessionId);
     }
 }

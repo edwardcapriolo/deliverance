@@ -27,16 +27,18 @@ public class InProcessTensorParallelRankService implements TensorParallelRankSer
     }
 
     @Override
-    public AbstractTensor batchForward(UUID sessionId, int[] tokenIds, int startPosition) {
+    public synchronized AbstractTensor batchForward(UUID sessionId, int[] tokenIds, int startPosition) {
         KvBufferCache.KvBuffer buffer = kvBuffer(sessionId);
         buffer.setCurrentContextPosition(startPosition);
-        return model.batchForward(tokenIds, startPosition, buffer);
+        try (var ignored = model.getTensorParallelCollectives().enterSession(sessionId)) {
+            return model.batchForward(tokenIds, startPosition, buffer);
+        }
     }
 
     @Override
-    public AbstractTensor forward(UUID sessionId, int tokenId, int position) {
+    public synchronized AbstractTensor forward(UUID sessionId, int tokenId, int position) {
         KvBufferCache.KvBuffer buffer = kvBuffer(sessionId);
-        try {
+        try (var ignored = model.getTensorParallelCollectives().enterSession(sessionId)) {
             return model.forward(tokenId, position, buffer, java.util.Optional.empty());
         } finally {
             buffer.incrementContextPosition();
@@ -48,6 +50,7 @@ public class InProcessTensorParallelRankService implements TensorParallelRankSer
         if (kvBuffer != null) {
             kvBuffer.close();
         }
+        model.getTensorParallelCollectives().closeSession(sessionId);
     }
 
     @Override

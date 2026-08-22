@@ -17,9 +17,9 @@ data:
     deliverance-model.configs[0].tensor-parallel.cluster={{ .Values.tensorParallel.cluster }}
     deliverance-model.configs[0].tensor-parallel.node-id=coordinator
     deliverance-model.configs[0].tensor-parallel.uri=udp://${POD_IP}:{{ .Values.tensorParallel.gossipPort }}
-    deliverance-model.configs[0].tensor-parallel.advertise-host=${POD_IP}
     deliverance-model.configs[0].tensor-parallel.deployment={{ .Values.tensorParallel.deployment }}
     deliverance-model.configs[0].tensor-parallel.collective-transport={{ .Values.tensorParallel.collectiveTransport }}
+    deliverance-model.configs[0].tensor-parallel.assignment-mode={{ .Values.tensorParallel.assignmentMode }}
     deliverance-model.configs[0].tensor-parallel.size={{ .Values.tensorParallel.size }}
     deliverance-model.configs[0].tensor-parallel.max-ranks-per-worker={{ .Values.tensorParallel.maxRanksPerWorker }}
     deliverance-model.configs[0].tensor-parallel.ready-timeout-seconds={{ .Values.tensorParallel.readyTimeoutSeconds }}

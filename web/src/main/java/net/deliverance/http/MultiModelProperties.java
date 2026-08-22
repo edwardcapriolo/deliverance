@@ -9,6 +9,7 @@ import io.teknek.deliverance.model.CausalLanguageModel;
 import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.model.tensorparallel.GossipParallelMembership;
 import io.teknek.deliverance.model.tensorparallel.GossipParallelSettings;
+import io.teknek.deliverance.model.tensorparallel.TensorParallelAssignmentMode;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelDeploymentSpec;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelGenerationGroup;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelRankEndpoint;
@@ -36,6 +37,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -180,9 +182,10 @@ class MultiModelConfiguration {
                 tp.getSize(), tp.getMaxRanksPerWorker());
         GossipParallelMembership membership = GossipParallelMembership.startObserver(new GossipParallelSettings(
                 tp.getCluster(), tp.getNodeId(), URI.create(tp.getUri()), seedMembers(tp), gossipSettings(), deploymentSpec,
-                tp.getCollectiveTransport(), tp.getAdvertiseHost(), TensorParallelTimeoutSettings.ofSeconds(
+                tp.getCollectiveTransport(), TensorParallelTimeoutSettings.ofSeconds(
                 tp.getRankConnectTimeoutSeconds(), tp.getRankRequestTimeoutSeconds(),
-                tp.getRankOperationTimeoutSeconds(), tp.getRankCloseTimeoutSeconds())));
+                tp.getRankOperationTimeoutSeconds(), tp.getRankCloseTimeoutSeconds()),
+                TensorParallelAssignmentMode.fromString(tp.getAssignmentMode())));
         AbstractModel coordinatorModel = builder.buildLocalTransformerModel();
         LOGGER.info("Spring tensor-parallel coordinator model loaded model={} deployment={} size={} initialState=NOT_READY",
                 config.getModelName(), tp.getDeployment(), tp.getSize());
@@ -429,6 +432,56 @@ class TensorParallelSpringCausalLanguageModel implements CausalLanguageModel {
     private ResponseStatusException notReady(String reason) {
         return new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                 "Tensor-parallel deployment is not ready: " + reason);
+    }
+
+    Map<String, Object> diagnostics() {
+        Readiness currentReadiness = readiness.get();
+        TensorParallelGenerationGroup currentGroup = group.get();
+        Map<String, Object> membershipDiagnostics = membership.diagnostics();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("state", currentReadiness.state().name());
+        result.put("diagnostics", currentReadiness.diagnostics());
+        result.put("groupOpen", currentGroup != null);
+        result.put("activeGenerations", activeGenerations.get());
+        result.put("membership", membershipDiagnostics);
+        return result;
+    }
+
+    Map<String, Object> gossipDiagnostics() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("nodeId", membership.localNodeId());
+        result.put("liveMembers", membership.liveMembers().stream().map(Member::getId).sorted().toList());
+        result.put("candidates", membership.candidateNodeIds());
+        result.put("leader", membership.electedLeader() == null ? "" : membership.electedLeader());
+        result.put("assignment", membership.findAssignment() == null ? "" : membership.findAssignment().toString());
+        return result;
+    }
+
+    Map<String, Object> endpointDiagnostics() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("nodeId", membership.localNodeId());
+        result.put("collectiveUri", membership.findCollectiveUri() == null ? "" : membership.findCollectiveUri().toString());
+        try {
+            result.put("rankEndpoints", membership.rankEndpointsForAssignment());
+        } catch (RuntimeException e) {
+            result.put("rankEndpoints", List.of());
+            result.put("error", e.getMessage());
+        }
+        return result;
+    }
+
+    Map<String, Object> assignRank(String nodeId, int rank) {
+        membership.assignRankManually(nodeId, rank);
+        return assignmentDiagnostics();
+    }
+
+    private Map<String, Object> assignmentDiagnostics() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("nodeId", membership.localNodeId());
+        result.put("manualAssignment", membership.findManualAssignment().ranks());
+        result.put("assignment", membership.findAssignment() == null ? "" : membership.findAssignment());
+        result.put("collectiveUri", membership.findCollectiveUri() == null ? "" : membership.findCollectiveUri().toString());
+        return result;
     }
 
     enum ReadinessState {

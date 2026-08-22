@@ -18,26 +18,26 @@ public record GossipParallelSettings(
         GossipSettings gossipSettings,
         TensorParallelDeploymentSpec deploymentSpec,
         String collectiveTransport,
-        String advertiseHost,
-        TensorParallelTimeoutSettings timeoutSettings
+        TensorParallelTimeoutSettings timeoutSettings,
+        TensorParallelAssignmentMode assignmentMode
 ) {
     public GossipParallelSettings(String cluster, String nodeId, URI uri, List<Member> seedMembers,
             GossipSettings gossipSettings, TensorParallelDeploymentSpec deploymentSpec) {
-        this(cluster, nodeId, uri, seedMembers, gossipSettings, deploymentSpec, "http", null,
-                TensorParallelTimeoutSettings.DEFAULT);
+        this(cluster, nodeId, uri, seedMembers, gossipSettings, deploymentSpec, "http",
+                TensorParallelTimeoutSettings.DEFAULT, TensorParallelAssignmentMode.AUTOMATIC);
     }
 
     public GossipParallelSettings(String cluster, String nodeId, URI uri, List<Member> seedMembers,
             GossipSettings gossipSettings, TensorParallelDeploymentSpec deploymentSpec, String collectiveTransport) {
-        this(cluster, nodeId, uri, seedMembers, gossipSettings, deploymentSpec, collectiveTransport, null,
-                TensorParallelTimeoutSettings.DEFAULT);
+        this(cluster, nodeId, uri, seedMembers, gossipSettings, deploymentSpec, collectiveTransport,
+                TensorParallelTimeoutSettings.DEFAULT, TensorParallelAssignmentMode.AUTOMATIC);
     }
 
     public GossipParallelSettings(String cluster, String nodeId, URI uri, List<Member> seedMembers,
             GossipSettings gossipSettings, TensorParallelDeploymentSpec deploymentSpec, String collectiveTransport,
-            String advertiseHost) {
-        this(cluster, nodeId, uri, seedMembers, gossipSettings, deploymentSpec, collectiveTransport, advertiseHost,
-                TensorParallelTimeoutSettings.DEFAULT);
+            TensorParallelTimeoutSettings timeoutSettings) {
+        this(cluster, nodeId, uri, seedMembers, gossipSettings, deploymentSpec, collectiveTransport,
+                timeoutSettings, TensorParallelAssignmentMode.AUTOMATIC);
     }
 
     public GossipParallelSettings {
@@ -48,9 +48,8 @@ public record GossipParallelSettings(
         gossipSettings = Objects.requireNonNull(gossipSettings, "gossipSettings");
         Objects.requireNonNull(deploymentSpec, "deploymentSpec");
         collectiveTransport = Objects.requireNonNull(collectiveTransport, "collectiveTransport").toLowerCase(java.util.Locale.ROOT);
-        advertiseHost = (advertiseHost == null || advertiseHost.isBlank()) ? uri.getHost() : advertiseHost;
-        Objects.requireNonNull(advertiseHost, "advertiseHost");
         timeoutSettings = timeoutSettings == null ? TensorParallelTimeoutSettings.DEFAULT : timeoutSettings;
+        assignmentMode = assignmentMode == null ? TensorParallelAssignmentMode.AUTOMATIC : assignmentMode;
         if (!collectiveTransport.equals("http") && !collectiveTransport.equals("netty")) {
             throw new IllegalArgumentException("collectiveTransport must be http or netty");
         }

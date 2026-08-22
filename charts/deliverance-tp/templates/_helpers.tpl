@@ -34,6 +34,8 @@
 - {{ .Values.tensorParallel.maxRanksPerWorker | quote }}
 - --collective-transport
 - {{ .Values.tensorParallel.collectiveTransport | quote }}
+- --assignment-mode
+- {{ .Values.tensorParallel.assignmentMode | quote }}
 - --tensor-operations
 - {{ .Values.tensorOperations.type | quote }}
 - --owner

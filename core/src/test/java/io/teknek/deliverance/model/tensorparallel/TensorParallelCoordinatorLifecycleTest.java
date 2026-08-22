@@ -33,12 +33,12 @@ class TensorParallelCoordinatorLifecycleTest {
         List<Member> coordinatorSeeds = List.of(new RemoteMember(cluster, coordinatorUri, "coordinator"));
 
         try (GossipParallelMembership worker0 = GossipParallelMembership.start(new GossipParallelSettings(cluster,
-                "worker-0", worker0Uri, workerSeeds, settings, spec, "netty", "127.0.0.1"));
+                "worker-0", worker0Uri, workerSeeds, settings, spec, "netty"));
              GossipParallelMembership worker1 = GossipParallelMembership.start(new GossipParallelSettings(cluster,
-                     "worker-1", worker1Uri, workerSeeds, settings, spec, "netty", "127.0.0.1"))) {
+                      "worker-1", worker1Uri, workerSeeds, settings, spec, "netty"))) {
 
             try (GossipParallelMembership coordinator = GossipParallelMembership.startObserver(new GossipParallelSettings(
-                    cluster, "coordinator", coordinatorUri, coordinatorSeeds, settings, spec, "netty", "127.0.0.1"))) {
+                    cluster, "coordinator", coordinatorUri, coordinatorSeeds, settings, spec, "netty"))) {
                 assertCoordinatorSeesWorkersAndAssignment(coordinator);
             }
 
@@ -46,7 +46,7 @@ class TensorParallelCoordinatorLifecycleTest {
 
             try (GossipParallelMembership restartedCoordinator = GossipParallelMembership.startObserver(
                     new GossipParallelSettings(cluster, "coordinator", coordinatorUri, coordinatorSeeds, settings, spec,
-                            "netty", "127.0.0.1"))) {
+                            "netty"))) {
                 assertCoordinatorSeesWorkersAndAssignment(restartedCoordinator);
             }
         }
@@ -69,12 +69,12 @@ class TensorParallelCoordinatorLifecycleTest {
         List<Member> coordinatorSeeds = List.of(new RemoteMember(cluster, coordinatorUri, "coordinator"));
 
         try (GossipParallelMembership coordinator = GossipParallelMembership.startObserver(new GossipParallelSettings(
-                cluster, "coordinator", coordinatorUri, coordinatorSeeds, settings, spec, "netty", "127.0.0.1"));
+                cluster, "coordinator", coordinatorUri, coordinatorSeeds, settings, spec, "netty"));
              GossipParallelMembership worker0 = GossipParallelMembership.start(new GossipParallelSettings(cluster,
-                     "worker-0", worker0Uri, workerSeeds, settings, spec, "netty", "127.0.0.1"))) {
+                      "worker-0", worker0Uri, workerSeeds, settings, spec, "netty"))) {
 
             GossipParallelMembership worker1 = GossipParallelMembership.start(new GossipParallelSettings(cluster,
-                    "worker-1", worker1Uri, workerSeeds, settings, spec, "netty", "127.0.0.1"));
+                    "worker-1", worker1Uri, workerSeeds, settings, spec, "netty"));
             try {
                 assertCoordinatorSeesWorkersAndAssignment(coordinator);
                 worker0.publishRankEndpoints(List.of(new TensorParallelRankEndpoint(0, "worker-0",
@@ -93,7 +93,7 @@ class TensorParallelCoordinatorLifecycleTest {
             eventually(() -> portReleased(worker1Port), Duration.ofSeconds(10));
 
             try (GossipParallelMembership restartedWorker1 = GossipParallelMembership.start(new GossipParallelSettings(cluster,
-                    "worker-1", worker1RestartUri, workerSeeds, settings, spec, "netty", "127.0.0.1"))) {
+                    "worker-1", worker1RestartUri, workerSeeds, settings, spec, "netty"))) {
                 restartedWorker1.publishRankEndpoints(List.of(new TensorParallelRankEndpoint(1, "worker-1",
                         "http://127.0.0.1:50101")));
 
@@ -122,14 +122,14 @@ class TensorParallelCoordinatorLifecycleTest {
         List<Member> restartedCoordinatorSeeds = List.of(new RemoteMember(cluster, restartedCoordinatorUri, "coordinator"));
 
         try (GossipParallelMembership worker0 = GossipParallelMembership.start(new GossipParallelSettings(cluster,
-                "worker-0", URI.create("udp://127.0.0.1:" + freePort()), workerSeeds, settings, spec, "netty", "127.0.0.1"));
+                "worker-0", URI.create("udp://127.0.0.1:" + freePort()), workerSeeds, settings, spec, "netty"));
              GossipParallelMembership worker1 = GossipParallelMembership.start(new GossipParallelSettings(cluster,
-                     "worker-1", URI.create("udp://127.0.0.1:" + freePort()), workerSeeds, settings, spec, "netty", "127.0.0.1"));
+                      "worker-1", URI.create("udp://127.0.0.1:" + freePort()), workerSeeds, settings, spec, "netty"));
              GossipParallelMembership worker2 = GossipParallelMembership.start(new GossipParallelSettings(cluster,
-                     "worker-2", URI.create("udp://127.0.0.1:" + freePort()), workerSeeds, settings, spec, "netty", "127.0.0.1"))) {
+                      "worker-2", URI.create("udp://127.0.0.1:" + freePort()), workerSeeds, settings, spec, "netty"))) {
 
             try (GossipParallelMembership coordinator = GossipParallelMembership.startObserver(new GossipParallelSettings(
-                    cluster, "coordinator", coordinatorUri, coordinatorSeeds, settings, spec, "netty", "127.0.0.1"))) {
+                    cluster, "coordinator", coordinatorUri, coordinatorSeeds, settings, spec, "netty"))) {
                 assertCoordinatorSeesWorkersAndAssignment(coordinator, List.of("worker-0", "worker-1", "worker-2"));
                 publishThreeRankEndpoints(worker0, worker1, worker2, 51000, 51001, 51002);
                 eventually(() -> coordinator.findRankEndpoints("worker-2").stream()
@@ -141,7 +141,7 @@ class TensorParallelCoordinatorLifecycleTest {
 
             try (GossipParallelMembership restartedCoordinator = GossipParallelMembership.startObserver(
                     new GossipParallelSettings(cluster, "coordinator", restartedCoordinatorUri, restartedCoordinatorSeeds,
-                            settings, spec, "netty", "127.0.0.1"))) {
+                            settings, spec, "netty"))) {
                 publishThreeRankEndpoints(worker0, worker1, worker2, 52000, 52001, 52002);
                 assertCoordinatorSeesWorkersAndAssignment(restartedCoordinator,
                         List.of("worker-0", "worker-1", "worker-2"));

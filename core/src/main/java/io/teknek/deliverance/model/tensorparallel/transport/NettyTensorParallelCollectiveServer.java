@@ -174,23 +174,30 @@ public class NettyTensorParallelCollectiveServer implements AutoCloseable {
 
         private synchronized AbstractTensor allReduceSum(String key, int rank, int size, AbstractTensor local) {
             Round round = rounds.computeIfAbsent(key, ignored -> new Round(size, local));
-            round.add(rank, local);
-            if (round.arrived == size) {
-                try (Timer.Context ignored = InferenceProfiler.timer(METRICS, "collective.server.reduce").time()) {
-                    round.reduce();
+            try {
+                round.add(rank, local);
+                if (round.arrived == size) {
+                    try (Timer.Context ignored = InferenceProfiler.timer(METRICS, "collective.server.reduce").time()) {
+                        round.reduce();
+                    }
+                    notifyAll();
                 }
-                notifyAll();
-            }
-            try (Timer.Context ignored = InferenceProfiler.timer(METRICS, "collective.server.wait").time()) {
-                waitForReduction(key, round);
-            }
-            AbstractTensor result = round.copyReduced();
-            round.returned++;
-            if (round.returned == size) {
-                round.closeReduced();
+                try (Timer.Context ignored = InferenceProfiler.timer(METRICS, "collective.server.wait").time()) {
+                    waitForReduction(key, round);
+                }
+                AbstractTensor result = round.copyReduced();
+                round.returned++;
+                if (round.returned == size) {
+                    rounds.remove(key);
+                    round.closeAll();
+                }
+                return result;
+            } catch (RuntimeException e) {
                 rounds.remove(key);
+                round.closeAll();
+                notifyAll();
+                throw e;
             }
-            return result;
         }
 
         private void waitForReduction(String key, Round round) {
@@ -259,6 +266,16 @@ public class NettyTensorParallelCollectiveServer implements AutoCloseable {
                 reduced.close();
                 reduced = null;
             }
+        }
+
+        private void closeAll() {
+            for (int i = 0; i < contributions.length; i++) {
+                if (contributions[i] != null) {
+                    contributions[i].close();
+                    contributions[i] = null;
+                }
+            }
+            closeReduced();
         }
 
         private static AbstractTensor copy(AbstractTensor source) {

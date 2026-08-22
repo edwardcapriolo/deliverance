@@ -24,7 +24,6 @@ import java.net.InetSocketAddress;
 import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,17 +45,26 @@ public class GossipParallelMembership implements AutoCloseable {
     private URI collectiveServerUri;
     private AutoModelForCausaLm.Builder rankBuilder;
     private TensorParallelWorker worker;
-    private final String advertiseHost;
+    private List<Integer> workerRanks = List.of();
+    private int workerTensorParallelSize;
+    private TensorParallelManualAssignment manualAssignmentDraft;
+    private final String runtimeHost;
     private final TensorParallelTimeoutSettings timeoutSettings;
+    private final TensorParallelAssignmentMode assignmentMode;
+    private final boolean workerCandidate;
 
     private GossipParallelMembership(GossipManager gossipManager, TensorParallelDeploymentSpec deploymentSpec,
-            String advertiseHost, String collectiveTransport, TensorParallelTimeoutSettings timeoutSettings) {
+            String runtimeHost, String collectiveTransport, TensorParallelTimeoutSettings timeoutSettings,
+            TensorParallelAssignmentMode assignmentMode, boolean workerCandidate) {
         this.gossipManager = gossipManager;
         this.deploymentSpec = deploymentSpec;
         this.gossipUri = gossipManager.getMyself().getUri();
-        this.advertiseHost = advertiseHost;
+        this.runtimeHost = runtimeHost;
         this.collectiveTransport = collectiveTransport;
         this.timeoutSettings = timeoutSettings;
+        this.assignmentMode = assignmentMode;
+        this.workerCandidate = workerCandidate;
+        this.manualAssignmentDraft = new TensorParallelManualAssignment(deploymentSpec.deploymentId(), List.of());
     }
 
     public static GossipParallelMembership start(GossipParallelSettings settings) {
@@ -86,10 +94,13 @@ public class GossipParallelMembership implements AutoCloseable {
                 .build();
         manager.init();
         GossipParallelMembership membership = new GossipParallelMembership(manager, settings.deploymentSpec(),
-                settings.advertiseHost(), settings.collectiveTransport(), settings.timeoutSettings());
+                settings.uri().getHost(), settings.collectiveTransport(), settings.timeoutSettings(),
+                settings.assignmentMode(), candidate);
         if (candidate) {
             membership.publishDeploymentSpec();
-            membership.publishCandidate();
+            membership.publishCapacity();
+        }
+        if (candidate || settings.assignmentMode() == TensorParallelAssignmentMode.MANUAL) {
             membership.startAssignmentCoordinator();
         }
         LOGGER.info("Started tensor-parallel gossip membership cluster={} node={} uri={}",
@@ -124,7 +135,7 @@ public class GossipParallelMembership implements AutoCloseable {
                 Map.entry("nodeId", localNodeId()),
                 Map.entry("deployment", deploymentSpec.deploymentId()),
                 Map.entry("gossipUri", gossipUri.toString()),
-                Map.entry("advertiseHost", advertiseHost),
+                Map.entry("runtimeHost", runtimeHost),
                 Map.entry("collectiveTransport", collectiveTransport),
                 Map.entry("closed", closed),
                 Map.entry("candidate", candidateNodeIds().contains(localNodeId())),
@@ -133,6 +144,7 @@ public class GossipParallelMembership implements AutoCloseable {
                 Map.entry("leader", electedLeader() == null ? "" : electedLeader()),
                 Map.entry("assignment", assignment == null ? "" : assignment.toString()),
                 Map.entry("localRanks", assignment == null ? List.of() : assignment.ranksForNode(localNodeId())),
+                Map.entry("servedRanks", workerRanks),
                 Map.entry("collectiveUri", collectiveUri == null ? "" : collectiveUri.toString()),
                 Map.entry("publishedRankEndpoints", localEndpoints),
                 Map.entry("worker", workerDiagnostics)
@@ -159,8 +171,18 @@ public class GossipParallelMembership implements AutoCloseable {
     }
 
     public void publishCandidate() {
-        mergeSharedData(deploymentSpec.candidatesKey(), new OrSet<>(gossipManager.getMyself().getId()));
-        LOGGER.info("Published tensor-parallel candidate node={} deployment={}", localNodeId(), deploymentSpec.deploymentId());
+        publishCapacity();
+    }
+
+    public void publishCapacity() {
+        PerNodeDataMessage message = new PerNodeDataMessage();
+        message.setKey(deploymentSpec.capacityKey());
+        message.setPayload(new TensorParallelNodeCapacity(localNodeId(), deploymentSpec.maxRanksPerNode()));
+        message.setTimestamp(System.currentTimeMillis());
+        message.setExpireAt(Long.MAX_VALUE);
+        gossipManager.gossipPerNodeData(message);
+        LOGGER.info("Published tensor-parallel capacity node={} deployment={} slots={}", localNodeId(),
+                deploymentSpec.deploymentId(), deploymentSpec.maxRanksPerNode());
     }
 
     public TensorParallelDeploymentSpec findDeploymentSpec() {
@@ -169,37 +191,54 @@ public class GossipParallelMembership implements AutoCloseable {
     }
 
     public List<String> candidateNodeIds() {
-        Crdt<?, ?> crdt = gossipManager.findCrdt(deploymentSpec.candidatesKey());
-        if (!(crdt instanceof OrSet<?> set)) {
-            return List.of();
-        }
-        List<String> nodes = new ArrayList<>();
-        for (Object value : set.value()) {
-            nodes.add(String.valueOf(value));
-        }
-        Collections.sort(nodes);
-        return nodes;
+        return liveCapacities().stream().map(TensorParallelNodeCapacity::nodeId).sorted().toList();
     }
 
     public TensorParallelTopology topology() {
-        List<String> candidates = candidateNodeIds();
+        List<TensorParallelNodeCapacity> capacities = liveCapacities();
         List<String> activeRankAssignments = new ArrayList<>();
         List<String> standby = new ArrayList<>();
-        for (String candidate : candidates) {
+        int availableSlots = 0;
+        for (TensorParallelNodeCapacity capacity : capacities) {
+            availableSlots += capacity.slots();
             if (activeRankAssignments.size() < deploymentSpec.requestedNodes()) {
                 int remaining = deploymentSpec.requestedNodes() - activeRankAssignments.size();
-                int ranks = Math.min(deploymentSpec.maxRanksPerNode(), remaining);
+                int ranks = Math.min(capacity.slots(), remaining);
                 for (int i = 0; i < ranks; i++) {
-                    activeRankAssignments.add(candidate);
+                    activeRankAssignments.add(capacity.nodeId());
                 }
             } else {
-                standby.add(candidate);
+                standby.add(capacity.nodeId());
             }
         }
-        return new TensorParallelTopology(deploymentSpec.deploymentId(), deploymentSpec.requestedNodes(),
+        return new TensorParallelTopology(deploymentSpec.deploymentId(), availableSlots,
                 activeRankAssignments, standby,
-                TensorParallelTopology.assignmentHash(deploymentSpec.deploymentId(), deploymentSpec.requestedNodes(),
+                TensorParallelTopology.assignmentHash(deploymentSpec.deploymentId(), availableSlots,
                         activeRankAssignments));
+    }
+
+    private List<TensorParallelNodeCapacity> liveCapacities() {
+        List<String> liveNodeIds = new ArrayList<>();
+        liveNodeIds.add(localNodeId());
+        for (LocalMember member : liveMembers()) {
+            liveNodeIds.add(member.getId());
+        }
+        return liveNodeIds.stream().distinct().sorted()
+                .map(this::findCapacity)
+                .filter(capacity -> capacity != null)
+                .toList();
+    }
+
+    private TensorParallelNodeCapacity findCapacity(String nodeId) {
+        PerNodeDataMessage message = gossipManager.findPerNodeGossipData(nodeId, deploymentSpec.capacityKey());
+        if (message == null || message.getPayload() == null) {
+            return null;
+        }
+        Object payload = message.getPayload();
+        if (payload instanceof TensorParallelNodeCapacity capacity) {
+            return capacity;
+        }
+        return null;
     }
 
     public void voteForLeader() {
@@ -240,6 +279,10 @@ public class GossipParallelMembership implements AutoCloseable {
 
     private void coordinateAssignment() {
         try {
+            if (assignmentMode == TensorParallelAssignmentMode.MANUAL) {
+                coordinateManualAssignment();
+                return;
+            }
             while (!closed && candidateNodeIds().size() < deploymentSpec.minimumPhysicalNodes()) {
                 Thread.sleep(100);
             }
@@ -255,6 +298,9 @@ public class GossipParallelMembership implements AutoCloseable {
                 publishAssignmentAsLeader();
             }
             while (!closed && findAssignment() == null) {
+                if (localNodeId().equals(electedLeader())) {
+                    publishAssignmentAsLeader();
+                }
                 Thread.sleep(100);
             }
             startCollectiveServerIfLeader();
@@ -262,10 +308,28 @@ public class GossipParallelMembership implements AutoCloseable {
                 Thread.sleep(100);
             }
             startWorkerIfReady();
+            monitorWorkerAssignment();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } catch (RuntimeException e) {
             LOGGER.warn("Tensor-parallel assignment coordination failed", e);
+        }
+    }
+
+    private void coordinateManualAssignment() throws InterruptedException {
+        while (!closed && findAssignment() == null) {
+            Thread.sleep(100);
+        }
+        if (closed) {
+            return;
+        }
+        startCollectiveServerIfLeader();
+        while (!closed && findCollectiveUri() == null) {
+            Thread.sleep(100);
+        }
+        if (workerCandidate) {
+            startWorkerIfReady();
+            monitorWorkerAssignment();
         }
     }
 
@@ -275,13 +339,13 @@ public class GossipParallelMembership implements AutoCloseable {
         }
         if (collectiveTransport.equals("netty")) {
             NettyTensorParallelCollectiveServer server = new NettyTensorParallelCollectiveServer(
-                    new InetSocketAddress(advertiseHost, 0), Duration.ofSeconds(30));
+                    new InetSocketAddress(runtimeHost, 0), Duration.ofSeconds(30));
             server.start();
             collectiveServer = server;
             collectiveServerUri = server.uri();
         } else {
             HttpTensorParallelCollectiveServer server = new HttpTensorParallelCollectiveServer(
-                    new InetSocketAddress(advertiseHost, 0), Duration.ofSeconds(30));
+                    new InetSocketAddress(runtimeHost, 0), Duration.ofSeconds(30));
             server.start();
             collectiveServer = server;
             collectiveServerUri = server.uri();
@@ -295,17 +359,67 @@ public class GossipParallelMembership implements AutoCloseable {
         while (!closed && rankBuilder == null) {
             wait(100);
         }
-        if (closed || worker != null || rankBuilder == null) {
+        if (closed || rankBuilder == null) {
             return;
         }
-        LOGGER.info("Starting tensor-parallel worker node={} deployment={} localRanks={} advertiseHost={}",
-                localNodeId(), deploymentSpec.deploymentId(), localRanks(), advertiseHost);
-        worker = TensorParallelWorker.start(rankBuilder, this, tensorParallelCollectivesFactory(), advertiseHost);
+        reconcileWorkerForCurrentAssignment();
+    }
+
+    private void monitorWorkerAssignment() throws InterruptedException {
+        while (!closed) {
+            Thread.sleep(500);
+            reconcileWorkerIfReady();
+        }
+    }
+
+    private synchronized void reconcileWorkerIfReady() {
+        if (closed || rankBuilder == null) {
+            return;
+        }
+        reconcileWorkerForCurrentAssignment();
+    }
+
+    private void reconcileWorkerForCurrentAssignment() {
+        TensorParallelAssignment assignment = findAssignment();
+        List<Integer> desiredRanks = assignment == null ? List.of() : assignment.ranksForNode(localNodeId());
+        int desiredSize = assignment == null ? 0 : assignment.tensorParallelSize();
+        if (desiredRanks.equals(workerRanks) && desiredSize == workerTensorParallelSize) {
+            return;
+        }
+        stopWorkerAndPublishEmptyEndpoints();
+        workerRanks = List.copyOf(desiredRanks);
+        workerTensorParallelSize = desiredSize;
+        if (desiredRanks.isEmpty()) {
+            LOGGER.info("Tensor-parallel worker has no local ranks node={} deployment={}",
+                    localNodeId(), deploymentSpec.deploymentId());
+            return;
+        }
+        LOGGER.info("Starting tensor-parallel worker node={} deployment={} localRanks={} runtimeHost={}",
+                localNodeId(), deploymentSpec.deploymentId(), desiredRanks, runtimeHost);
+        worker = TensorParallelWorker.start(rankBuilder, this, tensorParallelCollectivesFactory(), runtimeHost);
         LOGGER.info("Started tensor-parallel worker node={} deployment={} endpoints={}",
                 localNodeId(), deploymentSpec.deploymentId(), worker.endpoints());
     }
 
+    private void stopWorkerAndPublishEmptyEndpoints() {
+        if (worker != null) {
+            LOGGER.info("Stopping tensor-parallel worker node={} deployment={} servedRanks={}",
+                    localNodeId(), deploymentSpec.deploymentId(), workerRanks);
+            worker.close();
+            worker = null;
+        }
+        if (!workerRanks.isEmpty() || !findRankEndpoints(localNodeId()).isEmpty()) {
+            publishRankEndpoints(List.of());
+        }
+        workerRanks = List.of();
+        workerTensorParallelSize = 0;
+    }
+
     public String electedLeader() {
+        if (assignmentMode == TensorParallelAssignmentMode.MANUAL) {
+            TensorParallelAssignment assignment = findAssignment();
+            return assignment == null ? null : assignment.leaderNodeId();
+        }
         Crdt<?, ?> crdt = gossipManager.findCrdt(deploymentSpec.leaderVoteKey());
         if (!(crdt instanceof MajorityVote vote)) {
             return null;
@@ -320,6 +434,9 @@ public class GossipParallelMembership implements AutoCloseable {
     }
 
     public void publishAssignmentAsLeader() {
+        if (assignmentMode == TensorParallelAssignmentMode.MANUAL) {
+            throw new IllegalStateException("Automatic assignment publication is disabled in manual assignment mode");
+        }
         String leader = electedLeader();
         String localNodeId = gossipManager.getMyself().getId();
         if (!localNodeId.equals(leader)) {
@@ -327,11 +444,92 @@ public class GossipParallelMembership implements AutoCloseable {
                     + " leader=" + leader);
         }
         TensorParallelTopology topology = topology();
+        if (topology.tensorParallelSize() < deploymentSpec.requestedNodes()) {
+            LOGGER.info("Not publishing tensor-parallel assignment yet node={} deployment={} availableSlots={} requestedRanks={} activeNodes={}",
+                    localNodeId, deploymentSpec.deploymentId(), topology.availableSlots(), deploymentSpec.requestedNodes(),
+                    topology.activeNodeIds());
+            return;
+        }
         TensorParallelAssignment assignment = new TensorParallelAssignment(deploymentSpec.deploymentId(), leader,
                 topology.tensorParallelSize(), topology.assignmentHash(), topology.rankAssignments());
         publishSharedData(deploymentSpec.assignmentKey(), assignment);
         LOGGER.info("Published tensor-parallel assignment node={} deployment={} leader={} tensorParallelSize={} ranks={}",
                 localNodeId, deploymentSpec.deploymentId(), leader, assignment.tensorParallelSize(), assignment.ranks());
+    }
+
+    public synchronized TensorParallelManualAssignment assignRankManually(String nodeId, int rank) {
+        if (assignmentMode != TensorParallelAssignmentMode.MANUAL) {
+            throw new IllegalStateException("Manual rank assignment requires MANUAL assignment mode");
+        }
+        validateManualRank(nodeId, rank);
+        TensorParallelManualAssignment draft = manualAssignmentDraft.withRank(nodeId, rank);
+        validateManualAssignment(draft);
+        manualAssignmentDraft = draft;
+        publishSharedData(deploymentSpec.manualAssignmentKey(), draft);
+        LOGGER.info("Published tensor-parallel manual assignment draft node={} deployment={} assignedRank={} assignedNode={} draft={}",
+                localNodeId(), deploymentSpec.deploymentId(), rank, nodeId, draft.ranks());
+        if (draft.complete(deploymentSpec.requestedNodes())) {
+            publishManualAssignment(draft);
+        }
+        return draft;
+    }
+
+    public TensorParallelManualAssignment findManualAssignment() {
+        if (!manualAssignmentDraft.ranks().isEmpty()) {
+            return manualAssignmentDraft;
+        }
+        Object payload = findSharedData(deploymentSpec.manualAssignmentKey());
+        if (payload instanceof TensorParallelManualAssignment assignment) {
+            manualAssignmentDraft = assignment;
+            return assignment;
+        }
+        return new TensorParallelManualAssignment(deploymentSpec.deploymentId(), List.of());
+    }
+
+    private void publishManualAssignment(TensorParallelManualAssignment draft) {
+        List<String> activeRankAssignments = draft.ranks().stream()
+                .map(TensorParallelRankAssignment::nodeId)
+                .toList();
+        int availableSlots = liveCapacities().stream().mapToInt(TensorParallelNodeCapacity::slots).sum();
+        TensorParallelAssignment assignment = new TensorParallelAssignment(deploymentSpec.deploymentId(), localNodeId(),
+                deploymentSpec.requestedNodes(), TensorParallelTopology.assignmentHash(deploymentSpec.deploymentId(),
+                availableSlots, activeRankAssignments), draft.ranks());
+        publishSharedData(deploymentSpec.assignmentKey(), assignment);
+        LOGGER.info("Published tensor-parallel manual assignment node={} deployment={} tensorParallelSize={} ranks={}",
+                localNodeId(), deploymentSpec.deploymentId(), assignment.tensorParallelSize(), assignment.ranks());
+        startCollectiveServerIfLeader();
+    }
+
+    private void validateManualRank(String nodeId, int rank) {
+        if (rank < 0 || rank >= deploymentSpec.requestedNodes()) {
+            throw new IllegalArgumentException("rank must be between 0 and " + (deploymentSpec.requestedNodes() - 1));
+        }
+        TensorParallelNodeCapacity capacity = findLiveCapacity(nodeId);
+        if (capacity == null) {
+            throw new IllegalArgumentException("No live tensor-parallel capacity found for node " + nodeId);
+        }
+    }
+
+    private void validateManualAssignment(TensorParallelManualAssignment draft) {
+        Map<String, Integer> ranksPerNode = new LinkedHashMap<>();
+        for (TensorParallelRankAssignment rank : draft.ranks()) {
+            TensorParallelNodeCapacity capacity = findLiveCapacity(rank.nodeId());
+            if (capacity == null) {
+                throw new IllegalArgumentException("No live tensor-parallel capacity found for node " + rank.nodeId());
+            }
+            int count = ranksPerNode.merge(rank.nodeId(), 1, Integer::sum);
+            if (count > capacity.slots()) {
+                throw new IllegalArgumentException("Manual assignment gives node " + rank.nodeId() + " " + count
+                        + " ranks, capacity=" + capacity.slots());
+            }
+        }
+    }
+
+    private TensorParallelNodeCapacity findLiveCapacity(String nodeId) {
+        return liveCapacities().stream()
+                .filter(capacity -> capacity.nodeId().equals(nodeId))
+                .findFirst()
+                .orElse(null);
     }
 
     public TensorParallelAssignment findAssignment() {
@@ -346,6 +544,10 @@ public class GossipParallelMembership implements AutoCloseable {
                     + deploymentSpec.deploymentId());
         }
         return assignment;
+    }
+
+    public TensorParallelDeploymentSpec deploymentSpec() {
+        return deploymentSpec;
     }
 
     public URI findCollectiveUri() {
@@ -461,6 +663,10 @@ public class GossipParallelMembership implements AutoCloseable {
         gossipManager.merge(message);
     }
 
+    void mergeSharedDataForTest(String key, Crdt<?, ?> payload) {
+        mergeSharedData(key, payload);
+    }
+
     @Override
     public void close() {
         closed = true;
@@ -476,8 +682,7 @@ public class GossipParallelMembership implements AutoCloseable {
             collectiveServer = null;
         }
         if (worker != null) {
-            worker.close();
-            worker = null;
+            stopWorkerAndPublishEmptyEndpoints();
         }
         gossipManager.shutdown();
     }

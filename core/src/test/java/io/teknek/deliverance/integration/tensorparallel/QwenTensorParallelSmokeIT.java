@@ -31,6 +31,7 @@ import java.util.UUID;
 import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class QwenTensorParallelSmokeIT {
@@ -47,6 +48,57 @@ public class QwenTensorParallelSmokeIT {
     @Tag("longtest")
     public void qwen06bDefaultNativeTpProviderTwoWorkersOneCoordinatorSimpleChatIsSane() throws Exception {
         runQwen06bSmoke(true, false);
+    }
+
+    @Test
+    @Tag("longtest")
+    public void qwen06bTwoWorkersPromptSurvivesWorkerRestart() throws Exception {
+        String cluster = "deliverance-qwen-tp-restart-" + UUID.randomUUID();
+        int basePort = 44_000 + Math.floorMod(cluster.hashCode(), 1_000);
+        URI node0Uri = new URI("udp://127.0.0.1:" + basePort);
+        URI node1Uri = new URI("udp://127.0.0.1:" + (basePort + 1));
+        URI node1RestartUri = new URI("udp://127.0.0.1:" + (basePort + 11));
+        List<Member> seedMembers = List.of(new RemoteMember(cluster, node0Uri, NODE_0),
+                new RemoteMember(cluster, node1Uri, NODE_1), new RemoteMember(cluster, node1RestartUri, NODE_1));
+        GossipSettings settings = gossipSettings();
+        ModelFetcher fetcher = new ModelFetcher("edwardcapriolo", "Qwen3-0.6B-JQ4");
+        TensorParallelDeploymentSpec deploymentSpec = new TensorParallelDeploymentSpec("qwen-restart", 2, 1);
+
+        try (TestNode node0 = createNode(fetcher, cluster, NODE_0, node0Uri, seedMembers, settings, deploymentSpec,
+                true);
+             TestNode node1 = createNode(fetcher, cluster, NODE_1, node1Uri, seedMembers, settings, deploymentSpec,
+                     true)) {
+            waitForReady(List.of(node0, node1), deploymentSpec);
+            try (Coordinator coordinator = coordinator(fetcher, node0.membership(), true)) {
+                assertPrompt(coordinator);
+                String oldNode1Endpoint = node0.membership().findRankEndpoints(NODE_1).stream()
+                        .findFirst()
+                        .orElseThrow(() -> new AssertionError("node-1 endpoint was not visible before restart"))
+                        .uri();
+
+                node1.close();
+                eventually(() -> portReleased(basePort + 1), Duration.ofSeconds(10));
+
+                try (TestNode restartedNode1 = createNode(fetcher, cluster, NODE_1, node1RestartUri, seedMembers,
+                        settings, deploymentSpec, true)) {
+                    eventually(() -> {
+                        return node0.membership().findRankEndpoints(NODE_1).stream()
+                                .anyMatch(endpoint -> !endpoint.uri().equals(oldNode1Endpoint));
+                    }, Duration.ofSeconds(60));
+                    eventually(() -> {
+                        try {
+                            return node0.membership().rankEndpointsForAssignment().stream()
+                                    .noneMatch(endpoint -> endpoint.uri().equals(oldNode1Endpoint));
+                        } catch (RuntimeException e) {
+                            return false;
+                        }
+                    }, Duration.ofSeconds(60));
+                    try (TensorParallelGenerationGroup recoveredGroup = node0.membership().openGenerationGroup()) {
+                        assertPrompt(new Coordinator(coordinator.coordinatorModel(), null, recoveredGroup));
+                    }
+                }
+            }
+        }
     }
 
     @Test
@@ -90,15 +142,10 @@ public class QwenTensorParallelSmokeIT {
         TensorParallelDeploymentSpec deploymentSpec = new TensorParallelDeploymentSpec("qwen-smoke", 4, 2);
         try (TestNode node0 = createNode(fetcher, cluster, NODE_0, node0Uri, seedMembers, settings, deploymentSpec,
                 defaultProvider);
-             TestNode node1 = createNode(fetcher, cluster, NODE_1, node1Uri, seedMembers, settings, deploymentSpec,
-                     defaultProvider)) {
+            TestNode node1 = createNode(fetcher, cluster, NODE_1, node1Uri, seedMembers, settings, deploymentSpec,
+                      defaultProvider)) {
             List<TestNode> nodes = List.of(node0, node1);
-            eventually(() -> allMembersVisible(nodes), Duration.ofSeconds(10));
-            eventually(() -> allCandidatesVisible(nodes, deploymentSpec.minimumPhysicalNodes()), Duration.ofSeconds(10));
-            eventually(() -> allNodesSeeLeader(nodes, NODE_0), Duration.ofSeconds(10));
-            eventually(() -> allNodesSeeAssignment(nodes), Duration.ofSeconds(10));
-            eventually(() -> allNodesSeeCollectiveUri(nodes), Duration.ofSeconds(10));
-            eventually(() -> allNodesSeeRankEndpoints(nodes), Duration.ofSeconds(60));
+            waitForReady(nodes, deploymentSpec);
 
             TensorParallelGenerationGroup group = node0.membership().openGenerationGroup();
             MetricRegistry coordinatorMetrics = new MetricRegistry();
@@ -171,6 +218,53 @@ public class QwenTensorParallelSmokeIT {
         }
     }
 
+    private static Coordinator coordinator(ModelFetcher fetcher, GossipParallelMembership membership,
+            boolean defaultProvider) {
+        MetricRegistry coordinatorMetrics = new MetricRegistry();
+        WrappedForkJoinPool coordinatorPool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+        TensorAllocator coordinatorAllocator = new ArrayQueueTensorAllocator(coordinatorMetrics);
+        AbstractModel coordinatorModel = coordinatorBuilder(fetcher, coordinatorMetrics, coordinatorPool,
+                coordinatorAllocator, defaultProvider).buildLocalTransformerModel();
+        TensorParallelGenerationGroup group = membership.openGenerationGroup();
+        return new Coordinator(coordinatorModel, coordinatorPool, group);
+    }
+
+    private static void assertPrompt(Coordinator coordinator) {
+        var prompt = coordinator.coordinatorModel().promptSupport().get().builder()
+                .addTemplateArg("enable_thinking", true)
+                .addUserMessage("hi")
+                .build();
+        Response response = coordinator.group().generate(UUID.randomUUID(), coordinator.coordinatorModel(), prompt, new GeneratorParameters()
+                        .withNtokens(64)
+                        .withMaxTokens(16)
+                        .withTemperature(0.0f)
+                        .withSeed(123),
+                new DoNothingGenerateEvent());
+        assertNotNull(response);
+        assertFalse(response.generatedTokens.isEmpty());
+    }
+
+    private static void waitForReady(List<TestNode> nodes, TensorParallelDeploymentSpec deploymentSpec) throws Exception {
+        GossipParallelMembership observer = nodes.getFirst().membership();
+        eventually(() -> observer.findAssignment() != null, Duration.ofSeconds(60));
+        eventually(() -> observer.findCollectiveUri() != null, Duration.ofSeconds(60));
+        eventually(() -> {
+            try {
+                return observer.rankEndpointsForAssignment().size() == deploymentSpec.requestedNodes();
+            } catch (RuntimeException e) {
+                return false;
+            }
+        }, Duration.ofSeconds(120));
+    }
+
+    private static boolean portReleased(int port) {
+        try (java.net.ServerSocket ignored = new java.net.ServerSocket(port)) {
+            return true;
+        } catch (java.io.IOException e) {
+            return false;
+        }
+    }
+
     private static AutoModelForCausaLm.Builder coordinatorBuilder(ModelFetcher fetcher, MetricRegistry metrics,
             WrappedForkJoinPool pool, TensorAllocator allocator, boolean defaultProvider) {
         AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(fetcher)
@@ -240,8 +334,14 @@ public class QwenTensorParallelSmokeIT {
     }
 
     private static boolean allNodesSeeRankEndpoints(List<TestNode> nodes) {
-        return nodes.stream().allMatch(observer -> nodes.stream()
-                .allMatch(owner -> observer.membership().findRankEndpoints(owner.membership().localNodeId()).size() == 2));
+        int expectedRanks = nodes.getFirst().membership().requireAssignment().tensorParallelSize();
+        return nodes.stream().allMatch(observer -> {
+            try {
+                return observer.membership().rankEndpointsForAssignment().size() == expectedRanks;
+            } catch (RuntimeException e) {
+                return false;
+            }
+        });
     }
 
     private static void eventually(BooleanSupplier condition, Duration timeout) throws InterruptedException {
@@ -265,6 +365,17 @@ public class QwenTensorParallelSmokeIT {
         public void close() {
             model.close();
             pool.close();
+        }
+    }
+
+    private record Coordinator(AbstractModel coordinatorModel, WrappedForkJoinPool pool, TensorParallelGenerationGroup group) implements AutoCloseable {
+        @Override
+        public void close() {
+            group.close();
+            if (pool != null) {
+                coordinatorModel.close();
+                pool.close();
+            }
         }
     }
 }

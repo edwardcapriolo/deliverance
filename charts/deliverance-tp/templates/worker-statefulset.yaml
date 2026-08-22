@@ -36,8 +36,6 @@ spec:
             - $(NODE_ID)
             - --uri
             - udp://$(POD_IP):{{ .Values.tensorParallel.gossipPort }}
-            - --advertise-host
-            - $(POD_IP)
 {{ include "deliverance-tp.workerSeedArgs" . | indent 12 }}
 {{ include "deliverance-tp.workerCommonArgs" . | indent 12 }}
           env:
