@@ -83,7 +83,7 @@ cache:
   storageClassName: ""
   accessModes:
     - ReadWriteMany
-  size: 1Ti
+  size: 100Gi
   filestore:
     createStorageClass: true
     tier: standard

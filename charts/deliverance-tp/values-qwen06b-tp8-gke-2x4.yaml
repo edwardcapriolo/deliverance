@@ -28,4 +28,4 @@ podSecurityContext:
 
 cache:
   # Shared Filestore CSI RWX cache mounted by coordinator and all workers.
-  size: 1Ti
+  size: 100Gi

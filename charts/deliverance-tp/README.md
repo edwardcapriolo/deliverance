@@ -1,6 +1,6 @@
 # Deliverance Tensor Parallel Helm Chart
 
-This chart starts a Deliverance tensor-parallel deployment using the current UDP gossip transport.
+This chart starts a Deliverance tensor-parallel deployment using the current gossip transport.
 
 Default topology:
 
@@ -9,6 +9,7 @@ Default topology:
 * 4 tensor-parallel ranks total.
 * 1 rank per worker pod.
 * `tjake/gemma-2-2b-it-JQ4` by default, with Qwen values available in `values-qwen06b-tp8.yaml`.
+* One shared ReadWriteMany model cache PVC mounted by the coordinator and workers.
 
 ## Image Requirements
 
@@ -27,7 +28,7 @@ Override `workers.command`, `workers.baseArgs`, `coordinator.command`, and `coor
 ```sh
 helm install deliverance-tp charts/deliverance-tp \
   --set image.repository=ecapriolo/deliverance \
-  --set image.tag=0.0.13
+  --set image.tag=0.0.14-SNAPSHOT
 ```
 
 Install Qwen3 0.6B TP8 values:
@@ -38,9 +39,8 @@ helm upgrade --install deliverance-qwen charts/deliverance-tp \
   -f charts/deliverance-tp/values-qwen06b-tp8.yaml
 ```
 
-For GKE, add the GKE overlay. It pins pods to amd64 nodes for the current published image and uses the GKE
-`standard-rwo` Persistent Disk storage class. It also names installed resources around `model-testing` so the
-test resources and PVCs are easy to identify and delete:
+For GKE, add the GKE overlay. It pins pods to amd64 nodes, uses a shared Filestore CSI RWX cache, and names installed
+resources around `model-testing` so test resources are easy to identify:
 
 ```sh
 helm upgrade --install model-testing charts/deliverance-tp \
@@ -57,10 +57,11 @@ kubectl port-forward svc/deliverance-tp-deliverance-tp-coordinator 8080:8080
 
 Then use the normal Deliverance web API.
 
+See [GKE_QWEN_TP8.md](GKE_QWEN_TP8.md) for the full coordinator-first install, shared Filestore cache setup, scale-up,
+diagnostics, and query runbook.
+
 ## Notes
 
 * Kubernetes supports UDP Services; this chart uses UDP gossip on port `42606`.
-* The worker StatefulSet uses stable DNS names as gossip seeds.
-* Rank and collective HTTP endpoints are currently dynamically allocated and published through gossip.
-* If pod-to-pod direct HTTP to published pod host/port does not work in your cluster, Deliverance will need advertised host/port support for rank and collective servers.
-* HTTP gossip exists in newer local Gossip source but is not available in the current released Gossip dependency used by Deliverance.
+* Rank HTTP endpoints and collective endpoints are dynamically allocated and published through gossip.
+* The shared cache uses GKE Filestore CSI. The Filestore CSI driver and `file.googleapis.com` must be enabled, and the StorageClass network must match the cluster VPC.

@@ -163,4 +163,8 @@ automatic local worker startup, four HTTP rank endpoints, and `TensorParallelGen
 * Use one deployment id per logical model deployment.
 * Wait for all rank endpoints before serving traffic; `openGenerationGroup()` requires a completed assignment and rank
   endpoint publication.
-* Treat non-Gemma2 model families as unsupported until they have explicit tensor-parallel tests.
+* Workers publish capacity into gossip. Assignment is based on live capacity, not a static candidate list.
+* Workers reconcile assignment changes by stopping old rank servers, publishing empty endpoints if needed, and starting new assigned ranks.
+* Automatic assignment is the default. Manual assignment is available through `/tp/assign?nodeId=<gossip-id>&rank=<rank>` as an operational fallback.
+* For Kubernetes model caches, prefer a shared ReadWriteMany filesystem such as GKE Filestore so workers do not all download the same model independently.
+* Qwen3 0.6B JQ4 has been smoke-tested on GKE with TP8. Treat broader non-Gemma2 model families as unsupported until they have explicit tensor-parallel tests.

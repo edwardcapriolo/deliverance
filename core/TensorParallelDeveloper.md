@@ -120,12 +120,26 @@ can change floating-point reduction order.
 
 ## Current Limits
 
-* Gemma2 is the only model family with a full passing end-to-end tensor-parallel generation test.
+* Gemma2 is the primary model family with a full local end-to-end tensor-parallel generation test.
+* Qwen3 0.6B JQ4 has been exercised on GKE with TP8 and a short `/chat/completions` request.
 * Tensor-parallel generation does not currently expose local prefix-cache reuse through `GenerationBackend.prefixLength()`.
 * Runtime tensor payloads currently support `DType.F32`.
-* Worker readiness state and assignment-hash readiness checks are still follow-up hardening work.
+* Kubernetes performance depends heavily on node size, CPU contention, rank count, and transport overhead.
+* Gossip liveness remains operationally important. Deliverance depends on `io.teknek.gossip` handling direct contact from down members and same-id/new-URI replacement correctly.
 * Broader model support needs family-specific review. GPT2 packed QKV and MoE models are not expected to work without
   custom policies.
+
+## Kubernetes Additions
+
+Recent runtime hardening added:
+
+* capacity-based assignment using `TensorParallelNodeCapacity`
+* typed rank/connect/request/operation timeouts
+* explicit collective request sessions and wire-key isolation
+* worker assignment reconciliation after rank changes
+* coordinator and worker diagnostics endpoints for status, gossip, and rank endpoints
+* manual assignment mode through the Spring coordinator endpoint
+* shared GKE Filestore RWX model cache support in the Helm chart
 
 ## Tests
 

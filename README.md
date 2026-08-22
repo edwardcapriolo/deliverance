@@ -64,6 +64,7 @@ Generation:
 - [Prefix cache MSE TurboQuant](core/prefix_cache_turboquant.md) Documents experimental compressed prefix snapshots and tradeoffs
 - [Tensor parallel guide](core/TensorParallelGuide.md) Explains how to enable tensor-parallel generation for Gemma2
 - [Tensor parallel developer notes](core/TensorParallelDeveloper.md) Details the implementation changes behind tensor parallelism
+- [GKE Qwen TP8 runbook](charts/deliverance-tp/GKE_QWEN_TP8.md) Shows the Helm/GKE setup for Qwen3 0.6B with shared Filestore cache
 - [Build and test guide](build.md) Explains normal builds, Java-only native builds, native logs, and test flags
 
 
