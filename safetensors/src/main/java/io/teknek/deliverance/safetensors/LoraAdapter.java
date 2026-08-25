@@ -1,7 +1,7 @@
 package io.teknek.deliverance.safetensors;
 
-import com.codahale.metrics.MetricRegistry;
-import com.codahale.metrics.Timer;
+import io.dropwizard.metrics5.MetricRegistry;
+import io.dropwizard.metrics5.Timer;
 import io.teknek.deliverance.safetensors.fetch.LoraAdapterModelFetcher;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorInfo;

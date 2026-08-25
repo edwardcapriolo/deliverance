@@ -1,7 +1,7 @@
 package io.teknek.deliverance.generator;
 
-import com.codahale.metrics.MetricRegistry;
-import com.codahale.metrics.Timer;
+import io.dropwizard.metrics5.MetricRegistry;
+import io.dropwizard.metrics5.Timer;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;

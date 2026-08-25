@@ -1,7 +1,7 @@
 
 package io.teknek.deliverance.model.bert;
 
-import com.codahale.metrics.MetricRegistry;
+import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.classifier.ClassifyOutput;
 import io.teknek.deliverance.embedding.PoolingLayer;
@@ -26,7 +26,6 @@ import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensorlib.TensorPlan;
-import io.teknek.deliverance.tensorlib.TensorRuntimeGlobal;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 
 import java.util.Arrays;
@@ -117,7 +116,7 @@ public class BertModel extends AbstractModel {
 
     TensorPlan.Tensor bertEmbeddingGatherAddPlan(BertInput input, AbstractTensor embedding) {
         TensorPlan plan = new TensorPlan(configurableTensorProvider.get(), getPool(), metricRegistry,
-                TensorRuntimeGlobal.get(metricRegistry, getTensorRuntimeMode(), getPool().getCoreCount()));
+                getTensorRuntime());
         return plan.fuseRowsIntStream("bert_embeddings.gather_add", embedding.shape())
                 .read("word_embeddings", plan.immutable("model.weights.embeddings.word_embeddings.weight", wordEmbeddings))
                 .read("token_type_embeddings", plan.immutable("model.weights.embeddings.token_type_embeddings.weight", tokenTypeEmbeddings))

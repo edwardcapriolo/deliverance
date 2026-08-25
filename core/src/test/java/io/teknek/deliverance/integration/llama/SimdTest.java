@@ -1,6 +1,6 @@
 package io.teknek.deliverance.integration.llama;
 
-import com.codahale.metrics.MetricRegistry;
+import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;

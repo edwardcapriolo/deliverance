@@ -1,6 +1,6 @@
 package io.teknek.deliverance;
 
-import com.codahale.metrics.ConsoleReporter;
+import io.dropwizard.metrics5.ConsoleReporter;
 import io.teknek.deliverance.embedding.PoolingType;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForSequenceClassification;

@@ -1,6 +1,6 @@
 package io.teknek.deliverance.model;
 
-import com.codahale.metrics.Histogram;
+import io.dropwizard.metrics5.Histogram;
 import io.teknek.deliverance.generator.LayerNorm;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.tensor.AbstractTensor;
@@ -74,11 +74,12 @@ public class GeneratorSampler {
             long afterForward = System.nanoTime();
             forward1.update(Math.abs(afterForward - start));
 
-            VectorMath.pchunk(0, abstractModel.config.vocabularySize, (chunkStart, chunkSize) -> {
+            abstractModel.runChunks("sampler.output_projection", 0, abstractModel.config.vocabularySize,
+                    abstractModel.configurableTensorProvider.get().parallelSplitSize(), Optional.of(embedding), (chunkStart, chunkSize) -> {
                 abstractModel.configurableTensorProvider.get()
                         .dotProductChunk(logits, embedding, abstractModel.sampleOutput.getOutputLogitsWeights(), 0,
                                 abstractModel.config.embeddingLength, chunkStart, chunkSize);
-            }, abstractModel.configurableTensorProvider.get().parallelSplitSize(), abstractModel.getPool());
+            });
             long afterDotProductChunk = System.nanoTime();
             dotprod2.update(Math.abs(afterDotProductChunk - afterForward));
 

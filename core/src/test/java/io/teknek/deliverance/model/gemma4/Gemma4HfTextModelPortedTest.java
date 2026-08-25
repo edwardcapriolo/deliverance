@@ -1,6 +1,6 @@
 package io.teknek.deliverance.model.gemma4;
 
-import com.codahale.metrics.MetricRegistry;
+import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;

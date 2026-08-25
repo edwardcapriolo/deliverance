@@ -1,6 +1,6 @@
 package io.teknek.deliverance.model;
 
-import com.codahale.metrics.Timer;
+import io.dropwizard.metrics5.Timer;
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.generator.FeedForward;
 import io.teknek.deliverance.math.ActivationFunction;
@@ -117,7 +117,8 @@ public class MixtureOfExpertsBlock implements FeedForward {
                     batchResults[1] = buf2;
 
                     try (Timer.Context ignoredGateUp = InferenceProfiler.timer(model.getMetricRegistry(), "mixtureofexpertsblock.expert_gate_up_projection").time()) {
-                        VectorMath.pchunk(0, hiddenLength, (chunkStart, chunkSize) -> {
+                        model.runChunks("mixtureofexpertsblock.expert_gate_up_projection", 0, hiddenLength,
+                                model.configurableTensorProvider.get().parallelSplitSize(), Optional.of(lnembSlice), (chunkStart, chunkSize) -> {
                             model.configurableTensorProvider.get()
                                     .dotProductBatchChunk(
                                             batchResults,
@@ -127,7 +128,7 @@ public class MixtureOfExpertsBlock implements FeedForward {
                                             model.config.embeddingLength,
                                             chunkStart,
                                             chunkSize);
-                        }, model.configurableTensorProvider.get().parallelSplitSize(), model.getPool());
+                        });
                     }
 
                     try (Timer.Context ignoredActivation = InferenceProfiler.timer(model.getMetricRegistry(), "mixtureofexpertsblock.expert_activation_multiply").time()) {
@@ -151,10 +152,11 @@ public class MixtureOfExpertsBlock implements FeedForward {
                     }
                     try (AbstractTensor bufq = downQuantize(buf)) {
                         try (Timer.Context ignoredDown = InferenceProfiler.timer(model.getMetricRegistry(), "mixtureofexpertsblock.expert_down_projection").time()) {
-                        VectorMath.pchunk(0, model.config.embeddingLength, (chunkStart, chunkSize) -> {
+                        model.runChunks("mixtureofexpertsblock.expert_down_projection", 0, model.config.embeddingLength,
+                                model.configurableTensorProvider.get().parallelSplitSize(), Optional.of(bufq), (chunkStart, chunkSize) -> {
                             model.configurableTensorProvider.get()
                                     .dotProductChunk(moeResult, bufq, projectionWeight, 0, hiddenLength, chunkStart, chunkSize);
-                        }, model.configurableTensorProvider.get().parallelSplitSize(), model.getPool());
+                        });
                         }
                     }
 

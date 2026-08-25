@@ -9,6 +9,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -28,6 +29,8 @@ public record AutoModelConfig(
         Optional<Boolean> download,
         Optional<Integer> maxBatchSize,
         Optional<TensorRuntimeMode> tensorRuntimeMode,
+        Optional<Map<TensorProviderKind, Integer>> parallelSplitSizeFixed,
+        Optional<Map<TensorProviderKind, Double>> parallelSplitSizeMultiplier,
         Optional<Boolean> tensorPlanTrace,
         Optional<KvBufferCache> kvBufferCache,
         Optional<QuantizeOnDemand> quantizeOnDemand) {
@@ -43,6 +46,8 @@ public record AutoModelConfig(
         download = download == null ? Optional.empty() : download;
         maxBatchSize = maxBatchSize == null ? Optional.empty() : maxBatchSize;
         tensorRuntimeMode = tensorRuntimeMode == null ? Optional.empty() : tensorRuntimeMode;
+        parallelSplitSizeFixed = parallelSplitSizeFixed == null ? Optional.empty() : parallelSplitSizeFixed;
+        parallelSplitSizeMultiplier = parallelSplitSizeMultiplier == null ? Optional.empty() : parallelSplitSizeMultiplier;
         tensorPlanTrace = tensorPlanTrace == null ? Optional.empty() : tensorPlanTrace;
         kvBufferCache = kvBufferCache == null ? Optional.empty() : kvBufferCache;
         quantizeOnDemand = quantizeOnDemand == null ? Optional.empty() : quantizeOnDemand;

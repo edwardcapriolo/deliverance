@@ -7,7 +7,6 @@ import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensorlib.TensorPlan;
-import io.teknek.deliverance.tensorlib.TensorRuntimeGlobal;
 
 import java.util.Collections;
 import java.util.List;
@@ -82,12 +81,12 @@ public class VariableMLPBlock implements FeedForward {
         ) {
             batchResults[0] = gate;
             batchResults[1] = up;
-            VectorMath.pchunk(0, hiddenLength, (chunkStart, chunkSize) -> configurableTensorProvider.get()
-                    .dotProductBatchChunk(batchResults, input, batchWeights, 0, model.getConfig().embeddingLength, chunkStart, chunkSize),
-                    configurableTensorProvider.get().parallelSplitSize(), model.getPool());
+            model.runChunks("variablemlpblock.gate_up_projection", 0, hiddenLength,
+                    configurableTensorProvider.get().parallelSplitSize(), Optional.of(input), (chunkStart, chunkSize) -> configurableTensorProvider.get()
+                    .dotProductBatchChunk(batchResults, input, batchWeights, 0, model.getConfig().embeddingLength, chunkStart, chunkSize));
 
             TensorPlan plan = new TensorPlan(configurableTensorProvider.get(), model.getPool(), model.getMetricRegistry(),
-                    TensorRuntimeGlobal.get(model.getMetricRegistry()));
+                    model.getTensorRuntime());
             applyActivationSparsity(plan, gate, batchSize);
             model.getMetricRegistry().counter("variablemlpblock.tensorplan.intstream_activation_multiply").inc();
             TensorPlan.Tensor multiplyPlan = plan.fuseColumnsIntStream("gate", gate.shape())
@@ -106,9 +105,9 @@ public class VariableMLPBlock implements FeedForward {
             try (AbstractTensor gateQ = model.maybeQuantizeReadOnly(gate,
                     "variablemlpblock.maybe_quantize.down_projection")) {
                 AbstractTensor result = model.makeTensor(batchSize, model.getConfig().embeddingLength);
-                VectorMath.pchunk(0, model.getConfig().embeddingLength, (chunkStart, chunkSize) -> configurableTensorProvider.get()
-                        .dotProductChunk(result, gateQ, projectionWeights, 0, hiddenLength, chunkStart, chunkSize),
-                        configurableTensorProvider.get().parallelSplitSize(), model.getPool());
+                model.runChunks("variablemlpblock.down_projection", 0, model.getConfig().embeddingLength,
+                        configurableTensorProvider.get().parallelSplitSize(), Optional.of(gateQ), (chunkStart, chunkSize) -> configurableTensorProvider.get()
+                        .dotProductChunk(result, gateQ, projectionWeights, 0, hiddenLength, chunkStart, chunkSize));
                 tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(result)));
                 return result;
             }

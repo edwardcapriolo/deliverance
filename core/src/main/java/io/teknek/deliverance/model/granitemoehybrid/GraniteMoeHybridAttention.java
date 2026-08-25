@@ -1,6 +1,6 @@
 package io.teknek.deliverance.model.granitemoehybrid;
 
-import com.codahale.metrics.MetricRegistry;
+import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.generator.CausalSelfAttention;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.tensor.AbstractTensor;

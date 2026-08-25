@@ -1,6 +1,6 @@
 package io.teknek.deliverance.model;
 
-import com.codahale.metrics.Timer;
+import io.dropwizard.metrics5.Timer;
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.generator.FinishReason;
 import io.teknek.deliverance.generator.GeneratorParameters;

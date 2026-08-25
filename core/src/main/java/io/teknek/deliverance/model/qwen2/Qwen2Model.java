@@ -16,7 +16,7 @@
 package io.teknek.deliverance.model.qwen2;
 
 
-import com.codahale.metrics.MetricRegistry;
+import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.CausalSelfAttention;
 import io.teknek.deliverance.generator.MLPBlock;

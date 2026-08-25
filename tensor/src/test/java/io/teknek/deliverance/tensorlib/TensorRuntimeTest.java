@@ -1,6 +1,6 @@
 package io.teknek.deliverance.tensorlib;
 
-import com.codahale.metrics.MetricRegistry;
+import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorLocality;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;

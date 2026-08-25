@@ -1,10 +1,10 @@
 package io.teknek.deliverance.embedding;
 
-import com.codahale.metrics.Counter;
-import com.codahale.metrics.Histogram;
-import com.codahale.metrics.MetricRegistry;
-import com.codahale.metrics.Snapshot;
-import com.codahale.metrics.Timer;
+import io.dropwizard.metrics5.Counter;
+import io.dropwizard.metrics5.Histogram;
+import io.dropwizard.metrics5.MetricRegistry;
+import io.dropwizard.metrics5.Snapshot;
+import io.dropwizard.metrics5.Timer;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.grace.Encoding;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
@@ -146,19 +146,19 @@ class EmbeddingInferenceProfilerBenchmarkTest {
         System.out.println("[metrics] histograms");
         metrics.getHistograms().entrySet().stream()
                 .filter(entry -> entry.getValue().getCount() > 0)
-                .sorted(Comparator.comparingLong((Map.Entry<String, Histogram> entry) -> entry.getValue().getCount())
+                .sorted(Comparator.comparingLong((Map.Entry<io.dropwizard.metrics5.MetricName, Histogram> entry) -> entry.getValue().getCount())
                         .reversed())
                 .limit(maxRows)
-                .forEach(entry -> printHistogram("[metrics] " + entry.getKey(), entry.getValue().getSnapshot(), 1.0));
+                .forEach(entry -> printHistogram("[metrics] " + entry.getKey().getKey(), entry.getValue().getSnapshot(), 1.0));
 
         System.out.println("[metrics] counters");
         metrics.getCounters().entrySet().stream()
-                .filter(entry -> entry.getValue().getCount() != 0 || InferenceProfiler.shouldPrintCounter(entry.getKey()))
-                .sorted(Comparator.comparingLong((Map.Entry<String, Counter> entry) -> Math.abs(entry.getValue().getCount()))
+                .filter(entry -> entry.getValue().getCount() != 0 || InferenceProfiler.shouldPrintCounter(entry.getKey().getKey()))
+                .sorted(Comparator.comparingLong((Map.Entry<io.dropwizard.metrics5.MetricName, Counter> entry) -> Math.abs(entry.getValue().getCount()))
                         .reversed())
                 .limit(maxRows)
                 .forEach(entry -> System.out.printf("[metrics] %-55s count=%d%n",
-                        entry.getKey(), entry.getValue().getCount()));
+                        entry.getKey().getKey(), entry.getValue().getCount()));
     }
 
     private static double estimatedTotalMillis(Timer timer) {

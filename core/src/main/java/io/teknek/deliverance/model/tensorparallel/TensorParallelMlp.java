@@ -1,6 +1,6 @@
 package io.teknek.deliverance.model.tensorparallel;
 
-import com.codahale.metrics.Timer;
+import io.dropwizard.metrics5.Timer;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.model.AbstractModel;
@@ -10,6 +10,7 @@ import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 
 import java.util.function.Function;
+import java.util.Optional;
 import java.util.stream.IntStream;
 
 /**
@@ -88,14 +89,16 @@ public final class TensorParallelMlp {
             model.emitLayerDebug(layerIndex, "mlp_projection_input", input);
             try (Timer.Context ignoredGate = InferenceProfiler.timer(model.getMetricRegistry(), "tensorparallelmlp.gate_up_projection").time()) {
                 if (model.isInWorkingQuantizedType(input)) {
-                    VectorMath.pchunk(0, localHiddenLength, (chunkStart, chunkSize) ->
+                    model.runChunks("tensorparallelmlp.gate_up_projection", 0, localHiddenLength,
+                            tensorProvider.get().parallelSplitSize(), Optional.of(input), (chunkStart, chunkSize) ->
                             tensorProvider.get().dotProductBatchChunk(results, input, weights, 0, embeddingLength,
-                                    chunkStart, chunkSize), tensorProvider.get().parallelSplitSize(), model.getPool());
+                                    chunkStart, chunkSize));
                 } else {
                     try (AbstractTensor inputq = inputQuantize(model, input)) {
-                        VectorMath.pchunk(0, localHiddenLength, (chunkStart, chunkSize) ->
+                        model.runChunks("tensorparallelmlp.gate_up_projection", 0, localHiddenLength,
+                                tensorProvider.get().parallelSplitSize(), Optional.of(inputq), (chunkStart, chunkSize) ->
                                 tensorProvider.get().dotProductBatchChunk(results, inputq, weights, 0, embeddingLength,
-                                        chunkStart, chunkSize), tensorProvider.get().parallelSplitSize(), model.getPool());
+                                        chunkStart, chunkSize));
                     }
                 }
             }
@@ -103,14 +106,15 @@ public final class TensorParallelMlp {
             model.emitLayerDebug(layerIndex, "mlp_up_projection", up);
 
             try (Timer.Context ignoredActivation = InferenceProfiler.timer(model.getMetricRegistry(), "tensorparallelmlp.activation").time()) {
-                VectorMath.pchunk(0, localHiddenLength, (chunkStart, chunkSize) -> {
+                model.runChunks("tensorparallelmlp.activation", 0, localHiddenLength,
+                        tensorProvider.get().parallelSplitSize(), Optional.of(gate), (chunkStart, chunkSize) -> {
                     int chunkEnd = chunkStart + chunkSize;
                     for (int i = chunkStart; i < chunkEnd; i++) {
                         for (int row = 0; row < batchSize; row++) {
                             gate.set(ActivationFunction.eval(activationFunction, gate.get(row, i)), row, i);
                         }
                     }
-                }, tensorProvider.get().parallelSplitSize(), model.getPool());
+                });
             }
             model.emitLayerDebug(layerIndex, "mlp_after_activation", gate);
             try (Timer.Context ignoredMultiply = InferenceProfiler.timer(model.getMetricRegistry(), "tensorparallelmlp.multiply").time()) {
@@ -124,19 +128,19 @@ public final class TensorParallelMlp {
                     if (InferenceProfiler.isEnabled()) {
                         InferenceProfiler.counter(model.getMetricRegistry(), "tensorparallelmlp.down_input_" + gate.dType()).inc();
                     }
-                    VectorMath.pchunk(0, embeddingLength, (chunkStart, chunkSize) ->
+                    model.runChunks("tensorparallelmlp.down_projection", 0, embeddingLength,
+                            tensorProvider.get().parallelSplitSize(), Optional.of(gate), (chunkStart, chunkSize) ->
                             tensorProvider.get().dotProductChunk(partial, gate, downProjectionWeights, 0,
-                                    localHiddenLength, chunkStart, chunkSize), tensorProvider.get().parallelSplitSize(),
-                            model.getPool());
+                                    localHiddenLength, chunkStart, chunkSize));
                 } else {
                     if (InferenceProfiler.isEnabled()) {
                         InferenceProfiler.counter(model.getMetricRegistry(), "tensorparallelmlp.down_input_" + gate.dType()).inc();
                     }
                     try (AbstractTensor gateq = downQuantize(model, gate)) {
-                        VectorMath.pchunk(0, embeddingLength, (chunkStart, chunkSize) ->
+                        model.runChunks("tensorparallelmlp.down_projection", 0, embeddingLength,
+                                tensorProvider.get().parallelSplitSize(), Optional.of(gateq), (chunkStart, chunkSize) ->
                                 tensorProvider.get().dotProductChunk(partial, gateq, downProjectionWeights, 0,
-                                        localHiddenLength, chunkStart, chunkSize), tensorProvider.get().parallelSplitSize(),
-                                model.getPool());
+                                        localHiddenLength, chunkStart, chunkSize));
                     }
                 }
             }

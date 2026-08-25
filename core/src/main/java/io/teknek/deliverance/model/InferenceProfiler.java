@@ -1,10 +1,10 @@
 package io.teknek.deliverance.model;
 
-import com.codahale.metrics.Counter;
-import com.codahale.metrics.MetricRegistry;
-import com.codahale.metrics.Snapshot;
-import com.codahale.metrics.Timer;
-import com.codahale.metrics.ExponentiallyDecayingReservoir;
+import io.dropwizard.metrics5.Counter;
+import io.dropwizard.metrics5.MetricRegistry;
+import io.dropwizard.metrics5.Snapshot;
+import io.dropwizard.metrics5.Timer;
+import io.dropwizard.metrics5.ExponentiallyDecayingReservoir;
 
 import java.util.Comparator;
 import java.util.Collections;

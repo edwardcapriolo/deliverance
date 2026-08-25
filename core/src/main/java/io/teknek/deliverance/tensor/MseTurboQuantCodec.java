@@ -1,6 +1,6 @@
 package io.teknek.deliverance.tensor;
 
-import com.codahale.metrics.MetricRegistry;
+import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.model.InferenceProfiler;
 
 import java.util.Arrays;

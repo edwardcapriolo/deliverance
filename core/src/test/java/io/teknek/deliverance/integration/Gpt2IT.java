@@ -1,6 +1,6 @@
 package io.teknek.deliverance.integration;
 
-import com.codahale.metrics.MetricRegistry;
+import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.math.WrappedForkJoinPool;

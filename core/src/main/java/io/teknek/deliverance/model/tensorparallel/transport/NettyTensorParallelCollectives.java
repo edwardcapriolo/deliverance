@@ -1,7 +1,7 @@
 package io.teknek.deliverance.model.tensorparallel.transport;
 
-import com.codahale.metrics.MetricRegistry;
-import com.codahale.metrics.Timer;
+import io.dropwizard.metrics5.MetricRegistry;
+import io.dropwizard.metrics5.Timer;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;

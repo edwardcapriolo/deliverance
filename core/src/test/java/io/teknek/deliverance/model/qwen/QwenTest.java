@@ -28,7 +28,7 @@ public class QwenTest {
     @Disabled("Only single file tensors are supported")
     public void sample() throws IOException {
         ModelFetcher fetch = new ModelFetcher("Qwen", "Qwen2.5-7B");
-        com.codahale.metrics.MetricRegistry mr = new com.codahale.metrics.MetricRegistry();
+        io.dropwizard.metrics5.MetricRegistry mr = new io.dropwizard.metrics5.MetricRegistry();
         ArrayQueueTensorAllocator arrayQueueTensorAllocator = new ArrayQueueTensorAllocator(mr);
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
             try (AbstractModel m = AutoModelForCausaLm.newBuilder(fetch)

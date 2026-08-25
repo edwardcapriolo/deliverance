@@ -1,7 +1,7 @@
 
 package io.teknek.deliverance.tensor.operations;
 
-import com.codahale.metrics.MetricRegistry;
+import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.operations.gpunative.NativeGPU;

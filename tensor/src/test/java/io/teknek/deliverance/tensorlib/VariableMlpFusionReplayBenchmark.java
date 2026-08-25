@@ -1,6 +1,6 @@
 package io.teknek.deliverance.tensorlib;
 
-import com.codahale.metrics.MetricRegistry;
+import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.tensor.AbstractTensor;

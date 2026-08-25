@@ -1,6 +1,6 @@
 package io.teknek.deliverance.model;
 
-import com.codahale.metrics.MetricRegistry;
+import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.EmbedInput;
 import io.teknek.deliverance.generator.SampleOutput;

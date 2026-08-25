@@ -1,6 +1,6 @@
 package io.teknek.deliverance.model;
 
-import com.codahale.metrics.MetricRegistry;
+import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.grace.AutoTokenizer;
@@ -49,8 +49,11 @@ import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.MachineSpec;
 import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
 import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
+import io.teknek.deliverance.tensor.operations.ParallelSplitSizedTensorOperations;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensorlib.TensorRuntime;
 import io.teknek.deliverance.tensorlib.TensorRuntimeMode;
+import io.teknek.deliverance.tensorlib.TensorRuntimeNative;
 import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
 import io.teknek.deliverance.toolcallparser.LlamaToolCallParser;
 import io.teknek.deliverance.toolcallparser.QwenToolCallParser;
@@ -104,6 +107,11 @@ public class AutoModelForCausaLm {
 
 
     public static class Builder {
+        private static final double DEFAULT_SIMD_PARALLEL_SPLIT_SIZE_MULTIPLIER = 6.0;
+        private static final double DEFAULT_PANAMA_PARALLEL_SPLIT_SIZE_MULTIPLIER = 0.5;
+        private static final int SIMD_PARALLEL_SPLIT_ALIGNMENT = 16;
+        private static final int PANAMA_PARALLEL_SPLIT_ALIGNMENT = 4;
+
         private final ModelFetcher fetch;
         private MetricRegistry mr = new MetricRegistry();
         private TensorAllocator allocator = new ArrayQueueTensorAllocator(mr);
@@ -132,6 +140,8 @@ public class AutoModelForCausaLm {
         private boolean packedPrefill = true;
         private boolean tensorPlanTrace;
         private Optional<TensorRuntimeMode> tensorRuntimeMode = Optional.empty();
+        private final EnumMap<TensorProviderKind, Integer> parallelSplitSizeFixed = new EnumMap<>(TensorProviderKind.class);
+        private final EnumMap<TensorProviderKind, Double> parallelSplitSizeMultiplier = new EnumMap<>(TensorProviderKind.class);
 
         record QuantizeOnDemand(DType targetType, String outputOwner, String outputModel) {
             QuantizeOnDemand {
@@ -289,6 +299,26 @@ public class AutoModelForCausaLm {
             return this;
         }
 
+        public Builder withParallelSplitSizeFixed(TensorProviderKind kind, int splitSize) {
+            if (splitSize < 1) {
+                throw new IllegalArgumentException("splitSize must be >= 1");
+            }
+            kind = Objects.requireNonNull(kind, "kind");
+            if (kind == TensorProviderKind.SIMD) {
+                warnIfPoorSimdSplitSize("fixed override", splitSize, splitSize);
+            }
+            parallelSplitSizeFixed.put(kind, splitSize);
+            return this;
+        }
+
+        public Builder withParallelSplitSizeMultiplier(TensorProviderKind kind, double multiplier) {
+            if (!Double.isFinite(multiplier) || multiplier <= 0.0) {
+                throw new IllegalArgumentException("multiplier must be finite and > 0");
+            }
+            parallelSplitSizeMultiplier.put(Objects.requireNonNull(kind, "kind"), multiplier);
+            return this;
+        }
+
         public Builder withTensorPlanTrace(boolean tensorPlanTrace) {
             this.tensorPlanTrace = tensorPlanTrace;
             return this;
@@ -331,6 +361,8 @@ public class AutoModelForCausaLm {
             config.download().ifPresent(this::withDownload);
             config.maxBatchSize().ifPresent(this::withMaxBatchSize);
             config.tensorRuntimeMode().ifPresent(this::withTensorRuntimeMode);
+            config.parallelSplitSizeFixed().ifPresent(map -> map.forEach(this::withParallelSplitSizeFixed));
+            config.parallelSplitSizeMultiplier().ifPresent(map -> map.forEach(this::withParallelSplitSizeMultiplier));
             config.tensorPlanTrace().ifPresent(this::withTensorPlanTrace);
             config.kvBufferCache().map(AutoModelConfig.KvBufferCache::toSettings).ifPresent(this::withKvBufferCacheSettings);
             config.quantizeOnDemand().ifPresent(q -> withQuantizeOnDemand(q.targetType(), q.outputOwner(), q.outputModel()));
@@ -406,6 +438,8 @@ public class AutoModelForCausaLm {
             copy.quantizeOnDemand = this.quantizeOnDemand;
             copy.loraAdapterFetcher = this.loraAdapterFetcher;
             copy.additionalTensorOperations.putAll(this.additionalTensorOperations);
+            copy.parallelSplitSizeFixed.putAll(this.parallelSplitSizeFixed);
+            copy.parallelSplitSizeMultiplier.putAll(this.parallelSplitSizeMultiplier);
             copy.download = this.download;
             copy.maxBatchSize = this.maxBatchSize;
             copy.sketchesSettings = this.sketchesSettings;
@@ -465,7 +499,9 @@ public class AutoModelForCausaLm {
             if (provider == null){
                 ConfigurableTensorProvider base = new ConfigurableTensorProvider(allocator, pool);
                 Optional<TensorOperations> maybe = getNative(base.get());
-                provider = maybe.map(ConfigurableTensorProvider::new).orElse(base);
+                TensorOperations primary = maybe.map(ops -> tunedTensorOperations(TensorProviderKind.SIMD, ops))
+                        .orElseGet(() -> tunedTensorOperations(TensorProviderKind.PANAMA, base.get()));
+                provider = new ConfigurableTensorProvider(primary);
             }
             Optional<LoraAdapter> loraAdapter = loraAdapterFetcher == null
                     ? Optional.empty()
@@ -478,12 +514,54 @@ public class AutoModelForCausaLm {
             model.setGpuDecodeAttentionEnabled(gpuDecodeAttention);
             model.setPackedPrefillEnabled(packedPrefill);
             model.setTensorRuntimeMode(tensorRuntimeMode);
+            model.setTensorRuntime(createTensorRuntime());
             model.setTensorPlanTraceEnabled(tensorPlanTrace);
             if (!tensorProviderExplicit) {
                 model.addTensorOperations(hydrateTensorOperations());
             }
+            logBuilderState(model);
             model.init();
             return model;
+        }
+
+        private void logBuilderState(AbstractModel model) {
+            TensorOperations primary = model.configurableTensorProvider.get();
+            LOGGER.info("""
+                    Model builder final state
+                      model={}
+                      primaryProvider={} parallelSplitSize={}
+                      registeredProviders=[{}]
+                      parallelSplitPolicy=availableProcessors={} defaultSimdMultiplier={} defaultPanamaMultiplier={} simdAlignment={} panamaAlignment={} fixedOverrides={} multiplierOverrides={}
+                      modelType={} workingMemoryType={} quantizedMemoryType={}
+                      tensorRuntimeMode={} gpuPrefill={} gpuDecode={} gpuDecodeAttention={} packedPrefill={} maxBatchSize={}
+                    """,
+                    fetch.getName(), primary.name(), primary.parallelSplitSize(), model.tensorOperationsSummary(),
+                    Runtime.getRuntime().availableProcessors(), DEFAULT_SIMD_PARALLEL_SPLIT_SIZE_MULTIPLIER,
+                    DEFAULT_PANAMA_PARALLEL_SPLIT_SIZE_MULTIPLIER, SIMD_PARALLEL_SPLIT_ALIGNMENT,
+                    PANAMA_PARALLEL_SPLIT_ALIGNMENT, parallelSplitSizeFixed, parallelSplitSizeMultiplier,
+                    model.modelDType, model.workingDType, model.workingQType,
+                    tensorRuntimeMode.orElse(TensorRuntimeMode.DISABLED), gpuPrefill, gpuDecode,
+                    gpuDecodeAttention, packedPrefill, maxBatchSize);
+        }
+
+        private TensorRuntime createTensorRuntime() {
+            TensorRuntimeMode mode = tensorRuntimeMode.orElse(TensorRuntimeMode.DISABLED);
+            if (mode == TensorRuntimeMode.DISABLED) {
+                return null;
+            }
+            int workers = pool == null ? Math.max(1, Runtime.getRuntime().availableProcessors() / 2) : pool.getCoreCount();
+            return new TensorRuntime(Math.max(1, workers), mode, nativeTensorRuntime(), mr);
+        }
+
+        private TensorRuntimeNative nativeTensorRuntime() {
+            try {
+                return (TensorRuntimeNative) Class.forName(
+                        "io.teknek.deliverance.tensor.operations.runtime.NativeTensorRuntime")
+                        .getConstructor()
+                        .newInstance();
+            } catch (ReflectiveOperationException | LinkageError e) {
+                return TensorRuntimeNative.unavailable("native runtime not available: " + e.getMessage());
+            }
         }
 
         private void validatePrefixCacheSettingsForModel() {
@@ -585,31 +663,86 @@ public class AutoModelForCausaLm {
         private Map<TensorProviderKind, TensorOperations> hydrateTensorOperations() {
             EnumMap<TensorProviderKind, TensorOperations> operations = new EnumMap<>(TensorProviderKind.class);
 
-            TensorOperations naive = additionalTensorOperations.getOrDefault(TensorProviderKind.NAIVE, new NaiveTensorOperations());
+            TensorOperations naive = tunedTensorOperations(TensorProviderKind.NAIVE,
+                    additionalTensorOperations.getOrDefault(TensorProviderKind.NAIVE, new NaiveTensorOperations()));
             operations.put(TensorProviderKind.NAIVE, naive);
 
-            TensorOperations panama = additionalTensorOperations.getOrDefault(TensorProviderKind.PANAMA,
-                    new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, allocator, pool));
+            TensorOperations panama = tunedTensorOperations(TensorProviderKind.PANAMA,
+                    additionalTensorOperations.getOrDefault(TensorProviderKind.PANAMA,
+                            new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, allocator, pool)));
             operations.put(TensorProviderKind.PANAMA, panama);
 
             TensorOperations simd = additionalTensorOperations.get(TensorProviderKind.SIMD);
             if (simd == null) {
                 simd = getNative(panama).orElse(panama);
             }
+            simd = tunedTensorOperations(TensorProviderKind.SIMD, simd);
             operations.put(TensorProviderKind.SIMD, simd);
 
             TensorOperations gpu = additionalTensorOperations.get(TensorProviderKind.GPU);
             if (gpu == null) {
                 Optional<TensorOperations> maybeGpu = tryLoadTensorOperations("io.teknek.deliverance.tensor.operations.NativeGPUTensorOperations");
-                maybeGpu.ifPresent(value -> operations.put(TensorProviderKind.GPU, value));
+                maybeGpu.ifPresent(value -> operations.put(TensorProviderKind.GPU,
+                        tunedTensorOperations(TensorProviderKind.GPU, value)));
                 if ((gpuPrefill || gpuDecode || gpuDecodeAttention) && maybeGpu.isEmpty()) {
                     throw new IllegalStateException("GPU projection requested but NativeGPUTensorOperations is not available");
                 }
             } else {
-                operations.put(TensorProviderKind.GPU, gpu);
+                operations.put(TensorProviderKind.GPU, tunedTensorOperations(TensorProviderKind.GPU, gpu));
             }
 
             return Map.copyOf(operations);
+        }
+
+        private TensorOperations tunedTensorOperations(TensorProviderKind kind, TensorOperations operations) {
+            Integer fixed = parallelSplitSizeFixed.get(kind);
+            if (fixed != null) {
+                return new ParallelSplitSizedTensorOperations(operations, fixed);
+            }
+            Double configuredMultiplier = parallelSplitSizeMultiplier.get(kind);
+            Double multiplier = configuredMultiplier != null ? configuredMultiplier : defaultParallelSplitSizeMultiplier(kind);
+            if (multiplier != null) {
+                int splitSize = multiplierSplitSize(kind, multiplier, configuredMultiplier != null);
+                return new ParallelSplitSizedTensorOperations(operations, splitSize);
+            }
+            return operations;
+        }
+
+        private int multiplierSplitSize(TensorProviderKind kind, double multiplier, boolean configuredOverride) {
+            int rawSplitSize = Math.max(1, (int) Math.round(Runtime.getRuntime().availableProcessors() * multiplier));
+            int splitSize = rawSplitSize;
+            if (kind == TensorProviderKind.SIMD) {
+                splitSize = roundUp(splitSize, SIMD_PARALLEL_SPLIT_ALIGNMENT);
+                if (configuredOverride) {
+                    warnIfPoorSimdSplitSize("multiplier override", rawSplitSize, splitSize);
+                }
+                return splitSize;
+            }
+            if (kind == TensorProviderKind.PANAMA) {
+                return roundUp(splitSize, PANAMA_PARALLEL_SPLIT_ALIGNMENT);
+            }
+            return splitSize;
+        }
+
+        private void warnIfPoorSimdSplitSize(String source, int requestedSplitSize, int effectiveSplitSize) {
+            if (requestedSplitSize % SIMD_PARALLEL_SPLIT_ALIGNMENT == 0) {
+                return;
+            }
+            LOGGER.warn("SIMD parallelSplitSize from {} is {}. Native SIMD Q4 kernels require row chunks aligned to multiples of {}; non-aligned values can force Panama fallback and severely reduce performance. Use a fixed SIMD split size such as 32 or 64, or choose a SIMD multiplier that produces a multiple of {}. Effective aligned split size is {}.",
+                    source, requestedSplitSize, SIMD_PARALLEL_SPLIT_ALIGNMENT, SIMD_PARALLEL_SPLIT_ALIGNMENT,
+                    effectiveSplitSize);
+        }
+
+        private static int roundUp(int value, int alignment) {
+            return ((value + alignment - 1) / alignment) * alignment;
+        }
+
+        private Double defaultParallelSplitSizeMultiplier(TensorProviderKind kind) {
+            return switch (kind) {
+                case SIMD -> DEFAULT_SIMD_PARALLEL_SPLIT_SIZE_MULTIPLIER;
+                case PANAMA -> DEFAULT_PANAMA_PARALLEL_SPLIT_SIZE_MULTIPLIER;
+                default -> null;
+            };
         }
 
         private Optional<TensorOperations> tryLoadTensorOperations(String className) {

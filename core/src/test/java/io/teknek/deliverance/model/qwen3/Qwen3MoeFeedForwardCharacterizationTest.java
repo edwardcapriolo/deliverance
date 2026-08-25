@@ -1,6 +1,6 @@
 package io.teknek.deliverance.model.qwen3;
 
-import com.codahale.metrics.MetricRegistry;
+import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.model.AbstractModel;

@@ -1,7 +1,7 @@
 package io.teknek.deliverance.model;
 
-import com.codahale.metrics.MetricRegistry;
-import com.codahale.metrics.Timer;
+import io.dropwizard.metrics5.MetricRegistry;
+import io.dropwizard.metrics5.Timer;
 import com.google.common.base.Preconditions;
 import com.google.common.primitives.Ints;
 
@@ -14,6 +14,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 
 import io.teknek.deliverance.CausualWhisperer;
@@ -52,6 +53,7 @@ import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.tensorlib.PlannedTensor;
 import io.teknek.deliverance.tensorlib.TensorPlan;
+import io.teknek.deliverance.tensorlib.TensorRuntime;
 import io.teknek.deliverance.tensorlib.TensorRuntimeMode;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import jdk.incubator.vector.FloatVector;
@@ -201,6 +203,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     private final ConcurrentMap<String, TensorPlan.ImmutableTensor> modelLineageTensors = new ConcurrentHashMap<>();
     private final Queue<ModelLineageEntry> modelLineageEntries = new ConcurrentLinkedQueue<>();
     private Optional<TensorRuntimeMode> tensorRuntimeMode = Optional.empty();
+    private TensorRuntime tensorRuntime;
     private boolean initialized;
     private boolean tensorPlanTraceEnabled;
     private final ConcurrentMap<UUID, TensorPlanTraceContext> tensorPlanTraces = new ConcurrentHashMap<>();
@@ -266,10 +269,6 @@ public abstract class AbstractModel implements Generator, Classifier {
 
         this.workingQType = resolveWorkingQType(workingMemoryQType);
 
-        logger.info("Tensor provider = {}, parallelSplitSize = {} ",
-                configurableTensorProvider.get().name(), configurableTensorProvider.get().parallelSplitSize());
-        logger.info("Model type = {}, Working memory type = {}, Quantized memory type = {}", modelDType, workingDType,
-                workingQType);
         this.pool = pool;
         logger.debug("model constructor complete config={} inference_type={}", config.getClass().getSimpleName(), inferenceType);
     }
@@ -278,7 +277,7 @@ public abstract class AbstractModel implements Generator, Classifier {
         if (initialized) {
             return;
         }
-        this.modelLineagePlan = new TensorPlan(configurableTensorProvider.get(), pool, metricRegistry, this);
+        this.modelLineagePlan = new TensorPlan(configurableTensorProvider.get(), pool, metricRegistry, this, tensorRuntime);
         logger.debug("model init start config={} inference_type={}", config.getClass().getSimpleName(), inferenceType);
         this.embedInput = inferenceType.isInput ? loadInputWeights() : null;
         this.transformerBlocks = inferenceType.isFwdPass ? loadTransformerBlockWeights() : null;
@@ -392,6 +391,14 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public Optional<TensorOperations> tensorOperations(TensorProviderKind kind) {
         return Optional.ofNullable(tensorOperations.get(kind));
+    }
+
+    String tensorOperationsSummary() {
+        return tensorOperations.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> entry.getKey() + "=" + entry.getValue().name()
+                        + "(parallelSplitSize=" + entry.getValue().parallelSplitSize() + ")")
+                .collect(Collectors.joining(", "));
     }
 
     public TensorOperations primaryTensorOperations() {
@@ -1215,12 +1222,29 @@ public abstract class AbstractModel implements Generator, Classifier {
         return configurableTensorProvider;
     }
 
+    public void runChunks(String operation, int offset, int length, int splitSize, Optional<AbstractTensor> localityTensor,
+            io.teknek.deliverance.math.BiIntConsumer action) {
+        if (tensorRuntime != null) {
+            tensorRuntime.runChunks(operation, offset, length, splitSize, localityTensor, action);
+        } else {
+            VectorMath.pchunk(offset, length, action, splitSize, pool);
+        }
+    }
+
     public Optional<TensorRuntimeMode> getTensorRuntimeMode() {
         return tensorRuntimeMode;
     }
 
     public void setTensorRuntimeMode(Optional<TensorRuntimeMode> tensorRuntimeMode) {
         this.tensorRuntimeMode = Objects.requireNonNull(tensorRuntimeMode, "tensorRuntimeMode");
+    }
+
+    public TensorRuntime getTensorRuntime() {
+        return tensorRuntime;
+    }
+
+    public void setTensorRuntime(TensorRuntime tensorRuntime) {
+        this.tensorRuntime = tensorRuntime;
     }
 
     public void setTensorPlanTraceEnabled(boolean tensorPlanTraceEnabled) {

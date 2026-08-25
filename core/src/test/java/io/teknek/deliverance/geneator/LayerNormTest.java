@@ -1,6 +1,6 @@
 package io.teknek.deliverance.geneator;
 
-import com.codahale.metrics.MetricRegistry;
+import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.generator.LayerNorm;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;

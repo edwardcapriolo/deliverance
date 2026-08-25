@@ -1,13 +1,12 @@
 package io.teknek.deliverance.safetensors;
 
-import com.codahale.metrics.MetricRegistry;
-import com.codahale.metrics.Timer;
+import io.dropwizard.metrics5.MetricRegistry;
+import io.dropwizard.metrics5.Timer;
 import io.teknek.deliverance.safetensors.fetch.LoraAdapterModelFetcher;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.Locale;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -51,12 +50,12 @@ public class LoraAdapterProfileTest {
 
     private static void printSummary(MetricRegistry metricRegistry) {
         System.out.println("[profile] LoraAdapter");
-        for (Map.Entry<String, Timer> entry : metricRegistry.getTimers().entrySet()) {
+        for (java.util.Map.Entry<io.dropwizard.metrics5.MetricName, Timer> entry : metricRegistry.getTimers().entrySet()) {
             Timer timer = entry.getValue();
             double meanMs = timer.getSnapshot().getMean() / 1_000_000.0;
             double totalMs = timer.getCount() * meanMs;
             System.out.printf(Locale.ROOT, "[profile] %-30s count=%6d total_ms=%10.3f mean_ms=%10.3f%n",
-                    entry.getKey(), timer.getCount(), totalMs, meanMs);
+                    entry.getKey().getKey(), timer.getCount(), totalMs, meanMs);
         }
     }
 }

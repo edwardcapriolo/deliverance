@@ -1,6 +1,6 @@
 package io.teknek.deliverance.model.llama;
 
-import com.codahale.metrics.MetricRegistry;
+import io.dropwizard.metrics5.MetricRegistry;
 import com.google.common.base.Preconditions;
 import com.google.common.primitives.Ints;
 import io.teknek.deliverance.DType;

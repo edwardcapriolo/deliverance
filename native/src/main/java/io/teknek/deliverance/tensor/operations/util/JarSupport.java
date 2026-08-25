@@ -45,10 +45,10 @@ public class JarSupport {
                 LOGGER.debug("Loaded {} library: {}", libname, libfile.getAbsolutePath());
                 return true;
             } catch (IOException | UnsatisfiedLinkError e) {
-                LOGGER.warn("Error loading {} library", libname);
+                LOGGER.debug("Error loading bundled {} library", libname, e);
             }
         }
-        LOGGER.warn("deliverance-native shared library not found: {}{}", libname, ext);
+        LOGGER.debug("Bundled deliverance-native shared library not found: {}{}", libname, ext);
         return false;
     }
 }

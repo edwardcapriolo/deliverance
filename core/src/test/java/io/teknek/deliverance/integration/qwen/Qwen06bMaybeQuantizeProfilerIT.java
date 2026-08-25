@@ -56,9 +56,9 @@ public class Qwen06bMaybeQuantizeProfilerIT {
                     new DoNothingGenerateEvent());
             InferenceProfiler.printSummary("qwen06b maybeQuantize one-case", 20);
             model.getMetricRegistry().getCounters().entrySet().stream()
-                    .filter(entry -> InferenceProfiler.shouldPrintCounter(entry.getKey()))
-                    .forEach(entry -> System.out.println("[profile-counter] " + entry.getKey()
-                            + " count=" + InferenceProfiler.counterValue(entry.getKey())));
+                    .filter(entry -> InferenceProfiler.shouldPrintCounter(entry.getKey().getKey()))
+                    .forEach(entry -> System.out.println("[profile-counter] " + entry.getKey().getKey()
+                            + " count=" + InferenceProfiler.counterValue(entry.getKey().getKey())));
 
             assertFalse(response.responseTextWithSpecialTokens.isBlank());
             assertCounterHit("transformerblock.maybe_quantize.pre_attention.copy_or_quantize");
@@ -88,9 +88,9 @@ public class Qwen06bMaybeQuantizeProfilerIT {
                     new DoNothingGenerateEvent());
             InferenceProfiler.printSummary("qwen06b bf16 maybeQuantize one-case", 20);
             model.getMetricRegistry().getCounters().entrySet().stream()
-                    .filter(entry -> InferenceProfiler.shouldPrintCounter(entry.getKey()))
-                    .forEach(entry -> System.out.println("[profile-counter] " + entry.getKey()
-                            + " count=" + InferenceProfiler.counterValue(entry.getKey())));
+                    .filter(entry -> InferenceProfiler.shouldPrintCounter(entry.getKey().getKey()))
+                    .forEach(entry -> System.out.println("[profile-counter] " + entry.getKey().getKey()
+                            + " count=" + InferenceProfiler.counterValue(entry.getKey().getKey())));
 
             assertFalse(response.responseTextWithSpecialTokens.isBlank());
             assertCounterHit("transformerblock.maybe_quantize.pre_attention.read_only");
