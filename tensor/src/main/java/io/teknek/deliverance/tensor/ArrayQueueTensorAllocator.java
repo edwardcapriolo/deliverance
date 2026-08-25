@@ -1,8 +1,8 @@
 package io.teknek.deliverance.tensor;
 
-import com.codahale.metrics.Meter;
-import com.codahale.metrics.MetricRegistry;
-import com.codahale.metrics.Timer;
+import io.dropwizard.metrics5.Meter;
+import io.dropwizard.metrics5.MetricRegistry;
+import io.dropwizard.metrics5.Timer;
 import com.google.common.collect.Maps;
 
 import java.util.concurrent.ConcurrentMap;

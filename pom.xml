@@ -37,7 +37,8 @@
         <jackson3.annotations.version>2.21</jackson3.annotations.version>
         <dysfx.version>0.0.5</dysfx.version>
         <mockito.version>5.20.0</mockito.version>
-        <metrics.version>4.2.37</metrics.version>
+        <metrics.groupId>io.dropwizard.metrics5</metrics.groupId>
+        <metrics.version>5.0.1</metrics.version>
 
         <langchain4j.version>1.11.0</langchain4j.version>
         <!-- Shared plugin versions -->

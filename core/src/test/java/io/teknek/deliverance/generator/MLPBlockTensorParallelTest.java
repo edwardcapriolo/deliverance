@@ -1,6 +1,6 @@
 package io.teknek.deliverance.generator;
 
-import com.codahale.metrics.MetricRegistry;
+import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
@@ -99,6 +99,14 @@ public class MLPBlockTensorParallelTest {
         when(model.getTensorAllocator()).thenReturn(tensorAllocator);
         when(model.getMetricRegistry()).thenReturn(new MetricRegistry());
         when(model.getPool()).thenReturn(pool);
+        Mockito.doAnswer(invocation -> {
+            int offset = invocation.getArgument(1);
+            int length = invocation.getArgument(2);
+            io.teknek.deliverance.math.BiIntConsumer action = invocation.getArgument(5);
+            action.accept(offset, length);
+            return null;
+        }).when(model).runChunks(Mockito.anyString(), Mockito.anyInt(), Mockito.anyInt(), Mockito.anyInt(),
+                Mockito.any(), Mockito.any(io.teknek.deliverance.math.BiIntConsumer.class));
         when(model.getTensorParallelContext()).thenReturn(context);
         when(model.getTensorParallelCollectives()).thenReturn(collectives);
         when(model.makeTensor(Mockito.anyInt(), Mockito.anyInt()))

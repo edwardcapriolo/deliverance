@@ -416,7 +416,7 @@ public class Gemma4ExploratoryIT {
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
              AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
                      .withWorkingQuantType(DType.F32)
-                     .withTensorProvider(new ConfigurableTensorProvider(new ArrayQueueTensorAllocator(new com.codahale.metrics.MetricRegistry()), pool))
+                     .withTensorProvider(new ConfigurableTensorProvider(new ArrayQueueTensorAllocator(new io.dropwizard.metrics5.MetricRegistry()), pool))
                      .buildLocalTransformerModel()) {
             PromptContext prompt = prompt(model, false);
             Response response = model.generate(UUID.randomUUID(), prompt,
@@ -435,7 +435,7 @@ public class Gemma4ExploratoryIT {
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
              AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
                      .withWorkingQuantType(DType.F32)
-                     .withTensorProvider(new ConfigurableTensorProvider(new ArrayQueueTensorAllocator(new com.codahale.metrics.MetricRegistry()), pool))
+                     .withTensorProvider(new ConfigurableTensorProvider(new ArrayQueueTensorAllocator(new io.dropwizard.metrics5.MetricRegistry()), pool))
                      .buildLocalTransformerModel()) {
             PromptContext prompt = prompt(model, false);
             Response response = model.generate(UUID.randomUUID(), prompt,

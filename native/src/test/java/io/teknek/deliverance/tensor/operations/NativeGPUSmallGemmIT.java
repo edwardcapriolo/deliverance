@@ -70,7 +70,7 @@ class NativeGPUSmallGemmIT {
              AbstractTensor expected = new FloatBufferTensor(1, 5)) {
             gpu.registerModelTensor(weight);
             new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
-                    new io.teknek.deliverance.tensor.ArrayQueueTensorAllocator(new com.codahale.metrics.MetricRegistry()),
+                    new io.teknek.deliverance.tensor.ArrayQueueTensorAllocator(new io.dropwizard.metrics5.MetricRegistry()),
                     new io.teknek.deliverance.math.WrappedForkJoinPool(new java.util.concurrent.ForkJoinPool(1)))
                     .dotProductChunk(expected, input, weight, 0, 8, 0, 5);
 
@@ -106,7 +106,7 @@ class NativeGPUSmallGemmIT {
                      new io.teknek.deliverance.math.WrappedForkJoinPool(new java.util.concurrent.ForkJoinPool(1))) {
             gpu.registerModelTensor(weight);
             new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
-                    new io.teknek.deliverance.tensor.ArrayQueueTensorAllocator(new com.codahale.metrics.MetricRegistry()),
+                    new io.teknek.deliverance.tensor.ArrayQueueTensorAllocator(new io.dropwizard.metrics5.MetricRegistry()),
                     pool)
                     .dotProductChunk(expected, input, weight, 0, 8, 0, 134);
 
@@ -136,7 +136,7 @@ class NativeGPUSmallGemmIT {
                      new io.teknek.deliverance.math.WrappedForkJoinPool(new java.util.concurrent.ForkJoinPool(1))) {
             AbstractTensor[] pages = { page0, page1, page2, page3, page4 };
             TensorOperations reference = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
-                    new io.teknek.deliverance.tensor.ArrayQueueTensorAllocator(new com.codahale.metrics.MetricRegistry()),
+                    new io.teknek.deliverance.tensor.ArrayQueueTensorAllocator(new io.dropwizard.metrics5.MetricRegistry()),
                     pool);
             for (AbstractTensor page : pages) {
                 gpu.registerModelTensor(page);
@@ -215,7 +215,7 @@ class NativeGPUSmallGemmIT {
                      new io.teknek.deliverance.math.WrappedForkJoinPool(new java.util.concurrent.ForkJoinPool(1))) {
             gpu.registerModelTensor(weight);
             new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
-                    new io.teknek.deliverance.tensor.ArrayQueueTensorAllocator(new com.codahale.metrics.MetricRegistry()),
+                    new io.teknek.deliverance.tensor.ArrayQueueTensorAllocator(new io.dropwizard.metrics5.MetricRegistry()),
                     pool)
                     .dotProductChunk(expected, input, weight, 0, 8, 0, outputColumns);
 

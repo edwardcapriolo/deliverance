@@ -1,6 +1,6 @@
 package io.teknek.deliverance.tensor.operations.runtime;
 
-import com.codahale.metrics.MetricRegistry;
+import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
@@ -27,6 +27,7 @@ class NativeTensorPlanRuntimeTest {
 
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(new ForkJoinPool(workers));
              TensorRuntime runtime = new TensorRuntime(workers, TensorRuntimeMode.ENFORCE, nativeRuntime, metrics);
+
              FloatBufferTensor input = tensor(1, 8, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f);
              FloatBufferTensor multiplier = tensor(1, 8, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f)) {
             TensorPlan plan = new TensorPlan(new NaiveTensorOperations(), pool, metrics, runtime);
@@ -57,7 +58,7 @@ class NativeTensorPlanRuntimeTest {
             assertEquals(0, failed, "native runtime worker pinning should not fail");
             assertEquals(0, unsupported, "native runtime worker pinning should be supported");
 
-            if (input.locality().isPresent()) {
+            if (input.locality().map(io.teknek.deliverance.tensor.TensorLocality::numaKnown).orElse(false)) {
                 assertEquals(multiplies, snapshot.local(),
                         "known tensor NUMA locality should make ENFORCE mode run every multiply task locally");
                 assertEquals(0, snapshot.remote(), "ENFORCE mode should not choose remote workers for known locality");

@@ -1,6 +1,6 @@
 package io.teknek.deliverance.benchmark;
 
-import com.codahale.metrics.MetricRegistry;
+import io.dropwizard.metrics5.MetricRegistry;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.teknek.deliverance.DType;

@@ -1,7 +1,7 @@
 package io.teknek.deliverance.tensorlib;
 
-import com.codahale.metrics.MetricRegistry;
-import com.codahale.metrics.Timer;
+import io.dropwizard.metrics5.MetricRegistry;
+import io.dropwizard.metrics5.Timer;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
@@ -17,7 +17,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ForkJoinTask;
 import java.util.concurrent.ForkJoinPool;
 import java.util.stream.IntStream;
@@ -865,13 +864,8 @@ public final class TensorPlan {
             long length = shape.size();
             List<TensorSplit> splits = TensorLib.calculateTSplits(0, length, Math.max(1, pool.getCoreCount()));
             if (useTensorRuntime()) {
-                List<CompletableFuture<Void>> tasks = new ArrayList<>();
-                int chunk = 0;
-                for (TensorSplit split : splits) {
-                    tasks.add(runtime.submit("tensorplan.fuse.linear", chunk++, representativeTensor(context),
-                            () -> runSteps(context, split.offset, split.length)));
-                }
-                tasks.forEach(CompletableFuture::join);
+                runtime.runChunks("tensorplan.fuse.linear", 0, Math.toIntExact(length), splits.size(),
+                        representativeTensor(context), (chunkStart, chunkSize) -> runSteps(context, chunkStart, chunkSize));
                 return;
             }
             List<ForkJoinTask<?>> tasks = new ArrayList<>();
@@ -884,13 +878,8 @@ public final class TensorPlan {
         private void executeIntStreamColumns(FusedContext context) {
             int columns = (int) shape.last();
             if (useTensorRuntime()) {
-                List<CompletableFuture<Void>> tasks = new ArrayList<>();
-                for (int column = 0; column < columns; column++) {
-                    int chunk = column;
-                    tasks.add(runtime.submit("tensorplan.fuse.columns", chunk, representativeTensor(context),
-                            () -> runSteps(context, chunk, 1)));
-                }
-                tasks.forEach(CompletableFuture::join);
+                runtime.runChunks("tensorplan.fuse.columns", 0, columns, columns, representativeTensor(context),
+                        (column, ignored) -> runSteps(context, column, 1));
                 return;
             }
             IntStream.range(0, columns).parallel().forEach(column -> runSteps(context, column, 1));
@@ -899,13 +888,8 @@ public final class TensorPlan {
         private void executeIntStreamRows(FusedContext context) {
             int rows = (int) shape.first();
             if (useTensorRuntime()) {
-                List<CompletableFuture<Void>> tasks = new ArrayList<>();
-                for (int row = 0; row < rows; row++) {
-                    int chunk = row;
-                    tasks.add(runtime.submit("tensorplan.fuse.rows", chunk, representativeTensor(context),
-                            () -> runSteps(context, chunk, 1)));
-                }
-                tasks.forEach(CompletableFuture::join);
+                runtime.runChunks("tensorplan.fuse.rows", 0, rows, rows, representativeTensor(context),
+                        (row, ignored) -> runSteps(context, row, 1));
                 return;
             }
             IntStream.range(0, rows).parallel().forEach(row -> runSteps(context, row, 1));
@@ -1010,19 +994,15 @@ public final class TensorPlan {
         long length = (long) rows * cols;
         List<TensorSplit> splits = TensorLib.calculateTSplits(0, length, Math.max(1, pool.getCoreCount()));
         if (useTensorRuntime()) {
-            List<CompletableFuture<Void>> tasks = new ArrayList<>();
-            int chunk = 0;
-            for (TensorSplit split : splits) {
-                tasks.add(runtime.submit("tensorplan.foreach", chunk++, Optional.of(tensor), () -> {
-                    long end = split.offset + split.length;
-                    for (long index = split.offset; index < end; index++) {
+            runtime.runChunks("tensorplan.foreach", 0, Math.toIntExact(length), splits.size(), Optional.of(tensor),
+                    (chunkStart, chunkSize) -> {
+                    long end = (long) chunkStart + chunkSize;
+                    for (long index = chunkStart; index < end; index++) {
                         int row = (int) (index / cols);
                         int col = (int) (index % cols);
                         consumer.accept(row, col);
                     }
-                }));
-            }
-            tasks.forEach(CompletableFuture::join);
+                });
             return;
         }
         List<ForkJoinTask<?>> tasks = new ArrayList<>();
@@ -1059,15 +1039,7 @@ public final class TensorPlan {
     private void runRowChunks(String operation, int rowCount, AbstractTensor representative, RowChunk action) {
         List<TensorSplit> splits = TensorLib.calculateTSplits(0, rowCount, Math.max(1, operations.parallelSplitSize()));
         if (useTensorRuntime()) {
-            List<CompletableFuture<Void>> tasks = new ArrayList<>();
-            int chunk = 0;
-            for (TensorSplit split : splits) {
-                int chunkStart = (int) split.offset;
-                int chunkSize = (int) split.length;
-                tasks.add(runtime.submit(operation, chunk++, Optional.of(representative),
-                        () -> action.run(chunkStart, chunkSize)));
-            }
-            tasks.forEach(CompletableFuture::join);
+            runtime.runChunks(operation, 0, rowCount, splits.size(), Optional.of(representative), action::run);
             return;
         }
         List<ForkJoinTask<?>> tasks = new ArrayList<>();
@@ -1081,6 +1053,10 @@ public final class TensorPlan {
 
     private void runProviderRowChunks(int rowCount, RowChunk action) {
         List<TensorSplit> splits = TensorLib.calculateTSplits(0, rowCount, Math.max(1, operations.parallelSplitSize()));
+        if (useTensorRuntime()) {
+            runtime.runChunks("tensorplan.provider_row_chunks", 0, rowCount, splits.size(), Optional.empty(), action::run);
+            return;
+        }
         List<ForkJoinTask<?>> tasks = new ArrayList<>();
         for (TensorSplit split : splits) {
             int chunkStart = (int) split.offset;

@@ -617,9 +617,9 @@ public final class InferenceBenchmark {
             return;
         }
         model.getMetricRegistry().getCounters().entrySet().stream()
-                .filter(entry -> InferenceProfiler.shouldPrintCounter(entry.getKey()))
-                .forEach(entry -> System.out.println("[profile-counter] " + entry.getKey()
-                        + " count=" + InferenceProfiler.counterValue(entry.getKey())));
+                .filter(entry -> InferenceProfiler.shouldPrintCounter(entry.getKey().getKey()))
+                .forEach(entry -> System.out.println("[profile-counter] " + entry.getKey().getKey()
+                        + " count=" + InferenceProfiler.counterValue(entry.getKey().getKey())));
     }
 
     private static void printAllocatorMetrics(AbstractModel model) {
@@ -655,9 +655,13 @@ public final class InferenceBenchmark {
         }
     }
 
-    private static long meterCount(java.util.SortedMap<String, com.codahale.metrics.Meter> meters, String name) {
-        com.codahale.metrics.Meter meter = meters.get(name);
-        return meter == null ? 0 : meter.getCount();
+    private static long meterCount(java.util.SortedMap<io.dropwizard.metrics5.MetricName, io.dropwizard.metrics5.Meter> meters, String name) {
+        return meters.entrySet().stream()
+                .filter(entry -> entry.getKey().getKey().equals(name))
+                .map(java.util.Map.Entry::getValue)
+                .findFirst()
+                .map(io.dropwizard.metrics5.Meter::getCount)
+                .orElse(0L);
     }
 
     private static double hitRate(long hits, long requests) {

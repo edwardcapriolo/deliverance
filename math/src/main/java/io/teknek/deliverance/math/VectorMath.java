@@ -3,8 +3,8 @@ package io.teknek.deliverance.math;
 import java.util.function.IntConsumer;
 import java.util.stream.IntStream;
 
-import com.codahale.metrics.MetricRegistry;
-import com.codahale.metrics.Timer;
+import io.dropwizard.metrics5.MetricRegistry;
+import io.dropwizard.metrics5.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

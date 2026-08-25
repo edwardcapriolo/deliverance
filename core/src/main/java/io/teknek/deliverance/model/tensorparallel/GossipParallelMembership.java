@@ -294,7 +294,7 @@ public class GossipParallelMembership implements AutoCloseable {
                 Thread.sleep(100);
                 voteForLeaderIfNeeded();
             }
-            if (localNodeId().equals(electedLeader())) {
+            if (assignmentMode == TensorParallelAssignmentMode.AUTOMATIC && localNodeId().equals(electedLeader())) {
                 publishAssignmentAsLeader();
             }
             while (!closed && findAssignment() == null) {

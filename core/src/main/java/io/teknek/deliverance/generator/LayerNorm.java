@@ -1,6 +1,6 @@
 package io.teknek.deliverance.generator;
 
-import com.codahale.metrics.Histogram;
+import io.dropwizard.metrics5.Histogram;
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.CausualWhisperer;
 import io.teknek.deliverance.model.AbstractModel;
@@ -8,7 +8,7 @@ import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensorlib.PlannedTensor;
 import io.teknek.deliverance.tensorlib.TensorPlan;
 import net.jafama.FastMath;
-import com.codahale.metrics.MetricRegistry;
+import io.dropwizard.metrics5.MetricRegistry;
 /*
 * https://docs.pytorch.org/docs/stable/generated/torch.nn.LayerNorm.html
 * */

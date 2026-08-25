@@ -1,0 +1,18 @@
+{
+  "outputHeadQuantization": "Q4",
+  "maxBatchSize": 512,
+  "tensorRuntimeMode": "DISABLED",
+  "parallelSplitSizeFixed": {
+    "SIMD": 64,
+    "PANAMA": 12,
+    "GPU": 1
+  },
+  "kvBufferCache": {
+    "maxEntries": 10000,
+    "blockSize": 32,
+    "maxPrefixTokensPerPrompt": 8192,
+    "prefixCheckpointPolicy": "START_AND_END",
+    "maxPrefixCheckpointsPerPrompt": 4,
+    "contextRowsPerPageTarget": 32
+  }
+}

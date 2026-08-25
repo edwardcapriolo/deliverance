@@ -1,7 +1,7 @@
 package io.teknek.deliverance.model.gemma4;
 
-import com.codahale.metrics.MetricRegistry;
-import com.codahale.metrics.Timer;
+import io.dropwizard.metrics5.MetricRegistry;
+import io.dropwizard.metrics5.Timer;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.*;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;

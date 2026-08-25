@@ -3,7 +3,7 @@ package io.teknek.deliverance.model;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.LayerNorm;
-import com.codahale.metrics.Timer;
+import io.dropwizard.metrics5.Timer;
 import io.teknek.deliverance.guided.LogitsProcessor;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.tensor.*;
@@ -57,7 +57,8 @@ public abstract class AbstractGeneratorSampler {
         }
         logits.clear();
         TensorOperations operations = outputProjectionOperations(embedding);
-        VectorMath.pchunk(0, model.config.vocabularySize, (chunkStart, chunkSize) -> {
+        model.runChunks("sampler.output_projection", 0, model.config.vocabularySize,
+                operations.parallelSplitSize(), Optional.of(embedding), (chunkStart, chunkSize) -> {
             if (InferenceProfiler.isEnabled()) {
                 InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_chunks").inc();
                 InferenceProfiler.counter(model.getMetricRegistry(), "sampler.output_chunk_rows").inc(chunkSize);
@@ -66,7 +67,7 @@ public abstract class AbstractGeneratorSampler {
             }
             operations.dotProductChunk(logits, embedding, model.sampleOutput.getOutputLogitsWeights(), 0,
                     model.config.embeddingLength, chunkStart, chunkSize);
-        }, operations.parallelSplitSize(), model.getPool());
+        });
     }
 
     private TensorOperations outputProjectionOperations(AbstractTensor embedding) {

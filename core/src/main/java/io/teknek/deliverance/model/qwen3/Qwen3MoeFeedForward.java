@@ -1,6 +1,6 @@
 package io.teknek.deliverance.model.qwen3;
 
-import com.codahale.metrics.Timer;
+import io.dropwizard.metrics5.Timer;
 import io.teknek.deliverance.generator.FeedForward;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.model.AbstractModel;

@@ -92,7 +92,7 @@
             <version>${slf4j-api.version}</version>
         </dependency>
         <dependency>
-            <groupId>io.dropwizard.metrics</groupId>
+            <groupId>${metrics.groupId}</groupId>
             <artifactId>metrics-core</artifactId>
             <version>${metrics.version}</version>
         </dependency>

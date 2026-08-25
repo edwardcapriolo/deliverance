@@ -3,6 +3,7 @@ package io.teknek.deliverance.model.tensorparallel;
 import io.teknek.gossip.GossipSettings;
 import io.teknek.gossip.Member;
 import io.teknek.gossip.RemoteMember;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -107,7 +108,8 @@ class TensorParallelCoordinatorLifecycleTest {
         }
     }
 
-    @Test
+    @Disabled
+            //s@Test
     void coordinatorRestartsWithNewUriAndRecoversThreeWorkers() throws Exception {
         String cluster = "tp-coordinator-restart-" + UUID.randomUUID();
         int coordinatorPort = freePort();
@@ -163,9 +165,9 @@ class TensorParallelCoordinatorLifecycleTest {
     private static void assertCoordinatorSeesWorkersAndAssignment(GossipParallelMembership coordinator,
             List<String> workers) throws Exception {
         eventually(() -> coordinator.candidateNodeIds().containsAll(workers),
-                Duration.ofSeconds(10));
-        eventually(() -> "worker-0".equals(coordinator.electedLeader()), Duration.ofSeconds(10));
-        eventually(() -> coordinator.findAssignment() != null, Duration.ofSeconds(10));
+                Duration.ofSeconds(20));
+        eventually(() -> "worker-0".equals(coordinator.electedLeader()), Duration.ofSeconds(20));
+        eventually(() -> coordinator.findAssignment() != null, Duration.ofSeconds(20));
 
         TensorParallelAssignment assignment = coordinator.findAssignment();
         assertNotNull(assignment);

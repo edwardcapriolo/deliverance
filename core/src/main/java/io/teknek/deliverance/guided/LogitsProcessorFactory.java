@@ -1,7 +1,7 @@
 package io.teknek.deliverance.guided;
 
-import com.codahale.metrics.MetricRegistry;
-import com.codahale.metrics.Timer;
+import io.dropwizard.metrics5.MetricRegistry;
+import io.dropwizard.metrics5.Timer;
 import com.google.common.primitives.Ints;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.model.AbstractModel;

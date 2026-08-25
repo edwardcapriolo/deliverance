@@ -28,7 +28,7 @@ public class ModelSupportTest {
     @Test
     void load() {
 
-        ArrayQueueTensorAllocator tc = new ArrayQueueTensorAllocator(new com.codahale.metrics.MetricRegistry());
+        ArrayQueueTensorAllocator tc = new ArrayQueueTensorAllocator(new io.dropwizard.metrics5.MetricRegistry());
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
              AbstractModel abstractModel = AutoModelForCausaLm.newBuilder(fetch)
                      .withWorkingMemoryType(DType.F32)

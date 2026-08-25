@@ -1,7 +1,7 @@
 package io.teknek.deliverance.generator;
 
 import com.google.common.base.Preconditions;
-import com.codahale.metrics.Timer;
+import io.dropwizard.metrics5.Timer;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.InferenceProfiler;

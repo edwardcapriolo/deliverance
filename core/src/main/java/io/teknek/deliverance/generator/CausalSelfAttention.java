@@ -1,7 +1,7 @@
 package io.teknek.deliverance.generator;
 
-import com.codahale.metrics.MetricRegistry;
-import com.codahale.metrics.Timer;
+import io.dropwizard.metrics5.MetricRegistry;
+import io.dropwizard.metrics5.Timer;
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.model.AbstractModel;
@@ -238,27 +238,42 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
                 Timer tm = metricRegistry.timer("causualselfattention.forward_gqa_querybatch_1");
                 try (Timer.Context ignoredQkv = InferenceProfiler.timer(metricRegistry, "causalselfattention.qkv_projection").time()) {
                     ForkJoinTask<?> queryTask = m.getPool().getUnderlying().submit(() ->
-                            VectorMath.pchunkMetrics(0, attentionLength, (chunkStart, chunkLength) ->
+                            // Previous baseline for comparison:
+                            // VectorMath.pchunkMetrics(0, attentionLength, (chunkStart, chunkLength) ->
+                            //         configurableTensorProvider.get().dotProductChunk(queryBatch, input,
+                            //                 queryAttnWeights, 0, config.embeddingLength, chunkStart,
+                            //                 chunkLength),
+                            //         splitSize, tm, m.getPool())
+                            m.runChunks("causalselfattention.q_projection", 0, attentionLength, splitSize,
+                                    Optional.of(input), (chunkStart, chunkLength) -> {
+                                        try (Timer.Context ignoredChunk = tm.time()) {
                                             configurableTensorProvider.get().dotProductChunk(queryBatch, input,
                                                     queryAttnWeights, 0, config.embeddingLength, chunkStart,
-                                                    chunkLength),
-                                    splitSize, tm, m.getPool()));
+                                                    chunkLength);
+                                        }
+                                    }));
                     ForkJoinTask<?> keyTask = m.getPool().getUnderlying().submit(() ->
-                            VectorMath.pchunk(0, kvLength, (chunkStart, chunkLength) -> {
+                            // Previous baseline for comparison:
+                            // VectorMath.pchunk(0, kvLength, (chunkStart, chunkLength) -> { ... }, splitSize, m.getPool())
+                            m.runChunks("causalselfattention.k_projection", 0, kvLength, splitSize,
+                                    Optional.of(input), (chunkStart, chunkLength) -> {
                                 Timer t = metricRegistry.timer("causualselfattention.forward_gqa_key_2");
                                 try (Timer.Context context = t.time()) {
                                     configurableTensorProvider.get().dotProductChunk(tmpKeyBatch, input,
                                             keyAttnWeights, 0, config.embeddingLength, chunkStart, chunkLength);
                                 }
-                            }, splitSize, m.getPool()));
+                            }));
                     ForkJoinTask<?> valueTask = m.getPool().getUnderlying().submit(() ->
-                            VectorMath.pchunk(0, kvLength, (chunkStart, chunkLength) -> {
+                            // Previous baseline for comparison:
+                            // VectorMath.pchunk(0, kvLength, (chunkStart, chunkLength) -> { ... }, splitSize, m.getPool())
+                            m.runChunks("causalselfattention.v_projection", 0, kvLength, splitSize,
+                                    Optional.of(input), (chunkStart, chunkLength) -> {
                                 Timer r = metricRegistry.timer("causualselfattention.forward_gqa_val_3");
                                 try (Timer.Context context = r.time()) {
                                     configurableTensorProvider.get().dotProductChunk(tmpValBatch, input,
                                             valueAttnWeights, 0, config.embeddingLength, chunkStart, chunkLength);
                                 }
-                            }, splitSize, m.getPool()));
+                            }));
                     queryTask.join();
                     keyTask.join();
                     valueTask.join();
@@ -268,12 +283,13 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
                 qkvResults[1] = tmpKeyBatch;
                 qkvResults[2] = tmpValBatch;
                 try (Timer.Context ignoredQkv = InferenceProfiler.timer(metricRegistry, "causalselfattention.qkv_projection").time()) {
-                    VectorMath.pchunk(0, attentionLength, (chunkStart, chunkLength) -> {
+                    m.runChunks("causalselfattention.qkv_projection", 0, attentionLength, splitSize,
+                            Optional.of(input), (chunkStart, chunkLength) -> {
                     long start = System.nanoTime();
                     configurableTensorProvider.get()
                             .dotProductBatchChunk(qkvResults, input, qkvWeights, 0, config.embeddingLength, chunkStart, chunkLength);
                     metricRegistry.histogram("causualselfattention.forward_qkv_1").update(System.nanoTime() - start);
-                    }, splitSize, m.getPool());
+                    });
                 }
             }
 
@@ -388,7 +404,8 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
                 try (Timer.Context ignoredOutput = InferenceProfiler.timer(metricRegistry, "causalselfattention.output_projection").time()) {
                     io.teknek.deliverance.tensor.operations.TensorOperations outputOps =
                             m.prefillProjectionOperations(vq, outputProjectionWeights, phase);
-                    VectorMath.pchunk(0, config.embeddingLength, (chunkStart, chunkSize) -> {
+                    m.runChunks("causalselfattention.output_projection", 0, config.embeddingLength,
+                            outputOps.parallelSplitSize(), Optional.of(vq), (chunkStart, chunkSize) -> {
                     outputOps.dotProductChunk(
                                      result,
                                      vq,
@@ -398,7 +415,7 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
                                     chunkStart,
                                      chunkSize
                              );
-                    }, outputOps.parallelSplitSize(), m.getPool());
+                    });
                 }
                 AbstractTensor reduced = m.getTensorParallelContext().enabled()
                         ? allReduceAttention(result)
