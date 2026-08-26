@@ -101,11 +101,7 @@ public class GeneratorSampler {
                     logits.set(v, 0, i);
                 }
                 if (logProbs) {
-                    IndexValueToken token = new IndexValueToken(i, v, abstractModel.decodeToken(i));
-                    topNLogProbs.offer(token);
-                    if (topNLogProbs.size() > topLogProbs) {
-                        topNLogProbs.poll();
-                    }
+                    offerTopLogProb(topNLogProbs, i, v);
                 }
                 if (v > maxv) {
                     maxi = i;
@@ -113,12 +109,14 @@ public class GeneratorSampler {
                 }
             }
             if (logProbs) {
-                AbstractTensor logSum = abstractModel.getTensorAllocator().getDirty(logits.dType(), logits.shape());
-                VectorTensorMathUtils.logSumExpTensor(logSum, logits);
-                for (IndexValueToken token : topNLogProbs) {
-                    token.logProb = logSum.get(0, token.index);
+                if (!topNLogProbs.isEmpty()) {
+                    AbstractTensor logSum = abstractModel.getTensorAllocator().getDirty(logits.dType(), logits.shape());
+                    VectorTensorMathUtils.logSumExpTensor(logSum, logits);
+                    for (IndexValueToken token : topNLogProbs) {
+                        token.logProb = logSum.get(0, token.index);
+                    }
+                    logSum.close();
                 }
-                logSum.close();
             }
             Optional<IndexValueToken> chosen = Optional.empty();
             if (xtcThreshold != 0){
@@ -175,5 +173,25 @@ public class GeneratorSampler {
             long end = System.nanoTime();
             fullSample.update(Math.abs(end - start));
         }
+    }
+
+    private void offerTopLogProb(PriorityQueue<IndexValueToken> topNLogProbs, int index, float value) {
+        if (topLogProbs <= 0) {
+            return;
+        }
+        if (topNLogProbs.size() < topLogProbs) {
+            topNLogProbs.offer(new IndexValueToken(index, value, abstractModel.decodeToken(index)));
+            return;
+        }
+        IndexValueToken min = topNLogProbs.peek();
+        if (min != null && compareIndexValue(index, value, min.index, min.value) > 0) {
+            topNLogProbs.poll();
+            topNLogProbs.offer(new IndexValueToken(index, value, abstractModel.decodeToken(index)));
+        }
+    }
+
+    private static int compareIndexValue(int leftIndex, float leftValue, int rightIndex, float rightValue) {
+        int valueComparison = Float.compare(leftValue, rightValue);
+        return valueComparison != 0 ? valueComparison : Integer.compare(leftIndex, rightIndex);
     }
 }
