@@ -139,11 +139,7 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
             for (int i = 0; i < model.config.vocabularySize; i++) {
                 float v = logits.get(0, i);
                 if (logProbs) {
-                    IndexValueToken token = new IndexValueToken(i, v, model.decodeToken(i));
-                    topNLogProbs.offer(token);
-                    if (topNLogProbs.size() > topLogProbs) {
-                        topNLogProbs.poll();
-                    }
+                    offerTopLogProb(topNLogProbs, topLogProbs, i, v);
                 }
                 if (v > maxv) {
                     maxi = i;
@@ -184,11 +180,7 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
                         scaledLogits.set(v, 0, i);
 
                         if (logProbs) {
-                            IndexValueToken token = new IndexValueToken(i, v, model.decodeToken(i));
-                            topXLogProbs.offer(token);
-                            if (topXLogProbs.size() > topLogProbs) {
-                                topXLogProbs.poll();
-                            }
+                            offerTopLogProb(topXLogProbs, topLogProbs, i, v);
                         }
                     }
                     if (logProbs) {
@@ -246,12 +238,35 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
     }
 
     public void computeLogProbs(AbstractTensor scaledLogits, PriorityQueue<IndexValueToken> logPobs){
+        if (logPobs.isEmpty()) {
+            return;
+        }
         try (AbstractTensor logSum = model.getTensorAllocator().getDirty(scaledLogits.dType(), scaledLogits.shape())) {
             VectorTensorMathUtils.logSumExpTensor(logSum, scaledLogits);
             for (IndexValueToken token : logPobs) {
                 token.logProb = logSum.get(0, token.index);
             }
         }
+    }
+
+    private void offerTopLogProb(PriorityQueue<IndexValueToken> topLogProbs, int limit, int index, float value) {
+        if (limit <= 0) {
+            return;
+        }
+        if (topLogProbs.size() < limit) {
+            topLogProbs.offer(new IndexValueToken(index, value, model.decodeToken(index)));
+            return;
+        }
+        IndexValueToken min = topLogProbs.peek();
+        if (min != null && compareIndexValue(index, value, min.index, min.value) > 0) {
+            topLogProbs.poll();
+            topLogProbs.offer(new IndexValueToken(index, value, model.decodeToken(index)));
+        }
+    }
+
+    private static int compareIndexValue(int leftIndex, float leftValue, int rightIndex, float rightValue) {
+        int valueComparison = Float.compare(leftValue, rightValue);
+        return valueComparison != 0 ? valueComparison : Integer.compare(leftIndex, rightIndex);
     }
 
     static int topKCandidateCount(float topK, int vocabularySize) {
