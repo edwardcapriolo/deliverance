@@ -1154,6 +1154,193 @@ public class NativeSimd {
         }
     }
 
+    private static class max_f32 {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.of(
+            NativeSimd.C_FLOAT,
+            NativeSimd.C_POINTER,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT
+        );
+
+        public static final MemorySegment ADDR = NativeSimd.findOrThrow("max_f32");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /**
+     * Function descriptor for:
+     * {@snippet lang=c :
+     * float max_f32(const float *input, int row, int offset, int length, int input_stride)
+     * }
+     */
+    public static FunctionDescriptor max_f32$descriptor() {
+        return max_f32.DESC;
+    }
+
+    /**
+     * Downcall method handle for:
+     * {@snippet lang=c :
+     * float max_f32(const float *input, int row, int offset, int length, int input_stride)
+     * }
+     */
+    public static MethodHandle max_f32$handle() {
+        return max_f32.HANDLE;
+    }
+
+    /**
+     * Address for:
+     * {@snippet lang=c :
+     * float max_f32(const float *input, int row, int offset, int length, int input_stride)
+     * }
+     */
+    public static MemorySegment max_f32$address() {
+        return max_f32.ADDR;
+    }
+
+    /**
+     * {@snippet lang=c :
+     * float max_f32(const float *input, int row, int offset, int length, int input_stride)
+     * }
+     */
+    public static float max_f32(MemorySegment input, int row, int offset, int length, int input_stride) {
+        var mh$ = max_f32.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("max_f32", input, row, offset, length, input_stride);
+            }
+            return (float) mh$.invokeExact(input, row, offset, length, input_stride);
+        } catch (Throwable ex$) {
+           throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
+    private static class sum_f32 {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.of(
+            NativeSimd.C_FLOAT,
+            NativeSimd.C_POINTER,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT
+        );
+
+        public static final MemorySegment ADDR = NativeSimd.findOrThrow("sum_f32");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /**
+     * Function descriptor for:
+     * {@snippet lang=c :
+     * float sum_f32(const float *input, int row, int offset, int length, int input_stride)
+     * }
+     */
+    public static FunctionDescriptor sum_f32$descriptor() {
+        return sum_f32.DESC;
+    }
+
+    /**
+     * Downcall method handle for:
+     * {@snippet lang=c :
+     * float sum_f32(const float *input, int row, int offset, int length, int input_stride)
+     * }
+     */
+    public static MethodHandle sum_f32$handle() {
+        return sum_f32.HANDLE;
+    }
+
+    /**
+     * Address for:
+     * {@snippet lang=c :
+     * float sum_f32(const float *input, int row, int offset, int length, int input_stride)
+     * }
+     */
+    public static MemorySegment sum_f32$address() {
+        return sum_f32.ADDR;
+    }
+
+    /**
+     * {@snippet lang=c :
+     * float sum_f32(const float *input, int row, int offset, int length, int input_stride)
+     * }
+     */
+    public static float sum_f32(MemorySegment input, int row, int offset, int length, int input_stride) {
+        var mh$ = sum_f32.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("sum_f32", input, row, offset, length, input_stride);
+            }
+            return (float) mh$.invokeExact(input, row, offset, length, input_stride);
+        } catch (Throwable ex$) {
+           throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
+    private static class argmax_f32 {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
+            NativeSimd.C_POINTER,
+            NativeSimd.C_POINTER,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT
+        );
+
+        public static final MemorySegment ADDR = NativeSimd.findOrThrow("argmax_f32");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /**
+     * Function descriptor for:
+     * {@snippet lang=c :
+     * void argmax_f32(const float *input, float *output, int row, int offset, int length, int input_stride)
+     * }
+     */
+    public static FunctionDescriptor argmax_f32$descriptor() {
+        return argmax_f32.DESC;
+    }
+
+    /**
+     * Downcall method handle for:
+     * {@snippet lang=c :
+     * void argmax_f32(const float *input, float *output, int row, int offset, int length, int input_stride)
+     * }
+     */
+    public static MethodHandle argmax_f32$handle() {
+        return argmax_f32.HANDLE;
+    }
+
+    /**
+     * Address for:
+     * {@snippet lang=c :
+     * void argmax_f32(const float *input, float *output, int row, int offset, int length, int input_stride)
+     * }
+     */
+    public static MemorySegment argmax_f32$address() {
+        return argmax_f32.ADDR;
+    }
+
+    /**
+     * {@snippet lang=c :
+     * void argmax_f32(const float *input, float *output, int row, int offset, int length, int input_stride)
+     * }
+     */
+    public static void argmax_f32(MemorySegment input, MemorySegment output, int row, int offset, int length,
+            int input_stride) {
+        var mh$ = argmax_f32.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("argmax_f32", input, output, row, offset, length, input_stride);
+            }
+            mh$.invokeExact(input, output, row, offset, length, input_stride);
+        } catch (Throwable ex$) {
+           throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
     private static class saxpy_f32_batch {
         public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
             NativeSimd.C_POINTER,

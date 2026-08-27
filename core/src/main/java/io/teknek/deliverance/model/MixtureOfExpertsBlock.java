@@ -19,8 +19,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
 
-import static io.teknek.deliverance.tensor.VectorTensorMathUtils.softMax;
-
 public class MixtureOfExpertsBlock implements FeedForward {
 
     private static final Logger LOG = LoggerFactory.getLogger(MixtureOfExpertsBlock.class);
@@ -86,7 +84,7 @@ public class MixtureOfExpertsBlock implements FeedForward {
                 }
 
                 try (Timer.Context ignoredSoftmax = InferenceProfiler.timer(model.getMetricRegistry(), "mixtureofexpertsblock.router_softmax").time()) {
-                    VectorTensorMathUtils.softMax(expertResults,0, numberOfExperts);
+                    model.configurableTensorProvider.get().softMax(expertResults,0, numberOfExperts);
                 }
 
                 try (Timer.Context ignoredTopk = InferenceProfiler.timer(model.getMetricRegistry(), "mixtureofexpertsblock.router_topk").time()) {

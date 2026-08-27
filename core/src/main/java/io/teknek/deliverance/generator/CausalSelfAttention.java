@@ -503,7 +503,8 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
                                 int visibleLength = startPosition + bi + 1;
                                 try (AbstractTensor attnRow = attn.slice(bi);
                                      AbstractTensor valueRow = valueBatch.slice(bi)) {
-                                    scaledSoftmax(attnRow, visibleLength, attentionScale, config.attnLogitSoftCapping);
+                                    configurableTensorProvider.get().scaledSoftMax(attnRow, 0, visibleLength,
+                                            attentionScale, config.attnLogitSoftCapping);
                                     configurableTensorProvider.get().saxpy(attnRow, packedValues, valueRow,
                                             xoffset, yoffset, config.headSize, 0, 0, visibleLength);
                                 }

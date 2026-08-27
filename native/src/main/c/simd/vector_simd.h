@@ -47,6 +47,9 @@ void saxpy_f32(float alpha, const float *x, float *y, int xoffset, int yoffset, 
 void saxpy_f32_batch(const float *alpha, const float *x, float *y, int xoffset, int yoffset, int limit, int aoffset, int xrowoffset, int batch_size, int xstride);
 
 void exp_f32(const float *input, float *output, int rows, int offset, int length, int input_stride, int output_stride);
+float max_f32(const float *input, int row, int offset, int length, int input_stride);
+float sum_f32(const float *input, int row, int offset, int length, int input_stride);
+void argmax_f32(const float *input, float *output, int row, int offset, int length, int input_stride);
 
 void activation_multiply_quantize_silu_q8(const float *gate, const float *up, char *out, float *out_scale,
     int rows, int offset, int length, int gate_stride, int up_stride, int out_stride, int scale_stride);

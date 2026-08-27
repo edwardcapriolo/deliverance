@@ -81,6 +81,21 @@ public final class ParallelSplitSizedTensorOperations implements TensorOperation
     }
 
     @Override
+    public float max(AbstractTensor input, int row, int offset, int length) {
+        return delegate.max(input, row, offset, length);
+    }
+
+    @Override
+    public void argMax(AbstractTensor input, AbstractTensor output, int offset, int length) {
+        delegate.argMax(input, output, offset, length);
+    }
+
+    @Override
+    public float sum(AbstractTensor input, int row, int offset, int length) {
+        return delegate.sum(input, row, offset, length);
+    }
+
+    @Override
     public void exp(AbstractTensor input, AbstractTensor output, int offset, int length) {
         delegate.exp(input, output, offset, length);
     }

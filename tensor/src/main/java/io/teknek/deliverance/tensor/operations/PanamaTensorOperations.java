@@ -2951,6 +2951,62 @@ public final class PanamaTensorOperations implements TensorOperations {
     }
 
     @Override
+    public float max(AbstractTensor input, int row, int offset, int length) {
+        Preconditions.checkArgument(input.dType() == DType.F32, "Panama max currently supports F32 tensors");
+        return maxF32((FloatBufferTensor) input, row, offset, length);
+    }
+
+    @Override
+    public void argMax(AbstractTensor input, AbstractTensor output, int offset, int length) {
+        Preconditions.checkArgument(input.dType() == DType.F32, "Panama argMax currently supports F32 tensors");
+        Preconditions.checkArgument(output.dType() == DType.F32, "argMax output must be F32");
+        float maxValue = maxF32((FloatBufferTensor) input, 0, offset, length);
+        int maxIndex = offset;
+        for (int i = offset; i < offset + length; i++) {
+            if (input.get(0, i) == maxValue) {
+                maxIndex = i;
+                break;
+            }
+        }
+        output.set(maxIndex, 0, 0);
+        output.set(maxValue, 0, 1);
+    }
+
+    @Override
+    public float sum(AbstractTensor input, int row, int offset, int length) {
+        Preconditions.checkArgument(input.dType() == DType.F32, "Panama sum currently supports F32 tensors");
+        return sumF32((FloatBufferTensor) input, row, offset, length);
+    }
+
+    float sumF32(FloatBufferTensor input, int row, int offset, int length) {
+        int upperBound = offset + FloatVector.SPECIES_PREFERRED.loopBound(length);
+        FloatVector sumVector = FloatVector.zero(FloatVector.SPECIES_PREFERRED);
+        int i = offset;
+        for (; i < upperBound; i += FloatVector.SPECIES_PREFERRED.length()) {
+            sumVector = sumVector.add(input.getVector(FloatVector.SPECIES_PREFERRED, row, i));
+        }
+        float sum = sumVector.reduceLanes(VectorOperators.ADD);
+        for (; i < offset + length; i++) {
+            sum += input.get(row, i);
+        }
+        return sum;
+    }
+
+    float maxF32(FloatBufferTensor input, int row, int offset, int length) {
+        int upperBound = offset + FloatVector.SPECIES_PREFERRED.loopBound(length);
+        FloatVector maxVector = FloatVector.broadcast(FloatVector.SPECIES_PREFERRED, Float.NEGATIVE_INFINITY);
+        int i = offset;
+        for (; i < upperBound; i += FloatVector.SPECIES_PREFERRED.length()) {
+            maxVector = maxVector.max(input.getVector(FloatVector.SPECIES_PREFERRED, row, i));
+        }
+        float max = maxVector.reduceLanes(VectorOperators.MAX);
+        for (; i < offset + length; i++) {
+            max = Math.max(max, input.get(row, i));
+        }
+        return max;
+    }
+
+    @Override
     public void exp(AbstractTensor input, AbstractTensor output, int offset, int length) {
         TensorMutability.requireWritable(output, "exp");
         Preconditions.checkArgument(input.shape().equals(output.shape()), "input and output must have same shape");

@@ -593,6 +593,16 @@ public class NativeGPUTensorOperations implements TensorOperations {
     }
 
     @Override
+    public void argMax(AbstractTensor input, AbstractTensor output, int offset, int length) {
+        delegate.argMax(input, output, offset, length);
+    }
+
+    @Override
+    public float sum(AbstractTensor input, int row, int offset, int length) {
+        return delegate.sum(input, row, offset, length);
+    }
+
+    @Override
     public AbstractTensor quantize(AbstractTensor t, DType qtype, int offset, int length) {
         return delegate.quantize(t, qtype, offset, length);
     }

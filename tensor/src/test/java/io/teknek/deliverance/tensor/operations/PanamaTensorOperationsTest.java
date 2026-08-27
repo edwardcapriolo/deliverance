@@ -341,6 +341,77 @@ public class PanamaTensorOperationsTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("panamaVectorTypes")
+    void softMaxMatchesReferenceForOffsetsTailsAndRows(MachineSpec.Type vectorType) {
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+             FloatBufferTensor reference = deterministicInput(1, 37);
+             FloatBufferTensor actual = new FloatBufferTensor(reference)) {
+            int offset = 5;
+            int length = 29;
+            PanamaTensorOperations ops = new PanamaTensorOperations(vectorType, Mockito.mock(TensorAllocator.class), pool);
+
+            VectorTensorMathUtils.softMax(reference, offset, length);
+            ops.softMax(actual, offset, length);
+
+            for (int col = 0; col < reference.shape().last(); col++) {
+                assertEquals(reference.get(0, col), actual.get(0, col), 1.0e-6f, "col=" + col);
+            }
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("panamaVectorTypes")
+    void maxMatchesReferenceForOffsetsTailsAndRows(MachineSpec.Type vectorType) {
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+             FloatBufferTensor input = deterministicInput(3, 37)) {
+            PanamaTensorOperations ops = new PanamaTensorOperations(vectorType, Mockito.mock(TensorAllocator.class), pool);
+            int offset = 5;
+            int length = 29;
+
+            for (int row = 0; row < input.shape().first(); row++) {
+                float expected = scalarMax(input, row, offset, length);
+                assertEquals(expected, ops.max(input, row, offset, length), 0.0f,
+                        "row=" + row);
+            }
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("panamaVectorTypes")
+    void sumMatchesReferenceForOffsetsTailsAndRows(MachineSpec.Type vectorType) {
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+             FloatBufferTensor input = deterministicInput(3, 37)) {
+            PanamaTensorOperations ops = new PanamaTensorOperations(vectorType, Mockito.mock(TensorAllocator.class), pool);
+            int offset = 5;
+            int length = 29;
+
+            for (int row = 0; row < input.shape().first(); row++) {
+                assertEquals(scalarSum(input, row, offset, length), ops.sum(input, row, offset, length),
+                        1.0e-5f, "row=" + row);
+            }
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("panamaVectorTypes")
+    void argMaxReturnsIndexAndValueWithLowestIndexTie(MachineSpec.Type vectorType) {
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+             FloatBufferTensor input = filled(1, 37, -5.0f);
+             FloatBufferTensor output = new FloatBufferTensor(1, 2)) {
+            input.set(9.0f, 0, 3);
+            input.set(11.0f, 0, 12);
+            input.set(11.0f, 0, 24);
+            input.set(12.0f, 0, 33);
+            PanamaTensorOperations ops = new PanamaTensorOperations(vectorType, Mockito.mock(TensorAllocator.class), pool);
+
+            ops.argMax(input, output, 5, 25);
+
+            assertEquals(12.0f, output.get(0, 0), 0.0f);
+            assertEquals(11.0f, output.get(0, 1), 0.0f);
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("panamaVectorTypes")
     void expMatchesReferenceForOffsetsTailsAndRows(MachineSpec.Type vectorType) {
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(new java.util.concurrent.ForkJoinPool(2));
              FloatBufferTensor input = deterministicInput(3, 19);
@@ -462,6 +533,22 @@ public class PanamaTensorOperationsTest {
             }
         }
         return tensor;
+    }
+
+    private static float scalarMax(AbstractTensor input, int row, int offset, int length) {
+        float max = input.get(row, offset);
+        for (int i = offset + 1; i < offset + length; i++) {
+            max = Math.max(max, input.get(row, i));
+        }
+        return max;
+    }
+
+    private static float scalarSum(AbstractTensor input, int row, int offset, int length) {
+        float sum = 0.0f;
+        for (int i = offset; i < offset + length; i++) {
+            sum += input.get(row, i);
+        }
+        return sum;
     }
 
     private static FloatBufferTensor rowShard(AbstractTensor source, int startInclusive, int length) {

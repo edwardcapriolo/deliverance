@@ -140,6 +140,103 @@ public class NativeSimdTensorOpsFuzzParityTest {
                             }
                         });
                     }
+                    case MAX -> {
+                        try (FloatBufferTensor naiveInput = deterministicInput(3, c.size, c.seed);
+                             FloatBufferTensor panamaInput = new FloatBufferTensor(naiveInput);
+                             FloatBufferTensor simdInput = new FloatBufferTensor(naiveInput)) {
+                            for (int row = 0; row < naiveInput.shape().first(); row++) {
+                                float naiveMax = naive.max(naiveInput, row, c.offset, c.length);
+                                float panamaMax = panama.max(panamaInput, row, c.offset, c.length);
+                                float simdMax = simd.max(simdInput, row, c.offset, c.length);
+                                assertEquals(naiveMax, panamaMax, 0.0f, c + " panama row=" + row);
+                                assertEquals(panamaMax, simdMax, 0.0f, c + " simd row=" + row);
+                            }
+                        }
+                        gpu.ifPresent(ops -> {
+                            try (FloatBufferTensor gpuInput = deterministicInput(3, c.size, c.seed);
+                                 FloatBufferTensor panamaInput = new FloatBufferTensor(gpuInput)) {
+                                for (int row = 0; row < gpuInput.shape().first(); row++) {
+                                    assertEquals(panama.max(panamaInput, row, c.offset, c.length),
+                                            ops.max(gpuInput, row, c.offset, c.length), 0.0f, c + " gpu row=" + row);
+                                }
+                            }
+                        });
+                    }
+                    case SUM -> {
+                        try (FloatBufferTensor naiveInput = deterministicInput(3, c.size, c.seed);
+                             FloatBufferTensor panamaInput = new FloatBufferTensor(naiveInput);
+                             FloatBufferTensor simdInput = new FloatBufferTensor(naiveInput)) {
+                            for (int row = 0; row < naiveInput.shape().first(); row++) {
+                                float naiveSum = naive.sum(naiveInput, row, c.offset, c.length);
+                                float panamaSum = panama.sum(panamaInput, row, c.offset, c.length);
+                                float simdSum = simd.sum(simdInput, row, c.offset, c.length);
+                                assertEquals(naiveSum, panamaSum, 1.0e-5f, c + " panama row=" + row);
+                                assertEquals(panamaSum, simdSum, 1.0e-5f, c + " simd row=" + row);
+                            }
+                        }
+                        gpu.ifPresent(ops -> {
+                            try (FloatBufferTensor gpuInput = deterministicInput(3, c.size, c.seed);
+                                 FloatBufferTensor panamaInput = new FloatBufferTensor(gpuInput)) {
+                                for (int row = 0; row < gpuInput.shape().first(); row++) {
+                                    assertEquals(panama.sum(panamaInput, row, c.offset, c.length),
+                                            ops.sum(gpuInput, row, c.offset, c.length), 1.0e-5f,
+                                            c + " gpu row=" + row);
+                                }
+                            }
+                        });
+                    }
+                    case ARGMAX -> {
+                        try (FloatBufferTensor naiveInput = deterministicInput(1, c.size, c.seed);
+                             FloatBufferTensor panamaInput = new FloatBufferTensor(naiveInput);
+                             FloatBufferTensor simdInput = new FloatBufferTensor(naiveInput);
+                             FloatBufferTensor naiveOut = new FloatBufferTensor(1, 2);
+                             FloatBufferTensor panamaOut = new FloatBufferTensor(1, 2);
+                             FloatBufferTensor simdOut = new FloatBufferTensor(1, 2)) {
+                            int tieIndex = c.offset + Math.max(0, c.length / 3);
+                            int duplicateTieIndex = c.offset + Math.max(0, (c.length * 2) / 3);
+                            naiveInput.set(99.0f, 0, duplicateTieIndex);
+                            naiveInput.set(99.0f, 0, tieIndex);
+                            panamaInput.set(99.0f, 0, duplicateTieIndex);
+                            panamaInput.set(99.0f, 0, tieIndex);
+                            simdInput.set(99.0f, 0, duplicateTieIndex);
+                            simdInput.set(99.0f, 0, tieIndex);
+
+                            naive.argMax(naiveInput, naiveOut, c.offset, c.length);
+                            panama.argMax(panamaInput, panamaOut, c.offset, c.length);
+                            simd.argMax(simdInput, simdOut, c.offset, c.length);
+                            assertTensorClose(naiveOut, panamaOut, 0.0f, c + " panama");
+                            assertTensorClose(panamaOut, simdOut, 0.0f, c.toString());
+                        }
+                        gpu.ifPresent(ops -> {
+                            try (FloatBufferTensor gpuInput = deterministicInput(1, c.size, c.seed);
+                                 FloatBufferTensor panamaInput = new FloatBufferTensor(gpuInput);
+                                 FloatBufferTensor gpuOut = new FloatBufferTensor(1, 2);
+                                 FloatBufferTensor panamaOut = new FloatBufferTensor(1, 2)) {
+                                panama.argMax(panamaInput, panamaOut, c.offset, c.length);
+                                ops.argMax(gpuInput, gpuOut, c.offset, c.length);
+                                assertTensorClose(panamaOut, gpuOut, 0.0f, c + " gpu");
+                            }
+                        });
+                    }
+                    case SOFTMAX -> {
+                        try (FloatBufferTensor naiveInput = deterministicInput(1, c.size, c.seed);
+                             FloatBufferTensor panamaInput = new FloatBufferTensor(naiveInput);
+                             FloatBufferTensor simdInput = new FloatBufferTensor(naiveInput)) {
+                            naive.softMax(naiveInput, c.offset, c.length);
+                            panama.softMax(panamaInput, c.offset, c.length);
+                            simd.softMax(simdInput, c.offset, c.length);
+                            assertTensorClose(naiveInput, panamaInput, 0.0001f, c + " panama");
+                            assertTensorClose(panamaInput, simdInput, 0.0001f, c.toString());
+                        }
+                        gpu.ifPresent(ops -> {
+                            try (FloatBufferTensor gpuInput = deterministicInput(1, c.size, c.seed);
+                                 FloatBufferTensor panamaInput = new FloatBufferTensor(gpuInput)) {
+                                panama.softMax(panamaInput, c.offset, c.length);
+                                ops.softMax(gpuInput, c.offset, c.length);
+                                assertTensorClose(panamaInput, gpuInput, 0.0001f, c + " gpu");
+                            }
+                        });
+                    }
                     case ACTIVATION_MULTIPLY_QUANTIZE -> {
                         try (FloatBufferTensor naiveGate = deterministicInput(3, c.size, c.seed);
                              FloatBufferTensor naiveUp = deterministicInput(3, c.size, c.seed + 23);
@@ -444,6 +541,10 @@ public class NativeSimdTensorOpsFuzzParityTest {
         MACCUMULATE,
         SAXPY,
         EXP,
+        MAX,
+        SUM,
+        ARGMAX,
+        SOFTMAX,
         ACTIVATION_MULTIPLY_QUANTIZE
     }
 

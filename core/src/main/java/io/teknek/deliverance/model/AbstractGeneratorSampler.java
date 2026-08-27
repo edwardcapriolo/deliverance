@@ -28,20 +28,22 @@ public abstract class AbstractGeneratorSampler {
     protected final LayerNorm layerNorm;
     protected final AbstractTensor output;
     protected final AbstractTensor logits;
+    protected final AbstractTensor argMaxScratch;
     protected final Random random;
     protected final float uniformSample;
     protected final ResponseContext responseContext;
     protected final Optional<LogitsProcessor> logitsProcessor;
 
     public AbstractGeneratorSampler(AbstractModel model, GeneratorParameters generatorParameters,
-                                     AbstractTensor output, AbstractTensor logits, LayerNorm layerNorm, Random random,
-                                     float uniformSample, ResponseContext responseContext,
-                                     Optional<LogitsProcessor> logitsProcessor) {
+                                      AbstractTensor output, AbstractTensor logits, LayerNorm layerNorm, Random random,
+                                      float uniformSample, ResponseContext responseContext, AbstractTensor argMaxScratch,
+                                      Optional<LogitsProcessor> logitsProcessor) {
         this.model = model;
         this.parameters = generatorParameters;
         this.layerNorm = layerNorm;
         this.output = output;
         this.logits = logits;
+        this.argMaxScratch = argMaxScratch;
         this.random = random;
         this.uniformSample = uniformSample;
         this.responseContext = responseContext;
@@ -91,10 +93,11 @@ public abstract class AbstractGeneratorSampler {
 class DeliveranceSampler extends AbstractGeneratorSampler {
 
     public DeliveranceSampler(AbstractModel model, GeneratorParameters generatorParameters, AbstractTensor output,
-                                    AbstractTensor logits, LayerNorm layerNorm, Random random, float uniformSample,
-                                    ResponseContext responseContext, Optional<LogitsProcessor> logitsProcessor) {
+                                     AbstractTensor logits, LayerNorm layerNorm, Random random, float uniformSample,
+                                     ResponseContext responseContext, AbstractTensor argMaxScratch,
+                                     Optional<LogitsProcessor> logitsProcessor) {
         super(model, generatorParameters, output, logits, layerNorm, random, uniformSample, responseContext,
-                logitsProcessor);
+                argMaxScratch, logitsProcessor);
     }
 
     @Override
@@ -136,6 +139,13 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
             int maxi = Integer.MIN_VALUE;
             double maxv = Double.NEGATIVE_INFINITY;
             PriorityQueue<IndexValueToken> topNLogProbs = new PriorityQueue<>();
+            if (!logProbs && xtcThreshold == 0 && temperature == 0.0) {
+                if (parameters.uniformTopP.isPresent()) {
+                    throw new IllegalArgumentException("uniformTopP requires temperature > 0");
+                }
+                model.primaryTensorOperations().argMax(logits, argMaxScratch, 0, model.config.vocabularySize);
+                return samplerReturn((int) argMaxScratch.get(0, 0), false, topNLogProbs);
+            }
             for (int i = 0; i < model.config.vocabularySize; i++) {
                 float v = logits.get(0, i);
                 if (logProbs) {
