@@ -826,21 +826,22 @@ public abstract class AbstractModel implements Generator, Classifier {
     }
 
     SamplerReturn createNextToken(GeneratorParameters generatorParameters, GenerationEngine.Logits logits, GenerationEngine.PrefillOutput last,
-                                  ResponseContext responseContext, Random random, float temperature,
-                                  Optional<LogitsProcessor> logitsProcessor){
+                                   ResponseContext responseContext, Random random, float temperature,
+                                  Optional<LogitsProcessor> logitsProcessor, AbstractTensor argMaxScratch){
         try (AbstractTensor lastTokenOutput = last.copyLastTokenOutput(tensorAllocator)) {
             DeliveranceSampler legacy = new DeliveranceSampler(this, generatorParameters,
                     lastTokenOutput, logits.tensor(), sampleOutput.getOutputLayerNorm(), random, random.nextFloat(),
-                    responseContext, logitsProcessor);
+                    responseContext, argMaxScratch, logitsProcessor);
             return legacy.sample();
         }
     }
 
     SamplerReturn createNextTokenLoop(GeneratorParameters generatorParameters, AbstractTensor output,
-                            AbstractTensor logits, ResponseContext responseContext, Random random, float temperature,
-                            Optional<LogitsProcessor> logitsProcessor){
+                             AbstractTensor logits, ResponseContext responseContext, Random random, float temperature,
+                             Optional<LogitsProcessor> logitsProcessor, AbstractTensor argMaxScratch){
         DeliveranceSampler legacy = new DeliveranceSampler(this, generatorParameters, output, logits,
-                sampleOutput.getOutputLayerNorm(), random, random.nextFloat(), responseContext, logitsProcessor);
+                sampleOutput.getOutputLayerNorm(), random, random.nextFloat(), responseContext, argMaxScratch,
+                logitsProcessor);
         return legacy.sample();
     }
 
@@ -928,7 +929,7 @@ public abstract class AbstractModel implements Generator, Classifier {
         classifyOutput.getClassificationBias().ifPresent(bias ->
                 configurableTensorProvider.get().accumulate(scores, bias, 0, classes)) );
         metricRegistry.timer("classify.3_softmax_scores").time(() ->
-        VectorTensorMathUtils.softMax(scores, 0, classes));
+        configurableTensorProvider.get().softMax(scores, 0, classes));
         SortedMap<String, Float> result = new TreeMap<>();
         for (int i = 0; i < classes; i++) {
             String label = config.classifcationLabels.get().inverse().get(i);

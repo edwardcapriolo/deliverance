@@ -113,6 +113,25 @@ public class NaiveTensorOperations implements TensorOperations {
     }
 
     @Override
+    public float max(AbstractTensor input, int row, int offset, int length) {
+        float max = input.get(row, offset);
+        for (int i = offset + 1; i < offset + length; i++) {
+            max = Math.max(max, input.get(row, i));
+        }
+        return max;
+    }
+
+    @Override
+    public void argMax(AbstractTensor input, AbstractTensor output, int offset, int length) {
+        TensorOperations.super.argMax(input, output, offset, length);
+    }
+
+    @Override
+    public float sum(AbstractTensor input, int row, int offset, int length) {
+        return TensorOperations.super.sum(input, row, offset, length);
+    }
+
+    @Override
     public void exp(AbstractTensor input, AbstractTensor output, int offset, int length) {
         TensorMutability.requireWritable(output, "exp");
         if (!input.shape().equals(output.shape())) {

@@ -200,6 +200,176 @@ void exp_f32(const float *input, float *output, int rows, int offset, int length
     }
 }
 
+float max_f32(const float *input, int row, int offset, int length, int input_stride) {
+    const float *in = input + row * input_stride + offset;
+    int i = 0;
+#if defined(__ARM_NEON__)
+    float32x4_t maxv = vdupq_n_f32(-INFINITY);
+    for (; i + 4 <= length; i += 4) {
+        maxv = vmaxq_f32(maxv, vld1q_f32(in + i));
+    }
+    float max = vmaxvq_f32(maxv);
+#elif defined(__AVX512F__)
+    __m512 maxv = _mm512_set1_ps(-INFINITY);
+    for (; i + 16 <= length; i += 16) {
+        maxv = _mm512_max_ps(maxv, _mm512_loadu_ps(in + i));
+    }
+    float max = _mm512_reduce_max_ps(maxv);
+#else
+    __m256 maxv = _mm256_set1_ps(-INFINITY);
+    for (; i + 8 <= length; i += 8) {
+        maxv = _mm256_max_ps(maxv, _mm256_loadu_ps(in + i));
+    }
+    __attribute__((aligned(32))) float tmp[8];
+    _mm256_store_ps(tmp, maxv);
+    float max = tmp[0];
+    for (int j = 1; j < 8; j++) {
+        if (tmp[j] > max) {
+            max = tmp[j];
+        }
+    }
+#endif
+    for (; i < length; i++) {
+        if (in[i] > max) {
+            max = in[i];
+        }
+    }
+    return max;
+}
+
+float sum_f32(const float *input, int row, int offset, int length, int input_stride) {
+    const float *in = input + row * input_stride + offset;
+    int i = 0;
+#if defined(__ARM_NEON__)
+    float32x4_t sumv = vdupq_n_f32(0.0f);
+    for (; i + 4 <= length; i += 4) {
+        sumv = vaddq_f32(sumv, vld1q_f32(in + i));
+    }
+    float sum = vaddvq_f32(sumv);
+#elif defined(__AVX512F__)
+    __m512 sumv = _mm512_set1_ps(0.0f);
+    for (; i + 16 <= length; i += 16) {
+        sumv = _mm512_add_ps(sumv, _mm512_loadu_ps(in + i));
+    }
+    float sum = _mm512_reduce_add_ps(sumv);
+#else
+    __m256 sumv = _mm256_set1_ps(0.0f);
+    for (; i + 8 <= length; i += 8) {
+        sumv = _mm256_add_ps(sumv, _mm256_loadu_ps(in + i));
+    }
+    float tmp[8];
+    _mm256_storeu_ps(tmp, sumv);
+    float sum = tmp[0] + tmp[1] + tmp[2] + tmp[3] + tmp[4] + tmp[5] + tmp[6] + tmp[7];
+#endif
+    for (; i < length; i++) {
+        sum += in[i];
+    }
+    return sum;
+}
+
+void argmax_f32(const float *input, float *output, int row, int offset, int length, int input_stride) {
+    const float *base = input + row * input_stride;
+    const int limit = offset + length;
+    int max_index = offset;
+    float max_value = base[offset];
+    int i = offset;
+#if defined(__ARM_NEON__)
+    if (length >= 4) {
+        const uint32_t lane_init[4] = {0, 1, 2, 3};
+        const uint32x4_t lanes = vld1q_u32(lane_init);
+        float32x4_t maxv = vld1q_f32(base + offset);
+        uint32x4_t idxv = vaddq_u32(vdupq_n_u32((uint32_t) offset), lanes);
+        i = offset + 4;
+        for (; i + 4 <= limit; i += 4) {
+            float32x4_t values = vld1q_f32(base + i);
+            uint32x4_t indices = vaddq_u32(vdupq_n_u32((uint32_t) i), lanes);
+            uint32x4_t greater = vcgtq_f32(values, maxv);
+            maxv = vbslq_f32(greater, values, maxv);
+            idxv = vbslq_u32(greater, indices, idxv);
+        }
+        float values[4];
+        uint32_t indices[4];
+        vst1q_f32(values, maxv);
+        vst1q_u32(indices, idxv);
+        max_value = values[0];
+        max_index = (int) indices[0];
+        for (int lane = 1; lane < 4; lane++) {
+            if (values[lane] > max_value || (values[lane] == max_value && (int) indices[lane] < max_index)) {
+                max_value = values[lane];
+                max_index = (int) indices[lane];
+            }
+        }
+    } else {
+        i = offset + 1;
+    }
+#elif defined(__AVX512F__)
+    if (length >= 16) {
+        const __m512i lanes = _mm512_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
+        __m512 maxv = _mm512_loadu_ps(base + offset);
+        __m512i idxv = _mm512_add_epi32(_mm512_set1_epi32(offset), lanes);
+        i = offset + 16;
+        for (; i + 16 <= limit; i += 16) {
+            __m512 values = _mm512_loadu_ps(base + i);
+            __m512i indices = _mm512_add_epi32(_mm512_set1_epi32(i), lanes);
+            __mmask16 greater = _mm512_cmp_ps_mask(values, maxv, _CMP_GT_OQ);
+            maxv = _mm512_mask_blend_ps(greater, maxv, values);
+            idxv = _mm512_mask_blend_epi32(greater, idxv, indices);
+        }
+        float values[16];
+        int indices[16];
+        _mm512_storeu_ps(values, maxv);
+        _mm512_storeu_si512((__m512i *) indices, idxv);
+        max_value = values[0];
+        max_index = indices[0];
+        for (int lane = 1; lane < 16; lane++) {
+            if (values[lane] > max_value || (values[lane] == max_value && indices[lane] < max_index)) {
+                max_value = values[lane];
+                max_index = indices[lane];
+            }
+        }
+    } else {
+        i = offset + 1;
+    }
+#else
+    if (length >= 8) {
+        const __m256i lanes = _mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7);
+        __m256 maxv = _mm256_loadu_ps(base + offset);
+        __m256i idxv = _mm256_add_epi32(_mm256_set1_epi32(offset), lanes);
+        i = offset + 8;
+        for (; i + 8 <= limit; i += 8) {
+            __m256 values = _mm256_loadu_ps(base + i);
+            __m256i indices = _mm256_add_epi32(_mm256_set1_epi32(i), lanes);
+            __m256 greater = _mm256_cmp_ps(values, maxv, _CMP_GT_OQ);
+            maxv = _mm256_blendv_ps(maxv, values, greater);
+            idxv = _mm256_blendv_epi8(idxv, indices, _mm256_castps_si256(greater));
+        }
+        float values[8];
+        int indices[8];
+        _mm256_storeu_ps(values, maxv);
+        _mm256_storeu_si256((__m256i *) indices, idxv);
+        max_value = values[0];
+        max_index = indices[0];
+        for (int lane = 1; lane < 8; lane++) {
+            if (values[lane] > max_value || (values[lane] == max_value && indices[lane] < max_index)) {
+                max_value = values[lane];
+                max_index = indices[lane];
+            }
+        }
+    } else {
+        i = offset + 1;
+    }
+#endif
+    for (; i < limit; i++) {
+        float value = base[i];
+        if (value > max_value) {
+            max_value = value;
+            max_index = i;
+        }
+    }
+    output[0] = (float) max_index;
+    output[1] = max_value;
+}
+
 void activation_multiply_quantize_silu_q8(const float *gate, const float *up, char *out, float *out_scale,
     int rows, int offset, int length, int gate_stride, int up_stride, int out_stride, int scale_stride) {
     float block[Q8_BLOCK_SIZE];

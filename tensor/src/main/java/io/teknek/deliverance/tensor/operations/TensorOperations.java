@@ -138,6 +138,63 @@ public interface TensorOperations {
      */
     void scale(float factor, AbstractTensor x, int offset, int length);
 
+    /** Returns the maximum value over a contiguous window in one row of a tensor. */
+    default float max(AbstractTensor input, int row, int offset, int length) {
+        Preconditions.checkArgument(row >= 0 && row < input.shape().first(), "row out of bounds");
+        Preconditions.checkArgument(offset >= 0 && length > 0 && offset + length <= input.shape().last(),
+                "window out of bounds");
+        float max = input.get(row, offset);
+        for (int i = offset + 1; i < offset + length; i++) {
+            max = Math.max(max, input.get(row, i));
+        }
+        return max;
+    }
+
+    /**
+     * Writes the index and value of the maximum element in a one-row contiguous tensor window to {@code output}.
+     *
+     * <p>This is a separate operation from {@link #max(AbstractTensor, int, int, int)} because greedy generation needs
+     * the token index, not just the maximum logit. {@code output} must be a one-row, two-column F32 tensor where column 0
+     * receives the winning index and column 1 receives the winning value. Providers should write both values from the
+     * same kernel so callers do not need an extra scalar tensor read; that extra read is especially undesirable when the
+     * input tensor lives on an accelerator.</p>
+     *
+     * <p>Ties are resolved by choosing the lowest index. This preserves the existing scalar greedy sampler behavior,
+     * which updates only when {@code candidate > currentBest}, not when values are equal.</p>
+     */
+    default void argMax(AbstractTensor input, AbstractTensor output, int offset, int length) {
+        Preconditions.checkArgument(input.shape().first() == 1, "argMax expects one row");
+        Preconditions.checkArgument(output.shape().first() == 1 && output.shape().last() == 2,
+                "argMax output must have shape [1, 2]");
+        Preconditions.checkArgument(output.dType() == DType.F32, "argMax output must be F32");
+        TensorMutability.requireWritable(output, "argMax");
+        Preconditions.checkArgument(offset >= 0 && length > 0 && offset + length <= input.shape().last(),
+                "window out of bounds");
+        int maxIndex = offset;
+        float maxValue = input.get(0, offset);
+        for (int i = offset + 1; i < offset + length; i++) {
+            float value = input.get(0, i);
+            if (value > maxValue) {
+                maxValue = value;
+                maxIndex = i;
+            }
+        }
+        output.set(maxIndex, 0, 0);
+        output.set(maxValue, 0, 1);
+    }
+
+    /** Returns the sum over a contiguous window in one row of a tensor. */
+    default float sum(AbstractTensor input, int row, int offset, int length) {
+        Preconditions.checkArgument(row >= 0 && row < input.shape().first(), "row out of bounds");
+        Preconditions.checkArgument(offset >= 0 && length > 0 && offset + length <= input.shape().last(),
+                "window out of bounds");
+        float sum = 0.0f;
+        for (int i = offset; i < offset + length; i++) {
+            sum += input.get(row, i);
+        }
+        return sum;
+    }
+
     /**
      * Writes {@code output = exp(input)} over a contiguous window for every row in the input tensor.
      *
@@ -154,6 +211,38 @@ public interface TensorOperations {
                 output.set((float) net.jafama.FastMath.exp(input.get(row, i)), row, i);
             }
         }
+    }
+
+    default void scaledSoftMax(AbstractTensor x, int offset, int length, float scale, Float softcap) {
+        Preconditions.checkArgument(x.shape().first() == 1);
+        TensorMutability.requireWritable(x, "scaledSoftMax");
+        int limit = offset + length;
+        float maxVal = transformForAttentionSoftmax(x.get(0, offset), scale, softcap);
+        for (int i = offset + 1; i < limit; i++) {
+            float value = transformForAttentionSoftmax(x.get(0, i), scale, softcap);
+            if (value > maxVal) {
+                maxVal = value;
+            }
+        }
+        for (int i = offset; i < limit; i++) {
+            x.set(transformForAttentionSoftmax(x.get(0, i), scale, softcap) - maxVal, 0, i);
+        }
+        exp(x, x, offset, length);
+        float sum = sum(x, 0, offset, length);
+        float invSum = 1.0f / sum;
+        scale(invSum, x, offset, length);
+    }
+
+    default void softMax(AbstractTensor x, int offset, int length) {
+        scaledSoftMax(x, offset, length, 1.0f, null);
+    }
+
+    private static float transformForAttentionSoftmax(float value, float scale, Float softcap) {
+        float scaled = value * scale;
+        if (softcap == null) {
+            return scaled;
+        }
+        return (float) net.jafama.FastMath.tanh(scaled / softcap) * softcap;
     }
 
     /**
@@ -275,7 +364,7 @@ public interface TensorOperations {
                 batchDotProduct(attn, query, keyPage, queryOffset, kvOffset, headSize, globalRow, 0, rows);
                 globalRow += rows;
             }
-            VectorTensorMathUtils.scaledSoftMax(attn, 0, visibleRows, scale, softcap);
+            scaledSoftMax(attn, 0, visibleRows, scale, softcap);
             globalRow = 0;
             for (AbstractTensor valuePage : valuePages) {
                 if (globalRow >= visibleRows) {

@@ -97,6 +97,9 @@ public class VectorTensorMathUtils {
     }
 
     //https://nhigham.com/2021/01/05/what-is-the-log-sum-exp-function/
+    // TODO: This is not the numerically stable log-sum-exp form. It should subtract max(x) before exponentiating and
+    // add max(x) back after the log; otherwise large positive logits can overflow and large negative logits can
+    // underflow. Use a provider-backed max/exp path when this is updated for hot inference code.
     public static double logSumExp(AbstractTensor x){
         float sum = 0.0f;
         for (int i = 0; i < x.size(); i++) {
