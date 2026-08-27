@@ -588,6 +588,11 @@ public class NativeGPUTensorOperations implements TensorOperations {
     }
 
     @Override
+    public void exp(AbstractTensor input, AbstractTensor output, int offset, int length) {
+        delegate.exp(input, output, offset, length);
+    }
+
+    @Override
     public AbstractTensor quantize(AbstractTensor t, DType qtype, int offset, int length) {
         return delegate.quantize(t, qtype, offset, length);
     }

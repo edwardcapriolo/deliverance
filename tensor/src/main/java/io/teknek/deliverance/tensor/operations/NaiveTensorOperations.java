@@ -4,6 +4,7 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.AbstractTensorUtils;
 import io.teknek.deliverance.tensor.TensorMutability;
+import net.jafama.FastMath;
 
 public class NaiveTensorOperations implements TensorOperations {
     @Override
@@ -109,6 +110,20 @@ public class NaiveTensorOperations implements TensorOperations {
         for (int b = 0; b < x.shape().first(); b++)
             for (int i = offset; i < limit; ++i)
                 x.set(x.get(b, i) * factor, b, i);
+    }
+
+    @Override
+    public void exp(AbstractTensor input, AbstractTensor output, int offset, int length) {
+        TensorMutability.requireWritable(output, "exp");
+        if (!input.shape().equals(output.shape())) {
+            throw new IllegalArgumentException("input and output must have same shape");
+        }
+        int limit = offset + length;
+        for (int row = 0; row < input.shape().first(); row++) {
+            for (int i = offset; i < limit; i++) {
+                output.set((float) FastMath.exp(input.get(row, i)), row, i);
+            }
+        }
     }
 
     @Override

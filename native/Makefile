@@ -103,7 +103,7 @@ clean:
 
 $(BF16_TEST): src/test/c/test_bf16_gemm.c $(SRC_DIR)/vector_simd.c
 	mkdir -p $(OBJ_DIR)
-	$(CC) $(CFLAGS) -I$(SRC_DIR) $^ -o $@ -lm
+	$(CC) $(CFLAGS) -I$(SRC_DIR) $^ -o $@ -lm $(TEST_LDFLAGS)
 
 test-bf16-gemm-run: $(BF16_TEST)
 	$(BF16_TEST)

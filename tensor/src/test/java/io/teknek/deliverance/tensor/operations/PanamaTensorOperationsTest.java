@@ -341,6 +341,54 @@ public class PanamaTensorOperationsTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("panamaVectorTypes")
+    void expMatchesReferenceForOffsetsTailsAndRows(MachineSpec.Type vectorType) {
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(new java.util.concurrent.ForkJoinPool(2));
+             FloatBufferTensor input = deterministicInput(3, 19);
+             FloatBufferTensor actual = filled(3, 19, -777.0f)) {
+            int offset = 3;
+            int length = 13;
+            PanamaTensorOperations ops = new PanamaTensorOperations(vectorType, Mockito.mock(TensorAllocator.class), pool);
+
+            ops.exp(input, actual, offset, length);
+
+            for (int row = 0; row < input.shape().first(); row++) {
+                for (int col = 0; col < input.shape().last(); col++) {
+                    if (col >= offset && col < offset + length) {
+                        assertEquals((float) net.jafama.FastMath.exp(input.get(row, col)), actual.get(row, col),
+                                1.0e-6f, "row=" + row + " col=" + col);
+                    } else {
+                        assertEquals(-777.0f, actual.get(row, col), 0.0f,
+                                "out-of-window row=" + row + " col=" + col);
+                    }
+                }
+            }
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("panamaVectorTypes")
+    void expCoversSimpleKnownValues(MachineSpec.Type vectorType) {
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(new java.util.concurrent.ForkJoinPool(1));
+             FloatBufferTensor input = new FloatBufferTensor(1, 5);
+             FloatBufferTensor actual = new FloatBufferTensor(1, 5)) {
+            input.set(0.0f, 0, 0);
+            input.set(1.0f, 0, 1);
+            input.set(-1.0f, 0, 2);
+            input.set(2.0f, 0, 3);
+            input.set(-2.0f, 0, 4);
+            PanamaTensorOperations ops = new PanamaTensorOperations(vectorType, Mockito.mock(TensorAllocator.class), pool);
+
+            ops.exp(input, actual, 0, 5);
+
+            for (int col = 0; col < 5; col++) {
+                assertEquals((float) net.jafama.FastMath.exp(input.get(0, col)), actual.get(0, col),
+                        1.0e-6f, "col=" + col);
+            }
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("panamaVectorTypes")
     void dotProductChunkI8Q4ColumnShardMatchesFullProjectionContribution(MachineSpec.Type vectorType) {
         int batchSize = 3;
         int embeddingLength = 128;
@@ -401,6 +449,16 @@ public class PanamaTensorOperationsTest {
         for (int row = 0; row < rows; row++) {
             for (int col = 0; col < cols; col++) {
                 tensor.set(((row * 43 + col * 19 + salt) % 251 - 125) / 80.0f, row, col);
+            }
+        }
+        return tensor;
+    }
+
+    private static FloatBufferTensor filled(int rows, int cols, float value) {
+        FloatBufferTensor tensor = new FloatBufferTensor(rows, cols);
+        for (int row = 0; row < rows; row++) {
+            for (int col = 0; col < cols; col++) {
+                tensor.set(value, row, col);
             }
         }
         return tensor;

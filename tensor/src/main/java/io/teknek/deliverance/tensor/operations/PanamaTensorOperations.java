@@ -13,6 +13,7 @@ import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import jdk.incubator.vector.*;
+import net.jafama.FastMath;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -2946,6 +2947,24 @@ public final class PanamaTensorOperations implements TensorOperations {
         // tail
         for (; i < (offset + length); i++) {
             a.set(a.get(0, i) * factor, 0, i);
+        }
+    }
+
+    @Override
+    public void exp(AbstractTensor input, AbstractTensor output, int offset, int length) {
+        TensorMutability.requireWritable(output, "exp");
+        Preconditions.checkArgument(input.shape().equals(output.shape()), "input and output must have same shape");
+        Preconditions.checkArgument(input.dType() == DType.F32 && output.dType() == DType.F32,
+                "Panama exp currently supports F32 tensors");
+        expF32((FloatBufferTensor) input, (FloatBufferTensor) output, offset, length);
+    }
+
+    void expF32(FloatBufferTensor input, FloatBufferTensor output, int offset, int length) {
+        int limit = offset + length;
+        for (int row = 0; row < input.shape().first(); row++) {
+            for (int i = offset; i < limit; i++) {
+                output.set((float) FastMath.exp(input.get(row, i)), row, i);
+            }
         }
     }
 
