@@ -520,6 +520,21 @@ public class NativeSimdTensorOperations implements TensorOperations {
     }
 
     @Override
+    public void exp(AbstractTensor input, AbstractTensor output, int offset, int length) {
+        TensorMutability.requireWritable(output, "exp");
+        if (input.dType() == DType.F32
+                && output.dType() == DType.F32
+                && input instanceof FloatBufferTensor
+                && output instanceof FloatBufferTensor
+                && input.shape().equals(output.shape())) {
+            NativeSimd.exp_f32(input.getMemorySegment(), output.getMemorySegment(), input.shape().first(), offset,
+                    length, input.getStride(), output.getStride());
+            return;
+        }
+        delegate.exp(input, output, offset, length);
+    }
+
+    @Override
     public AbstractTensor quantize(AbstractTensor t, DType qtype, int offset, int length) {
         return delegate.quantize(t, qtype, offset, length);
     }

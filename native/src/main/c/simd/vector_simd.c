@@ -16,6 +16,9 @@
 #include <inttypes.h>
 #include <math.h>
 #include <stdlib.h>
+#if defined(__APPLE__)
+#include <Accelerate/Accelerate.h>
+#endif
 #include "vector_simd.h"
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
@@ -174,12 +177,27 @@ static void saxpy_f32_batch_128_arm(const float *alpha, const float *x, float *y
 #endif
 
 void saxpy_f32_batch(const float *alpha, const float *x, float *y, int xoffset, int yoffset, int limit,
-                     int aoffset, int xrowoffset, int batch_size, int xstride) {
+                      int aoffset, int xrowoffset, int batch_size, int xstride) {
 #if defined(__ARM_NEON__)
     saxpy_f32_batch_128_arm(alpha, x, y, xoffset, yoffset, limit, aoffset, xrowoffset, batch_size, xstride);
 #else
     saxpy_f32_batch_scalar(alpha, x, y, xoffset, yoffset, limit, aoffset, xrowoffset, batch_size, xstride);
 #endif
+}
+
+void exp_f32(const float *input, float *output, int rows, int offset, int length, int input_stride, int output_stride) {
+    for (int row = 0; row < rows; row++) {
+        const float *in = input + row * input_stride + offset;
+        float *out = output + row * output_stride + offset;
+#if defined(__APPLE__)
+        int n = length;
+        vvexpf(out, in, &n);
+#else
+        for (int i = 0; i < length; i++) {
+            out[i] = expf(in[i]);
+        }
+#endif
+    }
 }
 
 void activation_multiply_quantize_silu_q8(const float *gate, const float *up, char *out, float *out_scale,

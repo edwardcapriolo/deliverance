@@ -139,6 +139,24 @@ public interface TensorOperations {
     void scale(float factor, AbstractTensor x, int offset, int length);
 
     /**
+     * Writes {@code output = exp(input)} over a contiguous window for every row in the input tensor.
+     *
+     * <p>This is a first-class tensor operation because probability code such as softmax and diffusion entropy needs
+     * exponentials over large logits tensors. Implementations should use their best available backend; Java Vector API
+     * providers may still use scalar exponentials until a native vector exp is available.</p>
+     */
+    default void exp(AbstractTensor input, AbstractTensor output, int offset, int length) {
+        TensorMutability.requireWritable(output, "exp");
+        Preconditions.checkArgument(input.shape().equals(output.shape()), "input and output must have same shape");
+        int limit = offset + length;
+        for (int row = 0; row < input.shape().first(); row++) {
+            for (int i = offset; i < limit; i++) {
+                output.set((float) net.jafama.FastMath.exp(input.get(row, i)), row, i);
+            }
+        }
+    }
+
+    /**
      * Quantizes the tensor to the specified type (if supported)
      */
     /*

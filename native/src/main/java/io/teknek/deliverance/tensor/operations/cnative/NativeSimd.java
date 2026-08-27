@@ -1090,6 +1090,70 @@ public class NativeSimd {
         }
     }
 
+    private static class exp_f32 {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
+            NativeSimd.C_POINTER,
+            NativeSimd.C_POINTER,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT
+        );
+
+        public static final MemorySegment ADDR = NativeSimd.findOrThrow("exp_f32");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /**
+     * Function descriptor for:
+     * {@snippet lang=c :
+     * void exp_f32(const float *input, float *output, int rows, int offset, int length, int input_stride, int output_stride)
+     * }
+     */
+    public static FunctionDescriptor exp_f32$descriptor() {
+        return exp_f32.DESC;
+    }
+
+    /**
+     * Downcall method handle for:
+     * {@snippet lang=c :
+     * void exp_f32(const float *input, float *output, int rows, int offset, int length, int input_stride, int output_stride)
+     * }
+     */
+    public static MethodHandle exp_f32$handle() {
+        return exp_f32.HANDLE;
+    }
+
+    /**
+     * Address for:
+     * {@snippet lang=c :
+     * void exp_f32(const float *input, float *output, int rows, int offset, int length, int input_stride, int output_stride)
+     * }
+     */
+    public static MemorySegment exp_f32$address() {
+        return exp_f32.ADDR;
+    }
+
+    /**
+     * {@snippet lang=c :
+     * void exp_f32(const float *input, float *output, int rows, int offset, int length, int input_stride, int output_stride)
+     * }
+     */
+    public static void exp_f32(MemorySegment input, MemorySegment output, int rows, int offset, int length,
+            int input_stride, int output_stride) {
+        var mh$ = exp_f32.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("exp_f32", input, output, rows, offset, length, input_stride, output_stride);
+            }
+            mh$.invokeExact(input, output, rows, offset, length, input_stride, output_stride);
+        } catch (Throwable ex$) {
+           throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
     private static class saxpy_f32_batch {
         public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
             NativeSimd.C_POINTER,

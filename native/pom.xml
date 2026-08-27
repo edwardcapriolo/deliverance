@@ -521,8 +521,8 @@
                     <env key="JNI_PLATFORM" value="${jni.platform}" />
                     <env key="CFLAGS" value="-target arm64-apple-macos11 -mmacosx-version-min=11.0 -Rpass-analysis=loop-vectorize -Rpass=loop-vectorize -Rpass-missed=loop-vectorize -O3 -Werror -Wno-attributes -fPIC -fno-omit-frame-pointer -Wunused-variable -fno-common" />
                     <env key="CFLAGS2" value="-target arm64-apple-macos11 -mmacosx-version-min=11.0 -Rpass-analysis=loop-vectorize -Rpass=loop-vectorize -Rpass-missed=loop-vectorize -O3 -Werror -Wno-attributes -fPIC -fno-omit-frame-pointer -Wunused-variable -fno-common -I${dawnWorkDir}/include" />
-                    <env key="LDFLAGS" value="-syslibroot `xcrun -sdk macosx --show-sdk-path` -lSystem -dylib -arch arm64" />
-                    <env key="LDFLAGS2" value="-syslibroot `xcrun -sdk macosx --show-sdk-path` -lSystem -dylib -arch arm64 -L${dawnWorkDir}/lib -lwebgpu_dawn" />
+                    <env key="LDFLAGS" value="-syslibroot `xcrun -sdk macosx --show-sdk-path` -lSystem -framework Accelerate -dylib -arch arm64" />
+                    <env key="LDFLAGS2" value="-syslibroot `xcrun -sdk macosx --show-sdk-path` -lSystem -framework Accelerate -dylib -arch arm64 -L${dawnWorkDir}/lib -lwebgpu_dawn" />
                     <env key="LIB_NAME" value="${nativeLibName}" />
                     <env key="LIB_EXT" value="dylib" />
                     <env key="MACOSX_DEPLOYMENT_TARGET" value="11.0" />
@@ -549,6 +549,7 @@
                     <env key="OBJ_DIR" value="${nativeObjsOnlyDir}" />
                     <env key="JNI_PLATFORM" value="${jni.platform}" />
                     <env key="CFLAGS" value="-target arm64-apple-macos11 -mmacosx-version-min=11.0 -Rpass-analysis=loop-vectorize -Rpass=loop-vectorize -Rpass-missed=loop-vectorize -O3 -Werror -Wno-attributes -fPIC -fno-omit-frame-pointer -Wunused-variable -fno-common" />
+                    <env key="TEST_LDFLAGS" value="-isysroot `xcrun -sdk macosx --show-sdk-path` -framework Accelerate -arch arm64" />
                     <env key="LIB_NAME" value="${nativeLibName}" />
                     <env key="LIB_EXT" value="dylib" />
                     <env key="MACOSX_DEPLOYMENT_TARGET" value="11.0" />
@@ -633,8 +634,8 @@
                     <env key="JNI_PLATFORM" value="${jni.platform}" />
                     <env key="CFLAGS" value="-target x86_64-apple-macos10.12 -mmacosx-version-min=10.12 -mavx2 -mfma -O3 -Werror -Wno-attributes -fPIC -fno-omit-frame-pointer -Wunused-variable -fno-common" />
                     <env key="CFLAGS2" value="-target x86_64-apple-macos10.12 -mmacosx-version-min=10.12 -mavx2 -mfma -O3 -Werror -Wno-attributes -fPIC -fno-omit-frame-pointer -Wunused-variable -fno-common -I${dawnWorkDir}/include" />
-                    <env key="LDFLAGS" value="-syslibroot `xcrun -sdk macosx --show-sdk-path` -lSystem -dylib -arch x86_64" />
-                    <env key="LDFLAGS2" value="-syslibroot `xcrun -sdk macosx --show-sdk-path` -lSystem -dylib -arch x86_64 -L${dawnWorkDir}/lib -lwebgpu_dawn" />
+                    <env key="LDFLAGS" value="-syslibroot `xcrun -sdk macosx --show-sdk-path` -lSystem -framework Accelerate -dylib -arch x86_64" />
+                    <env key="LDFLAGS2" value="-syslibroot `xcrun -sdk macosx --show-sdk-path` -lSystem -framework Accelerate -dylib -arch x86_64 -L${dawnWorkDir}/lib -lwebgpu_dawn" />
                     <env key="LIB_NAME" value="${nativeLibName}" />
                     <env key="LIB_EXT" value="dylib" />
                     <env key="MACOSX_DEPLOYMENT_TARGET" value="10.12" />

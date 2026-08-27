@@ -120,6 +120,26 @@ public class NativeSimdTensorOpsFuzzParityTest {
                             }
                         });
                     }
+                    case EXP -> {
+                        try (FloatBufferTensor naiveOut = filled(1, c.size, -77.0f);
+                             FloatBufferTensor panamaOut = filled(1, c.size, -77.0f);
+                             FloatBufferTensor simdOut = filled(1, c.size, -77.0f)) {
+                            naive.exp(panamaA, naiveOut, c.offset, c.length);
+                            panama.exp(panamaA, panamaOut, c.offset, c.length);
+                            assertTensorClose(naiveOut, panamaOut, 0.0001f, c + " panama");
+                            simd.exp(simdA, simdOut, c.offset, c.length);
+                            assertTensorClose(panamaOut, simdOut, 0.0001f, c.toString());
+                        }
+                        gpu.ifPresent(ops -> {
+                            try (FloatBufferTensor gpuIn = deterministicInput(1, c.size, c.seed);
+                                 FloatBufferTensor gpuOut = filled(1, c.size, -77.0f);
+                                 FloatBufferTensor panamaOut = filled(1, c.size, -77.0f)) {
+                                ops.exp(gpuIn, gpuOut, c.offset, c.length);
+                                panama.exp(gpuIn, panamaOut, c.offset, c.length);
+                                assertTensorClose(panamaOut, gpuOut, 0.0001f, c + " gpu");
+                            }
+                        });
+                    }
                     case ACTIVATION_MULTIPLY_QUANTIZE -> {
                         try (FloatBufferTensor naiveGate = deterministicInput(3, c.size, c.seed);
                              FloatBufferTensor naiveUp = deterministicInput(3, c.size, c.seed + 23);
@@ -403,6 +423,16 @@ public class NativeSimdTensorOpsFuzzParityTest {
         }
     }
 
+    private static FloatBufferTensor filled(int rows, int cols, float value) {
+        FloatBufferTensor tensor = new FloatBufferTensor(rows, cols);
+        for (int row = 0; row < rows; row++) {
+            for (int col = 0; col < cols; col++) {
+                tensor.set(value, row, col);
+            }
+        }
+        return tensor;
+    }
+
     private enum Op {
         BATCH_DOT,
         DOT_CHUNK,
@@ -413,6 +443,7 @@ public class NativeSimdTensorOpsFuzzParityTest {
         ACCUMULATE,
         MACCUMULATE,
         SAXPY,
+        EXP,
         ACTIVATION_MULTIPLY_QUANTIZE
     }
 
