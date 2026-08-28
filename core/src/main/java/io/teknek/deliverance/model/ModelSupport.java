@@ -7,6 +7,7 @@ import io.teknek.deliverance.grace.AutoTokenizer;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.bert.BertModelType;
+import io.teknek.deliverance.model.diffusiongemma.DiffusionGemmaModelType;
 import io.teknek.deliverance.model.gemma2.Gemma2ModelType;
 import io.teknek.deliverance.model.gemma4.Gemma4ModelType;
 import io.teknek.deliverance.model.gemma3.Gemma3ModelType;
@@ -66,6 +67,7 @@ public class ModelSupport {
         registry.putIfAbsent("GPT2", new Gpt2ModelType());
         registry.putIfAbsent("MIXTRAL", new MixtralModelType());
         registry.putIfAbsent("GRANITEMOEHYBRID", new GraniteMoeHybridModelType());
+        registry.putIfAbsent("DIFFUSION_GEMMA", new DiffusionGemmaModelType());
     }
 
     public static void addModel(String modelName, ModelType t){

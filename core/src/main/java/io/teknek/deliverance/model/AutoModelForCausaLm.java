@@ -6,6 +6,8 @@ import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.grace.AutoTokenizer;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
+import io.teknek.deliverance.model.diffusiongemma.DiffusionGemmaConfig;
+import io.teknek.deliverance.model.diffusiongemma.DiffusionGemmaModel;
 import io.teknek.deliverance.model.gemma2.Gemma2Config;
 import io.teknek.deliverance.model.gemma2.Gemma2Model;
 import io.teknek.deliverance.model.gemma3.Gemma3Config;
@@ -611,6 +613,7 @@ public class AutoModelForCausaLm {
                 case "GPT2" -> JsonUtils.om.readValue(configFile, Gpt2Config.class);
                 case "MIXTRAL" -> JsonUtils.om.readValue(configFile, MixtralConfig.class);
                 case "GRANITEMOEHYBRID" -> JsonUtils.om.readValue(configFile, GraniteMoeHybridConfig.class);
+                case "DIFFUSION_GEMMA" -> JsonUtils.om.readValue(configFile, DiffusionGemmaConfig.class);
                 default -> throw new IllegalArgumentException(modelType + " not found in AutoModelForCausaLm");
             };
         }
@@ -654,6 +657,9 @@ public class AutoModelForCausaLm {
                         allocator, settings, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives,
                         outputHeadQuantization);
                 case "BERT" -> new io.teknek.deliverance.model.bert.BertModel(inferenceType, config, weightLoader,
+                        tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
+                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                case "DIFFUSION_GEMMA" -> new DiffusionGemmaModel(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
                 default -> throw new IllegalArgumentException(modelType + " not supported by AutoModelForCausaLm");

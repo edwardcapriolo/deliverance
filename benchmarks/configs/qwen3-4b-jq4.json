@@ -1,6 +1,10 @@
 {
   "outputHeadQuantization": "Q4",
   "maxBatchSize": 512,
+  "tensorRuntimeMode": "DISABLED",
+  "parallelSplitSizeFixed": {
+    "SIMD": 32
+  },
   "kvBufferCache": {
     "maxEntries": 10000,
     "blockSize": 32,

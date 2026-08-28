@@ -2020,7 +2020,12 @@ public final class PanamaTensorOperations implements TensorOperations {
 
     @Override
     public AbstractTensor quantize(AbstractTensor t, DType qtype, int offset, int length) {
-        Preconditions.checkArgument(t.dims() == 2 && length % Q8ByteBufferTensor.BLOCK_SIZE == 0);
+        Preconditions.checkArgument(t.dims() == 2);
+        if ((t.dType() == DType.BF16 && qtype == DType.F32) || (t.dType() == DType.F32 && qtype == DType.BF16)) {
+            Preconditions.checkArgument(length % ShortVector.SPECIES_PREFERRED.length() == 0);
+        } else {
+            Preconditions.checkArgument(length % Q8ByteBufferTensor.BLOCK_SIZE == 0);
+        }
 
         return switch (t.dType()) {
             case F32 -> switch (qtype) {

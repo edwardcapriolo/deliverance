@@ -1,7 +1,14 @@
 package io.teknek.deliverance.model.diffusiongemma;
 
+import io.dropwizard.metrics5.MetricRegistry;
+import io.dropwizard.metrics5.Timer;
+import io.teknek.deliverance.DType;
+import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
-import net.jafama.FastMath;
+import io.teknek.deliverance.tensor.TensorProbability;
+import io.teknek.deliverance.tensor.TensorMutability;
+import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
+import io.teknek.deliverance.tensor.operations.TensorOperations;
 
 import java.util.Arrays;
 import java.util.Objects;
@@ -12,9 +19,12 @@ public final class EntropyBoundSampler {
     private final int canvasLength;
     private final int vocabSize;
     private final Random random;
+    private final TensorOperations tensorOperations;
+    private final MetricRegistry metricRegistry;
     private boolean[][] acceptedTokenMask;
 
-    public EntropyBoundSampler(float entropyBound, int canvasLength, int vocabSize, Random random) {
+    public EntropyBoundSampler(float entropyBound, int canvasLength, int vocabSize, Random random,
+            TensorOperations tensorOperations, MetricRegistry metricRegistry) {
         if (!Float.isFinite(entropyBound) || entropyBound <= 0.0f) {
             throw new IllegalArgumentException("entropyBound must be finite and > 0");
         }
@@ -28,19 +38,18 @@ public final class EntropyBoundSampler {
         this.canvasLength = canvasLength;
         this.vocabSize = vocabSize;
         this.random = Objects.requireNonNull(random, "random");
+        this.tensorOperations = Objects.requireNonNull(tensorOperations, "tensorOperations");
+        this.metricRegistry = Objects.requireNonNull(metricRegistry, "metricRegistry");
     }
 
-    public int[][] initializeCanvas(int batchSize) {
-        if (batchSize <= 0) {
-            throw new IllegalArgumentException("batchSize must be > 0");
-        }
-        int[][] canvas = new int[batchSize][canvasLength];
-        for (int batch = 0; batch < batchSize; batch++) {
+    public void initializeCanvas(AbstractTensor canvas) {
+        validateCanvas(canvas, "canvas");
+        TensorMutability.requireWritable(canvas, "initializeCanvas");
+        for (int batch = 0; batch < canvas.shape().first(); batch++) {
             for (int position = 0; position < canvasLength; position++) {
-                canvas[batch][position] = random.nextInt(vocabSize);
+                canvas.set(random.nextInt(vocabSize), batch, position);
             }
         }
-        return canvas;
     }
 
     /**
@@ -52,77 +61,96 @@ public final class EntropyBoundSampler {
      * accepts positions while {@code cumulativeEntropy - currentEntropy <= entropyBound}. Accepted positions take their
      * token from {@code denoiserCanvas}; rejected positions keep their token from {@code currentCanvas}.</p>
      *
-     * <p>The accepted-position mask is stored on the sampler so {@link #renoiseCanvas(int[][], int)} can keep accepted
-     * tokens fixed and re-randomize the rejected positions.</p>
+     * <p>The accepted-position mask is stored on the sampler so {@link #renoiseCanvas(AbstractTensor, AbstractTensor, int)}
+     * can keep accepted tokens fixed and re-randomize the rejected positions.</p>
      */
-    public int[][] acceptCanvas(int[][] currentCanvas, int[][] denoiserCanvas, AbstractTensor logits, int curStep) {
+    public void acceptCanvas(AbstractTensor acceptedCanvas, AbstractTensor currentCanvas, AbstractTensor denoiserCanvas,
+            AbstractTensor logits, int curStep) {
+        try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
+                "diffusiongemma.sampler.accept_canvas").time()) {
+        validateCanvas(acceptedCanvas, "acceptedCanvas");
         validateCanvas(currentCanvas, "currentCanvas");
         validateCanvas(denoiserCanvas, "denoiserCanvas");
-        if (logits.dims() != 3 || logits.shape().dim(0) != currentCanvas.length
+        TensorMutability.requireWritable(acceptedCanvas, "acceptCanvas");
+        if (logits.dims() != 3 || logits.shape().dim(0) != currentCanvas.shape().first()
                 || logits.shape().dim(1) != canvasLength || logits.shape().dim(2) != vocabSize) {
             throw new IllegalArgumentException("logits must have shape [batchSize, canvasLength, vocabSize]");
         }
-        int batchSize = currentCanvas.length;
+        int batchSize = (int) currentCanvas.shape().first();
         boolean[][] accepted = new boolean[batchSize][canvasLength];
-        int[][] result = copyCanvas(currentCanvas);
-        for (int batch = 0; batch < batchSize; batch++) {
-            PositionEntropy[] entropies = new PositionEntropy[canvasLength];
-            for (int position = 0; position < canvasLength; position++) {
-                entropies[position] = new PositionEntropy(position, entropy(logits, batch, position));
+        acceptedCanvas.copyFrom(currentCanvas, 0, 0, (int) currentCanvas.size());
+        int acceptedCount = 0;
+        try (FloatBufferTensor tokenEntropy = new FloatBufferTensor(batchSize, canvasLength)) {
+            try (Timer.Context ignoredEntropy = InferenceProfiler.timer(metricRegistry,
+                    "diffusiongemma.sampler.entropy").time()) {
+                TensorProbability.entropy(tokenEntropy, logits, tensorOperations);
             }
-            Arrays.sort(entropies);
-            double cumulativeEntropy = 0.0;
-            for (PositionEntropy positionEntropy : entropies) {
-                cumulativeEntropy += positionEntropy.entropy;
-                if (cumulativeEntropy - positionEntropy.entropy <= entropyBound) {
-                    int position = positionEntropy.position;
-                    accepted[batch][position] = true;
-                    result[batch][position] = denoiserCanvas[batch][position];
+            try (Timer.Context ignoredSelection = InferenceProfiler.timer(metricRegistry,
+                    "diffusiongemma.sampler.accept_selection").time()) {
+            for (int batch = 0; batch < batchSize; batch++) {
+                PositionEntropy[] entropies = new PositionEntropy[canvasLength];
+                for (int position = 0; position < canvasLength; position++) {
+                    entropies[position] = new PositionEntropy(position, tokenEntropy.get(batch, position));
+                }
+                Arrays.sort(entropies);
+                double cumulativeEntropy = 0.0;
+                for (PositionEntropy positionEntropy : entropies) {
+                    cumulativeEntropy += positionEntropy.entropy;
+                    if (cumulativeEntropy - positionEntropy.entropy <= entropyBound) {
+                        int position = positionEntropy.position;
+                        accepted[batch][position] = true;
+                        acceptedCount++;
+                        acceptedCanvas.set(denoiserCanvas.get(batch, position), batch, position);
+                    }
+                }
+            }
+            }
+        }
+        if (InferenceProfiler.isEnabled()) {
+            InferenceProfiler.counter(metricRegistry, "diffusiongemma.sampler.accepted_tokens").inc(acceptedCount);
+            InferenceProfiler.counter(metricRegistry, "diffusiongemma.sampler.rejected_tokens")
+                    .inc((long) batchSize * canvasLength - acceptedCount);
+        }
+        this.acceptedTokenMask = accepted;
+        }
+    }
+
+    public void renoiseCanvas(AbstractTensor renoisedCanvas, AbstractTensor acceptedCanvas, int curStep) {
+        try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
+                "diffusiongemma.sampler.renoise_canvas").time()) {
+        if (acceptedTokenMask == null) {
+            throw new IllegalStateException("acceptCanvas must be called before renoiseCanvas");
+        }
+        validateCanvas(renoisedCanvas, "renoisedCanvas");
+        validateCanvas(acceptedCanvas, "acceptedCanvas");
+        TensorMutability.requireWritable(renoisedCanvas, "renoiseCanvas");
+        int batchSize = (int) acceptedCanvas.shape().first();
+        if (acceptedTokenMask.length != batchSize) {
+            throw new IllegalStateException("acceptedTokenMask batch size does not match acceptedCanvas");
+        }
+        for (int batch = 0; batch < batchSize; batch++) {
+            if (acceptedTokenMask[batch].length != canvasLength) {
+                throw new IllegalStateException("acceptedTokenMask row " + batch + " does not match canvasLength");
+            }
+            for (int position = 0; position < canvasLength; position++) {
+                if (acceptedTokenMask[batch][position]) {
+                    renoisedCanvas.set(acceptedCanvas.get(batch, position), batch, position);
+                } else {
+                    renoisedCanvas.set(random.nextInt(vocabSize), batch, position);
                 }
             }
         }
-        this.acceptedTokenMask = accepted;
-        return result;
-    }
-
-    public int[][] renoiseCanvas(int[][] acceptedCanvas, int curStep) {
-        throw new UnsupportedOperationException("DiffusionGemma renoiseCanvas is not implemented yet");
-    }
-
-    private double entropy(AbstractTensor logits, int batch, int position) {
-        double max = Double.NEGATIVE_INFINITY;
-        for (int token = 0; token < vocabSize; token++) {
-            max = Math.max(max, logits.get(batch, position, token));
         }
-        double sumExp = 0.0;
-        double weighted = 0.0;
-        for (int token = 0; token < vocabSize; token++) {
-            double shifted = logits.get(batch, position, token) - max;
-            double exp = FastMath.exp(shifted);
-            sumExp += exp;
-            weighted += exp * shifted;
-        }
-        return FastMath.log(sumExp) - (weighted / sumExp);
     }
 
-    private void validateCanvas(int[][] canvas, String name) {
+    private void validateCanvas(AbstractTensor canvas, String name) {
         Objects.requireNonNull(canvas, name);
-        if (canvas.length == 0) {
-            throw new IllegalArgumentException(name + " must have at least one batch row");
+        if (canvas.dims() != 2 || canvas.shape().first() <= 0 || canvas.shape().last() != canvasLength) {
+            throw new IllegalArgumentException(name + " must have shape [batchSize, " + canvasLength + "]");
         }
-        for (int batch = 0; batch < canvas.length; batch++) {
-            if (canvas[batch].length != canvasLength) {
-                throw new IllegalArgumentException(name + " row " + batch + " must have canvasLength=" + canvasLength);
-            }
+        if (canvas.dType() != DType.F32) {
+            throw new IllegalArgumentException(name + " must be F32 token-id tensor");
         }
-    }
-
-    private static int[][] copyCanvas(int[][] source) {
-        int[][] copy = new int[source.length][];
-        for (int i = 0; i < source.length; i++) {
-            copy[i] = Arrays.copyOf(source[i], source[i].length);
-        }
-        return copy;
     }
 
     private record PositionEntropy(int position, double entropy) implements Comparable<PositionEntropy> {
