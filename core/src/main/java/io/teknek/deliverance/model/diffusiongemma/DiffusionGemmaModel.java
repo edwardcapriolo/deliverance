@@ -2,18 +2,25 @@ package io.teknek.deliverance.model.diffusiongemma;
 
 import com.google.common.base.Preconditions;
 import io.dropwizard.metrics5.MetricRegistry;
+import io.teknek.deliverance.generator.FinishReason;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.EmbedInput;
+import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.LayerNorm;
+import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.generator.SampleOutput;
 import io.teknek.deliverance.generator.TransformerBlock;
+import io.teknek.deliverance.grace.EncodeOptions;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
+import io.teknek.deliverance.grace.TokenIds;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.GenerateEvent;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelContext;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
+import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorMutability;
@@ -28,14 +35,16 @@ import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Random;
+import java.util.UUID;
 
 /**
- * Minimal DiffusionGemma checkpoint-loading skeleton.
+ * Minimal DiffusionGemma checkpoint-loading and smoke-generation implementation.
  *
- * <p>This class intentionally validates and loads representative tensors without implementing inference. DiffusionGemma
- * has encoder/decoder/cache semantics that differ from the existing AR models, and Gemma4 is not considered a correctness
- * baseline here. Forward/generation support should be added in Phase 6 after the tiny checkpoint key/shape layout is
- * proven.</p>
+ * <p>This class validates the checkpoint layout and carries enough tensor execution to run the public tiny checkpoint
+ * through a generation smoke. DiffusionGemma has encoder/decoder/cache semantics that differ from the existing AR models,
+ * and Gemma4 is not considered a correctness baseline here; HF-parity generation still requires the remaining
+ * DiffusionGemma-specific attention and denoising semantics.</p>
  */
 public final class DiffusionGemmaModel extends AbstractModel {
     public record DiffusionGemmaModelOutput(AbstractTensor lastHiddenState) implements AutoCloseable {
@@ -199,8 +208,8 @@ public final class DiffusionGemmaModel extends AbstractModel {
      *
      * <p>This is the first executable encoder-layer slice. It intentionally covers the tensor data flow that the tiny
      * checkpoint can prove locally: token embedding, input RMSNorm, Q/K/V projections, full-sequence scaled-dot-product
-     * attention, output projection, post-attention RMSNorm, MLP, and residuals. RoPE, sliding-window masking, grouped-query
-     * head expansion, and all-layer encoder execution are separate follow-up work.</p>
+     * attention with GQA head mapping, output projection, post-attention RMSNorm, MLP, and residuals. RoPE,
+     * sliding-window masking, and decoder cross-attention are separate follow-up work.</p>
      */
     public AbstractTensor forwardTextEncoderLayer(AbstractTensor inputIds, int layerIndex) {
         Preconditions.checkArgument(inputIds.dims() == 2, "inputIds must be [batch, sequence]");
@@ -233,6 +242,86 @@ public final class DiffusionGemmaModel extends AbstractModel {
             output.close();
             throw e;
         }
+    }
+
+    /** Runs every currently loaded text layer over token IDs and returns final-normalized hidden states. */
+    public DiffusionGemmaModelOutput forwardTextEncoder(AbstractTensor inputIds) {
+        Preconditions.checkArgument(inputIds.dims() == 2, "inputIds must be [batch, sequence]");
+        Preconditions.checkState(outputNormWeights != null, "DiffusionGemmaModel must be initialized first");
+        int batchSize = (int) inputIds.shape().first();
+        int sequenceLength = (int) inputIds.shape().last();
+        int hidden = diffusionConfig.textConfig.hiddenSize;
+        AbstractTensor output = tensorAllocator.getDirty(DType.F32, TensorShape.of(batchSize, sequenceLength, hidden));
+        try (AbstractTensor embeddings3d = tensorAllocator.getDirty(decoderEmbeddingWeights.dType(),
+                     TensorShape.of(batchSize, sequenceLength, hidden));
+             AbstractTensor input2d = tensorAllocator.getDirty(DType.F32, TensorShape.of(batchSize * sequenceLength,
+                     hidden))) {
+            embedTokenIds(inputIds, embeddings3d);
+            flatten3d(embeddings3d, input2d);
+            try (AbstractTensor encoded2d = forwardHiddenThroughLoadedLayers(input2d, batchSize, sequenceLength);
+                 AbstractTensor encoded3d = tensorAllocator.getDirty(DType.F32,
+                         TensorShape.of(batchSize, sequenceLength, hidden))) {
+                inflate3d(encoded2d, encoded3d, batchSize, sequenceLength, hidden);
+                TensorNormalization.rmsNormLastDim(output, encoded3d, outputNormWeights,
+                        diffusionConfig.textConfig.rmsNormEps, configurableTensorProvider.get(), pool);
+                return new DiffusionGemmaModelOutput(output);
+            }
+        } catch (RuntimeException | Error e) {
+            output.close();
+            throw e;
+        }
+    }
+
+    /**
+     * First end-to-end DiffusionGemma smoke generation path.
+     *
+     * <p>This intentionally proves the Java pipeline can tokenize, build prompt cache rows, denoise a decoder canvas,
+     * project logits, choose tokens, and decode a response on the tiny checkpoint. It is not yet HF-parity generation:
+     * decoder cross-attention, RoPE, sliding-window masks, entropy-bound acceptance, and stopping criteria are still open.</p>
+     */
+    @Override
+    public Response generate(UUID sessionId, PromptContext promptContext, GeneratorParameters generatorParameters,
+            GenerateEvent eventFired) {
+        long startNanos = System.nanoTime();
+        int[] promptTokens = tokenizer.encode(promptContext.getPrompt(), EncodeOptions.defaults()).inputIds();
+        if (promptTokens.length == 0) {
+            promptTokens = new int[] { diffusionConfig.textConfig.bosTokenId == null ? 2 : diffusionConfig.textConfig.bosTokenId };
+        }
+        int requestedTokens = generatorParameters.maxTokens
+                .or(() -> generatorParameters.ntokens)
+                .orElse(Math.min(8, diffusionConfig.canvasLength));
+        int tokensToReturn = Math.max(1, Math.min(requestedTokens, diffusionConfig.canvasLength));
+        int seed = generatorParameters.seed.orElse(42);
+        List<Integer> generatedTokens = new ArrayList<>(tokensToReturn);
+
+        try (AbstractTensor promptIds = tokenTensor(promptTokens);
+             KvBufferCache.KvBuffer kvBuffer = newKvBuffer();
+             AbstractTensor canvas = tensorAllocator.getDirty(DType.F32, TensorShape.of(1, diffusionConfig.canvasLength));
+             AbstractTensor argmax = tensorAllocator.getDirty(DType.F32, TensorShape.of(1, 2))) {
+            encodeTextToCache(promptIds, kvBuffer);
+            new EntropyBoundSampler(1.0f, diffusionConfig.canvasLength, diffusionConfig.textConfig.vocabSize,
+                    new Random(seed), configurableTensorProvider.get(), metricRegistry).initializeCanvas(canvas);
+
+            try (AbstractTensor hidden = forwardCanvas(canvas, null)) {
+                for (int position = 0; position < tokensToReturn; position++) {
+                    try (AbstractTensor logits = logitsForCanvasPosition(hidden, 0, position)) {
+                        configurableTensorProvider.get().argMax(logits, argmax, 0, diffusionConfig.textConfig.vocabSize);
+                        int token = (int) argmax.get(0, 0);
+                        generatedTokens.add(token);
+                        canvas.set(token, 0, position);
+                        String raw = decodeTokens(new int[] { token }, false);
+                        eventFired.emit(token, raw, raw, elapsedMs(startNanos));
+                    }
+                }
+            }
+        }
+
+        int[] generated = generatedTokens.stream().mapToInt(Integer::intValue).toArray();
+        String textWithSpecialTokens = decodeTokens(generated, false);
+        String text = decodeTokens(generated, true);
+        long totalMs = Math.round(elapsedMs(startNanos));
+        return postProcessResponse(new Response(text, textWithSpecialTokens, FinishReason.MAX_TOKENS,
+                promptTokens.length, generatedTokens, 0, totalMs, List.of()));
     }
 
     @Override
@@ -298,13 +387,66 @@ public final class DiffusionGemmaModel extends AbstractModel {
         return new TransformerBlock[0];
     }
 
+    private AbstractTensor forwardCanvas(AbstractTensor canvasTokens, AbstractTensor selfConditioningSignal) {
+        Preconditions.checkArgument(canvasTokens.dims() == 2 && canvasTokens.shape().last() == diffusionConfig.canvasLength,
+                "canvasTokens must be [batch, canvasLength]");
+        int batchSize = (int) canvasTokens.shape().first();
+        int hidden = diffusionConfig.textConfig.hiddenSize;
+        AbstractTensor output = tensorAllocator.getDirty(DType.F32, TensorShape.of(batchSize, diffusionConfig.canvasLength,
+                hidden));
+        try (AbstractTensor inputEmbeddings = embedCanvasTokens(canvasTokens);
+             AbstractTensor zeroSignal = selfConditioningSignal == null
+                     ? zeroCanvasSignal(batchSize)
+                     : null;
+             AbstractTensor conditioned = applySelfConditioning(inputEmbeddings,
+                     selfConditioningSignal == null ? zeroSignal : selfConditioningSignal);
+             AbstractTensor conditioned2d = tensorAllocator.getDirty(DType.F32,
+                     TensorShape.of(batchSize * diffusionConfig.canvasLength, hidden))) {
+            flatten3d(conditioned, conditioned2d);
+            try (AbstractTensor final2d = forwardHiddenThroughLoadedLayers(conditioned2d, batchSize,
+                         diffusionConfig.canvasLength);
+                 AbstractTensor final3d = tensorAllocator.getDirty(DType.F32,
+                         TensorShape.of(batchSize, diffusionConfig.canvasLength, hidden))) {
+                inflate3d(final2d, final3d, batchSize, diffusionConfig.canvasLength, hidden);
+                TensorNormalization.rmsNormLastDim(output, final3d, outputNormWeights,
+                        diffusionConfig.textConfig.rmsNormEps, configurableTensorProvider.get(), pool);
+                return output;
+            }
+        } catch (RuntimeException | Error e) {
+            output.close();
+            throw e;
+        }
+    }
+
+    private AbstractTensor forwardHiddenThroughLoadedLayers(AbstractTensor input2d, int batchSize, int sequenceLength) {
+        AbstractTensor current = copyTensor(input2d);
+        try {
+            for (int layer = 0; layer < diffusionConfig.textConfig.numHiddenLayers; layer++) {
+                AbstractTensor next = forwardTextEncoderLayer2d(current, layer, batchSize, sequenceLength);
+                current.close();
+                current = next;
+            }
+            return current;
+        } catch (RuntimeException | Error e) {
+            current.close();
+            throw e;
+        }
+    }
+
     private AbstractTensor forwardTextEncoderLayer2d(AbstractTensor input, int layerIndex, int batchSize,
             int sequenceLength) {
         int hidden = diffusionConfig.textConfig.hiddenSize;
         int attentionLength = (int) encoderQueryWeights[layerIndex].shape().first();
         int kvLength = (int) encoderKeyWeights[layerIndex].shape().first();
-        Preconditions.checkArgument(attentionLength == kvLength,
-                "current DiffusionGemma encoder slice requires q/k lengths to match");
+        int headDim = diffusionConfig.textConfig.headDim;
+        int numberOfHeads = diffusionConfig.textConfig.numAttentionHeads;
+        int numberOfKeyValueHeads = diffusionConfig.textConfig.numKeyValueHeads;
+        Preconditions.checkArgument(attentionLength == numberOfHeads * headDim,
+                "q_proj rows must match numAttentionHeads * headDim");
+        Preconditions.checkArgument(kvLength == numberOfKeyValueHeads * headDim,
+                "k_proj rows must match numKeyValueHeads * headDim");
+        Preconditions.checkArgument(numberOfHeads % numberOfKeyValueHeads == 0,
+                "numAttentionHeads must be divisible by numKeyValueHeads");
         AbstractTensor valueWeight = encoderValueWeights[layerIndex] == null
                 ? encoderKeyWeights[layerIndex]
                 : encoderValueWeights[layerIndex];
@@ -327,7 +469,7 @@ public final class DiffusionGemmaModel extends AbstractModel {
             project(query, normed, encoderQueryWeights[layerIndex], hidden, attentionLength);
             project(key, normed, encoderKeyWeights[layerIndex], hidden, kvLength);
             project(value, normed, valueWeight, hidden, kvLength);
-            fullSequenceAttention(attended, query, key, value, batchSize, sequenceLength, attentionLength);
+            fullSequenceAttention(attended, query, key, value, batchSize, sequenceLength, attentionLength, kvLength);
             project(attentionOutput, attended, encoderOutputWeights[layerIndex], attentionLength, hidden);
 
             residualAfterAttention.copyFrom(input, 0, 0, (int) input.size());
@@ -355,8 +497,8 @@ public final class DiffusionGemmaModel extends AbstractModel {
                          diffusionConfig.textConfig.hiddenActivation, DType.F32, 0, intermediate)) {
                 AbstractTensor output = tensorAllocator.getDirty(DType.F32, input.shape());
                 try {
-                project(output, activated, encoderDownWeights[layerIndex], intermediate, hidden);
-                return output;
+                    project(output, activated, encoderDownWeights[layerIndex], intermediate, hidden);
+                    return output;
                 } catch (RuntimeException | Error e) {
                     output.close();
                     throw e;
@@ -366,28 +508,42 @@ public final class DiffusionGemmaModel extends AbstractModel {
     }
 
     private void fullSequenceAttention(AbstractTensor output, AbstractTensor query, AbstractTensor key,
-            AbstractTensor value, int batchSize, int sequenceLength, int attentionLength) {
+            AbstractTensor value, int batchSize, int sequenceLength, int attentionLength, int kvLength) {
         TensorOperations ops = configurableTensorProvider.get();
-        float scale = (float) (1.0 / StrictMath.sqrt(attentionLength));
+        int headDim = diffusionConfig.textConfig.headDim;
+        int numberOfHeads = diffusionConfig.textConfig.numAttentionHeads;
+        int numberOfKeyValueHeads = diffusionConfig.textConfig.numKeyValueHeads;
+        int headGroupSize = numberOfHeads / numberOfKeyValueHeads;
+        float scale = (float) (1.0 / StrictMath.sqrt(headDim));
         output.clear();
         for (int batch = 0; batch < batchSize; batch++) {
             try (AbstractTensor queryBatch = tensorAllocator.getDirty(DType.F32,
                          TensorShape.of(sequenceLength, attentionLength));
                  AbstractTensor keyBatch = tensorAllocator.getDirty(DType.F32,
-                         TensorShape.of(sequenceLength, attentionLength));
+                         TensorShape.of(sequenceLength, kvLength));
                  AbstractTensor valueBatch = tensorAllocator.getDirty(DType.F32,
-                         TensorShape.of(sequenceLength, attentionLength));
-                 AbstractTensor scores = tensorAllocator.getDirty(DType.F32,
-                         TensorShape.of(sequenceLength, sequenceLength))) {
+                         TensorShape.of(sequenceLength, kvLength));
+                 AbstractTensor scores = tensorAllocator.getDirty(DType.F32, TensorShape.of(1, sequenceLength))) {
                 copyBatchRows(query, queryBatch, batch, sequenceLength, attentionLength);
-                copyBatchRows(key, keyBatch, batch, sequenceLength, attentionLength);
-                copyBatchRows(value, valueBatch, batch, sequenceLength, attentionLength);
-                ops.batchDotProduct(scores, queryBatch, keyBatch, 0, 0, attentionLength, 0, 0, sequenceLength);
+                copyBatchRows(key, keyBatch, batch, sequenceLength, kvLength);
+                copyBatchRows(value, valueBatch, batch, sequenceLength, kvLength);
                 for (int row = 0; row < sequenceLength; row++) {
-                    try (AbstractTensor scoreRow = scores.slice(row);
+                    try (AbstractTensor queryRow = queryBatch.slice(row);
                          AbstractTensor outputRow = output.slice(batch * sequenceLength + row)) {
-                        ops.scaledSoftMax(scoreRow, 0, sequenceLength, scale, null);
-                        ops.saxpy(scoreRow, valueBatch, outputRow, 0, 0, attentionLength, 0, 0, sequenceLength);
+                        for (int head = 0; head < numberOfHeads; head++) {
+                            int kvHead = head / headGroupSize;
+                            int queryOffset = head * headDim;
+                            int kvOffset = kvHead * headDim;
+                            for (int keyPosition = 0; keyPosition < sequenceLength; keyPosition++) {
+                                try (AbstractTensor keyRow = keyBatch.slice(keyPosition)) {
+                                    scores.set(ops.dotProduct(queryRow, keyRow, queryOffset, kvOffset, headDim), 0,
+                                            keyPosition);
+                                }
+                            }
+                            ops.scaledSoftMax(scores, 0, sequenceLength, scale, null);
+                            ops.saxpy(scores, valueBatch, outputRow, kvOffset, queryOffset, headDim, 0, 0,
+                                    sequenceLength);
+                        }
                     }
                 }
             }
@@ -422,6 +578,29 @@ public final class DiffusionGemmaModel extends AbstractModel {
         AbstractTensor copy = tensorAllocator.getDirty(source.dType(), source.shape());
         copy.copyFrom(source, 0, 0, (int) source.size());
         return copy;
+    }
+
+    private AbstractTensor tokenTensor(int[] tokenIds) {
+        AbstractTensor tensor = tensorAllocator.getDirty(DType.F32, TensorShape.of(1, tokenIds.length));
+        for (int i = 0; i < tokenIds.length; i++) {
+            tensor.set(tokenIds[i], 0, i);
+        }
+        return tensor;
+    }
+
+    private AbstractTensor zeroCanvasSignal(int batchSize) {
+        AbstractTensor signal = tensorAllocator.getDirty(DType.F32,
+                TensorShape.of(batchSize, diffusionConfig.canvasLength, diffusionConfig.textConfig.hiddenSize));
+        signal.clear();
+        return signal;
+    }
+
+    private String decodeTokens(int[] tokenIds, boolean skipSpecialTokens) {
+        return tokenizer.decode(new TokenIds(tokenIds), skipSpecialTokens, false, false, false);
+    }
+
+    private static float elapsedMs(long startNanos) {
+        return (System.nanoTime() - startNanos) / 1_000_000.0f;
     }
 
     private AbstractTensor loadLayerRepresentative(boolean required, int layer, String... suffixes) {

@@ -1,14 +1,19 @@
 package io.teknek.deliverance.model.diffusiongemma;
 
+import io.teknek.deliverance.generator.GeneratorParameters;
+import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.safetensors.DefaultWeightLoader;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
+import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -135,6 +140,21 @@ class DiffusionGemmaTinyCheckpointLoadIT {
                 assertTrue(nonZero(output));
                 assertFinite(output);
             }
+        }
+    }
+
+    @Test
+    void tinyCheckpointGenerateSmokeReturnsTokens() {
+        ModelFetcher fetcher = new ModelFetcher("trl-internal-testing", "tiny-DiffusionGemmaForBlockDiffusion");
+
+        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetcher).buildLocalTransformerModel()) {
+            Response response = model.generate(UUID.randomUUID(), PromptContext.of("hello"),
+                    new GeneratorParameters().withMaxTokens(2), (next, nextRaw, nextCleaned, timing) -> { });
+
+            assertEquals(2, response.generatedTokens.size());
+            assertTrue(response.promptTokens > 0);
+            assertTrue(response.responseText != null);
+            assertTrue(response.responseTextWithSpecialTokens != null);
         }
     }
 
