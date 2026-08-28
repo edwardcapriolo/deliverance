@@ -360,6 +360,33 @@ public class PanamaTensorOperationsTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("panamaVectorTypes")
+    void tensorProbabilityEntropyMatchesScalarReference(MachineSpec.Type vectorType) {
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+             FloatBufferTensor logits = new FloatBufferTensor(2, 3, 17);
+             FloatBufferTensor entropy = new FloatBufferTensor(2, 3)) {
+            for (int batch = 0; batch < logits.shape().dim(0); batch++) {
+                for (int position = 0; position < logits.shape().dim(1); position++) {
+                    for (int token = 0; token < logits.shape().dim(2); token++) {
+                        logits.set(((batch * 23 + position * 11 + token * 7) % 31 - 15) / 5.0f,
+                                batch, position, token);
+                    }
+                }
+            }
+            PanamaTensorOperations ops = new PanamaTensorOperations(vectorType, Mockito.mock(TensorAllocator.class), pool);
+
+            TensorProbability.entropy(entropy, logits, ops);
+
+            for (int batch = 0; batch < logits.shape().dim(0); batch++) {
+                for (int position = 0; position < logits.shape().dim(1); position++) {
+                    assertEquals(scalarEntropy(logits, batch, position), entropy.get(batch, position), 1.0e-5f,
+                            "batch=" + batch + " position=" + position);
+                }
+            }
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("panamaVectorTypes")
     void maxMatchesReferenceForOffsetsTailsAndRows(MachineSpec.Type vectorType) {
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
              FloatBufferTensor input = deterministicInput(3, 37)) {
@@ -549,6 +576,23 @@ public class PanamaTensorOperationsTest {
             sum += input.get(row, i);
         }
         return sum;
+    }
+
+    private static float scalarEntropy(AbstractTensor logits, int batch, int position) {
+        int vocab = logits.shape().dim(2);
+        double max = Double.NEGATIVE_INFINITY;
+        for (int token = 0; token < vocab; token++) {
+            max = Math.max(max, logits.get(batch, position, token));
+        }
+        double sumExp = 0.0;
+        double weighted = 0.0;
+        for (int token = 0; token < vocab; token++) {
+            double shifted = logits.get(batch, position, token) - max;
+            double exp = net.jafama.FastMath.exp(shifted);
+            sumExp += exp;
+            weighted += exp * shifted;
+        }
+        return (float) (net.jafama.FastMath.log(sumExp) - weighted / sumExp);
     }
 
     private static FloatBufferTensor rowShard(AbstractTensor source, int startInclusive, int length) {
