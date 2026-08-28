@@ -22,6 +22,7 @@ import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.GenerateEvent;
 import io.teknek.deliverance.model.InferenceProfiler;
+import io.teknek.deliverance.model.TensorProviderKind;
 import io.teknek.deliverance.model.llama.LlamaModel;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelContext;
@@ -630,8 +631,12 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
             if (diffusionHeadWeight.dType() == DType.Q4) {
                 try (AbstractTensor projectionInput = maybeQuantizeReadOnly(hidden,
                         "nemotron_labs_diffusion.maybe_quantize.logits_block_projection")) {
-                    project(logits, projectionInput, diffusionHeadWeight, config.embeddingLength, config.vocabularySize,
-                            "nemotron_labs_diffusion.logits_block_projection");
+                    if (isGpuDiffusionBlockProjectionEnabled()) {
+                        gpuLogitsBlockProjection(logits, projectionInput);
+                    } else {
+                        project(logits, projectionInput, diffusionHeadWeight, config.embeddingLength,
+                                config.vocabularySize, "nemotron_labs_diffusion.logits_block_projection");
+                    }
                 }
             } else {
                 project(logits, hidden, diffusionHeadWeight, config.embeddingLength, config.vocabularySize,
@@ -641,6 +646,23 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
         } catch (RuntimeException | Error e) {
             logits.close();
             throw e;
+        }
+    }
+
+    private void gpuLogitsBlockProjection(AbstractTensor logits, AbstractTensor projectionInput) {
+        TensorOperations gpu = tensorOperations(TensorProviderKind.GPU)
+                .orElseThrow(() -> new IllegalStateException("GPU diffusion block projection requested, but GPU provider is unavailable"));
+        Preconditions.checkArgument(projectionInput.shape().first() * (long) config.vocabularySize * DType.F32.size()
+                        <= 16L * 1024L * 1024L,
+                "GPU diffusion block logits exceed current scratch size: rows=%s vocab=%s",
+                projectionInput.shape().first(), config.vocabularySize);
+        gpu.registerModelTensor(diffusionHeadWeight);
+        InferenceProfiler.counter(metricRegistry,
+                "nemotron_labs_diffusion.logits_block_projection.provider_gpu").inc();
+        try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
+                "nemotron_labs_diffusion.logits_block_projection").time()) {
+            gpu.dotProductChunk(logits, projectionInput, diffusionHeadWeight, 0, config.embeddingLength, 0,
+                    config.vocabularySize);
         }
     }
 

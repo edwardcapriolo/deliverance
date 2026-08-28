@@ -26,6 +26,7 @@ public class AutoModelConfigTest {
                   "gpuPrefill": true,
                   "gpuDecode": true,
                   "gpuDecodeAttention": true,
+                  "gpuDiffusionBlockProjection": true,
                   "download": false,
                   "maxBatchSize": 17,
                   "kvBufferCache": {
@@ -52,6 +53,7 @@ public class AutoModelConfigTest {
         assertEquals(true, builder.isGpuPrefill());
         assertEquals(true, builder.isGpuDecode());
         assertEquals(true, builder.isGpuDecodeAttention());
+        assertEquals(true, builder.isGpuDiffusionBlockProjection());
         assertFalse(builder.isDownload());
         assertEquals(17, builder.getMaxBatchSize());
         assertEquals(0, builder.getSettings().getMaxEntries());

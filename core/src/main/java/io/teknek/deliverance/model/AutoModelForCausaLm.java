@@ -141,6 +141,7 @@ public class AutoModelForCausaLm {
         private boolean gpuPrefill;
         private boolean gpuDecode;
         private boolean gpuDecodeAttention;
+        private boolean gpuDiffusionBlockProjection;
         private boolean packedPrefill = true;
         private boolean tensorPlanTrace;
         private Optional<TensorRuntimeMode> tensorRuntimeMode = Optional.empty();
@@ -293,6 +294,12 @@ public class AutoModelForCausaLm {
             return this;
         }
 
+        /** Opts into GPU execution for diffusion block output-head projections. */
+        public Builder withGpuDiffusionBlockProjection(boolean gpuDiffusionBlockProjection) {
+            this.gpuDiffusionBlockProjection = gpuDiffusionBlockProjection;
+            return this;
+        }
+
         public Builder withPackedPrefill(boolean packedPrefill) {
             this.packedPrefill = packedPrefill;
             return this;
@@ -361,6 +368,7 @@ public class AutoModelForCausaLm {
             config.gpuPrefill().ifPresent(this::withGpuPrefill);
             config.gpuDecode().ifPresent(this::withGpuDecode);
             config.gpuDecodeAttention().ifPresent(this::withGpuDecodeAttention);
+            config.gpuDiffusionBlockProjection().ifPresent(this::withGpuDiffusionBlockProjection);
             config.packedPrefill().ifPresent(this::withPackedPrefill);
             config.download().ifPresent(this::withDownload);
             config.maxBatchSize().ifPresent(this::withMaxBatchSize);
@@ -450,6 +458,7 @@ public class AutoModelForCausaLm {
             copy.gpuPrefill = this.gpuPrefill;
             copy.gpuDecode = this.gpuDecode;
             copy.gpuDecodeAttention = this.gpuDecodeAttention;
+            copy.gpuDiffusionBlockProjection = this.gpuDiffusionBlockProjection;
             copy.packedPrefill = this.packedPrefill;
             copy.tensorPlanTrace = this.tensorPlanTrace;
             return copy;
@@ -516,6 +525,7 @@ public class AutoModelForCausaLm {
             model.setGpuPrefillEnabled(gpuPrefill);
             model.setGpuDecodeEnabled(gpuDecode);
             model.setGpuDecodeAttentionEnabled(gpuDecodeAttention);
+            model.setGpuDiffusionBlockProjectionEnabled(gpuDiffusionBlockProjection);
             model.setPackedPrefillEnabled(packedPrefill);
             model.setTensorRuntimeMode(tensorRuntimeMode);
             model.setTensorRuntime(createTensorRuntime());
@@ -537,7 +547,7 @@ public class AutoModelForCausaLm {
                       registeredProviders=[{}]
                       parallelSplitPolicy=availableProcessors={} defaultSimdMultiplier={} defaultPanamaMultiplier={} simdAlignment={} panamaAlignment={} fixedOverrides={} multiplierOverrides={}
                       modelType={} workingMemoryType={} quantizedMemoryType={}
-                      tensorRuntimeMode={} gpuPrefill={} gpuDecode={} gpuDecodeAttention={} packedPrefill={} maxBatchSize={}
+                      tensorRuntimeMode={} gpuPrefill={} gpuDecode={} gpuDecodeAttention={} gpuDiffusionBlockProjection={} packedPrefill={} maxBatchSize={}
                     """,
                     fetch.getName(), primary.name(), primary.parallelSplitSize(), model.tensorOperationsSummary(),
                     Runtime.getRuntime().availableProcessors(), DEFAULT_SIMD_PARALLEL_SPLIT_SIZE_MULTIPLIER,
@@ -545,7 +555,7 @@ public class AutoModelForCausaLm {
                     PANAMA_PARALLEL_SPLIT_ALIGNMENT, parallelSplitSizeFixed, parallelSplitSizeMultiplier,
                     model.modelDType, model.workingDType, model.workingQType,
                     tensorRuntimeMode.orElse(TensorRuntimeMode.DISABLED), gpuPrefill, gpuDecode,
-                    gpuDecodeAttention, packedPrefill, maxBatchSize);
+                    gpuDecodeAttention, gpuDiffusionBlockProjection, packedPrefill, maxBatchSize);
         }
 
         private TensorRuntime createTensorRuntime() {
@@ -696,7 +706,7 @@ public class AutoModelForCausaLm {
                 Optional<TensorOperations> maybeGpu = tryLoadTensorOperations("io.teknek.deliverance.tensor.operations.NativeGPUTensorOperations");
                 maybeGpu.ifPresent(value -> operations.put(TensorProviderKind.GPU,
                         tunedTensorOperations(TensorProviderKind.GPU, value)));
-                if ((gpuPrefill || gpuDecode || gpuDecodeAttention) && maybeGpu.isEmpty()) {
+                if ((gpuPrefill || gpuDecode || gpuDecodeAttention || gpuDiffusionBlockProjection) && maybeGpu.isEmpty()) {
                     throw new IllegalStateException("GPU projection requested but NativeGPUTensorOperations is not available");
                 }
             } else {
@@ -881,6 +891,10 @@ public class AutoModelForCausaLm {
 
         public boolean isGpuDecodeAttention() {
             return gpuDecodeAttention;
+        }
+
+        public boolean isGpuDiffusionBlockProjection() {
+            return gpuDiffusionBlockProjection;
         }
 
         public ConfigurableTensorProvider getProvider() {

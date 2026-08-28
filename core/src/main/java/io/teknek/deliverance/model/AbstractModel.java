@@ -190,6 +190,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     private boolean gpuPrefillEnabled;
     private boolean gpuDecodeEnabled;
     private boolean gpuDecodeAttentionEnabled;
+    private boolean gpuDiffusionBlockProjectionEnabled;
     private boolean packedPrefillEnabled = true;
     private GossipParallelMembership gossipParallelMembership;
 
@@ -371,6 +372,10 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.gpuDecodeAttentionEnabled = gpuDecodeAttentionEnabled;
     }
 
+    void setGpuDiffusionBlockProjectionEnabled(boolean gpuDiffusionBlockProjectionEnabled) {
+        this.gpuDiffusionBlockProjectionEnabled = gpuDiffusionBlockProjectionEnabled;
+    }
+
     void setPackedPrefillEnabled(boolean packedPrefillEnabled) {
         this.packedPrefillEnabled = packedPrefillEnabled;
     }
@@ -385,6 +390,10 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public boolean isGpuDecodeAttentionEnabled() {
         return gpuDecodeAttentionEnabled;
+    }
+
+    public boolean isGpuDiffusionBlockProjectionEnabled() {
+        return gpuDiffusionBlockProjectionEnabled;
     }
 
     public boolean isPackedPrefillEnabled() {
@@ -1447,6 +1456,7 @@ public abstract class AbstractModel implements Generator, Classifier {
                 + "gpuPrefill=" + gpuPrefillEnabled + '\n'
                 + "gpuDecode=" + gpuDecodeEnabled + '\n'
                 + "gpuDecodeAttention=" + gpuDecodeAttentionEnabled + '\n'
+                + "gpuDiffusionBlockProjection=" + gpuDiffusionBlockProjectionEnabled + '\n'
                 + "packedPrefill=" + packedPrefillEnabled + '\n'
                 + "tensorProviderExplicit=" + tensorProviderExplicit + '\n'
                 + "layers=" + config.numberOfLayers + '\n'

@@ -228,6 +228,34 @@ class NemotronLabsDiffusionBaseCheckpointIT {
     }
 
     @Test
+    void baseCheckpointQuantizeOnDemandDiffusionBlockThirtyTwoProfileGpuBlockLogits() {
+        boolean previousProfiling = InferenceProfiler.isEnabled();
+        InferenceProfiler.setEnabled(true);
+        try (AbstractModel model = AutoModelForCausaLm.newBuilder(FETCHER)
+                .withQuantizeOnDemand(DType.Q4, QOD_OWNER, QOD_MODEL)
+                .withOutputHeadQuantization(DType.Q4)
+                .withGpuDiffusionBlockProjection(true)
+                .buildLocalTransformerModel()) {
+            InferenceProfiler.reset();
+            Response response = model.generate(UUID.randomUUID(), PromptContext.of("Question: What is Paris?\nAnswer:"),
+                    new GeneratorParameters().withMaxTokens(33),
+                    (next, nextRaw, nextCleaned, timing) ->
+                            System.out.println("DIFFUSION_BLOCK32_GPU_LOGITS " + nextCleaned + " " + next));
+
+            System.out.println("DIFFUSION_BLOCK32_GPU_LOGITS_TEXT=" + response.responseText);
+            InferenceProfiler.printSummary("nemotron qod diffusion block32 gpu block logits", 40);
+            printProfileCounters(model, 80);
+            assertTrue(response.generatedTokens.size() >= 2);
+            assertTrue(response.generatedTokens.size() <= 33);
+            assertTrue(response.responseText != null && !response.responseText.isBlank());
+            assertTrue(InferenceProfiler.counterValue(
+                    "nemotron_labs_diffusion.logits_block_projection.provider_gpu") > 0);
+        } finally {
+            InferenceProfiler.setEnabled(previousProfiling);
+        }
+    }
+
+    @Test
     void baseCheckpointQuantizeOnDemandDiffusionBlockThirtyTwoProfileWithLinearSpecLora() {
         boolean previousProfiling = InferenceProfiler.isEnabled();
         InferenceProfiler.setEnabled(true);
