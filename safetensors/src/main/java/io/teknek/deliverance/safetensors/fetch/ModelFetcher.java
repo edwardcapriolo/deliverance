@@ -296,7 +296,10 @@ public class ModelFetcher {
                     || lowerCaseFile.equals("sentence_bert_config.json")
                     || lowerCaseFile.endsWith("_pooling/config.json")
                     || lowerCaseFile.endsWith("_normalize/config.json")
+                    || lowerCaseFile.equals("generation_config.json")
+                    || lowerCaseFile.equals("special_tokens_map.json")
                     || lowerCaseFile.equals("chat_template.jinja")
+                    || lowerCaseFile.endsWith(".py")
                     || lowerCaseFile.contains("tokenizer")) {
                 if (lowerCaseFile.contains("safetensor")) {
                     hasSafetensor = true;

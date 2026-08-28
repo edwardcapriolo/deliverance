@@ -354,6 +354,9 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
                 // apply RoPE if present (accounting for huggingface permutation)
                 // https://github.com/huggingface/transformers/blob/d533465150532b0c5de167b574e59f64c68b1154/src/transformers/models/llama/convert_llama_weights_to_hf.py#L114
                 try (Timer.Context ignoredRope = InferenceProfiler.timer(metricRegistry, "causalselfattention.rope").time()) {
+                    boolean handledByModel = m.applyRotaryEmbedding(query, key, finalPosition, numberOfHeads,
+                            numberOfKeyValueHeads, config.headSize, configurableTensorProvider.get());
+                    if (!handledByModel) {
                     config.ropeFreqs.ifPresent(rf -> {
                     int headPiece = config.headSize / 2;
                     int poffset = finalPosition * headPiece;
@@ -385,6 +388,7 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
                     debug("query+rope", query, finalPosition);
                     debug("key+rope", key, finalPosition);
                     });
+                    }
                 }
 
                 if (!usePackedPrefill(batchSize)) {

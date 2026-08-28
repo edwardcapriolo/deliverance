@@ -123,6 +123,28 @@ public class LoraAdapterTest {
         }
     }
 
+    @Test
+    @Tag("large-model")
+    void fromPretrainedDownloadsAndParsesNemotronLinearSpecSubfolderAdapter() {
+        LoraAdapterModelFetcher fetcher = new LoraAdapterModelFetcher("nvidia", "Nemotron-Labs-Diffusion-3B",
+                "linear_spec_lora", true);
+
+        try (LoraAdapter adapter = LoraAdapter.fromPretrained(fetcher)) {
+            assertEquals(128, adapter.rank());
+            assertEquals(512.0, adapter.alpha());
+            assertEquals(4.0, adapter.scale());
+
+            Optional<LoraAdapter.LoraDelta> delta = adapter.deltaFor("encoder.layers.0.self_attn.o_proj.weight");
+            assertTrue(delta.isPresent());
+            assertEquals(128, delta.get().loraA().shape().first());
+            assertEquals(4096, delta.get().loraA().shape().last());
+            assertEquals(3072, delta.get().loraB().shape().first());
+            assertEquals(128, delta.get().loraB().shape().last());
+
+            assertFalse(adapter.deltaFor("encoder.layers.0.self_attn.q_proj.weight").isPresent());
+        }
+    }
+
     private static void writeAdapterConfig(Path adapterDir, int rank, double alpha, String... targetModules)
             throws IOException {
         StringBuilder modules = new StringBuilder();

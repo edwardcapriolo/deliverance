@@ -24,6 +24,8 @@ import io.teknek.deliverance.model.mistral.MistralConfig;
 import io.teknek.deliverance.model.mistral.MistralModel;
 import io.teknek.deliverance.model.mixtral.MixtralConfig;
 import io.teknek.deliverance.model.mixtral.MixtralModel;
+import io.teknek.deliverance.model.nemotronlabsdiffusion.NemotronLabsDiffusionConfig;
+import io.teknek.deliverance.model.nemotronlabsdiffusion.NemotronLabsDiffusionModel;
 import io.teknek.deliverance.model.qwen2.Qwen2Config;
 import io.teknek.deliverance.model.qwen2.Qwen2Model;
 import io.teknek.deliverance.model.qwen3.Qwen3Config;
@@ -614,6 +616,7 @@ public class AutoModelForCausaLm {
                 case "MIXTRAL" -> JsonUtils.om.readValue(configFile, MixtralConfig.class);
                 case "GRANITEMOEHYBRID" -> JsonUtils.om.readValue(configFile, GraniteMoeHybridConfig.class);
                 case "DIFFUSION_GEMMA" -> JsonUtils.om.readValue(configFile, DiffusionGemmaConfig.class);
+                case "NEMOTRON_LABS_DIFFUSION" -> JsonUtils.om.readValue(configFile, NemotronLabsDiffusionConfig.class);
                 default -> throw new IllegalArgumentException(modelType + " not found in AutoModelForCausaLm");
             };
         }
@@ -660,6 +663,9 @@ public class AutoModelForCausaLm {
                         tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
                 case "DIFFUSION_GEMMA" -> new DiffusionGemmaModel(inferenceType, config, weightLoader,
+                        tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
+                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                case "NEMOTRON_LABS_DIFFUSION" -> new NemotronLabsDiffusionModel(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
                 default -> throw new IllegalArgumentException(modelType + " not supported by AutoModelForCausaLm");

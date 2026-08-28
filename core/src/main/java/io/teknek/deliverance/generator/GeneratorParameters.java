@@ -26,6 +26,7 @@ public class GeneratorParameters {
     public Optional<Float> topK = Optional.empty();
     public Optional<Float> topP = Optional.empty();
     public Optional<Float> uniformTopP = Optional.empty();
+    public Optional<Integer> diffusionBlockLength = Optional.empty();
 
     public GeneratorParameters withSeed(int seed){
         this.seed = Optional.of(seed);
@@ -107,6 +108,14 @@ public class GeneratorParameters {
     }
     public GeneratorParameters withUniformTopP(float uniformTopP){
         this.uniformTopP = Optional.of(uniformTopP);
+        return this;
+    }
+
+    public GeneratorParameters withDiffusionBlockLength(int diffusionBlockLength){
+        if (diffusionBlockLength <= 0) {
+            throw new IllegalArgumentException("diffusionBlockLength must be > 0");
+        }
+        this.diffusionBlockLength = Optional.of(diffusionBlockLength);
         return this;
     }
 }

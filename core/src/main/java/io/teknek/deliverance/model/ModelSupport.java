@@ -16,6 +16,7 @@ import io.teknek.deliverance.model.granitemoehybrid.GraniteMoeHybridModelType;
 import io.teknek.deliverance.model.llama.LlamaModelType;
 import io.teknek.deliverance.model.mistral.MistralModelType;
 import io.teknek.deliverance.model.mixtral.MixtralModelType;
+import io.teknek.deliverance.model.nemotronlabsdiffusion.NemotronLabsDiffusionModelType;
 import io.teknek.deliverance.model.qwen2.Qwen2ModelType;
 import io.teknek.deliverance.model.qwen3.Qwen3ModelType;
 import io.teknek.deliverance.model.qwen3.Qwen3MoeModelType;
@@ -68,6 +69,7 @@ public class ModelSupport {
         registry.putIfAbsent("MIXTRAL", new MixtralModelType());
         registry.putIfAbsent("GRANITEMOEHYBRID", new GraniteMoeHybridModelType());
         registry.putIfAbsent("DIFFUSION_GEMMA", new DiffusionGemmaModelType());
+        registry.putIfAbsent("NEMOTRON_LABS_DIFFUSION", new NemotronLabsDiffusionModelType());
     }
 
     public static void addModel(String modelName, ModelType t){

@@ -47,6 +47,8 @@ import io.teknek.deliverance.safetensors.fetch.LoraAdapterModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.tensor.*;
+import io.teknek.deliverance.tensor.kv.KvCacheManager;
+import io.teknek.deliverance.tensor.kv.KvCacheSession;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
@@ -177,6 +179,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     protected SampleOutput sampleOutput;
     protected TransformerBlock[] transformerBlocks;
     protected KvBufferCache kvBufferCache;
+    protected KvCacheManager kvCacheManager;
     protected final ConfigurableTensorProvider configurableTensorProvider;
     protected final MetricRegistry metricRegistry;
     protected final TensorAllocator tensorAllocator;
@@ -260,11 +263,14 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.modelDType = w.getModelDType();
         this.workingDType = workingMemoryDType;
         this.modelQType = modelQType;
-        this.kvBufferCache = new KvBufferCache(this, kvBufferCacheSettings);
         this.configurableTensorProvider = provider;
         this.tensorOperations.put(TensorProviderKind.SIMD, provider.get());
         this.metricRegistry = metricRegistry;
         this.tensorAllocator = tensorAllocator;
+        this.kvBufferCache = new KvBufferCache(this, kvBufferCacheSettings);
+        this.kvCacheManager = new KvCacheManager(c.numberOfLayers, c.contextLength,
+                c.kvLength / tensorParallelContext.size(), workingMemoryDType, kvBufferCacheSettings, tensorAllocator,
+                metricRegistry);
         this.toolCallParser = toolCallParser;
 
         this.workingQType = resolveWorkingQType(workingMemoryQType);
@@ -441,6 +447,14 @@ public abstract class AbstractModel implements Generator, Classifier {
         return kvBufferCache.getEphemeralKvBuffer();
     }
 
+    public KvCacheManager kvCacheManager() {
+        return kvCacheManager;
+    }
+
+    public KvCacheSession newKvCacheSession() {
+        return kvCacheManager.openSession();
+    }
+
     public int restorePrefixToKvBuffer(int[] promptTokens, Optional<String> cacheSalt,
             KvBufferCache.KvBuffer destination) {
         KvBufferCache.PrefixEntry prefixHit = kvBufferCache.lookupPrefix(promptTokens, cacheSalt);
@@ -491,6 +505,18 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public int getLocalKvLength() {
         return config.kvLength / tensorParallelContext.size();
+    }
+
+    /**
+     * Optional model-family hook for RoPE variants not represented by {@link Config#ropeFreqs}.
+     *
+     * <p>The default returns {@code false}, allowing {@code CausalSelfAttention} to use its existing configured RoPE path.
+     * Models with custom RoPE, such as YaRN plus model-specific query scaling, can mutate {@code query} and {@code key}
+     * in place and return {@code true}.</p>
+     */
+    public boolean applyRotaryEmbedding(AbstractTensor query, AbstractTensor key, int absolutePosition,
+            int queryHeads, int keyValueHeads, int headSize, TensorOperations operations) {
+        return false;
     }
 
     /**
