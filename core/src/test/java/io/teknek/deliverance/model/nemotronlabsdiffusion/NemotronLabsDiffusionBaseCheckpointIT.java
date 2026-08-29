@@ -297,6 +297,7 @@ class NemotronLabsDiffusionBaseCheckpointIT {
                 .withOutputHeadQuantization(DType.Q4)
                 .withGpuDiffusionBlockProjection(true)
                 .withPackedBlockAttention(true)
+                .withTrackKvReadViews(true)
                 .buildLocalTransformerModel()) {
             PromptContext prompt = model.promptSupport().orElseThrow().builder()
                     .addUserMessage(BENCHMARK_MATH_PROMPT)

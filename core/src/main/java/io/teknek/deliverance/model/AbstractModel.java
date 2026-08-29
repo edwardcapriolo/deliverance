@@ -183,6 +183,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     protected final ConfigurableTensorProvider configurableTensorProvider;
     protected final MetricRegistry metricRegistry;
     protected final TensorAllocator tensorAllocator;
+    private final KvBufferCacheSettings kvBufferCacheSettings;
     protected final TensorParallelContext tensorParallelContext;
     protected final TensorParallelCollectives tensorParallelCollectives;
     private final EnumMap<TensorProviderKind, TensorOperations> tensorOperations = new EnumMap<>(TensorProviderKind.class);
@@ -193,6 +194,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     private boolean gpuDiffusionBlockProjectionEnabled;
     private boolean packedBlockAttentionEnabled;
     private boolean packedPrefillEnabled = true;
+    private boolean trackKvReadViewsEnabled;
     private GossipParallelMembership gossipParallelMembership;
 
     //embedding
@@ -270,6 +272,7 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.tensorOperations.put(TensorProviderKind.SIMD, provider.get());
         this.metricRegistry = metricRegistry;
         this.tensorAllocator = tensorAllocator;
+        this.kvBufferCacheSettings = kvBufferCacheSettings;
         this.kvBufferCache = new KvBufferCache(this, kvBufferCacheSettings);
         this.kvCacheManager = new KvCacheManager(c.numberOfLayers, c.contextLength,
                 c.kvLength / tensorParallelContext.size(), workingMemoryDType, kvBufferCacheSettings, tensorAllocator,
@@ -386,6 +389,13 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.packedPrefillEnabled = packedPrefillEnabled;
     }
 
+    void setTrackKvReadViewsEnabled(boolean trackKvReadViewsEnabled) {
+        this.trackKvReadViewsEnabled = trackKvReadViewsEnabled;
+        this.kvCacheManager = new KvCacheManager(config.numberOfLayers, config.contextLength,
+                config.kvLength / tensorParallelContext.size(), workingDType, kvBufferCacheSettings, tensorAllocator,
+                metricRegistry, trackKvReadViewsEnabled);
+    }
+
     public boolean isGpuPrefillEnabled() {
         return gpuPrefillEnabled;
     }
@@ -408,6 +418,10 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public boolean isPackedPrefillEnabled() {
         return packedPrefillEnabled;
+    }
+
+    public boolean isTrackKvReadViewsEnabled() {
+        return trackKvReadViewsEnabled;
     }
 
     public boolean isTensorProviderExplicit() {

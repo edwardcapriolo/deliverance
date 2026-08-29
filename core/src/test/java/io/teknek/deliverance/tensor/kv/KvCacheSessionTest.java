@@ -5,12 +5,18 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
+import io.teknek.deliverance.tensor.ReadOnlyTensor;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor.TrackedReadOnlyTensor;
 import org.junit.jupiter.api.Test;
 
+import java.lang.foreign.ValueLayout;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class KvCacheSessionTest {
     private final MetricRegistry metricRegistry = new MetricRegistry();
@@ -71,6 +77,55 @@ class KvCacheSessionTest {
                 assertEquals(3.0f, values.get(0, 0), 0.0f);
                 assertEquals(4.0f, values.get(1, 0), 0.0f);
                 assertEquals(5.0f, values.get(2, 0), 0.0f);
+            }
+        }
+    }
+
+    @Test
+    void readViewRowReturnsNonCopyingReadOnlyView() {
+        KvCacheManager manager = new KvCacheManager(1, 8, 4, DType.F32,
+                new KvBufferCacheSettings(true).withBlockSize(1), allocator, metricRegistry);
+
+        try (KvCacheSession session = manager.openSession()) {
+            writePosition(session, 0, 10.0f, 1);
+            try (KvWriteCursor writer = session.writer(CacheExecutionMode.PREFILL_UPDATE_CACHE)) {
+                writer.advanceLength(1);
+            }
+
+            try (KvReadView readView = session.readView(0, 1, AttentionPattern.CAUSAL);
+                 AbstractTensor key = readView.keyRow(0)) {
+                assertTrue(key instanceof ReadOnlyTensor);
+                assertThrows(UnsupportedOperationException.class, () -> key.set(99.0f, 0, 0));
+                key.getMemorySegment().set(ValueLayout.JAVA_FLOAT, key.getMemorySegmentOffset(0), 123.0f);
+            }
+
+            try (AbstractTensor keyCopy = session.keyRowCopy(0, 0)) {
+                assertEquals(123.0f, keyCopy.get(0, 0), 0.0f);
+            }
+        }
+    }
+
+    @Test
+    void trackedReadViewRowDetectsBackingMutationOnClose() {
+        KvCacheManager manager = new KvCacheManager(1, 8, 4, DType.F32,
+                new KvBufferCacheSettings(true).withBlockSize(1), allocator, metricRegistry, true);
+
+        try (KvCacheSession session = manager.openSession()) {
+            writePosition(session, 0, 10.0f, 1);
+            try (KvWriteCursor writer = session.writer(CacheExecutionMode.PREFILL_UPDATE_CACHE)) {
+                writer.advanceLength(1);
+            }
+
+            try (KvReadView readView = session.readView(0, 1, AttentionPattern.CAUSAL)) {
+                AbstractTensor key = readView.keyRow(0);
+                assertTrue(key instanceof TrackedReadOnlyTensor);
+                TrackedReadOnlyTensor tracked = (TrackedReadOnlyTensor) key;
+                assertFalse(tracked.hasChecksumChanged());
+
+                key.getMemorySegment().set(ValueLayout.JAVA_FLOAT, key.getMemorySegmentOffset(0), 123.0f);
+
+                assertTrue(tracked.hasChecksumChanged());
+                assertThrows(IllegalStateException.class, tracked::close);
             }
         }
     }

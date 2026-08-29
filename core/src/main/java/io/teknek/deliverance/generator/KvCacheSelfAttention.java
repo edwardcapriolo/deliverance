@@ -234,15 +234,16 @@ public class KvCacheSelfAttention {
             return;
         }
         try (KvReadView readView = kvSession.readView(layerIndex, startPosition, AttentionPattern.CAUSAL);
-             AbstractTensor previousKeys = readView.copyVisibleKeys();
-             AbstractTensor previousValues = readView.copyVisibleValues();
              AbstractTensor packedKeys = model.makeDenseTensor(TensorShape.of(startPosition + batchSize, kvLength));
              AbstractTensor packedValues = model.makeDenseTensor(TensorShape.of(startPosition + batchSize, kvLength))) {
             try (Timer.Context ignoredPack = InferenceProfiler.timer(metricRegistry,
                     "kvcacheselfattention.pack_kv").time()) {
-                if (startPosition > 0) {
-                    packedKeys.copyFrom(previousKeys, 0, 0, (int) previousKeys.size());
-                    packedValues.copyFrom(previousValues, 0, 0, (int) previousValues.size());
+                for (int position = 0; position < startPosition; position++) {
+                    try (AbstractTensor keyRow = readView.keyRow(position);
+                         AbstractTensor valueRow = readView.valueRow(position)) {
+                        packedKeys.copyFrom(keyRow, 0, packedKeys.getOffset(position, 0), kvLength);
+                        packedValues.copyFrom(valueRow, 0, packedValues.getOffset(position, 0), kvLength);
+                    }
                 }
                 packedKeys.copyFrom(keyBatch, 0, packedKeys.getOffset(startPosition, 0), (int) keyBatch.size());
                 packedValues.copyFrom(valueBatch, 0, packedValues.getOffset(startPosition, 0), (int) valueBatch.size());
