@@ -4,7 +4,9 @@ import com.google.common.base.Preconditions;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.ReadOnlyTensor;
 import io.teknek.deliverance.tensor.TensorAllocator;
+import io.teknek.deliverance.tensor.TrackedReadOnlyTensor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,13 +24,14 @@ public final class KvCacheSession implements AutoCloseable {
     private final DType dtype;
     private final TensorAllocator allocator;
     private final MetricRegistry metricRegistry;
+    private final boolean trackReadViews;
     private final NavigableMap<Integer, KvBlock> committedBlocks = new TreeMap<>();
     private final NavigableMap<Integer, MutableKvBlock> mutableBlocks = new TreeMap<>();
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private int length;
 
     KvCacheSession(int layers, int contextLength, int kvLength, int blockSize, DType dtype,
-            TensorAllocator allocator, MetricRegistry metricRegistry) {
+            TensorAllocator allocator, MetricRegistry metricRegistry, boolean trackReadViews) {
         this.layers = layers;
         this.contextLength = contextLength;
         this.kvLength = kvLength;
@@ -36,6 +39,7 @@ public final class KvCacheSession implements AutoCloseable {
         this.dtype = dtype;
         this.allocator = allocator;
         this.metricRegistry = metricRegistry;
+        this.trackReadViews = trackReadViews;
     }
 
     public int length() {
@@ -69,6 +73,14 @@ public final class KvCacheSession implements AutoCloseable {
 
     public AbstractTensor valueRowCopy(int layer, int position) {
         return rowCopy(layer, position, false);
+    }
+
+    AbstractTensor keyRowView(int layer, int position) {
+        return rowView(layer, position, true);
+    }
+
+    AbstractTensor valueRowView(int layer, int position) {
+        return rowView(layer, position, false);
     }
 
     void write(CacheExecutionMode mode, int layer, int position, AbstractTensor key, AbstractTensor value) {
@@ -174,6 +186,25 @@ public final class KvCacheSession implements AutoCloseable {
             throw new IllegalStateException("No KV block for position " + position);
         }
         return key ? mutable.keyRowCopy(layer, position, allocator) : mutable.valueRowCopy(layer, position, allocator);
+    }
+
+    private AbstractTensor rowView(int layer, int position, boolean key) {
+        requireOpen();
+        validateLayer(layer);
+        Preconditions.checkArgument(position >= 0 && position < length, "position out of visible length");
+        int blockIndex = position / blockSize;
+        AbstractTensor view;
+        KvBlock committed = committedBlocks.get(blockIndex);
+        if (committed != null) {
+            view = key ? committed.keyRowView(layer, position) : committed.valueRowView(layer, position);
+        } else {
+            MutableKvBlock mutable = mutableBlocks.get(blockIndex);
+            if (mutable == null) {
+                throw new IllegalStateException("No KV block for position " + position);
+            }
+            view = key ? mutable.keyRowView(layer, position) : mutable.valueRowView(layer, position);
+        }
+        return trackReadViews ? new TrackedReadOnlyTensor(view) : new ReadOnlyTensor(view);
     }
 
     private MutableKvBlock mutableBlock(int blockIndex) {

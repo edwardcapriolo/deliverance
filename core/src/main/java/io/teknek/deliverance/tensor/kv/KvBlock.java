@@ -67,6 +67,14 @@ public final class KvBlock implements AutoCloseable {
         return rowCopy(layer, position, 1, allocator);
     }
 
+    AbstractTensor keyRowView(int layer, int position) {
+        return rowView(layer, position, 0);
+    }
+
+    AbstractTensor valueRowView(int layer, int position) {
+        return rowView(layer, position, 1);
+    }
+
     private AbstractTensor rowCopy(int layer, int position, int keyOrValue, TensorAllocator allocator) {
         requireOpen();
         AbstractTensor copy = allocator.getDirty(storage.dType(), TensorShape.of(1, kvLength));
@@ -82,6 +90,14 @@ public final class KvBlock implements AutoCloseable {
                 && destination.shape().last() == kvLength, "destination must be [1, kvLength]");
         int blockRow = position - startPosition();
         destination.copyFrom(storage, storage.getOffset(layer, keyOrValue, blockRow, 0), 0, kvLength);
+    }
+
+    private AbstractTensor rowView(int layer, int position, int keyOrValue) {
+        requireOpen();
+        validateLayer(layer);
+        Preconditions.checkArgument(containsPosition(position), "position not in block");
+        int blockRow = position - startPosition();
+        return storage.slice(true, layer, keyOrValue, blockRow);
     }
 
     private void validateLayer(int layer) {

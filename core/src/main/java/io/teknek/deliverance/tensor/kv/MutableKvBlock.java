@@ -61,6 +61,14 @@ final class MutableKvBlock implements AutoCloseable {
         return rowCopy(layer, position, 1, allocator);
     }
 
+    AbstractTensor keyRowView(int layer, int position) {
+        return rowView(layer, position, 0);
+    }
+
+    AbstractTensor valueRowView(int layer, int position) {
+        return rowView(layer, position, 1);
+    }
+
     KvBlock commit(int tokenCount) {
         requireWritable();
         Preconditions.checkArgument(tokenCount >= 0 && tokenCount <= blockSize, "tokenCount out of bounds");
@@ -78,6 +86,16 @@ final class MutableKvBlock implements AutoCloseable {
         AbstractTensor copy = allocator.getDirty(storage.dType(), TensorShape.of(1, kvLength));
         copy.copyFrom(storage, storage.getOffset(layer, keyOrValue, blockRow, 0), 0, kvLength);
         return copy;
+    }
+
+    private AbstractTensor rowView(int layer, int position, int keyOrValue) {
+        requireOpen();
+        validateLayer(layer);
+        Preconditions.checkArgument(containsPosition(position), "position not in mutable block");
+        int blockRow = position - startPosition();
+        Preconditions.checkState(writtenRows.get(writtenIndex(layer, blockRow, keyOrValue)),
+                "KV row has not been written");
+        return storage.slice(true, layer, keyOrValue, blockRow);
     }
 
     private int writtenIndex(int layer, int blockRow, int keyOrValue) {

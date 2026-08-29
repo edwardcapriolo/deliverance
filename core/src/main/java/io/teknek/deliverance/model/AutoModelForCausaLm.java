@@ -144,6 +144,7 @@ public class AutoModelForCausaLm {
         private boolean gpuDiffusionBlockProjection;
         private boolean packedBlockAttention;
         private boolean packedPrefill = true;
+        private boolean trackKvReadViews;
         private boolean tensorPlanTrace;
         private Map<String, Object> generationOptions = Map.of();
         private Optional<TensorRuntimeMode> tensorRuntimeMode = Optional.empty();
@@ -305,6 +306,12 @@ public class AutoModelForCausaLm {
         /** Opts into the packed block-attention helper for KV-cache v2 attention. */
         public Builder withPackedBlockAttention(boolean packedBlockAttention) {
             this.packedBlockAttention = packedBlockAttention;
+            return this;
+        }
+
+        /** Enables checksum assertions for borrowed non-copying KV-cache read views. */
+        public Builder withTrackKvReadViews(boolean trackKvReadViews) {
+            this.trackKvReadViews = trackKvReadViews;
             return this;
         }
 
@@ -545,6 +552,7 @@ public class AutoModelForCausaLm {
             model.setGpuDiffusionBlockProjectionEnabled(gpuDiffusionBlockProjection);
             model.setPackedBlockAttentionEnabled(packedBlockAttention);
             model.setPackedPrefillEnabled(packedPrefill);
+            model.setTrackKvReadViewsEnabled(trackKvReadViews);
             model.setGenerationOptions(generationOptions);
             model.setTensorRuntimeMode(tensorRuntimeMode);
             model.setTensorRuntime(createTensorRuntime());
@@ -566,7 +574,7 @@ public class AutoModelForCausaLm {
                       registeredProviders=[{}]
                       parallelSplitPolicy=availableProcessors={} defaultSimdMultiplier={} defaultPanamaMultiplier={} simdAlignment={} panamaAlignment={} fixedOverrides={} multiplierOverrides={}
                       modelType={} workingMemoryType={} quantizedMemoryType={}
-                      tensorRuntimeMode={} gpuPrefill={} gpuDecode={} gpuDecodeAttention={} gpuDiffusionBlockProjection={} packedBlockAttention={} packedPrefill={} maxBatchSize={}
+                      tensorRuntimeMode={} gpuPrefill={} gpuDecode={} gpuDecodeAttention={} gpuDiffusionBlockProjection={} packedBlockAttention={} packedPrefill={} trackKvReadViews={} maxBatchSize={}
                       generationOptions={}
                     """,
                     fetch.getName(), primary.name(), primary.parallelSplitSize(), model.tensorOperationsSummary(),
@@ -575,7 +583,8 @@ public class AutoModelForCausaLm {
                     PANAMA_PARALLEL_SPLIT_ALIGNMENT, parallelSplitSizeFixed, parallelSplitSizeMultiplier,
                     model.modelDType, model.workingDType, model.workingQType,
                     tensorRuntimeMode.orElse(TensorRuntimeMode.DISABLED), gpuPrefill, gpuDecode,
-                    gpuDecodeAttention, gpuDiffusionBlockProjection, packedBlockAttention, packedPrefill, maxBatchSize,
+                    gpuDecodeAttention, gpuDiffusionBlockProjection, packedBlockAttention, packedPrefill,
+                    trackKvReadViews, maxBatchSize,
                     generationOptions);
         }
 
@@ -920,6 +929,10 @@ public class AutoModelForCausaLm {
 
         public boolean isPackedBlockAttention() {
             return packedBlockAttention;
+        }
+
+        public boolean isTrackKvReadViews() {
+            return trackKvReadViews;
         }
 
         public Map<String, Object> getGenerationOptions() {

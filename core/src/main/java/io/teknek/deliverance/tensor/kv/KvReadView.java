@@ -36,6 +36,22 @@ public final class KvReadView implements AutoCloseable {
         return session.valueRowCopy(layer, position);
     }
 
+    /**
+     * Returns a non-copying read-only key row view. In tracked mode, closing the returned tensor asserts that the
+     * underlying KV row was not mutated while borrowed.
+     */
+    public AbstractTensor keyRow(int position) {
+        return session.keyRowView(layer, position);
+    }
+
+    /**
+     * Returns a non-copying read-only value row view. In tracked mode, closing the returned tensor asserts that the
+     * underlying KV row was not mutated while borrowed.
+     */
+    public AbstractTensor valueRow(int position) {
+        return session.valueRowView(layer, position);
+    }
+
     public AbstractTensor copyVisibleKeys() {
         return session.copyVisibleKeys(layer, visibleTokens);
     }
