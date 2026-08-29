@@ -26,6 +26,7 @@ public record AutoModelConfig(
         Optional<Boolean> gpuDecode,
         Optional<Boolean> gpuDecodeAttention,
         Optional<Boolean> gpuDiffusionBlockProjection,
+        Optional<Boolean> packedBlockAttention,
         Optional<Boolean> packedPrefill,
         Optional<Boolean> download,
         Optional<Integer> maxBatchSize,
@@ -33,6 +34,7 @@ public record AutoModelConfig(
         Optional<Map<TensorProviderKind, Integer>> parallelSplitSizeFixed,
         Optional<Map<TensorProviderKind, Double>> parallelSplitSizeMultiplier,
         Optional<Boolean> tensorPlanTrace,
+        Optional<Map<String, Object>> generationOptions,
         Optional<KvBufferCache> kvBufferCache,
         Optional<QuantizeOnDemand> quantizeOnDemand) {
 
@@ -44,6 +46,7 @@ public record AutoModelConfig(
         gpuDecode = gpuDecode == null ? Optional.empty() : gpuDecode;
         gpuDecodeAttention = gpuDecodeAttention == null ? Optional.empty() : gpuDecodeAttention;
         gpuDiffusionBlockProjection = gpuDiffusionBlockProjection == null ? Optional.empty() : gpuDiffusionBlockProjection;
+        packedBlockAttention = packedBlockAttention == null ? Optional.empty() : packedBlockAttention;
         packedPrefill = packedPrefill == null ? Optional.empty() : packedPrefill;
         download = download == null ? Optional.empty() : download;
         maxBatchSize = maxBatchSize == null ? Optional.empty() : maxBatchSize;
@@ -51,6 +54,7 @@ public record AutoModelConfig(
         parallelSplitSizeFixed = parallelSplitSizeFixed == null ? Optional.empty() : parallelSplitSizeFixed;
         parallelSplitSizeMultiplier = parallelSplitSizeMultiplier == null ? Optional.empty() : parallelSplitSizeMultiplier;
         tensorPlanTrace = tensorPlanTrace == null ? Optional.empty() : tensorPlanTrace;
+        generationOptions = generationOptions == null ? Optional.empty() : generationOptions;
         kvBufferCache = kvBufferCache == null ? Optional.empty() : kvBufferCache;
         quantizeOnDemand = quantizeOnDemand == null ? Optional.empty() : quantizeOnDemand;
     }

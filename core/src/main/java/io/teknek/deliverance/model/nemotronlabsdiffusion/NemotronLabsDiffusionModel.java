@@ -105,6 +105,11 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
     }
 
     @Override
+    protected boolean addBosToken() {
+        return false;
+    }
+
+    @Override
     protected EmbedInput loadInputWeights() {
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
                 "nemotron_labs_diffusion.embedding.load").time()) {
@@ -245,6 +250,7 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
         int maxNewTokens = Math.max(1, parameters.maxTokens.or(() -> parameters.ntokens).orElse(1));
         int[] promptTokens = constructPromptTokensForRuntime(promptContext.getPrompt());
         List<Integer> generated = new ArrayList<>(maxNewTokens);
+        long firstTokenNanos = 0L;
 
         try (AbstractModel.TensorPlanTraceScope ignoredTrace = openTensorPlanTrace(sessionId);
              KvCacheSession kvSession = newKvCacheSession();
@@ -254,6 +260,7 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
                 configurableTensorProvider.get().argMax(logits, argMax, 0, config.vocabularySize);
                 int token = (int) argMax.get(0, 0);
                 generated.add(token);
+                firstTokenNanos = System.nanoTime() - startNanos;
                 String raw = decodeTokens(new int[] { token }, false);
                 eventFired.emit(token, raw, raw, elapsedMs(startNanos));
             }
@@ -285,18 +292,58 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
         FinishReason reason = !generated.isEmpty() && config.eosTokens.contains(generated.getLast())
                 ? FinishReason.STOP_TOKEN
                 : FinishReason.MAX_TOKENS;
-        return postProcessResponse(new Response(decodeTokens(generatedIds, true), decodeTokens(generatedIds, false),
-                reason, promptTokens.length, generated, 0, totalMs, List.of()));
+        return timedResponse(new Response(decodeTokens(generatedIds, true), decodeTokens(generatedIds, false),
+                reason, promptTokens.length, generated, 0, totalMs, List.of()), startNanos, firstTokenNanos);
     }
 
     /** Defaults Nemotron generation to diffusion mode; use {@link #generateArBaseline} for AR comparison. */
     @Override
+    public boolean usesModelSpecificGeneration() {
+        return generationOptions().containsKey("mode");
+    }
+
+    @Override
     public Response generate(UUID sessionId, PromptContext promptContext, GeneratorParameters parameters,
             GenerateEvent eventFired) {
+        String mode = generationOptionString("mode", "linear_spec");
+        if ("ar".equalsIgnoreCase(mode) || "autoregressive".equalsIgnoreCase(mode)) {
+            return generateArBaseline(sessionId, promptContext, parameters, eventFired);
+        }
+        Preconditions.checkArgument("diffusion".equalsIgnoreCase(mode) || "linear_spec".equalsIgnoreCase(mode),
+                "unsupported Nemotron generationOptions.mode: %s", mode);
         int requestedTokens = parameters.maxTokens.or(() -> parameters.ntokens).orElse(((NemotronLabsDiffusionConfig) config).blockSize);
-        int configuredBlockLength = parameters.diffusionBlockLength.orElse(((NemotronLabsDiffusionConfig) config).blockSize);
+        int configuredBlockLength = parameters.diffusionBlockLength.orElseGet(() ->
+                generationOptionInt("blockLength", ((NemotronLabsDiffusionConfig) config).blockSize));
         int blockLength = Math.max(1, Math.min(configuredBlockLength, requestedTokens));
-        return generateDiffusion(sessionId, promptContext, parameters, eventFired, blockLength, 0.0f);
+        float threshold = generationOptionFloat("threshold", 0.0f);
+        return generateDiffusion(sessionId, promptContext, parameters, eventFired, blockLength, threshold);
+    }
+
+    private String generationOptionString(String key, String defaultValue) {
+        Object value = generationOptions().get(key);
+        return value == null ? defaultValue : value.toString();
+    }
+
+    private int generationOptionInt(String key, int defaultValue) {
+        Object value = generationOptions().get(key);
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        return Integer.parseInt(value.toString());
+    }
+
+    private float generationOptionFloat(String key, float defaultValue) {
+        Object value = generationOptions().get(key);
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof Number number) {
+            return number.floatValue();
+        }
+        return Float.parseFloat(value.toString());
     }
 
     /**
@@ -320,6 +367,7 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
         Random random = new Random(parameters.seed.orElse(42));
         float temperature = parameters.temperature.orElse(0.0f);
         int nfe = 1;
+        long firstTokenNanos = 0L;
         Optional<String> previousAdapter = activeLoraAdapterId();
         clearActiveAdapter();
 
@@ -328,7 +376,14 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
              AbstractTensor promptHidden = forwardCausalWithCache(promptTokens, 0, kvSession)) {
             int nextToken = tokenFromHiddenRow(promptHidden, promptTokens.length - 1, temperature, random);
             emitToken(nextToken, generated, eventFired, startNanos);
+            firstTokenNanos = System.nanoTime() - startNanos;
+            if (config.eosTokens.contains(nextToken)) {
+                InferenceProfiler.counter(metricRegistry, "nemotron_labs_diffusion.linear_spec.initial_seed_eos").inc();
+            }
             while (generated.size() < maxNewTokens) {
+                if (config.eosTokens.contains(generated.getLast())) {
+                    break;
+                }
                 int cacheLength = kvSession.length();
                 int remaining = maxNewTokens - generated.size();
                 int currentBlockLength = Math.min(effectiveBlockLength, remaining);
@@ -362,22 +417,27 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
                 }
                 int accepted = acceptedPrefixLength(block, verifiedTokens);
                 accepted = Math.min(accepted, maxNewTokens - generated.size());
-                InferenceProfiler.counter(metricRegistry, "nemotron_labs_diffusion.linear_spec.blocks").inc();
-                InferenceProfiler.counter(metricRegistry, "nemotron_labs_diffusion.linear_spec.accepted_tokens")
-                        .inc(accepted);
-                InferenceProfiler.counter(metricRegistry, "nemotron_labs_diffusion.linear_spec.accepted_"
-                        + acceptanceBucket(accepted)).inc();
-                InferenceProfiler.counter(metricRegistry, "nemotron_labs_diffusion.linear_spec.block_length_"
-                        + acceptanceBucket(currentBlockLength)).inc();
+                int emittedAccepted = 0;
+                boolean stoppedOnEos = false;
                 for (int i = 0; i < accepted; i++) {
                     emitToken(verifiedTokens[i], generated, eventFired, startNanos);
+                    emittedAccepted++;
                     if (config.eosTokens.contains(verifiedTokens[i])) {
+                        stoppedOnEos = true;
+                        InferenceProfiler.counter(metricRegistry, "nemotron_labs_diffusion.linear_spec.verify_eos").inc();
                         break;
                     }
                 }
-                kvSession.crop(cacheLength + accepted);
-                nextToken = verifiedTokens[accepted - 1];
-                if (!generated.isEmpty() && config.eosTokens.contains(generated.getLast())) {
+                InferenceProfiler.counter(metricRegistry, "nemotron_labs_diffusion.linear_spec.blocks").inc();
+                InferenceProfiler.counter(metricRegistry, "nemotron_labs_diffusion.linear_spec.accepted_tokens")
+                        .inc(emittedAccepted);
+                InferenceProfiler.counter(metricRegistry, "nemotron_labs_diffusion.linear_spec.accepted_"
+                        + acceptanceBucket(emittedAccepted)).inc();
+                InferenceProfiler.counter(metricRegistry, "nemotron_labs_diffusion.linear_spec.block_length_"
+                        + acceptanceBucket(currentBlockLength)).inc();
+                kvSession.crop(cacheLength + emittedAccepted);
+                nextToken = verifiedTokens[Math.max(0, emittedAccepted - 1)];
+                if (stoppedOnEos || (!generated.isEmpty() && config.eosTokens.contains(generated.getLast()))) {
                     break;
                 }
             }
@@ -393,8 +453,18 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
         double tokensPerSecond = totalMs <= 0 ? 0.0 : generated.size() * 1000.0 / totalMs;
         LOGGER.info("nemotron_diffusion_complete prompt_tokens={} generated_tokens={} nfe={} total_ms={} tokens_per_second={}",
                 promptTokens.length, generated.size(), nfe, totalMs, tokensPerSecond);
-        return postProcessResponse(new Response(text, textWithSpecial, FinishReason.MAX_TOKENS, promptTokens.length,
-                generated, 0, totalMs, List.of()));
+        FinishReason reason = !generated.isEmpty() && config.eosTokens.contains(generated.getLast())
+                ? FinishReason.STOP_TOKEN
+                : FinishReason.MAX_TOKENS;
+        return timedResponse(new Response(text, textWithSpecial, reason, promptTokens.length,
+                generated, 0, totalMs, List.of()), startNanos, firstTokenNanos);
+    }
+
+    private Response timedResponse(Response response, long startNanos, long firstTokenNanos) {
+        double totalMs = elapsedMs(startNanos);
+        double firstTokenMs = firstTokenNanos <= 0L ? 0.0 : firstTokenNanos / 1_000_000.0;
+        double averageMs = response.generatedTokens.isEmpty() ? 0.0 : totalMs / response.generatedTokens.size();
+        return postProcessResponse(response.copyWithTiming(firstTokenMs, averageMs, totalMs));
     }
 
     private void enableLinearSpecDraftAdapter() {
@@ -584,11 +654,10 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
     private AbstractTensor forwardLayerCausalCached(AbstractTensor input, int layer, int startPosition,
             KvCacheSession kvSession, CacheExecutionMode mode) {
         TensorOperations ops = configurableTensorProvider.get();
+        ForwardPhase phase = mode == CacheExecutionMode.DECODE_UPDATE_CACHE ? ForwardPhase.DECODE : ForwardPhase.PREFILL;
         try (AbstractTensor normed = new RmsNorm(this, inputNormWeights[layer], metricRegistry).forward(input);
              AbstractTensor attentionOutput = kvCacheSelfAttentions[layer].forward(normed, startPosition, kvSession,
-                     mode, Optional.empty(), mode == CacheExecutionMode.DECODE_UPDATE_CACHE
-                             ? ForwardPhase.DECODE
-                             : ForwardPhase.PREFILL);
+                     mode, Optional.empty(), phase);
              AbstractTensor afterAttention = tensorAllocator.getDirty(DType.F32, input.shape())) {
             afterAttention.copyFrom(input, 0, 0, (int) input.size());
             ops.accumulate(afterAttention, attentionOutput, 0, config.embeddingLength);
@@ -596,7 +665,7 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
                          .forward(afterAttention);
                  AbstractTensor postAttentionProjectionInput = maybeQuantizeReadOnly(postAttentionNorm,
                          "transformerblock.maybe_quantize.pre_ff");
-                 AbstractTensor mlp = mlpBlocks[layer].forward(postAttentionProjectionInput, Optional.empty())) {
+                 AbstractTensor mlp = mlpBlocks[layer].forward(postAttentionProjectionInput, Optional.empty(), phase)) {
                 ops.accumulate(afterAttention, mlp, 0, config.embeddingLength);
                 return copyTensor(afterAttention);
             }

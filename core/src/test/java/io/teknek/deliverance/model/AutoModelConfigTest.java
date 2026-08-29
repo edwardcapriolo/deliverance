@@ -27,6 +27,12 @@ public class AutoModelConfigTest {
                   "gpuDecode": true,
                   "gpuDecodeAttention": true,
                   "gpuDiffusionBlockProjection": true,
+                  "packedBlockAttention": true,
+                  "generationOptions": {
+                    "mode": "linear_spec",
+                    "blockLength": 32,
+                    "threshold": 0.0
+                  },
                   "download": false,
                   "maxBatchSize": 17,
                   "kvBufferCache": {
@@ -54,6 +60,10 @@ public class AutoModelConfigTest {
         assertEquals(true, builder.isGpuDecode());
         assertEquals(true, builder.isGpuDecodeAttention());
         assertEquals(true, builder.isGpuDiffusionBlockProjection());
+        assertEquals(true, builder.isPackedBlockAttention());
+        assertEquals("linear_spec", builder.getGenerationOptions().get("mode"));
+        assertEquals(32, builder.getGenerationOptions().get("blockLength"));
+        assertEquals(0.0, ((Number) builder.getGenerationOptions().get("threshold")).doubleValue());
         assertFalse(builder.isDownload());
         assertEquals(17, builder.getMaxBatchSize());
         assertEquals(0, builder.getSettings().getMaxEntries());

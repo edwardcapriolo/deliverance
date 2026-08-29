@@ -276,6 +276,63 @@ public class NativeGPU {
         }
     }
 
+    private static class unregister_scratch_buffers {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
+            NativeGPU.C_LONG
+        );
+
+        public static final MemorySegment ADDR = NativeGPU.findOrThrow("unregister_scratch_buffers");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /**
+     * Function descriptor for:
+     * {@snippet lang=c :
+     * void unregister_scratch_buffers(long id)
+     * }
+     */
+    public static FunctionDescriptor unregister_scratch_buffers$descriptor() {
+        return unregister_scratch_buffers.DESC;
+    }
+
+    /**
+     * Downcall method handle for:
+     * {@snippet lang=c :
+     * void unregister_scratch_buffers(long id)
+     * }
+     */
+    public static MethodHandle unregister_scratch_buffers$handle() {
+        return unregister_scratch_buffers.HANDLE;
+    }
+
+    /**
+     * Address for:
+     * {@snippet lang=c :
+     * void unregister_scratch_buffers(long id)
+     * }
+     */
+    public static MemorySegment unregister_scratch_buffers$address() {
+        return unregister_scratch_buffers.ADDR;
+    }
+
+    /**
+     * {@snippet lang=c :
+     * void unregister_scratch_buffers(long id)
+     * }
+     */
+    public static void unregister_scratch_buffers(long id) {
+        var mh$ = unregister_scratch_buffers.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("unregister_scratch_buffers", id);
+            }
+            mh$.invokeExact(id);
+        } catch (Throwable ex$) {
+           throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
     private static class register_shader {
         public static final FunctionDescriptor DESC = FunctionDescriptor.of(
             NativeGPU.C_LONG,

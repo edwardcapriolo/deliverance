@@ -191,6 +191,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     private boolean gpuDecodeEnabled;
     private boolean gpuDecodeAttentionEnabled;
     private boolean gpuDiffusionBlockProjectionEnabled;
+    private boolean packedBlockAttentionEnabled;
     private boolean packedPrefillEnabled = true;
     private GossipParallelMembership gossipParallelMembership;
 
@@ -208,6 +209,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     private final Queue<ModelLineageEntry> modelLineageEntries = new ConcurrentLinkedQueue<>();
     private Optional<TensorRuntimeMode> tensorRuntimeMode = Optional.empty();
     private TensorRuntime tensorRuntime;
+    private Map<String, Object> generationOptions = Map.of();
     private boolean initialized;
     private boolean tensorPlanTraceEnabled;
     private final ConcurrentMap<UUID, TensorPlanTraceContext> tensorPlanTraces = new ConcurrentHashMap<>();
@@ -376,6 +378,10 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.gpuDiffusionBlockProjectionEnabled = gpuDiffusionBlockProjectionEnabled;
     }
 
+    void setPackedBlockAttentionEnabled(boolean packedBlockAttentionEnabled) {
+        this.packedBlockAttentionEnabled = packedBlockAttentionEnabled;
+    }
+
     void setPackedPrefillEnabled(boolean packedPrefillEnabled) {
         this.packedPrefillEnabled = packedPrefillEnabled;
     }
@@ -394,6 +400,10 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public boolean isGpuDiffusionBlockProjectionEnabled() {
         return gpuDiffusionBlockProjectionEnabled;
+    }
+
+    public boolean isPackedBlockAttentionEnabled() {
+        return packedBlockAttentionEnabled;
     }
 
     public boolean isPackedPrefillEnabled() {
@@ -716,10 +726,24 @@ public abstract class AbstractModel implements Generator, Classifier {
             }
         }
         kvBufferCache.close();
+        closeTensorOperations();
         try {
             weights.close();
         } catch (Exception e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    private void closeTensorOperations() {
+        Set<TensorOperations> closed = Collections.newSetFromMap(new IdentityHashMap<>());
+        TensorOperations primary = configurableTensorProvider.get();
+        if (closed.add(primary)) {
+            primary.close();
+        }
+        for (TensorOperations operations : tensorOperations.values()) {
+            if (closed.add(operations)) {
+                operations.close();
+            }
         }
     }
 
@@ -913,6 +937,11 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     protected Response postProcessResponse(Response response) {
         return response;
+    }
+
+    /** Returns true when a model family owns generation semantics that should bypass the generic AR engine. */
+    public boolean usesModelSpecificGeneration() {
+        return false;
     }
 
     @Override
@@ -1283,6 +1312,14 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.tensorRuntime = tensorRuntime;
     }
 
+    public Map<String, Object> generationOptions() {
+        return generationOptions;
+    }
+
+    void setGenerationOptions(Map<String, Object> generationOptions) {
+        this.generationOptions = generationOptions == null ? Map.of() : Map.copyOf(generationOptions);
+    }
+
     public void setTensorPlanTraceEnabled(boolean tensorPlanTraceEnabled) {
         this.tensorPlanTraceEnabled = tensorPlanTraceEnabled;
     }
@@ -1457,7 +1494,9 @@ public abstract class AbstractModel implements Generator, Classifier {
                 + "gpuDecode=" + gpuDecodeEnabled + '\n'
                 + "gpuDecodeAttention=" + gpuDecodeAttentionEnabled + '\n'
                 + "gpuDiffusionBlockProjection=" + gpuDiffusionBlockProjectionEnabled + '\n'
+                + "packedBlockAttention=" + packedBlockAttentionEnabled + '\n'
                 + "packedPrefill=" + packedPrefillEnabled + '\n'
+                + "generationOptions=" + generationOptions + '\n'
                 + "tensorProviderExplicit=" + tensorProviderExplicit + '\n'
                 + "layers=" + config.numberOfLayers + '\n'
                 + "embeddingLength=" + config.embeddingLength + '\n'

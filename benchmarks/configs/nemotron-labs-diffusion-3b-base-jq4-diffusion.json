@@ -1,0 +1,23 @@
+{
+  "outputHeadQuantization": "Q4",
+  "gpuDiffusionBlockProjection": true,
+  "packedBlockAttention": true,
+  "maxBatchSize": 512,
+  "tensorRuntimeMode": "DISABLED",
+  "parallelSplitSizeFixed": {
+    "SIMD": 64
+  },
+  "generationOptions": {
+    "mode": "linear_spec",
+    "blockLength": 32,
+    "threshold": 0.0
+  },
+  "kvBufferCache": {
+    "maxEntries": 10000,
+    "blockSize": 32,
+    "maxPrefixTokensPerPrompt": 8192,
+    "prefixCheckpointPolicy": "START_AND_END",
+    "maxPrefixCheckpointsPerPrompt": 4,
+    "contextRowsPerPageTarget": 32
+  }
+}
