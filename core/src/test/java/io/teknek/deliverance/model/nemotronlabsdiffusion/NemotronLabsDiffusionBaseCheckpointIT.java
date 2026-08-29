@@ -32,6 +32,12 @@ class NemotronLabsDiffusionBaseCheckpointIT {
     private static final ModelFetcher FETCHER = new ModelFetcher("nvidia", "Nemotron-Labs-Diffusion-3B-Base");
     private static final String QOD_OWNER = "nvidia";
     private static final String QOD_MODEL = "Nemotron-Labs-Diffusion-3B-Base-JQ4";
+    private static final ModelFetcher INSTRUCT_FETCHER = new ModelFetcher("nvidia", "Nemotron-Labs-Diffusion-3B");
+    private static final String INSTRUCT_QOD_MODEL = "Nemotron-Labs-Diffusion-3B-JQ4";
+    private static final String BENCHMARK_MATH_PROMPT = "Solve step by step. A bus starts with an unknown number of passengers. "
+            + "At the first stop, half get off and 4 get on. At the second stop, 6 get off and 8 get on. "
+            + "There are 25 passengers heading to the third stop. How many passengers started at the terminal? "
+            + "Then compute total fare collected if every person who ever boarded paid $2.";
 
     @Test
     void baseCheckpointHasExpectedTensorInventory() {
@@ -61,6 +67,21 @@ class NemotronLabsDiffusionBaseCheckpointIT {
     void baseCheckpointCanInstantiateNemotronModel() {
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(FETCHER).buildLocalTransformerModel()) {
             assertInstanceOf(NemotronLabsDiffusionModel.class, model);
+        }
+    }
+
+    @Test
+    void baseCheckpointPromptTemplateRuntimeTokensDoNotPrependBos() {
+        try (AbstractModel model = AutoModelForCausaLm.newBuilder(FETCHER).buildLocalTransformerModel()) {
+            String prompt = model.promptSupport().orElseThrow().builder()
+                    .addUserMessage("Hi!")
+                    .build()
+                    .getPrompt();
+            int[] runtimeTokens = model.constructPromptTokensForRuntime(prompt);
+
+            assertEquals(10, runtimeTokens[0], "Nemotron chat template should start with <|im_start|>, not BOS");
+            assertTrue(runtimeTokens[0] != model.getConfig().bosToken,
+                    "Nemotron tokenizer_config disables add_bos_token for chat-template prompts");
         }
     }
 
@@ -235,21 +256,62 @@ class NemotronLabsDiffusionBaseCheckpointIT {
                 .withQuantizeOnDemand(DType.Q4, QOD_OWNER, QOD_MODEL)
                 .withOutputHeadQuantization(DType.Q4)
                 .withGpuDiffusionBlockProjection(true)
+                .withPackedBlockAttention(true)
                 .buildLocalTransformerModel()) {
             InferenceProfiler.reset();
-            Response response = model.generate(UUID.randomUUID(), PromptContext.of("Question: What is Paris?\nAnswer:"),
-                    new GeneratorParameters().withMaxTokens(33),
-                    (next, nextRaw, nextCleaned, timing) ->
-                            System.out.println("DIFFUSION_BLOCK32_GPU_LOGITS " + nextCleaned + " " + next));
 
-            System.out.println("DIFFUSION_BLOCK32_GPU_LOGITS_TEXT=" + response.responseText);
-            InferenceProfiler.printSummary("nemotron qod diffusion block32 gpu block logits", 40);
+
+            for (int i=0;i< 10; i++) {
+                //Solve step by step. A bus starts with an unknown number of passengers. At the first stop, half get off and 4 get on. At the second stop, 6 get off and 8 get on. There are 25 passengers heading to the third stop. How many passengers started at the terminal? Then compute total fare collected if every person who ever boarded paid $2.
+                //PromptContext pc = model.promptSupport().get().builder().addUserMessage("What is Paris?").build();
+                PromptContext pc = model.promptSupport().get().builder().addUserMessage("Solve step by step. A bus starts with an unknown number of passengers. At the first stop, half get off and 4 get on. At the second stop, 6 get off and 8 get on. There are 25 passengers heading to the third stop. How many passengers started at the terminal? Then compute total fare collected if every person who ever boarded paid $2.").build();
+                Response response = model.generate(UUID.randomUUID(), pc,
+
+            //for (int i=0;i< 10; i++) {
+            //    PromptContext pc = model.promptSupport().get().builder().addUserMessage("What is Paris?").build();
+            //    Response response = model.generate(UUID.randomUUID(), PromptContext.of("Question: What is Paris?\nAnswer:"),
+                        new GeneratorParameters().withMaxTokens(33),
+                        (next, nextRaw, nextCleaned, timing) ->
+                                System.out.println("DIFFUSION_BLOCK32_GPU_LOGITS " + nextCleaned + " " + next));
+
+                System.out.println("DIFFUSION_BLOCK32_GPU_LOGITS_TEXT=" + response.responseText);
+                InferenceProfiler.printSummary("nemotron qod diffusion block32 gpu block logits", 40);
+                printProfileCounters(model, 80);
+                assertTrue(response.generatedTokens.size() >= 2);
+                assertTrue(response.generatedTokens.size() <= 33);
+                assertTrue(response.responseText != null && !response.responseText.isBlank());
+                assertTrue(InferenceProfiler.counterValue(
+                        "nemotron_labs_diffusion.logits_block_projection.provider_gpu") > 0);
+            }
+        } finally {
+            InferenceProfiler.setEnabled(previousProfiling);
+        }
+    }
+
+    @Test
+    void instructCheckpointQuantizeOnDemandDiffusionBenchmarkMathPromptProfileGpuBlockLogits() {
+        boolean previousProfiling = InferenceProfiler.isEnabled();
+        InferenceProfiler.setEnabled(true);
+        try (AbstractModel model = AutoModelForCausaLm.newBuilder(INSTRUCT_FETCHER)
+                .withQuantizeOnDemand(DType.Q4, QOD_OWNER, INSTRUCT_QOD_MODEL)
+                .withOutputHeadQuantization(DType.Q4)
+                .withGpuDiffusionBlockProjection(true)
+                .withPackedBlockAttention(true)
+                .buildLocalTransformerModel()) {
+            PromptContext prompt = model.promptSupport().orElseThrow().builder()
+                    .addUserMessage(BENCHMARK_MATH_PROMPT)
+                    .build();
+            InferenceProfiler.reset();
+            Response response = model.generate(UUID.randomUUID(), prompt,
+                    new GeneratorParameters().withMaxTokens(128),
+                    (next, nextRaw, nextCleaned, timing) ->
+                            System.out.println("INSTRUCT_DIFFUSION_MATH " + nextCleaned + " " + next));
+
+            System.out.println("INSTRUCT_DIFFUSION_MATH_TEXT=" + response.responseText);
+            System.out.println("INSTRUCT_DIFFUSION_MATH_RESPONSE=" + response);
+            InferenceProfiler.printSummary("nemotron instruct qod diffusion math prompt gpu block logits", 40);
             printProfileCounters(model, 80);
-            assertTrue(response.generatedTokens.size() >= 2);
-            assertTrue(response.generatedTokens.size() <= 33);
             assertTrue(response.responseText != null && !response.responseText.isBlank());
-            assertTrue(InferenceProfiler.counterValue(
-                    "nemotron_labs_diffusion.logits_block_projection.provider_gpu") > 0);
         } finally {
             InferenceProfiler.setEnabled(previousProfiling);
         }

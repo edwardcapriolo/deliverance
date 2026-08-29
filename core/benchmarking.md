@@ -115,6 +115,38 @@ DELIVERANCE_BENCHMARK_ARGS="--output-head-quantization Q4 --pool-size 16 --max-t
 
 If you need to change owner/model, run `InferenceBenchmark` directly or adjust the script; the Qwen JQ4 scripts now default to the uploaded `edwardcapriolo/Qwen3-*-JQ4` repositories before `DELIVERANCE_BENCHMARK_ARGS`.
 
+### Nemotron AR And Diffusion Q4 Benchmarks
+
+```sh
+./benchmarks/run-nemotron-ar-q4-benchmark.sh
+./benchmarks/run-nemotron-diffusion-q4-benchmark.sh
+```
+
+Both scripts use the local QOD target `nvidia/Nemotron-Labs-Diffusion-3B-JQ4` so they can be compared with Qwen 4B JQ4 runs. The non-Base Nemotron checkpoint is the appropriate target for the built-in chat/instruction benchmark suite; the Base checkpoint produced `</s>` or repeated-bullet outputs on several benchmark prompts.
+
+The AR script uses `benchmarks/configs/nemotron-labs-diffusion-3b-base-jq4-ar.json`:
+
+```json
+"generationOptions": {
+  "mode": "ar"
+}
+```
+
+The diffusion script uses `benchmarks/configs/nemotron-labs-diffusion-3b-base-jq4-diffusion.json`, which opts into the current diffusion performance features by default:
+
+```json
+"outputHeadQuantization": "Q4",
+"gpuDiffusionBlockProjection": true,
+"packedBlockAttention": true,
+"generationOptions": {
+  "mode": "linear_spec",
+  "blockLength": 32,
+  "threshold": 0.0
+}
+```
+
+`generationOptions` is a model-specific map transported through `AutoModelConfig` to `AbstractModel`; each model owns the meaning of its keys. Runtime/backend flags such as `outputHeadQuantization`, `gpuDiffusionBlockProjection`, and `packedBlockAttention` remain first-class model config fields.
+
 ### Gemma2 Single-Model Benchmark
 
 ```sh

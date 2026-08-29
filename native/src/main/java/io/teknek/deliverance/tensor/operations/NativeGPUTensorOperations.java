@@ -73,6 +73,11 @@ public class NativeGPUTensorOperations implements TensorOperations {
 
     private final AtomicLong totalBytesAllocated = new AtomicLong(0);
     private final AtomicBoolean limitReached = new AtomicBoolean(false);
+    private final AtomicBoolean closed = new AtomicBoolean(false);
+    private final AtomicLong registerHits = new AtomicLong(0);
+    private final AtomicLong registerMisses = new AtomicLong(0);
+    private final AtomicLong gemmGpuCalls = new AtomicLong(0);
+    private final AtomicLong gemmFallbackCalls = new AtomicLong(0);
 
     private static final TensorOperations delegate;
     private static final WrappedForkJoinPool pool;
@@ -116,15 +121,23 @@ public class NativeGPUTensorOperations implements TensorOperations {
 
     @Override
     public void registerModelTensor(AbstractTensor t) {
+        if (closed.get()) {
+            throw new IllegalStateException("NativeGPUTensorOperations is closed");
+        }
 
         long byteSize = t.getMemorySegment().byteSize();
         if (t.dType() == DType.Q4) {
             byteSize += ((Q4ByteBufferTensor) t).getBlockF().getMemorySegment().byteSize();
         }
 
-        if (tensorCache.containsKey(t.getUid()) || limitReached.get()) {
+        if (tensorCache.containsKey(t.getUid())) {
+            registerHits.incrementAndGet();
             return;
         }
+        if (limitReached.get()) {
+            return;
+        }
+        registerMisses.incrementAndGet();
 
         // We can't accurately know the amount of GPU memory available, so we will just let the GPU handle it
 
@@ -164,6 +177,50 @@ public class NativeGPUTensorOperations implements TensorOperations {
             limitReached.set(true);
             logger.warn("GPU Memory Limit reached, falling back to CPU");
         }
+    }
+
+    @Override
+    public void close() {
+        if (!closed.compareAndSet(false, true)) {
+            return;
+        }
+        int released = 0;
+        for (Long id : tensorCache.values()) {
+            NativeGPU.unregister_tensor(id);
+            released++;
+        }
+        tensorCache.clear();
+        Long scratch = gpuBuffers;
+        if (scratch != null) {
+            try {
+                NativeGPU.unregister_scratch_buffers(scratch);
+            } catch (Throwable t) {
+                logger.debug("GPU scratch release unavailable; rebuild native GPU library to enable scratch cleanup", t);
+            }
+            gpuBuffers = null;
+        }
+        logger.info("Native GPU Operations released registered_tensors={} scratch_released={} bytes_accounted={}",
+                released, scratch != null, totalBytesAllocated.get());
+    }
+
+    public int registeredTensorCount() {
+        return tensorCache.size();
+    }
+
+    public long registerHits() {
+        return registerHits.get();
+    }
+
+    public long registerMisses() {
+        return registerMisses.get();
+    }
+
+    public long gemmGpuCalls() {
+        return gemmGpuCalls.get();
+    }
+
+    public long gemmFallbackCalls() {
+        return gemmFallbackCalls.get();
     }
 
     private Long gpuBuffers;
@@ -384,8 +441,10 @@ public class NativeGPUTensorOperations implements TensorOperations {
                 result.getStride(),
                 m1_optimized ? 1 : 0
             );
+            gemmGpuCalls.incrementAndGet();
 
         } else {
+            gemmFallbackCalls.incrementAndGet();
 
             // I REALLY need to redo this terrible API.
             // rRowOffset > 0 effectively means we are decoupling the result from the bRowOffset
@@ -489,12 +548,15 @@ public class NativeGPUTensorOperations implements TensorOperations {
                         b[0].getStride(),
                         r[0].getStride(),
                         M == 1 ? 1 : 0);
+                gemmGpuCalls.incrementAndGet();
             } else {
+                gemmFallbackCalls.incrementAndGet();
                 for (int i = 0; i < r.length; i++) {
                     batchDotProduct(r[i], a, b[i], columnOffset, columnOffset, columnLength, 0, bRowOffset, rowChunkSize);
                 }
             }
         } else {
+            gemmFallbackCalls.incrementAndGet();
             VectorMath.pchunk(bRowOffset, rowChunkSize, (chunkStart, chunkSize) -> {
                 delegate.dotProductBatchChunk(r, a, b, columnOffset, columnLength, chunkStart, chunkSize);
             }, delegate.parallelSplitSize(), pool);

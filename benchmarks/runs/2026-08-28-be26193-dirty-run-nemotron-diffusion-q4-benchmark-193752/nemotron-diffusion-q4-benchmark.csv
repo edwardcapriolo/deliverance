@@ -1,0 +1,13 @@
+timestamp,engine,model,case_id,category,turn,prompt_chars,prompt_tokens,generated_tokens,total_ms,generation_ms,tokens_per_second,response_chars,finish_reason
+"2026-08-28T23:40:00.065952Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-Base-JQ4","builtin-reasoning-1","reasoning",1,637,136,256,123354.4453125,117078.6814375,2.178022479149002,256,"MAX_TOKENS"
+"2026-08-28T23:41:57.224233Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-Base-JQ4","builtin-reasoning-1","reasoning",2,1033,416,256,117106.6875,101008.027,2.52455183586548,256,"MAX_TOKENS"
+"2026-08-28T23:42:08.335060Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-Base-JQ4","builtin-math-1","math",1,427,97,2,11098.1162109375,8787.9210859375,0.113792555738832,5,"STOP_TOKEN"
+"2026-08-28T23:42:20.998337Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-Base-JQ4","builtin-math-1","math",2,651,141,2,12655.3955078125,9053.6602988125,0.11045256470812832,5,"STOP_TOKEN"
+"2026-08-28T23:42:31.206846Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-Base-JQ4","builtin-coding-1","coding",1,363,69,2,10201.9638671875,8561.6057841875,0.11680051910903304,5,"STOP_TOKEN"
+"2026-08-28T23:42:42.610506Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-Base-JQ4","builtin-coding-1","coding",2,552,103,2,11396.833984375,8952.529734374999,0.11170027128313278,5,"STOP_TOKEN"
+"2026-08-28T23:42:52.559854Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-Base-JQ4","builtin-coding-2","coding",1,310,57,2,9937.482421875,8463.427671875,0.11815543758034602,5,"STOP_TOKEN"
+"2026-08-28T23:43:03.527356Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-Base-JQ4","builtin-coding-2","coding",2,491,90,2,10960.509765625,8822.505265625,0.11334648944855669,5,"STOP_TOKEN"
+"2026-08-28T23:43:28.792498Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-Base-JQ4","builtin-extraction-1","extraction",1,560,342,2,25257.00390625,10598.67990625,0.09435137289223197,5,"STOP_TOKEN"
+"2026-08-28T23:43:55.005829Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-Base-JQ4","builtin-extraction-1","extraction",2,739,376,2,26201.439453125,10876.702869125,0.09193962656078765,5,"STOP_TOKEN"
+"2026-08-28T23:44:05.222465Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-Base-JQ4","builtin-stem-1","stem",1,315,58,2,10205.169921875,8592.008587875,0.11638722072638463,5,"STOP_TOKEN"
+"2026-08-28T23:44:16.178513Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-Base-JQ4","builtin-stem-1","stem",2,498,92,2,10950.3251953125,8715.6729863125,0.11473583297244479,5,"STOP_TOKEN"

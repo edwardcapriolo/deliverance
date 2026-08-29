@@ -63,6 +63,9 @@ public final class DefaultCausalLanguageModel implements CausalLanguageModel {
     @Override
     public Response generate(UUID sessionId, PromptContext promptContext, GeneratorParameters generatorParameters,
             GenerateEvent eventFired) {
+        if (coordinatorModel.usesModelSpecificGeneration()) {
+            return coordinatorModel.generate(sessionId, promptContext, generatorParameters, eventFired);
+        }
         return engine.generate(coordinatorModel, backend, sessionId, promptContext, generatorParameters, eventFired);
     }
 

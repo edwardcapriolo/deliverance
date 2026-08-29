@@ -175,6 +175,9 @@ pthread_mutex_t tensor_registry_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 Scratch scratch_lookup[8192];
 int64_t scratch_lookup_idx = 0;
+int64_t scratch_free_list[8192];
+int64_t scratch_free_count = 0;
+pthread_mutex_t scratch_registry_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 WGPUShaderModule shader_lookup[1024];
 int64_t shader_lookup_idx = 0;
@@ -312,7 +315,11 @@ void init_gpu(int64_t *results) {
     tensor_lookup_idx = 0;
     tensor_free_count = 0;
     pthread_mutex_unlock(&tensor_registry_mutex);
+    pthread_mutex_lock(&scratch_registry_mutex);
+    memset(scratch_lookup, 0, sizeof(scratch_lookup));
     scratch_lookup_idx = 0;
+    scratch_free_count = 0;
+    pthread_mutex_unlock(&scratch_registry_mutex);
     shader_lookup_idx = 0;
     shader_pipeline_lookup_idx = 0;
 
@@ -486,11 +493,76 @@ int64_t register_scratch_buffers( int params_size, int input_size, int result_si
     WGPUBuffer empty_buffer = create_working_buffer(device, "empty", 8, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
 
     Scratch s = {input_buffer, input2_buffer, params_buffer, result_buffer, result_staging_buffer, empty_buffer};
-    scratch_lookup[scratch_lookup_idx] = s;
-    int64_t id = scratch_lookup_idx;
-    scratch_lookup_idx++;
+    pthread_mutex_lock(&scratch_registry_mutex);
+    int64_t id;
+    if (scratch_free_count > 0) {
+        id = scratch_free_list[--scratch_free_count];
+    } else if (scratch_lookup_idx < 8192) {
+        id = scratch_lookup_idx++;
+    } else {
+        pthread_mutex_unlock(&scratch_registry_mutex);
+        fprintf(stderr, "GPU scratch registry exhausted: %lld/8192 registered scratch buffers. This indicates leaked/unreleased GPU scratch buffers.\n",
+                (long long) scratch_lookup_idx);
+        wgpuBufferDestroy(input_buffer);
+        wgpuBufferRelease(input_buffer);
+        wgpuBufferDestroy(input2_buffer);
+        wgpuBufferRelease(input2_buffer);
+        wgpuBufferDestroy(params_buffer);
+        wgpuBufferRelease(params_buffer);
+        wgpuBufferDestroy(result_buffer);
+        wgpuBufferRelease(result_buffer);
+        wgpuBufferDestroy(result_staging_buffer);
+        wgpuBufferRelease(result_staging_buffer);
+        wgpuBufferDestroy(empty_buffer);
+        wgpuBufferRelease(empty_buffer);
+        return -1;
+    }
+    scratch_lookup[id] = s;
+    pthread_mutex_unlock(&scratch_registry_mutex);
 
     return id;
+}
+
+void unregister_scratch_buffers(int64_t id) {
+    if (id < 0) {
+        return;
+    }
+    pthread_mutex_lock(&scratch_registry_mutex);
+    if (id >= scratch_lookup_idx) {
+        pthread_mutex_unlock(&scratch_registry_mutex);
+        return;
+    }
+    Scratch s = scratch_lookup[id];
+    Scratch empty = {NULL, NULL, NULL, NULL, NULL, NULL};
+    scratch_lookup[id] = empty;
+    if (scratch_free_count < 8192) {
+        scratch_free_list[scratch_free_count++] = id;
+    }
+    pthread_mutex_unlock(&scratch_registry_mutex);
+    if (s.input_buffer != NULL) {
+        wgpuBufferDestroy(s.input_buffer);
+        wgpuBufferRelease(s.input_buffer);
+    }
+    if (s.input2_buffer != NULL) {
+        wgpuBufferDestroy(s.input2_buffer);
+        wgpuBufferRelease(s.input2_buffer);
+    }
+    if (s.params_buffer != NULL) {
+        wgpuBufferDestroy(s.params_buffer);
+        wgpuBufferRelease(s.params_buffer);
+    }
+    if (s.result_buffer != NULL) {
+        wgpuBufferDestroy(s.result_buffer);
+        wgpuBufferRelease(s.result_buffer);
+    }
+    if (s.result_staging_buffer != NULL) {
+        wgpuBufferDestroy(s.result_staging_buffer);
+        wgpuBufferRelease(s.result_staging_buffer);
+    }
+    if (s.empty_buffer != NULL) {
+        wgpuBufferDestroy(s.empty_buffer);
+        wgpuBufferRelease(s.empty_buffer);
+    }
 }
 
 WGPUShaderModule create_shader_module(WGPUDevice device, const char* shader_code) {

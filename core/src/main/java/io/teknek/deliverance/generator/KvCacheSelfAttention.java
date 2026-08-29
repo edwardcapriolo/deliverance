@@ -49,6 +49,7 @@ public class KvCacheSelfAttention {
     private final int numberOfKeyValueHeads;
     private final int headGroupSize;
     private final float attentionScale;
+    private final PackedBlockAttention packedBlockAttention;
 
     public KvCacheSelfAttention(AbstractModel model, int layerIndex, AbstractTensor queryAttnWeights,
             AbstractTensor keyAttnWeights, AbstractTensor valueAttnWeights, AbstractTensor outputProjectionWeights,
@@ -75,6 +76,7 @@ public class KvCacheSelfAttention {
         this.attentionScale = config.attentionMultiplier != null
                 ? config.attentionMultiplier
                 : (float) (1.0 / StrictMath.sqrt(config.headSize));
+        this.packedBlockAttention = new PackedBlockAttention(model, metricRegistry);
 
         configurableTensorProvider.get().registerModelTensor(queryAttnWeights);
         configurableTensorProvider.get().registerModelTensor(keyAttnWeights);
@@ -236,12 +238,15 @@ public class KvCacheSelfAttention {
              AbstractTensor previousValues = readView.copyVisibleValues();
              AbstractTensor packedKeys = model.makeDenseTensor(TensorShape.of(startPosition + batchSize, kvLength));
              AbstractTensor packedValues = model.makeDenseTensor(TensorShape.of(startPosition + batchSize, kvLength))) {
-            if (startPosition > 0) {
-                packedKeys.copyFrom(previousKeys, 0, 0, (int) previousKeys.size());
-                packedValues.copyFrom(previousValues, 0, 0, (int) previousValues.size());
+            try (Timer.Context ignoredPack = InferenceProfiler.timer(metricRegistry,
+                    "kvcacheselfattention.pack_kv").time()) {
+                if (startPosition > 0) {
+                    packedKeys.copyFrom(previousKeys, 0, 0, (int) previousKeys.size());
+                    packedValues.copyFrom(previousValues, 0, 0, (int) previousValues.size());
+                }
+                packedKeys.copyFrom(keyBatch, 0, packedKeys.getOffset(startPosition, 0), (int) keyBatch.size());
+                packedValues.copyFrom(valueBatch, 0, packedValues.getOffset(startPosition, 0), (int) valueBatch.size());
             }
-            packedKeys.copyFrom(keyBatch, 0, packedKeys.getOffset(startPosition, 0), (int) keyBatch.size());
-            packedValues.copyFrom(valueBatch, 0, packedValues.getOffset(startPosition, 0), (int) valueBatch.size());
             if (mode == CacheExecutionMode.DENOISE_BLOCK_NO_UPDATE) {
                 bidirectionalBlockAttentionWithPrefix(output, queryBatch, packedKeys, packedValues, startPosition,
                         batchSize);
@@ -255,8 +260,15 @@ public class KvCacheSelfAttention {
             AbstractTensor value, boolean causal) {
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
                 "kvcacheselfattention.attention").time()) {
-            TensorOperations ops = configurableTensorProvider.get();
             int sequenceLength = (int) query.shape().first();
+            if (model.isPackedBlockAttentionEnabled()) {
+                InferenceProfiler.counter(metricRegistry, "kvcacheselfattention.attention.provider_packed_block").inc();
+                packedBlockAttention.forward(output, query, key, value, 0, sequenceLength, numberOfHeads,
+                        numberOfKeyValueHeads, config.headSize, attentionScale, config.attnLogitSoftCapping, causal);
+                return;
+            }
+            InferenceProfiler.counter(metricRegistry, "kvcacheselfattention.attention.provider_legacy").inc();
+            TensorOperations ops = configurableTensorProvider.get();
             output.clear();
             try (AbstractTensor scores = model.makeDenseTensor(1, sequenceLength)) {
                 for (int row = 0; row < sequenceLength; row++) {
@@ -274,6 +286,13 @@ public class KvCacheSelfAttention {
             AbstractTensor values, int startPosition, int batchSize) {
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
                 "kvcacheselfattention.attention").time()) {
+            if (model.isPackedBlockAttentionEnabled()) {
+                InferenceProfiler.counter(metricRegistry, "kvcacheselfattention.attention.provider_packed_block").inc();
+                packedBlockAttention.forward(output, query, keys, values, startPosition, batchSize, numberOfHeads,
+                        numberOfKeyValueHeads, config.headSize, attentionScale, config.attnLogitSoftCapping, true);
+                return;
+            }
+            InferenceProfiler.counter(metricRegistry, "kvcacheselfattention.attention.provider_legacy").inc();
             TensorOperations ops = configurableTensorProvider.get();
             output.clear();
             for (int row = 0; row < batchSize; row++) {
@@ -289,6 +308,13 @@ public class KvCacheSelfAttention {
             AbstractTensor values, int startPosition, int batchSize) {
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
                 "kvcacheselfattention.attention").time()) {
+            if (model.isPackedBlockAttentionEnabled()) {
+                InferenceProfiler.counter(metricRegistry, "kvcacheselfattention.attention.provider_packed_block").inc();
+                packedBlockAttention.forward(output, query, keys, values, startPosition, batchSize, numberOfHeads,
+                        numberOfKeyValueHeads, config.headSize, attentionScale, config.attnLogitSoftCapping, false);
+                return;
+            }
+            InferenceProfiler.counter(metricRegistry, "kvcacheselfattention.attention.provider_legacy").inc();
             TensorOperations ops = configurableTensorProvider.get();
             output.clear();
             int visibleRows = startPosition + batchSize;

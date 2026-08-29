@@ -1,0 +1,12 @@
+timestamp,engine,model,case_id,category,turn,prompt_chars,prompt_tokens,generated_tokens,total_ms,generation_ms,tokens_per_second,response_chars,finish_reason
+"2026-08-28T22:19:48.591517Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-Base-JQ4","builtin-reasoning-1","reasoning",1,637,137,2,0.0,0.0,0.0,5,"MAX_TOKENS"
+"2026-08-28T22:19:55.380272Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-Base-JQ4","builtin-reasoning-1","reasoning",2,782,163,2,0.0,0.0,0.0,5,"MAX_TOKENS"
+"2026-08-28T22:19:59.544109Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-Base-JQ4","builtin-math-1","math",1,427,98,2,0.0,0.0,0.0,5,"MAX_TOKENS"
+"2026-08-28T22:20:05.244235Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-Base-JQ4","builtin-math-1","math",2,651,142,2,0.0,0.0,0.0,5,"MAX_TOKENS"
+"2026-08-28T22:20:08.770272Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-Base-JQ4","builtin-coding-1","coding",1,363,70,2,0.0,0.0,0.0,5,"MAX_TOKENS"
+"2026-08-28T22:20:13.310874Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-Base-JQ4","builtin-coding-1","coding",2,552,104,2,0.0,0.0,0.0,5,"MAX_TOKENS"
+"2026-08-28T22:20:16.265177Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-Base-JQ4","builtin-coding-2","coding",1,310,58,2,0.0,0.0,0.0,5,"MAX_TOKENS"
+"2026-08-28T22:20:20.157253Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-Base-JQ4","builtin-coding-2","coding",2,491,91,2,0.0,0.0,0.0,5,"MAX_TOKENS"
+"2026-08-28T22:20:36.078494Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-Base-JQ4","builtin-extraction-1","extraction",1,560,343,2,0.0,0.0,0.0,5,"MAX_TOKENS"
+"2026-08-28T22:20:53.431010Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-Base-JQ4","builtin-extraction-1","extraction",2,739,377,2,0.0,0.0,0.0,5,"MAX_TOKENS"
+"2026-08-28T22:20:56.435975Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-Base-JQ4","builtin-stem-1","stem",1,315,59,2,0.0,0.0,0.0,5,"MAX_TOKENS"

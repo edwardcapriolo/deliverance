@@ -1,0 +1,6 @@
+timestamp,engine,model,case_id,category,turn,prompt_chars,prompt_tokens,generated_tokens,total_ms,generation_ms,tokens_per_second,response_chars,finish_reason
+"2026-08-29T12:53:25.435957Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-JQ4","builtin-reasoning-1","reasoning",1,637,136,256,130837.5078125,126249.9517705,2.0198027517946677,965,"MAX_TOKENS"
+"2026-08-29T12:57:56.501866Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-JQ4","builtin-reasoning-1","reasoning",2,1742,416,256,271033.6875,255070.281167,0.9997244635216676,1003,"MAX_TOKENS"
+"2026-08-29T12:59:21.321543Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-JQ4","builtin-math-1","math",1,427,97,256,84796.4453125,82487.8970215,3.0913626023649954,802,"MAX_TOKENS"
+"2026-08-29T13:02:07.033057Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-JQ4","builtin-math-1","math",2,1448,395,256,165700.328125,151303.661209,1.6853524756929794,889,"MAX_TOKENS"
+"2026-08-29T13:04:28.791913Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-JQ4","builtin-coding-1","coding",1,363,69,256,141747.6875,140305.721666,1.8174597370093826,1029,"MAX_TOKENS"

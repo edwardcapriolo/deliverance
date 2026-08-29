@@ -13,6 +13,8 @@ void unregister_tensor(int64_t id);
 
 int64_t register_scratch_buffers(int params_size, int input_size, int result_size);
 
+void unregister_scratch_buffers(int64_t id);
+
 //Returns a unique identifier for the shader
 int64_t register_shader(const char *data, int size);
 

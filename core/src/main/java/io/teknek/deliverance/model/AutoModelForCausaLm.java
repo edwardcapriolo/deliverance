@@ -142,8 +142,10 @@ public class AutoModelForCausaLm {
         private boolean gpuDecode;
         private boolean gpuDecodeAttention;
         private boolean gpuDiffusionBlockProjection;
+        private boolean packedBlockAttention;
         private boolean packedPrefill = true;
         private boolean tensorPlanTrace;
+        private Map<String, Object> generationOptions = Map.of();
         private Optional<TensorRuntimeMode> tensorRuntimeMode = Optional.empty();
         private final EnumMap<TensorProviderKind, Integer> parallelSplitSizeFixed = new EnumMap<>(TensorProviderKind.class);
         private final EnumMap<TensorProviderKind, Double> parallelSplitSizeMultiplier = new EnumMap<>(TensorProviderKind.class);
@@ -300,6 +302,17 @@ public class AutoModelForCausaLm {
             return this;
         }
 
+        /** Opts into the packed block-attention helper for KV-cache v2 attention. */
+        public Builder withPackedBlockAttention(boolean packedBlockAttention) {
+            this.packedBlockAttention = packedBlockAttention;
+            return this;
+        }
+
+        public Builder withGenerationOptions(Map<String, Object> generationOptions) {
+            this.generationOptions = generationOptions == null ? Map.of() : Map.copyOf(generationOptions);
+            return this;
+        }
+
         public Builder withPackedPrefill(boolean packedPrefill) {
             this.packedPrefill = packedPrefill;
             return this;
@@ -369,6 +382,8 @@ public class AutoModelForCausaLm {
             config.gpuDecode().ifPresent(this::withGpuDecode);
             config.gpuDecodeAttention().ifPresent(this::withGpuDecodeAttention);
             config.gpuDiffusionBlockProjection().ifPresent(this::withGpuDiffusionBlockProjection);
+            config.packedBlockAttention().ifPresent(this::withPackedBlockAttention);
+            config.generationOptions().ifPresent(this::withGenerationOptions);
             config.packedPrefill().ifPresent(this::withPackedPrefill);
             config.download().ifPresent(this::withDownload);
             config.maxBatchSize().ifPresent(this::withMaxBatchSize);
@@ -459,8 +474,10 @@ public class AutoModelForCausaLm {
             copy.gpuDecode = this.gpuDecode;
             copy.gpuDecodeAttention = this.gpuDecodeAttention;
             copy.gpuDiffusionBlockProjection = this.gpuDiffusionBlockProjection;
+            copy.packedBlockAttention = this.packedBlockAttention;
             copy.packedPrefill = this.packedPrefill;
             copy.tensorPlanTrace = this.tensorPlanTrace;
+            copy.generationOptions = this.generationOptions;
             return copy;
         }
         /** This is a JVM wide property! **/
@@ -526,7 +543,9 @@ public class AutoModelForCausaLm {
             model.setGpuDecodeEnabled(gpuDecode);
             model.setGpuDecodeAttentionEnabled(gpuDecodeAttention);
             model.setGpuDiffusionBlockProjectionEnabled(gpuDiffusionBlockProjection);
+            model.setPackedBlockAttentionEnabled(packedBlockAttention);
             model.setPackedPrefillEnabled(packedPrefill);
+            model.setGenerationOptions(generationOptions);
             model.setTensorRuntimeMode(tensorRuntimeMode);
             model.setTensorRuntime(createTensorRuntime());
             model.setTensorPlanTraceEnabled(tensorPlanTrace);
@@ -547,7 +566,8 @@ public class AutoModelForCausaLm {
                       registeredProviders=[{}]
                       parallelSplitPolicy=availableProcessors={} defaultSimdMultiplier={} defaultPanamaMultiplier={} simdAlignment={} panamaAlignment={} fixedOverrides={} multiplierOverrides={}
                       modelType={} workingMemoryType={} quantizedMemoryType={}
-                      tensorRuntimeMode={} gpuPrefill={} gpuDecode={} gpuDecodeAttention={} gpuDiffusionBlockProjection={} packedPrefill={} maxBatchSize={}
+                      tensorRuntimeMode={} gpuPrefill={} gpuDecode={} gpuDecodeAttention={} gpuDiffusionBlockProjection={} packedBlockAttention={} packedPrefill={} maxBatchSize={}
+                      generationOptions={}
                     """,
                     fetch.getName(), primary.name(), primary.parallelSplitSize(), model.tensorOperationsSummary(),
                     Runtime.getRuntime().availableProcessors(), DEFAULT_SIMD_PARALLEL_SPLIT_SIZE_MULTIPLIER,
@@ -555,7 +575,8 @@ public class AutoModelForCausaLm {
                     PANAMA_PARALLEL_SPLIT_ALIGNMENT, parallelSplitSizeFixed, parallelSplitSizeMultiplier,
                     model.modelDType, model.workingDType, model.workingQType,
                     tensorRuntimeMode.orElse(TensorRuntimeMode.DISABLED), gpuPrefill, gpuDecode,
-                    gpuDecodeAttention, gpuDiffusionBlockProjection, packedPrefill, maxBatchSize);
+                    gpuDecodeAttention, gpuDiffusionBlockProjection, packedBlockAttention, packedPrefill, maxBatchSize,
+                    generationOptions);
         }
 
         private TensorRuntime createTensorRuntime() {
@@ -895,6 +916,14 @@ public class AutoModelForCausaLm {
 
         public boolean isGpuDiffusionBlockProjection() {
             return gpuDiffusionBlockProjection;
+        }
+
+        public boolean isPackedBlockAttention() {
+            return packedBlockAttention;
+        }
+
+        public Map<String, Object> getGenerationOptions() {
+            return generationOptions;
         }
 
         public ConfigurableTensorProvider getProvider() {

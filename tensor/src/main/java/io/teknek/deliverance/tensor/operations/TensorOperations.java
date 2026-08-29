@@ -33,6 +33,9 @@ public interface TensorOperations {
      */
     default void registerModelTensor(AbstractTensor t) { }
 
+    /** Releases provider-owned resources such as cached accelerator buffers. */
+    default void close() { }
+
     default float dotProduct(AbstractTensor a, AbstractTensor b, int limit) {
         return dotProduct(a, b, 0, 0, limit);
     }

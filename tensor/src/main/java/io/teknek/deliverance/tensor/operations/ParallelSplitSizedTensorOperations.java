@@ -37,6 +37,11 @@ public final class ParallelSplitSizedTensorOperations implements TensorOperation
     }
 
     @Override
+    public void close() {
+        delegate.close();
+    }
+
+    @Override
     public float dotProduct(AbstractTensor a, AbstractTensor b, int aoffset, int boffset, int limit) {
         return delegate.dotProduct(a, b, aoffset, boffset, limit);
     }
