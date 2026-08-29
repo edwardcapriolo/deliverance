@@ -114,6 +114,23 @@ public class ModelQuantizerTest {
     }
 
     @Test
+    public void defaultFilterCoversNemotronLabsDiffusionProjectionWeightsAndKeepsEmbeddingsNormAndHeadDense() {
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("encoder.layers.0.self_attn.q_proj.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("encoder.layers.0.self_attn.k_proj.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("encoder.layers.0.self_attn.v_proj.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("encoder.layers.0.self_attn.o_proj.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("encoder.layers.0.mlp.gate_proj.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("encoder.layers.0.mlp.up_proj.weight"));
+        assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("encoder.layers.0.mlp.down_proj.weight"));
+
+        assertFalse(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("encoder.embed_tokens.weight"));
+        assertFalse(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("encoder.norm.weight"));
+        assertFalse(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("encoder.layers.0.input_layernorm.weight"));
+        assertFalse(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("encoder.layers.0.post_attention_layernorm.weight"));
+        assertFalse(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("diffusion_head.weight"));
+    }
+
+    @Test
     public void defaultFilterCoversBertEncoderProjectionWeightsAndKeepsEmbeddingRecipeDense() {
         assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("encoder.layer.0.attention.self.query.weight"));
         assertTrue(ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test("encoder.layer.0.attention.self.key.weight"));

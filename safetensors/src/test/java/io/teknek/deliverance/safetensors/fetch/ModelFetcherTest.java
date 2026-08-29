@@ -1,6 +1,7 @@
 package io.teknek.deliverance.safetensors.fetch;
 
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -52,6 +53,51 @@ public class ModelFetcherTest {
         Assertions.assertTrue(files.contains("sentence_bert_config.json"));
         Assertions.assertTrue(files.contains("1_Pooling/config.json"));
         Assertions.assertTrue(files.contains("2_Normalize/config.json"));
+    }
+
+    @Test
+    void includesNemotronLabsDiffusionModelSupportFilesInDownloads() {
+        ModelFetcher fetch = new ModelFetcher("nvidia", "Nemotron-Labs-Diffusion-3B-Base");
+
+        List<String> files = fetch.filesToDownload(List.of(
+                "README.md",
+                "config.json",
+                "generation_config.json",
+                "configuration_nemotron_labs_diffusion.py",
+                "modeling_nemotron_labs_diffusion.py",
+                "modeling_ministral.py",
+                "special_tokens_map.json",
+                "tokenizer.json",
+                "tokenizer_config.json",
+                "chat_template.jinja",
+                "model.safetensors"
+        ), true);
+
+        Assertions.assertTrue(files.contains("generation_config.json"));
+        Assertions.assertTrue(files.contains("configuration_nemotron_labs_diffusion.py"));
+        Assertions.assertTrue(files.contains("modeling_nemotron_labs_diffusion.py"));
+        Assertions.assertTrue(files.contains("modeling_ministral.py"));
+        Assertions.assertTrue(files.contains("special_tokens_map.json"));
+    }
+
+    @Test
+    @Tag("longtest")
+    void downloadNemotronLabsDiffusionBaseModelSupportFiles() {
+        ModelFetcher fetch = new ModelFetcher("nvidia", "Nemotron-Labs-Diffusion-3B-Base");
+
+        File modelDir = fetch.maybeDownload();
+
+        Assertions.assertTrue(modelDir.exists() && modelDir.isDirectory());
+        assertDownloaded(modelDir, "config.json");
+        assertDownloaded(modelDir, "generation_config.json");
+        assertDownloaded(modelDir, "configuration_nemotron_labs_diffusion.py");
+        assertDownloaded(modelDir, "modeling_nemotron_labs_diffusion.py");
+        assertDownloaded(modelDir, "modeling_ministral.py");
+        assertDownloaded(modelDir, "special_tokens_map.json");
+        assertDownloaded(modelDir, "tokenizer.json");
+        assertDownloaded(modelDir, "tokenizer_config.json");
+        assertDownloaded(modelDir, "chat_template.jinja");
+        assertDownloaded(modelDir, "model.safetensors");
     }
 
     @Test
@@ -135,5 +181,11 @@ public class ModelFetcherTest {
         File local = fetch.maybeDownload();
 
         Assertions.assertEquals(modelDir.toFile(), local);
+    }
+
+    private static void assertDownloaded(File modelDir, String name) {
+        File file = modelDir.toPath().resolve(name).toFile();
+        Assertions.assertTrue(file.isFile() && file.length() > 0,
+                "expected non-empty downloaded file " + file);
     }
 }

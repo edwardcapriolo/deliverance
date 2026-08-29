@@ -1,6 +1,7 @@
 package io.teknek.deliverance.generator;
 
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.safetensors.LoraLayerDelta;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
@@ -41,6 +42,8 @@ final class LoraDeltaApplier {
     }
 
     static void apply(AbstractModel model, AbstractTensor output, AbstractTensor input, LoraLayerDelta delta) {
+        InferenceProfiler.counter(model.getMetricRegistry(), "lora.delta.apply").inc();
+        InferenceProfiler.counter(model.getMetricRegistry(), "lora.delta.input_" + input.dType()).inc();
         int outFeatures = output.shape().last();
         TensorOperations tensorOps = model.primaryTensorOperations();
         AbstractTensor denseInput = toDType(model, input, delta.loraA().dType());

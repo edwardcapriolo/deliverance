@@ -65,6 +65,45 @@ AutoModelForCausaLm.newBuilder(fetch)
         .buildLocalTransformerModel();
 ```
 
+## Nemotron Labs Diffusion Policy
+
+For `nvidia/Nemotron-Labs-Diffusion-3B-Base`, the first Q.O.D. policy is conservative and uses the default Q4 tensor filter.
+
+Quantize only the shared encoder projection matrices:
+
+- `encoder.layers.*.self_attn.q_proj.weight`
+- `encoder.layers.*.self_attn.k_proj.weight`
+- `encoder.layers.*.self_attn.v_proj.weight`
+- `encoder.layers.*.self_attn.o_proj.weight`
+- `encoder.layers.*.mlp.gate_proj.weight`
+- `encoder.layers.*.mlp.up_proj.weight`
+- `encoder.layers.*.mlp.down_proj.weight`
+
+Keep dense for the first quantized artifact:
+
+- `encoder.embed_tokens.weight`
+- `encoder.norm.weight`
+- `encoder.layers.*.input_layernorm.weight`
+- `encoder.layers.*.post_attention_layernorm.weight`
+- `diffusion_head.weight`
+
+Rationale:
+
+- The current quality gate has not passed for diffusion output, so output-head quantization must not be mixed into the first Q.O.D. run.
+- `diffusion_head.weight` dominates logits selection quality and should stay dense until BF16/F32 generation is crisp enough to compare drift.
+- Embeddings and norms are small or quality-sensitive and are not expected to be the main CPU bottleneck.
+- AR and diffusion must both smoke-pass on the quantized projection-only artifact before testing output-head quantization.
+
+Suggested target name:
+
+```java
+AutoModelForCausaLm.newBuilder(new ModelFetcher("nvidia", "Nemotron-Labs-Diffusion-3B-Base"))
+        .withQuantizeOnDemand(DType.Q4, "nvidia", "Nemotron-Labs-Diffusion-3B-Base-JQ4")
+        .buildLocalTransformerModel();
+```
+
+Do not enable TurboQuant prefix cache for Nemotron during the first Q.O.D. run. Validate ordinary prefix-cache mechanics and cache-row drift separately first.
+
 ## Generated Files
 
 Q.O.D. generated model directories include the normal copied model metadata and rewritten safetensor weights. They also include Deliverance-specific provenance files:
