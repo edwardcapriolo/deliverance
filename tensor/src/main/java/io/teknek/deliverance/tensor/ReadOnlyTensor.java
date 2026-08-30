@@ -5,10 +5,16 @@ import java.lang.foreign.MemorySegment;
 /** Close-safe read-only wrapper for borrowed projection inputs. */
 public final class ReadOnlyTensor extends AbstractTensor {
     private final AbstractTensor delegate;
+    private final boolean closeDelegate;
 
     public ReadOnlyTensor(AbstractTensor delegate) {
+        this(delegate, false);
+    }
+
+    public ReadOnlyTensor(AbstractTensor delegate, boolean closeDelegate) {
         super(delegate.dType(), delegate.shape(), false);
         this.delegate = delegate;
+        this.closeDelegate = closeDelegate;
         this.uid = delegate.getUid();
         delegate.locality().ifPresent(this::setLocality);
     }
@@ -24,7 +30,7 @@ public final class ReadOnlyTensor extends AbstractTensor {
 
     @Override
     protected AbstractTensor make(int heapOffset, int heapLength, TensorShape shape, boolean cacheSlices) {
-        return new ReadOnlyTensor(delegate.make(heapOffset, heapLength, shape, cacheSlices));
+        return new ReadOnlyTensor(delegate.make(heapOffset, heapLength, shape, cacheSlices), true);
     }
 
     @Override
@@ -59,6 +65,8 @@ public final class ReadOnlyTensor extends AbstractTensor {
 
     @Override
     public void close() {
-        // Borrowed wrapper; do not close the delegate.
+        if (closeDelegate) {
+            delegate.close();
+        }
     }
 }

@@ -309,6 +309,16 @@ public class AutoModelForCausaLm {
             return this;
         }
 
+        public Builder withKvBlockStoragePolicy(KvBufferCacheSettings.KvBlockStoragePolicy kvBlockStoragePolicy) {
+            this.settings.setKvBlockStoragePolicy(Objects.requireNonNull(kvBlockStoragePolicy, "kvBlockStoragePolicy"));
+            return this;
+        }
+
+        public Builder withKvTurboQuantBits(int kvTurboQuantBits) {
+            this.settings.setKvTurboQuantBits(kvTurboQuantBits);
+            return this;
+        }
+
         /** Enables checksum assertions for borrowed non-copying KV-cache read views. */
         public Builder withTrackKvReadViews(boolean trackKvReadViews) {
             this.trackKvReadViews = trackKvReadViews;
@@ -575,6 +585,7 @@ public class AutoModelForCausaLm {
                       parallelSplitPolicy=availableProcessors={} defaultSimdMultiplier={} defaultPanamaMultiplier={} simdAlignment={} panamaAlignment={} fixedOverrides={} multiplierOverrides={}
                       modelType={} workingMemoryType={} quantizedMemoryType={}
                       tensorRuntimeMode={} gpuPrefill={} gpuDecode={} gpuDecodeAttention={} gpuDiffusionBlockProjection={} packedBlockAttention={} packedPrefill={} trackKvReadViews={} maxBatchSize={}
+                      kvBlockStoragePolicy={} kvTurboQuantBits={}
                       generationOptions={}
                     """,
                     fetch.getName(), primary.name(), primary.parallelSplitSize(), model.tensorOperationsSummary(),
@@ -585,6 +596,7 @@ public class AutoModelForCausaLm {
                     tensorRuntimeMode.orElse(TensorRuntimeMode.DISABLED), gpuPrefill, gpuDecode,
                     gpuDecodeAttention, gpuDiffusionBlockProjection, packedBlockAttention, packedPrefill,
                     trackKvReadViews, maxBatchSize,
+                    settings.getKvBlockStoragePolicy(), settings.getKvTurboQuantBits(),
                     generationOptions);
         }
 

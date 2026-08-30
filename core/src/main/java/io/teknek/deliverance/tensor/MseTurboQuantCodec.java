@@ -9,6 +9,9 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import jdk.incubator.vector.FloatVector;
+import jdk.incubator.vector.VectorSpecies;
+
 /**
  * MSE-oriented TurboQuant-style row-vector codec used by prefix-cache snapshot storage.
  *
@@ -19,8 +22,9 @@ import java.util.concurrent.TimeUnit;
  * <p>The class is package-private on purpose. Prefix-cache code owns storage/lifecycle, while this class owns the numeric
  * mechanics so they can be directly unit tested.</p>
  */
-final class MseTurboQuantCodec {
+public final class MseTurboQuantCodec {
     static final long ROTATION_SEED = 0x6A09E667F3BCC909L;
+    private static final VectorSpecies<Float> FLOAT_SPECIES = FloatVector.SPECIES_PREFERRED;
     /**
      * JVM-wide cache of Lloyd-Max codebooks keyed by bit width.
      *
@@ -39,8 +43,8 @@ final class MseTurboQuantCodec {
     }
 
     /** Encoded row block for a fixed row count, row width, and bit width. */
-    record EncodedRows(byte[] packedCodes, float[] norms, int bitWidth, int kvLength, int rotatedDim) {
-        long encodedBytes() {
+    public record EncodedRows(byte[] packedCodes, float[] norms, int bitWidth, int kvLength, int rotatedDim) {
+        public long encodedBytes() {
             return packedCodes.length + (long) norms.length * Float.BYTES;
         }
     }
@@ -50,16 +54,16 @@ final class MseTurboQuantCodec {
     }
 
     /** Reusable per-thread/per-call scratch space for encode/decode row transforms. */
-    static final class Scratch {
+    public static final class Scratch {
         final float[] rotated;
 
-        Scratch(int rotatedDim) {
+        public Scratch(int rotatedDim) {
             this.rotated = new float[rotatedDim];
         }
     }
 
     /** Allocates a packed-code/norm container for {@code rows} vectors of length {@code kvLength}. */
-    static EncodedRows allocate(int rows, int kvLength, int bitWidth) {
+    public static EncodedRows allocate(int rows, int kvLength, int bitWidth) {
         if (rows < 0) {
             throw new IllegalArgumentException("rows must be >= 0");
         }
@@ -81,20 +85,26 @@ final class MseTurboQuantCodec {
      *
      * <p>The row is borrowed; this method does not close it.</p>
      */
-    static int encodeRow(ReadableTensor row, EncodedRows encoded, int rowIndex) {
+    public static int encodeRow(ReadableTensor row, EncodedRows encoded, int rowIndex) {
         return encodeRow(row, encoded, rowIndex, null, new Scratch(encoded.rotatedDim()));
     }
 
     /**
      * Encodes one readable row and records optional substep metrics when {@code metricRegistry} is non-null.
      */
-    static int encodeRow(ReadableTensor row, EncodedRows encoded, int rowIndex, MetricRegistry metricRegistry) {
+    public static int encodeRow(ReadableTensor row, EncodedRows encoded, int rowIndex, MetricRegistry metricRegistry) {
         return encodeRow(row, encoded, rowIndex, metricRegistry, new Scratch(encoded.rotatedDim()));
     }
 
     /** Encodes one readable row using caller-provided scratch storage. */
-    static int encodeRow(ReadableTensor row, EncodedRows encoded, int rowIndex, MetricRegistry metricRegistry,
+    public static int encodeRow(ReadableTensor row, EncodedRows encoded, int rowIndex, MetricRegistry metricRegistry,
             Scratch scratch) {
+        return encodeRow(row, encoded, rowIndex, metricRegistry, scratch, "kvbuffercache.prefix.turboquant");
+    }
+
+    /** Encodes one readable row using caller-provided scratch storage and metric prefix. */
+    public static int encodeRow(ReadableTensor row, EncodedRows encoded, int rowIndex, MetricRegistry metricRegistry,
+            Scratch scratch, String metricPrefix) {
         ScalarQuantizer quantizer = quantizer(encoded.bitWidth());
         float[] signs = rotationSigns(encoded.rotatedDim());
         float invSqrtDim = (float) (1.0 / Math.sqrt(encoded.rotatedDim()));
@@ -105,7 +115,7 @@ final class MseTurboQuantCodec {
             normSquared += value * value;
         }
         float norm = (float) Math.sqrt(normSquared);
-        recordTimer(metricRegistry, "kvbuffercache.prefix.turboquant.row.norm", normStart);
+        recordTimer(metricRegistry, metricPrefix + ".row.norm", normStart);
         encoded.norms()[rowIndex] = norm;
         float[] rotated = scratch.rotated;
         if (norm != 0.0f) {
@@ -117,13 +127,13 @@ final class MseTurboQuantCodec {
             if (encoded.rotatedDim() > encoded.kvLength()) {
                 Arrays.fill(rotated, encoded.kvLength(), encoded.rotatedDim(), 0.0f);
             }
-            recordTimer(metricRegistry, "kvbuffercache.prefix.turboquant.row.sign", signStart);
+            recordTimer(metricRegistry, metricPrefix + ".row.sign", signStart);
             long rotateStart = System.nanoTime();
             fastWalshHadamard(rotated);
             for (int i = 0; i < encoded.rotatedDim(); i++) {
                 rotated[i] *= invSqrtDim;
             }
-            recordTimer(metricRegistry, "kvbuffercache.prefix.turboquant.row.hadamard", rotateStart);
+            recordTimer(metricRegistry, metricPrefix + ".row.hadamard", rotateStart);
         }
         long baseCode = (long) rowIndex * encoded.rotatedDim();
         float coordinateScale = (float) Math.sqrt(encoded.rotatedDim());
@@ -132,9 +142,9 @@ final class MseTurboQuantCodec {
             int code = quantizeScalar(rotated[i] * coordinateScale, quantizer);
             packCode(encoded.packedCodes(), baseCode + i, encoded.bitWidth(), code);
         }
-        recordTimer(metricRegistry, "kvbuffercache.prefix.turboquant.row.quantize_pack", quantizeStart);
-        recordCounter(metricRegistry, "kvbuffercache.prefix.turboquant.row.count", 1);
-        recordCounter(metricRegistry, "kvbuffercache.prefix.turboquant.coordinate.count", encoded.rotatedDim());
+        recordTimer(metricRegistry, metricPrefix + ".row.quantize_pack", quantizeStart);
+        recordCounter(metricRegistry, metricPrefix + ".row.count", 1);
+        recordCounter(metricRegistry, metricPrefix + ".coordinate.count", encoded.rotatedDim());
         return rowIndex + 1;
     }
 
@@ -143,42 +153,72 @@ final class MseTurboQuantCodec {
      *
      * <p>The destination row is borrowed; this method does not close it.</p>
      */
-    static int decodeRow(EncodedRows encoded, AbstractTensor row, int rowIndex) {
+    public static int decodeRow(EncodedRows encoded, AbstractTensor row, int rowIndex) {
         return decodeRow(encoded, row, rowIndex, null, new Scratch(encoded.rotatedDim()));
     }
 
     /**
      * Decodes one row and records optional substep metrics when {@code metricRegistry} is non-null.
      */
-    static int decodeRow(EncodedRows encoded, AbstractTensor row, int rowIndex, MetricRegistry metricRegistry) {
+    public static int decodeRow(EncodedRows encoded, AbstractTensor row, int rowIndex, MetricRegistry metricRegistry) {
         return decodeRow(encoded, row, rowIndex, metricRegistry, new Scratch(encoded.rotatedDim()));
     }
 
     /** Decodes one row using caller-provided scratch storage. */
-    static int decodeRow(EncodedRows encoded, AbstractTensor row, int rowIndex, MetricRegistry metricRegistry,
+    public static int decodeRow(EncodedRows encoded, AbstractTensor row, int rowIndex, MetricRegistry metricRegistry,
             Scratch scratch) {
+        return decodeRow(encoded, row, rowIndex, metricRegistry, scratch, "kvbuffercache.prefix.turboquant");
+    }
+
+    /** Decodes one row using caller-provided scratch storage and metric prefix. */
+    public static int decodeRow(EncodedRows encoded, AbstractTensor row, int rowIndex, MetricRegistry metricRegistry,
+            Scratch scratch, String metricPrefix) {
         float[] codebook = codebook(encoded.bitWidth());
         float[] signs = rotationSigns(encoded.rotatedDim());
         float invSqrtDim = (float) (1.0 / Math.sqrt(encoded.rotatedDim()));
         float[] rotated = scratch.rotated;
         long baseCode = (long) rowIndex * encoded.rotatedDim();
         long unpackStart = System.nanoTime();
-        for (int i = 0; i < encoded.rotatedDim(); i++) {
-            int code = unpackCode(encoded.packedCodes(), baseCode + i, encoded.bitWidth());
-            rotated[i] = codebook[code] * invSqrtDim;
-        }
-        recordTimer(metricRegistry, "kvbuffercache.prefix.turboquant.row.unpack", unpackStart);
+        unpackRow(encoded, rowIndex, codebook, invSqrtDim, rotated);
+        recordTimer(metricRegistry, metricPrefix + ".row.unpack", unpackStart);
         long rotateStart = System.nanoTime();
         fastWalshHadamard(rotated);
-        recordTimer(metricRegistry, "kvbuffercache.prefix.turboquant.row.inverse_hadamard", rotateStart);
+        recordTimer(metricRegistry, metricPrefix + ".row.inverse_hadamard", rotateStart);
         float normScale = encoded.norms()[rowIndex] * invSqrtDim;
         long writeStart = System.nanoTime();
         for (int i = 0; i < encoded.kvLength(); i++) {
             row.set(rotated[i] * normScale * signs[i], 0, i);
         }
-        recordTimer(metricRegistry, "kvbuffercache.prefix.turboquant.row.write", writeStart);
-        recordCounter(metricRegistry, "kvbuffercache.prefix.turboquant.decode.row.count", 1);
+        recordTimer(metricRegistry, metricPrefix + ".row.write", writeStart);
+        recordCounter(metricRegistry, metricPrefix + ".decode.row.count", 1);
         return rowIndex + 1;
+    }
+
+    static void unpackRow(EncodedRows encoded, int rowIndex, float[] codebook, float scale, float[] destination) {
+        int rotatedDim = encoded.rotatedDim();
+        if (encoded.bitWidth() == 4) {
+            int byteIndex = Math.toIntExact(((long) rowIndex * rotatedDim) >>> 1);
+            for (int i = 0; i < rotatedDim; i += 2) {
+                int packed = encoded.packedCodes()[byteIndex++] & 0xFF;
+                destination[i] = codebook[packed & 0x0F] * scale;
+                if (i + 1 < rotatedDim) {
+                    destination[i + 1] = codebook[(packed >>> 4) & 0x0F] * scale;
+                }
+            }
+            return;
+        }
+        if (encoded.bitWidth() == 8) {
+            int byteIndex = Math.toIntExact((long) rowIndex * rotatedDim);
+            for (int i = 0; i < rotatedDim; i++) {
+                destination[i] = codebook[encoded.packedCodes()[byteIndex++] & 0xFF] * scale;
+            }
+            return;
+        }
+        long baseCode = (long) rowIndex * rotatedDim;
+        for (int i = 0; i < rotatedDim; i++) {
+            int code = unpackCode(encoded.packedCodes(), baseCode + i, encoded.bitWidth());
+            destination[i] = codebook[code] * scale;
+        }
     }
 
     private static void recordTimer(MetricRegistry metricRegistry, String name, long startNanos) {
@@ -234,11 +274,28 @@ final class MseTurboQuantCodec {
         }
         for (int step = 1; step < values.length; step <<= 1) {
             for (int base = 0; base < values.length; base += step << 1) {
-                for (int i = 0; i < step; i++) {
-                    float a = values[base + i];
-                    float b = values[base + i + step];
-                    values[base + i] = a + b;
-                    values[base + i + step] = a - b;
+                if (step >= FLOAT_SPECIES.length()) {
+                    int i = 0;
+                    int upperBound = FLOAT_SPECIES.loopBound(step);
+                    for (; i < upperBound; i += FLOAT_SPECIES.length()) {
+                        FloatVector a = FloatVector.fromArray(FLOAT_SPECIES, values, base + i);
+                        FloatVector b = FloatVector.fromArray(FLOAT_SPECIES, values, base + i + step);
+                        a.add(b).intoArray(values, base + i);
+                        a.sub(b).intoArray(values, base + i + step);
+                    }
+                    for (; i < step; i++) {
+                        float a = values[base + i];
+                        float b = values[base + i + step];
+                        values[base + i] = a + b;
+                        values[base + i + step] = a - b;
+                    }
+                } else {
+                    for (int i = 0; i < step; i++) {
+                        float a = values[base + i];
+                        float b = values[base + i + step];
+                        values[base + i] = a + b;
+                        values[base + i + step] = a - b;
+                    }
                 }
             }
         }

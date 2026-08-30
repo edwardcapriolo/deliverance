@@ -4,6 +4,7 @@ import com.google.common.base.Preconditions;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.ReadOnlyTensor;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TrackedReadOnlyTensor;
@@ -25,13 +26,14 @@ public final class KvCacheSession implements AutoCloseable {
     private final TensorAllocator allocator;
     private final MetricRegistry metricRegistry;
     private final boolean trackReadViews;
+    private final KvBufferCacheSettings settings;
     private final NavigableMap<Integer, KvBlock> committedBlocks = new TreeMap<>();
     private final NavigableMap<Integer, MutableKvBlock> mutableBlocks = new TreeMap<>();
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private int length;
 
     KvCacheSession(int layers, int contextLength, int kvLength, int blockSize, DType dtype,
-            TensorAllocator allocator, MetricRegistry metricRegistry, boolean trackReadViews) {
+            TensorAllocator allocator, MetricRegistry metricRegistry, boolean trackReadViews, KvBufferCacheSettings settings) {
         this.layers = layers;
         this.contextLength = contextLength;
         this.kvLength = kvLength;
@@ -40,6 +42,7 @@ public final class KvCacheSession implements AutoCloseable {
         this.allocator = allocator;
         this.metricRegistry = metricRegistry;
         this.trackReadViews = trackReadViews;
+        this.settings = settings;
     }
 
     public int length() {
@@ -127,7 +130,8 @@ public final class KvCacheSession implements AutoCloseable {
         if (committed == null) {
             return;
         }
-        MutableKvBlock mutable = new MutableKvBlock(blockIndex, blockSize, layers, kvLength, dtype, allocator);
+        MutableKvBlock mutable = new MutableKvBlock(blockIndex, blockSize, layers, kvLength, dtype, allocator,
+                settings, metricRegistry);
         try {
             for (int position = committed.startPosition(); position < newLength; position++) {
                 for (int layer = 0; layer < layers; layer++) {
@@ -157,6 +161,14 @@ public final class KvCacheSession implements AutoCloseable {
         return copyVisible(layer, visibleTokens, false);
     }
 
+    void copyKeyRows(int layer, int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart) {
+        copyRows(layer, positionStart, rowCount, destination, destinationRowStart, true);
+    }
+
+    void copyValueRows(int layer, int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart) {
+        copyRows(layer, positionStart, rowCount, destination, destinationRowStart, false);
+    }
+
     private AbstractTensor copyVisible(int layer, int visibleTokens, boolean key) {
         AbstractTensor result = allocator.getDirty(dtype, io.teknek.deliverance.tensor.TensorShape.of(visibleTokens, kvLength));
         try {
@@ -169,6 +181,48 @@ public final class KvCacheSession implements AutoCloseable {
         } catch (RuntimeException | Error e) {
             result.close();
             throw e;
+        }
+    }
+
+    private void copyRows(int layer, int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart,
+            boolean key) {
+        requireOpen();
+        validateLayer(layer);
+        Preconditions.checkArgument(positionStart >= 0 && rowCount >= 0 && positionStart + rowCount <= length,
+                "position range out of visible length");
+        Preconditions.checkArgument(destination.dims() == 2 && destination.shape().last() == kvLength,
+                "destination must have kvLength columns");
+        Preconditions.checkArgument(destinationRowStart >= 0
+                && destinationRowStart + rowCount <= destination.shape().first(), "destination row range out of bounds");
+        int remaining = rowCount;
+        int sourcePosition = positionStart;
+        int destRow = destinationRowStart;
+        while (remaining > 0) {
+            int blockIndex = sourcePosition / blockSize;
+            int blockRow = sourcePosition % blockSize;
+            int rowsInBlock = Math.min(remaining, blockSize - blockRow);
+            KvBlock committed = committedBlocks.get(blockIndex);
+            if (committed != null) {
+                rowsInBlock = Math.min(rowsInBlock, committed.endPositionExclusive() - sourcePosition);
+                if (key) {
+                    committed.copyKeyRows(layer, sourcePosition, rowsInBlock, destination, destRow);
+                } else {
+                    committed.copyValueRows(layer, sourcePosition, rowsInBlock, destination, destRow);
+                }
+            } else {
+                MutableKvBlock mutable = mutableBlocks.get(blockIndex);
+                if (mutable == null) {
+                    throw new IllegalStateException("No KV block for position " + sourcePosition);
+                }
+                if (key) {
+                    mutable.copyKeyRows(layer, sourcePosition, rowsInBlock, destination, destRow);
+                } else {
+                    mutable.copyValueRows(layer, sourcePosition, rowsInBlock, destination, destRow);
+                }
+            }
+            remaining -= rowsInBlock;
+            sourcePosition += rowsInBlock;
+            destRow += rowsInBlock;
         }
     }
 
@@ -204,12 +258,13 @@ public final class KvCacheSession implements AutoCloseable {
             }
             view = key ? mutable.keyRowView(layer, position) : mutable.valueRowView(layer, position);
         }
-        return trackReadViews ? new TrackedReadOnlyTensor(view) : new ReadOnlyTensor(view);
+        return trackReadViews ? new TrackedReadOnlyTensor(view, true) : new ReadOnlyTensor(view, true);
     }
 
     private MutableKvBlock mutableBlock(int blockIndex) {
         return mutableBlocks.computeIfAbsent(blockIndex,
-                index -> new MutableKvBlock(index, blockSize, layers, kvLength, dtype, allocator));
+                index -> new MutableKvBlock(index, blockSize, layers, kvLength, dtype, allocator, settings,
+                        metricRegistry));
     }
 
     private void commitFullBlocksBefore(int newLength) {

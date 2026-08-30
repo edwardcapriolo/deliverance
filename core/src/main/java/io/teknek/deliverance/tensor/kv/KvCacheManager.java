@@ -18,6 +18,7 @@ public final class KvCacheManager {
     private final TensorAllocator allocator;
     private final MetricRegistry metricRegistry;
     private final boolean trackReadViews;
+    private final KvBufferCacheSettings settings;
 
     public KvCacheManager(int layers, int contextLength, int kvLength, DType dtype,
             KvBufferCacheSettings settings, TensorAllocator allocator, MetricRegistry metricRegistry) {
@@ -33,7 +34,8 @@ public final class KvCacheManager {
         this.contextLength = contextLength;
         this.kvLength = kvLength;
         this.dtype = Objects.requireNonNull(dtype, "dtype");
-        this.blockSize = Objects.requireNonNull(settings, "settings").getBlockSize();
+        this.settings = Objects.requireNonNull(settings, "settings");
+        this.blockSize = this.settings.getBlockSize();
         this.allocator = Objects.requireNonNull(allocator, "allocator");
         this.metricRegistry = Objects.requireNonNull(metricRegistry, "metricRegistry");
         this.trackReadViews = trackReadViews;
@@ -42,6 +44,6 @@ public final class KvCacheManager {
     public KvCacheSession openSession() {
         metricRegistry.meter("kvcache.v2.session.open").mark();
         return new KvCacheSession(layers, contextLength, kvLength, blockSize, dtype, allocator, metricRegistry,
-                trackReadViews);
+                trackReadViews, settings);
     }
 }

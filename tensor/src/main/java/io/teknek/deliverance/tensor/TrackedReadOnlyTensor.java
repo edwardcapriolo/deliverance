@@ -13,12 +13,18 @@ import java.util.zip.CRC32;
  */
 public final class TrackedReadOnlyTensor extends AbstractTensor {
     private final AbstractTensor delegate;
+    private final boolean closeDelegate;
     private final long initialChecksum;
     private boolean closed;
 
     public TrackedReadOnlyTensor(AbstractTensor delegate) {
+        this(delegate, false);
+    }
+
+    public TrackedReadOnlyTensor(AbstractTensor delegate, boolean closeDelegate) {
         super(delegate.dType(), delegate.shape(), false);
         this.delegate = delegate;
+        this.closeDelegate = closeDelegate;
         this.uid = delegate.getUid();
         delegate.locality().ifPresent(this::setLocality);
         this.initialChecksum = checksum(delegate);
@@ -39,7 +45,7 @@ public final class TrackedReadOnlyTensor extends AbstractTensor {
 
     @Override
     protected AbstractTensor make(int heapOffset, int heapLength, TensorShape shape, boolean cacheSlices) {
-        return new TrackedReadOnlyTensor(delegate.make(heapOffset, heapLength, shape, cacheSlices));
+        return new TrackedReadOnlyTensor(delegate.make(heapOffset, heapLength, shape, cacheSlices), true);
     }
 
     @Override
@@ -88,7 +94,11 @@ public final class TrackedReadOnlyTensor extends AbstractTensor {
             return;
         }
         closed = true;
-        if (hasChecksumChanged()) {
+        boolean changed = hasChecksumChanged();
+        if (closeDelegate) {
+            delegate.close();
+        }
+        if (changed) {
             throw new IllegalStateException("tracked read-only tensor backing storage changed");
         }
     }

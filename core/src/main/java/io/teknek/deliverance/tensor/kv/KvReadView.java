@@ -60,6 +60,14 @@ public final class KvReadView implements AutoCloseable {
         return session.copyVisibleValues(layer, visibleTokens);
     }
 
+    public void copyKeyRows(int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart) {
+        session.copyKeyRows(layer, positionStart, rowCount, destination, destinationRowStart);
+    }
+
+    public void copyValueRows(int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart) {
+        session.copyValueRows(layer, positionStart, rowCount, destination, destinationRowStart);
+    }
+
     @Override
     public void close() {
     }

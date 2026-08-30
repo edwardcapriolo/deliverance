@@ -1,0 +1,2 @@
+timestamp,engine,model,case_id,category,turn,prompt_chars,prompt_tokens,generated_tokens,total_ms,generation_ms,tokens_per_second,response_chars,finish_reason
+"2026-08-30T00:11:45.122767Z","deliverance","nvidia/Nemotron-Labs-Diffusion-3B-JQ4","builtin-reasoning-1","reasoning",1,637,136,256,131704.46875,126720.030875,2.012310115766455,965,"MAX_TOKENS"
