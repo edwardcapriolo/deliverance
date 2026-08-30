@@ -74,6 +74,11 @@ final class MseTurboQuantKvBlockStorage implements KvBlockStorage {
     }
 
     @Override
+    public DType dtype(int keyOrValue) {
+        return dtype;
+    }
+
+    @Override
     public int layers() {
         return layers;
     }

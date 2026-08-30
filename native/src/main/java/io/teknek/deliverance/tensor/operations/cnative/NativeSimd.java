@@ -381,6 +381,45 @@ public class NativeSimd {
         }
     }
 
+    private static class gemm_f32_q8 {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
+            NativeSimd.C_INT,
+            NativeSimd.C_POINTER,
+            NativeSimd.C_INT,
+            NativeSimd.C_POINTER,
+            NativeSimd.C_POINTER,
+            NativeSimd.C_INT,
+            NativeSimd.C_POINTER,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT
+        );
+
+        public static final MemorySegment ADDR = NativeSimd.findOrThrow("gemm_f32_q8");
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    public static void gemm_f32_q8(int flags, MemorySegment a, int aoffset, MemorySegment bf, MemorySegment b,
+            int boffset, MemorySegment r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf,
+            int ldc) {
+        var mh$ = gemm_f32_q8.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("gemm_f32_q8", flags, a, aoffset, bf, b, boffset, r, roffset, m, n0, n, k, lda,
+                        ldb, ldbf, ldc);
+            }
+            mh$.invokeExact(flags, a, aoffset, bf, b, boffset, r, roffset, m, n0, n, k, lda, ldb, ldbf, ldc);
+        } catch (Throwable ex$) {
+           throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
     private static class gemm_f32_batch {
         public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
             NativeSimd.C_INT,
@@ -1090,6 +1129,36 @@ public class NativeSimd {
         }
     }
 
+    private static class saxpy_q8_f32 {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
+            NativeSimd.C_FLOAT,
+            NativeSimd.C_POINTER,
+            NativeSimd.C_POINTER,
+            NativeSimd.C_POINTER,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT
+        );
+
+        public static final MemorySegment ADDR = NativeSimd.findOrThrow("saxpy_q8_f32");
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    public static void saxpy_q8_f32(float alpha, MemorySegment xf, MemorySegment x, MemorySegment y, int xoffset,
+            int yoffset, int limit, int xstride, int xscaleStride) {
+        var mh$ = saxpy_q8_f32.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("saxpy_q8_f32", alpha, xf, x, y, xoffset, yoffset, limit, xstride, xscaleStride);
+            }
+            mh$.invokeExact(alpha, xf, x, y, xoffset, yoffset, limit, xstride, xscaleStride);
+        } catch (Throwable ex$) {
+           throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
     private static class exp_f32 {
         public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
             NativeSimd.C_POINTER,
@@ -1402,6 +1471,42 @@ public class NativeSimd {
                 traceDowncall("saxpy_f32_batch", alpha, x, y, xoffset, yoffset, limit, aoffset, xrowoffset, batch_size, xstride);
             }
             mh$.invokeExact(alpha, x, y, xoffset, yoffset, limit, aoffset, xrowoffset, batch_size, xstride);
+        } catch (Throwable ex$) {
+           throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
+    private static class saxpy_q8_f32_batch {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
+            NativeSimd.C_POINTER,
+            NativeSimd.C_POINTER,
+            NativeSimd.C_POINTER,
+            NativeSimd.C_POINTER,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT,
+            NativeSimd.C_INT
+        );
+
+        public static final MemorySegment ADDR = NativeSimd.findOrThrow("saxpy_q8_f32_batch");
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    public static void saxpy_q8_f32_batch(MemorySegment alpha, MemorySegment xf, MemorySegment x, MemorySegment y,
+            int xoffset, int yoffset, int limit, int aoffset, int xrowoffset, int batchSize, int xstride,
+            int xscaleStride) {
+        var mh$ = saxpy_q8_f32_batch.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("saxpy_q8_f32_batch", alpha, xf, x, y, xoffset, yoffset, limit, aoffset,
+                        xrowoffset, batchSize, xstride, xscaleStride);
+            }
+            mh$.invokeExact(alpha, xf, x, y, xoffset, yoffset, limit, aoffset, xrowoffset, batchSize, xstride,
+                    xscaleStride);
         } catch (Throwable ex$) {
            throw new AssertionError("should not reach here", ex$);
         }

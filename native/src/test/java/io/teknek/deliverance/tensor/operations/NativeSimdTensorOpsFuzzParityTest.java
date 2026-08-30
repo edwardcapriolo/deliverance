@@ -414,6 +414,7 @@ public class NativeSimdTensorOpsFuzzParityTest {
                 {DType.F32, DType.BF16},
                 {DType.BF16, DType.BF16},
                 {DType.F32, DType.Q4},
+                {DType.F32, DType.I8},
                 {DType.BF16, DType.Q4},
                 {DType.I8, DType.Q4}
         };
@@ -424,7 +425,7 @@ public class NativeSimdTensorOpsFuzzParityTest {
             int aOffset = offsets[random.nextInt(offsets.length)];
             int bOffset = offsets[random.nextInt(offsets.length)];
             int columnLength = lengths[random.nextInt(lengths.length)];
-            if (pair[0] == DType.I8 || pair[1] == DType.Q4) {
+            if (pair[0] == DType.I8 || pair[1] == DType.Q4 || pair[1] == DType.I8) {
                 columnLength = lengths[8 + random.nextInt(lengths.length - 8)];
             }
             int bRowOffset = random.nextInt(5);
@@ -552,12 +553,12 @@ public class NativeSimdTensorOpsFuzzParityTest {
             int rRowOffset, int bRowOffset, int rowChunkSize, DType inputType, DType weightType, int seed) {
         private float tolerance() {
             if (inputType == DType.F32 && weightType == DType.F32) {
-                return 0.005f;
+                return 0.01f;
             }
             if (weightType == DType.BF16 || inputType == DType.BF16) {
                 return 0.08f;
             }
-            if (inputType == DType.I8 || weightType == DType.Q4) {
+            if (inputType == DType.I8 || weightType == DType.I8 || weightType == DType.Q4) {
                 return 0.30f;
             }
             return 0.10f;

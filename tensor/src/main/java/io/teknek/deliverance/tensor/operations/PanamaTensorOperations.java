@@ -134,6 +134,12 @@ public final class PanamaTensorOperations implements TensorOperations {
             return;
         }
 
+        if (a.dType() == DType.F32 && b.dType() == DType.I8) {
+            batchDotProductF32I8(result, (FloatBufferTensor) a, (Q8ByteBufferTensor) b, aColumnOffset,
+                    bColumnOffset, columnLength, rOffset, bStart, bEnd);
+            return;
+        }
+
         Gemmer gemm = switch (a.dType()) {
             case F32 -> switch (b.dType()) {
                 case F32 -> new GemmerF32(K, a, b, result, aColumnOffset, bColumnOffset, rOffset);
@@ -199,6 +205,38 @@ public final class PanamaTensorOperations implements TensorOperations {
                     sum += a.get(i, aColumnOffset + k) * b.get(j, bColumnOffset + k);
                 }
                 result.set(sum, i, j + rOffset);
+            }
+        }
+    }
+
+    private void batchDotProductF32I8(AbstractTensor result, FloatBufferTensor a, Q8ByteBufferTensor b,
+            int aColumnOffset, int bColumnOffset, int columnLength, int rOffset, int bStart, int bEnd) {
+        Preconditions.checkArgument(result.dType() == DType.F32, "F32xI8 dot output must be F32");
+        Preconditions.checkArgument(aColumnOffset % Q8ByteBufferTensor.BLOCK_SIZE == 0
+                && bColumnOffset % Q8ByteBufferTensor.BLOCK_SIZE == 0
+                && columnLength % Q8ByteBufferTensor.BLOCK_SIZE == 0,
+                "F32xI8 dot requires Q8 block-aligned offsets and length");
+        for (int row = 0; row < a.shape().first(); row++) {
+            for (int bRow = bStart; bRow < bEnd; bRow++) {
+                FloatVector acc0 = FloatVector.zero(FloatVector.SPECIES_512);
+                FloatVector acc1 = FloatVector.zero(FloatVector.SPECIES_512);
+                int aOffset = aColumnOffset;
+                int bOffset = bColumnOffset;
+                int limit = aColumnOffset + columnLength;
+                for (; aOffset < limit; aOffset += Q8ByteBufferTensor.BLOCK_SIZE,
+                        bOffset += Q8ByteBufferTensor.BLOCK_SIZE) {
+                    FloatVector scale = FloatVector.broadcast(FloatVector.SPECIES_512,
+                            b.getFactorForIndex(bRow, bOffset));
+                    ByteVector bytes0 = b.getVector(ByteVector.SPECIES_128, bRow, bOffset);
+                    ByteVector bytes1 = b.getVector(ByteVector.SPECIES_128, bRow,
+                            bOffset + Q8ByteBufferTensor.BLOCK_SIZE / 2);
+                    FloatVector bf0 = ((FloatVector) bytes0.convertShape(VectorOperators.B2F, FloatVector.SPECIES_512, 0)).mul(scale);
+                    FloatVector bf1 = ((FloatVector) bytes1.convertShape(VectorOperators.B2F, FloatVector.SPECIES_512, 0)).mul(scale);
+                    acc0 = a.getVector(FloatVector.SPECIES_512, row, aOffset).fma(bf0, acc0);
+                    acc1 = a.getVector(FloatVector.SPECIES_512, row,
+                            aOffset + Q8ByteBufferTensor.BLOCK_SIZE / 2).fma(bf1, acc1);
+                }
+                result.set(acc0.add(acc1).reduceLanes(VectorOperators.ADD), row, bRow + rOffset);
             }
         }
     }
@@ -3082,7 +3120,8 @@ public final class PanamaTensorOperations implements TensorOperations {
     @Override
     public void saxpy(float alpha, AbstractTensor x, AbstractTensor y, int xoffset, int yoffset, int limit) {
         Preconditions.checkArgument(y.shape().first() == 1);
-        Preconditions.checkArgument(x.dType() == y.dType() || x.dType() == DType.BF16 && y.dType() == DType.F32);
+        Preconditions.checkArgument(x.dType() == y.dType() || x.dType() == DType.BF16 && y.dType() == DType.F32
+                || x.dType() == DType.I8 && y.dType() == DType.F32);
 
         switch (x.dType()) {
             case F32:
@@ -3100,8 +3139,31 @@ public final class PanamaTensorOperations implements TensorOperations {
                         throw new UnsupportedOperationException();
                 }
                 break;
+            case I8:
+                saxpyI8F32(alpha, (Q8ByteBufferTensor) x, (FloatBufferTensor) y, xoffset, yoffset, limit);
+                break;
             default:
                 throw new UnsupportedOperationException();
+        }
+    }
+
+    void saxpyI8F32(float alpha, Q8ByteBufferTensor x, FloatBufferTensor y, int xoffset, int yoffset, int limit) {
+        Preconditions.checkArgument(xoffset % Q8ByteBufferTensor.BLOCK_SIZE == 0
+                && limit % Q8ByteBufferTensor.BLOCK_SIZE == 0,
+                "I8 saxpy requires Q8 block-aligned offset and length");
+        FloatVector av = FloatVector.broadcast(FloatVector.SPECIES_512, alpha);
+        int xo = xoffset;
+        int yo = yoffset;
+        int end = xoffset + limit;
+        for (; xo < end; xo += Q8ByteBufferTensor.BLOCK_SIZE, yo += Q8ByteBufferTensor.BLOCK_SIZE) {
+            FloatVector scale = FloatVector.broadcast(FloatVector.SPECIES_512, x.getFactorForIndex(0, xo));
+            ByteVector bytes0 = x.getVector(ByteVector.SPECIES_128, 0, xo);
+            ByteVector bytes1 = x.getVector(ByteVector.SPECIES_128, 0, xo + Q8ByteBufferTensor.BLOCK_SIZE / 2);
+            FloatVector xf0 = ((FloatVector) bytes0.convertShape(VectorOperators.B2F, FloatVector.SPECIES_512, 0)).mul(scale);
+            FloatVector xf1 = ((FloatVector) bytes1.convertShape(VectorOperators.B2F, FloatVector.SPECIES_512, 0)).mul(scale);
+            y.intoTensor(xf0.fma(av, y.getVector(FloatVector.SPECIES_512, 0, yo)), 0, yo);
+            y.intoTensor(xf1.fma(av, y.getVector(FloatVector.SPECIES_512, 0,
+                    yo + Q8ByteBufferTensor.BLOCK_SIZE / 2)), 0, yo + Q8ByteBufferTensor.BLOCK_SIZE / 2);
         }
     }
 
@@ -3153,8 +3215,25 @@ public final class PanamaTensorOperations implements TensorOperations {
                         throw new UnsupportedOperationException();
                 }
                 break;
+            case I8:
+                saxpyI8F32(alpha, (Q8ByteBufferTensor) x, (FloatBufferTensor) y, xoffset, yoffset, limit, aOffset,
+                        xOffset, batchSize);
+                break;
             default:
                 throw new UnsupportedOperationException();
+        }
+    }
+
+    public void saxpyI8F32(AbstractTensor alpha, Q8ByteBufferTensor x, FloatBufferTensor y, int xoffset,
+            int yoffset, int limit, int aOffset, int xOffset, int batchSize) {
+        Preconditions.checkArgument(xoffset % Q8ByteBufferTensor.BLOCK_SIZE == 0
+                && limit % Q8ByteBufferTensor.BLOCK_SIZE == 0,
+                "I8 saxpy requires Q8 block-aligned offset and length");
+        int batchLimit = aOffset + batchSize;
+        for (int a = aOffset, xi = xOffset; a < batchLimit; a++, xi++) {
+            try (AbstractTensor row = x.slice(xi)) {
+                saxpyI8F32(alpha.get(0, a), (Q8ByteBufferTensor) row, y, xoffset, yoffset, limit);
+            }
         }
     }
 

@@ -28,6 +28,14 @@ public final class KvReadView implements AutoCloseable {
         return pattern;
     }
 
+    public io.teknek.deliverance.DType keyDType() {
+        return session.keyDType();
+    }
+
+    public io.teknek.deliverance.DType valueDType() {
+        return session.valueDType();
+    }
+
     public AbstractTensor keyRowCopy(int position) {
         return session.keyRowCopy(layer, position);
     }

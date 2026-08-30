@@ -1,5 +1,7 @@
 package io.teknek.deliverance.tensor;
 
+import io.teknek.deliverance.DType;
+
 import javax.annotation.Nullable;
 import java.io.File;
 import java.time.Duration;
@@ -70,6 +72,8 @@ public class KvBufferCacheSettings {
     private KvFormat kvFormat = KvFormat.BF16;
     private KvBlockStoragePolicy kvBlockStoragePolicy = KvBlockStoragePolicy.DENSE;
     private int kvTurboQuantBits = 4;
+    private DType kvKeyDType = DType.F32;
+    private DType kvValueDType = DType.F32;
     /**
      * Use the tensor cache shared with model
      */
@@ -199,6 +203,10 @@ public class KvBufferCacheSettings {
         if (kvBlockStoragePolicy == null) {
             throw new IllegalArgumentException("kvBlockStoragePolicy must not be null");
         }
+        if (kvBlockStoragePolicy != KvBlockStoragePolicy.DENSE
+                && (kvKeyDType != DType.F32 || kvValueDType != DType.F32)) {
+            throw new IllegalArgumentException("kvKeyDType/kvValueDType are currently supported only with DENSE KV blocks");
+        }
         this.kvBlockStoragePolicy = kvBlockStoragePolicy;
     }
 
@@ -221,6 +229,52 @@ public class KvBufferCacheSettings {
     public KvBufferCacheSettings withKvTurboQuantBits(int kvTurboQuantBits) {
         setKvTurboQuantBits(kvTurboQuantBits);
         return this;
+    }
+
+    public DType getKvKeyDType() {
+        return kvKeyDType;
+    }
+
+    public void setKvKeyDType(DType kvKeyDType) {
+        validateKvDType(kvKeyDType, "kvKeyDType");
+        this.kvKeyDType = kvKeyDType;
+        validateDenseKvDTypePolicy();
+    }
+
+    public KvBufferCacheSettings withKvKeyDType(DType kvKeyDType) {
+        setKvKeyDType(kvKeyDType);
+        return this;
+    }
+
+    public DType getKvValueDType() {
+        return kvValueDType;
+    }
+
+    public void setKvValueDType(DType kvValueDType) {
+        validateKvDType(kvValueDType, "kvValueDType");
+        this.kvValueDType = kvValueDType;
+        validateDenseKvDTypePolicy();
+    }
+
+    public KvBufferCacheSettings withKvValueDType(DType kvValueDType) {
+        setKvValueDType(kvValueDType);
+        return this;
+    }
+
+    private static void validateKvDType(DType dtype, String name) {
+        if (dtype == null) {
+            throw new IllegalArgumentException(name + " must not be null");
+        }
+        if (dtype != DType.F32 && dtype != DType.I8) {
+            throw new IllegalArgumentException(name + " currently supports only F32 and I8");
+        }
+    }
+
+    private void validateDenseKvDTypePolicy() {
+        if (kvBlockStoragePolicy != KvBlockStoragePolicy.DENSE
+                && (kvKeyDType != DType.F32 || kvValueDType != DType.F32)) {
+            throw new IllegalArgumentException("kvKeyDType/kvValueDType are currently supported only with DENSE KV blocks");
+        }
     }
 
     public void setPrefixCheckpointAnchors(List<Integer> prefixCheckpointAnchors) {

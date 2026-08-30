@@ -82,7 +82,9 @@ public record AutoModelConfig(
             Optional<List<Integer>> prefixCheckpointAnchors,
             Optional<Integer> contextRowsPerPageTarget,
             Optional<KvBufferCacheSettings.KvBlockStoragePolicy> kvBlockStoragePolicy,
-            Optional<Integer> kvTurboQuantBits) {
+            Optional<Integer> kvTurboQuantBits,
+            Optional<DType> kvKeyDType,
+            Optional<DType> kvValueDType) {
 
         public KvBufferCache {
             maxEntries = maxEntries == null ? Optional.empty() : maxEntries;
@@ -96,6 +98,8 @@ public record AutoModelConfig(
             contextRowsPerPageTarget = contextRowsPerPageTarget == null ? Optional.empty() : contextRowsPerPageTarget;
             kvBlockStoragePolicy = kvBlockStoragePolicy == null ? Optional.empty() : kvBlockStoragePolicy;
             kvTurboQuantBits = kvTurboQuantBits == null ? Optional.empty() : kvTurboQuantBits;
+            kvKeyDType = kvKeyDType == null ? Optional.empty() : kvKeyDType;
+            kvValueDType = kvValueDType == null ? Optional.empty() : kvValueDType;
         }
 
         KvBufferCacheSettings toSettings() {
@@ -111,6 +115,8 @@ public record AutoModelConfig(
             contextRowsPerPageTarget.ifPresent(settings::setContextRowsPerPageTarget);
             kvBlockStoragePolicy.ifPresent(settings::setKvBlockStoragePolicy);
             kvTurboQuantBits.ifPresent(settings::setKvTurboQuantBits);
+            kvKeyDType.ifPresent(settings::setKvKeyDType);
+            kvValueDType.ifPresent(settings::setKvValueDType);
             return settings;
         }
     }

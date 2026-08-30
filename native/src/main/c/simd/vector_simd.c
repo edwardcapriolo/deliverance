@@ -185,6 +185,95 @@ void saxpy_f32_batch(const float *alpha, const float *x, float *y, int xoffset, 
 #endif
 }
 
+void saxpy_q8_f32(float alpha, const float *xf, const char *x, float *y, int xoffset, int yoffset, int limit,
+                  int xstride, int xscale_stride) {
+    int block_start = xoffset / Q8_BLOCK_SIZE;
+    int blocks = limit / Q8_BLOCK_SIZE;
+#if defined(__ARM_NEON__)
+    float32x4_t av = vdupq_n_f32(alpha);
+    for (int block = 0; block < blocks; block++) {
+        float32x4_t sv = vdupq_n_f32(xf[block_start + block]);
+        int base = xoffset + block * Q8_BLOCK_SIZE;
+        int ybase = yoffset + block * Q8_BLOCK_SIZE;
+        for (int j = 0; j < Q8_BLOCK_SIZE; j += 16) {
+            int8x16_t q = vld1q_s8((const int8_t *) (x + base + j));
+            int16x8_t qlo = vmovl_s8(vget_low_s8(q));
+            int16x8_t qhi = vmovl_s8(vget_high_s8(q));
+            float32x4_t q0 = vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(qlo))), sv);
+            float32x4_t q1 = vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(qlo))), sv);
+            float32x4_t q2 = vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(qhi))), sv);
+            float32x4_t q3 = vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(qhi))), sv);
+            vst1q_f32(y + ybase + j, vmlaq_f32(vld1q_f32(y + ybase + j), q0, av));
+            vst1q_f32(y + ybase + j + 4, vmlaq_f32(vld1q_f32(y + ybase + j + 4), q1, av));
+            vst1q_f32(y + ybase + j + 8, vmlaq_f32(vld1q_f32(y + ybase + j + 8), q2, av));
+            vst1q_f32(y + ybase + j + 12, vmlaq_f32(vld1q_f32(y + ybase + j + 12), q3, av));
+        }
+    }
+#else
+    for (int block = 0; block < blocks; block++) {
+        float scale = xf[block_start + block];
+        int base = xoffset + block * Q8_BLOCK_SIZE;
+        int ybase = yoffset + block * Q8_BLOCK_SIZE;
+        for (int j = 0; j < Q8_BLOCK_SIZE; j++) {
+            y[ybase + j] += alpha * ((float) x[base + j] * scale);
+        }
+    }
+#endif
+}
+
+void saxpy_q8_f32_batch(const float *alpha, const float *xf, const char *x, float *y, int xoffset, int yoffset,
+                         int limit, int aoffset, int xrowoffset, int batch_size, int xstride, int xscale_stride) {
+    for (int row = 0; row < batch_size; row++) {
+        int xrow = xrowoffset + row;
+        saxpy_q8_f32(alpha[aoffset + row], xf + xrow * xscale_stride, x + xrow * xstride, y,
+                     xoffset, yoffset, limit, xstride, xscale_stride);
+    }
+}
+
+void gemm_f32_q8(int flags, const float *a, int aoffset, const float *bf, const char* b, int boffset,
+                 float *r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf, int ldc) {
+    int blocks = k / Q8_BLOCK_SIZE;
+    int bblock_start = boffset / Q8_BLOCK_SIZE;
+    for (int row = 0; row < m; row++) {
+        for (int out_col = 0; out_col < n; out_col++) {
+            int weight_row = n0 + out_col;
+#if defined(__ARM_NEON__)
+            float32x4_t acc = vdupq_n_f32(0.0f);
+            for (int block = 0; block < blocks; block++) {
+                float32x4_t sv = vdupq_n_f32(bf[weight_row * ldbf + bblock_start + block]);
+                int abase = row * lda + aoffset + block * Q8_BLOCK_SIZE;
+                int bbase = weight_row * ldb + boffset + block * Q8_BLOCK_SIZE;
+                for (int j = 0; j < Q8_BLOCK_SIZE; j += 16) {
+                    int8x16_t q = vld1q_s8((const int8_t *) (b + bbase + j));
+                    int16x8_t qlo = vmovl_s8(vget_low_s8(q));
+                    int16x8_t qhi = vmovl_s8(vget_high_s8(q));
+                    float32x4_t q0 = vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(qlo))), sv);
+                    float32x4_t q1 = vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(qlo))), sv);
+                    float32x4_t q2 = vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(qhi))), sv);
+                    float32x4_t q3 = vmulq_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(qhi))), sv);
+                    acc = vmlaq_f32(acc, vld1q_f32(a + abase + j), q0);
+                    acc = vmlaq_f32(acc, vld1q_f32(a + abase + j + 4), q1);
+                    acc = vmlaq_f32(acc, vld1q_f32(a + abase + j + 8), q2);
+                    acc = vmlaq_f32(acc, vld1q_f32(a + abase + j + 12), q3);
+                }
+            }
+            float sum = vaddvq_f32(acc);
+#else
+            float sum = 0.0f;
+            for (int block = 0; block < blocks; block++) {
+                float scale = bf[weight_row * ldbf + bblock_start + block];
+                int abase = row * lda + aoffset + block * Q8_BLOCK_SIZE;
+                int bbase = weight_row * ldb + boffset + block * Q8_BLOCK_SIZE;
+                for (int j = 0; j < Q8_BLOCK_SIZE; j++) {
+                    sum += a[abase + j] * (float) b[bbase + j] * scale;
+                }
+            }
+#endif
+            r[row * ldc + weight_row - roffset] = sum;
+        }
+    }
+}
+
 void exp_f32(const float *input, float *output, int rows, int offset, int length, int input_stride, int output_stride) {
     for (int row = 0; row < rows; row++) {
         const float *in = input + row * input_stride + offset;

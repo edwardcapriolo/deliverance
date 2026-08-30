@@ -8,6 +8,8 @@ interface KvBlockStorage extends AutoCloseable {
 
     DType dtype();
 
+    DType dtype(int keyOrValue);
+
     int layers();
 
     int tokenCount();

@@ -281,7 +281,8 @@ public abstract class AbstractModel implements Generator, Classifier {
                 c.kvLength / tensorParallelContext.size(), workingMemoryDType, kvBufferCacheSettings, tensorAllocator,
                 metricRegistry);
         this.kvPrefixSnapshotCache = new KvPrefixSnapshotCache(c.numberOfLayers, c.contextLength,
-                c.kvLength / tensorParallelContext.size(), kvBufferCacheSettings.getBlockSize(), workingMemoryDType,
+                c.kvLength / tensorParallelContext.size(), kvBufferCacheSettings.getBlockSize(),
+                kvBufferCacheSettings.getKvKeyDType(), kvBufferCacheSettings.getKvValueDType(),
                 tensorAllocator, metricRegistry, kvBufferCacheSettings);
         this.toolCallParser = toolCallParser;
 

@@ -211,6 +211,27 @@ public class NativeSimdTensorOperations implements TensorOperations {
                             result.getStride()
                         );
                         break;
+                    case I8:
+                        Q8ByteBufferTensor b8 = (Q8ByteBufferTensor) bt;
+                        NativeSimd.gemm_f32_q8(
+                                flags,
+                                at.getMemorySegment(),
+                                aOffset,
+                                b8.getBlockF().getMemorySegment(),
+                                b8.getMemorySegment(),
+                                b8.getMemorySegmentOffset(bOffset),
+                                result.getMemorySegment(),
+                                rOffset,
+                                M,
+                                adjBRowOffset,
+                                N,
+                                K,
+                                at.getStride(),
+                                b8.getMemorySegmentOffset(b8.getStride()),
+                                b8.getBlockF().getStride(),
+                                result.getStride()
+                        );
+                        break;
                     default:
                         throw new UnsupportedOperationException(at.dType().name() + " " + bt.dType().name());
                 }
@@ -249,6 +270,7 @@ public class NativeSimdTensorOperations implements TensorOperations {
                 throw new UnsupportedOperationException(at.dType().name());
         }
     }
+
 
     private boolean optimizedBatchDotProductSupports(AbstractTensor a, AbstractTensor b,
             int aColumnOffset, int bColumnOffset, int columnLength, int bRowOffset, int rowChunkSize) {
@@ -416,6 +438,12 @@ public class NativeSimdTensorOperations implements TensorOperations {
                             r[0].getStride()
                         );
                         break;
+                    case I8:
+                        for (int i = 0; i < r.length; i++) {
+                            batchDotProduct(r[i], a, b[i], columnOffset, columnOffset, columnLength, 0,
+                                    bRowOffset, rowChunkSize);
+                        }
+                        break;
                     default:
                         throw new UnsupportedOperationException(a.dType().name() + " " + b[0].dType().name());
                 }
@@ -480,6 +508,12 @@ public class NativeSimdTensorOperations implements TensorOperations {
             );
             return;
         }
+        if (x.dType() == DType.I8 && y.dType() == DType.F32) {
+            Q8ByteBufferTensor q8 = (Q8ByteBufferTensor) x;
+            NativeSimd.saxpy_q8_f32(alpha, q8.getBlockF().getMemorySegment(), q8.getMemorySegment(),
+                    y.getMemorySegment(), xoffset, yoffset, limit, q8.getStride(), q8.getBlockF().getStride());
+            return;
+        }
         delegate.saxpy(alpha, x, y, xoffset, yoffset, limit);
     }
 
@@ -508,6 +542,17 @@ public class NativeSimdTensorOperations implements TensorOperations {
                     batchSize,
                     x.getStride()
             );
+            return;
+        }
+
+        if (alpha.dType() == DType.F32 && x.dType() == DType.I8 && y.dType() == DType.F32) {
+            if (xoffset % Q8ByteBufferTensor.BLOCK_SIZE != 0 || limit % Q8ByteBufferTensor.BLOCK_SIZE != 0) {
+                throw new UnsupportedOperationException("I8 saxpy requires Q8 block-aligned offset and length");
+            }
+            Q8ByteBufferTensor q8 = (Q8ByteBufferTensor) x;
+            NativeSimd.saxpy_q8_f32_batch(alpha.getMemorySegment(), q8.getBlockF().getMemorySegment(),
+                    q8.getMemorySegment(), y.getMemorySegment(), xoffset, yoffset, limit, rOffset, xOffset,
+                    batchSize, q8.getStride(), q8.getBlockF().getStride());
             return;
         }
 

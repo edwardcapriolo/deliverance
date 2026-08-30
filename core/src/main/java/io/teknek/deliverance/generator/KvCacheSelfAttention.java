@@ -3,6 +3,7 @@ package io.teknek.deliverance.generator;
 import com.google.common.base.Preconditions;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.dropwizard.metrics5.Timer;
+import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.kv.AttentionPattern;
@@ -263,14 +264,16 @@ public class KvCacheSelfAttention extends BaseCausalSelfAttention {
             return;
         }
         try (KvReadView readView = kvSession.readView(layerIndex, startPosition, AttentionPattern.CAUSAL);
-             AbstractTensor packedKeys = model.makeDenseTensor(TensorShape.of(startPosition + batchSize, kvLength));
-             AbstractTensor packedValues = model.makeDenseTensor(TensorShape.of(startPosition + batchSize, kvLength))) {
+             AbstractTensor packedKeys = model.getTensorAllocator().getDirty(readView.keyDType(),
+                     TensorShape.of(startPosition + batchSize, kvLength));
+             AbstractTensor packedValues = model.getTensorAllocator().getDirty(readView.valueDType(),
+                     TensorShape.of(startPosition + batchSize, kvLength))) {
             try (Timer.Context ignoredPack = InferenceProfiler.timer(metricRegistry,
                     "kvcacheselfattention.pack_kv").time()) {
                 readView.copyKeyRows(0, startPosition, packedKeys, 0);
                 readView.copyValueRows(0, startPosition, packedValues, 0);
-                packedKeys.copyFrom(keyBatch, 0, packedKeys.getOffset(startPosition, 0), (int) keyBatch.size());
-                packedValues.copyFrom(valueBatch, 0, packedValues.getOffset(startPosition, 0), (int) valueBatch.size());
+                copyCurrentRows(keyBatch, packedKeys, startPosition);
+                copyCurrentRows(valueBatch, packedValues, startPosition);
             }
             if (mode == CacheExecutionMode.DENOISE_BLOCK_NO_UPDATE) {
                 bidirectionalBlockAttentionWithPrefix(output, queryBatch, packedKeys, packedValues, startPosition,
@@ -279,6 +282,23 @@ public class KvCacheSelfAttention extends BaseCausalSelfAttention {
                 causalAttentionWithPrefix(output, queryBatch, packedKeys, packedValues, startPosition, batchSize);
             }
         }
+    }
+
+    private void copyCurrentRows(AbstractTensor source, AbstractTensor destination, int destinationRowStart) {
+        if (source.dType() == destination.dType()) {
+            destination.copyFrom(source, 0, destination.getOffset(destinationRowStart, 0), (int) source.size());
+            return;
+        }
+        if (destination.dType() == DType.I8) {
+            try (AbstractTensor converted = configurableTensorProvider.get().quantize(source, DType.I8, 0,
+                    (int) source.shape().last())) {
+                destination.copyFrom(converted, 0, destination.getOffset(destinationRowStart, 0),
+                        (int) converted.size());
+            }
+            return;
+        }
+        throw new UnsupportedOperationException("Unsupported KV pack conversion " + source.dType() + " -> "
+                + destination.dType());
     }
 
     private void decodePagedAttention(AbstractTensor output, AbstractTensor query, AbstractTensor currentKeys,

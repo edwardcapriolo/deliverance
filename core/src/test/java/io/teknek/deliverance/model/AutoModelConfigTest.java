@@ -46,7 +46,9 @@ public class AutoModelConfigTest {
                     "prefixCheckpointAnchors": [16, 32, 64],
                     "contextRowsPerPageTarget": 64,
                     "kvBlockStoragePolicy": "MSE_TURBOQUANT",
-                    "kvTurboQuantBits": 5
+                    "kvTurboQuantBits": 5,
+                    "kvKeyDType": "F32",
+                    "kvValueDType": "F32"
                   }
                 }
                 """);
@@ -82,5 +84,7 @@ public class AutoModelConfigTest {
         assertEquals(io.teknek.deliverance.tensor.KvBufferCacheSettings.KvBlockStoragePolicy.MSE_TURBOQUANT,
                 builder.getSettings().getKvBlockStoragePolicy());
         assertEquals(5, builder.getSettings().getKvTurboQuantBits());
+        assertEquals(DType.F32, builder.getSettings().getKvKeyDType());
+        assertEquals(DType.F32, builder.getSettings().getKvValueDType());
     }
 }

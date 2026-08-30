@@ -9,14 +9,17 @@ final class DenseKvBlockStorage implements KvBlockStorage {
     private final int tokenCount;
     private final int blockSize;
     private final int kvLength;
-    private final AbstractTensor storage;
+    private final AbstractTensor keyStorage;
+    private final AbstractTensor valueStorage;
 
-    DenseKvBlockStorage(int layers, int tokenCount, int blockSize, int kvLength, AbstractTensor storage) {
+    DenseKvBlockStorage(int layers, int tokenCount, int blockSize, int kvLength, AbstractTensor keyStorage,
+            AbstractTensor valueStorage) {
         this.layers = layers;
         this.tokenCount = tokenCount;
         this.blockSize = blockSize;
         this.kvLength = kvLength;
-        this.storage = storage;
+        this.keyStorage = keyStorage;
+        this.valueStorage = valueStorage;
     }
 
     @Override
@@ -26,7 +29,12 @@ final class DenseKvBlockStorage implements KvBlockStorage {
 
     @Override
     public DType dtype() {
-        return storage.dType();
+        return keyStorage.dType();
+    }
+
+    @Override
+    public DType dtype(int keyOrValue) {
+        return storage(keyOrValue).dType();
     }
 
     @Override
@@ -51,7 +59,8 @@ final class DenseKvBlockStorage implements KvBlockStorage {
 
     @Override
     public long denseBytesEquivalent() {
-        return (long) layers * tokenCount * 2 * kvLength * dtype().size();
+        return (long) layers * tokenCount * kvLength * keyStorage.dType().size()
+                + (long) layers * tokenCount * kvLength * valueStorage.dType().size();
     }
 
     @Override
@@ -62,20 +71,22 @@ final class DenseKvBlockStorage implements KvBlockStorage {
     @Override
     public AbstractTensor rowView(int layer, int blockRow, int keyOrValue) {
         validate(layer, blockRow, keyOrValue);
-        return storage.slice(true, layer, keyOrValue, blockRow);
+        return storage(keyOrValue).slice(true, layer, blockRow);
     }
 
     @Override
     public AbstractTensor pageView(int layer, int keyOrValue) {
         Preconditions.checkArgument(layer >= 0 && layer < layers, "layer out of bounds");
         Preconditions.checkArgument(keyOrValue == 0 || keyOrValue == 1, "keyOrValue must be 0 or 1");
-        return storage.slice(true, layer, keyOrValue);
+        return storage(keyOrValue).slice(true, layer);
     }
 
     @Override
     public void copyRow(int layer, int blockRow, int keyOrValue, AbstractTensor destination) {
         validate(layer, blockRow, keyOrValue);
-        destination.copyFrom(storage, storage.getOffset(layer, keyOrValue, blockRow, 0), 0, kvLength);
+        AbstractTensor storage = storage(keyOrValue);
+        Preconditions.checkArgument(destination.dType() == storage.dType(), "destination dtype must match KV dtype");
+        destination.copyFrom(storage, storage.getOffset(layer, blockRow, 0), 0, kvLength);
     }
 
     @Override
@@ -85,8 +96,14 @@ final class DenseKvBlockStorage implements KvBlockStorage {
         if (rowCount == 0) {
             return;
         }
-        destination.copyFrom(storage, storage.getOffset(layer, keyOrValue, blockRowStart, 0),
+        AbstractTensor storage = storage(keyOrValue);
+        Preconditions.checkArgument(destination.dType() == storage.dType(), "destination dtype must match KV dtype");
+        destination.copyFrom(storage, storage.getOffset(layer, blockRowStart, 0),
                 destination.getOffset(destinationRowStart, 0), rowCount * kvLength);
+    }
+
+    private AbstractTensor storage(int keyOrValue) {
+        return keyOrValue == 0 ? keyStorage : valueStorage;
     }
 
     private void validate(int layer, int blockRow, int keyOrValue) {
@@ -109,6 +126,9 @@ final class DenseKvBlockStorage implements KvBlockStorage {
 
     @Override
     public void close() {
-        storage.close();
+        keyStorage.close();
+        if (valueStorage != keyStorage) {
+            valueStorage.close();
+        }
     }
 }
