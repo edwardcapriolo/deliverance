@@ -49,6 +49,7 @@ import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.tensor.*;
 import io.teknek.deliverance.tensor.kv.KvCacheManager;
 import io.teknek.deliverance.tensor.kv.KvCacheSession;
+import io.teknek.deliverance.tensor.kv.KvPrefixSnapshotCache;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
@@ -180,6 +181,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     protected TransformerBlock[] transformerBlocks;
     protected KvBufferCache kvBufferCache;
     protected KvCacheManager kvCacheManager;
+    protected KvPrefixSnapshotCache kvPrefixSnapshotCache;
     protected final ConfigurableTensorProvider configurableTensorProvider;
     protected final MetricRegistry metricRegistry;
     protected final TensorAllocator tensorAllocator;
@@ -278,6 +280,9 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.kvCacheManager = new KvCacheManager(c.numberOfLayers, c.contextLength,
                 c.kvLength / tensorParallelContext.size(), workingMemoryDType, kvBufferCacheSettings, tensorAllocator,
                 metricRegistry);
+        this.kvPrefixSnapshotCache = new KvPrefixSnapshotCache(c.numberOfLayers, c.contextLength,
+                c.kvLength / tensorParallelContext.size(), kvBufferCacheSettings.getBlockSize(), workingMemoryDType,
+                tensorAllocator, metricRegistry, kvBufferCacheSettings);
         this.toolCallParser = toolCallParser;
 
         this.workingQType = resolveWorkingQType(workingMemoryQType);
@@ -487,6 +492,10 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public KvCacheSession newKvCacheSession() {
         return kvCacheManager.openSession();
+    }
+
+    public KvPrefixSnapshotCache kvPrefixSnapshotCache() {
+        return kvPrefixSnapshotCache;
     }
 
     public boolean usesKvCache2Generation() {
@@ -745,6 +754,7 @@ public abstract class AbstractModel implements Generator, Classifier {
             }
         }
         kvBufferCache.close();
+        kvPrefixSnapshotCache.close();
         kvCache2SessionAdapters.values().forEach(KvCacheSession::close);
         kvCache2SessionAdapters.clear();
         closeTensorOperations();

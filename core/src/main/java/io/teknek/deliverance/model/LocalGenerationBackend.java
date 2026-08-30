@@ -4,6 +4,7 @@ import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.kv.KvCacheSession;
+import io.teknek.deliverance.tensor.kv.KvPrefixSnapshotCache;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -39,28 +40,48 @@ public final class LocalGenerationBackend implements GenerationBackend {
     private final class LocalKvCache2GenerationSession implements GenerationSession {
         private final int[] promptTokens;
         private final GeneratorParameters parameters;
+        private final Optional<String> effectiveCacheSalt;
         private final KvCacheSession kvSession;
+        private final int prefixLength;
 
         private LocalKvCache2GenerationSession(int[] promptTokens, GeneratorParameters parameters) {
             this.promptTokens = promptTokens;
             this.parameters = parameters;
+            this.effectiveCacheSalt = withActiveAdapterScope(parameters.cacheSalt);
             this.kvSession = model.newKvCacheSession();
+            KvPrefixSnapshotCache.PrefixHit prefixHit = model.kvPrefixSnapshotCache()
+                    .lookupPrefix(promptTokens, effectiveCacheSalt, kvSession);
+            this.prefixLength = prefixHit == null ? 0 : prefixHit.length();
+            if (prefixLength > 0) {
+                model.emitGenerationDebug(new AbstractModel.GenerationDebugEvent(
+                        AbstractModel.GenerationDebugEventType.AFTER_PREFIX_COPY,
+                        promptTokens,
+                        prefixLength,
+                        prefixLength,
+                        promptTokens.length - prefixLength,
+                        null));
+            }
         }
 
         @Override
         public int prefixLength() {
-            return 0;
+            return prefixLength;
         }
 
         @Override
         public AbstractTensor prefill(GenerationCursor cursor) {
-            AbstractTensor last = cursor.hasTokensToProcess()
-                    ? model.batchForward(cursor.tokensToProcess(), cursor.startPosition(), kvSession)
-                    : model.forward(cursor.replayToken(), cursor.replayPosition(), kvSession);
+            AbstractTensor last;
+            if (cursor.hasTokensToProcess()) {
+                last = model.batchForward(cursor.tokensToProcess(), cursor.startPosition(), kvSession);
+                model.kvPrefixSnapshotCache().storePrefix(promptTokens, kvSession, effectiveCacheSalt);
+            } else {
+                kvSession.crop(cursor.replayPosition());
+                last = model.forward(cursor.replayToken(), cursor.replayPosition(), kvSession);
+            }
             model.emitGenerationDebug(new AbstractModel.GenerationDebugEvent(
                     AbstractModel.GenerationDebugEventType.AFTER_PROMPT_PREFILL,
                     promptTokens,
-                    0,
+                    prefixLength,
                     cursor.startPosition(),
                     cursor.tokensToProcess().length,
                     null));
