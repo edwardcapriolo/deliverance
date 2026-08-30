@@ -117,12 +117,14 @@ If you need to change owner/model, run `InferenceBenchmark` directly or adjust t
 
 ### Nemotron AR And Diffusion Q4 Benchmarks
 
+For the model architecture and generation-mode details, see [Nemotron Labs Diffusion Support](nemotron_labs_diffusion.md).
+
 ```sh
 ./benchmarks/run-nemotron-ar-q4-benchmark.sh
 ./benchmarks/run-nemotron-diffusion-q4-benchmark.sh
 ```
 
-Both scripts use the local QOD target `nvidia/Nemotron-Labs-Diffusion-3B-JQ4` so they can be compared with Qwen 4B JQ4 runs. The non-Base Nemotron checkpoint is the appropriate target for the built-in chat/instruction benchmark suite; the Base checkpoint produced `</s>` or repeated-bullet outputs on several benchmark prompts.
+Both scripts use the uploaded QOD target `edwardcapriolo/Nemotron-Labs-Diffusion-3B-JQ4` so they can be compared with Qwen 4B JQ4 runs. The non-Base Nemotron checkpoint is the appropriate target for the built-in chat/instruction benchmark suite; the Base checkpoint produced `</s>` or repeated-bullet outputs on several benchmark prompts.
 
 The AR script uses `benchmarks/configs/nemotron-labs-diffusion-3b-base-jq4-ar.json`:
 

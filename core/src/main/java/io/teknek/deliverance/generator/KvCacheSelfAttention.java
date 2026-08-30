@@ -14,6 +14,7 @@ import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.InferenceProfiler;
+import io.teknek.deliverance.model.TensorProviderKind;
 
 import java.util.Collections;
 import java.util.List;
@@ -292,7 +293,13 @@ public class KvCacheSelfAttention extends BaseCausalSelfAttention {
             AbstractTensor[] keyPages = appendCurrentPage(prefixKeyPages, currentKeys);
             AbstractTensor[] valuePages = appendCurrentPage(prefixValuePages, currentValues);
             try {
-                configurableTensorProvider.get().decodePagedAttention(output, query, keyPages, valuePages,
+                TensorOperations decodeAttentionOps = decodeAttentionOperations(output, query, keyPages, valuePages,
+                        startPosition + 1);
+                if (InferenceProfiler.isEnabled()) {
+                    InferenceProfiler.counter(metricRegistry, "kvcacheselfattention.decode_paged_attention.provider_"
+                            + decodeAttentionOps.name().replace(' ', '_')).inc();
+                }
+                decodeAttentionOps.decodePagedAttention(output, query, keyPages, valuePages,
                         startPosition + 1, numberOfHeads, numberOfKeyValueHeads, config.headSize, attentionScale,
                         config.attnLogitSoftCapping);
             } finally {
@@ -300,6 +307,20 @@ public class KvCacheSelfAttention extends BaseCausalSelfAttention {
                 closeAll(prefixValuePages);
             }
         }
+    }
+
+    private TensorOperations decodeAttentionOperations(AbstractTensor output, AbstractTensor query,
+            AbstractTensor[] keyPages, AbstractTensor[] valuePages, int visibleRows) {
+        TensorOperations primary = configurableTensorProvider.get();
+        if (model.isGpuDecodeAttentionEnabled() && !model.isTensorProviderExplicit()) {
+            Optional<TensorOperations> gpu = model.tensorOperations(TensorProviderKind.GPU);
+            if (gpu.isPresent() && gpu.get().supportsDecodePagedAttention(output, query, keyPages, valuePages,
+                    visibleRows, numberOfHeads, numberOfKeyValueHeads, config.headSize, attentionScale,
+                    config.attnLogitSoftCapping)) {
+                return gpu.get();
+            }
+        }
+        return primary;
     }
 
     private AbstractTensor[] appendCurrentPage(AbstractTensor[] prefixPages, AbstractTensor currentPage) {
