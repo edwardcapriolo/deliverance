@@ -183,6 +183,43 @@ class KvPrefixSnapshotCacheTest {
     }
 
     @Test
+    void i8SnapshotsRestoreIntoI8KvSession() {
+        int kvLength = 64;
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withMaxEntries(512)
+                .withBlockSize(4)
+                .withPrefixCheckpointPolicy(KvBufferCacheSettings.PrefixCheckpointPolicy.FIXED_BLOCKS)
+                .withKvKeyDType(DType.I8)
+                .withKvValueDType(DType.I8);
+        KvPrefixSnapshotCache cache = new KvPrefixSnapshotCache(1, 8, kvLength, settings.getBlockSize(), DType.I8,
+                DType.I8, allocator, metricRegistry, settings);
+        KvCacheManager manager = new KvCacheManager(1, 8, kvLength, DType.F32, settings, allocator, metricRegistry);
+        try (KvCacheSession source = manager.openSession();
+             KvCacheSession restored = manager.openSession()) {
+            try (KvWriteCursor writer = source.writer(CacheExecutionMode.PREFILL_UPDATE_CACHE)) {
+                for (int position = 0; position < 4; position++) {
+                    try (AbstractTensor key = wideRow(position + 1.0f, kvLength);
+                         AbstractTensor value = wideRow(position + 2.0f, kvLength)) {
+                        writer.write(0, position, key, value);
+                    }
+                }
+                writer.advanceLength(4);
+            }
+
+            cache.storePrefix(new int[]{1, 2, 3, 4}, source, Optional.empty());
+            assertEquals(4, cache.lookupPrefix(new int[]{1, 2, 3, 4}, Optional.empty(), restored).length());
+            try (KvReadView readView = restored.readView(0, 4, AttentionPattern.CAUSAL);
+                 AbstractTensor key = readView.keyRow(0);
+                 AbstractTensor value = readView.valueRow(0)) {
+                assertEquals(DType.I8, key.dType());
+                assertEquals(DType.I8, value.dType());
+            }
+        } finally {
+            cache.close();
+        }
+    }
+
+    @Test
     void checkpointPoliciesMatchExistingPrefixCacheBehavior() {
         KvPrefixSnapshotCache fixed = cache(settings());
         try {
@@ -215,7 +252,7 @@ class KvPrefixSnapshotCacheTest {
     }
 
     private KvPrefixSnapshotCache cache(KvBufferCacheSettings settings) {
-        return new KvPrefixSnapshotCache(2, 16, 4, settings.getBlockSize(), DType.F32, allocator, metricRegistry,
+        return new KvPrefixSnapshotCache(2, 16, 4, settings.getBlockSize(), DType.F32, DType.F32, allocator, metricRegistry,
                 settings);
     }
 
@@ -245,6 +282,14 @@ class KvPrefixSnapshotCacheTest {
         AbstractTensor tensor = allocator.getDirty(DType.F32, TensorShape.of(1, 4));
         for (int i = 0; i < 4; i++) {
             tensor.set(firstValue + i, 0, i);
+        }
+        return tensor;
+    }
+
+    private AbstractTensor wideRow(float firstValue, int width) {
+        AbstractTensor tensor = allocator.getDirty(DType.F32, TensorShape.of(1, width));
+        for (int i = 0; i < width; i++) {
+            tensor.set(firstValue + (i % 17) * 0.125f, 0, i);
         }
         return tensor;
     }

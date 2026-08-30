@@ -134,6 +134,7 @@ public class NativeSimdQwenTpShapeTest {
                 Arguments.of("mlp_gate_i8q4", 10, 1024, 768, DType.I8, DType.Q4, 0.20f),
                 Arguments.of("attention_output_i8q4", 10, 256, 1024, DType.I8, DType.Q4, 0.20f),
                 Arguments.of("mlp_down_i8q4", 10, 768, 1024, DType.I8, DType.Q4, 0.20f),
+                Arguments.of("kv_attention_score_f32i8", 10, 1024, 128, DType.F32, DType.I8, 0.0001f),
                 Arguments.of("q_proj_f32q4", 10, 1024, 256, DType.F32, DType.Q4, 0.08f),
                 Arguments.of("mlp_gate_f32q4", 10, 1024, 768, DType.F32, DType.Q4, 0.08f)
         );
@@ -146,6 +147,7 @@ public class NativeSimdQwenTpShapeTest {
                 Arguments.of("v_proj_full_chunk_i8q4", 10, 1024, 128, 0, 128, DType.I8, DType.Q4, 0.20f),
                 Arguments.of("q_proj_half_chunk_i8q4", 10, 1024, 256, 128, 128, DType.I8, DType.Q4, 0.20f),
                 Arguments.of("mlp_gate_chunk_i8q4", 10, 1024, 768, 0, 768, DType.I8, DType.Q4, 0.20f),
+                Arguments.of("kv_attention_score_f32i8", 10, 1024, 128, 0, 128, DType.F32, DType.I8, 0.0001f),
                 Arguments.of("q_proj_full_chunk_f32q4", 10, 1024, 256, 0, 256, DType.F32, DType.Q4, 0.08f),
                 Arguments.of("k_proj_full_chunk_f32q4", 10, 1024, 128, 0, 128, DType.F32, DType.Q4, 0.08f)
         );

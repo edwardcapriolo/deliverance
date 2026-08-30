@@ -193,6 +193,45 @@ class KvCacheSessionTest {
     }
 
     @Test
+    void denseKvCanStoreKeysAndValuesAsI8() {
+        int kvLength = 64;
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withBlockSize(4)
+                .withKvKeyDType(DType.I8)
+                .withKvValueDType(DType.I8);
+        KvCacheManager manager = new KvCacheManager(1, 8, kvLength, DType.F32, settings, allocator, metricRegistry);
+
+        try (KvCacheSession session = manager.openSession()) {
+            try (KvWriteCursor writer = session.writer(CacheExecutionMode.PREFILL_UPDATE_CACHE)) {
+                for (int position = 0; position < 4; position++) {
+                    try (AbstractTensor key = wideRow(position + 1.0f, kvLength);
+                         AbstractTensor value = wideRow(position + 2.0f, kvLength)) {
+                        writer.write(0, position, key, value);
+                    }
+                }
+                writer.advanceLength(4);
+            }
+
+            try (KvReadView readView = session.readView(0, 4, AttentionPattern.CAUSAL);
+                 AbstractTensor key = readView.keyRow(0);
+                 AbstractTensor value = readView.valueRow(0)) {
+                assertEquals(DType.I8, key.dType());
+                assertEquals(DType.I8, value.dType());
+            }
+
+            assertEquals(KvBlockLayout.DENSE, session.committedBlocks().getFirst().layout());
+            assertTrue(session.committedBlocks().getFirst().encodedBytes() < 4L * 2 * kvLength * DType.F32.size());
+        }
+    }
+
+    @Test
+    void i8KvIsRejectedWithTurboQuantPolicy() {
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true).withKvKeyDType(DType.I8);
+        assertThrows(IllegalArgumentException.class,
+                () -> settings.setKvBlockStoragePolicy(KvBufferCacheSettings.KvBlockStoragePolicy.MSE_TURBOQUANT));
+    }
+
+    @Test
     void denoiseModeCannotWrite() {
         KvCacheManager manager = new KvCacheManager(1, 8, 4, DType.F32,
                 new KvBufferCacheSettings(true).withBlockSize(2), allocator, metricRegistry);
@@ -285,6 +324,14 @@ class KvCacheSessionTest {
         AbstractTensor tensor = allocator.getDirty(DType.F32, TensorShape.of(1, 4));
         for (int i = 0; i < 4; i++) {
             tensor.set(firstValue + i, 0, i);
+        }
+        return tensor;
+    }
+
+    private AbstractTensor wideRow(float firstValue, int width) {
+        AbstractTensor tensor = allocator.getDirty(DType.F32, TensorShape.of(1, width));
+        for (int i = 0; i < width; i++) {
+            tensor.set(firstValue + (i % 17) * 0.125f, 0, i);
         }
         return tensor;
     }

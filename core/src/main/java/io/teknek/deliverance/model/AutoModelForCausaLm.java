@@ -319,6 +319,16 @@ public class AutoModelForCausaLm {
             return this;
         }
 
+        public Builder withKvKeyDType(DType kvKeyDType) {
+            this.settings.setKvKeyDType(kvKeyDType);
+            return this;
+        }
+
+        public Builder withKvValueDType(DType kvValueDType) {
+            this.settings.setKvValueDType(kvValueDType);
+            return this;
+        }
+
         /** Enables checksum assertions for borrowed non-copying KV-cache read views. */
         public Builder withTrackKvReadViews(boolean trackKvReadViews) {
             this.trackKvReadViews = trackKvReadViews;
@@ -585,7 +595,7 @@ public class AutoModelForCausaLm {
                       parallelSplitPolicy=availableProcessors={} defaultSimdMultiplier={} defaultPanamaMultiplier={} simdAlignment={} panamaAlignment={} fixedOverrides={} multiplierOverrides={}
                       modelType={} workingMemoryType={} quantizedMemoryType={}
                       tensorRuntimeMode={} gpuPrefill={} gpuDecode={} gpuDecodeAttention={} gpuDiffusionBlockProjection={} packedBlockAttention={} packedPrefill={} trackKvReadViews={} maxBatchSize={}
-                      kvBlockStoragePolicy={} kvTurboQuantBits={}
+                      kvBlockStoragePolicy={} kvTurboQuantBits={} kvKeyDType={} kvValueDType={}
                       generationOptions={}
                     """,
                     fetch.getName(), primary.name(), primary.parallelSplitSize(), model.tensorOperationsSummary(),
@@ -597,6 +607,7 @@ public class AutoModelForCausaLm {
                     gpuDecodeAttention, gpuDiffusionBlockProjection, packedBlockAttention, packedPrefill,
                     trackKvReadViews, maxBatchSize,
                     settings.getKvBlockStoragePolicy(), settings.getKvTurboQuantBits(),
+                    settings.getKvKeyDType(), settings.getKvValueDType(),
                     generationOptions);
         }
 

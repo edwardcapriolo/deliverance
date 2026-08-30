@@ -57,6 +57,14 @@ public final class KvCacheSession implements AutoCloseable {
         return blockSize;
     }
 
+    DType keyDType() {
+        return settings.getKvKeyDType();
+    }
+
+    DType valueDType() {
+        return settings.getKvValueDType();
+    }
+
     public List<KvBlock> committedBlocks() {
         return List.copyOf(committedBlocks.values());
     }

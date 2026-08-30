@@ -95,14 +95,16 @@ public final class KvPrefixSnapshotCache implements AutoCloseable {
     private final int contextLength;
     private final int kvLength;
     private final int blockSize;
-    private final DType dtype;
+    private final DType keyDType;
+    private final DType valueDType;
     private final TensorAllocator allocator;
     private final MetricRegistry metricRegistry;
     private final KvBufferCacheSettings settings;
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final Map<CacheKey, StoredPrefixEntry> prefixCache;
 
-    public KvPrefixSnapshotCache(int layers, int contextLength, int kvLength, int blockSize, DType dtype,
+    public KvPrefixSnapshotCache(int layers, int contextLength, int kvLength, int blockSize, DType keyDType,
+            DType valueDType,
             TensorAllocator allocator, MetricRegistry metricRegistry, KvBufferCacheSettings settings) {
         Preconditions.checkArgument(layers > 0, "layers must be > 0");
         Preconditions.checkArgument(contextLength > 0, "contextLength must be > 0");
@@ -112,7 +114,8 @@ public final class KvPrefixSnapshotCache implements AutoCloseable {
         this.contextLength = contextLength;
         this.kvLength = kvLength;
         this.blockSize = blockSize;
-        this.dtype = dtype;
+        this.keyDType = keyDType;
+        this.valueDType = valueDType;
         this.allocator = allocator;
         this.metricRegistry = metricRegistry;
         this.settings = settings;
@@ -251,12 +254,13 @@ public final class KvPrefixSnapshotCache implements AutoCloseable {
         AbstractTensor[] values = new AbstractTensor[layers];
         try {
             for (int layer = 0; layer < layers; layer++) {
-                keys[layer] = allocator.getDirty(dtype, TensorShape.of(prefixLen, kvLength));
-                values[layer] = allocator.getDirty(dtype, TensorShape.of(prefixLen, kvLength));
+                keys[layer] = allocator.getDirty(keyDType, TensorShape.of(prefixLen, kvLength));
+                values[layer] = allocator.getDirty(valueDType, TensorShape.of(prefixLen, kvLength));
                 source.copyKeyRows(layer, 0, prefixLen, keys[layer], 0);
                 source.copyValueRows(layer, 0, prefixLen, values[layer], 0);
             }
-            long bytes = (long) layers * prefixLen * 2 * kvLength * dtype.size();
+            long bytes = (long) layers * prefixLen * kvLength * keyDType.size()
+                    + (long) layers * prefixLen * kvLength * valueDType.size();
             InferenceProfiler.counter(metricRegistry, "kvcache.v2.prefix.snapshot.bytes").inc(bytes);
             return new DenseStoredPrefixEntry(prefixLen, keys, values);
         } catch (RuntimeException | Error e) {

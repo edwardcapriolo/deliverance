@@ -1,10 +1,13 @@
 package io.teknek.deliverance.tensor.operations;
 
 import io.dropwizard.metrics5.MetricRegistry;
+import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.AbstractTensorUtils;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -47,6 +50,20 @@ public class NativeSimdSaxpyTest {
             assertTensorClose(expected, actual);
             panamaOps().saxpy(alpha, x, panama, xoffset, yoffset, limit, aOffset, xRowOffset, batchSize);
             assertTensorClose(expected, panama);
+        }
+    }
+
+    @Test
+    public void batchedI8F32SaxpyMatchesPanamaReference() {
+        try (FloatBufferTensor alpha = vector(1, 4);
+             FloatBufferTensor denseX = vector(4, 64);
+             AbstractTensor x = AbstractTensorUtils.quantize(denseX, DType.I8, true);
+             FloatBufferTensor expected = vector(1, 64);
+             FloatBufferTensor actual = copy(expected)) {
+            panamaOps().saxpy(alpha, x, expected, 0, 0, 64, 0, 0, 4);
+            new NativeSimdTensorOperations(panamaOps()).saxpy(alpha, x, actual, 0, 0, 64, 0, 0, 4);
+
+            assertTensorClose(expected, actual);
         }
     }
 

@@ -4,6 +4,7 @@ import com.google.common.base.Preconditions;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.AbstractTensorUtils;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorShape;
@@ -16,7 +17,8 @@ final class MutableKvBlock implements AutoCloseable {
     private final int blockSize;
     private final int layers;
     private final int kvLength;
-    private final AbstractTensor storage;
+    private final AbstractTensor keyStorage;
+    private final AbstractTensor valueStorage;
     private final BitSet writtenRows;
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final KvBufferCacheSettings settings;
@@ -33,7 +35,8 @@ final class MutableKvBlock implements AutoCloseable {
         this.allocator = allocator;
         this.settings = settings;
         this.metricRegistry = metricRegistry;
-        this.storage = allocator.getDirty(dtype, TensorShape.of(layers, 2, blockSize, kvLength));
+        this.keyStorage = allocator.getDirty(settings.getKvKeyDType(), TensorShape.of(layers, blockSize, kvLength));
+        this.valueStorage = allocator.getDirty(settings.getKvValueDType(), TensorShape.of(layers, blockSize, kvLength));
         this.writtenRows = new BitSet(layers * blockSize * 2);
     }
 
@@ -56,8 +59,8 @@ final class MutableKvBlock implements AutoCloseable {
         validateRow(key, "key");
         validateRow(value, "value");
         int blockRow = position - startPosition();
-        storage.copyFrom(key, 0, storage.getOffset(layer, 0, blockRow, 0), kvLength);
-        storage.copyFrom(value, 0, storage.getOffset(layer, 1, blockRow, 0), kvLength);
+        copyRowIntoStorage(key, keyStorage, layer, blockRow, "key");
+        copyRowIntoStorage(value, valueStorage, layer, blockRow, "value");
         writtenRows.set(writtenIndex(layer, blockRow, 0));
         writtenRows.set(writtenIndex(layer, blockRow, 1));
     }
@@ -99,11 +102,11 @@ final class MutableKvBlock implements AutoCloseable {
         Preconditions.checkArgument(tokenCount >= 0 && tokenCount <= blockSize, "tokenCount out of bounds");
         committed = true;
         KvBlockStorage blockStorage = switch (settings.getKvBlockStoragePolicy()) {
-            case DENSE -> new DenseKvBlockStorage(layers, tokenCount, blockSize, kvLength, storage);
+            case DENSE -> new DenseKvBlockStorage(layers, tokenCount, blockSize, kvLength, keyStorage, valueStorage);
             case MSE_TURBOQUANT -> tokenCount == blockSize
-                    ? MseTurboQuantKvBlockStorage.encode(storage, layers, tokenCount, blockSize, kvLength,
+                    ? MseTurboQuantKvBlockStorage.encode(combinedStorageForTurboQuant(), layers, tokenCount, blockSize, kvLength,
                     settings.getKvTurboQuantBits(), allocator, metricRegistry)
-                    : new DenseKvBlockStorage(layers, tokenCount, blockSize, kvLength, storage);
+                    : new DenseKvBlockStorage(layers, tokenCount, blockSize, kvLength, keyStorage, valueStorage);
         };
         return new KvBlock(blockIndex, blockSize, tokenCount, layers, kvLength, blockStorage);
     }
@@ -115,8 +118,9 @@ final class MutableKvBlock implements AutoCloseable {
         int blockRow = position - startPosition();
         Preconditions.checkState(writtenRows.get(writtenIndex(layer, blockRow, keyOrValue)),
                 "KV row has not been written");
+        AbstractTensor storage = storage(keyOrValue);
         AbstractTensor copy = allocator.getDirty(storage.dType(), TensorShape.of(1, kvLength));
-        copy.copyFrom(storage, storage.getOffset(layer, keyOrValue, blockRow, 0), 0, kvLength);
+        copy.copyFrom(storage, storage.getOffset(layer, blockRow, 0), 0, kvLength);
         return copy;
     }
 
@@ -127,14 +131,14 @@ final class MutableKvBlock implements AutoCloseable {
         int blockRow = position - startPosition();
         Preconditions.checkState(writtenRows.get(writtenIndex(layer, blockRow, keyOrValue)),
                 "KV row has not been written");
-        return storage.slice(true, layer, keyOrValue, blockRow);
+        return storage(keyOrValue).slice(true, layer, blockRow);
     }
 
     private AbstractTensor pageView(int layer, int keyOrValue) {
         requireOpen();
         validateLayer(layer);
         Preconditions.checkArgument(keyOrValue == 0 || keyOrValue == 1, "keyOrValue must be 0 or 1");
-        return storage.slice(true, layer, keyOrValue);
+        return storage(keyOrValue).slice(true, layer);
     }
 
     private void copyRows(int layer, int positionStart, int rowCount, int keyOrValue, AbstractTensor destination,
@@ -156,8 +160,43 @@ final class MutableKvBlock implements AutoCloseable {
             Preconditions.checkState(writtenRows.get(writtenIndex(layer, blockRowStart + i, keyOrValue)),
                     "KV row has not been written");
         }
-        destination.copyFrom(storage, storage.getOffset(layer, keyOrValue, blockRowStart, 0),
+        AbstractTensor storage = storage(keyOrValue);
+        Preconditions.checkArgument(destination.dType() == storage.dType(), "destination dtype must match KV dtype");
+        destination.copyFrom(storage, storage.getOffset(layer, blockRowStart, 0),
                 destination.getOffset(destinationRowStart, 0), rowCount * kvLength);
+    }
+
+    private AbstractTensor storage(int keyOrValue) {
+        return keyOrValue == 0 ? keyStorage : valueStorage;
+    }
+
+    private void copyRowIntoStorage(AbstractTensor source, AbstractTensor destinationStorage, int layer, int blockRow,
+            String name) {
+        if (source.dType() == destinationStorage.dType()) {
+            destinationStorage.copyFrom(source, 0, destinationStorage.getOffset(layer, blockRow, 0), kvLength);
+            return;
+        }
+        try (AbstractTensor converted = AbstractTensorUtils.quantize(source, destinationStorage.dType(), true)) {
+            Preconditions.checkArgument(converted.dType() == destinationStorage.dType(), name + " conversion failed");
+            destinationStorage.copyFrom(converted, 0, destinationStorage.getOffset(layer, blockRow, 0), kvLength);
+        }
+    }
+
+    private AbstractTensor combinedStorageForTurboQuant() {
+        Preconditions.checkArgument(keyStorage.dType() == DType.F32 && valueStorage.dType() == DType.F32,
+                "TurboQuant KV requires F32 key/value dense rows before compression");
+        AbstractTensor combined = allocator.getDirty(DType.F32, TensorShape.of(layers, 2, blockSize, kvLength));
+        for (int layer = 0; layer < layers; layer++) {
+            for (int blockRow = 0; blockRow < blockSize; blockRow++) {
+                combined.copyFrom(keyStorage, keyStorage.getOffset(layer, blockRow, 0),
+                        combined.getOffset(layer, 0, blockRow, 0), kvLength);
+                combined.copyFrom(valueStorage, valueStorage.getOffset(layer, blockRow, 0),
+                        combined.getOffset(layer, 1, blockRow, 0), kvLength);
+            }
+        }
+        keyStorage.close();
+        valueStorage.close();
+        return combined;
     }
 
     private int writtenIndex(int layer, int blockRow, int keyOrValue) {
@@ -171,7 +210,6 @@ final class MutableKvBlock implements AutoCloseable {
     private void validateRow(AbstractTensor row, String name) {
         Preconditions.checkArgument(row.dims() == 2 && row.shape().first() == 1 && row.shape().last() == kvLength,
                 name + " must be [1, kvLength]");
-        Preconditions.checkArgument(row.dType() == storage.dType(), name + " dtype must match KV dtype");
     }
 
     private void requireWritable() {
@@ -190,7 +228,8 @@ final class MutableKvBlock implements AutoCloseable {
     @Override
     public void close() {
         if (!committed && closed.compareAndSet(false, true)) {
-            storage.close();
+            keyStorage.close();
+            valueStorage.close();
         }
     }
 }

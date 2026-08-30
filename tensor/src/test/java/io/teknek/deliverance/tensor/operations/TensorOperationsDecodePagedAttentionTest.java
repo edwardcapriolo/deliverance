@@ -1,8 +1,10 @@
 package io.teknek.deliverance.tensor.operations;
 
 import io.dropwizard.metrics5.MetricRegistry;
+import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.AbstractTensorUtils;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.VectorTensorMathUtils;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
@@ -38,6 +40,42 @@ class TensorOperationsDecodePagedAttentionTest {
                         numberOfKeyValueHeads, headSize, 0.25f, 2.0f);
                 ops.decodePagedAttention(actual, query, keyPages, valuePages, visibleRows, numberOfHeads,
                         numberOfKeyValueHeads, headSize, 0.25f, 2.0f);
+
+                for (int col = 0; col < expected.shape().last(); col++) {
+                    assertEquals(expected.get(0, col), actual.get(0, col), 1.0e-5f, "col=" + col);
+                }
+            }
+        }
+    }
+
+    @Test
+    void decodePagedAttentionSupportsI8KeyAndValuePages() {
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(new ForkJoinPool(2))) {
+            TensorOperations ops = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
+                    new ArrayQueueTensorAllocator(new MetricRegistry()), pool);
+            int numberOfHeads = 4;
+            int numberOfKeyValueHeads = 2;
+            int headSize = 32;
+            int kvLength = numberOfKeyValueHeads * headSize;
+            int visibleRows = 5;
+            try (AbstractTensor query = tensor(1, numberOfHeads * headSize, 3);
+                 AbstractTensor keyPage0Dense = tensor(3, kvLength, 7);
+                 AbstractTensor keyPage1Dense = tensor(3, kvLength, 11);
+                 AbstractTensor valuePage0Dense = tensor(3, kvLength, 13);
+                 AbstractTensor valuePage1Dense = tensor(3, kvLength, 17);
+                 AbstractTensor keyPage0 = AbstractTensorUtils.quantize(keyPage0Dense, DType.I8, true);
+                 AbstractTensor keyPage1 = AbstractTensorUtils.quantize(keyPage1Dense, DType.I8, true);
+                 AbstractTensor valuePage0 = AbstractTensorUtils.quantize(valuePage0Dense, DType.I8, true);
+                 AbstractTensor valuePage1 = AbstractTensorUtils.quantize(valuePage1Dense, DType.I8, true);
+                 AbstractTensor expected = new FloatBufferTensor(1, numberOfHeads * headSize);
+                 AbstractTensor actual = new FloatBufferTensor(1, numberOfHeads * headSize)) {
+                AbstractTensor[] denseKeyPages = { keyPage0, keyPage1 };
+                AbstractTensor[] denseValuePages = { valuePage0, valuePage1 };
+
+                explicitPageLoop(expected, query, denseKeyPages, denseValuePages, visibleRows, numberOfHeads,
+                        numberOfKeyValueHeads, headSize, 0.25f, null);
+                ops.decodePagedAttention(actual, query, denseKeyPages, denseValuePages, visibleRows, numberOfHeads,
+                        numberOfKeyValueHeads, headSize, 0.25f, null);
 
                 for (int col = 0; col < expected.shape().last(); col++) {
                     assertEquals(expected.get(0, col), actual.get(0, col), 1.0e-5f, "col=" + col);
