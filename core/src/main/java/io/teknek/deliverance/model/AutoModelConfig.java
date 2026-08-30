@@ -80,7 +80,9 @@ public record AutoModelConfig(
             Optional<Integer> prefixTurboQuantBits,
             Optional<Integer> maxPrefixCheckpointsPerPrompt,
             Optional<List<Integer>> prefixCheckpointAnchors,
-            Optional<Integer> contextRowsPerPageTarget) {
+            Optional<Integer> contextRowsPerPageTarget,
+            Optional<KvBufferCacheSettings.KvBlockStoragePolicy> kvBlockStoragePolicy,
+            Optional<Integer> kvTurboQuantBits) {
 
         public KvBufferCache {
             maxEntries = maxEntries == null ? Optional.empty() : maxEntries;
@@ -92,6 +94,8 @@ public record AutoModelConfig(
             maxPrefixCheckpointsPerPrompt = maxPrefixCheckpointsPerPrompt == null ? Optional.empty() : maxPrefixCheckpointsPerPrompt;
             prefixCheckpointAnchors = prefixCheckpointAnchors == null ? Optional.empty() : prefixCheckpointAnchors;
             contextRowsPerPageTarget = contextRowsPerPageTarget == null ? Optional.empty() : contextRowsPerPageTarget;
+            kvBlockStoragePolicy = kvBlockStoragePolicy == null ? Optional.empty() : kvBlockStoragePolicy;
+            kvTurboQuantBits = kvTurboQuantBits == null ? Optional.empty() : kvTurboQuantBits;
         }
 
         KvBufferCacheSettings toSettings() {
@@ -105,6 +109,8 @@ public record AutoModelConfig(
             maxPrefixCheckpointsPerPrompt.ifPresent(settings::setMaxPrefixCheckpointsPerPrompt);
             prefixCheckpointAnchors.ifPresent(settings::setPrefixCheckpointAnchors);
             contextRowsPerPageTarget.ifPresent(settings::setContextRowsPerPageTarget);
+            kvBlockStoragePolicy.ifPresent(settings::setKvBlockStoragePolicy);
+            kvTurboQuantBits.ifPresent(settings::setKvTurboQuantBits);
             return settings;
         }
     }

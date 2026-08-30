@@ -62,7 +62,14 @@ public class KvBufferCacheSettings {
         MSE_TURBOQUANT
     }
 
+    public enum KvBlockStoragePolicy {
+        DENSE,
+        MSE_TURBOQUANT
+    }
+
     private KvFormat kvFormat = KvFormat.BF16;
+    private KvBlockStoragePolicy kvBlockStoragePolicy = KvBlockStoragePolicy.DENSE;
+    private int kvTurboQuantBits = 4;
     /**
      * Use the tensor cache shared with model
      */
@@ -181,6 +188,38 @@ public class KvBufferCacheSettings {
 
     public KvBufferCacheSettings withPrefixTurboQuantBits(int prefixTurboQuantBits) {
         setPrefixTurboQuantBits(prefixTurboQuantBits);
+        return this;
+    }
+
+    public KvBlockStoragePolicy getKvBlockStoragePolicy() {
+        return kvBlockStoragePolicy;
+    }
+
+    public void setKvBlockStoragePolicy(KvBlockStoragePolicy kvBlockStoragePolicy) {
+        if (kvBlockStoragePolicy == null) {
+            throw new IllegalArgumentException("kvBlockStoragePolicy must not be null");
+        }
+        this.kvBlockStoragePolicy = kvBlockStoragePolicy;
+    }
+
+    public KvBufferCacheSettings withKvBlockStoragePolicy(KvBlockStoragePolicy kvBlockStoragePolicy) {
+        setKvBlockStoragePolicy(kvBlockStoragePolicy);
+        return this;
+    }
+
+    public int getKvTurboQuantBits() {
+        return kvTurboQuantBits;
+    }
+
+    public void setKvTurboQuantBits(int kvTurboQuantBits) {
+        if (kvTurboQuantBits < 1 || kvTurboQuantBits > 8) {
+            throw new IllegalArgumentException("kvTurboQuantBits must be between 1 and 8");
+        }
+        this.kvTurboQuantBits = kvTurboQuantBits;
+    }
+
+    public KvBufferCacheSettings withKvTurboQuantBits(int kvTurboQuantBits) {
+        setKvTurboQuantBits(kvTurboQuantBits);
         return this;
     }
 

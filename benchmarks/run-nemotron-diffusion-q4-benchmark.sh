@@ -49,9 +49,10 @@ EXEC_ARGS="\
 -cp %classpath \
 io.teknek.deliverance.benchmark.InferenceBenchmark \
 --engine deliverance \
---owner nvidia \
---model Nemotron-Labs-Diffusion-3B-JQ4 \
-${DELIVERANCE_BENCHMARK_ARGS:-$DEFAULT_BENCHMARK_ARGS}"
+  --owner nvidia \
+  --model Nemotron-Labs-Diffusion-3B-JQ4 \
+  ${DELIVERANCE_BENCHMARK_ARGS:-$DEFAULT_BENCHMARK_ARGS} \
+  $*"
 
 mvn -q -pl core \
   -Dexec.classpathScope=test \

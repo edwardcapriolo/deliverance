@@ -1,8 +1,10 @@
 package io.teknek.deliverance.tensor.kv;
 
 import com.google.common.base.Preconditions;
+import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorShape;
 
@@ -17,13 +19,20 @@ final class MutableKvBlock implements AutoCloseable {
     private final AbstractTensor storage;
     private final BitSet writtenRows;
     private final AtomicBoolean closed = new AtomicBoolean(false);
+    private final KvBufferCacheSettings settings;
+    private final TensorAllocator allocator;
+    private final MetricRegistry metricRegistry;
     private boolean committed;
 
-    MutableKvBlock(int blockIndex, int blockSize, int layers, int kvLength, DType dtype, TensorAllocator allocator) {
+    MutableKvBlock(int blockIndex, int blockSize, int layers, int kvLength, DType dtype, TensorAllocator allocator,
+            KvBufferCacheSettings settings, MetricRegistry metricRegistry) {
         this.blockIndex = blockIndex;
         this.blockSize = blockSize;
         this.layers = layers;
         this.kvLength = kvLength;
+        this.allocator = allocator;
+        this.settings = settings;
+        this.metricRegistry = metricRegistry;
         this.storage = allocator.getDirty(dtype, TensorShape.of(layers, 2, blockSize, kvLength));
         this.writtenRows = new BitSet(layers * blockSize * 2);
     }
@@ -69,11 +78,26 @@ final class MutableKvBlock implements AutoCloseable {
         return rowView(layer, position, 1);
     }
 
+    void copyKeyRows(int layer, int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart) {
+        copyRows(layer, positionStart, rowCount, 0, destination, destinationRowStart);
+    }
+
+    void copyValueRows(int layer, int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart) {
+        copyRows(layer, positionStart, rowCount, 1, destination, destinationRowStart);
+    }
+
     KvBlock commit(int tokenCount) {
         requireWritable();
         Preconditions.checkArgument(tokenCount >= 0 && tokenCount <= blockSize, "tokenCount out of bounds");
         committed = true;
-        return new KvBlock(blockIndex, blockSize, tokenCount, layers, kvLength, storage);
+        KvBlockStorage blockStorage = switch (settings.getKvBlockStoragePolicy()) {
+            case DENSE -> new DenseKvBlockStorage(layers, tokenCount, blockSize, kvLength, storage);
+            case MSE_TURBOQUANT -> tokenCount == blockSize
+                    ? MseTurboQuantKvBlockStorage.encode(storage, layers, tokenCount, blockSize, kvLength,
+                    settings.getKvTurboQuantBits(), allocator, metricRegistry)
+                    : new DenseKvBlockStorage(layers, tokenCount, blockSize, kvLength, storage);
+        };
+        return new KvBlock(blockIndex, blockSize, tokenCount, layers, kvLength, blockStorage);
     }
 
     private AbstractTensor rowCopy(int layer, int position, int keyOrValue, TensorAllocator allocator) {
@@ -96,6 +120,29 @@ final class MutableKvBlock implements AutoCloseable {
         Preconditions.checkState(writtenRows.get(writtenIndex(layer, blockRow, keyOrValue)),
                 "KV row has not been written");
         return storage.slice(true, layer, keyOrValue, blockRow);
+    }
+
+    private void copyRows(int layer, int positionStart, int rowCount, int keyOrValue, AbstractTensor destination,
+            int destinationRowStart) {
+        requireOpen();
+        validateLayer(layer);
+        Preconditions.checkArgument(rowCount >= 0, "rowCount must be >= 0");
+        if (rowCount == 0) {
+            return;
+        }
+        Preconditions.checkArgument(containsPosition(positionStart) && containsPosition(positionStart + rowCount - 1),
+                "position range not in mutable block");
+        Preconditions.checkArgument(destination.dims() == 2 && destination.shape().last() == kvLength,
+                "destination must have kvLength columns");
+        Preconditions.checkArgument(destinationRowStart >= 0
+                && destinationRowStart + rowCount <= destination.shape().first(), "destination row range out of bounds");
+        int blockRowStart = positionStart - startPosition();
+        for (int i = 0; i < rowCount; i++) {
+            Preconditions.checkState(writtenRows.get(writtenIndex(layer, blockRowStart + i, keyOrValue)),
+                    "KV row has not been written");
+        }
+        destination.copyFrom(storage, storage.getOffset(layer, keyOrValue, blockRowStart, 0),
+                destination.getOffset(destinationRowStart, 0), rowCount * kvLength);
     }
 
     private int writtenIndex(int layer, int blockRow, int keyOrValue) {

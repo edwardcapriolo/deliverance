@@ -14,10 +14,10 @@ public final class KvBlock implements AutoCloseable {
     private final int tokenCount;
     private final int layers;
     private final int kvLength;
-    private final AbstractTensor storage;
+    private final KvBlockStorage storage;
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
-    KvBlock(int blockIndex, int blockSize, int tokenCount, int layers, int kvLength, AbstractTensor storage) {
+    KvBlock(int blockIndex, int blockSize, int tokenCount, int layers, int kvLength, KvBlockStorage storage) {
         this.blockIndex = blockIndex;
         this.blockSize = blockSize;
         this.tokenCount = tokenCount;
@@ -51,12 +51,32 @@ public final class KvBlock implements AutoCloseable {
         return position >= startPosition() && position < endPositionExclusive();
     }
 
+    public KvBlockLayout layout() {
+        return storage.layout();
+    }
+
+    public long denseBytesEquivalent() {
+        return storage.denseBytesEquivalent();
+    }
+
+    public long encodedBytes() {
+        return storage.encodedBytes();
+    }
+
     void copyKeyRow(int layer, int position, AbstractTensor destination) {
         copyRow(layer, position, 0, destination);
     }
 
     void copyValueRow(int layer, int position, AbstractTensor destination) {
         copyRow(layer, position, 1, destination);
+    }
+
+    void copyKeyRows(int layer, int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart) {
+        copyRows(layer, positionStart, rowCount, 0, destination, destinationRowStart);
+    }
+
+    void copyValueRows(int layer, int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart) {
+        copyRows(layer, positionStart, rowCount, 1, destination, destinationRowStart);
     }
 
     AbstractTensor keyRowCopy(int layer, int position, TensorAllocator allocator) {
@@ -77,7 +97,7 @@ public final class KvBlock implements AutoCloseable {
 
     private AbstractTensor rowCopy(int layer, int position, int keyOrValue, TensorAllocator allocator) {
         requireOpen();
-        AbstractTensor copy = allocator.getDirty(storage.dType(), TensorShape.of(1, kvLength));
+        AbstractTensor copy = allocator.getDirty(storage.dtype(), TensorShape.of(1, kvLength));
         copyRow(layer, position, keyOrValue, copy);
         return copy;
     }
@@ -89,7 +109,20 @@ public final class KvBlock implements AutoCloseable {
         Preconditions.checkArgument(destination.dims() == 2 && destination.shape().first() == 1
                 && destination.shape().last() == kvLength, "destination must be [1, kvLength]");
         int blockRow = position - startPosition();
-        destination.copyFrom(storage, storage.getOffset(layer, keyOrValue, blockRow, 0), 0, kvLength);
+        storage.copyRow(layer, blockRow, keyOrValue, destination);
+    }
+
+    private void copyRows(int layer, int positionStart, int rowCount, int keyOrValue, AbstractTensor destination,
+            int destinationRowStart) {
+        requireOpen();
+        validateLayer(layer);
+        Preconditions.checkArgument(rowCount >= 0, "rowCount must be >= 0");
+        if (rowCount == 0) {
+            return;
+        }
+        Preconditions.checkArgument(positionStart >= startPosition()
+                && positionStart + rowCount <= endPositionExclusive(), "position range not in block");
+        storage.copyRows(layer, keyOrValue, positionStart - startPosition(), rowCount, destination, destinationRowStart);
     }
 
     private AbstractTensor rowView(int layer, int position, int keyOrValue) {
@@ -97,7 +130,7 @@ public final class KvBlock implements AutoCloseable {
         validateLayer(layer);
         Preconditions.checkArgument(containsPosition(position), "position not in block");
         int blockRow = position - startPosition();
-        return storage.slice(true, layer, keyOrValue, blockRow);
+        return storage.rowView(layer, blockRow, keyOrValue);
     }
 
     private void validateLayer(int layer) {

@@ -131,6 +131,68 @@ class KvCacheSessionTest {
     }
 
     @Test
+    void turboQuantCommittedBlockUsesCompressedLayoutAndDecodedRowsStayWithinDistribution() {
+        int layers = 2;
+        int blockSize = 4;
+        int kvLength = 64;
+        KvCacheManager manager = new KvCacheManager(layers, 8, kvLength, DType.F32,
+                new KvBufferCacheSettings(true)
+                        .withBlockSize(blockSize)
+                        .withKvBlockStoragePolicy(KvBufferCacheSettings.KvBlockStoragePolicy.MSE_TURBOQUANT)
+                        .withKvTurboQuantBits(4),
+                allocator, metricRegistry, true);
+        float[][][][] expected = new float[layers][2][blockSize][kvLength];
+
+        try (KvCacheSession session = manager.openSession()) {
+            try (KvWriteCursor writer = session.writer(CacheExecutionMode.PREFILL_UPDATE_CACHE)) {
+                for (int position = 0; position < blockSize; position++) {
+                    for (int layer = 0; layer < layers; layer++) {
+                        try (AbstractTensor key = statisticalRow(layer, position, 0, kvLength, expected);
+                             AbstractTensor value = statisticalRow(layer, position, 1, kvLength, expected)) {
+                            writer.write(layer, position, key, value);
+                        }
+                    }
+                }
+                writer.advanceLength(blockSize);
+            }
+
+            KvBlock block = session.committedBlocks().getFirst();
+            assertEquals(KvBlockLayout.MSE_TURBOQUANT, block.layout());
+            assertTrue(block.encodedBytes() < block.denseBytesEquivalent() / 2,
+                    "expected TurboQuant KV block to be materially smaller");
+
+            double squaredError = 0.0;
+            double sum = 0.0;
+            double sumSquares = 0.0;
+            int count = 0;
+            for (int layer = 0; layer < layers; layer++) {
+                try (KvReadView readView = session.readView(layer, blockSize, AttentionPattern.CAUSAL)) {
+                    for (int position = 0; position < blockSize; position++) {
+                        try (AbstractTensor key = readView.keyRow(position);
+                             AbstractTensor value = readView.valueRow(position)) {
+                            for (int i = 0; i < kvLength; i++) {
+                                double expectedKey = expected[layer][0][position][i];
+                                double expectedValue = expected[layer][1][position][i];
+                                squaredError += square(expectedKey - key.get(0, i));
+                                squaredError += square(expectedValue - value.get(0, i));
+                                sum += expectedKey + expectedValue;
+                                sumSquares += expectedKey * expectedKey + expectedValue * expectedValue;
+                                count += 2;
+                            }
+                        }
+                    }
+                }
+            }
+            double rmse = Math.sqrt(squaredError / count);
+            double mean = sum / count;
+            double standardDeviation = Math.sqrt((sumSquares / count) - (mean * mean));
+            assertTrue(rmse < standardDeviation,
+                    "TurboQuant reconstruction RMSE should remain within one standard deviation: rmse="
+                            + rmse + " stddev=" + standardDeviation);
+        }
+    }
+
+    @Test
     void denoiseModeCannotWrite() {
         KvCacheManager manager = new KvCacheManager(1, 8, 4, DType.F32,
                 new KvBufferCacheSettings(true).withBlockSize(2), allocator, metricRegistry);
@@ -225,6 +287,25 @@ class KvCacheSessionTest {
             tensor.set(firstValue + i, 0, i);
         }
         return tensor;
+    }
+
+    private AbstractTensor statisticalRow(int layer, int position, int keyOrValue, int kvLength,
+            float[][][][] expected) {
+        AbstractTensor tensor = allocator.getDirty(DType.F32, TensorShape.of(1, kvLength));
+        for (int i = 0; i < kvLength; i++) {
+            float value = (float) (Math.sin((layer + 1) * (i + 1) * 0.13)
+                    + Math.cos((position + 1) * (i + 3) * 0.07)
+                    + keyOrValue * 0.25
+                    + layer * 0.5
+                    + position * 0.125);
+            tensor.set(value, 0, i);
+            expected[layer][keyOrValue][position][i] = value;
+        }
+        return tensor;
+    }
+
+    private static double square(double value) {
+        return value * value;
     }
 
     private static void assertRow(AbstractTensor tensor, float firstValue) {

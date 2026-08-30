@@ -11,6 +11,7 @@ import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.safetensors.ModelQuantizer;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
+import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorInfo;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Tag;
@@ -297,6 +298,8 @@ class NemotronLabsDiffusionBaseCheckpointIT {
                 .withOutputHeadQuantization(DType.Q4)
                 .withGpuDiffusionBlockProjection(true)
                 .withPackedBlockAttention(true)
+                .withKvBlockStoragePolicy(KvBufferCacheSettings.KvBlockStoragePolicy.MSE_TURBOQUANT)
+                .withKvTurboQuantBits(4)
                 .withTrackKvReadViews(true)
                 .buildLocalTransformerModel()) {
             PromptContext prompt = model.promptSupport().orElseThrow().builder()
@@ -312,6 +315,64 @@ class NemotronLabsDiffusionBaseCheckpointIT {
             System.out.println("INSTRUCT_DIFFUSION_MATH_RESPONSE=" + response);
             InferenceProfiler.printSummary("nemotron instruct qod diffusion math prompt gpu block logits", 40);
             printProfileCounters(model, 80);
+            assertTrue(response.responseText != null && !response.responseText.isBlank());
+        } finally {
+            InferenceProfiler.setEnabled(previousProfiling);
+        }
+    }
+
+    @Test
+    void instructCheckpointQuantizeOnDemandDiffusionBenchmarkMathPromptProfileCpuDenseKv() {
+        boolean previousProfiling = InferenceProfiler.isEnabled();
+        InferenceProfiler.setEnabled(true);
+        try (AbstractModel model = AutoModelForCausaLm.newBuilder(INSTRUCT_FETCHER)
+                .withQuantizeOnDemand(DType.Q4, QOD_OWNER, INSTRUCT_QOD_MODEL)
+                .withOutputHeadQuantization(DType.Q4)
+                .withPackedBlockAttention(true)
+                .buildLocalTransformerModel()) {
+            PromptContext prompt = model.promptSupport().orElseThrow().builder()
+                    .addUserMessage(BENCHMARK_MATH_PROMPT)
+                    .build();
+            InferenceProfiler.reset();
+            Response response = model.generate(UUID.randomUUID(), prompt,
+                    new GeneratorParameters().withMaxTokens(32),
+                    (next, nextRaw, nextCleaned, timing) ->
+                            System.out.println("INSTRUCT_DIFFUSION_MATH_CPU_DENSE " + nextCleaned + " " + next));
+
+            System.out.println("INSTRUCT_DIFFUSION_MATH_CPU_DENSE_TEXT=" + response.responseText);
+            System.out.println("INSTRUCT_DIFFUSION_MATH_CPU_DENSE_RESPONSE=" + response);
+            InferenceProfiler.printSummary("nemotron instruct qod diffusion math prompt cpu dense kv", 40);
+            printProfileCounters(model, 100);
+            assertTrue(response.responseText != null && !response.responseText.isBlank());
+        } finally {
+            InferenceProfiler.setEnabled(previousProfiling);
+        }
+    }
+
+    @Test
+    void instructCheckpointQuantizeOnDemandDiffusionBenchmarkMathPromptProfileCpuTurboQuantKv() {
+        boolean previousProfiling = InferenceProfiler.isEnabled();
+        InferenceProfiler.setEnabled(true);
+        try (AbstractModel model = AutoModelForCausaLm.newBuilder(INSTRUCT_FETCHER)
+                .withQuantizeOnDemand(DType.Q4, QOD_OWNER, INSTRUCT_QOD_MODEL)
+                .withOutputHeadQuantization(DType.Q4)
+                .withPackedBlockAttention(true)
+                .withKvBlockStoragePolicy(KvBufferCacheSettings.KvBlockStoragePolicy.MSE_TURBOQUANT)
+                .withKvTurboQuantBits(4)
+                .buildLocalTransformerModel()) {
+            PromptContext prompt = model.promptSupport().orElseThrow().builder()
+                    .addUserMessage(BENCHMARK_MATH_PROMPT)
+                    .build();
+            InferenceProfiler.reset();
+            Response response = model.generate(UUID.randomUUID(), prompt,
+                    new GeneratorParameters().withMaxTokens(32),
+                    (next, nextRaw, nextCleaned, timing) ->
+                            System.out.println("INSTRUCT_DIFFUSION_MATH_CPU_TURBOQUANT " + nextCleaned + " " + next));
+
+            System.out.println("INSTRUCT_DIFFUSION_MATH_CPU_TURBOQUANT_TEXT=" + response.responseText);
+            System.out.println("INSTRUCT_DIFFUSION_MATH_CPU_TURBOQUANT_RESPONSE=" + response);
+            InferenceProfiler.printSummary("nemotron instruct qod diffusion math prompt cpu turboquant kv", 40);
+            printProfileCounters(model, 100);
             assertTrue(response.responseText != null && !response.responseText.isBlank());
         } finally {
             InferenceProfiler.setEnabled(previousProfiling);
