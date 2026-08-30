@@ -66,6 +66,13 @@ final class DenseKvBlockStorage implements KvBlockStorage {
     }
 
     @Override
+    public AbstractTensor pageView(int layer, int keyOrValue) {
+        Preconditions.checkArgument(layer >= 0 && layer < layers, "layer out of bounds");
+        Preconditions.checkArgument(keyOrValue == 0 || keyOrValue == 1, "keyOrValue must be 0 or 1");
+        return storage.slice(true, layer, keyOrValue);
+    }
+
+    @Override
     public void copyRow(int layer, int blockRow, int keyOrValue, AbstractTensor destination) {
         validate(layer, blockRow, keyOrValue);
         destination.copyFrom(storage, storage.getOffset(layer, keyOrValue, blockRow, 0), 0, kvLength);

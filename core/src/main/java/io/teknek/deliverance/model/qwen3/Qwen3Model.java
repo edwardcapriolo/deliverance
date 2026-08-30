@@ -3,7 +3,7 @@ package io.teknek.deliverance.model.qwen3;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.MLPBlock;
-import io.teknek.deliverance.generator.Qwen3CausalSelfAttention;
+import io.teknek.deliverance.generator.Qwen3KvCacheSelfAttention;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.generator.RmsNorm;
 import io.teknek.deliverance.generator.TransformerBlock;
@@ -54,6 +54,11 @@ public class Qwen3Model extends LlamaModel {
     }
 
     @Override
+    public boolean usesKvCache2Generation() {
+        return true;
+    }
+
+    @Override
     protected TransformerBlock[] loadTransformerBlockWeights() {
         DType qType = modelQType.orElse(this.modelDType);
         TensorParallelShardPlan tensorParallelPlan = TensorParallelPlanner.plan(config, tensorParallelContext);
@@ -81,7 +86,7 @@ public class Qwen3Model extends LlamaModel {
             registerModelLineageTensor(oName, oWeight);
             registerModelLineageTensor(qNormName, qNormWeight);
             registerModelLineageTensor(kNormName, kNormWeight);
-            Qwen3CausalSelfAttention attention = new Qwen3CausalSelfAttention(
+            Qwen3KvCacheSelfAttention attention = new Qwen3KvCacheSelfAttention(
                     this,
                     i,
                     qWeight,

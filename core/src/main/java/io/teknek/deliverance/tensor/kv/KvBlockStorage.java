@@ -22,6 +22,8 @@ interface KvBlockStorage extends AutoCloseable {
 
     AbstractTensor rowView(int layer, int blockRow, int keyOrValue);
 
+    AbstractTensor pageView(int layer, int keyOrValue);
+
     void copyRow(int layer, int blockRow, int keyOrValue, AbstractTensor destination);
 
     void copyRows(int layer, int keyOrValue, int blockRowStart, int rowCount, AbstractTensor destination,

@@ -1,5 +1,6 @@
 package io.teknek.deliverance.generator;
 
+import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.safetensors.LoraLayerDelta;
@@ -26,6 +27,8 @@ public class LoraDeltaApplierTest {
         AbstractModel model = Mockito.mock(AbstractModel.class);
         when(model.primaryTensorOperations()).thenReturn(new NaiveTensorOperations());
         when(model.getWorkingDType()).thenReturn(DType.F32);
+        MetricRegistry mr = new MetricRegistry();
+        when(model.getMetricRegistry()).thenReturn(mr);
         TensorAllocator allocator = Mockito.mock(TensorAllocator.class);
         when(allocator.getDirty(Mockito.eq(DType.F32), Mockito.any(TensorShape.class)))
                 .thenAnswer(invocation -> new FloatBufferTensor((TensorShape) invocation.getArgument(1)));

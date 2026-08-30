@@ -116,6 +116,18 @@ final class MseTurboQuantKvBlockStorage implements KvBlockStorage {
     }
 
     @Override
+    public AbstractTensor pageView(int layer, int keyOrValue) {
+        AbstractTensor decoded = allocator.getDirty(dtype, TensorShape.of(tokenCount, kvLength));
+        try {
+            copyRows(layer, keyOrValue, 0, tokenCount, decoded, 0);
+            return decoded;
+        } catch (RuntimeException | Error e) {
+            decoded.close();
+            throw e;
+        }
+    }
+
+    @Override
     public void copyRow(int layer, int blockRow, int keyOrValue, AbstractTensor destination) {
         decodeRow(layer, blockRow, keyOrValue, destination);
     }

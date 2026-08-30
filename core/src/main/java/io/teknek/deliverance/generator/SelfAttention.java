@@ -2,6 +2,7 @@ package io.teknek.deliverance.generator;
 
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
+import io.teknek.deliverance.tensor.kv.KvCacheSession;
 
 import java.util.List;
 import java.util.Optional;
@@ -14,5 +15,10 @@ public interface SelfAttention {
     default AbstractTensor forward(AbstractTensor input, int startPosition, KvBufferCache.KvBuffer kvMem,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer, ForwardPhase phase) {
         return forward(input, startPosition, kvMem, tensorReducer);
+    }
+
+    default AbstractTensor forward(AbstractTensor input, int startPosition, KvCacheSession kvSession,
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer, ForwardPhase phase) {
+        throw new UnsupportedOperationException(getClass().getSimpleName() + " does not support KVCache2");
     }
 }

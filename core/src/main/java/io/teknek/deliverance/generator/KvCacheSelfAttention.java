@@ -29,7 +29,7 @@ import java.util.function.Consumer;
  * active-block attention for diffusion denoising. It currently packs v2 read views into dense tensors for attention
  * scoring; page-backed v2 attention can replace that internals without changing callers.</p>
  */
-public class KvCacheSelfAttention {
+public class KvCacheSelfAttention extends BaseCausalSelfAttention {
     private final AbstractModel model;
     private final int layerIndex;
     private final io.teknek.deliverance.safetensors.Config config;
@@ -93,6 +93,15 @@ public class KvCacheSelfAttention {
         return forward(input, startPosition, kvSession, mode, tensorReducer, phase);
     }
 
+    @Override
+    public AbstractTensor forward(AbstractTensor input, int startPosition, KvCacheSession kvSession,
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer, ForwardPhase phase) {
+        CacheExecutionMode mode = phase == ForwardPhase.DECODE
+                ? CacheExecutionMode.DECODE_UPDATE_CACHE
+                : CacheExecutionMode.PREFILL_UPDATE_CACHE;
+        return forward(input, startPosition, kvSession, mode, tensorReducer, phase);
+    }
+
     public AbstractTensor forward(AbstractTensor input, int startPosition, KvCacheSession kvSession,
             CacheExecutionMode mode, Optional<Consumer<List<AbstractTensor>>> tensorReducer, ForwardPhase phase) {
         Preconditions.checkArgument(mode == CacheExecutionMode.PREFILL_UPDATE_CACHE
@@ -116,6 +125,7 @@ public class KvCacheSelfAttention {
              AbstractTensor valueBatch = model.makeDenseTensor(batchSize, kvLength);
              AbstractTensor attended = model.makeDenseTensor(batchSize, attentionLength)) {
             projectQkv(projectionInput, queryBatch, keyBatch, valueBatch, phase);
+            normalizeQueryKey(queryBatch, keyBatch);
             applyRotaryEmbedding(queryBatch, keyBatch, startPosition);
             if (writesCache(mode)) {
                 writeKvRows(kvSession, mode, keyBatch, valueBatch, startPosition);
@@ -167,6 +177,20 @@ public class KvCacheSelfAttention {
         model.emitLayerDebug(layerIndex, "query_projection", queryBatch);
         model.emitLayerDebug(layerIndex, "key_projection", keyBatch);
         model.emitLayerDebug(layerIndex, "value_projection", valueBatch);
+    }
+
+    protected void normalizeQueryKey(AbstractTensor queryBatch, AbstractTensor keyBatch) {
+    }
+
+    public AbstractTensor forward(AbstractTensor input, int startPosition, io.teknek.deliverance.tensor.KvBufferCache.KvBuffer kvMem,
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer, ForwardPhase phase) {
+        throw new UnsupportedOperationException("KvCacheSelfAttention requires KVCache2 session");
+    }
+
+    @Override
+    public AbstractTensor forward(AbstractTensor input, int startPosition, io.teknek.deliverance.tensor.KvBufferCache.KvBuffer kvMem,
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
+        throw new UnsupportedOperationException("KvCacheSelfAttention requires KVCache2 session");
     }
 
     private void project(AbstractTensor output, AbstractTensor input, AbstractTensor weight, int inputLength,
@@ -233,6 +257,10 @@ public class KvCacheSelfAttention {
                     mode != CacheExecutionMode.DENOISE_BLOCK_NO_UPDATE);
             return;
         }
+        if (batchSize == 1 && mode != CacheExecutionMode.DENOISE_BLOCK_NO_UPDATE) {
+            decodePagedAttention(output, queryBatch, keyBatch, valueBatch, kvSession, startPosition);
+            return;
+        }
         try (KvReadView readView = kvSession.readView(layerIndex, startPosition, AttentionPattern.CAUSAL);
              AbstractTensor packedKeys = model.makeDenseTensor(TensorShape.of(startPosition + batchSize, kvLength));
              AbstractTensor packedValues = model.makeDenseTensor(TensorShape.of(startPosition + batchSize, kvLength))) {
@@ -252,12 +280,41 @@ public class KvCacheSelfAttention {
         }
     }
 
+    private void decodePagedAttention(AbstractTensor output, AbstractTensor query, AbstractTensor currentKeys,
+            AbstractTensor currentValues, KvCacheSession kvSession, int startPosition) {
+        try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
+                "kvcacheselfattention.attention").time();
+             KvReadView readView = kvSession.readView(layerIndex, startPosition, AttentionPattern.CAUSAL)) {
+            InferenceProfiler.counter(metricRegistry, "kvcacheselfattention.attention.provider_paged_decode").inc();
+            output.clear();
+            AbstractTensor[] prefixKeyPages = readView.keyPages();
+            AbstractTensor[] prefixValuePages = readView.valuePages();
+            AbstractTensor[] keyPages = appendCurrentPage(prefixKeyPages, currentKeys);
+            AbstractTensor[] valuePages = appendCurrentPage(prefixValuePages, currentValues);
+            try {
+                configurableTensorProvider.get().decodePagedAttention(output, query, keyPages, valuePages,
+                        startPosition + 1, numberOfHeads, numberOfKeyValueHeads, config.headSize, attentionScale,
+                        config.attnLogitSoftCapping);
+            } finally {
+                closeAll(prefixKeyPages);
+                closeAll(prefixValuePages);
+            }
+        }
+    }
+
+    private AbstractTensor[] appendCurrentPage(AbstractTensor[] prefixPages, AbstractTensor currentPage) {
+        AbstractTensor[] pages = new AbstractTensor[prefixPages.length + 1];
+        System.arraycopy(prefixPages, 0, pages, 0, prefixPages.length);
+        pages[prefixPages.length] = currentPage;
+        return pages;
+    }
+
     private void fullSequenceAttention(AbstractTensor output, AbstractTensor query, AbstractTensor key,
             AbstractTensor value, boolean causal) {
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
                 "kvcacheselfattention.attention").time()) {
             int sequenceLength = (int) query.shape().first();
-            if (model.isPackedBlockAttentionEnabled()) {
+            if (usePackedBlockAttention()) {
                 InferenceProfiler.counter(metricRegistry, "kvcacheselfattention.attention.provider_packed_block").inc();
                 packedBlockAttention.forward(output, query, key, value, 0, sequenceLength, numberOfHeads,
                         numberOfKeyValueHeads, config.headSize, attentionScale, config.attnLogitSoftCapping, causal);
@@ -282,7 +339,7 @@ public class KvCacheSelfAttention {
             AbstractTensor values, int startPosition, int batchSize) {
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
                 "kvcacheselfattention.attention").time()) {
-            if (model.isPackedBlockAttentionEnabled()) {
+            if (usePackedBlockAttention()) {
                 InferenceProfiler.counter(metricRegistry, "kvcacheselfattention.attention.provider_packed_block").inc();
                 packedBlockAttention.forward(output, query, keys, values, startPosition, batchSize, numberOfHeads,
                         numberOfKeyValueHeads, config.headSize, attentionScale, config.attnLogitSoftCapping, true);
@@ -304,7 +361,7 @@ public class KvCacheSelfAttention {
             AbstractTensor values, int startPosition, int batchSize) {
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
                 "kvcacheselfattention.attention").time()) {
-            if (model.isPackedBlockAttentionEnabled()) {
+            if (usePackedBlockAttention()) {
                 InferenceProfiler.counter(metricRegistry, "kvcacheselfattention.attention.provider_packed_block").inc();
                 packedBlockAttention.forward(output, query, keys, values, startPosition, batchSize, numberOfHeads,
                         numberOfKeyValueHeads, config.headSize, attentionScale, config.attnLogitSoftCapping, false);
@@ -340,6 +397,10 @@ public class KvCacheSelfAttention {
                 ops.saxpy(scores, values, outputRow, kvOffset, queryOffset, config.headSize, 0, 0, visibleRows);
             }
         }
+    }
+
+    private boolean usePackedBlockAttention() {
+        return model.isPackedBlockAttentionEnabled() || model.usesKvCache2Generation();
     }
 
     private AbstractTensor outputProjection(AbstractTensor attended,

@@ -9,6 +9,7 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
+import io.teknek.deliverance.tensor.kv.KvCacheSession;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensorlib.PlannedTensor;
 import io.teknek.deliverance.tensorlib.TensorPlan;
@@ -241,6 +242,52 @@ public class TransformerBlock {
         TensorPlan outputLineage = TensorPlanSupport.plan(model, configurableTensorProvider.get());
         return new PlannedTensor(output,
                 outputLineage.input("layer_output", lnpreFF.plan(), output).as("layer_output"));
+        }
+    }
+
+    public PlannedTensor forward(
+            PlannedTensor embedding,
+            int position,
+            KvCacheSession kvSession,
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer,
+            ForwardPhase phase
+    ) {
+        Timer timer = InferenceProfiler.timer(model.getMetricRegistry(), "transformerblock.forward");
+        try (Timer.Context ignored = timer.time()) {
+            PlannedTensor lnemb = preAttentionNorm.map(ln -> ln.forward(embedding)).orElse(embedding);
+            AbstractTensor postAttention;
+            try (AbstractTensor qlnemb = preAttentionProjectionInput(lnemb.tensor())) {
+                postAttention = attention.forward(qlnemb, position, kvSession, tensorReducer, phase);
+            }
+            AbstractTensor lnattn = maybeApplyNorm(postAttention, postAttentionNorm);
+            applyResidual(lnattn, embedding.tensor(), "post_attention_residual");
+            model.emitLayerDebug(layerIndex, "post_attention_residual", lnattn);
+
+            TensorPlan residualLineage = TensorPlanSupport.plan(model, configurableTensorProvider.get());
+            PlannedTensor plannedLnattn = new PlannedTensor(lnattn,
+                    residualLineage.input("post_attention_residual", lnemb.plan(), lnattn).as("post_attention_residual"));
+            PlannedTensor lnpreFF = preFFNorm.map(ln -> ln.forward(plannedLnattn)).orElse(plannedLnattn);
+            AbstractTensor postFF;
+            try (AbstractTensor qlnemb2 = model.maybeQuantizeReadOnly(lnpreFF.tensor(),
+                    "transformerblock.maybe_quantize.pre_ff")) {
+                postFF = ffBlock.forward(qlnemb2, tensorReducer, phase);
+            }
+
+            AbstractTensor lnpostFF = maybeApplyNorm(postFF, postFFNorm);
+
+            applyResidual(lnpostFF, lnattn, "post_ff_residual");
+            model.emitLayerDebug(layerIndex, "post_ff_residual", lnpostFF);
+
+            if (lnemb.tensor() != embedding.tensor()) lnemb.tensor().close();
+            if (lnattn != postAttention) lnattn.close();
+            else postAttention.close();
+            if (lnpreFF.tensor() != lnattn) lnpreFF.tensor().close();
+            else lnattn.close();
+
+            AbstractTensor output = maybeApplyNorm(lnpostFF, preResponseNorm);
+            TensorPlan outputLineage = TensorPlanSupport.plan(model, configurableTensorProvider.get());
+            return new PlannedTensor(output,
+                    outputLineage.input("layer_output", lnpreFF.plan(), output).as("layer_output"));
         }
     }
 

@@ -3,7 +3,7 @@ package io.teknek.deliverance.model.qwen3;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.MLPBlock;
-import io.teknek.deliverance.generator.Qwen3CausalSelfAttention;
+import io.teknek.deliverance.generator.Qwen3KvCacheSelfAttention;
 import io.teknek.deliverance.generator.RmsNorm;
 import io.teknek.deliverance.generator.TransformerBlock;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
@@ -63,7 +63,7 @@ public class Qwen3MoeModel extends Qwen3Model {
             String base = "model.layers." + i + ".";
             String attn = base + "self_attn.";
             LOGGER.debug("loading qwen3_moe layer={} attention weights prefix={}", i, attn);
-            Qwen3CausalSelfAttention attention = new Qwen3CausalSelfAttention(
+            Qwen3KvCacheSelfAttention attention = new Qwen3KvCacheSelfAttention(
                     this,
                     i,
                     quantize(weights.load(attn + "q_proj.weight"), qType),
@@ -73,7 +73,8 @@ public class Qwen3MoeModel extends Qwen3Model {
                     quantize(weights.load(attn + "q_norm.weight"), qType),
                     quantize(weights.load(attn + "k_norm.weight"), qType),
                     configurableTensorProvider,
-                    metricRegistry
+                    metricRegistry,
+                    null, null, null, null
             );
             LOGGER.debug("loaded qwen3_moe layer={} attention weights", i);
 
