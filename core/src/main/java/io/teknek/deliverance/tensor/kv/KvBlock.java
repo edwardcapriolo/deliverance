@@ -95,6 +95,18 @@ public final class KvBlock implements AutoCloseable {
         return rowView(layer, position, 1);
     }
 
+    AbstractTensor keyPageView(int layer) {
+        requireOpen();
+        validateLayer(layer);
+        return storage.pageView(layer, 0);
+    }
+
+    AbstractTensor valuePageView(int layer) {
+        requireOpen();
+        validateLayer(layer);
+        return storage.pageView(layer, 1);
+    }
+
     private AbstractTensor rowCopy(int layer, int position, int keyOrValue, TensorAllocator allocator) {
         requireOpen();
         AbstractTensor copy = allocator.getDirty(storage.dtype(), TensorShape.of(1, kvLength));

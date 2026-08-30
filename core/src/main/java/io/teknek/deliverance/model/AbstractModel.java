@@ -209,6 +209,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     protected TensorPlan modelLineagePlan;
     private final ConcurrentMap<String, TensorPlan.ImmutableTensor> modelLineageTensors = new ConcurrentHashMap<>();
     private final Queue<ModelLineageEntry> modelLineageEntries = new ConcurrentLinkedQueue<>();
+    private final Map<KvBufferCache.KvBuffer, KvCacheSession> kvCache2SessionAdapters = Collections.synchronizedMap(new WeakHashMap<>());
     private Optional<TensorRuntimeMode> tensorRuntimeMode = Optional.empty();
     private TensorRuntime tensorRuntime;
     private Map<String, Object> generationOptions = Map.of();
@@ -488,6 +489,10 @@ public abstract class AbstractModel implements Generator, Classifier {
         return kvCacheManager.openSession();
     }
 
+    public boolean usesKvCache2Generation() {
+        return false;
+    }
+
     public int restorePrefixToKvBuffer(int[] promptTokens, Optional<String> cacheSalt,
             KvBufferCache.KvBuffer destination) {
         KvBufferCache.PrefixEntry prefixHit = kvBufferCache.lookupPrefix(promptTokens, cacheSalt);
@@ -740,6 +745,8 @@ public abstract class AbstractModel implements Generator, Classifier {
             }
         }
         kvBufferCache.close();
+        kvCache2SessionAdapters.values().forEach(KvCacheSession::close);
+        kvCache2SessionAdapters.clear();
         closeTensorOperations();
         try {
             weights.close();
@@ -1089,6 +1096,11 @@ public abstract class AbstractModel implements Generator, Classifier {
     }
 
     public AbstractTensor batchForward(int[] tokenIds, int startPos) {
+        if (usesKvCache2Generation()) {
+            try (KvCacheSession kvSession = newKvCacheSession()) {
+                return batchForward(tokenIds, startPos, kvSession, Optional.empty());
+            }
+        }
         try (KvBufferCache.KvBuffer kvBuffer = kvBufferCache.getEphemeralKvBuffer()) {
             return batchForward(tokenIds, startPos, kvBuffer, Optional.empty());
         }
@@ -1096,6 +1108,9 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     public AbstractTensor batchForward(int[] token_ids, int startPos, KvBufferCache.KvBuffer kvbuf,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
+        if (usesKvCache2Generation()) {
+            return batchForward(token_ids, startPos, kvCache2SessionFor(kvbuf), tensorReducer);
+        }
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "abstractmodel.batch_forward").time()) {
             AbstractTensor lastBatchOutput = null;
 
@@ -1133,6 +1148,47 @@ public abstract class AbstractModel implements Generator, Classifier {
         }
     }
 
+    public AbstractTensor batchForward(int[] tokenIds, int startPos, KvCacheSession kvSession) {
+        return batchForward(tokenIds, startPos, kvSession, Optional.empty());
+    }
+
+    public AbstractTensor batchForward(int[] tokenIds, int startPos, KvCacheSession kvSession,
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
+        try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "abstractmodel.batch_forward").time()) {
+            AbstractTensor lastBatchOutput = null;
+            PrefillProgress previousProgress = PREFILL_PROGRESS.get();
+            PrefillProgress progress = new PrefillProgress(tokenIds.length, startPos, System.nanoTime());
+            PREFILL_PROGRESS.set(progress);
+            try {
+                for (int i = 0; i < tokenIds.length; i += maxBatchSize) {
+                    throwIfGenerationInterrupted();
+                    int[] batch = Arrays.copyOfRange(tokenIds, i, Math.min(tokenIds.length, i + maxBatchSize));
+                    progress.chunkStart = i;
+                    progress.chunkTokens = batch.length;
+                    AbstractTensor inputEmbeddings = embedInput.batchInputsToEmbeddings(batch, startPos + i);
+                    PlannedTensor plannedEmbeddings = plannedInputEmbeddings("input_embeddings", inputEmbeddings,
+                            io.teknek.deliverance.generator.ForwardPhase.PREFILL);
+                    lastBatchOutput = forward(plannedEmbeddings, startPos + i, kvSession, tensorReducer,
+                            io.teknek.deliverance.generator.ForwardPhase.PREFILL).tensor();
+                    kvSession.advanceLength(startPos + i + batch.length);
+                    int processed = Math.min(tokenIds.length, i + batch.length);
+                    long now = System.nanoTime();
+                    if (processed < tokenIds.length && now >= progress.nextLogNanos) {
+                        logPrefillProgress(progress, progress.chunkStart, config.numberOfLayers, config.numberOfLayers, now);
+                        progress.nextLogNanos = now + PREFILL_PROGRESS_INTERVAL_NANOS;
+                    }
+                }
+            } finally {
+                if (previousProgress == null) {
+                    PREFILL_PROGRESS.remove();
+                } else {
+                    PREFILL_PROGRESS.set(previousProgress);
+                }
+            }
+            return lastBatchOutput;
+        }
+    }
+
     public AbstractTensor forward(int token_id, int pos, KvBufferCache.KvBuffer kvbuf) {
         return forward(token_id, pos, kvbuf, Optional.empty());
     }
@@ -1149,11 +1205,34 @@ public abstract class AbstractModel implements Generator, Classifier {
      */
     public AbstractTensor forward(int token_id, int pos, KvBufferCache.KvBuffer kvbuf,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
+        if (usesKvCache2Generation()) {
+            return forward(token_id, pos, kvCache2SessionFor(kvbuf), tensorReducer);
+        }
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "abstractmodel.forward_token").time()) {
         AbstractTensor embedding = embedInput.inputTokenToEmbedding(token_id, pos);
         return forward(plannedInputEmbeddings("input_embedding", embedding,
                 io.teknek.deliverance.generator.ForwardPhase.DECODE), pos, kvbuf, tensorReducer,
                 io.teknek.deliverance.generator.ForwardPhase.DECODE).tensor();
+        }
+    }
+
+    private KvCacheSession kvCache2SessionFor(KvBufferCache.KvBuffer kvbuf) {
+        return kvCache2SessionAdapters.computeIfAbsent(kvbuf, ignored -> newKvCacheSession());
+    }
+
+    public AbstractTensor forward(int tokenId, int pos, KvCacheSession kvSession) {
+        return forward(tokenId, pos, kvSession, Optional.empty());
+    }
+
+    public AbstractTensor forward(int tokenId, int pos, KvCacheSession kvSession,
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
+        try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "abstractmodel.forward_token").time()) {
+            AbstractTensor embedding = embedInput.inputTokenToEmbedding(tokenId, pos);
+            AbstractTensor result = forward(plannedInputEmbeddings("input_embedding", embedding,
+                    io.teknek.deliverance.generator.ForwardPhase.DECODE), pos, kvSession, tensorReducer,
+                    io.teknek.deliverance.generator.ForwardPhase.DECODE).tensor();
+            kvSession.advanceLength(pos + 1);
+            return result;
         }
     }
 
@@ -1200,6 +1279,29 @@ public abstract class AbstractModel implements Generator, Classifier {
             }
         }
         return embedding;
+        }
+    }
+
+    public PlannedTensor forward(PlannedTensor embedding, int startPos, KvCacheSession kvSession,
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer, io.teknek.deliverance.generator.ForwardPhase phase) {
+        try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "abstractmodel.forward_layers").time()) {
+            emitLayerDebug(-1, "input", embedding.tensor());
+            int batchTokens = embedding.tensor().shape().first();
+            for (int i = 0; i < config.numberOfLayers; i++) {
+                throwIfGenerationInterrupted();
+                int relativeLayer = i;
+                AbstractTensor ref = embedding.tensor();
+                embedding = transformerBlocks[relativeLayer].forward(embedding, startPos, kvSession, tensorReducer, phase);
+                emitLayerDebug(relativeLayer, "layer_output", embedding.tensor());
+                ref.close();
+                long now = System.nanoTime();
+                PrefillProgress progress = PREFILL_PROGRESS.get();
+                if (progress != null && batchTokens > 1 && i + 1 < config.numberOfLayers && now >= progress.nextLogNanos) {
+                    logPrefillProgress(progress, progress.chunkStart, i + 1, config.numberOfLayers, now);
+                    progress.nextLogNanos = now + PREFILL_PROGRESS_INTERVAL_NANOS;
+                }
+            }
+            return embedding;
         }
     }
 

@@ -1,5 +1,7 @@
 # Nemotron Labs Diffusion Port Plan
 
+For the user-facing support guide, generation examples, benchmark commands, and current runtime notes, see [Nemotron Labs Diffusion Support](nemotron_labs_diffusion.md).
+
 ## Goal
 
 Port `nvidia/Nemotron-Labs-Diffusion-3B-Base` into Deliverance in small, source-backed slices with diffusion text generation as the primary goal. The point of this port is to measure whether diffusion decoding changes CPU text-generation throughput in a meaningful way. Autoregressive generation is an intermediate correctness and loader milestone only; another CPU AR decoder by itself is not a major deliverable.

@@ -34,6 +34,7 @@ class NemotronLabsDiffusionBaseCheckpointIT {
     private static final String QOD_OWNER = "nvidia";
     private static final String QOD_MODEL = "Nemotron-Labs-Diffusion-3B-Base-JQ4";
     private static final ModelFetcher INSTRUCT_FETCHER = new ModelFetcher("nvidia", "Nemotron-Labs-Diffusion-3B");
+    private static final String INSTRUCT_QOD_OWNER = "edwardcapriolo";
     private static final String INSTRUCT_QOD_MODEL = "Nemotron-Labs-Diffusion-3B-JQ4";
     private static final String BENCHMARK_MATH_PROMPT = "Solve step by step. A bus starts with an unknown number of passengers. "
             + "At the first stop, half get off and 4 get on. At the second stop, 6 get off and 8 get on. "
@@ -294,7 +295,7 @@ class NemotronLabsDiffusionBaseCheckpointIT {
         boolean previousProfiling = InferenceProfiler.isEnabled();
         InferenceProfiler.setEnabled(true);
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(INSTRUCT_FETCHER)
-                .withQuantizeOnDemand(DType.Q4, QOD_OWNER, INSTRUCT_QOD_MODEL)
+                .withQuantizeOnDemand(DType.Q4, INSTRUCT_QOD_OWNER, INSTRUCT_QOD_MODEL)
                 .withOutputHeadQuantization(DType.Q4)
                 .withGpuDiffusionBlockProjection(true)
                 .withPackedBlockAttention(true)
@@ -326,7 +327,7 @@ class NemotronLabsDiffusionBaseCheckpointIT {
         boolean previousProfiling = InferenceProfiler.isEnabled();
         InferenceProfiler.setEnabled(true);
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(INSTRUCT_FETCHER)
-                .withQuantizeOnDemand(DType.Q4, QOD_OWNER, INSTRUCT_QOD_MODEL)
+                .withQuantizeOnDemand(DType.Q4, INSTRUCT_QOD_OWNER, INSTRUCT_QOD_MODEL)
                 .withOutputHeadQuantization(DType.Q4)
                 .withPackedBlockAttention(true)
                 .buildLocalTransformerModel()) {
@@ -354,7 +355,7 @@ class NemotronLabsDiffusionBaseCheckpointIT {
         boolean previousProfiling = InferenceProfiler.isEnabled();
         InferenceProfiler.setEnabled(true);
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(INSTRUCT_FETCHER)
-                .withQuantizeOnDemand(DType.Q4, QOD_OWNER, INSTRUCT_QOD_MODEL)
+                .withQuantizeOnDemand(DType.Q4, INSTRUCT_QOD_OWNER, INSTRUCT_QOD_MODEL)
                 .withOutputHeadQuantization(DType.Q4)
                 .withPackedBlockAttention(true)
                 .withKvBlockStoragePolicy(KvBufferCacheSettings.KvBlockStoragePolicy.MSE_TURBOQUANT)

@@ -29,8 +29,12 @@ public final class KvCacheSession implements AutoCloseable {
     private final KvBufferCacheSettings settings;
     private final NavigableMap<Integer, KvBlock> committedBlocks = new TreeMap<>();
     private final NavigableMap<Integer, MutableKvBlock> mutableBlocks = new TreeMap<>();
+    private final java.util.Map<PageCacheKey, AbstractTensor[]> densePageCache = new java.util.HashMap<>();
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private int length;
+
+    private record PageCacheKey(int layer, boolean key, int pageCount) {
+    }
 
     KvCacheSession(int layers, int contextLength, int kvLength, int blockSize, DType dtype,
             TensorAllocator allocator, MetricRegistry metricRegistry, boolean trackReadViews, KvBufferCacheSettings settings) {
@@ -117,6 +121,7 @@ public final class KvCacheSession implements AutoCloseable {
         committedBlocks.tailMap(lastBlockToKeep + 1, true).clear();
         mutableBlocks.tailMap(lastBlockToKeep + 1, true).values().forEach(MutableKvBlock::close);
         mutableBlocks.tailMap(lastBlockToKeep + 1, true).clear();
+        densePageCache.clear();
 
         if (rowsInLastBlock > 0 && rowsInLastBlock < blockSize) {
             splitCommittedTailBlock(lastBlockToKeep, newLength);
@@ -167,6 +172,14 @@ public final class KvCacheSession implements AutoCloseable {
 
     void copyValueRows(int layer, int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart) {
         copyRows(layer, positionStart, rowCount, destination, destinationRowStart, false);
+    }
+
+    AbstractTensor[] keyPages(int layer, int visibleTokens) {
+        return pages(layer, visibleTokens, true);
+    }
+
+    AbstractTensor[] valuePages(int layer, int visibleTokens) {
+        return pages(layer, visibleTokens, false);
     }
 
     private AbstractTensor copyVisible(int layer, int visibleTokens, boolean key) {
@@ -223,6 +236,64 @@ public final class KvCacheSession implements AutoCloseable {
             remaining -= rowsInBlock;
             sourcePosition += rowsInBlock;
             destRow += rowsInBlock;
+        }
+    }
+
+    private AbstractTensor[] pages(int layer, int visibleTokens, boolean key) {
+        requireOpen();
+        validateLayer(layer);
+        Preconditions.checkArgument(visibleTokens >= 0 && visibleTokens <= length,
+                "visibleTokens must be within session length");
+        if (visibleTokens == 0) {
+            return new AbstractTensor[0];
+        }
+        int pageCount = (visibleTokens + blockSize - 1) / blockSize;
+        if (allVisiblePagesAreDense(pageCount)) {
+            PageCacheKey cacheKey = new PageCacheKey(layer, key, pageCount);
+            AbstractTensor[] cached = densePageCache.get(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+            AbstractTensor[] pages = buildPages(layer, pageCount, key);
+            densePageCache.put(cacheKey, pages);
+            return pages;
+        }
+        return buildPages(layer, pageCount, key);
+    }
+
+    private boolean allVisiblePagesAreDense(int pageCount) {
+        for (int blockIndex = 0; blockIndex < pageCount; blockIndex++) {
+            KvBlock committed = committedBlocks.get(blockIndex);
+            if (committed != null && committed.layout() != KvBlockLayout.DENSE) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private AbstractTensor[] buildPages(int layer, int pageCount, boolean key) {
+        AbstractTensor[] pages = new AbstractTensor[pageCount];
+        try {
+            for (int blockIndex = 0; blockIndex < pageCount; blockIndex++) {
+                KvBlock committed = committedBlocks.get(blockIndex);
+                if (committed != null) {
+                    pages[blockIndex] = key ? committed.keyPageView(layer) : committed.valuePageView(layer);
+                } else {
+                    MutableKvBlock mutable = mutableBlocks.get(blockIndex);
+                    if (mutable == null) {
+                        throw new IllegalStateException("No KV block for block index " + blockIndex);
+                    }
+                    pages[blockIndex] = key ? mutable.keyPageView(layer) : mutable.valuePageView(layer);
+                }
+            }
+            return pages;
+        } catch (RuntimeException | Error e) {
+            for (AbstractTensor page : pages) {
+                if (page != null) {
+                    page.close();
+                }
+            }
+            throw e;
         }
     }
 
@@ -298,6 +369,7 @@ public final class KvCacheSession implements AutoCloseable {
             mutableBlocks.values().forEach(MutableKvBlock::close);
             committedBlocks.clear();
             mutableBlocks.clear();
+            densePageCache.clear();
             metricRegistry.meter("kvcache.v2.session.close").mark();
         }
     }

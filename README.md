@@ -30,6 +30,7 @@ Generation:
 - qwen3
 - gpt2
 - granitemoehybrid / Granite 4.0
+- nemotron_labs_diffusion / Nemotron Labs Diffusion
 
 ### Learning and Developer docs
 
@@ -37,6 +38,7 @@ Generation:
 - [0.0.12 release notes: Corner Stone](release-notes/0.0.12.md) Granite, Antares, packed Q4, LoRA merge, uniform top-p, Dead to Rights, and Spring client support
 - [0.0.10 release notes](release-notes/0.0.10.md) Detailed notes for the Qwen3, JQ4, tensor-parallel, GPU, nanocode, and benchmarking release
 - [Qwen3 support](core/qwen3_support.md) Documents Qwen3 integration status, tests, and limitations
+- [Nemotron Labs Diffusion support](core/nemotron_labs_diffusion.md) Explains AR, diffusion, linear self-speculation, KVCache2, benchmark scripts, and QOD configs
 - [Granite 4.0 / GraniteMoeHybrid support](core/granite_support.md) Documents dense Antares and hybrid Granite support, Mamba/MoE notes, and current limitations
 - [Gemma4 support](core/gemma4_support.md) High-level status, usage, and notes for Gemma 4 support in Deliverance
 - [LoRA/PEFT adapter support](core/lora_support.md) Explains what LoRA adapters are, why Deliverance is adding support, and current implementation status
@@ -63,6 +65,8 @@ Generation:
 - [No-black-box AI for Spring developers](spring-ai-deliverance/no_black_box_java_ai.md) Positions Deliverance with Spring AI for Java-first local prototyping
 - [Prefix cache](core/PrefixCache.md) Describes how to get the most benefits from the prefix cache
 - [Prefix cache MSE TurboQuant](core/prefix_cache_turboquant.md) Documents experimental compressed prefix snapshots and tradeoffs
+- [KV TurboQuant](core/KVTurboQuant.md) Plans first-class TurboQuant KVCache2 committed-block storage and attention integration
+- [KVCache2 roadmap](core/KVCache2Roadmap.md) Tracks configurable KV precision, automatic prefix caching, and disk-backed KV2 work
 - [Tensor parallel guide](core/TensorParallelGuide.md) Explains how to enable tensor-parallel generation for Gemma2
 - [Tensor parallel developer notes](core/TensorParallelDeveloper.md) Details the implementation changes behind tensor parallelism
 - [GKE Qwen TP8 runbook](charts/deliverance-tp/GKE_QWEN_TP8.md) Shows the Helm/GKE setup for Qwen3 0.6B with shared Filestore cache
@@ -134,6 +138,14 @@ Deliverance can back local coding-assistant experiments and spec-driven generati
 - [`nanocode-deliverance`](nanocode-deliverance/README.md) is a tiny terminal coding agent inspired by `nanocode.java`, backed by a running Deliverance HTTP server.
 
 These projects are intentionally small integration surfaces: start a Deliverance HTTP server with the model you want, then point the assistant/plugin at that local endpoint.
+
+#### Nemotron Labs Diffusion
+
+Nemotron Labs Diffusion is a different beast: one checkpoint can act like a traditional autoregressive language model and also run block-diffusion style generation. Deliverance supports the `nvidia/Nemotron-Labs-Diffusion-3B` family with AR, linear self-speculation, QOD/JQ4 loading, GPU block-logit projection, packed block attention, KVCache2, and experimental TurboQuant KV storage.
+
+If AR is the one-token-at-a-time classic, diffusion is the block-at-a-time newcomer: mask a region, denoise it, verify what stuck, and move forward. That makes it a useful playground for CPU inference research because the runtime has to expose cache state, acceptance rates, denoising steps, and attention costs instead of hiding everything behind a single decode loop.
+
+Read the dedicated [Nemotron Labs Diffusion support](core/nemotron_labs_diffusion.md) page for model names, generation modes, Java examples, benchmark commands, and the technical internals.
 
 #### HTTP enabled inference engine (inference as a service)
 

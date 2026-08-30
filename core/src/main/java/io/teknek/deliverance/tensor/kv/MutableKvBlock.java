@@ -78,6 +78,14 @@ final class MutableKvBlock implements AutoCloseable {
         return rowView(layer, position, 1);
     }
 
+    AbstractTensor keyPageView(int layer) {
+        return pageView(layer, 0);
+    }
+
+    AbstractTensor valuePageView(int layer) {
+        return pageView(layer, 1);
+    }
+
     void copyKeyRows(int layer, int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart) {
         copyRows(layer, positionStart, rowCount, 0, destination, destinationRowStart);
     }
@@ -120,6 +128,13 @@ final class MutableKvBlock implements AutoCloseable {
         Preconditions.checkState(writtenRows.get(writtenIndex(layer, blockRow, keyOrValue)),
                 "KV row has not been written");
         return storage.slice(true, layer, keyOrValue, blockRow);
+    }
+
+    private AbstractTensor pageView(int layer, int keyOrValue) {
+        requireOpen();
+        validateLayer(layer);
+        Preconditions.checkArgument(keyOrValue == 0 || keyOrValue == 1, "keyOrValue must be 0 or 1");
+        return storage.slice(true, layer, keyOrValue);
     }
 
     private void copyRows(int layer, int positionStart, int rowCount, int keyOrValue, AbstractTensor destination,

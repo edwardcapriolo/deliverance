@@ -3,6 +3,7 @@ package io.teknek.deliverance.model;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
+import io.teknek.deliverance.tensor.kv.KvCacheSession;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -29,7 +30,56 @@ public final class LocalGenerationBackend implements GenerationBackend {
      */
     @Override
     public GenerationSession open(UUID sessionId, int[] promptTokens, GeneratorParameters parameters) {
+        if (model.usesKvCache2Generation()) {
+            return new LocalKvCache2GenerationSession(promptTokens, parameters);
+        }
         return new LocalGenerationSession(promptTokens, parameters);
+    }
+
+    private final class LocalKvCache2GenerationSession implements GenerationSession {
+        private final int[] promptTokens;
+        private final GeneratorParameters parameters;
+        private final KvCacheSession kvSession;
+
+        private LocalKvCache2GenerationSession(int[] promptTokens, GeneratorParameters parameters) {
+            this.promptTokens = promptTokens;
+            this.parameters = parameters;
+            this.kvSession = model.newKvCacheSession();
+        }
+
+        @Override
+        public int prefixLength() {
+            return 0;
+        }
+
+        @Override
+        public AbstractTensor prefill(GenerationCursor cursor) {
+            AbstractTensor last = cursor.hasTokensToProcess()
+                    ? model.batchForward(cursor.tokensToProcess(), cursor.startPosition(), kvSession)
+                    : model.forward(cursor.replayToken(), cursor.replayPosition(), kvSession);
+            model.emitGenerationDebug(new AbstractModel.GenerationDebugEvent(
+                    AbstractModel.GenerationDebugEventType.AFTER_PROMPT_PREFILL,
+                    promptTokens,
+                    0,
+                    cursor.startPosition(),
+                    cursor.tokensToProcess().length,
+                    null));
+            return last;
+        }
+
+        @Override
+        public AbstractTensor decode(int tokenId, int position) {
+            return model.forward(tokenId, position, kvSession);
+        }
+
+        @Override
+        public void afterDecode() {
+        }
+
+        @Override
+        public void close() {
+            kvSession.close();
+        }
     }
 
     /** Per-request local KV state for {@link LocalGenerationBackend}. */
