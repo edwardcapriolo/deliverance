@@ -1128,6 +1128,7 @@ void __attribute__((noinline)) gemm_f32_q4_128_arm(int m0, int m, int n0, int n,
             int bo = params.boffset;
 
             for (int i = 0; i < numBlocks; i += 4) { //128bits == 4floats
+                int remainingBlocks = MIN(4, numBlocks - i);
                 int aoo = ao;
                 int boo = bo;
 
@@ -1135,11 +1136,12 @@ void __attribute__((noinline)) gemm_f32_q4_128_arm(int m0, int m, int n0, int n,
                     ao = aoo;
                     bo = boo;
 
-                    // Load float32
-                    float32x4_t bblock = vld1q_f32(params.bf + (params.ldbf * (jj + ni) + ((bo*2) / Q4_BLOCK_SIZE)));
-                    vst1q_f32(scalef, bblock);
+                    for (int sf = 0; sf < remainingBlocks; sf++) {
+                        scalef[sf] = params.bf[params.ldbf * (jj + ni)
+                                + (((bo + sf * (Q4_BLOCK_SIZE / 2)) * 2) / Q4_BLOCK_SIZE)];
+                    }
 
-                    for(int j = 0; j < 4; j++, ao += 32, bo += 16) {
+                    for(int j = 0; j < remainingBlocks; j++, ao += 32, bo += 16) {
                         float32x4_t vb_f32 = vdupq_n_f32(scalef[j]);
 
                         // Load 4 bytes into a 128-bit integer register
@@ -1421,9 +1423,6 @@ static void gemm_f32_q4_scalar(const float *a, int aoffset, const float *bf, con
 
 void gemm_f32_q4(int flags, const float *a, int aoffset, const float *bf, const char* b, int boffset, float *r, int roffset, int m, int n0, int n, int k, int lda, int ldb, int ldbf, int ldc)
 {
-    gemm_f32_q4_scalar(a, aoffset, bf, b, boffset, r, roffset, m, n0, n, k, lda, ldb, ldbf, ldc);
-    return;
-
     struct gemm_params p = {
                         .flags = flags,
                         .af = a,

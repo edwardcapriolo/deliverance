@@ -8,6 +8,7 @@ import io.teknek.deliverance.math.BiIntConsumer;
 
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.tensor.*;
+import io.teknek.deliverance.tensor.Efficiency;
 import io.teknek.deliverance.tensor.impl.BFloat16BufferTensor;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
@@ -2057,6 +2058,7 @@ public final class PanamaTensorOperations implements TensorOperations {
     }
 
     @Override
+    @Efficiency("vector")
     public AbstractTensor quantize(AbstractTensor t, DType qtype, int offset, int length) {
         Preconditions.checkArgument(t.dims() == 2);
         if ((t.dType() == DType.BF16 && qtype == DType.F32) || (t.dType() == DType.F32 && qtype == DType.BF16)) {

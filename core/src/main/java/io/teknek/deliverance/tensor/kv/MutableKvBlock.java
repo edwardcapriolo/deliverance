@@ -2,13 +2,17 @@ package io.teknek.deliverance.tensor.kv;
 
 import com.google.common.base.Preconditions;
 import io.dropwizard.metrics5.MetricRegistry;
+import io.dropwizard.metrics5.Timer;
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.AbstractTensorUtils;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor.operations.TensorOperations;
 
+import javax.annotation.Nullable;
 import java.util.BitSet;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -24,10 +28,17 @@ final class MutableKvBlock implements AutoCloseable {
     private final KvBufferCacheSettings settings;
     private final TensorAllocator allocator;
     private final MetricRegistry metricRegistry;
+    private final TensorOperations conversionOperations;
     private boolean committed;
 
     MutableKvBlock(int blockIndex, int blockSize, int layers, int kvLength, DType dtype, TensorAllocator allocator,
             KvBufferCacheSettings settings, MetricRegistry metricRegistry) {
+        this(blockIndex, blockSize, layers, kvLength, dtype, allocator, settings, metricRegistry, null);
+    }
+
+    MutableKvBlock(int blockIndex, int blockSize, int layers, int kvLength, DType dtype, TensorAllocator allocator,
+            KvBufferCacheSettings settings, MetricRegistry metricRegistry,
+            @Nullable TensorOperations conversionOperations) {
         this.blockIndex = blockIndex;
         this.blockSize = blockSize;
         this.layers = layers;
@@ -35,6 +46,7 @@ final class MutableKvBlock implements AutoCloseable {
         this.allocator = allocator;
         this.settings = settings;
         this.metricRegistry = metricRegistry;
+        this.conversionOperations = conversionOperations;
         this.keyStorage = allocator.getDirty(settings.getKvKeyDType(), TensorShape.of(layers, blockSize, kvLength));
         this.valueStorage = allocator.getDirty(settings.getKvValueDType(), TensorShape.of(layers, blockSize, kvLength));
         this.writtenRows = new BitSet(layers * blockSize * 2);
@@ -59,10 +71,16 @@ final class MutableKvBlock implements AutoCloseable {
         validateRow(key, "key");
         validateRow(value, "value");
         int blockRow = position - startPosition();
-        copyRowIntoStorage(key, keyStorage, layer, blockRow, "key");
-        copyRowIntoStorage(value, valueStorage, layer, blockRow, "value");
-        writtenRows.set(writtenIndex(layer, blockRow, 0));
-        writtenRows.set(writtenIndex(layer, blockRow, 1));
+        try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "kvcache.v2.write.key").time()) {
+            copyRowIntoStorage(key, keyStorage, layer, blockRow, "key");
+        }
+        try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "kvcache.v2.write.value").time()) {
+            copyRowIntoStorage(value, valueStorage, layer, blockRow, "value");
+        }
+        try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "kvcache.v2.write.bookkeeping").time()) {
+            writtenRows.set(writtenIndex(layer, blockRow, 0));
+            writtenRows.set(writtenIndex(layer, blockRow, 1));
+        }
     }
 
     AbstractTensor keyRowCopy(int layer, int position, TensorAllocator allocator) {
@@ -173,13 +191,33 @@ final class MutableKvBlock implements AutoCloseable {
     private void copyRowIntoStorage(AbstractTensor source, AbstractTensor destinationStorage, int layer, int blockRow,
             String name) {
         if (source.dType() == destinationStorage.dType()) {
-            destinationStorage.copyFrom(source, 0, destinationStorage.getOffset(layer, blockRow, 0), kvLength);
+            try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
+                    "kvcache.v2.write.copy.same_dtype." + destinationStorage.dType()).time()) {
+                destinationStorage.copyFrom(source, 0, destinationStorage.getOffset(layer, blockRow, 0), kvLength);
+            }
             return;
         }
-        try (AbstractTensor converted = AbstractTensorUtils.quantize(source, destinationStorage.dType(), true)) {
-            Preconditions.checkArgument(converted.dType() == destinationStorage.dType(), name + " conversion failed");
-            destinationStorage.copyFrom(converted, 0, destinationStorage.getOffset(layer, blockRow, 0), kvLength);
+        AbstractTensor converted;
+        try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
+                "kvcache.v2.write.quantize.to_" + destinationStorage.dType()).time()) {
+            converted = quantizeForStorage(source, destinationStorage.dType());
         }
+        try (converted) {
+            Preconditions.checkArgument(converted.dType() == destinationStorage.dType(), name + " conversion failed");
+            try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
+                    "kvcache.v2.write.copy.converted.to_" + destinationStorage.dType()).time()) {
+                destinationStorage.copyFrom(converted, 0, destinationStorage.getOffset(layer, blockRow, 0), kvLength);
+            }
+        }
+    }
+
+    private AbstractTensor quantizeForStorage(AbstractTensor source, DType destinationDType) {
+        if (conversionOperations != null) {
+            InferenceProfiler.counter(metricRegistry, "kvcache.v2.write.quantize.provider").inc();
+            return conversionOperations.quantize(source, destinationDType, 0, kvLength);
+        }
+        InferenceProfiler.counter(metricRegistry, "kvcache.v2.write.quantize.constructor").inc();
+        return AbstractTensorUtils.quantize(source, destinationDType, true);
     }
 
     private AbstractTensor combinedStorageForTurboQuant() {

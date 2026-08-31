@@ -149,7 +149,10 @@ public class NativeSimdQwenTpShapeTest {
                 Arguments.of("mlp_gate_chunk_i8q4", 10, 1024, 768, 0, 768, DType.I8, DType.Q4, 0.20f),
                 Arguments.of("kv_attention_score_f32i8", 10, 1024, 128, 0, 128, DType.F32, DType.I8, 0.0001f),
                 Arguments.of("q_proj_full_chunk_f32q4", 10, 1024, 256, 0, 256, DType.F32, DType.Q4, 0.08f),
-                Arguments.of("k_proj_full_chunk_f32q4", 10, 1024, 128, 0, 128, DType.F32, DType.Q4, 0.08f)
+                Arguments.of("k_proj_full_chunk_f32q4", 10, 1024, 128, 0, 128, DType.F32, DType.Q4, 0.08f),
+                Arguments.of("sampler_lm_head_first_chunk_f32q4", 1, 1024, 4096, 0, 64, DType.F32, DType.Q4, 0.08f),
+                Arguments.of("sampler_lm_head_mid_chunk_f32q4", 1, 1024, 4096, 2048, 64, DType.F32, DType.Q4, 0.08f),
+                Arguments.of("sampler_lm_head_tail_chunk_f32q4", 1, 1024, 4096, 4032, 64, DType.F32, DType.Q4, 0.08f)
         );
     }
 

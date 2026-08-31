@@ -105,10 +105,48 @@ class KvCachePackCharacterizationTest {
             System.out.printf("[kv-i8-decode-characterization] qwen4b=%s%n", qwen4b);
             InferenceProfiler.printSummary("kv i8 decode characterization", 80);
 
-            assertTrue(qwen06.i8Bytes() < qwen06.f32Bytes() / 2, "I8 should materially reduce KV bytes");
-            assertTrue(qwen4b.i8Bytes() < qwen4b.f32Bytes() / 2, "I8 should materially reduce KV bytes");
-            assertTrue(qwen06.rmse() < qwen06.outputStddev(), "Qwen 0.6B-shaped I8 decode RMSE should stay within output stddev");
-            assertTrue(qwen4b.rmse() < qwen4b.outputStddev(), "Qwen 4B-shaped I8 decode RMSE should stay within output stddev");
+            assertTrue(qwen06.bf16Bytes() < qwen06.f32Bytes(), "BF16 should reduce KV bytes");
+            assertTrue(qwen4b.bf16Bytes() < qwen4b.f32Bytes(), "BF16 should reduce KV bytes");
+            assertTrue(qwen06.i8Bytes() < qwen06.bf16Bytes(), "I8 should reduce KV bytes more than BF16");
+            assertTrue(qwen4b.i8Bytes() < qwen4b.bf16Bytes(), "I8 should reduce KV bytes more than BF16");
+            assertTrue(qwen06.i8Rmse() < qwen06.outputStddev(), "Qwen 0.6B-shaped I8 decode RMSE should stay within output stddev");
+            assertTrue(qwen4b.i8Rmse() < qwen4b.outputStddev(), "Qwen 4B-shaped I8 decode RMSE should stay within output stddev");
+        } finally {
+            InferenceProfiler.setEnabled(previousProfiling);
+        }
+    }
+
+    @Test
+    void qwenSizedKvWriteDtypeCharacterization() {
+        boolean previousProfiling = InferenceProfiler.isEnabled();
+        InferenceProfiler.setEnabled(true);
+        InferenceProfiler.reset();
+        try (io.teknek.deliverance.math.WrappedForkJoinPool pool = new io.teknek.deliverance.math.WrappedForkJoinPool(
+                new java.util.concurrent.ForkJoinPool(4))) {
+            TensorOperations provider = new NativeSimdTensorOperations(new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
+                    allocator, pool));
+            WriteResult f32 = writeDTypeScenario("qwen06.f32.constructor", DType.F32, null, 28, 4, 32, 1024, 2);
+            WriteResult bf16 = writeDTypeScenario("qwen06.bf16.constructor", DType.BF16, null, 28, 4, 32, 1024, 2);
+            WriteResult i8 = writeDTypeScenario("qwen06.i8.constructor", DType.I8, null, 28, 4, 32, 1024, 2);
+            WriteResult f32Provider = writeDTypeScenario("qwen06.f32.provider", DType.F32, provider, 28, 4, 32, 1024, 2);
+            WriteResult bf16Provider = writeDTypeScenario("qwen06.bf16.provider", DType.BF16, provider, 28, 4, 32, 1024, 2);
+            WriteResult i8Provider = writeDTypeScenario("qwen06.i8.provider", DType.I8, provider, 28, 4, 32, 1024, 2);
+
+            System.out.printf("[kv-write-characterization] f32_constructor=%s%n", f32);
+            System.out.printf("[kv-write-characterization] bf16_constructor=%s%n", bf16);
+            System.out.printf("[kv-write-characterization] i8_constructor=%s%n", i8);
+            System.out.printf("[kv-write-characterization] f32_provider=%s%n", f32Provider);
+            System.out.printf("[kv-write-characterization] bf16_provider=%s%n", bf16Provider);
+            System.out.printf("[kv-write-characterization] i8_provider=%s%n", i8Provider);
+            InferenceProfiler.printSummary("kv write dtype characterization", 80);
+
+            assertEquals(f32.writes(), bf16.writes());
+            assertEquals(f32.writes(), i8.writes());
+            assertEquals(f32.writes(), f32Provider.writes());
+            assertEquals(f32.writes(), bf16Provider.writes());
+            assertEquals(f32.writes(), i8Provider.writes());
+            assertTrue(bf16.bytes() < f32.bytes(), "BF16 KV should use fewer dense bytes than F32");
+            assertTrue(i8.bytes() < bf16.bytes(), "I8 KV should use fewer dense bytes than BF16");
         } finally {
             InferenceProfiler.setEnabled(previousProfiling);
         }
@@ -295,10 +333,13 @@ class KvCachePackCharacterizationTest {
                 allocator, new io.teknek.deliverance.math.WrappedForkJoinPool(new java.util.concurrent.ForkJoinPool(4))));
         try (AbstractTensor query = allocator.getDirty(DType.F32, TensorShape.of(1, attentionLength));
              AbstractTensor f32Out = allocator.getDirty(DType.F32, TensorShape.of(1, attentionLength));
+             AbstractTensor bf16Out = allocator.getDirty(DType.F32, TensorShape.of(1, attentionLength));
              AbstractTensor i8Out = allocator.getDirty(DType.F32, TensorShape.of(1, attentionLength))) {
             fillQuery(query);
             AbstractTensor[] f32Keys = new AbstractTensor[layers];
             AbstractTensor[] f32Values = new AbstractTensor[layers];
+            AbstractTensor[] bf16Keys = new AbstractTensor[layers];
+            AbstractTensor[] bf16Values = new AbstractTensor[layers];
             AbstractTensor[] i8Keys = new AbstractTensor[layers];
             AbstractTensor[] i8Values = new AbstractTensor[layers];
             try {
@@ -307,11 +348,14 @@ class KvCachePackCharacterizationTest {
                     f32Values[layer] = allocator.getDirty(DType.F32, TensorShape.of(visibleRows, kvLength));
                     fillKvPage(f32Keys[layer], layer, 0);
                     fillKvPage(f32Values[layer], layer, 1);
+                    bf16Keys[layer] = AbstractTensorUtils.quantize(f32Keys[layer], DType.BF16, true);
+                    bf16Values[layer] = AbstractTensorUtils.quantize(f32Values[layer], DType.BF16, true);
                     i8Keys[layer] = AbstractTensorUtils.quantize(f32Keys[layer], DType.I8, true);
                     i8Values[layer] = AbstractTensorUtils.quantize(f32Values[layer], DType.I8, true);
                 }
 
                 long f32Nanos = 0;
+                long bf16Nanos = 0;
                 long i8Nanos = 0;
                 for (int repetition = 0; repetition < repetitions; repetition++) {
                     for (int layer = 0; layer < layers; layer++) {
@@ -321,6 +365,13 @@ class KvCachePackCharacterizationTest {
                                 new AbstractTensor[]{f32Values[layer]}, visibleRows, numberOfHeads, numberOfKeyValueHeads,
                                 headSize, 1.0f / (float) Math.sqrt(headSize), null);
                         f32Nanos += System.nanoTime() - f32Start;
+
+                        bf16Out.clear();
+                        long bf16Start = System.nanoTime();
+                        ops.decodePagedAttention(bf16Out, query, new AbstractTensor[]{bf16Keys[layer]},
+                                new AbstractTensor[]{bf16Values[layer]}, visibleRows, numberOfHeads, numberOfKeyValueHeads,
+                                headSize, 1.0f / (float) Math.sqrt(headSize), null);
+                        bf16Nanos += System.nanoTime() - bf16Start;
 
                         i8Out.clear();
                         long i8Start = System.nanoTime();
@@ -332,21 +383,28 @@ class KvCachePackCharacterizationTest {
                 }
 
                 double squaredError = 0.0;
+                double bf16SquaredError = 0.0;
                 double sum = 0.0;
                 double sumSquares = 0.0;
                 int count = 0;
                 for (int layer = 0; layer < layers; layer++) {
                     f32Out.clear();
+                    bf16Out.clear();
                     i8Out.clear();
                     ops.decodePagedAttention(f32Out, query, new AbstractTensor[]{f32Keys[layer]},
                             new AbstractTensor[]{f32Values[layer]}, visibleRows, numberOfHeads, numberOfKeyValueHeads,
+                            headSize, 1.0f / (float) Math.sqrt(headSize), null);
+                    ops.decodePagedAttention(bf16Out, query, new AbstractTensor[]{bf16Keys[layer]},
+                            new AbstractTensor[]{bf16Values[layer]}, visibleRows, numberOfHeads, numberOfKeyValueHeads,
                             headSize, 1.0f / (float) Math.sqrt(headSize), null);
                     ops.decodePagedAttention(i8Out, query, new AbstractTensor[]{i8Keys[layer]},
                             new AbstractTensor[]{i8Values[layer]}, visibleRows, numberOfHeads, numberOfKeyValueHeads,
                             headSize, 1.0f / (float) Math.sqrt(headSize), null);
                     for (int col = 0; col < attentionLength; col++) {
                         double expected = f32Out.get(0, col);
+                        double bf16Actual = bf16Out.get(0, col);
                         double actual = i8Out.get(0, col);
+                        bf16SquaredError += square(expected - bf16Actual);
                         squaredError += square(expected - actual);
                         sum += expected;
                         sumSquares += expected * expected;
@@ -355,23 +413,66 @@ class KvCachePackCharacterizationTest {
                 }
                 InferenceProfiler.timer(metricRegistry, "kvdecode.characterization." + name + ".f32")
                         .update(f32Nanos, TimeUnit.NANOSECONDS);
+                InferenceProfiler.timer(metricRegistry, "kvdecode.characterization." + name + ".bf16")
+                        .update(bf16Nanos, TimeUnit.NANOSECONDS);
                 InferenceProfiler.timer(metricRegistry, "kvdecode.characterization." + name + ".i8")
                         .update(i8Nanos, TimeUnit.NANOSECONDS);
-                long f32Bytes = (long) layers * visibleRows * 2 * kvLength * DType.F32.size();
-                long i8Bytes = (long) layers * visibleRows * 2 * kvLength * DType.I8.size()
-                        + (long) layers * visibleRows * 2 * (kvLength / 32) * DType.F32.size();
+                long f32Bytes = denseKvBytes(layers, visibleRows, kvLength, DType.F32);
+                long bf16Bytes = denseKvBytes(layers, visibleRows, kvLength, DType.BF16);
+                long i8Bytes = denseKvBytes(layers, visibleRows, kvLength, DType.I8);
                 double mean = sum / count;
                 double stddev = Math.sqrt((sumSquares / count) - (mean * mean));
                 return new DecodeResult(layers, visibleRows, attentionLength, kvLength, repetitions,
-                        TimeUnit.NANOSECONDS.toMicros(f32Nanos), TimeUnit.NANOSECONDS.toMicros(i8Nanos),
-                        f32Bytes, i8Bytes, Math.sqrt(squaredError / count), stddev);
+                        TimeUnit.NANOSECONDS.toMicros(f32Nanos), TimeUnit.NANOSECONDS.toMicros(bf16Nanos),
+                        TimeUnit.NANOSECONDS.toMicros(i8Nanos), f32Bytes, bf16Bytes, i8Bytes,
+                        Math.sqrt(bf16SquaredError / count), Math.sqrt(squaredError / count), stddev);
             } finally {
                 closeAll(f32Keys);
                 closeAll(f32Values);
+                closeAll(bf16Keys);
+                closeAll(bf16Values);
                 closeAll(i8Keys);
                 closeAll(i8Values);
             }
         }
+    }
+
+    private WriteResult writeDTypeScenario(String name, DType dtype, TensorOperations provider, int layers,
+            int visibleBlocks, int blockSize, int kvLength, int repetitions) {
+        int visibleRows = visibleBlocks * blockSize;
+        long elapsedNanos = 0;
+        int writes = 0;
+        for (int repetition = 0; repetition < repetitions; repetition++) {
+            KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                    .withBlockSize(blockSize)
+                    .withKvKeyDType(dtype)
+                    .withKvValueDType(dtype);
+            KvCacheManager manager = provider == null
+                    ? new KvCacheManager(layers, visibleRows, kvLength, DType.F32, settings, allocator,
+                            metricRegistry)
+                    : new KvCacheManager(layers, visibleRows, kvLength, DType.F32, settings, allocator,
+                            metricRegistry, false, provider);
+            try (KvCacheSession session = manager.openSession();
+                 KvWriteCursor writer = session.writer(CacheExecutionMode.PREFILL_UPDATE_CACHE)) {
+                for (int position = 0; position < visibleRows; position++) {
+                    for (int layer = 0; layer < layers; layer++) {
+                        try (AbstractTensor key = row(layer, position, 0, kvLength);
+                             AbstractTensor value = row(layer, position, 1, kvLength)) {
+                            long start = System.nanoTime();
+                            writer.write(layer, position, key, value);
+                            elapsedNanos += System.nanoTime() - start;
+                            writes++;
+                        }
+                    }
+                    writer.advanceLength(position + 1);
+                }
+            }
+        }
+        InferenceProfiler.timer(metricRegistry, "kvwrite.characterization." + name)
+                .update(elapsedNanos, TimeUnit.NANOSECONDS);
+        long bytes = denseKvBytes(layers, visibleRows, kvLength, dtype);
+        return new WriteResult(dtype, layers, visibleRows, kvLength, repetitions, writes,
+                TimeUnit.NANOSECONDS.toMicros(elapsedNanos), bytes);
     }
 
     private void fillQuery(AbstractTensor query) {
@@ -413,6 +514,14 @@ class KvCachePackCharacterizationTest {
         return value * value;
     }
 
+    private static long denseKvBytes(int layers, int visibleRows, int kvLength, DType dtype) {
+        long dataBytes = (long) layers * visibleRows * 2 * kvLength * dtype.size();
+        if (dtype == DType.I8) {
+            return dataBytes + (long) layers * visibleRows * 2 * (kvLength / 32) * DType.F32.size();
+        }
+        return dataBytes;
+    }
+
     private static float value(int layer, int position, int keyOrValue, int index) {
         return (float) (Math.sin((layer + 1) * (index + 1) * 0.013)
                 + Math.cos((position + 1) * (index + 3) * 0.007)
@@ -429,7 +538,12 @@ class KvCachePackCharacterizationTest {
             long packMicros, long f32Bytes, long i8Bytes, double rmse, double standardDeviation) {
     }
 
+    private record WriteResult(DType dtype, int layers, int visibleRows, int kvLength, int repetitions, int writes,
+            long elapsedMicros, long bytes) {
+    }
+
     private record DecodeResult(int layers, int visibleRows, int attentionLength, int kvLength, int repetitions,
-            long f32Micros, long i8Micros, long f32Bytes, long i8Bytes, double rmse, double outputStddev) {
+            long f32Micros, long bf16Micros, long i8Micros, long f32Bytes, long bf16Bytes, long i8Bytes,
+            double bf16Rmse, double i8Rmse, double outputStddev) {
     }
 }

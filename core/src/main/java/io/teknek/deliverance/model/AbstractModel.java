@@ -279,7 +279,7 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.kvBufferCache = new KvBufferCache(this, kvBufferCacheSettings);
         this.kvCacheManager = new KvCacheManager(c.numberOfLayers, c.contextLength,
                 c.kvLength / tensorParallelContext.size(), workingMemoryDType, kvBufferCacheSettings, tensorAllocator,
-                metricRegistry);
+                metricRegistry, false, configurableTensorProvider.get());
         this.kvPrefixSnapshotCache = new KvPrefixSnapshotCache(c.numberOfLayers, c.contextLength,
                 c.kvLength / tensorParallelContext.size(), kvBufferCacheSettings.getBlockSize(),
                 kvBufferCacheSettings.getKvKeyDType(), kvBufferCacheSettings.getKvValueDType(),
@@ -400,7 +400,7 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.trackKvReadViewsEnabled = trackKvReadViewsEnabled;
         this.kvCacheManager = new KvCacheManager(config.numberOfLayers, config.contextLength,
                 config.kvLength / tensorParallelContext.size(), workingDType, kvBufferCacheSettings, tensorAllocator,
-                metricRegistry, trackKvReadViewsEnabled);
+                metricRegistry, trackKvReadViewsEnabled, configurableTensorProvider.get());
     }
 
     public boolean isGpuPrefillEnabled() {
