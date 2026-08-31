@@ -243,10 +243,38 @@ public class KvCacheSelfAttention extends BaseCausalSelfAttention {
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "kvcacheselfattention.kv_cache_write").time();
              KvWriteCursor writer = kvSession.writer(mode)) {
             for (int row = 0; row < keyBatch.shape().first(); row++) {
-                try (AbstractTensor keyRow = keyBatch.slice(row);
-                     AbstractTensor valueRow = valueBatch.slice(row)) {
-                    writer.write(layerIndex, startPosition + row, keyRow, valueRow);
+                try (RowSlices rows = sliceKvRows(keyBatch, valueBatch, row)) {
+                    try (Timer.Context ignoredWrite = InferenceProfiler.timer(metricRegistry,
+                            "kvcacheselfattention.kv_cache_write.writer.write_row").time()) {
+                        writer.write(layerIndex, startPosition + row, rows.key(), rows.value());
+                    }
                 }
+            }
+        }
+    }
+
+    private RowSlices sliceKvRows(AbstractTensor keyBatch, AbstractTensor valueBatch, int row) {
+        try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
+                "kvcacheselfattention.kv_cache_write.row_slice").time()) {
+            AbstractTensor keyRow = null;
+            try {
+                keyRow = keyBatch.slice(row);
+                AbstractTensor valueRow = valueBatch.slice(row);
+                return new RowSlices(keyRow, valueRow);
+            } catch (Throwable t) {
+                if (keyRow != null) {
+                    keyRow.close();
+                }
+                throw t;
+            }
+        }
+    }
+
+    private record RowSlices(AbstractTensor key, AbstractTensor value) implements AutoCloseable {
+        @Override
+        public void close() {
+            try (key; value) {
+                // close both row views
             }
         }
     }
@@ -289,8 +317,8 @@ public class KvCacheSelfAttention extends BaseCausalSelfAttention {
             destination.copyFrom(source, 0, destination.getOffset(destinationRowStart, 0), (int) source.size());
             return;
         }
-        if (destination.dType() == DType.I8) {
-            try (AbstractTensor converted = configurableTensorProvider.get().quantize(source, DType.I8, 0,
+        if (destination.dType() == DType.BF16 || destination.dType() == DType.I8) {
+            try (AbstractTensor converted = configurableTensorProvider.get().quantize(source, destination.dType(), 0,
                     (int) source.shape().last())) {
                 destination.copyFrom(converted, 0, destination.getOffset(destinationRowStart, 0),
                         (int) converted.size());

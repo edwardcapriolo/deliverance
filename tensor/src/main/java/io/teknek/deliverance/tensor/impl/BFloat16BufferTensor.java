@@ -10,6 +10,7 @@ import java.nio.ShortBuffer;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.FloatConversions;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.Efficiency;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.UnsafeDirectByteBuffer;
 import jdk.incubator.vector.ShortVector;
@@ -21,6 +22,7 @@ public class BFloat16BufferTensor extends AbstractTensor {
     private final String name;
     private final MemorySegment segment;
 
+    @Efficiency("cursor")
     public BFloat16BufferTensor(AbstractTensor ft) {
         this(ft.shape());
         Preconditions.checkArgument(ft.getDType() != DType.BF16, "This should never happen, likely a bug");

@@ -3,13 +3,16 @@ package io.teknek.deliverance.tensor.kv;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.AbstractTensorUtils;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.ReadOnlyTensor;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.TrackedReadOnlyTensor;
+import io.teknek.deliverance.tensor.operations.TensorOperations;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import java.lang.foreign.ValueLayout;
 
@@ -17,6 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class KvCacheSessionTest {
     private final MetricRegistry metricRegistry = new MetricRegistry();
@@ -222,6 +230,64 @@ class KvCacheSessionTest {
             assertEquals(KvBlockLayout.DENSE, session.committedBlocks().getFirst().layout());
             assertTrue(session.committedBlocks().getFirst().encodedBytes() < 4L * 2 * kvLength * DType.F32.size());
         }
+    }
+
+    @Test
+    void denseKvCanStoreKeysAndValuesAsBf16() {
+        int kvLength = 64;
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withBlockSize(4)
+                .withKvKeyDType(DType.BF16)
+                .withKvValueDType(DType.BF16);
+        KvCacheManager manager = new KvCacheManager(1, 8, kvLength, DType.F32, settings, allocator, metricRegistry);
+
+        try (KvCacheSession session = manager.openSession()) {
+            try (KvWriteCursor writer = session.writer(CacheExecutionMode.PREFILL_UPDATE_CACHE)) {
+                for (int position = 0; position < 4; position++) {
+                    try (AbstractTensor key = wideRow(position + 1.0f, kvLength);
+                         AbstractTensor value = wideRow(position + 2.0f, kvLength)) {
+                        writer.write(0, position, key, value);
+                    }
+                }
+                writer.advanceLength(4);
+            }
+
+            try (KvReadView readView = session.readView(0, 4, AttentionPattern.CAUSAL);
+                 AbstractTensor key = readView.keyRow(0);
+                 AbstractTensor value = readView.valueRow(0)) {
+                assertEquals(DType.BF16, key.dType());
+                assertEquals(DType.BF16, value.dType());
+                assertEquals(1.0f, key.get(0, 0), 0.01f);
+                assertEquals(2.0f, value.get(0, 0), 0.01f);
+            }
+
+            assertEquals(KvBlockLayout.DENSE, session.committedBlocks().getFirst().layout());
+            assertEquals(4L * 2 * kvLength * DType.BF16.size(),
+                    session.committedBlocks().getFirst().encodedBytes());
+        }
+    }
+
+    @Test
+    void denseKvConversionUsesSuppliedTensorOperations() {
+        int kvLength = 64;
+        TensorOperations operations = Mockito.mock(TensorOperations.class);
+        when(operations.quantize(any(AbstractTensor.class), eq(DType.I8), eq(0), eq(kvLength)))
+                .thenAnswer(invocation -> AbstractTensorUtils.quantize(invocation.getArgument(0), DType.I8, true));
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withBlockSize(4)
+                .withKvKeyDType(DType.I8)
+                .withKvValueDType(DType.I8);
+        KvCacheManager manager = new KvCacheManager(1, 8, kvLength, DType.F32, settings, allocator,
+                metricRegistry, false, operations);
+
+        try (KvCacheSession session = manager.openSession();
+             KvWriteCursor writer = session.writer(CacheExecutionMode.PREFILL_UPDATE_CACHE);
+             AbstractTensor key = wideRow(1.0f, kvLength);
+             AbstractTensor value = wideRow(2.0f, kvLength)) {
+            writer.write(0, 0, key, value);
+        }
+
+        verify(operations, times(2)).quantize(any(AbstractTensor.class), eq(DType.I8), eq(0), eq(kvLength));
     }
 
     @Test

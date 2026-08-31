@@ -12,6 +12,7 @@ import java.util.stream.IntStream;
 
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.Efficiency;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.UnsafeDirectByteBuffer;
 import jdk.incubator.vector.ByteVector;
@@ -32,6 +33,7 @@ public class Q8ByteBufferTensor extends AbstractTensor {
     private final String name;
     private final MemorySegment segment;
 
+    @Efficiency("cursor")
     public Q8ByteBufferTensor(AbstractTensor ft) {
         this(ft.shape());
         Preconditions.checkArgument(ft.getDType() != DType.I8, "This should never happen, likely a bug");

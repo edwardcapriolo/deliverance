@@ -11,6 +11,7 @@ import java.lang.foreign.ValueLayout;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.Efficiency;
 import io.teknek.deliverance.tensor.TensorMutability;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
@@ -610,6 +611,7 @@ public class NativeSimdTensorOperations implements TensorOperations {
     }
 
     @Override
+    @Efficiency("vector")
     public AbstractTensor quantize(AbstractTensor t, DType qtype, int offset, int length) {
         return delegate.quantize(t, qtype, offset, length);
     }

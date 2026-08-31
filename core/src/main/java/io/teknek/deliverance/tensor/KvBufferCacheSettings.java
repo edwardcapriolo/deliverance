@@ -265,8 +265,8 @@ public class KvBufferCacheSettings {
         if (dtype == null) {
             throw new IllegalArgumentException(name + " must not be null");
         }
-        if (dtype != DType.F32 && dtype != DType.I8) {
-            throw new IllegalArgumentException(name + " currently supports only F32 and I8");
+        if (dtype != DType.F32 && dtype != DType.BF16 && dtype != DType.I8) {
+            throw new IllegalArgumentException(name + " currently supports only F32, BF16, and I8");
         }
     }
 

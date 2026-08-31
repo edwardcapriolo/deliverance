@@ -8,7 +8,9 @@ import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.ReadOnlyTensor;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TrackedReadOnlyTensor;
+import io.teknek.deliverance.tensor.operations.TensorOperations;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.NavigableMap;
@@ -27,6 +29,7 @@ public final class KvCacheSession implements AutoCloseable {
     private final MetricRegistry metricRegistry;
     private final boolean trackReadViews;
     private final KvBufferCacheSettings settings;
+    private final TensorOperations conversionOperations;
     private final NavigableMap<Integer, KvBlock> committedBlocks = new TreeMap<>();
     private final NavigableMap<Integer, MutableKvBlock> mutableBlocks = new TreeMap<>();
     private final java.util.Map<PageCacheKey, AbstractTensor[]> densePageCache = new java.util.HashMap<>();
@@ -38,6 +41,12 @@ public final class KvCacheSession implements AutoCloseable {
 
     KvCacheSession(int layers, int contextLength, int kvLength, int blockSize, DType dtype,
             TensorAllocator allocator, MetricRegistry metricRegistry, boolean trackReadViews, KvBufferCacheSettings settings) {
+        this(layers, contextLength, kvLength, blockSize, dtype, allocator, metricRegistry, trackReadViews, settings, null);
+    }
+
+    KvCacheSession(int layers, int contextLength, int kvLength, int blockSize, DType dtype,
+            TensorAllocator allocator, MetricRegistry metricRegistry, boolean trackReadViews,
+            KvBufferCacheSettings settings, @Nullable TensorOperations conversionOperations) {
         this.layers = layers;
         this.contextLength = contextLength;
         this.kvLength = kvLength;
@@ -47,6 +56,7 @@ public final class KvCacheSession implements AutoCloseable {
         this.metricRegistry = metricRegistry;
         this.trackReadViews = trackReadViews;
         this.settings = settings;
+        this.conversionOperations = conversionOperations;
     }
 
     public int length() {
@@ -144,7 +154,7 @@ public final class KvCacheSession implements AutoCloseable {
             return;
         }
         MutableKvBlock mutable = new MutableKvBlock(blockIndex, blockSize, layers, kvLength, dtype, allocator,
-                settings, metricRegistry);
+                settings, metricRegistry, conversionOperations);
         try {
             for (int position = committed.startPosition(); position < newLength; position++) {
                 for (int layer = 0; layer < layers; layer++) {
@@ -343,7 +353,7 @@ public final class KvCacheSession implements AutoCloseable {
     private MutableKvBlock mutableBlock(int blockIndex) {
         return mutableBlocks.computeIfAbsent(blockIndex,
                 index -> new MutableKvBlock(index, blockSize, layers, kvLength, dtype, allocator, settings,
-                        metricRegistry));
+                        metricRegistry, conversionOperations));
     }
 
     private void commitFullBlocksBefore(int newLength) {
