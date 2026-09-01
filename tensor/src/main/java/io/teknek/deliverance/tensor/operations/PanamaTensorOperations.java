@@ -194,6 +194,12 @@ public final class PanamaTensorOperations implements TensorOperations {
                     && bColumnOffset % Q8ByteBufferTensor.BLOCK_SIZE == 0
                     && columnLength % Q8ByteBufferTensor.BLOCK_SIZE == 0;
         }
+        if (a.dType() == DType.BF16 || b.dType() == DType.BF16) {
+            int lanes = ShortVector.SPECIES_PREFERRED.length();
+            return aColumnOffset % lanes == 0
+                    && bColumnOffset % lanes == 0
+                    && columnLength % lanes == 0;
+        }
         return columnLength % FloatVector.SPECIES_PREFERRED.length() == 0;
     }
 
