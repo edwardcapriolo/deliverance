@@ -67,13 +67,18 @@ jobs:
       - name: Build native artifact in Airlock musl container
         if: matrix.native.mode == 'airlock'
         run: |
+          mkdir -p "$RUNNER_TEMP/m2" "$RUNNER_TEMP/testqemu-home"
           docker run --rm \
             --platform linux/amd64 \
+            --user "$(id -u):$(id -g)" \
+            -e HOME=/tmp/airlock-home \
             --entrypoint sh \
             --mount type=bind,src="$PWD",dst=/workspace \
+            --mount type=bind,src="$RUNNER_TEMP/m2",dst=/m2 \
+            --mount type=bind,src="$RUNNER_TEMP/testqemu-home",dst=/tmp/airlock-home \
             -w /workspace \
             ecapriolo/trusted-opencode:0.0.3-cloudops \
-            -lc 'mvn -B -pl native -am -Djni.classifier=${{ matrix.native.classifier }} ${{ matrix.native.test_args }} package'
+            -lc 'mvn -B -Dmaven.repo.local=/m2/repository -pl native -am -Djni.classifier=${{ matrix.native.classifier }} ${{ matrix.native.test_args }} package'
 
       - name: Prepare artifact files
         run: |
