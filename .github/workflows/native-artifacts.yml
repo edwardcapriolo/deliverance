@@ -79,6 +79,7 @@ jobs:
     runs-on: ubuntu-24.04
     container:
       image: ecapriolo/trusted-opencode:0.0.3-cloudops
+      options: --user 0
 
     steps:
       - name: Check out sources
