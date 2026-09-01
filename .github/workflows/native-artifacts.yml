@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-host:
     name: Build ${{ matrix.native.name }}
     runs-on: ${{ matrix.native.runner }}
     strategy:
@@ -19,17 +19,10 @@ jobs:
         native:
           - name: linux-glibc-x86_64
             runner: ubuntu-24.04
-            mode: host
             classifier: linux-x86_64
             test_args: -Dtest=NativeSimdTensorOpsFuzzParityTest,NativeSimdQwenTpShapeTest -Dsurefire.failIfNoSpecifiedTests=false
-          - name: linux-musl-x86_64
-            runner: ubuntu-24.04
-            mode: airlock
-            classifier: linux-musl-x86_64
-            test_args: -DskipTests
           - name: macos-aarch64
             runner: macos-14
-            mode: host
             classifier: osx-aarch_64
             test_args: -DskipTests
 
@@ -38,7 +31,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Java 25
-        if: matrix.native.mode == 'host'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -46,7 +38,7 @@ jobs:
           cache: maven
 
       - name: Install native build tools
-        if: matrix.native.mode == 'host' && startsWith(matrix.native.runner, 'ubuntu')
+        if: startsWith(matrix.native.runner, 'ubuntu')
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -57,28 +49,11 @@ jobs:
             unzip
 
       - name: Build native artifact on host
-        if: matrix.native.mode == 'host'
         run: |
           mvn -B -pl native -am \
             -Djni.classifier=${{ matrix.native.classifier }} \
             ${{ matrix.native.test_args }} \
             package
-
-      - name: Build native artifact in Airlock musl container
-        if: matrix.native.mode == 'airlock'
-        run: |
-          mkdir -p "$RUNNER_TEMP/m2" "$RUNNER_TEMP/testqemu-home"
-          docker run --rm \
-            --platform linux/amd64 \
-            --user "$(id -u):$(id -g)" \
-            -e HOME=/tmp/airlock-home \
-            --entrypoint sh \
-            --mount type=bind,src="$PWD",dst=/workspace \
-            --mount type=bind,src="$RUNNER_TEMP/m2",dst=/m2 \
-            --mount type=bind,src="$RUNNER_TEMP/testqemu-home",dst=/tmp/airlock-home \
-            -w /workspace \
-            ecapriolo/trusted-opencode:0.0.3-cloudops \
-            -lc 'mvn -B -Dmaven.repo.local=/m2/repository -pl native -am -Djni.classifier=${{ matrix.native.classifier }} ${{ matrix.native.test_args }} package'
 
       - name: Prepare artifact files
         run: |
@@ -99,11 +74,47 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
+  build-musl:
+    name: Build linux-musl-x86_64
+    runs-on: ubuntu-24.04
+    container:
+      image: ecapriolo/trusted-opencode:0.0.3-cloudops
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+
+      - name: Build native artifact in Airlock musl container
+        run: |
+          mvn -B -pl native -am \
+            -Djni.classifier=linux-musl-x86_64 \
+            -DskipTests \
+            package
+
+      - name: Prepare artifact files
+        run: |
+          mkdir -p native-release/linux-musl-x86_64
+          cp native/target/native-*-linux-musl-x86_64.jar native-release/linux-musl-x86_64/
+          if [ -f native/target/native-build.log ]; then
+            cp native/target/native-build.log native-release/linux-musl-x86_64/
+          fi
+          if [ -f native/target/native-smoke-test.log ]; then
+            cp native/target/native-smoke-test.log native-release/linux-musl-x86_64/
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deliverance-native-linux-musl-x86_64
+          path: native-release/linux-musl-x86_64
+          if-no-files-found: error
+          compression-level: 0
+
   release:
     name: Upload Native Artifacts To Release
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
-    needs: build
+    needs: [build-host, build-musl]
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
