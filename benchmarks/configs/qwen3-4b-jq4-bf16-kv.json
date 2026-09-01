@@ -2,6 +2,7 @@
   "outputHeadQuantization": "Q4",
   "maxBatchSize": 512,
   "tensorRuntimeMode": "DISABLED",
+  "groupedDecodeQkvSplitSize": 8,
   "parallelSplitSizeFixed": {
     "SIMD": 32
   },

@@ -33,6 +33,7 @@ public record AutoModelConfig(
         Optional<TensorRuntimeMode> tensorRuntimeMode,
         Optional<Map<TensorProviderKind, Integer>> parallelSplitSizeFixed,
         Optional<Map<TensorProviderKind, Double>> parallelSplitSizeMultiplier,
+        Optional<Integer> groupedDecodeQkvSplitSize,
         Optional<Boolean> tensorPlanTrace,
         Optional<Map<String, Object>> generationOptions,
         Optional<KvBufferCache> kvBufferCache,
@@ -53,6 +54,7 @@ public record AutoModelConfig(
         tensorRuntimeMode = tensorRuntimeMode == null ? Optional.empty() : tensorRuntimeMode;
         parallelSplitSizeFixed = parallelSplitSizeFixed == null ? Optional.empty() : parallelSplitSizeFixed;
         parallelSplitSizeMultiplier = parallelSplitSizeMultiplier == null ? Optional.empty() : parallelSplitSizeMultiplier;
+        groupedDecodeQkvSplitSize = groupedDecodeQkvSplitSize == null ? Optional.empty() : groupedDecodeQkvSplitSize;
         tensorPlanTrace = tensorPlanTrace == null ? Optional.empty() : tensorPlanTrace;
         generationOptions = generationOptions == null ? Optional.empty() : generationOptions;
         kvBufferCache = kvBufferCache == null ? Optional.empty() : kvBufferCache;

@@ -150,6 +150,7 @@ public class AutoModelForCausaLm {
         private Optional<TensorRuntimeMode> tensorRuntimeMode = Optional.empty();
         private final EnumMap<TensorProviderKind, Integer> parallelSplitSizeFixed = new EnumMap<>(TensorProviderKind.class);
         private final EnumMap<TensorProviderKind, Double> parallelSplitSizeMultiplier = new EnumMap<>(TensorProviderKind.class);
+        private Optional<Integer> groupedDecodeQkvSplitSize = Optional.empty();
 
         record QuantizeOnDemand(DType targetType, String outputOwner, String outputModel) {
             QuantizeOnDemand {
@@ -350,6 +351,14 @@ public class AutoModelForCausaLm {
             return this;
         }
 
+        public Builder withGroupedDecodeQkvSplitSize(int groupedDecodeQkvSplitSize) {
+            if (groupedDecodeQkvSplitSize < 1) {
+                throw new IllegalArgumentException("groupedDecodeQkvSplitSize must be >= 1");
+            }
+            this.groupedDecodeQkvSplitSize = Optional.of(groupedDecodeQkvSplitSize);
+            return this;
+        }
+
         public Builder withParallelSplitSizeFixed(TensorProviderKind kind, int splitSize) {
             if (splitSize < 1) {
                 throw new IllegalArgumentException("splitSize must be >= 1");
@@ -417,6 +426,7 @@ public class AutoModelForCausaLm {
             config.tensorRuntimeMode().ifPresent(this::withTensorRuntimeMode);
             config.parallelSplitSizeFixed().ifPresent(map -> map.forEach(this::withParallelSplitSizeFixed));
             config.parallelSplitSizeMultiplier().ifPresent(map -> map.forEach(this::withParallelSplitSizeMultiplier));
+            config.groupedDecodeQkvSplitSize().ifPresent(this::withGroupedDecodeQkvSplitSize);
             config.tensorPlanTrace().ifPresent(this::withTensorPlanTrace);
             config.kvBufferCache().map(AutoModelConfig.KvBufferCache::toSettings).ifPresent(this::withKvBufferCacheSettings);
             config.quantizeOnDemand().ifPresent(q -> withQuantizeOnDemand(q.targetType(), q.outputOwner(), q.outputModel()));
@@ -494,6 +504,7 @@ public class AutoModelForCausaLm {
             copy.additionalTensorOperations.putAll(this.additionalTensorOperations);
             copy.parallelSplitSizeFixed.putAll(this.parallelSplitSizeFixed);
             copy.parallelSplitSizeMultiplier.putAll(this.parallelSplitSizeMultiplier);
+            copy.groupedDecodeQkvSplitSize = this.groupedDecodeQkvSplitSize;
             copy.download = this.download;
             copy.maxBatchSize = this.maxBatchSize;
             copy.sketchesSettings = this.sketchesSettings;
@@ -574,6 +585,7 @@ public class AutoModelForCausaLm {
             model.setPackedPrefillEnabled(packedPrefill);
             model.setTrackKvReadViewsEnabled(trackKvReadViews);
             model.setGenerationOptions(generationOptions);
+            model.setGroupedDecodeQkvSplitSize(groupedDecodeQkvSplitSize);
             model.setTensorRuntimeMode(tensorRuntimeMode);
             model.setTensorRuntime(createTensorRuntime());
             model.setTensorPlanTraceEnabled(tensorPlanTrace);
@@ -594,7 +606,7 @@ public class AutoModelForCausaLm {
                       registeredProviders=[{}]
                       parallelSplitPolicy=availableProcessors={} defaultSimdMultiplier={} defaultPanamaMultiplier={} simdAlignment={} panamaAlignment={} fixedOverrides={} multiplierOverrides={}
                       modelType={} workingMemoryType={} quantizedMemoryType={}
-                      tensorRuntimeMode={} gpuPrefill={} gpuDecode={} gpuDecodeAttention={} gpuDiffusionBlockProjection={} packedBlockAttention={} packedPrefill={} trackKvReadViews={} maxBatchSize={}
+                      tensorRuntimeMode={} groupedDecodeQkvSplitSize={} gpuPrefill={} gpuDecode={} gpuDecodeAttention={} gpuDiffusionBlockProjection={} packedBlockAttention={} packedPrefill={} trackKvReadViews={} maxBatchSize={}
                       kvBlockStoragePolicy={} kvTurboQuantBits={} kvKeyDType={} kvValueDType={}
                       generationOptions={}
                     """,
@@ -603,7 +615,7 @@ public class AutoModelForCausaLm {
                     DEFAULT_PANAMA_PARALLEL_SPLIT_SIZE_MULTIPLIER, SIMD_PARALLEL_SPLIT_ALIGNMENT,
                     PANAMA_PARALLEL_SPLIT_ALIGNMENT, parallelSplitSizeFixed, parallelSplitSizeMultiplier,
                     model.modelDType, model.workingDType, model.workingQType,
-                    tensorRuntimeMode.orElse(TensorRuntimeMode.DISABLED), gpuPrefill, gpuDecode,
+                    tensorRuntimeMode.orElse(TensorRuntimeMode.DISABLED), groupedDecodeQkvSplitSize.orElse(null), gpuPrefill, gpuDecode,
                     gpuDecodeAttention, gpuDiffusionBlockProjection, packedBlockAttention, packedPrefill,
                     trackKvReadViews, maxBatchSize,
                     settings.getKvBlockStoragePolicy(), settings.getKvTurboQuantBits(),

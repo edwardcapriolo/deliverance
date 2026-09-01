@@ -4,6 +4,7 @@ import com.google.common.base.Preconditions;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.dropwizard.metrics5.Timer;
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.kv.AttentionPattern;
@@ -32,6 +33,8 @@ import java.util.function.Consumer;
  * scoring; page-backed v2 attention can replace that internals without changing callers.</p>
  */
 public class KvCacheSelfAttention extends BaseCausalSelfAttention {
+    private static final int DEFAULT_GROUPED_DECODE_QKV_SPLIT_SIZE = 8;
+
     private final AbstractModel model;
     private final int layerIndex;
     private final io.teknek.deliverance.safetensors.Config config;
@@ -146,20 +149,10 @@ public class KvCacheSelfAttention extends BaseCausalSelfAttention {
             AbstractTensor valueBatch, ForwardPhase phase) {
         int splitSize = configurableTensorProvider.get().parallelSplitSize();
         if (config.isGQA) {
-            try (Timer.Context ignoredQkv = InferenceProfiler.timer(metricRegistry,
-                    "kvcacheselfattention.qkv_projection").time()) {
-                ForkJoinTask<?> queryTask = model.getPool().getUnderlying().submit(() -> project(queryBatch, input,
-                        queryAttnWeights, config.embeddingLength, attentionLength,
-                        "kvcacheselfattention.q_projection", phase, splitSize));
-                ForkJoinTask<?> keyTask = model.getPool().getUnderlying().submit(() -> project(keyBatch, input,
-                        keyAttnWeights, config.embeddingLength, kvLength,
-                        "kvcacheselfattention.k_projection", phase, splitSize));
-                ForkJoinTask<?> valueTask = model.getPool().getUnderlying().submit(() -> project(valueBatch, input,
-                        valueAttnWeights, config.embeddingLength, kvLength,
-                        "kvcacheselfattention.v_projection", phase, splitSize));
-                queryTask.join();
-                keyTask.join();
-                valueTask.join();
+            if (phase == ForwardPhase.DECODE) {
+                projectGqaQkvGroupedDecode(input, queryBatch, keyBatch, valueBatch, phase);
+            } else {
+                projectGqaQkvDoNotDelete(input, queryBatch, keyBatch, valueBatch, phase, splitSize);
             }
         } else {
             AbstractTensor[] results = new AbstractTensor[] { queryBatch, keyBatch, valueBatch };
@@ -179,6 +172,63 @@ public class KvCacheSelfAttention extends BaseCausalSelfAttention {
         model.emitLayerDebug(layerIndex, "query_projection", queryBatch);
         model.emitLayerDebug(layerIndex, "key_projection", keyBatch);
         model.emitLayerDebug(layerIndex, "value_projection", valueBatch);
+    }
+
+    // DO NOT DELETE: baseline GQA projection implementation kept for profiling/regression comparison.
+    private void projectGqaQkvDoNotDelete(AbstractTensor input, AbstractTensor queryBatch, AbstractTensor keyBatch,
+            AbstractTensor valueBatch, ForwardPhase phase, int splitSize) {
+        try (Timer.Context ignoredQkv = InferenceProfiler.timer(metricRegistry,
+                "kvcacheselfattention.qkv_projection").time()) {
+            ForkJoinTask<?> queryTask = model.getPool().getUnderlying().submit(() -> project(queryBatch, input,
+                    queryAttnWeights, config.embeddingLength, attentionLength,
+                    "kvcacheselfattention.q_projection", phase, splitSize));
+            ForkJoinTask<?> keyTask = model.getPool().getUnderlying().submit(() -> project(keyBatch, input,
+                    keyAttnWeights, config.embeddingLength, kvLength,
+                    "kvcacheselfattention.k_projection", phase, splitSize));
+            ForkJoinTask<?> valueTask = model.getPool().getUnderlying().submit(() -> project(valueBatch, input,
+                    valueAttnWeights, config.embeddingLength, kvLength,
+                    "kvcacheselfattention.v_projection", phase, splitSize));
+            queryTask.join();
+            keyTask.join();
+            valueTask.join();
+        }
+    }
+
+    private void projectGqaQkvGroupedDecode(AbstractTensor input, AbstractTensor queryBatch, AbstractTensor keyBatch,
+            AbstractTensor valueBatch, ForwardPhase phase) {
+        TensorOperations queryOps = projectionOperations(input, queryAttnWeights, phase);
+        TensorOperations keyOps = projectionOperations(input, keyAttnWeights, phase);
+        TensorOperations valueOps = projectionOperations(input, valueAttnWeights, phase);
+        try (Timer.Context ignoredQkv = InferenceProfiler.timer(metricRegistry,
+                "kvcacheselfattention.qkv_projection").time()) {
+            VectorMath.pchunk(0, attentionLength, (chunkStart, chunkSize) -> {
+                try (Timer.Context ignoredQ = InferenceProfiler.timer(metricRegistry,
+                        "kvcacheselfattention.q_projection").time()) {
+                    queryOps.dotProductChunk(queryBatch, input, queryAttnWeights, 0, config.embeddingLength,
+                            chunkStart, chunkSize);
+                }
+                int kvChunkSize = Math.min(chunkSize, kvLength - chunkStart);
+                if (kvChunkSize <= 0) {
+                    return;
+                }
+                try (Timer.Context ignoredK = InferenceProfiler.timer(metricRegistry,
+                        "kvcacheselfattention.k_projection").time()) {
+                    keyOps.dotProductChunk(keyBatch, input, keyAttnWeights, 0, config.embeddingLength,
+                            chunkStart, kvChunkSize);
+                }
+                try (Timer.Context ignoredV = InferenceProfiler.timer(metricRegistry,
+                        "kvcacheselfattention.v_projection").time()) {
+                    valueOps.dotProductChunk(valueBatch, input, valueAttnWeights, 0, config.embeddingLength,
+                            chunkStart, kvChunkSize);
+                }
+            }, groupedDecodeQkvSplitSize(), model.getPool());
+        }
+    }
+
+    private int groupedDecodeQkvSplitSize() {
+        int configured = model.groupedDecodeQkvSplitSize().orElse(DEFAULT_GROUPED_DECODE_QKV_SPLIT_SIZE);
+        int poolSize = model.getPool() == null ? 1 : model.getPool().getCoreCount();
+        return Math.max(1, Math.min(Math.min(configured, poolSize), attentionLength));
     }
 
     protected void normalizeQueryKey(AbstractTensor queryBatch, AbstractTensor keyBatch) {
