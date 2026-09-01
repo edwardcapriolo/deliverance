@@ -720,6 +720,7 @@ void __attribute__((noinline)) gemm_q8_q4_256(int m0, int m, int n0, int n, int 
             int bo = params.boffset;
 
             for (int i = 0; i < numBlocks; i += 8) { //256bits == 8floats
+                int remainingBlocks = MIN(8, numBlocks - i);
                 int aoo = ao;
                 int boo = bo;
 
@@ -727,13 +728,12 @@ void __attribute__((noinline)) gemm_q8_q4_256(int m0, int m, int n0, int n, int 
                     ao = aoo;
                     bo = boo;
 
-                    // Load float32
-                     __m256 ablock = _mm256_loadu_ps(params.af + (params.ldaf * (ii + mi) + (ao / Q4_BLOCK_SIZE)));
-                     __m256 bblock = _mm256_loadu_ps(params.bf + (params.ldbf * (jj + ni) + ((bo*2) / Q4_BLOCK_SIZE)));
-                     __m256 scaled = _mm256_mul_ps(ablock, bblock);
-                     _mm256_store_ps(scalef, scaled);
+                    for (int sf = 0; sf < remainingBlocks; sf++) {
+                        scalef[sf] = params.af[params.ldaf * (ii + mi) + ((ao + sf * Q4_BLOCK_SIZE) / Q4_BLOCK_SIZE)]
+                                * params.bf[params.ldbf * (jj + ni) + (((bo + sf * (Q4_BLOCK_SIZE / 2)) * 2) / Q4_BLOCK_SIZE)];
+                    }
 
-                    for(int j = 0; j < 8; j++, ao += 32, bo += 16) {
+                    for(int j = 0; j < remainingBlocks; j++, ao += 32, bo += 16) {
                         // Load 16 bytes into 2 128-bit integer registers
                         __m256i int_va1 = _mm256_loadu_si256((__m256i const*)(params.a + params.lda * (ii + mi) + ao));
                         __m256i int_va0 = _mm256_sign_epi8(int_va1, int_va1);
@@ -809,6 +809,7 @@ void __attribute__((noinline)) gemm_q8_q4_512(int m0, int m, int n0, int n, int 
             int bo = params.boffset;
 
             for (int i = 0; i < numBlocks; i += 8) { //256bits == 8floats
+                int remainingBlocks = MIN(8, numBlocks - i);
                 int aoo = ao;
                 int boo = bo;
 
@@ -816,13 +817,12 @@ void __attribute__((noinline)) gemm_q8_q4_512(int m0, int m, int n0, int n, int 
                     ao = aoo;
                     bo = boo;
 
-                    // Load float32
-                     __m256 ablock = _mm256_loadu_ps(params.af + (params.ldaf * (ii + mi) + (ao / Q4_BLOCK_SIZE)));
-                     __m256 bblock = _mm256_loadu_ps(params.bf + (params.ldbf * (jj + ni) + ((bo*2) / Q4_BLOCK_SIZE)));
-                     __m256 scaled = _mm256_mul_ps(ablock, bblock);
-                     _mm256_store_ps(scalef, scaled);
+                    for (int sf = 0; sf < remainingBlocks; sf++) {
+                        scalef[sf] = params.af[params.ldaf * (ii + mi) + ((ao + sf * Q4_BLOCK_SIZE) / Q4_BLOCK_SIZE)]
+                                * params.bf[params.ldbf * (jj + ni) + (((bo + sf * (Q4_BLOCK_SIZE / 2)) * 2) / Q4_BLOCK_SIZE)];
+                    }
 
-                    for(int j = 0; j < 8; j++, ao += 32, bo += 16) {
+                    for(int j = 0; j < remainingBlocks; j++, ao += 32, bo += 16) {
                         // Load 16 bytes into 2 128-bit integer registers
                         __m256i int_va1 = _mm256_loadu_si256((__m256i const*)(params.a + params.lda * (ii + mi) + ao));
                         __m256i int_va0 = _mm256_sign_epi8(int_va1, int_va1);

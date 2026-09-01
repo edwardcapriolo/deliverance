@@ -215,6 +215,7 @@ public abstract class AbstractModel implements Generator, Classifier {
     private Optional<TensorRuntimeMode> tensorRuntimeMode = Optional.empty();
     private TensorRuntime tensorRuntime;
     private Map<String, Object> generationOptions = Map.of();
+    private Optional<Integer> groupedDecodeQkvSplitSize = Optional.empty();
     private boolean initialized;
     private boolean tensorPlanTraceEnabled;
     private final ConcurrentMap<UUID, TensorPlanTraceContext> tensorPlanTraces = new ConcurrentHashMap<>();
@@ -1447,6 +1448,14 @@ public abstract class AbstractModel implements Generator, Classifier {
         this.generationOptions = generationOptions == null ? Map.of() : Map.copyOf(generationOptions);
     }
 
+    public Optional<Integer> groupedDecodeQkvSplitSize() {
+        return groupedDecodeQkvSplitSize;
+    }
+
+    void setGroupedDecodeQkvSplitSize(Optional<Integer> groupedDecodeQkvSplitSize) {
+        this.groupedDecodeQkvSplitSize = Objects.requireNonNull(groupedDecodeQkvSplitSize, "groupedDecodeQkvSplitSize");
+    }
+
     public void setTensorPlanTraceEnabled(boolean tensorPlanTraceEnabled) {
         this.tensorPlanTraceEnabled = tensorPlanTraceEnabled;
     }
@@ -1624,6 +1633,7 @@ public abstract class AbstractModel implements Generator, Classifier {
                 + "packedBlockAttention=" + packedBlockAttentionEnabled + '\n'
                 + "packedPrefill=" + packedPrefillEnabled + '\n'
                 + "generationOptions=" + generationOptions + '\n'
+                + "groupedDecodeQkvSplitSize=" + groupedDecodeQkvSplitSize + '\n'
                 + "tensorProviderExplicit=" + tensorProviderExplicit + '\n'
                 + "layers=" + config.numberOfLayers + '\n'
                 + "embeddingLength=" + config.embeddingLength + '\n'

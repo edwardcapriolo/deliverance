@@ -411,6 +411,8 @@ public class NativeSimdTensorOpsFuzzParityTest {
                 1, 1024, 0, 0, 0, 2048, 64, DType.F32, DType.Q4, id++));
         cases.add(new Case("sampler_lm_head_tail_chunk_f32q4", Op.DOT_CHUNK,
                 1, 1024, 0, 0, 0, 4032, 64, DType.F32, DType.Q4, id++));
+        cases.add(new Case("regression_i8_q4_batch_chunk_batch13_k96_row128", Op.BATCH_CHUNK,
+                13, 96, 0, 32, 2, 0, 128, DType.I8, DType.Q4, -931254078));
         int[] batchRows = {1, 2, 3, 5, 10, 13};
         int[] rowChunks = {1, 2, 3, 5, 7, 13, 16, 21, 128, 256};
         int[] offsets = {0, 1, 7, 31, 32, 64};
