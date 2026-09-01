@@ -16,6 +16,7 @@ import io.teknek.deliverance.tensor.TensorMutability;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
+import jdk.incubator.vector.ShortVector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -283,6 +284,12 @@ public class NativeSimdTensorOperations implements TensorOperations {
             return aColumnOffset % Q8ByteBufferTensor.BLOCK_SIZE == 0
                     && bColumnOffset % Q8ByteBufferTensor.BLOCK_SIZE == 0
                     && columnLength % Q8ByteBufferTensor.BLOCK_SIZE == 0;
+        }
+        if (a.dType() == DType.BF16 || b.dType() == DType.BF16) {
+            int lanes = ShortVector.SPECIES_PREFERRED.length();
+            return aColumnOffset % lanes == 0
+                    && bColumnOffset % lanes == 0
+                    && columnLength % lanes == 0;
         }
         return columnLength % 4 == 0;
     }
