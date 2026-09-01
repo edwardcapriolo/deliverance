@@ -1,0 +1,118 @@
+name: Native Artifacts
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.native.name }}
+    runs-on: ${{ matrix.native.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        native:
+          - name: linux-glibc-x86_64
+            runner: ubuntu-24.04
+            mode: host
+            classifier: linux-x86_64
+            test_args: -Dtest=NativeSimdTensorOpsFuzzParityTest,NativeSimdQwenTpShapeTest -Dsurefire.failIfNoSpecifiedTests=false
+          - name: linux-musl-x86_64
+            runner: ubuntu-24.04
+            mode: airlock
+            classifier: linux-musl-x86_64
+            test_args: -DskipTests
+          - name: macos-aarch64
+            runner: macos-14
+            mode: host
+            classifier: osx-aarch_64
+            test_args: -DskipTests
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@v4
+
+      - name: Set up Java 25
+        if: matrix.native.mode == 'host'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Install native build tools
+        if: matrix.native.mode == 'host' && startsWith(matrix.native.runner, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bash \
+            build-essential \
+            curl \
+            make \
+            unzip
+
+      - name: Build native artifact on host
+        if: matrix.native.mode == 'host'
+        run: |
+          mvn -B -pl native -am \
+            -Djni.classifier=${{ matrix.native.classifier }} \
+            ${{ matrix.native.test_args }} \
+            package
+
+      - name: Build native artifact in Airlock musl container
+        if: matrix.native.mode == 'airlock'
+        run: |
+          docker run --rm \
+            --platform linux/amd64 \
+            --entrypoint sh \
+            --mount type=bind,src="$PWD",dst=/workspace \
+            -w /workspace \
+            ecapriolo/trusted-opencode:0.0.3-cloudops \
+            -lc 'mvn -B -pl native -am -Djni.classifier=${{ matrix.native.classifier }} ${{ matrix.native.test_args }} package'
+
+      - name: Prepare artifact files
+        run: |
+          mkdir -p native-release/${{ matrix.native.name }}
+          cp native/target/native-*-${{ matrix.native.classifier }}.jar native-release/${{ matrix.native.name }}/
+          if [ -f native/target/native-build.log ]; then
+            cp native/target/native-build.log native-release/${{ matrix.native.name }}/
+          fi
+          if [ -f native/target/native-smoke-test.log ]; then
+            cp native/target/native-smoke-test.log native-release/${{ matrix.native.name }}/
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deliverance-native-${{ matrix.native.name }}
+          path: native-release/${{ matrix.native.name }}
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    name: Upload Native Artifacts To Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    needs: build
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: deliverance-native-*
+          path: native-artifacts
+
+      - name: Create release if needed
+        run: |
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 \
+            || gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --notes "Native artifacts for ${GITHUB_REF_NAME}"
+
+      - name: Upload native jars
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" native-artifacts/**/*.jar --clobber
