@@ -253,7 +253,9 @@ public final class InferenceBenchmark {
             BufferedWriter writer, BufferedWriter jsonlWriter, boolean warmup) throws IOException {
         List<ChatMessage> messages = new ArrayList<>();
         Optional<PromptSupport> promptSupport = runner.promptSupport();
-        for (int turn = 0; turn < benchmarkCase.turns.size(); turn++) {
+        int turnCount = options.maxTurns > 0 ? Math.min(options.maxTurns, benchmarkCase.turns.size())
+                : benchmarkCase.turns.size();
+        for (int turn = 0; turn < turnCount; turn++) {
             messages.add(new ChatMessage("user", benchmarkCase.turns.get(turn)));
             PromptContext promptContext = promptContext(promptSupport, messages);
             printStart("deliverance", runner.modelName(), benchmarkCase, turn + 1, warmup,
@@ -692,7 +694,9 @@ public final class InferenceBenchmark {
     private static void runOllamaCase(HttpClient client, Options options, BenchmarkCase benchmarkCase, BufferedWriter writer,
             BufferedWriter jsonlWriter, boolean warmup) throws IOException, InterruptedException {
         List<ChatMessage> messages = new ArrayList<>();
-        for (int turn = 0; turn < benchmarkCase.turns.size(); turn++) {
+        int turnCount = options.maxTurns > 0 ? Math.min(options.maxTurns, benchmarkCase.turns.size())
+                : benchmarkCase.turns.size();
+        for (int turn = 0; turn < turnCount; turn++) {
             messages.add(new ChatMessage("user", benchmarkCase.turns.get(turn)));
             ObjectNode requestJson = JsonUtils.om.createObjectNode();
             requestJson.put("model", options.ollamaModel);
@@ -1014,6 +1018,7 @@ public final class InferenceBenchmark {
         private Integer seed = 42;
         private int warmupCases = 1;
         private int maxCases = 0;
+        private int maxTurns = 0;
         private int tensorParallelSize = 1;
         private int tensorParallelMaxRanksPerWorker = 2;
         private String tensorParallelCollectiveTransport = "http";
@@ -1052,6 +1057,7 @@ public final class InferenceBenchmark {
                     case "--seed" -> options.seed = "none".equalsIgnoreCase(args[++i]) ? null : Integer.parseInt(args[i]);
                     case "--warmup-cases" -> options.warmupCases = Integer.parseInt(args[++i]);
                     case "--max-cases" -> options.maxCases = Integer.parseInt(args[++i]);
+                    case "--max-turns" -> options.maxTurns = Integer.parseInt(args[++i]);
                     case "--tensor-parallel-size" -> options.tensorParallelSize = Integer.parseInt(args[++i]);
                     case "--tensor-parallel-max-ranks-per-worker" ->
                             options.tensorParallelMaxRanksPerWorker = Integer.parseInt(args[++i]);
@@ -1126,6 +1132,7 @@ public final class InferenceBenchmark {
                       --seed N|none                      Seed, default 42
                       --warmup-cases N                   Cases to run before recording, default 1
                       --max-cases N                      Limit cases, default all
+                      --max-turns N                      Limit turns per case, default all
                       --tensor-parallel-size N           Local in-process tensor parallel ranks, default 1
                       --tensor-parallel-max-ranks-per-worker N Max ranks per local worker, default 2
                       --tensor-parallel-collective-transport http|netty Collective transport, default http

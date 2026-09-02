@@ -4,6 +4,7 @@ import com.google.common.base.Preconditions;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
+import io.teknek.deliverance.tensor.TensorAllocator;
 
 import javax.annotation.Nullable;
 import java.util.Comparator;
@@ -112,6 +113,7 @@ public final class KvBlockManager implements AutoCloseable {
     private final ConcurrentHashMap<KvBlockKey, ManagedKvBlock> blocks = new ConcurrentHashMap<>();
     private final MetricRegistry metricRegistry;
     private final long maxResidentBytes;
+    private final KvBlockDiskStore diskStore;
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
     public KvBlockManager(MetricRegistry metricRegistry) {
@@ -119,13 +121,23 @@ public final class KvBlockManager implements AutoCloseable {
     }
 
     public KvBlockManager(MetricRegistry metricRegistry, KvBufferCacheSettings settings) {
-        this(metricRegistry, Objects.requireNonNull(settings, "settings").getSharedPrefixBlockCacheMaxBytes());
+        this(metricRegistry, Objects.requireNonNull(settings, "settings").getSharedPrefixBlockCacheMaxBytes(), null);
+    }
+
+    public KvBlockManager(MetricRegistry metricRegistry, KvBufferCacheSettings settings, TensorAllocator allocator) {
+        this(metricRegistry, Objects.requireNonNull(settings, "settings").getSharedPrefixBlockCacheMaxBytes(),
+                KvBlockDiskStore.open(settings, allocator, metricRegistry));
     }
 
     public KvBlockManager(MetricRegistry metricRegistry, long maxResidentBytes) {
+        this(metricRegistry, maxResidentBytes, null);
+    }
+
+    KvBlockManager(MetricRegistry metricRegistry, long maxResidentBytes, @Nullable KvBlockDiskStore diskStore) {
         this.metricRegistry = Objects.requireNonNull(metricRegistry, "metricRegistry");
         Preconditions.checkArgument(maxResidentBytes >= 0, "maxResidentBytes must be >= 0");
         this.maxResidentBytes = maxResidentBytes;
+        this.diskStore = diskStore;
     }
 
     public KvBlockLease retain(KvBlockKey key, String sessionId) {
@@ -135,6 +147,10 @@ public final class KvBlockManager implements AutoCloseable {
         while (true) {
             ManagedKvBlock managed = blocks.get(key);
             if (managed == null) {
+                KvBlockLease diskLease = retainFromDisk(key, sessionId);
+                if (diskLease != null) {
+                    return diskLease;
+                }
                 InferenceProfiler.counter(metricRegistry, "kvcache.v2.blockmanager.miss").inc();
                 return null;
             }
@@ -149,9 +165,14 @@ public final class KvBlockManager implements AutoCloseable {
     }
 
     public KvBlockLease admitAndRetain(KvBlockKey key, KvBlock candidate, String sessionId) {
+        return admitAndRetain(key, candidate, sessionId, key.tokenCount());
+    }
+
+    public KvBlockLease admitAndRetain(KvBlockKey key, KvBlock candidate, String sessionId, int diskAdmitTokenCount) {
         requireOpen();
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(candidate, "candidate");
+        Preconditions.checkArgument(diskAdmitTokenCount >= 0, "diskAdmitTokenCount must be >= 0");
         validateKeyMatchesBlock(key, candidate);
         ManagedKvBlock candidateManaged = new ManagedKvBlock(this, key, candidate, metricRegistry);
         while (true) {
@@ -159,6 +180,9 @@ public final class KvBlockManager implements AutoCloseable {
             if (existing == null) {
                 InferenceProfiler.counter(metricRegistry, "kvcache.v2.blockmanager.admit").inc();
                 KvBlockLease lease = candidateManaged.tryRetain(sessionId);
+                if (diskStore != null) {
+                    diskStore.enqueueWrite(key, candidate, diskAdmitTokenCount);
+                }
                 evictToBudget();
                 return lease;
             }
@@ -166,6 +190,33 @@ public final class KvBlockManager implements AutoCloseable {
             if (lease != null) {
                 InferenceProfiler.counter(metricRegistry, "kvcache.v2.blockmanager.admit.duplicate").inc();
                 candidate.close();
+                return lease;
+            }
+            blocks.remove(key, existing);
+            InferenceProfiler.counter(metricRegistry, "kvcache.v2.blockmanager.retain.race_retry").inc();
+        }
+    }
+
+    private KvBlockLease retainFromDisk(KvBlockKey key, String sessionId) {
+        if (diskStore == null) {
+            return null;
+        }
+        KvBlock loaded = diskStore.load(key);
+        if (loaded == null) {
+            return null;
+        }
+        ManagedKvBlock loadedManaged = new ManagedKvBlock(this, key, loaded, metricRegistry);
+        while (true) {
+            ManagedKvBlock existing = blocks.putIfAbsent(key, loadedManaged);
+            if (existing == null) {
+                InferenceProfiler.counter(metricRegistry, "kvcache.v2.blockmanager.hit.disk").inc();
+                KvBlockLease lease = loadedManaged.tryRetain(sessionId);
+                evictToBudget();
+                return lease;
+            }
+            KvBlockLease lease = existing.tryRetain(sessionId);
+            if (lease != null) {
+                loaded.close();
                 return lease;
             }
             blocks.remove(key, existing);
@@ -274,6 +325,9 @@ public final class KvBlockManager implements AutoCloseable {
                 managed.markEvicting();
             }
             blocks.clear();
+            if (diskStore != null) {
+                diskStore.close();
+            }
         }
     }
 }

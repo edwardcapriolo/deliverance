@@ -84,6 +84,13 @@ public record AutoModelConfig(
             Optional<List<Integer>> prefixCheckpointAnchors,
             Optional<KvBufferCacheSettings.PrefixCacheMode> prefixCacheMode,
             Optional<Long> sharedPrefixBlockCacheMaxBytes,
+            Optional<Boolean> sharedPrefixDiskCacheEnabled,
+            Optional<File> sharedPrefixDiskCachePath,
+            Optional<Long> sharedPrefixDiskCacheMaxBytes,
+            Optional<Long> sharedPrefixDiskCacheReservedFreeBytes,
+            Optional<Long> sharedPrefixDiskCacheMinUsableBytes,
+            Optional<Integer> sharedPrefixDiskCacheAdmitMinTokens,
+            Optional<Integer> sharedPrefixDiskCacheWriterQueueSize,
             Optional<Integer> contextRowsPerPageTarget,
             Optional<KvBufferCacheSettings.KvBlockStoragePolicy> kvBlockStoragePolicy,
             Optional<Integer> kvTurboQuantBits,
@@ -101,6 +108,13 @@ public record AutoModelConfig(
             prefixCheckpointAnchors = prefixCheckpointAnchors == null ? Optional.empty() : prefixCheckpointAnchors;
             prefixCacheMode = prefixCacheMode == null ? Optional.empty() : prefixCacheMode;
             sharedPrefixBlockCacheMaxBytes = sharedPrefixBlockCacheMaxBytes == null ? Optional.empty() : sharedPrefixBlockCacheMaxBytes;
+            sharedPrefixDiskCacheEnabled = sharedPrefixDiskCacheEnabled == null ? Optional.empty() : sharedPrefixDiskCacheEnabled;
+            sharedPrefixDiskCachePath = sharedPrefixDiskCachePath == null ? Optional.empty() : sharedPrefixDiskCachePath;
+            sharedPrefixDiskCacheMaxBytes = sharedPrefixDiskCacheMaxBytes == null ? Optional.empty() : sharedPrefixDiskCacheMaxBytes;
+            sharedPrefixDiskCacheReservedFreeBytes = sharedPrefixDiskCacheReservedFreeBytes == null ? Optional.empty() : sharedPrefixDiskCacheReservedFreeBytes;
+            sharedPrefixDiskCacheMinUsableBytes = sharedPrefixDiskCacheMinUsableBytes == null ? Optional.empty() : sharedPrefixDiskCacheMinUsableBytes;
+            sharedPrefixDiskCacheAdmitMinTokens = sharedPrefixDiskCacheAdmitMinTokens == null ? Optional.empty() : sharedPrefixDiskCacheAdmitMinTokens;
+            sharedPrefixDiskCacheWriterQueueSize = sharedPrefixDiskCacheWriterQueueSize == null ? Optional.empty() : sharedPrefixDiskCacheWriterQueueSize;
             contextRowsPerPageTarget = contextRowsPerPageTarget == null ? Optional.empty() : contextRowsPerPageTarget;
             kvBlockStoragePolicy = kvBlockStoragePolicy == null ? Optional.empty() : kvBlockStoragePolicy;
             kvTurboQuantBits = kvTurboQuantBits == null ? Optional.empty() : kvTurboQuantBits;
@@ -120,6 +134,13 @@ public record AutoModelConfig(
             prefixCheckpointAnchors.ifPresent(settings::setPrefixCheckpointAnchors);
             prefixCacheMode.ifPresent(settings::setPrefixCacheMode);
             sharedPrefixBlockCacheMaxBytes.ifPresent(settings::setSharedPrefixBlockCacheMaxBytes);
+            sharedPrefixDiskCacheEnabled.ifPresent(settings::setSharedPrefixDiskCacheEnabled);
+            sharedPrefixDiskCachePath.ifPresent(settings::setSharedPrefixDiskCachePath);
+            sharedPrefixDiskCacheMaxBytes.ifPresent(settings::setSharedPrefixDiskCacheMaxBytes);
+            sharedPrefixDiskCacheReservedFreeBytes.ifPresent(settings::setSharedPrefixDiskCacheReservedFreeBytes);
+            sharedPrefixDiskCacheMinUsableBytes.ifPresent(settings::setSharedPrefixDiskCacheMinUsableBytes);
+            sharedPrefixDiskCacheAdmitMinTokens.ifPresent(settings::setSharedPrefixDiskCacheAdmitMinTokens);
+            sharedPrefixDiskCacheWriterQueueSize.ifPresent(settings::setSharedPrefixDiskCacheWriterQueueSize);
             contextRowsPerPageTarget.ifPresent(settings::setContextRowsPerPageTarget);
             kvBlockStoragePolicy.ifPresent(settings::setKvBlockStoragePolicy);
             kvTurboQuantBits.ifPresent(settings::setKvTurboQuantBits);

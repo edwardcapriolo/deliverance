@@ -209,6 +209,13 @@ public class Q8ByteBufferTensor extends AbstractTensor {
         Preconditions.checkArgument(!b.isReadOnly(), "Read-only");
         segment.asSlice(getMemorySegmentOffset(destOffset), length)
                 .copyFrom(src.getMemorySegment().asSlice(src.getMemorySegmentOffset(srcOffset), length));
+        if (src instanceof Q8ByteBufferTensor q8
+                && srcOffset % BLOCK_SIZE == 0 && destOffset % BLOCK_SIZE == 0 && length % BLOCK_SIZE == 0) {
+            int srcBlock = Q4ByteBufferTensor.blockIndex(srcOffset);
+            int destBlock = Q4ByteBufferTensor.blockIndex(destOffset);
+            int blockCount = Q4ByteBufferTensor.blockIndex(length);
+            blockF.copyFrom(q8.blockF, srcBlock, destBlock, blockCount);
+        }
     }
 
     @Override

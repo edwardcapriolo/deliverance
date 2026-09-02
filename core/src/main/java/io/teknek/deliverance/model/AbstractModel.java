@@ -286,7 +286,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         this.tensorAllocator = tensorAllocator;
         this.kvBufferCacheSettings = kvBufferCacheSettings;
         this.kvBufferCache = new KvBufferCache(this, kvBufferCacheSettings);
-        this.kvBlockManager = new KvBlockManager(metricRegistry, kvBufferCacheSettings);
+        this.kvBlockManager = new KvBlockManager(metricRegistry, kvBufferCacheSettings, tensorAllocator);
         this.kvCacheManager = new KvCacheManager(c.numberOfLayers, c.contextLength,
                 c.kvLength / tensorParallelContext.size(), workingMemoryDType, kvBufferCacheSettings, tensorAllocator,
                 metricRegistry, false, configurableTensorProvider.get());
@@ -548,10 +548,17 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
                 continue;
             }
             KvBlock block = source.detachCommittedBlock(key.blockIndex());
-            KvBlockLease lease = kvBlockManager.admitAndRetain(key, block, source.sessionId());
+            KvBlockLease lease = kvBlockManager.admitAndRetain(key, block, source.sessionId(),
+                    sharedPrefixDiskAdmitTokenCount(promptTokens));
             source.attachCommittedBlock(lease);
             InferenceProfiler.counter(metricRegistry, "kvcache.v2.prefix.blocks.admitted").inc();
         }
+    }
+
+    private int sharedPrefixDiskAdmitTokenCount(int[] promptTokens) {
+        int blockSize = kvBufferCacheSettings.getBlockSize();
+        int limit = Math.min(promptTokens.length, kvBufferCacheSettings.getMaxPrefixTokensPerPrompt());
+        return (limit / blockSize) * blockSize;
     }
 
     private List<KvBlockKey> sharedPrefixBlockKeys(int[] promptTokens, Optional<String> cacheSalt) {
