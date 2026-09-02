@@ -56,6 +56,7 @@ import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.tensorlib.PlannedTensor;
 import io.teknek.deliverance.tensorlib.TensorPlan;
+import io.teknek.deliverance.tensorlib.TensorPlanAdaptiveSplitTuner;
 import io.teknek.deliverance.tensorlib.TensorRuntime;
 import io.teknek.deliverance.tensorlib.TensorRuntimeMode;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
@@ -86,7 +87,7 @@ import static io.teknek.deliverance.tensor.DebugSupport.debug;
  * <p>Useful background: Thinking Machines, "Defeating Nondeterminism in LLM Inference",
  * https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/</p>
  */
-public abstract class AbstractModel implements Generator, Classifier {
+public abstract class AbstractModel implements Generator, Classifier, TensorPlanAdaptiveSplitTuner {
     static final Logger logger = LoggerFactory.getLogger(AbstractModel.class);
 
     public static final int DEFAULT_MAX_BATCH_SIZE = 512;
@@ -216,6 +217,8 @@ public abstract class AbstractModel implements Generator, Classifier {
     private TensorRuntime tensorRuntime;
     private Map<String, Object> generationOptions = Map.of();
     private Optional<Integer> groupedDecodeQkvSplitSize = Optional.empty();
+    private final ConcurrentMap<String, AdaptiveSplitState> adaptiveSplitStates = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, AdaptiveAlternateState> adaptiveAlternateStates = new ConcurrentHashMap<>();
     private boolean initialized;
     private boolean tensorPlanTraceEnabled;
     private final ConcurrentMap<UUID, TensorPlanTraceContext> tensorPlanTraces = new ConcurrentHashMap<>();
@@ -1454,6 +1457,218 @@ public abstract class AbstractModel implements Generator, Classifier {
 
     void setGroupedDecodeQkvSplitSize(Optional<Integer> groupedDecodeQkvSplitSize) {
         this.groupedDecodeQkvSplitSize = Objects.requireNonNull(groupedDecodeQkvSplitSize, "groupedDecodeQkvSplitSize");
+    }
+
+    @Override
+    public int chooseSplit(String planName, TensorShape shape, int defaultSplit, int minSplit, int maxSplit) {
+        String key = adaptiveSplitKey(planName, shape);
+        AdaptiveSplitState state = adaptiveSplitStates.computeIfAbsent(key,
+                ignored -> new AdaptiveSplitState(minSplit, maxSplit, defaultSplit));
+        int split = state.choose();
+        if (InferenceProfiler.isEnabled()) {
+            InferenceProfiler.counter(metricRegistry, "tensorplan.jit.split", "plan", planName, "split",
+                    Integer.toString(split)).inc();
+        }
+        return split;
+    }
+
+    @Override
+    public void observeSplit(String planName, TensorShape shape, int split, long elapsedNanos) {
+        AdaptiveSplitState state = adaptiveSplitStates.get(adaptiveSplitKey(planName, shape));
+        if (state != null) {
+            boolean promoted = state.observe(split, elapsedNanos);
+            if (InferenceProfiler.isEnabled()) {
+                InferenceProfiler.timer(metricRegistry, "tensorplan.jit.elapsed", "plan", planName, "split",
+                        Integer.toString(split)).update(elapsedNanos, TimeUnit.NANOSECONDS);
+                if (promoted) {
+                    InferenceProfiler.counter(metricRegistry, "tensorplan.jit.selected", "plan", planName, "split",
+                            Integer.toString(state.selected())).inc();
+                }
+            }
+        }
+    }
+
+    @Override
+    public String chooseAlternate(String planName, List<String> candidates) {
+        AdaptiveAlternateState state = adaptiveAlternateStates.computeIfAbsent(planName,
+                ignored -> new AdaptiveAlternateState(candidates));
+        String candidate = state.choose(candidates);
+        if (InferenceProfiler.isEnabled()) {
+            InferenceProfiler.counter(metricRegistry, "tensorplan.jit.alternate.choice", "plan", planName,
+                    "candidate", candidate).inc();
+        }
+        return candidate;
+    }
+
+    @Override
+    public void observeAlternate(String planName, String candidate, long elapsedNanos) {
+        AdaptiveAlternateState state = adaptiveAlternateStates.get(planName);
+        if (state != null) {
+            boolean promoted = state.observe(candidate, elapsedNanos);
+            if (InferenceProfiler.isEnabled()) {
+                InferenceProfiler.timer(metricRegistry, "tensorplan.jit.alternate.elapsed", "plan", planName,
+                        "candidate", candidate).update(elapsedNanos, TimeUnit.NANOSECONDS);
+                if (promoted) {
+                    InferenceProfiler.counter(metricRegistry, "tensorplan.jit.alternate.selected", "plan", planName,
+                            "candidate", state.selected()).inc();
+                }
+            }
+        }
+    }
+
+    private static String adaptiveSplitKey(String planName, TensorShape shape) {
+        return planName + "|" + shape;
+    }
+
+    private static final class AdaptiveSplitState {
+        private static final double EPSILON = 0.05;
+        private static final double ALPHA = 0.15;
+        private final int[] splits;
+        private final long[] counts;
+        private final double[] ewmaNanos;
+        private final Random random = new Random(0x51A7E5EEDL);
+        private final int defaultIndex;
+        private int lastBestIndex;
+
+        private AdaptiveSplitState(int minSplit, int maxSplit, int defaultSplit) {
+            this.splits = new int[maxSplit - minSplit + 1];
+            for (int i = 0; i < splits.length; i++) {
+                splits[i] = minSplit + i;
+            }
+            this.counts = new long[splits.length];
+            this.ewmaNanos = new double[splits.length];
+            this.defaultIndex = Math.max(0, Math.min(splits.length - 1, defaultSplit - minSplit));
+            this.lastBestIndex = defaultIndex;
+        }
+
+        synchronized int choose() {
+            int unsampled = firstUnsampledIndex();
+            if (unsampled >= 0) {
+                return splits[unsampled];
+            }
+            if (random.nextDouble() < EPSILON) {
+                return splits[random.nextInt(splits.length)];
+            }
+            lastBestIndex = bestIndex();
+            return splits[lastBestIndex];
+        }
+
+        synchronized boolean observe(int split, long elapsedNanos) {
+            int previousBest = bestIndex();
+            int index = indexOf(split);
+            if (index < 0) {
+                return false;
+            }
+            counts[index]++;
+            ewmaNanos[index] = counts[index] == 1
+                    ? elapsedNanos
+                    : (ALPHA * elapsedNanos) + ((1.0 - ALPHA) * ewmaNanos[index]);
+            lastBestIndex = bestIndex();
+            return lastBestIndex != previousBest;
+        }
+
+        synchronized int selected() {
+            return splits[bestIndex()];
+        }
+
+        private int firstUnsampledIndex() {
+            for (int offset = 0; offset < splits.length; offset++) {
+                int index = (defaultIndex + offset) % splits.length;
+                if (counts[index] == 0) {
+                    return index;
+                }
+            }
+            return -1;
+        }
+
+        private int bestIndex() {
+            int bestIndex = lastBestIndex;
+            double bestMean = Double.POSITIVE_INFINITY;
+            for (int i = 0; i < splits.length; i++) {
+                if (counts[i] == 0) {
+                    continue;
+                }
+                if (ewmaNanos[i] < bestMean) {
+                    bestMean = ewmaNanos[i];
+                    bestIndex = i;
+                }
+            }
+            return bestIndex;
+        }
+
+        private int indexOf(int split) {
+            for (int i = 0; i < splits.length; i++) {
+                if (splits[i] == split) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+    }
+
+    private static final class AdaptiveAlternateState {
+        private static final double EPSILON = 0.05;
+        private static final double ALPHA = 0.15;
+        private final Random random = new Random(0xA17E5EEDL);
+        private final Map<String, Stats> stats = new LinkedHashMap<>();
+        private String lastBest;
+
+        private AdaptiveAlternateState(List<String> candidates) {
+            for (String candidate : candidates) {
+                stats.put(candidate, new Stats());
+            }
+            lastBest = candidates.isEmpty() ? null : candidates.getFirst();
+        }
+
+        synchronized String choose(List<String> candidates) {
+            for (String candidate : candidates) {
+                stats.computeIfAbsent(candidate, ignored -> new Stats());
+                if (stats.get(candidate).count == 0) {
+                    return candidate;
+                }
+            }
+            if (random.nextDouble() < EPSILON) {
+                return candidates.get(random.nextInt(candidates.size()));
+            }
+            lastBest = best(candidates);
+            return lastBest;
+        }
+
+        synchronized boolean observe(String candidate, long elapsedNanos) {
+            String previousBest = best(List.copyOf(stats.keySet()));
+            Stats stat = stats.computeIfAbsent(candidate, ignored -> new Stats());
+            stat.count++;
+            stat.ewmaNanos = stat.count == 1
+                    ? elapsedNanos
+                    : (ALPHA * elapsedNanos) + ((1.0 - ALPHA) * stat.ewmaNanos);
+            lastBest = best(List.copyOf(stats.keySet()));
+            return !Objects.equals(previousBest, lastBest);
+        }
+
+        synchronized String selected() {
+            return lastBest;
+        }
+
+        private String best(List<String> candidates) {
+            String best = lastBest == null ? candidates.getFirst() : lastBest;
+            double bestMean = Double.POSITIVE_INFINITY;
+            for (String candidate : candidates) {
+                Stats stat = stats.get(candidate);
+                if (stat == null || stat.count == 0) {
+                    continue;
+                }
+                if (stat.ewmaNanos < bestMean) {
+                    bestMean = stat.ewmaNanos;
+                    best = candidate;
+                }
+            }
+            return best;
+        }
+
+        private static final class Stats {
+            private long count;
+            private double ewmaNanos;
+        }
     }
 
     public void setTensorPlanTraceEnabled(boolean tensorPlanTraceEnabled) {

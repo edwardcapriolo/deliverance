@@ -41,6 +41,7 @@ public final class TensorPlan {
     private final MetricRegistry metricRegistry;
     private final TensorRuntime runtime;
     private final String ownerClass;
+    private final TensorPlanAdaptiveSplitTuner adaptiveSplitTuner;
     private RunMode runMode = RunMode.DEFAULT;
 
     public TensorPlan(TensorOperations operations, WrappedForkJoinPool pool) {
@@ -68,6 +69,7 @@ public final class TensorPlan {
         this.metricRegistry = metricRegistry;
         this.runtime = runtime;
         this.ownerClass = owner == null ? "UNKNOWN" : owner.getClass().getSimpleName();
+        this.adaptiveSplitTuner = owner instanceof TensorPlanAdaptiveSplitTuner tuner ? tuner : null;
     }
 
     public String ownerClass() {
@@ -120,6 +122,15 @@ public final class TensorPlan {
         return new Tensor(new InputNode(name, tensor, true));
     }
 
+    /**
+     * Creates a fused node with an explicit iteration/output shape.
+     *
+     * <p>The shape is both the default output shape when the fuse creates a new tensor and the iteration domain used by
+     * {@link FusedMap}. For {@link FusedExecution#FIXED_POOL_LINEAR}, materialization splits {@code shape.size()} into
+     * linear chunks and passes each chunk as {@code offset}/{@code length} to every fused map. Callers that want row-chunk
+     * semantics should use a one-dimensional shape such as {@code TensorShape.of(rowCount)} and interpret the map offset
+     * as a row start.</p>
+     */
     public FusedBuilder fuse(String name, TensorShape shape) {
         return new FusedBuilder(name, shape, FusedExecution.FIXED_POOL_LINEAR);
     }
@@ -132,6 +143,10 @@ public final class TensorPlan {
         return new FusedBuilder(name, shape, FusedExecution.INT_STREAM_ROWS);
     }
 
+    public AlternateJitBuilder alternateJit(String planName, String candidateName, Runnable operation) {
+        return new AlternateJitBuilder(planName, candidateName, operation);
+    }
+
     public TensorPlan forcedRunMode(RunMode runMode) {
         this.runMode = Objects.requireNonNull(runMode, "runMode");
         return this;
@@ -139,6 +154,44 @@ public final class TensorPlan {
 
     public RunMode runMode() {
         return runMode;
+    }
+
+    public final class AlternateJitBuilder {
+        private final String planName;
+        private final Map<String, Runnable> candidates = new LinkedHashMap<>();
+
+        private AlternateJitBuilder(String planName, String candidateName, Runnable operation) {
+            this.planName = Objects.requireNonNull(planName, "planName");
+            alternate(candidateName, operation);
+        }
+
+        public AlternateJitBuilder alternate(String candidateName, Runnable operation) {
+            candidates.put(Objects.requireNonNull(candidateName, "candidateName"),
+                    Objects.requireNonNull(operation, "operation"));
+            return this;
+        }
+
+        public void run() {
+            if (candidates.isEmpty()) {
+                throw new IllegalStateException("alternateJit requires at least one candidate");
+            }
+            String candidate = adaptiveSplitTuner == null
+                    ? candidates.keySet().iterator().next()
+                    : adaptiveSplitTuner.chooseAlternate(planName, List.copyOf(candidates.keySet()));
+            Runnable operation = candidates.get(candidate);
+            if (operation == null) {
+                candidate = candidates.keySet().iterator().next();
+                operation = candidates.get(candidate);
+            }
+            long start = System.nanoTime();
+            try {
+                operation.run();
+            } finally {
+                if (adaptiveSplitTuner != null) {
+                    adaptiveSplitTuner.observeAlternate(planName, candidate, System.nanoTime() - start);
+                }
+            }
+        }
     }
 
     public final class Tensor {
@@ -188,6 +241,17 @@ public final class TensorPlan {
 
         public Tensor timer(String metricName) {
             return new Tensor(new TimedNode(metricName, this.node));
+        }
+
+        /**
+         * Opts this tensor into model-scoped adaptive split tuning during materialization.
+         *
+         * <p>This currently applies to fused nodes. TensorPlan starts with the node's normal split policy, then asks the
+         * owning model's {@link TensorPlanAdaptiveSplitTuner} to try split counts in the supplied inclusive range and reuse
+         * the fastest observed split on later materializations of the same named shape.</p>
+         */
+        public Tensor justInTime(int minSplit, int maxSplit) {
+            return new Tensor(new JustInTimeNode(this.node, minSplit, maxSplit));
         }
 
         public TensorShape shape() {
@@ -264,6 +328,7 @@ public final class TensorPlan {
         private final Map<String, Node> inputs = new LinkedHashMap<>();
         private final List<FusedStep> steps = new ArrayList<>();
         private String outputInputName;
+        private Integer splitCount;
 
         private FusedBuilder(String name, TensorShape shape, FusedExecution execution) {
             this.name = Objects.requireNonNull(name, "name");
@@ -296,10 +361,25 @@ public final class TensorPlan {
             return this;
         }
 
+        /**
+         * Overrides the default fused-node split count.
+         *
+         * <p>By default, fixed-pool fused nodes split the iteration domain by {@code pool.getCoreCount()}. This override
+         * is useful when a shape has a natural model partition, such as attention-head or KV-head row groups, that is more
+         * efficient than blindly using every worker.</p>
+         */
+        public FusedBuilder splitCount(int splitCount) {
+            if (splitCount < 1) {
+                throw new IllegalArgumentException("splitCount must be >= 1");
+            }
+            this.splitCount = splitCount;
+            return this;
+        }
+
         public Tensor tensor() {
             return new Tensor(new FusedNode(name, shape, execution,
                     Collections.unmodifiableMap(new LinkedHashMap<>(inputs)), outputInputName,
-                    List.copyOf(steps)));
+                    List.copyOf(steps), splitCount));
         }
     }
 
@@ -338,6 +418,57 @@ public final class TensorPlan {
         @Override
         public void render(StringBuilder sb, String indent, boolean last) {
             renderLine(sb, indent, last, "timer " + metricName + " -> " + delegate.label() + " " + compactShape(shape()));
+            delegate.render(sb, indent + (last ? "   " : "│  "), true);
+        }
+
+        @Override
+        public String label() {
+            return delegate.label();
+        }
+    }
+
+    private final class JustInTimeNode implements Node {
+        private final Node delegate;
+        private final int minSplit;
+        private final int maxSplit;
+
+        private JustInTimeNode(Node delegate, int minSplit, int maxSplit) {
+            if (minSplit < 1 || maxSplit < minSplit) {
+                throw new IllegalArgumentException("invalid justInTime split range");
+            }
+            this.delegate = Objects.requireNonNull(delegate, "delegate");
+            this.minSplit = minSplit;
+            this.maxSplit = maxSplit;
+        }
+
+        @Override
+        public Eval eval() {
+            if (!(delegate instanceof FusedNode fused)) {
+                throw new UnsupportedOperationException("justInTime currently supports fused TensorPlan nodes only");
+            }
+            if (adaptiveSplitTuner == null) {
+                return fused.eval();
+            }
+            int max = Math.min(maxSplit, Math.toIntExact(Math.max(1, shape().size())));
+            int min = Math.min(minSplit, max);
+            int split = adaptiveSplitTuner.chooseSplit(fused.name, fused.shape(), fused.defaultSplitCount(), min, max);
+            long start = System.nanoTime();
+            try {
+                return fused.evalWithSplitCount(split);
+            } finally {
+                adaptiveSplitTuner.observeSplit(fused.name, fused.shape(), split, System.nanoTime() - start);
+            }
+        }
+
+        @Override
+        public TensorShape shape() {
+            return delegate.shape();
+        }
+
+        @Override
+        public void render(StringBuilder sb, String indent, boolean last) {
+            renderLine(sb, indent, last, "justInTime splits=" + minSplit + ".." + maxSplit + " -> "
+                    + delegate.label() + " " + compactShape(shape()));
             delegate.render(sb, indent + (last ? "   " : "│  "), true);
         }
 
@@ -819,19 +950,25 @@ public final class TensorPlan {
         private final Map<String, Node> inputs;
         private final String outputInputName;
         private final List<FusedStep> steps;
+        private final Integer splitCount;
 
         private FusedNode(String name, TensorShape shape, FusedExecution execution, Map<String, Node> inputs,
-                String outputInputName, List<FusedStep> steps) {
+                String outputInputName, List<FusedStep> steps, Integer splitCount) {
             this.name = name;
             this.shape = shape;
             this.execution = execution;
             this.inputs = inputs;
             this.outputInputName = outputInputName;
             this.steps = steps;
+            this.splitCount = splitCount;
         }
 
         @Override
         public Eval eval() {
+            return evalWithSplitCount(splitCount);
+        }
+
+        private Eval evalWithSplitCount(Integer splitOverride) {
             Map<String, Eval> evals = new LinkedHashMap<>();
             Map<String, AbstractTensor> tensors = new LinkedHashMap<>();
             for (Map.Entry<String, Node> entry : inputs.entrySet()) {
@@ -851,7 +988,7 @@ public final class TensorPlan {
             } else if (execution == FusedExecution.INT_STREAM_ROWS) {
                 executeIntStreamRows(context);
             } else {
-                executeFixedPoolLinear(context);
+                executeFixedPoolLinear(context, splitOverride);
             }
             evals.entrySet().stream()
                     .filter(entry -> outputInputName == null || !outputInputName.equals(entry.getKey()))
@@ -860,9 +997,14 @@ public final class TensorPlan {
             return new Eval(output, outputEval == null || outputEval.owned(), true);
         }
 
-        private void executeFixedPoolLinear(FusedContext context) {
+        private int defaultSplitCount() {
+            return splitCount == null ? Math.max(1, pool.getCoreCount()) : splitCount;
+        }
+
+        private void executeFixedPoolLinear(FusedContext context, Integer splitOverride) {
             long length = shape.size();
-            List<TensorSplit> splits = TensorLib.calculateTSplits(0, length, Math.max(1, pool.getCoreCount()));
+            int splitsCount = splitOverride == null ? defaultSplitCount() : splitOverride;
+            List<TensorSplit> splits = TensorLib.calculateTSplits(0, length, splitsCount);
             if (useTensorRuntime()) {
                 runtime.runChunks("tensorplan.fuse.linear", 0, Math.toIntExact(length), splits.size(),
                         representativeTensor(context), (chunkStart, chunkSize) -> runSteps(context, chunkStart, chunkSize));

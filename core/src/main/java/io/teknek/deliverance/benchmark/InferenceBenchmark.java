@@ -617,9 +617,9 @@ public final class InferenceBenchmark {
             return;
         }
         model.getMetricRegistry().getCounters().entrySet().stream()
-                .filter(entry -> InferenceProfiler.shouldPrintCounter(entry.getKey().getKey()))
-                .forEach(entry -> System.out.println("[profile-counter] " + entry.getKey().getKey()
-                        + " count=" + InferenceProfiler.counterValue(entry.getKey().getKey())));
+                .filter(entry -> InferenceProfiler.shouldPrintCounter(entry.getKey()))
+                .forEach(entry -> System.out.println("[profile-counter] " + InferenceProfiler.displayName(entry.getKey())
+                        + " count=" + InferenceProfiler.counterValue(entry.getKey())));
     }
 
     private static void printAllocatorMetrics(AbstractModel model) {
