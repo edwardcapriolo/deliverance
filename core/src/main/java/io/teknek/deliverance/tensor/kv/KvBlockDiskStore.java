@@ -7,6 +7,7 @@ import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
+import io.teknek.deliverance.tensor.MseTurboQuantCodec;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
@@ -15,6 +16,8 @@ import javax.annotation.Nullable;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.lang.foreign.ValueLayout;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -127,7 +130,7 @@ public final class KvBlockDiskStore implements AutoCloseable {
                 InferenceProfiler.counter(metricRegistry, METRIC_PREFIX + ".miss.checksum").inc();
                 return null;
             }
-            KvBlock block = deserializeDenseBlock(key, payload);
+            KvBlock block = deserializeBlock(key, payload);
             touch(metaPath, binPath, metadata);
             InferenceProfiler.counter(metricRegistry, METRIC_PREFIX + ".hit").inc();
             return block;
@@ -152,7 +155,7 @@ public final class KvBlockDiskStore implements AutoCloseable {
             InferenceProfiler.counter(metricRegistry, METRIC_PREFIX + ".write.skipped.too_small").inc();
             return;
         }
-        if (block.layout() != KvBlockLayout.DENSE || !(block.storage() instanceof DenseKvBlockStorage)) {
+        if (!supportsLayout(block)) {
             InferenceProfiler.counter(metricRegistry, METRIC_PREFIX + ".write.skipped.unsupported_layout").inc();
             return;
         }
@@ -160,7 +163,7 @@ public final class KvBlockDiskStore implements AutoCloseable {
             InferenceProfiler.counter(metricRegistry, METRIC_PREFIX + ".write.skipped.exists").inc();
             return;
         }
-        byte[] payload = serializeDenseBlock(block);
+        byte[] payload = serializeBlock(block);
         if (root.toFile().getUsableSpace() - payload.length < reservedFreeBytes) {
             InferenceProfiler.counter(metricRegistry, METRIC_PREFIX + ".write.skipped.low_space").inc();
             return;
@@ -220,16 +223,49 @@ public final class KvBlockDiskStore implements AutoCloseable {
         }
     }
 
-    private byte[] serializeDenseBlock(KvBlock block) {
-        DenseKvBlockStorage storage = (DenseKvBlockStorage) block.storage();
+    private boolean supportsLayout(KvBlock block) {
+        return (block.layout() == KvBlockLayout.DENSE && block.storage() instanceof DenseKvBlockStorage)
+                || (block.layout() == KvBlockLayout.MSE_TURBOQUANT
+                && block.storage() instanceof MseTurboQuantKvBlockStorage);
+    }
+
+    private byte[] serializeBlock(KvBlock block) {
         try {
-            ByteArrayOutputStream out = new ByteArrayOutputStream(Math.toIntExact(block.encodedBytes()));
-            writeTensor(out, storage.keyStorage());
-            writeTensor(out, storage.valueStorage());
-            return out.toByteArray();
+            return switch (block.layout()) {
+                case DENSE -> serializeDenseBlock(block);
+                case MSE_TURBOQUANT -> serializeTurboQuantBlock(block);
+            };
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private byte[] serializeDenseBlock(KvBlock block) throws IOException {
+        DenseKvBlockStorage storage = (DenseKvBlockStorage) block.storage();
+        ByteArrayOutputStream out = new ByteArrayOutputStream(Math.toIntExact(block.encodedBytes()));
+        writeTensor(out, storage.keyStorage());
+        writeTensor(out, storage.valueStorage());
+        return out.toByteArray();
+    }
+
+    private byte[] serializeTurboQuantBlock(KvBlock block) throws IOException {
+        MseTurboQuantKvBlockStorage storage = (MseTurboQuantKvBlockStorage) block.storage();
+        MseTurboQuantCodec.EncodedRows encodedRows = storage.encodedRows();
+        ByteArrayOutputStream out = new ByteArrayOutputStream(Math.toIntExact(block.encodedBytes()));
+        out.write(encodedRows.packedCodes());
+        ByteBuffer norms = ByteBuffer.allocate(encodedRows.norms().length * Float.BYTES).order(ByteOrder.LITTLE_ENDIAN);
+        for (float norm : encodedRows.norms()) {
+            norms.putFloat(norm);
+        }
+        out.write(norms.array());
+        return out.toByteArray();
+    }
+
+    private KvBlock deserializeBlock(KvBlockKey key, byte[] payload) throws IOException {
+        return switch (key.layout()) {
+            case DENSE -> deserializeDenseBlock(key, payload);
+            case MSE_TURBOQUANT -> deserializeTurboQuantBlock(key, payload);
+        };
     }
 
     private KvBlock deserializeDenseBlock(KvBlockKey key, byte[] payload) throws IOException {
@@ -247,6 +283,24 @@ public final class KvBlockDiskStore implements AutoCloseable {
             valueStorage.close();
             throw e;
         }
+    }
+
+    private KvBlock deserializeTurboQuantBlock(KvBlockKey key, byte[] payload) throws IOException {
+        int rows = key.layers() * key.blockSize() * 2;
+        MseTurboQuantCodec.EncodedRows allocated = MseTurboQuantCodec.allocate(rows, key.kvLength(), key.turboQuantBits());
+        int packedLength = allocated.packedCodes().length;
+        int normBytes = allocated.norms().length * Float.BYTES;
+        if (payload.length != packedLength + normBytes) {
+            throw new IOException("unexpected TurboQuant KV payload length");
+        }
+        System.arraycopy(payload, 0, allocated.packedCodes(), 0, packedLength);
+        ByteBuffer norms = ByteBuffer.wrap(payload, packedLength, normBytes).order(ByteOrder.LITTLE_ENDIAN);
+        for (int i = 0; i < allocated.norms().length; i++) {
+            allocated.norms()[i] = norms.getFloat();
+        }
+        return new KvBlock(key.blockIndex(), key.blockSize(), key.tokenCount(), key.layers(), key.kvLength(),
+                MseTurboQuantKvBlockStorage.fromEncoded(key.keyDType(), key.layers(), key.tokenCount(), key.blockSize(),
+                        key.kvLength(), allocator, metricRegistry, allocated));
     }
 
     private void writeTensor(ByteArrayOutputStream out, AbstractTensor tensor) throws IOException {
