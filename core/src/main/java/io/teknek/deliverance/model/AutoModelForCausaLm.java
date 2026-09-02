@@ -141,6 +141,7 @@ public class AutoModelForCausaLm {
         private boolean gpuPrefill;
         private boolean gpuDecode;
         private boolean gpuDecodeAttention;
+        private boolean gpuProvider = true;
         private boolean gpuDiffusionBlockProjection;
         private boolean packedBlockAttention;
         private boolean packedPrefill = true;
@@ -195,6 +196,12 @@ public class AutoModelForCausaLm {
         public Builder withTensorProvider(ConfigurableTensorProvider provider){
             this.provider = provider;
             this.tensorProviderExplicit = true;
+            return this;
+        }
+
+        public Builder withPrimaryTensorProvider(ConfigurableTensorProvider provider){
+            this.provider = provider;
+            this.tensorProviderExplicit = false;
             return this;
         }
         public Builder withAdditionalTensorOperations(TensorProviderKind kind, TensorOperations operations) {
@@ -295,6 +302,11 @@ public class AutoModelForCausaLm {
 
         public Builder withGpuDecodeAttention(boolean gpuDecodeAttention) {
             this.gpuDecodeAttention = gpuDecodeAttention;
+            return this;
+        }
+
+        public Builder withGpuProvider(boolean gpuProvider) {
+            this.gpuProvider = gpuProvider;
             return this;
         }
 
@@ -536,6 +548,7 @@ public class AutoModelForCausaLm {
             copy.gpuPrefill = this.gpuPrefill;
             copy.gpuDecode = this.gpuDecode;
             copy.gpuDecodeAttention = this.gpuDecodeAttention;
+            copy.gpuProvider = this.gpuProvider;
             copy.gpuDiffusionBlockProjection = this.gpuDiffusionBlockProjection;
             copy.packedBlockAttention = this.packedBlockAttention;
             copy.packedPrefill = this.packedPrefill;
@@ -631,7 +644,7 @@ public class AutoModelForCausaLm {
                       registeredProviders=[{}]
                       parallelSplitPolicy=availableProcessors={} defaultSimdMultiplier={} defaultPanamaMultiplier={} simdAlignment={} panamaAlignment={} fixedOverrides={} multiplierOverrides={}
                       modelType={} workingMemoryType={} quantizedMemoryType={}
-                      tensorRuntimeMode={} groupedDecodeQkvSplitSize={} gpuPrefill={} gpuDecode={} gpuDecodeAttention={} gpuDiffusionBlockProjection={} packedBlockAttention={} packedPrefill={} trackKvReadViews={} maxBatchSize={}
+                      tensorRuntimeMode={} groupedDecodeQkvSplitSize={} gpuProvider={} gpuPrefill={} gpuDecode={} gpuDecodeAttention={} gpuDiffusionBlockProjection={} packedBlockAttention={} packedPrefill={} trackKvReadViews={} maxBatchSize={}
                       prefixCacheMode={} kvBlockStoragePolicy={} kvTurboQuantBits={} kvKeyDType={} kvValueDType={} sharedPrefixBlockCacheMaxBytes={} sharedPrefixDiskCacheEnabled={} sharedPrefixDiskCacheMaxBytes={}
                       generationOptions={}
                     """,
@@ -640,8 +653,8 @@ public class AutoModelForCausaLm {
                     DEFAULT_PANAMA_PARALLEL_SPLIT_SIZE_MULTIPLIER, SIMD_PARALLEL_SPLIT_ALIGNMENT,
                     PANAMA_PARALLEL_SPLIT_ALIGNMENT, parallelSplitSizeFixed, parallelSplitSizeMultiplier,
                     model.modelDType, model.workingDType, model.workingQType,
-                    tensorRuntimeMode.orElse(TensorRuntimeMode.DISABLED), groupedDecodeQkvSplitSize.orElse(null), gpuPrefill, gpuDecode,
-                    gpuDecodeAttention, gpuDiffusionBlockProjection, packedBlockAttention, packedPrefill,
+                    tensorRuntimeMode.orElse(TensorRuntimeMode.DISABLED), groupedDecodeQkvSplitSize.orElse(null),
+                    gpuProvider, gpuPrefill, gpuDecode, gpuDecodeAttention, gpuDiffusionBlockProjection, packedBlockAttention, packedPrefill,
                     trackKvReadViews, maxBatchSize,
                     settings.getPrefixCacheMode(), settings.getKvBlockStoragePolicy(), settings.getKvTurboQuantBits(),
                     settings.getKvKeyDType(), settings.getKvValueDType(), settings.getSharedPrefixBlockCacheMaxBytes(),
@@ -794,7 +807,9 @@ public class AutoModelForCausaLm {
 
             TensorOperations gpu = additionalTensorOperations.get(TensorProviderKind.GPU);
             if (gpu == null) {
-                Optional<TensorOperations> maybeGpu = tryLoadTensorOperations("io.teknek.deliverance.tensor.operations.NativeGPUTensorOperations");
+                Optional<TensorOperations> maybeGpu = gpuProvider
+                        ? tryLoadTensorOperations("io.teknek.deliverance.tensor.operations.NativeGPUTensorOperations")
+                        : Optional.empty();
                 maybeGpu.ifPresent(value -> operations.put(TensorProviderKind.GPU,
                         tunedTensorOperations(TensorProviderKind.GPU, value)));
                 if ((gpuPrefill || gpuDecode || gpuDecodeAttention || gpuDiffusionBlockProjection) && maybeGpu.isEmpty()) {
@@ -982,6 +997,10 @@ public class AutoModelForCausaLm {
 
         public boolean isGpuDecodeAttention() {
             return gpuDecodeAttention;
+        }
+
+        public boolean isGpuProvider() {
+            return gpuProvider;
         }
 
         public boolean isGpuDiffusionBlockProjection() {

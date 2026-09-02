@@ -267,9 +267,11 @@ public class ChatCompletionController {
                     var promptContext = ready.promptSupportBuilder().build();
                     debugPrompt(promptContext.getPrompt());
                     long generateStart = System.nanoTime();
+                    resetProfile();
                     Response resp = model.generate(UUID.randomUUID(), promptContext,
                             ready.generatorParameters(), new DoNothingGenerateEvent());
                     debugElapsed("chat.generate", generateStart);
+                    printProfile("chat.completions model=" + request.getModel());
                     CreateChatCompletionResponse response = new CreateChatCompletionResponse();
                     List<ToolCall> tcs = model.getToolCallParser().extract(resp);
                     ChatCompletionResponseMessage message = new ChatCompletionResponseMessage()
@@ -380,6 +382,7 @@ public class ChatCompletionController {
                 ReasoningTextSplitter reasoningSplitter = new ReasoningTextSplitter(
                         ReasoningTextSplitter.promptEndsInsideReasoning(promptContext.getPrompt()));
                 AtomicBoolean suppressContent = new AtomicBoolean(false);
+                resetProfile();
                 Response response = model.generate(finalSessionId, promptContext, finalReady.generatorParameters(),
                         (int next, String tok, String token, float f) -> {
                             streamedText.append(token == null ? "" : token);
@@ -430,6 +433,7 @@ public class ChatCompletionController {
                         emitter.complete();
                     }
                 }
+                printProfile("chat.completions.stream model=" + request.getModel());
             } catch (Throwable t) {
                 if (!closed.get()) {
                     closed.set(true);
@@ -440,6 +444,19 @@ public class ChatCompletionController {
             }
         });
         return emitter;
+    }
+
+    private static void resetProfile() {
+        if (InferenceProfiler.isEnabled()) {
+            InferenceProfiler.reset();
+        }
+    }
+
+    private static void printProfile(String label) {
+        if (InferenceProfiler.isEnabled()) {
+            InferenceProfiler.printSummary(label, 40);
+            InferenceProfiler.printCounters();
+        }
     }
 
     protected SseEmitter newSseEmitter() {

@@ -7,6 +7,7 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.CausalLanguageModel;
 import io.teknek.deliverance.model.ModelSupport;
+import io.teknek.deliverance.model.TensorProviderKind;
 import io.teknek.deliverance.model.tensorparallel.GossipParallelMembership;
 import io.teknek.deliverance.model.tensorparallel.GossipParallelSettings;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelAssignmentMode;
@@ -89,6 +90,25 @@ class MultiModelConfiguration {
     private final String kvPrefixCompression;
     private final int kvPrefixTurboQuantBits;
     private final int kvContextRowsPerPageTarget;
+    private final String kvPrefixCacheMode;
+    private final long kvSharedPrefixBlockCacheMaxBytes;
+    private final String kvBlockStoragePolicy;
+    private final int kvTurboQuantBits;
+    private final String kvKeyDType;
+    private final String kvValueDType;
+    private final boolean kvSharedPrefixDiskCacheEnabled;
+    private final String kvSharedPrefixDiskCachePath;
+    private final long kvSharedPrefixDiskCacheMaxBytes;
+    private final long kvSharedPrefixDiskCacheReservedFreeBytes;
+    private final long kvSharedPrefixDiskCacheMinUsableBytes;
+    private final int kvSharedPrefixDiskCacheAdmitMinTokens;
+    private final int kvSharedPrefixDiskCacheWriterQueueSize;
+    private final int groupedDecodeQkvSplitSize;
+    private final boolean gpuPrefill;
+    private final boolean gpuDecode;
+    private final boolean gpuDecodeAttention;
+    private final boolean gpuProvider;
+    private final int simdParallelSplitSize;
 
     public MultiModelConfiguration(MultiModelProperties multiModelProperties, MetricRegistry metricRegistry,
                                      TensorAllocator arrayQueueTensorAllocator,
@@ -100,9 +120,28 @@ class MultiModelConfiguration {
                                      @Value("${deliverance.kv.prefix.max-tokens:512}") int kvPrefixMaxTokens,
                                      @Value("${deliverance.kv.prefix.max-checkpoints:4}") int kvPrefixMaxCheckpoints,
                                      @Value("${deliverance.kv.prefix.checkpoint-policy:START_AND_END}") String kvPrefixCheckpointPolicy,
-                                     @Value("${deliverance.kv.prefix.compression:NONE}") String kvPrefixCompression,
-                                     @Value("${deliverance.kv.prefix.turboquant.bits:4}") int kvPrefixTurboQuantBits,
-                                     @Value("${deliverance.kv.context-rows-per-page-target:32}") int kvContextRowsPerPageTarget){
+                                      @Value("${deliverance.kv.prefix.compression:NONE}") String kvPrefixCompression,
+                                      @Value("${deliverance.kv.prefix.turboquant.bits:4}") int kvPrefixTurboQuantBits,
+                                      @Value("${deliverance.kv.context-rows-per-page-target:32}") int kvContextRowsPerPageTarget,
+                                      @Value("${deliverance.kv.prefix.mode:SNAPSHOT}") String kvPrefixCacheMode,
+                                      @Value("${deliverance.kv.shared-prefix.block-cache.max-bytes:536870912}") long kvSharedPrefixBlockCacheMaxBytes,
+                                      @Value("${deliverance.kv.block-storage-policy:DENSE}") String kvBlockStoragePolicy,
+                                      @Value("${deliverance.kv.turboquant.bits:4}") int kvTurboQuantBits,
+                                      @Value("${deliverance.kv.key-dtype:F32}") String kvKeyDType,
+                                      @Value("${deliverance.kv.value-dtype:F32}") String kvValueDType,
+                                      @Value("${deliverance.kv.shared-prefix.disk-cache.enabled:false}") boolean kvSharedPrefixDiskCacheEnabled,
+                                      @Value("${deliverance.kv.shared-prefix.disk-cache.path:}") String kvSharedPrefixDiskCachePath,
+                                      @Value("${deliverance.kv.shared-prefix.disk-cache.max-bytes:2147483648}") long kvSharedPrefixDiskCacheMaxBytes,
+                                      @Value("${deliverance.kv.shared-prefix.disk-cache.reserved-free-bytes:1073741824}") long kvSharedPrefixDiskCacheReservedFreeBytes,
+                                      @Value("${deliverance.kv.shared-prefix.disk-cache.min-usable-bytes:1073741824}") long kvSharedPrefixDiskCacheMinUsableBytes,
+                                      @Value("${deliverance.kv.shared-prefix.disk-cache.admit-min-tokens:256}") int kvSharedPrefixDiskCacheAdmitMinTokens,
+                                      @Value("${deliverance.kv.shared-prefix.disk-cache.writer-queue-size:128}") int kvSharedPrefixDiskCacheWriterQueueSize,
+                                      @Value("${deliverance.grouped-decode-qkv-split-size:0}") int groupedDecodeQkvSplitSize,
+                                      @Value("${deliverance.gpu.prefill:false}") boolean gpuPrefill,
+                                      @Value("${deliverance.gpu.decode:false}") boolean gpuDecode,
+                                      @Value("${deliverance.gpu.decode-attention:false}") boolean gpuDecodeAttention,
+                                      @Value("${deliverance.gpu.provider:true}") boolean gpuProvider,
+                                      @Value("${deliverance.tensor.operations.simd.parallel-split-size:0}") int simdParallelSplitSize){
         this.multiModelProperties = multiModelProperties;
         this.metricRegistry = metricRegistry;
         this.arrayQueueTensorAllocator = arrayQueueTensorAllocator;
@@ -117,6 +156,25 @@ class MultiModelConfiguration {
         this.kvPrefixCompression = kvPrefixCompression;
         this.kvPrefixTurboQuantBits = kvPrefixTurboQuantBits;
         this.kvContextRowsPerPageTarget = kvContextRowsPerPageTarget;
+        this.kvPrefixCacheMode = kvPrefixCacheMode;
+        this.kvSharedPrefixBlockCacheMaxBytes = kvSharedPrefixBlockCacheMaxBytes;
+        this.kvBlockStoragePolicy = kvBlockStoragePolicy;
+        this.kvTurboQuantBits = kvTurboQuantBits;
+        this.kvKeyDType = kvKeyDType;
+        this.kvValueDType = kvValueDType;
+        this.kvSharedPrefixDiskCacheEnabled = kvSharedPrefixDiskCacheEnabled;
+        this.kvSharedPrefixDiskCachePath = kvSharedPrefixDiskCachePath;
+        this.kvSharedPrefixDiskCacheMaxBytes = kvSharedPrefixDiskCacheMaxBytes;
+        this.kvSharedPrefixDiskCacheReservedFreeBytes = kvSharedPrefixDiskCacheReservedFreeBytes;
+        this.kvSharedPrefixDiskCacheMinUsableBytes = kvSharedPrefixDiskCacheMinUsableBytes;
+        this.kvSharedPrefixDiskCacheAdmitMinTokens = kvSharedPrefixDiskCacheAdmitMinTokens;
+        this.kvSharedPrefixDiskCacheWriterQueueSize = kvSharedPrefixDiskCacheWriterQueueSize;
+        this.groupedDecodeQkvSplitSize = groupedDecodeQkvSplitSize;
+        this.gpuPrefill = gpuPrefill;
+        this.gpuDecode = gpuDecode;
+        this.gpuDecodeAttention = gpuDecodeAttention;
+        this.gpuProvider = gpuProvider;
+        this.simdParallelSplitSize = simdParallelSplitSize;
     }
 
 
@@ -154,9 +212,19 @@ class MultiModelConfiguration {
         AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(fetch)
                 .withMetricRegistry(metricRegistry)
                 .withTensorAllocator(arrayQueueTensorAllocator)
-                .withTensorProvider(provider)
+                .withPrimaryTensorProvider(provider)
                 .withWrappedForkJoinPool(pool)
                 .withKvBufferCacheSettings(kvBufferCacheSettings());
+        if (groupedDecodeQkvSplitSize > 0) {
+            builder.withGroupedDecodeQkvSplitSize(groupedDecodeQkvSplitSize);
+        }
+        builder.withGpuPrefill(gpuPrefill)
+                .withGpuDecode(gpuDecode)
+                .withGpuDecodeAttention(gpuDecodeAttention)
+                .withGpuProvider(gpuProvider);
+        if (simdParallelSplitSize > 0) {
+            builder.withParallelSplitSizeFixed(TensorProviderKind.SIMD, simdParallelSplitSize);
+        }
         if (config.getOutputHeadQuantization() != null
                 && !config.getOutputHeadQuantization().isBlank()
                 && !"none".equalsIgnoreCase(config.getOutputHeadQuantization())
@@ -255,6 +323,21 @@ class MultiModelConfiguration {
         settings.setPrefixCompression(KvBufferCacheSettings.PrefixCompression.valueOf(kvPrefixCompression));
         settings.setPrefixTurboQuantBits(kvPrefixTurboQuantBits);
         settings.setContextRowsPerPageTarget(kvContextRowsPerPageTarget);
+        settings.setPrefixCacheMode(KvBufferCacheSettings.PrefixCacheMode.valueOf(kvPrefixCacheMode));
+        settings.setSharedPrefixBlockCacheMaxBytes(kvSharedPrefixBlockCacheMaxBytes);
+        settings.setKvBlockStoragePolicy(KvBufferCacheSettings.KvBlockStoragePolicy.valueOf(kvBlockStoragePolicy));
+        settings.setKvTurboQuantBits(kvTurboQuantBits);
+        settings.setKvKeyDType(DType.valueOf(kvKeyDType));
+        settings.setKvValueDType(DType.valueOf(kvValueDType));
+        settings.setSharedPrefixDiskCacheEnabled(kvSharedPrefixDiskCacheEnabled);
+        if (kvSharedPrefixDiskCachePath != null && !kvSharedPrefixDiskCachePath.isBlank()) {
+            settings.setSharedPrefixDiskCachePath(new File(kvSharedPrefixDiskCachePath));
+        }
+        settings.setSharedPrefixDiskCacheMaxBytes(kvSharedPrefixDiskCacheMaxBytes);
+        settings.setSharedPrefixDiskCacheReservedFreeBytes(kvSharedPrefixDiskCacheReservedFreeBytes);
+        settings.setSharedPrefixDiskCacheMinUsableBytes(kvSharedPrefixDiskCacheMinUsableBytes);
+        settings.setSharedPrefixDiskCacheAdmitMinTokens(kvSharedPrefixDiskCacheAdmitMinTokens);
+        settings.setSharedPrefixDiskCacheWriterQueueSize(kvSharedPrefixDiskCacheWriterQueueSize);
         return settings;
     }
 }

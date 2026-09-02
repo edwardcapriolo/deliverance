@@ -942,6 +942,7 @@ void gpu_decode_paged_attention_head(int64_t scratch_id, int64_t shader, const v
     WGPUBuffer *borrowed_k = calloc(page_count, sizeof(WGPUBuffer));
     WGPUBuffer *borrowed_v = calloc(page_count, sizeof(WGPUBuffer));
     WGPUBindGroup *bind_groups = calloc(page_count, sizeof(WGPUBindGroup));
+    WGPUBuffer *params_buffers = calloc(page_count, sizeof(WGPUBuffer));
 
     int rows_remaining = visible_rows;
     for (int i = 0; i < page_count && rows_remaining > 0; i++) {
@@ -951,7 +952,9 @@ void gpu_decode_paged_attention_head(int64_t scratch_id, int64_t shader, const v
         assert(borrowed_k[i]);
         assert(borrowed_v[i]);
         DecodeAttentionParams params = {rows, head_size, kv_offset, key_stride, value_stride, i == 0 ? 1u : 0u, scale, 0u};
-        wgpuQueueWriteBuffer(queue, s.params_buffer, 0, &params, sizeof(DecodeAttentionParams));
+        params_buffers[i] = create_working_buffer(device, "decode_attention_params", sizeof(DecodeAttentionParams), WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+        assert(params_buffers[i]);
+        wgpuQueueWriteBuffer(queue, params_buffers[i], 0, &params, sizeof(DecodeAttentionParams));
 
         WGPUBindGroupEntry bind_group_entries[6] = {
             { .binding = 0, .buffer = s.input_buffer, .offset = 0, .size = query_size },
@@ -959,7 +962,7 @@ void gpu_decode_paged_attention_head(int64_t scratch_id, int64_t shader, const v
             { .binding = 2, .buffer = borrowed_v[i], .offset = 0, .size = value_buffer_size },
             { .binding = 3, .buffer = s.empty_buffer, .offset = 0, .size = 8 },
             { .binding = 4, .buffer = s.result_buffer, .offset = 0, .size = state_size },
-            { .binding = 5, .buffer = s.params_buffer, .offset = 0, .size = sizeof(DecodeAttentionParams) },
+            { .binding = 5, .buffer = params_buffers[i], .offset = 0, .size = sizeof(DecodeAttentionParams) },
         };
         bind_groups[i] = wgpuDeviceCreateBindGroup(device, &(WGPUBindGroupDescriptor){
             .layout = bind_group_layout,
@@ -1009,10 +1012,15 @@ void gpu_decode_paged_attention_head(int64_t scratch_id, int64_t shader, const v
         }
         release_tensor(borrowed_k[i]);
         release_tensor(borrowed_v[i]);
+        if (params_buffers[i] != NULL) {
+            wgpuBufferDestroy(params_buffers[i]);
+            wgpuBufferRelease(params_buffers[i]);
+        }
     }
     free(bind_groups);
     free(borrowed_k);
     free(borrowed_v);
+    free(params_buffers);
     wgpuCommandBufferRelease(command_buffer);
     wgpuCommandEncoderRelease(encoder);
 }
