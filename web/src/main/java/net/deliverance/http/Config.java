@@ -8,9 +8,13 @@ import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NativeGPUTensorOperations;
 import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
+import io.teknek.deliverance.tensor.operations.ParallelSplitSizedTensorOperations;
+import io.teknek.deliverance.tensor.operations.TensorOperations;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.util.concurrent.ForkJoinPool;
 
 @Configuration
 public class Config {
@@ -26,19 +30,27 @@ public class Config {
     }
 
     @Bean
-    public WrappedForkJoinPool pool(){
-        WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
-        return pool;
+    public WrappedForkJoinPool pool(@Value("${deliverance.pool-size:0}") int poolSize){
+        if (poolSize > 0) {
+            return new WrappedForkJoinPool(new ForkJoinPool(poolSize, ForkJoinPool.defaultForkJoinWorkerThreadFactory,
+                    null, true));
+        }
+        return new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
     }
 
     @Bean
-    public ConfigurableTensorProvider provider(@Value("${deliverance.tensor.operations.type:simd}") String type){
+    public ConfigurableTensorProvider provider(@Value("${deliverance.tensor.operations.type:simd}") String type,
+            @Value("${deliverance.tensor.operations.simd.parallel-split-size:0}") int simdParallelSplitSize,
+            WrappedForkJoinPool pool){
 
         if ("simd".equalsIgnoreCase(type)) {
-            NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache(), pool()).get());
-            return new ConfigurableTensorProvider(n);
+            NativeSimdTensorOperations n = new NativeSimdTensorOperations(new ConfigurableTensorProvider(tensorCache(), pool).get());
+            TensorOperations operations = simdParallelSplitSize > 0
+                    ? new ParallelSplitSizedTensorOperations(n, simdParallelSplitSize)
+                    : n;
+            return new ConfigurableTensorProvider(operations);
         } else if ("jvector".equalsIgnoreCase(type)){
-            return new ConfigurableTensorProvider(tensorCache(), pool());
+            return new ConfigurableTensorProvider(tensorCache(), pool);
         } else if ("gpu".equalsIgnoreCase(type)){
            NativeGPUTensorOperations g = new NativeGPUTensorOperations();
            return new ConfigurableTensorProvider(g);

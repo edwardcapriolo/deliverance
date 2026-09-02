@@ -39,6 +39,7 @@ public class NativeGPUTensorOperations implements TensorOperations {
 
     private static final Logger logger = LoggerFactory.getLogger(NativeGPUTensorOperations.class);
     private static final int MAX_SCRATCH_SIZE = 1 << 24;
+    private static final Object GPU_SUBMIT_LOCK = new Object();
 
     static {
         if (RuntimeSupport.isWin()) {
@@ -418,29 +419,31 @@ public class NativeGPUTensorOperations implements TensorOperations {
 
             int adjBRowOffset = bRowOffset - bt.shape().sparseRowOffset();
             Long bid2 = bt.dType() == DType.Q4 ? tensorCache.get(((Q4ByteBufferTensor) bt).getBlockF().getUid()) : -1;
-            NativeGPU.gpu_gemm(
-                scratchId,
-                shaderId,
-                at.getMemorySegment(),
-                at.dType() == DType.I8 ? ((Q8ByteBufferTensor) at).getBlockF().getMemorySegment() : MemorySegment.NULL,
-                at.getMemorySegmentOffset(aOffset),
-                at.getMemorySegmentOffset(aLimit),
-                btId,
-                bid2,
-                bt.getMemorySegmentOffset(bOffset),
-                bt.getMemorySegmentOffset(bLimit),
-                result.getMemorySegment(),
-                rOffset,
-                result.getMemorySegmentOffset(rLimit),
-                M,
-                adjBRowOffset,
-                N,
-                K,
-                at.getStride(),
-                bt.getStride(),
-                result.getStride(),
-                m1_optimized ? 1 : 0
-            );
+            synchronized (GPU_SUBMIT_LOCK) {
+                NativeGPU.gpu_gemm(
+                    scratchId,
+                    shaderId,
+                    at.getMemorySegment(),
+                    at.dType() == DType.I8 ? ((Q8ByteBufferTensor) at).getBlockF().getMemorySegment() : MemorySegment.NULL,
+                    at.getMemorySegmentOffset(aOffset),
+                    at.getMemorySegmentOffset(aLimit),
+                    btId,
+                    bid2,
+                    bt.getMemorySegmentOffset(bOffset),
+                    bt.getMemorySegmentOffset(bLimit),
+                    result.getMemorySegment(),
+                    rOffset,
+                    result.getMemorySegmentOffset(rLimit),
+                    M,
+                    adjBRowOffset,
+                    N,
+                    K,
+                    at.getStride(),
+                    bt.getStride(),
+                    result.getStride(),
+                    m1_optimized ? 1 : 0
+                );
+            }
             gemmGpuCalls.incrementAndGet();
 
         } else {
@@ -525,29 +528,31 @@ public class NativeGPUTensorOperations implements TensorOperations {
                 int bLimit = b[0].getOffset(bRowOffset + N + b[0].shape().sparseRowOffset(), columnOffset);
                 if (bLimit > b[0].size()) bLimit = (int) b[0].size();
                 int rOffset = r[0].shape().sparseColumnOffset() - b[0].shape().sparseRowOffset();
-                NativeGPU.gpu_gemm_batch(
-                        scratchId,
-                        shaderId,
-                        r.length,
-                        a.getMemorySegment(),
-                        a.dType() == DType.I8 ? ((Q8ByteBufferTensor) a).getBlockF().getMemorySegment() : MemorySegment.NULL,
-                        a.getMemorySegmentOffset(aOffset),
-                        a.getMemorySegmentOffset(aLimit),
-                        MemorySegment.ofBuffer(bidsBuffer),
-                        MemorySegment.ofBuffer(bid2sBuffer),
-                        b[0].getMemorySegmentOffset(bOffset),
-                        b[0].getMemorySegmentOffset(bLimit),
-                        MemorySegment.ofBuffer(resultPointersBuffer),
-                        rOffset,
-                        (int) (resultBytes),
-                        M,
-                        bRowOffset - b[0].shape().sparseRowOffset(),
-                        N,
-                        K,
-                        a.getStride(),
-                        b[0].getStride(),
-                        r[0].getStride(),
-                        M == 1 ? 1 : 0);
+                synchronized (GPU_SUBMIT_LOCK) {
+                    NativeGPU.gpu_gemm_batch(
+                            scratchId,
+                            shaderId,
+                            r.length,
+                            a.getMemorySegment(),
+                            a.dType() == DType.I8 ? ((Q8ByteBufferTensor) a).getBlockF().getMemorySegment() : MemorySegment.NULL,
+                            a.getMemorySegmentOffset(aOffset),
+                            a.getMemorySegmentOffset(aLimit),
+                            MemorySegment.ofBuffer(bidsBuffer),
+                            MemorySegment.ofBuffer(bid2sBuffer),
+                            b[0].getMemorySegmentOffset(bOffset),
+                            b[0].getMemorySegmentOffset(bLimit),
+                            MemorySegment.ofBuffer(resultPointersBuffer),
+                            rOffset,
+                            (int) (resultBytes),
+                            M,
+                            bRowOffset - b[0].shape().sparseRowOffset(),
+                            N,
+                            K,
+                            a.getStride(),
+                            b[0].getStride(),
+                            r[0].getStride(),
+                            M == 1 ? 1 : 0);
+                }
                 gemmGpuCalls.incrementAndGet();
             } else {
                 gemmFallbackCalls.incrementAndGet();
@@ -777,24 +782,26 @@ public class NativeGPUTensorOperations implements TensorOperations {
         if (scratchId == null) {
             throw new IllegalStateException("GPU scratch buffers are unavailable");
         }
-        NativeGPU.gpu_decode_attention_packed_all_heads(
-                scratchId,
-                decodePagedAttentionF32Id,
-                query.getMemorySegment(),
-                query.getMemorySegmentOffset(query.getOffset(0, 0)),
-                (int) query.getMemorySegment().byteSize(),
-                packedKey.getMemorySegment(),
-                (int) packedKey.getMemorySegment().byteSize(),
-                packedValue.getMemorySegment(),
-                (int) packedValue.getMemorySegment().byteSize(),
-                valueOut.getMemorySegment(),
-                valueOut.getOffset(0, 0),
-                visibleRows,
-                numberOfHeads,
-                numberOfKeyValueHeads,
-                headSize,
-                kvLength,
-                scale);
+        synchronized (GPU_SUBMIT_LOCK) {
+            NativeGPU.gpu_decode_attention_packed_all_heads(
+                    scratchId,
+                    decodePagedAttentionF32Id,
+                    query.getMemorySegment(),
+                    query.getMemorySegmentOffset(query.getOffset(0, 0)),
+                    (int) query.getMemorySegment().byteSize(),
+                    packedKey.getMemorySegment(),
+                    (int) packedKey.getMemorySegment().byteSize(),
+                    packedValue.getMemorySegment(),
+                    (int) packedValue.getMemorySegment().byteSize(),
+                    valueOut.getMemorySegment(),
+                    valueOut.getOffset(0, 0),
+                    visibleRows,
+                    numberOfHeads,
+                    numberOfKeyValueHeads,
+                    headSize,
+                    kvLength,
+                    scale);
+        }
     }
 
     private boolean gpuDotProductAllowSmall(AbstractTensor result, AbstractTensor at, AbstractTensor bt,
@@ -838,28 +845,30 @@ public class NativeGPUTensorOperations implements TensorOperations {
             return false;
         }
         try {
-            NativeGPU.gpu_gemm(
-                    scratchId,
-                    shaderId,
-                    at.getMemorySegment(),
-                    at.dType() == DType.I8 ? ((Q8ByteBufferTensor) at).getBlockF().getMemorySegment() : MemorySegment.NULL,
-                    at.getMemorySegmentOffset(aOffset),
-                    at.getMemorySegmentOffset(aLimit),
-                    btId,
-                    -1,
-                    bt.getMemorySegmentOffset(bOffset),
-                    bt.getMemorySegmentOffset(bLimit),
-                    result.getMemorySegment(),
-                    rOffset,
-                    result.getMemorySegmentOffset(rLimit),
-                    m,
-                    0,
-                    n,
-                    k,
-                    at.getStride(),
-                    bt.getStride(),
-                    result.getStride(),
-                    0);
+            synchronized (GPU_SUBMIT_LOCK) {
+                NativeGPU.gpu_gemm(
+                        scratchId,
+                        shaderId,
+                        at.getMemorySegment(),
+                        at.dType() == DType.I8 ? ((Q8ByteBufferTensor) at).getBlockF().getMemorySegment() : MemorySegment.NULL,
+                        at.getMemorySegmentOffset(aOffset),
+                        at.getMemorySegmentOffset(aLimit),
+                        btId,
+                        -1,
+                        bt.getMemorySegmentOffset(bOffset),
+                        bt.getMemorySegmentOffset(bLimit),
+                        result.getMemorySegment(),
+                        rOffset,
+                        result.getMemorySegmentOffset(rLimit),
+                        m,
+                        0,
+                        n,
+                        k,
+                        at.getStride(),
+                        bt.getStride(),
+                        result.getStride(),
+                        0);
+            }
             return true;
         } catch (RuntimeException e) {
             logger.debug("GPU decode paged attention dot failed; falling back to CPU", e);

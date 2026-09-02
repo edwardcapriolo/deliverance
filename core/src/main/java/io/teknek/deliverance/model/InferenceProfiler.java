@@ -9,6 +9,7 @@ import io.dropwizard.metrics5.ExponentiallyDecayingReservoir;
 
 import java.util.Comparator;
 import java.util.Collections;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -140,6 +141,18 @@ public final class InferenceProfiler {
 
     public static long counterValue(MetricName metricName) {
         return counterValue(displayName(metricName));
+    }
+
+    public static void printCounters() {
+        if (!enabled) {
+            return;
+        }
+        COUNTER_NAMES.stream()
+                .sorted()
+                .map(name -> Map.entry(name, counterValue(name)))
+                .filter(entry -> entry.getValue() != 0)
+                .forEach(entry -> System.out.printf(java.util.Locale.ROOT,
+                        "[profile-counter] %s count=%d%n", entry.getKey(), entry.getValue()));
     }
 
     public static boolean shouldPrintCounter(String name) {
