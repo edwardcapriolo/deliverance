@@ -529,7 +529,7 @@ Metrics:
 - `kvcache.v2.disk.evict`
 - `kvcache.v2.disk.evict.bytes`
 
-TurboQuant should follow only after dense proves the disk lifecycle. For TurboQuant, the rule remains exact-layout persistence: `MSE_TURBOQUANT` encoded payload to disk and back into `MSE_TURBOQUANT`, with no dense intermediate.
+TurboQuant should use exact-layout persistence: `MSE_TURBOQUANT` encoded payload to disk and back into `MSE_TURBOQUANT`, with no dense intermediate. Test coverage should be an IT-style small-prompt path using a Java temporary directory, not another profiler-only benchmark test.
 
 ## Implementation Phases
 
