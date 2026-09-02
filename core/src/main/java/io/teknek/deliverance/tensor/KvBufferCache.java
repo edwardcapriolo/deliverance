@@ -254,6 +254,10 @@ public class KvBufferCache implements Closeable {
     }
 
     public PrefixEntry lookupPrefix(int[] tokens, Optional<String> salt) {
+        if (kvBufferCacheSettings.getPrefixCacheMode() != KvBufferCacheSettings.PrefixCacheMode.SNAPSHOT) {
+            model.getMetricRegistry().meter("kvbuffercache.lookup.skip.mode").mark();
+            return null;
+        }
         StoredPrefixEntry best = null;
         int limit = kvBufferCacheSettings.getMaxPrefixTokensPerPrompt();
         for (int prefixLen : checkpointLengths(Math.min(tokens.length, limit))) {
@@ -273,6 +277,10 @@ public class KvBufferCache implements Closeable {
 
     public void storePrefix(int[] tokens, KvBuffer buffer, Optional<String> salt) {
         long storeStart = System.nanoTime();
+        if (kvBufferCacheSettings.getPrefixCacheMode() != KvBufferCacheSettings.PrefixCacheMode.SNAPSHOT) {
+            model.getMetricRegistry().meter("kvbuffercache.prefix.store.skip.mode").mark();
+            return;
+        }
         if (!kvBufferCacheSettings.isEphemeral()) {
             model.getMetricRegistry().meter("kvbuffercache.prefix.disk.skip").mark();
             return;

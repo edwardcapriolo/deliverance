@@ -44,6 +44,8 @@ public class AutoModelConfigTest {
                     "prefixTurboQuantBits": 4,
                     "maxPrefixCheckpointsPerPrompt": 5,
                     "prefixCheckpointAnchors": [16, 32, 64],
+                    "prefixCacheMode": "SHARED_BLOCKS",
+                    "sharedPrefixBlockCacheMaxBytes": 123456,
                     "contextRowsPerPageTarget": 64,
                     "kvBlockStoragePolicy": "MSE_TURBOQUANT",
                     "kvTurboQuantBits": 5,
@@ -80,6 +82,9 @@ public class AutoModelConfigTest {
         assertEquals(4, builder.getSettings().getPrefixTurboQuantBits());
         assertEquals(5, builder.getSettings().getMaxPrefixCheckpointsPerPrompt());
         assertEquals(java.util.List.of(16, 32, 64), builder.getSettings().getPrefixCheckpointAnchors());
+        assertEquals(io.teknek.deliverance.tensor.KvBufferCacheSettings.PrefixCacheMode.SHARED_BLOCKS,
+                builder.getSettings().getPrefixCacheMode());
+        assertEquals(123456L, builder.getSettings().getSharedPrefixBlockCacheMaxBytes());
         assertEquals(64, builder.getSettings().getContextRowsPerPageTarget());
         assertEquals(io.teknek.deliverance.tensor.KvBufferCacheSettings.KvBlockStoragePolicy.MSE_TURBOQUANT,
                 builder.getSettings().getKvBlockStoragePolicy());

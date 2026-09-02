@@ -82,6 +82,8 @@ public record AutoModelConfig(
             Optional<Integer> prefixTurboQuantBits,
             Optional<Integer> maxPrefixCheckpointsPerPrompt,
             Optional<List<Integer>> prefixCheckpointAnchors,
+            Optional<KvBufferCacheSettings.PrefixCacheMode> prefixCacheMode,
+            Optional<Long> sharedPrefixBlockCacheMaxBytes,
             Optional<Integer> contextRowsPerPageTarget,
             Optional<KvBufferCacheSettings.KvBlockStoragePolicy> kvBlockStoragePolicy,
             Optional<Integer> kvTurboQuantBits,
@@ -97,6 +99,8 @@ public record AutoModelConfig(
             prefixTurboQuantBits = prefixTurboQuantBits == null ? Optional.empty() : prefixTurboQuantBits;
             maxPrefixCheckpointsPerPrompt = maxPrefixCheckpointsPerPrompt == null ? Optional.empty() : maxPrefixCheckpointsPerPrompt;
             prefixCheckpointAnchors = prefixCheckpointAnchors == null ? Optional.empty() : prefixCheckpointAnchors;
+            prefixCacheMode = prefixCacheMode == null ? Optional.empty() : prefixCacheMode;
+            sharedPrefixBlockCacheMaxBytes = sharedPrefixBlockCacheMaxBytes == null ? Optional.empty() : sharedPrefixBlockCacheMaxBytes;
             contextRowsPerPageTarget = contextRowsPerPageTarget == null ? Optional.empty() : contextRowsPerPageTarget;
             kvBlockStoragePolicy = kvBlockStoragePolicy == null ? Optional.empty() : kvBlockStoragePolicy;
             kvTurboQuantBits = kvTurboQuantBits == null ? Optional.empty() : kvTurboQuantBits;
@@ -114,6 +118,8 @@ public record AutoModelConfig(
             prefixTurboQuantBits.ifPresent(settings::setPrefixTurboQuantBits);
             maxPrefixCheckpointsPerPrompt.ifPresent(settings::setMaxPrefixCheckpointsPerPrompt);
             prefixCheckpointAnchors.ifPresent(settings::setPrefixCheckpointAnchors);
+            prefixCacheMode.ifPresent(settings::setPrefixCacheMode);
+            sharedPrefixBlockCacheMaxBytes.ifPresent(settings::setSharedPrefixBlockCacheMaxBytes);
             contextRowsPerPageTarget.ifPresent(settings::setContextRowsPerPageTarget);
             kvBlockStoragePolicy.ifPresent(settings::setKvBlockStoragePolicy);
             kvTurboQuantBits.ifPresent(settings::setKvTurboQuantBits);

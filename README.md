@@ -64,6 +64,7 @@ Generation:
 - [Guided decoding overview](core/guided_decoding_real_inference_engine.md) A narrative walkthrough of guided decoding and how it moves Deliverance toward a full inference-engine feature set
 - [No-black-box AI for Spring developers](spring-ai-deliverance/no_black_box_java_ai.md) Positions Deliverance with Spring AI for Java-first local prototyping
 - [Prefix cache](core/PrefixCache.md) Describes how to get the most benefits from the prefix cache
+- [Shared KV block cache plan](core/shared_kv_block_cache_plan.md) Plans KVCache2 shared immutable blocks, leases, and disk prefix persistence boundaries
 - [Prefix cache MSE TurboQuant](core/prefix_cache_turboquant.md) Documents experimental compressed prefix snapshots and tradeoffs
 - [KV TurboQuant](core/KVTurboQuant.md) Plans first-class TurboQuant KVCache2 committed-block storage and attention integration
 - [KVCache2 roadmap](core/KVCache2Roadmap.md) Tracks configurable KV precision, automatic prefix caching, and disk-backed KV2 work

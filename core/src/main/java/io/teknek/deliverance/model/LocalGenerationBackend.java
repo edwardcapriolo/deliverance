@@ -3,6 +3,7 @@ package io.teknek.deliverance.model;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
+import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.kv.KvCacheSession;
 import io.teknek.deliverance.tensor.kv.KvPrefixSnapshotCache;
 
@@ -49,9 +50,13 @@ public final class LocalGenerationBackend implements GenerationBackend {
             this.parameters = parameters;
             this.effectiveCacheSalt = withActiveAdapterScope(parameters.cacheSalt);
             this.kvSession = model.newKvCacheSession();
-            KvPrefixSnapshotCache.PrefixHit prefixHit = model.kvPrefixSnapshotCache()
-                    .lookupPrefix(promptTokens, effectiveCacheSalt, kvSession);
-            this.prefixLength = prefixHit == null ? 0 : prefixHit.length();
+            if (model.prefixCacheMode() == KvBufferCacheSettings.PrefixCacheMode.SHARED_BLOCKS) {
+                this.prefixLength = model.restoreSharedPrefixToKvSession(promptTokens, effectiveCacheSalt, kvSession);
+            } else {
+                KvPrefixSnapshotCache.PrefixHit prefixHit = model.kvPrefixSnapshotCache()
+                        .lookupPrefix(promptTokens, effectiveCacheSalt, kvSession);
+                this.prefixLength = prefixHit == null ? 0 : prefixHit.length();
+            }
             if (prefixLength > 0) {
                 model.emitGenerationDebug(new AbstractModel.GenerationDebugEvent(
                         AbstractModel.GenerationDebugEventType.AFTER_PREFIX_COPY,
@@ -73,7 +78,11 @@ public final class LocalGenerationBackend implements GenerationBackend {
             AbstractTensor last;
             if (cursor.hasTokensToProcess()) {
                 last = model.batchForward(cursor.tokensToProcess(), cursor.startPosition(), kvSession);
-                model.kvPrefixSnapshotCache().storePrefix(promptTokens, kvSession, effectiveCacheSalt);
+                if (model.prefixCacheMode() == KvBufferCacheSettings.PrefixCacheMode.SHARED_BLOCKS) {
+                    model.storeSharedPrefixFromKvSession(promptTokens, kvSession, effectiveCacheSalt);
+                } else {
+                    model.kvPrefixSnapshotCache().storePrefix(promptTokens, kvSession, effectiveCacheSalt);
+                }
             } else {
                 kvSession.crop(cursor.replayPosition());
                 last = model.forward(cursor.replayToken(), cursor.replayPosition(), kvSession);

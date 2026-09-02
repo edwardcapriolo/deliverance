@@ -27,6 +27,8 @@ public class KvBufferCacheSettings {
     private int prefixTurboQuantBits = 4;
     /** the maximum size of the cache before evictions happen **/
     private int maxEntries = 10_000;
+    /** Maximum resident in-memory bytes for future KVCache2 shared immutable prefix blocks. */
+    private long sharedPrefixBlockCacheMaxBytes = 512L * 1024L * 1024L;
     /**
     The block size of the kvcache. Cache hits will only happen at block boundaries, smaller blockize uses more memory
      */
@@ -64,12 +66,18 @@ public class KvBufferCacheSettings {
         MSE_TURBOQUANT
     }
 
+    public enum PrefixCacheMode {
+        SNAPSHOT,
+        SHARED_BLOCKS
+    }
+
     public enum KvBlockStoragePolicy {
         DENSE,
         MSE_TURBOQUANT
     }
 
     private KvFormat kvFormat = KvFormat.BF16;
+    private PrefixCacheMode prefixCacheMode = PrefixCacheMode.SNAPSHOT;
     private KvBlockStoragePolicy kvBlockStoragePolicy = KvBlockStoragePolicy.DENSE;
     private int kvTurboQuantBits = 4;
     private DType kvKeyDType = DType.F32;
@@ -307,6 +315,38 @@ public class KvBufferCacheSettings {
 
     public KvBufferCacheSettings withMaxEntries(int maxEntries) {
         this.maxEntries = maxEntries;
+        return this;
+    }
+
+    public PrefixCacheMode getPrefixCacheMode() {
+        return prefixCacheMode;
+    }
+
+    public void setPrefixCacheMode(PrefixCacheMode prefixCacheMode) {
+        if (prefixCacheMode == null) {
+            throw new IllegalArgumentException("prefixCacheMode must not be null");
+        }
+        this.prefixCacheMode = prefixCacheMode;
+    }
+
+    public KvBufferCacheSettings withPrefixCacheMode(PrefixCacheMode prefixCacheMode) {
+        setPrefixCacheMode(prefixCacheMode);
+        return this;
+    }
+
+    public long getSharedPrefixBlockCacheMaxBytes() {
+        return sharedPrefixBlockCacheMaxBytes;
+    }
+
+    public void setSharedPrefixBlockCacheMaxBytes(long sharedPrefixBlockCacheMaxBytes) {
+        if (sharedPrefixBlockCacheMaxBytes < 0) {
+            throw new IllegalArgumentException("sharedPrefixBlockCacheMaxBytes must be >= 0");
+        }
+        this.sharedPrefixBlockCacheMaxBytes = sharedPrefixBlockCacheMaxBytes;
+    }
+
+    public KvBufferCacheSettings withSharedPrefixBlockCacheMaxBytes(long sharedPrefixBlockCacheMaxBytes) {
+        setSharedPrefixBlockCacheMaxBytes(sharedPrefixBlockCacheMaxBytes);
         return this;
     }
 

@@ -12,14 +12,19 @@ import io.teknek.deliverance.tensor.operations.TensorOperations;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** Request-local KV cache v2 session with immutable committed blocks and mutable active blocks. */
 public final class KvCacheSession implements AutoCloseable {
+    private static final AtomicLong SESSION_SEQUENCE = new AtomicLong();
+
+    private final String sessionId;
     private final int layers;
     private final int contextLength;
     private final int kvLength;
@@ -31,6 +36,7 @@ public final class KvCacheSession implements AutoCloseable {
     private final KvBufferCacheSettings settings;
     private final TensorOperations conversionOperations;
     private final NavigableMap<Integer, KvBlock> committedBlocks = new TreeMap<>();
+    private final NavigableMap<Integer, KvBlockLease> committedBlockLeases = new TreeMap<>();
     private final NavigableMap<Integer, MutableKvBlock> mutableBlocks = new TreeMap<>();
     private final java.util.Map<PageCacheKey, AbstractTensor[]> densePageCache = new java.util.HashMap<>();
     private final AtomicBoolean closed = new AtomicBoolean(false);
@@ -47,6 +53,7 @@ public final class KvCacheSession implements AutoCloseable {
     KvCacheSession(int layers, int contextLength, int kvLength, int blockSize, DType dtype,
             TensorAllocator allocator, MetricRegistry metricRegistry, boolean trackReadViews,
             KvBufferCacheSettings settings, @Nullable TensorOperations conversionOperations) {
+        this.sessionId = "kv2-session-" + SESSION_SEQUENCE.incrementAndGet();
         this.layers = layers;
         this.contextLength = contextLength;
         this.kvLength = kvLength;
@@ -63,6 +70,10 @@ public final class KvCacheSession implements AutoCloseable {
         return length;
     }
 
+    public String sessionId() {
+        return sessionId;
+    }
+
     public int blockSize() {
         return blockSize;
     }
@@ -77,6 +88,10 @@ public final class KvCacheSession implements AutoCloseable {
 
     public List<KvBlock> committedBlocks() {
         return List.copyOf(committedBlocks.values());
+    }
+
+    List<KvBlockLease> committedBlockLeases() {
+        return List.copyOf(committedBlockLeases.values());
     }
 
     public KvWriteCursor writer(CacheExecutionMode mode) {
@@ -135,8 +150,12 @@ public final class KvCacheSession implements AutoCloseable {
         int lastBlockToKeep = newLength == 0 ? -1 : (newLength - 1) / blockSize;
         int rowsInLastBlock = newLength == 0 ? 0 : ((newLength - 1) % blockSize) + 1;
 
-        committedBlocks.tailMap(lastBlockToKeep + 1, true).values().forEach(KvBlock::close);
+        ArrayList<Integer> committedToRemove = new ArrayList<>(committedBlocks.tailMap(lastBlockToKeep + 1, true).keySet());
+        for (Integer blockIndex : committedToRemove) {
+            closeCommittedBlock(committedBlocks.get(blockIndex), committedBlockLeases.get(blockIndex));
+        }
         committedBlocks.tailMap(lastBlockToKeep + 1, true).clear();
+        committedBlockLeases.tailMap(lastBlockToKeep + 1, true).clear();
         mutableBlocks.tailMap(lastBlockToKeep + 1, true).values().forEach(MutableKvBlock::close);
         mutableBlocks.tailMap(lastBlockToKeep + 1, true).clear();
         densePageCache.clear();
@@ -153,6 +172,7 @@ public final class KvCacheSession implements AutoCloseable {
         if (committed == null) {
             return;
         }
+        KvBlockLease lease = committedBlockLeases.remove(blockIndex);
         MutableKvBlock mutable = new MutableKvBlock(blockIndex, blockSize, layers, kvLength, dtype, allocator,
                 settings, metricRegistry, conversionOperations);
         try {
@@ -164,16 +184,56 @@ public final class KvCacheSession implements AutoCloseable {
                     }
                 }
             }
-            committed.close();
+            closeCommittedBlock(committed, lease);
             MutableKvBlock previous = mutableBlocks.put(blockIndex, mutable);
             if (previous != null) {
                 previous.close();
             }
         } catch (RuntimeException | Error e) {
             mutable.close();
-            committed.close();
+            closeCommittedBlock(committed, lease);
             throw e;
         }
+    }
+
+    /** Transfers an owned committed block out of this session for shared-block admission. */
+    public KvBlock detachCommittedBlock(int blockIndex) {
+        requireOpen();
+        KvBlockLease lease = committedBlockLeases.remove(blockIndex);
+        Preconditions.checkState(lease == null, "cannot detach a leased KV block");
+        KvBlock block = committedBlocks.remove(blockIndex);
+        Preconditions.checkState(block != null, "no committed KV block at index " + blockIndex);
+        densePageCache.clear();
+        return block;
+    }
+
+    /** Attaches a retained shared immutable block lease to this session. */
+    public void attachCommittedBlock(KvBlockLease lease) {
+        requireOpen();
+        Objects.requireNonNull(lease, "lease");
+        KvBlock block = lease.block();
+        Preconditions.checkArgument(block.tokenCount() == blockSize,
+                "shared KV block must be a full committed block");
+        Preconditions.checkArgument(block.blockSize() == blockSize, "block size mismatch");
+        Preconditions.checkArgument(block.endPositionExclusive() <= length || block.startPosition() == length,
+                "shared KV blocks must attach contiguously or inside current length");
+        Preconditions.checkArgument(!mutableBlocks.containsKey(block.blockIndex()),
+                "cannot attach shared block over mutable block");
+        Preconditions.checkArgument(!committedBlocks.containsKey(block.blockIndex()),
+                "cannot attach shared block over committed block");
+        committedBlocks.put(block.blockIndex(), block);
+        committedBlockLeases.put(block.blockIndex(), lease);
+        length = Math.max(length, block.endPositionExclusive());
+        densePageCache.clear();
+        metricRegistry.meter("kvcache.v2.block.attach").mark();
+    }
+
+    List<Integer> attachedLeaseBlockIndexes() {
+        return Collections.unmodifiableList(new ArrayList<>(committedBlockLeases.keySet()));
+    }
+
+    public boolean committedBlockIsLeased(int blockIndex) {
+        return committedBlockLeases.containsKey(blockIndex);
     }
 
     AbstractTensor copyVisibleKeys(int layer, int visibleTokens) {
@@ -364,6 +424,17 @@ public final class KvCacheSession implements AutoCloseable {
             committedBlocks.put(blockIndex, mutable.commit(blockSize));
             metricRegistry.meter("kvcache.v2.block.commit").mark();
         }
+        if (!toCommit.isEmpty()) {
+            densePageCache.clear();
+        }
+    }
+
+    private void closeCommittedBlock(KvBlock block, @Nullable KvBlockLease lease) {
+        if (lease != null) {
+            lease.close();
+        } else {
+            block.close();
+        }
     }
 
     private void validateLayer(int layer) {
@@ -383,9 +454,12 @@ public final class KvCacheSession implements AutoCloseable {
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {
-            committedBlocks.values().forEach(KvBlock::close);
+            for (var entry : committedBlocks.entrySet()) {
+                closeCommittedBlock(entry.getValue(), committedBlockLeases.get(entry.getKey()));
+            }
             mutableBlocks.values().forEach(MutableKvBlock::close);
             committedBlocks.clear();
+            committedBlockLeases.clear();
             mutableBlocks.clear();
             densePageCache.clear();
             metricRegistry.meter("kvcache.v2.session.close").mark();

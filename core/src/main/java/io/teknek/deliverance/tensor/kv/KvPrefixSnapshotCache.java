@@ -134,6 +134,10 @@ public final class KvPrefixSnapshotCache implements AutoCloseable {
 
     public PrefixHit lookupPrefix(int[] tokens, Optional<String> salt, KvCacheSession destination) {
         requireOpen();
+        if (settings.getPrefixCacheMode() != KvBufferCacheSettings.PrefixCacheMode.SNAPSHOT) {
+            InferenceProfiler.counter(metricRegistry, "kvcache.v2.prefix.lookup.skip.mode").inc();
+            return null;
+        }
         long start = System.nanoTime();
         try {
             synchronized (prefixCache) {
@@ -162,6 +166,10 @@ public final class KvPrefixSnapshotCache implements AutoCloseable {
 
     public void storePrefix(int[] tokens, KvCacheSession source, Optional<String> salt) {
         requireOpen();
+        if (settings.getPrefixCacheMode() != KvBufferCacheSettings.PrefixCacheMode.SNAPSHOT) {
+            InferenceProfiler.counter(metricRegistry, "kvcache.v2.prefix.store.skip.mode").inc();
+            return;
+        }
         if (settings.getMaxEntries() < 1) {
             return;
         }
