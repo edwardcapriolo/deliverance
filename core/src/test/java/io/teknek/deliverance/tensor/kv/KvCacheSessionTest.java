@@ -15,9 +15,15 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 import java.lang.foreign.ValueLayout;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -371,6 +377,293 @@ class KvCacheSessionTest {
         }
     }
 
+    @Test
+    void samePromptCanAttachLeasesToSameImmutableBlocks() {
+        KvBlockManager blockManager = new KvBlockManager(metricRegistry);
+        KvCacheManager sessionManager = new KvCacheManager(1, 8, 4, DType.F32,
+                new KvBufferCacheSettings(true).withBlockSize(2), allocator, metricRegistry);
+        List<KvBlockKey> keys;
+        List<Integer> blockIdentities;
+
+        try (KvCacheSession first = sessionManager.openSession()) {
+            writeFourTokenPrompt(first);
+            keys = blockKeys(first, new long[] {10L, 20L});
+            blockIdentities = transferCommittedBlocksToManager(first, blockManager, keys);
+            assertEquals(List.of(0, 1), first.attachedLeaseBlockIndexes());
+        }
+
+        assertEquals(2, blockManager.residentBlockCount());
+        assertEquals(0, blockManager.refCount(keys.get(0)));
+        assertEquals(0, blockManager.refCount(keys.get(1)));
+
+        try (KvCacheSession second = sessionManager.openSession()) {
+            for (KvBlockKey key : keys) {
+                KvBlockLease lease = blockManager.retain(key, second.sessionId());
+                assertNotNull(lease);
+                second.attachCommittedBlock(lease);
+            }
+
+            assertEquals(4, second.length());
+            assertEquals(List.of(0, 1), second.attachedLeaseBlockIndexes());
+            assertEquals(blockIdentities.get(0), second.committedBlockLeases().get(0).blockIdentity());
+            assertEquals(blockIdentities.get(1), second.committedBlockLeases().get(1).blockIdentity());
+            assertEquals(1, blockManager.refCount(keys.get(0)));
+            assertEquals(1, blockManager.refCount(keys.get(1)));
+            try (AbstractTensor key = second.keyRowCopy(0, 3);
+                 AbstractTensor value = second.valueRowCopy(0, 3)) {
+                assertRow(key, 41.0f);
+                assertRow(value, 42.0f);
+            }
+        }
+
+        assertEquals(0, blockManager.refCount(keys.get(0)));
+        assertEquals(0, blockManager.refCount(keys.get(1)));
+        blockManager.close();
+    }
+
+    @Test
+    void differentSuffixReusesOnlyCommonFullBlocks() {
+        KvBlockManager blockManager = new KvBlockManager(metricRegistry);
+        KvCacheManager sessionManager = new KvCacheManager(1, 8, 4, DType.F32,
+                new KvBufferCacheSettings(true).withBlockSize(2), allocator, metricRegistry);
+
+        List<KvBlockKey> firstKeys;
+        try (KvCacheSession first = sessionManager.openSession()) {
+            writeFourTokenPrompt(first);
+            firstKeys = blockKeys(first, new long[] {10L, 20L});
+            transferCommittedBlocksToManager(first, blockManager, firstKeys);
+        }
+
+        KvBlockKey commonPrefix = firstKeys.get(0);
+        KvBlockKey differentSuffix = localKey(1, 10L, 99L, 2, 1, 4, KvBlockLayout.DENSE);
+        try (KvCacheSession second = sessionManager.openSession()) {
+            KvBlockLease commonLease = blockManager.retain(commonPrefix, second.sessionId());
+            assertNotNull(commonLease);
+            second.attachCommittedBlock(commonLease);
+            assertNull(blockManager.retain(differentSuffix, second.sessionId()));
+            assertEquals(2, second.length());
+        }
+        blockManager.close();
+    }
+
+    @Test
+    void partialTailBlockIsNotShared() {
+        KvBlockManager blockManager = new KvBlockManager(metricRegistry);
+        KvCacheManager sessionManager = new KvCacheManager(1, 8, 4, DType.F32,
+                new KvBufferCacheSettings(true).withBlockSize(4), allocator, metricRegistry);
+
+        try (KvCacheSession session = sessionManager.openSession()) {
+            for (int position = 0; position < 6; position++) {
+                writePosition(session, position, (position + 1) * 10.0f, 1);
+            }
+            try (KvWriteCursor writer = session.writer(CacheExecutionMode.PREFILL_UPDATE_CACHE)) {
+                writer.advanceLength(6);
+            }
+
+            assertEquals(1, session.committedBlocks().size());
+            List<KvBlockKey> keys = blockKeys(session, new long[] {10L});
+            transferCommittedBlocksToManager(session, blockManager, keys);
+            assertEquals(1, blockManager.residentBlockCount());
+            assertNull(blockManager.retain(localKey(1, 10L, 20L, 4, 1, 4, KvBlockLayout.DENSE), session.sessionId()));
+        }
+        blockManager.close();
+    }
+
+    @Test
+    void rankAwareIdentityPreventsCrossRankReuse() {
+        KvBlockManager blockManager = new KvBlockManager(metricRegistry);
+        KvCacheManager sessionManager = new KvCacheManager(1, 4, 4, DType.F32,
+                new KvBufferCacheSettings(true).withBlockSize(2), allocator, metricRegistry);
+        KvBlockKey rank0 = tpKey(0, 2, 0, 100L, 1, 0L, 10L, 2, 1, 4, KvBlockLayout.DENSE);
+        KvBlockKey rank1 = tpKey(0, 2, 1, 100L, 1, 0L, 10L, 2, 1, 4, KvBlockLayout.DENSE);
+
+        try (KvCacheSession session = sessionManager.openSession()) {
+            writePosition(session, 0, 10.0f, 1);
+            writePosition(session, 1, 20.0f, 1);
+            try (KvWriteCursor writer = session.writer(CacheExecutionMode.PREFILL_UPDATE_CACHE)) {
+                writer.advanceLength(2);
+            }
+            KvBlock block = session.detachCommittedBlock(0);
+            session.attachCommittedBlock(blockManager.admitAndRetain(rank0, block, session.sessionId()));
+
+            KvBlockLease rank0Lease = blockManager.retain(rank0, session.sessionId());
+            assertNotNull(rank0Lease);
+            rank0Lease.close();
+            assertNull(blockManager.retain(rank1, session.sessionId()));
+        }
+        blockManager.close();
+    }
+
+    @Test
+    void assignmentEpochPreventsStaleRankReuse() {
+        KvBlockManager blockManager = new KvBlockManager(metricRegistry);
+        KvCacheManager sessionManager = new KvCacheManager(1, 4, 4, DType.F32,
+                new KvBufferCacheSettings(true).withBlockSize(2), allocator, metricRegistry);
+        KvBlockKey oldEpoch = tpKey(0, 2, 0, 100L, 1, 0L, 10L, 2, 1, 4, KvBlockLayout.DENSE);
+        KvBlockKey newEpoch = tpKey(0, 2, 0, 101L, 1, 0L, 10L, 2, 1, 4, KvBlockLayout.DENSE);
+
+        try (KvCacheSession session = sessionManager.openSession()) {
+            writePosition(session, 0, 10.0f, 1);
+            writePosition(session, 1, 20.0f, 1);
+            try (KvWriteCursor writer = session.writer(CacheExecutionMode.PREFILL_UPDATE_CACHE)) {
+                writer.advanceLength(2);
+            }
+            KvBlock block = session.detachCommittedBlock(0);
+            session.attachCommittedBlock(blockManager.admitAndRetain(oldEpoch, block, session.sessionId()));
+
+            KvBlockLease oldLease = blockManager.retain(oldEpoch, session.sessionId());
+            assertNotNull(oldLease);
+            oldLease.close();
+            assertNull(blockManager.retain(newEpoch, session.sessionId()));
+        }
+        blockManager.close();
+    }
+
+    @Test
+    void leasedBlockSurvivesEvictionUntilSessionCloses() {
+        KvBlockManager blockManager = new KvBlockManager(metricRegistry);
+        KvCacheManager sessionManager = new KvCacheManager(1, 4, 4, DType.F32,
+                new KvBufferCacheSettings(true).withBlockSize(2), allocator, metricRegistry);
+        KvBlockKey key = localKey(0, 0L, 10L, 2, 1, 4, KvBlockLayout.DENSE);
+        KvBlock block;
+
+        try (KvCacheSession first = sessionManager.openSession()) {
+            writePosition(first, 0, 10.0f, 1);
+            writePosition(first, 1, 20.0f, 1);
+            try (KvWriteCursor writer = first.writer(CacheExecutionMode.PREFILL_UPDATE_CACHE)) {
+                writer.advanceLength(2);
+            }
+            block = first.detachCommittedBlock(0);
+            first.attachCommittedBlock(blockManager.admitAndRetain(key, block, first.sessionId()));
+        }
+
+        try (KvCacheSession second = sessionManager.openSession()) {
+            second.attachCommittedBlock(blockManager.retain(key, second.sessionId()));
+            assertTrue(blockManager.evict(key));
+            assertFalse(block.isClosed());
+            try (AbstractTensor keyRow = second.keyRowCopy(0, 1)) {
+                assertRow(keyRow, 21.0f);
+            }
+        }
+
+        assertTrue(block.isClosed());
+        blockManager.close();
+    }
+
+    @Test
+    void duplicateConcurrentAdmitsConvergeToOneManagedBlock() throws Exception {
+        KvBlockManager blockManager = new KvBlockManager(metricRegistry);
+        KvCacheManager sessionManager = new KvCacheManager(1, 4, 4, DType.F32,
+                new KvBufferCacheSettings(true).withBlockSize(2), allocator, metricRegistry);
+        KvBlockKey key = localKey(0, 0L, 10L, 2, 1, 4, KvBlockLayout.DENSE);
+        KvBlock firstBlock = detachedSingleBlock(sessionManager, 10.0f);
+        KvBlock secondBlock = detachedSingleBlock(sessionManager, 10.0f);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        AtomicReference<KvBlockLease> firstLease = new AtomicReference<>();
+        AtomicReference<KvBlockLease> secondLease = new AtomicReference<>();
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+
+        Thread first = new Thread(() -> admitAfterBarrier(blockManager, key, firstBlock, "race-1", ready, start,
+                firstLease, failure));
+        Thread second = new Thread(() -> admitAfterBarrier(blockManager, key, secondBlock, "race-2", ready, start,
+                secondLease, failure));
+        first.start();
+        second.start();
+        ready.await();
+        start.countDown();
+        first.join();
+        second.join();
+
+        if (failure.get() != null) {
+            throw new AssertionError(failure.get());
+        }
+        assertNotNull(firstLease.get());
+        assertNotNull(secondLease.get());
+        assertEquals(1, blockManager.residentBlockCount());
+        assertEquals(2, blockManager.refCount(key));
+        assertEquals(firstLease.get().blockIdentity(), secondLease.get().blockIdentity());
+
+        firstLease.get().close();
+        secondLease.get().close();
+        assertEquals(0, blockManager.refCount(key));
+        blockManager.close();
+    }
+
+    @Test
+    void blockManagerEvictsOldestUnreferencedBlockToStayWithinByteBudget() {
+        KvBlockManager blockManager = new KvBlockManager(metricRegistry, 64);
+        KvCacheManager sessionManager = new KvCacheManager(1, 4, 4, DType.F32,
+                new KvBufferCacheSettings(true).withBlockSize(2), allocator, metricRegistry);
+        KvBlockKey firstKey = localKey(0, 0L, 10L, 2, 1, 4, KvBlockLayout.DENSE);
+        KvBlockKey secondKey = localKey(0, 10L, 20L, 2, 1, 4, KvBlockLayout.DENSE);
+
+        try (KvCacheSession first = sessionManager.openSession()) {
+            KvBlock firstBlock = detachedSingleBlock(sessionManager, 10.0f);
+            first.attachCommittedBlock(blockManager.admitAndRetain(firstKey, firstBlock, first.sessionId()));
+        }
+        assertEquals(64, blockManager.residentEncodedBytes());
+        assertEquals(0, blockManager.referencedEncodedBytes());
+
+        try (KvCacheSession second = sessionManager.openSession()) {
+            KvBlock secondBlock = detachedSingleBlock(sessionManager, 30.0f);
+            second.attachCommittedBlock(blockManager.admitAndRetain(secondKey, secondBlock, second.sessionId()));
+
+            assertEquals(1, blockManager.residentBlockCount());
+            assertEquals(64, blockManager.residentEncodedBytes());
+            assertNull(blockManager.retain(firstKey, second.sessionId()));
+            KvBlockLease secondLease = blockManager.retain(secondKey, second.sessionId());
+            assertNotNull(secondLease);
+            secondLease.close();
+        }
+        blockManager.close();
+    }
+
+    @Test
+    void referencedBlocksCanTemporarilyExceedBudgetAndEvictAfterRelease() {
+        KvBlockManager blockManager = new KvBlockManager(metricRegistry, 64);
+        KvCacheManager sessionManager = new KvCacheManager(1, 6, 4, DType.F32,
+                new KvBufferCacheSettings(true).withBlockSize(2), allocator, metricRegistry);
+        KvBlockKey firstKey = localKey(0, 0L, 10L, 2, 1, 4, KvBlockLayout.DENSE);
+        KvBlockKey secondKey = localKey(0, 10L, 20L, 2, 1, 4, KvBlockLayout.DENSE);
+        KvBlock firstBlock = detachedSingleBlock(sessionManager, 10.0f);
+        KvBlock secondBlock = detachedSingleBlock(sessionManager, 30.0f);
+
+        try (KvCacheSession first = sessionManager.openSession();
+             KvCacheSession second = sessionManager.openSession()) {
+            first.attachCommittedBlock(blockManager.admitAndRetain(firstKey, firstBlock, first.sessionId()));
+            second.attachCommittedBlock(blockManager.admitAndRetain(secondKey, secondBlock, second.sessionId()));
+
+            assertEquals(2, blockManager.residentBlockCount());
+            assertEquals(128, blockManager.residentEncodedBytes());
+            assertEquals(128, blockManager.referencedEncodedBytes());
+
+            first.close();
+
+            assertTrue(firstBlock.isClosed());
+            assertEquals(1, blockManager.residentBlockCount());
+            assertEquals(64, blockManager.residentEncodedBytes());
+            assertNull(blockManager.retain(firstKey, second.sessionId()));
+            KvBlockLease secondLease = blockManager.retain(secondKey, second.sessionId());
+            assertNotNull(secondLease);
+            secondLease.close();
+        }
+        blockManager.close();
+    }
+
+    @Test
+    void settingsExposeSharedPrefixBlockCacheByteBudget() {
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withPrefixCacheMode(KvBufferCacheSettings.PrefixCacheMode.SHARED_BLOCKS)
+                .withSharedPrefixBlockCacheMaxBytes(1234L);
+
+        assertEquals(KvBufferCacheSettings.PrefixCacheMode.SHARED_BLOCKS, settings.getPrefixCacheMode());
+        assertEquals(1234L, settings.getSharedPrefixBlockCacheMaxBytes());
+        assertEquals(1234L, new KvBlockManager(metricRegistry, settings).maxResidentBytes());
+        assertThrows(IllegalArgumentException.class, () -> settings.setSharedPrefixBlockCacheMaxBytes(-1L));
+        assertThrows(IllegalArgumentException.class, () -> settings.setPrefixCacheMode(null));
+    }
+
     private void writePosition(KvCacheSession session, int position, float base) {
         writePosition(session, position, base, 2);
     }
@@ -384,6 +677,75 @@ class KvCacheSessionTest {
                 }
             }
         }
+    }
+
+    private void writeFourTokenPrompt(KvCacheSession session) {
+        for (int position = 0; position < 4; position++) {
+            writePosition(session, position, (position + 1) * 10.0f, 1);
+        }
+        try (KvWriteCursor writer = session.writer(CacheExecutionMode.PREFILL_UPDATE_CACHE)) {
+            writer.advanceLength(4);
+        }
+    }
+
+    private List<KvBlockKey> blockKeys(KvCacheSession session, long[] tokenHashes) {
+        ArrayList<KvBlockKey> keys = new ArrayList<>();
+        long parent = 0L;
+        for (KvBlock block : session.committedBlocks()) {
+            long hash = tokenHashes[block.blockIndex()];
+            keys.add(localKey(block.blockIndex(), parent, hash, block.blockSize(), 1, 4, block.layout()));
+            parent = hash;
+        }
+        return keys;
+    }
+
+    private List<Integer> transferCommittedBlocksToManager(KvCacheSession session, KvBlockManager blockManager,
+            List<KvBlockKey> keys) {
+        ArrayList<Integer> identities = new ArrayList<>();
+        for (KvBlockKey key : keys) {
+            KvBlock block = session.detachCommittedBlock(key.blockIndex());
+            KvBlockLease lease = blockManager.admitAndRetain(key, block, session.sessionId());
+            identities.add(lease.blockIdentity());
+            session.attachCommittedBlock(lease);
+        }
+        return identities;
+    }
+
+    private KvBlock detachedSingleBlock(KvCacheManager manager, float base) {
+        try (KvCacheSession session = manager.openSession()) {
+            writePosition(session, 0, base, 1);
+            writePosition(session, 1, base + 10.0f, 1);
+            try (KvWriteCursor writer = session.writer(CacheExecutionMode.PREFILL_UPDATE_CACHE)) {
+                writer.advanceLength(2);
+            }
+            return session.detachCommittedBlock(0);
+        }
+    }
+
+    private void admitAfterBarrier(KvBlockManager blockManager, KvBlockKey key, KvBlock block, String sessionId,
+            CountDownLatch ready, CountDownLatch start, AtomicReference<KvBlockLease> lease,
+            AtomicReference<Throwable> failure) {
+        try {
+            ready.countDown();
+            start.await();
+            lease.set(blockManager.admitAndRetain(key, block, sessionId));
+        } catch (Throwable t) {
+            failure.set(t);
+        }
+    }
+
+    private KvBlockKey localKey(int blockIndex, long parentHash, long blockHash, int blockSize, int layers, int kvLength,
+            KvBlockLayout layout) {
+        return KvBlockKey.local("test-model", "test-runtime", blockIndex, parentHash, blockHash, blockSize,
+                blockSize, layers, kvLength, DType.F32, DType.F32, layout, 0);
+    }
+
+    private KvBlockKey tpKey(int blockIndex, int tpSize, int tpRank, long epoch, int layers, long parentHash,
+            long blockHash, int blockSize, int localLayers, int kvLength, KvBlockLayout layout) {
+        return new KvBlockKey(1, "test-model", "none", "test-tokenizer", "test-runtime", "test-rope",
+                "test-attention", blockIndex, parentHash, blockHash, blockSize,
+                blockSize, localLayers, kvLength, DType.F32, DType.F32, layout, 0, tpSize, tpRank, epoch,
+                "kvLength=" + kvLength + ":rank=" + tpRank + ":layers=" + layers);
     }
 
     private AbstractTensor row(float firstValue) {

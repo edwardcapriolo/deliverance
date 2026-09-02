@@ -63,6 +63,10 @@ public final class KvBlock implements AutoCloseable {
         return storage.encodedBytes();
     }
 
+    boolean isClosed() {
+        return closed.get();
+    }
+
     void copyKeyRow(int layer, int position, AbstractTensor destination) {
         copyRow(layer, position, 0, destination);
     }

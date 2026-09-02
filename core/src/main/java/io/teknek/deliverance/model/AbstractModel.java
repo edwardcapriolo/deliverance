@@ -47,6 +47,10 @@ import io.teknek.deliverance.safetensors.fetch.LoraAdapterModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
 import io.teknek.deliverance.tensor.*;
+import io.teknek.deliverance.tensor.kv.KvBlock;
+import io.teknek.deliverance.tensor.kv.KvBlockKey;
+import io.teknek.deliverance.tensor.kv.KvBlockLease;
+import io.teknek.deliverance.tensor.kv.KvBlockManager;
 import io.teknek.deliverance.tensor.kv.KvCacheManager;
 import io.teknek.deliverance.tensor.kv.KvCacheSession;
 import io.teknek.deliverance.tensor.kv.KvPrefixSnapshotCache;
@@ -183,6 +187,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     protected KvBufferCache kvBufferCache;
     protected KvCacheManager kvCacheManager;
     protected KvPrefixSnapshotCache kvPrefixSnapshotCache;
+    protected KvBlockManager kvBlockManager;
     protected final ConfigurableTensorProvider configurableTensorProvider;
     protected final MetricRegistry metricRegistry;
     protected final TensorAllocator tensorAllocator;
@@ -281,6 +286,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         this.tensorAllocator = tensorAllocator;
         this.kvBufferCacheSettings = kvBufferCacheSettings;
         this.kvBufferCache = new KvBufferCache(this, kvBufferCacheSettings);
+        this.kvBlockManager = new KvBlockManager(metricRegistry, kvBufferCacheSettings);
         this.kvCacheManager = new KvCacheManager(c.numberOfLayers, c.contextLength,
                 c.kvLength / tensorParallelContext.size(), workingMemoryDType, kvBufferCacheSettings, tensorAllocator,
                 metricRegistry, false, configurableTensorProvider.get());
@@ -501,6 +507,141 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
 
     public KvPrefixSnapshotCache kvPrefixSnapshotCache() {
         return kvPrefixSnapshotCache;
+    }
+
+    public KvBufferCacheSettings.PrefixCacheMode prefixCacheMode() {
+        return kvBufferCacheSettings.getPrefixCacheMode();
+    }
+
+    public KvBlockManager kvBlockManager() {
+        return kvBlockManager;
+    }
+
+    public int restoreSharedPrefixToKvSession(int[] promptTokens, Optional<String> cacheSalt,
+            KvCacheSession destination) {
+        if (kvBufferCacheSettings.getPrefixCacheMode() != KvBufferCacheSettings.PrefixCacheMode.SHARED_BLOCKS) {
+            return 0;
+        }
+        int restoredTokens = 0;
+        for (KvBlockKey key : sharedPrefixBlockKeys(promptTokens, cacheSalt)) {
+            KvBlockLease lease = kvBlockManager.retain(key, destination.sessionId());
+            if (lease == null) {
+                break;
+            }
+            destination.attachCommittedBlock(lease);
+            restoredTokens += key.tokenCount();
+            InferenceProfiler.counter(metricRegistry, "kvcache.v2.prefix.blocks.attached").inc();
+            InferenceProfiler.counter(metricRegistry, "kvcache.v2.prefix.bytes.attached").inc(lease.block().encodedBytes());
+        }
+        if (restoredTokens > 0) {
+            InferenceProfiler.counter(metricRegistry, "kvcache.v2.prefix.tokens.reused").inc(restoredTokens);
+        }
+        return restoredTokens;
+    }
+
+    public void storeSharedPrefixFromKvSession(int[] promptTokens, KvCacheSession source, Optional<String> cacheSalt) {
+        if (kvBufferCacheSettings.getPrefixCacheMode() != KvBufferCacheSettings.PrefixCacheMode.SHARED_BLOCKS) {
+            return;
+        }
+        for (KvBlockKey key : sharedPrefixBlockKeys(promptTokens, cacheSalt)) {
+            if (keyEndPositionExclusive(key) > source.length() || source.committedBlockIsLeased(key.blockIndex())) {
+                continue;
+            }
+            KvBlock block = source.detachCommittedBlock(key.blockIndex());
+            KvBlockLease lease = kvBlockManager.admitAndRetain(key, block, source.sessionId());
+            source.attachCommittedBlock(lease);
+            InferenceProfiler.counter(metricRegistry, "kvcache.v2.prefix.blocks.admitted").inc();
+        }
+    }
+
+    private List<KvBlockKey> sharedPrefixBlockKeys(int[] promptTokens, Optional<String> cacheSalt) {
+        int blockSize = kvBufferCacheSettings.getBlockSize();
+        int limit = Math.min(promptTokens.length, kvBufferCacheSettings.getMaxPrefixTokensPerPrompt());
+        int fullTokens = (limit / blockSize) * blockSize;
+        if (fullTokens == 0) {
+            return List.of();
+        }
+        ArrayList<KvBlockKey> keys = new ArrayList<>(fullTokens / blockSize);
+        long parentHash = 0L;
+        for (int blockIndex = 0; blockIndex < fullTokens / blockSize; blockIndex++) {
+            long tokenBlockHash = tokenBlockHash(parentHash, promptTokens, blockIndex * blockSize, blockSize);
+            keys.add(new KvBlockKey(1, effectiveModelFingerprint(), adapterFingerprint(), tokenizerFingerprint(),
+                    cacheSalt.orElse(""), ropeConfigHash(), attentionConfigHash(), blockIndex, parentHash,
+                    tokenBlockHash, blockSize, blockSize, config.numberOfLayers, getLocalKvLength(),
+                    kvBufferCacheSettings.getKvKeyDType(), kvBufferCacheSettings.getKvValueDType(),
+                    kvBufferCacheSettings.getKvBlockStoragePolicy() == KvBufferCacheSettings.KvBlockStoragePolicy.DENSE
+                            ? io.teknek.deliverance.tensor.kv.KvBlockLayout.DENSE
+                            : io.teknek.deliverance.tensor.kv.KvBlockLayout.MSE_TURBOQUANT,
+                    kvBufferCacheSettings.getKvTurboQuantBits(), tensorParallelContext.size(),
+                    tensorParallelContext.rank(), 0L, localShardId()));
+            parentHash = tokenBlockHash;
+        }
+        return keys;
+    }
+
+    private int keyEndPositionExclusive(KvBlockKey key) {
+        return key.blockIndex() * key.blockSize() + key.tokenCount();
+    }
+
+    private String effectiveModelFingerprint() {
+        return stableHash("model", weights.getClass().getName(), weights.modelRoot().map(Object::toString).orElse("none"),
+                weights.getModelDType().name(), config.getClass().getName(), String.valueOf(config.contextLength),
+                String.valueOf(config.embeddingLength), String.valueOf(config.hiddenLength),
+                String.valueOf(config.numberOfHeads), String.valueOf(config.numberOfKeyValueHeads),
+                String.valueOf(config.headSize), String.valueOf(config.numberOfLayers), String.valueOf(config.vocabularySize),
+                String.valueOf(config.bosToken), String.valueOf(config.eosTokens), String.valueOf(config.architectures));
+    }
+
+    private String adapterFingerprint() {
+        return activeLoraAdapterId().map(id -> stableHash("active-lora", id)).orElse("none");
+    }
+
+    private String tokenizerFingerprint() {
+        return stableHash("tokenizer", tokenizer == null ? "none" : tokenizer.getClass().getName(),
+                preTrainedTokenizer == null ? "none" : preTrainedTokenizer.getClass().getName());
+    }
+
+    private String ropeConfigHash() {
+        String sample = config.ropeFreqs.map(freqs -> freqs.length == 0 || freqs[0].length == 0
+                ? "empty"
+                : freqs[0][0] + ":" + freqs[Math.min(freqs.length - 1, 1)][Math.min(freqs[0].length - 1, 1)])
+                .orElse("none");
+        return stableHash("rope", String.valueOf(config.ropeFreqs.isPresent()), String.valueOf(config.contextLength),
+                String.valueOf(config.headSize), sample);
+    }
+
+    private String attentionConfigHash() {
+        return stableHash("attention", String.valueOf(config.attentionLength), String.valueOf(config.headGroupSize),
+                String.valueOf(config.isGQA), String.valueOf(config.attnLogitSoftCapping),
+                String.valueOf(config.residualMultiplier), String.valueOf(config.attentionMultiplier));
+    }
+
+    private String localShardId() {
+        return "tpSize=" + tensorParallelContext.size() + ":tpRank=" + tensorParallelContext.rank()
+                + ":localKvLength=" + getLocalKvLength();
+    }
+
+    private static long tokenBlockHash(long parentHash, int[] tokens, int offset, int length) {
+        long hash = 0xcbf29ce484222325L ^ parentHash;
+        for (int i = 0; i < length; i++) {
+            hash ^= tokens[offset + i];
+            hash *= 0x100000001b3L;
+        }
+        return hash;
+    }
+
+    private static String stableHash(String prefix, String... parts) {
+        long hash = 0xcbf29ce484222325L;
+        for (String part : parts) {
+            String value = part == null ? "null" : part;
+            for (int i = 0; i < value.length(); i++) {
+                hash ^= value.charAt(i);
+                hash *= 0x100000001b3L;
+            }
+            hash ^= 0xff;
+            hash *= 0x100000001b3L;
+        }
+        return prefix + ":" + Long.toUnsignedString(hash, 16);
     }
 
     public boolean usesKvCache2Generation() {
@@ -760,6 +901,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         }
         kvBufferCache.close();
         kvPrefixSnapshotCache.close();
+        kvBlockManager.close();
         kvCache2SessionAdapters.values().forEach(KvCacheSession::close);
         kvCache2SessionAdapters.clear();
         closeTensorOperations();

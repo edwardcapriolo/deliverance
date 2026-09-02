@@ -81,6 +81,22 @@ public class KvBufferCachePrefixTest {
     }
 
     @Test
+    public void snapshotPrefixCacheIsDisabledWhenSharedBlockModeIsSelected() {
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withMaxEntries(512)
+                .withBlockSize(4)
+                .withPrefixCheckpointPolicy(KvBufferCacheSettings.PrefixCheckpointPolicy.FIXED_BLOCKS)
+                .withPrefixCacheMode(KvBufferCacheSettings.PrefixCacheMode.SHARED_BLOCKS);
+        KvBufferCache cache = new KvBufferCache(mockModel(), settings);
+        int[] tokens = {1, 2, 3, 4, 5, 6, 7, 8};
+        KvBufferCache.KvBuffer buf = cache.getEphemeralKvBuffer();
+
+        cache.storePrefix(tokens, buf, Optional.empty());
+
+        assertNull(cache.lookupPrefix(tokens, Optional.empty()));
+    }
+
+    @Test
     public void testSaltyDisabled() {
         KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
                 .withMaxEntries(10)
