@@ -29,6 +29,13 @@ public class KvBufferCacheSettings {
     private int maxEntries = 10_000;
     /** Maximum resident in-memory bytes for future KVCache2 shared immutable prefix blocks. */
     private long sharedPrefixBlockCacheMaxBytes = 512L * 1024L * 1024L;
+    private boolean sharedPrefixDiskCacheEnabled;
+    private File sharedPrefixDiskCachePath = new File(System.getProperty("user.home"), ".deliverance/kv-cache");
+    private long sharedPrefixDiskCacheMaxBytes = 2L * 1024L * 1024L * 1024L;
+    private long sharedPrefixDiskCacheReservedFreeBytes = 1024L * 1024L * 1024L;
+    private long sharedPrefixDiskCacheMinUsableBytes = 1024L * 1024L * 1024L;
+    private int sharedPrefixDiskCacheAdmitMinTokens = 256;
+    private int sharedPrefixDiskCacheWriterQueueSize = 128;
     /**
     The block size of the kvcache. Cache hits will only happen at block boundaries, smaller blockize uses more memory
      */
@@ -347,6 +354,115 @@ public class KvBufferCacheSettings {
 
     public KvBufferCacheSettings withSharedPrefixBlockCacheMaxBytes(long sharedPrefixBlockCacheMaxBytes) {
         setSharedPrefixBlockCacheMaxBytes(sharedPrefixBlockCacheMaxBytes);
+        return this;
+    }
+
+    public boolean isSharedPrefixDiskCacheEnabled() {
+        return sharedPrefixDiskCacheEnabled;
+    }
+
+    public void setSharedPrefixDiskCacheEnabled(boolean sharedPrefixDiskCacheEnabled) {
+        this.sharedPrefixDiskCacheEnabled = sharedPrefixDiskCacheEnabled;
+    }
+
+    public KvBufferCacheSettings withSharedPrefixDiskCacheEnabled(boolean sharedPrefixDiskCacheEnabled) {
+        setSharedPrefixDiskCacheEnabled(sharedPrefixDiskCacheEnabled);
+        return this;
+    }
+
+    public File getSharedPrefixDiskCachePath() {
+        return sharedPrefixDiskCachePath;
+    }
+
+    public void setSharedPrefixDiskCachePath(File sharedPrefixDiskCachePath) {
+        if (sharedPrefixDiskCachePath == null) {
+            throw new IllegalArgumentException("sharedPrefixDiskCachePath must not be null");
+        }
+        this.sharedPrefixDiskCachePath = sharedPrefixDiskCachePath;
+    }
+
+    public KvBufferCacheSettings withSharedPrefixDiskCachePath(File sharedPrefixDiskCachePath) {
+        setSharedPrefixDiskCachePath(sharedPrefixDiskCachePath);
+        return this;
+    }
+
+    public long getSharedPrefixDiskCacheMaxBytes() {
+        return sharedPrefixDiskCacheMaxBytes;
+    }
+
+    public void setSharedPrefixDiskCacheMaxBytes(long sharedPrefixDiskCacheMaxBytes) {
+        if (sharedPrefixDiskCacheMaxBytes < 0) {
+            throw new IllegalArgumentException("sharedPrefixDiskCacheMaxBytes must be >= 0");
+        }
+        this.sharedPrefixDiskCacheMaxBytes = sharedPrefixDiskCacheMaxBytes;
+    }
+
+    public KvBufferCacheSettings withSharedPrefixDiskCacheMaxBytes(long sharedPrefixDiskCacheMaxBytes) {
+        setSharedPrefixDiskCacheMaxBytes(sharedPrefixDiskCacheMaxBytes);
+        return this;
+    }
+
+    public long getSharedPrefixDiskCacheReservedFreeBytes() {
+        return sharedPrefixDiskCacheReservedFreeBytes;
+    }
+
+    public void setSharedPrefixDiskCacheReservedFreeBytes(long sharedPrefixDiskCacheReservedFreeBytes) {
+        if (sharedPrefixDiskCacheReservedFreeBytes < 0) {
+            throw new IllegalArgumentException("sharedPrefixDiskCacheReservedFreeBytes must be >= 0");
+        }
+        this.sharedPrefixDiskCacheReservedFreeBytes = sharedPrefixDiskCacheReservedFreeBytes;
+    }
+
+    public KvBufferCacheSettings withSharedPrefixDiskCacheReservedFreeBytes(long reservedFreeBytes) {
+        setSharedPrefixDiskCacheReservedFreeBytes(reservedFreeBytes);
+        return this;
+    }
+
+    public long getSharedPrefixDiskCacheMinUsableBytes() {
+        return sharedPrefixDiskCacheMinUsableBytes;
+    }
+
+    public void setSharedPrefixDiskCacheMinUsableBytes(long sharedPrefixDiskCacheMinUsableBytes) {
+        if (sharedPrefixDiskCacheMinUsableBytes < 0) {
+            throw new IllegalArgumentException("sharedPrefixDiskCacheMinUsableBytes must be >= 0");
+        }
+        this.sharedPrefixDiskCacheMinUsableBytes = sharedPrefixDiskCacheMinUsableBytes;
+    }
+
+    public KvBufferCacheSettings withSharedPrefixDiskCacheMinUsableBytes(long minUsableBytes) {
+        setSharedPrefixDiskCacheMinUsableBytes(minUsableBytes);
+        return this;
+    }
+
+    public int getSharedPrefixDiskCacheAdmitMinTokens() {
+        return sharedPrefixDiskCacheAdmitMinTokens;
+    }
+
+    public void setSharedPrefixDiskCacheAdmitMinTokens(int sharedPrefixDiskCacheAdmitMinTokens) {
+        if (sharedPrefixDiskCacheAdmitMinTokens < 0) {
+            throw new IllegalArgumentException("sharedPrefixDiskCacheAdmitMinTokens must be >= 0");
+        }
+        this.sharedPrefixDiskCacheAdmitMinTokens = sharedPrefixDiskCacheAdmitMinTokens;
+    }
+
+    public KvBufferCacheSettings withSharedPrefixDiskCacheAdmitMinTokens(int admitMinTokens) {
+        setSharedPrefixDiskCacheAdmitMinTokens(admitMinTokens);
+        return this;
+    }
+
+    public int getSharedPrefixDiskCacheWriterQueueSize() {
+        return sharedPrefixDiskCacheWriterQueueSize;
+    }
+
+    public void setSharedPrefixDiskCacheWriterQueueSize(int sharedPrefixDiskCacheWriterQueueSize) {
+        if (sharedPrefixDiskCacheWriterQueueSize < 1) {
+            throw new IllegalArgumentException("sharedPrefixDiskCacheWriterQueueSize must be >= 1");
+        }
+        this.sharedPrefixDiskCacheWriterQueueSize = sharedPrefixDiskCacheWriterQueueSize;
+    }
+
+    public KvBufferCacheSettings withSharedPrefixDiskCacheWriterQueueSize(int queueSize) {
+        setSharedPrefixDiskCacheWriterQueueSize(queueSize);
         return this;
     }
 

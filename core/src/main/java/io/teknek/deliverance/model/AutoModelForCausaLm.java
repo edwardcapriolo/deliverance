@@ -340,6 +340,21 @@ public class AutoModelForCausaLm {
             return this;
         }
 
+        public Builder withSharedPrefixDiskCacheEnabled(boolean enabled) {
+            this.settings.setSharedPrefixDiskCacheEnabled(enabled);
+            return this;
+        }
+
+        public Builder withSharedPrefixDiskCachePath(java.io.File path) {
+            this.settings.setSharedPrefixDiskCachePath(path);
+            return this;
+        }
+
+        public Builder withSharedPrefixDiskCacheMaxBytes(long maxBytes) {
+            this.settings.setSharedPrefixDiskCacheMaxBytes(maxBytes);
+            return this;
+        }
+
         /** Enables checksum assertions for borrowed non-copying KV-cache read views. */
         public Builder withTrackKvReadViews(boolean trackKvReadViews) {
             this.trackKvReadViews = trackKvReadViews;
@@ -617,7 +632,7 @@ public class AutoModelForCausaLm {
                       parallelSplitPolicy=availableProcessors={} defaultSimdMultiplier={} defaultPanamaMultiplier={} simdAlignment={} panamaAlignment={} fixedOverrides={} multiplierOverrides={}
                       modelType={} workingMemoryType={} quantizedMemoryType={}
                       tensorRuntimeMode={} groupedDecodeQkvSplitSize={} gpuPrefill={} gpuDecode={} gpuDecodeAttention={} gpuDiffusionBlockProjection={} packedBlockAttention={} packedPrefill={} trackKvReadViews={} maxBatchSize={}
-                      prefixCacheMode={} kvBlockStoragePolicy={} kvTurboQuantBits={} kvKeyDType={} kvValueDType={} sharedPrefixBlockCacheMaxBytes={}
+                      prefixCacheMode={} kvBlockStoragePolicy={} kvTurboQuantBits={} kvKeyDType={} kvValueDType={} sharedPrefixBlockCacheMaxBytes={} sharedPrefixDiskCacheEnabled={} sharedPrefixDiskCacheMaxBytes={}
                       generationOptions={}
                     """,
                     fetch.getName(), primary.name(), primary.parallelSplitSize(), model.tensorOperationsSummary(),
@@ -630,6 +645,7 @@ public class AutoModelForCausaLm {
                     trackKvReadViews, maxBatchSize,
                     settings.getPrefixCacheMode(), settings.getKvBlockStoragePolicy(), settings.getKvTurboQuantBits(),
                     settings.getKvKeyDType(), settings.getKvValueDType(), settings.getSharedPrefixBlockCacheMaxBytes(),
+                    settings.isSharedPrefixDiskCacheEnabled(), settings.getSharedPrefixDiskCacheMaxBytes(),
                     generationOptions);
         }
 

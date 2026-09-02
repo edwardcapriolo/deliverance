@@ -106,6 +106,14 @@ final class DenseKvBlockStorage implements KvBlockStorage {
         return keyOrValue == 0 ? keyStorage : valueStorage;
     }
 
+    AbstractTensor keyStorage() {
+        return keyStorage;
+    }
+
+    AbstractTensor valueStorage() {
+        return valueStorage;
+    }
+
     private void validate(int layer, int blockRow, int keyOrValue) {
         Preconditions.checkArgument(layer >= 0 && layer < layers, "layer out of bounds");
         Preconditions.checkArgument(blockRow >= 0 && blockRow < tokenCount, "blockRow out of bounds");

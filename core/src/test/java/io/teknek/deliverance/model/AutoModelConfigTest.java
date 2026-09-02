@@ -46,6 +46,13 @@ public class AutoModelConfigTest {
                     "prefixCheckpointAnchors": [16, 32, 64],
                     "prefixCacheMode": "SHARED_BLOCKS",
                     "sharedPrefixBlockCacheMaxBytes": 123456,
+                    "sharedPrefixDiskCacheEnabled": true,
+                    "sharedPrefixDiskCachePath": "/tmp/deliverance-kv-test",
+                    "sharedPrefixDiskCacheMaxBytes": 2147483648,
+                    "sharedPrefixDiskCacheReservedFreeBytes": 1,
+                    "sharedPrefixDiskCacheMinUsableBytes": 2,
+                    "sharedPrefixDiskCacheAdmitMinTokens": 3,
+                    "sharedPrefixDiskCacheWriterQueueSize": 4,
                     "contextRowsPerPageTarget": 64,
                     "kvBlockStoragePolicy": "MSE_TURBOQUANT",
                     "kvTurboQuantBits": 5,
@@ -85,6 +92,13 @@ public class AutoModelConfigTest {
         assertEquals(io.teknek.deliverance.tensor.KvBufferCacheSettings.PrefixCacheMode.SHARED_BLOCKS,
                 builder.getSettings().getPrefixCacheMode());
         assertEquals(123456L, builder.getSettings().getSharedPrefixBlockCacheMaxBytes());
+        assertEquals(true, builder.getSettings().isSharedPrefixDiskCacheEnabled());
+        assertEquals(new java.io.File("/tmp/deliverance-kv-test"), builder.getSettings().getSharedPrefixDiskCachePath());
+        assertEquals(2147483648L, builder.getSettings().getSharedPrefixDiskCacheMaxBytes());
+        assertEquals(1L, builder.getSettings().getSharedPrefixDiskCacheReservedFreeBytes());
+        assertEquals(2L, builder.getSettings().getSharedPrefixDiskCacheMinUsableBytes());
+        assertEquals(3, builder.getSettings().getSharedPrefixDiskCacheAdmitMinTokens());
+        assertEquals(4, builder.getSettings().getSharedPrefixDiskCacheWriterQueueSize());
         assertEquals(64, builder.getSettings().getContextRowsPerPageTarget());
         assertEquals(io.teknek.deliverance.tensor.KvBufferCacheSettings.KvBlockStoragePolicy.MSE_TURBOQUANT,
                 builder.getSettings().getKvBlockStoragePolicy());

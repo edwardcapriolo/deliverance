@@ -424,6 +424,113 @@ Disk metrics:
 - `kvcache.v2.disk.bytes.written`
 - `kvcache.v2.disk.evict`
 
+### Initial Dense Disk Persistence Slice
+
+The first disk implementation should be dense-only and opt-in. It is a correctness and measurement baseline, not the final local-disk recommendation.
+
+Scope:
+
+- persist exact `DENSE` committed `KvBlockStorage` only
+- support dense `I8`, `BF16`, and `F32` key/value payloads
+- preserve the exact chosen layout and dtype
+- no TurboQuant serialization yet
+- no layout or dtype conversion
+- no active KV spill
+- no synchronous disk writes on the generation hot path
+
+Runtime mode:
+
+```text
+prefill computes block
+commit immutable block
+admit to memory block manager
+generation continues
+background writer persists block
+```
+
+Lookup mode:
+
+```text
+memory lookup
+  hit -> attach lease
+memory miss
+  disk lookup/load before prefill
+  validate metadata/checksum/exact key
+  promote loaded block to memory manager
+  attach lease
+disk miss/corrupt/error
+  recompute normally
+```
+
+Disk is a cold persistence tier behind memory. It is not a direct-disk-only KV cache.
+
+Configuration:
+
+```json
+{
+  "kvBufferCache": {
+    "prefixCacheMode": "SHARED_BLOCKS",
+    "sharedPrefixBlockCacheMaxBytes": 536870912,
+    "sharedPrefixDiskCacheEnabled": true,
+    "sharedPrefixDiskCachePath": "~/.deliverance/kv-cache",
+    "sharedPrefixDiskCacheMaxBytes": 2147483648,
+    "sharedPrefixDiskCacheReservedFreeBytes": 1073741824,
+    "sharedPrefixDiskCacheMinUsableBytes": 1073741824,
+    "sharedPrefixDiskCacheAdmitMinTokens": 256,
+    "sharedPrefixDiskCacheWriterQueueSize": 128
+  }
+}
+```
+
+Safety gates:
+
+- disk cache is disabled by default
+- if `sharedPrefixDiskCacheMaxBytes` is below the minimum accepted disk budget, disable disk cache and record a metric
+- if filesystem usable space is below `sharedPrefixDiskCacheMinUsableBytes`, disable disk cache and record a metric
+- skip writes that would violate `sharedPrefixDiskCacheReservedFreeBytes`
+- skip writes when the writer queue is full
+- skip writes below `sharedPrefixDiskCacheAdmitMinTokens`
+- skip unsupported layouts, including TurboQuant until exact encoded serialization is implemented
+- never rewrite an existing block key
+- corrupt or incomplete disk entries are treated as misses
+
+Eviction:
+
+```text
+startup scan -> delete oldest entries until totalBytes <= maxBytes
+after successful write -> delete oldest entries until totalBytes <= maxBytes
+```
+
+Disk eviction can delete files even if the same block is currently memory-resident, because active sessions hold memory leases. V1 disk eviction does not need active-session lease tracking.
+
+Dense payload format:
+
+```text
+meta JSON: full key identity, dtype/layout/shape, payload checksum, payload bytes
+bin: key rows then value rows in storage dtype byte order
+```
+
+Metrics:
+
+- `kvcache.v2.disk.disabled.max_bytes_too_small`
+- `kvcache.v2.disk.disabled.usable_bytes_too_small`
+- `kvcache.v2.disk.lookup`
+- `kvcache.v2.disk.hit`
+- `kvcache.v2.disk.miss`
+- `kvcache.v2.disk.load.elapsed`
+- `kvcache.v2.disk.write.elapsed`
+- `kvcache.v2.disk.bytes.read`
+- `kvcache.v2.disk.bytes.written`
+- `kvcache.v2.disk.write.skipped.low_space`
+- `kvcache.v2.disk.write.skipped.queue_full`
+- `kvcache.v2.disk.write.skipped.too_small`
+- `kvcache.v2.disk.write.skipped.unsupported_layout`
+- `kvcache.v2.disk.write.skipped.exists`
+- `kvcache.v2.disk.evict`
+- `kvcache.v2.disk.evict.bytes`
+
+TurboQuant should follow only after dense proves the disk lifecycle. For TurboQuant, the rule remains exact-layout persistence: `MSE_TURBOQUANT` encoded payload to disk and back into `MSE_TURBOQUANT`, with no dense intermediate.
+
 ## Implementation Phases
 
 ### Phase 1: In-Memory Leased Blocks

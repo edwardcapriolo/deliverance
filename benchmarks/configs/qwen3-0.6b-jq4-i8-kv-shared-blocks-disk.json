@@ -1,0 +1,25 @@
+{
+  "outputHeadQuantization": "Q4",
+  "maxBatchSize": 512,
+  "tensorRuntimeMode": "DISABLED",
+  "groupedDecodeQkvSplitSize": 8,
+  "kvBufferCache": {
+    "prefixCacheMode": "SHARED_BLOCKS",
+    "sharedPrefixBlockCacheMaxBytes": 536870912,
+    "sharedPrefixDiskCacheEnabled": true,
+    "sharedPrefixDiskCacheMaxBytes": 2147483648,
+    "sharedPrefixDiskCacheReservedFreeBytes": 1073741824,
+    "sharedPrefixDiskCacheMinUsableBytes": 1073741824,
+    "sharedPrefixDiskCacheAdmitMinTokens": 128,
+    "sharedPrefixDiskCacheWriterQueueSize": 128,
+    "maxEntries": 10000,
+    "blockSize": 32,
+    "maxPrefixTokensPerPrompt": 8192,
+    "prefixCheckpointPolicy": "START_AND_END",
+    "maxPrefixCheckpointsPerPrompt": 4,
+    "contextRowsPerPageTarget": 32,
+    "kvBlockStoragePolicy": "DENSE",
+    "kvKeyDType": "I8",
+    "kvValueDType": "I8"
+  }
+}
