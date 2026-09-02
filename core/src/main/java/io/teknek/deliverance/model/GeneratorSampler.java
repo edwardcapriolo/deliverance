@@ -95,9 +95,10 @@ public class GeneratorSampler {
             for (int i = 0; i < abstractModel.config.vocabularySize; i++) {
                 float v = logits.get(0, i);
                 if (abstractModel.config.finalLogitSoftCapping != null) {
-                    v /= abstractModel.config.finalLogitSoftCapping;
+                    float softcap = abstractModel.config.finalLogitSoftCapping;
+                    v /= softcap;
                     v = (float) FastMath.tanh(v);
-                    v = v * abstractModel.config.finalLogitSoftCapping;
+                    v = v * softcap;
                     logits.set(v, 0, i);
                 }
                 if (logProbs) {

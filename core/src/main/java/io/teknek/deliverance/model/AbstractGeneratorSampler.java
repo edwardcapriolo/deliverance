@@ -124,12 +124,13 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
                         logits, 0, model.config.vocabularySize);
             }
 
-            for (int i = 0; i < model.config.vocabularySize; i++) {
-                float v = logits.get(0, i);
-                if (model.config.finalLogitSoftCapping != null) {
-                    v /= model.config.finalLogitSoftCapping;
+            if (model.config.finalLogitSoftCapping != null) {
+                float softcap = model.config.finalLogitSoftCapping;
+                for (int i = 0; i < model.config.vocabularySize; i++) {
+                    float v = logits.get(0, i);
+                    v /= softcap;
                     v = (float) FastMath.tanh(v);
-                    v = v * model.config.finalLogitSoftCapping;
+                    v = v * softcap;
                     logits.set(v, 0, i);
                 }
             }
@@ -410,6 +411,7 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
             Optional<Float> x = t.stream().max(Float::compareTo);
             return x.map(Maybe::possibly).orElseGet(Maybe::nothing);
         };
+
 
         TensorLib tensorLib = new TensorLib(model.getPool());
         Maybe<Float> maybeMaxValue = tensorLib.unary(logits).readOnlyMapper(new MaxReadOnlyTensor())

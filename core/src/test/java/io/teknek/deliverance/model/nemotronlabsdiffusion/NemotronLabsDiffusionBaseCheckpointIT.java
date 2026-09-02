@@ -452,13 +452,13 @@ class NemotronLabsDiffusionBaseCheckpointIT {
     private static void printProfileCounters(AbstractModel model, int maxRows) {
         model.getMetricRegistry().getCounters().entrySet().stream()
                 .filter(entry -> entry.getValue().getCount() != 0
-                        || InferenceProfiler.shouldPrintCounter(entry.getKey().getKey()))
+                        || InferenceProfiler.shouldPrintCounter(entry.getKey()))
                 .sorted(Comparator.comparingLong(
                         (Map.Entry<io.dropwizard.metrics5.MetricName, io.dropwizard.metrics5.Counter> entry) ->
                                 Math.abs(entry.getValue().getCount())).reversed())
                 .limit(maxRows)
-                .forEach(entry -> System.out.println("[profile-counter] " + entry.getKey().getKey()
+                .forEach(entry -> System.out.println("[profile-counter] " + InferenceProfiler.displayName(entry.getKey())
                         + " count=" + entry.getValue().getCount()
-                        + " delta=" + InferenceProfiler.counterValue(entry.getKey().getKey())));
+                        + " delta=" + InferenceProfiler.counterValue(entry.getKey())));
     }
 }

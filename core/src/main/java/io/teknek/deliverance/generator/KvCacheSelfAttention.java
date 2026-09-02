@@ -17,6 +17,7 @@ import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.model.TensorProviderKind;
+import io.teknek.deliverance.tensorlib.TensorPlan;
 
 import java.util.Collections;
 import java.util.List;
@@ -201,28 +202,105 @@ public class KvCacheSelfAttention extends BaseCausalSelfAttention {
         TensorOperations valueOps = projectionOperations(input, valueAttnWeights, phase);
         try (Timer.Context ignoredQkv = InferenceProfiler.timer(metricRegistry,
                 "kvcacheselfattention.qkv_projection").time()) {
-            VectorMath.pchunk(0, attentionLength, (chunkStart, chunkSize) -> {
-                try (Timer.Context ignoredQ = InferenceProfiler.timer(metricRegistry,
-                        "kvcacheselfattention.q_projection").time()) {
-                    queryOps.dotProductChunk(queryBatch, input, queryAttnWeights, 0, config.embeddingLength,
-                            chunkStart, chunkSize);
-                }
-                int kvChunkSize = Math.min(chunkSize, kvLength - chunkStart);
-                if (kvChunkSize <= 0) {
-                    return;
-                }
-                try (Timer.Context ignoredK = InferenceProfiler.timer(metricRegistry,
-                        "kvcacheselfattention.k_projection").time()) {
-                    keyOps.dotProductChunk(keyBatch, input, keyAttnWeights, 0, config.embeddingLength,
-                            chunkStart, kvChunkSize);
-                }
-                try (Timer.Context ignoredV = InferenceProfiler.timer(metricRegistry,
-                        "kvcacheselfattention.v_projection").time()) {
-                    valueOps.dotProductChunk(valueBatch, input, valueAttnWeights, 0, config.embeddingLength,
-                            chunkStart, kvChunkSize);
-                }
-            }, groupedDecodeQkvSplitSize(), model.getPool());
+            TensorPlan alternatePlan = new TensorPlan(queryOps, model.getPool(), metricRegistry, model);
+            alternatePlan.alternateJit("kvcacheselfattention.qkv_projection.grouped_decode", "direct_pchunk",
+                            () -> projectGqaQkvGroupedDecodeDirect(input, queryBatch, keyBatch, valueBatch,
+                                    queryOps, keyOps, valueOps))
+                    .alternate("tensorplan_fuse", () -> projectGqaQkvGroupedDecodeTensorPlan(input, queryBatch,
+                            keyBatch, valueBatch, queryOps, keyOps, valueOps, false))
+                    .run();
         }
+    }
+
+    private void projectGqaQkvGroupedDecodeDirect(AbstractTensor input, AbstractTensor queryBatch,
+            AbstractTensor keyBatch, AbstractTensor valueBatch, TensorOperations queryOps, TensorOperations keyOps,
+            TensorOperations valueOps) {
+        VectorMath.pchunk(0, attentionLength, (chunkStart, chunkSize) -> {
+            try (Timer.Context ignoredQ = InferenceProfiler.timer(metricRegistry,
+                    "kvcacheselfattention.q_projection").time()) {
+                queryOps.dotProductChunk(queryBatch, input, queryAttnWeights, 0, config.embeddingLength,
+                        chunkStart, chunkSize);
+            }
+            int kvChunkSize = Math.min(chunkSize, kvLength - chunkStart);
+            if (kvChunkSize <= 0) {
+                return;
+            }
+            try (Timer.Context ignoredK = InferenceProfiler.timer(metricRegistry,
+                    "kvcacheselfattention.k_projection").time()) {
+                keyOps.dotProductChunk(keyBatch, input, keyAttnWeights, 0, config.embeddingLength,
+                        chunkStart, kvChunkSize);
+            }
+            try (Timer.Context ignoredV = InferenceProfiler.timer(metricRegistry,
+                    "kvcacheselfattention.v_projection").time()) {
+                valueOps.dotProductChunk(valueBatch, input, valueAttnWeights, 0, config.embeddingLength,
+                        chunkStart, kvChunkSize);
+            }
+        }, groupedDecodeQkvSplitSize(), model.getPool());
+    }
+
+    // DO NOT DELETE: exact TensorPlan fused grouped implementation kept for profiling/regression comparison.
+    private void projectGqaQkvGroupedDecodeTensorPlanJitDoNotDelete(AbstractTensor input, AbstractTensor queryBatch,
+            AbstractTensor keyBatch, AbstractTensor valueBatch, TensorOperations queryOps, TensorOperations keyOps,
+            TensorOperations valueOps) {
+        projectGqaQkvGroupedDecodeTensorPlan(input, queryBatch, keyBatch, valueBatch, queryOps, keyOps, valueOps, true);
+    }
+
+    private void projectGqaQkvGroupedDecodeTensorPlan(AbstractTensor input, AbstractTensor queryBatch,
+            AbstractTensor keyBatch, AbstractTensor valueBatch, TensorOperations queryOps, TensorOperations keyOps,
+            TensorOperations valueOps, boolean splitJit) {
+            TensorPlan plan = new TensorPlan(queryOps, model.getPool(), metricRegistry, model);
+            TensorPlan.Tensor inputNode = plan.input("qkv.input", input);
+            TensorPlan.ImmutableTensor queryWeightsNode = plan.immutable("qkv.query.weight", queryAttnWeights);
+            TensorPlan.ImmutableTensor keyWeightsNode = plan.immutable("qkv.key.weight", keyAttnWeights);
+            TensorPlan.ImmutableTensor valueWeightsNode = plan.immutable("qkv.value.weight", valueAttnWeights);
+            TensorPlan.Tensor queryNode = plan.mutable("qkv.query.output", queryBatch);
+            TensorPlan.Tensor keyNode = plan.mutable("qkv.key.output", keyBatch);
+            TensorPlan.Tensor valueNode = plan.mutable("qkv.value.output", valueBatch);
+
+            int maxSplit = groupedDecodeQkvSplitSize();
+            int minSplit = Math.max(1, (int) Math.floor(maxSplit * 0.5));
+            TensorPlan.Tensor tensor = plan.fuse("kvcacheselfattention.qkv_projection.grouped_decode", TensorShape.of(attentionLength))
+                    .read("input", inputNode)
+                    .read("queryWeight", queryWeightsNode)
+                    .read("keyWeight", keyWeightsNode)
+                    .read("valueWeight", valueWeightsNode)
+                    .write("query", queryNode)
+                    .read("key", keyNode)
+                    .read("value", valueNode)
+                    .splitCount(maxSplit)
+                    .map("grouped q/k/v dotProductChunk by output rows", TensorPlan.TensorOp.CUSTOM,
+                            (context, offset, length) -> {
+                                int chunkStart = Math.toIntExact(offset);
+                                int chunkSize = Math.toIntExact(length);
+                                try (Timer.Context ignoredQ = InferenceProfiler.timer(metricRegistry,
+                                        "kvcacheselfattention.q_projection").time()) {
+                                    queryOps.dotProductChunk(context.tensor("query"), context.tensor("input"),
+                                            context.tensor("queryWeight"), 0, config.embeddingLength, chunkStart,
+                                            chunkSize);
+                                }
+                                int kvChunkSize = Math.min(chunkSize, kvLength - chunkStart);
+                                if (kvChunkSize <= 0) {
+                                    return;
+                                }
+                                try (Timer.Context ignoredK = InferenceProfiler.timer(metricRegistry,
+                                        "kvcacheselfattention.k_projection").time()) {
+                                    keyOps.dotProductChunk(context.tensor("key"), context.tensor("input"),
+                                            context.tensor("keyWeight"), 0, config.embeddingLength, chunkStart,
+                                            kvChunkSize);
+                                }
+                                try (Timer.Context ignoredV = InferenceProfiler.timer(metricRegistry,
+                                        "kvcacheselfattention.v_projection").time()) {
+                                    valueOps.dotProductChunk(context.tensor("value"), context.tensor("input"),
+                                            context.tensor("valueWeight"), 0, config.embeddingLength, chunkStart,
+                                            kvChunkSize);
+                                }
+                            })
+                    .tensor();
+            if (splitJit) {
+                tensor.justInTime(minSplit, maxSplit).materialize();
+            } else {
+                tensor.materialize();
+            }
     }
 
     private int groupedDecodeQkvSplitSize() {

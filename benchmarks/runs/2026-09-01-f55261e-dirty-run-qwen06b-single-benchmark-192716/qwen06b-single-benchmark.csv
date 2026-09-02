@@ -1,0 +1,12 @@
+timestamp,engine,model,case_id,category,turn,prompt_chars,prompt_tokens,generated_tokens,total_ms,generation_ms,tokens_per_second,response_chars,finish_reason
+"2026-09-01T23:27:34.233872Z","deliverance","edwardcapriolo/Qwen3-0.6B-JQ4","builtin-reasoning-1","reasoning",1,592,128,256,11665.477416,9836.300916,25.92437972136557,1051,"MAX_TOKENS"
+"2026-09-01T23:27:49.617124Z","deliverance","edwardcapriolo/Qwen3-0.6B-JQ4","builtin-reasoning-1","reasoning",2,1768,403,256,15367.091166,9651.541375,26.420650349229838,1024,"MAX_TOKENS"
+"2026-09-01T23:27:58.652394Z","deliverance","edwardcapriolo/Qwen3-0.6B-JQ4","builtin-math-1","math",1,382,89,256,9026.186,8407.172917,30.331242442315997,1029,"MAX_TOKENS"
+"2026-09-01T23:28:13.286923Z","deliverance","edwardcapriolo/Qwen3-0.6B-JQ4","builtin-math-1","math",2,1615,382,256,14630.30125,9335.418708000001,27.31532542632259,973,"MAX_TOKENS"
+"2026-09-01T23:28:22.849644Z","deliverance","edwardcapriolo/Qwen3-0.6B-JQ4","builtin-coding-1","coding",1,318,63,256,9556.670833,9170.35375,27.806997085581347,1084,"MAX_TOKENS"
+"2026-09-01T23:28:39.235445Z","deliverance","edwardcapriolo/Qwen3-0.6B-JQ4","builtin-coding-1","coding",2,1571,346,256,16379.285583,11508.526291000002,22.15748511600632,1238,"MAX_TOKENS"
+"2026-09-01T23:28:49.302338Z","deliverance","edwardcapriolo/Qwen3-0.6B-JQ4","builtin-coding-2","coding",1,265,50,256,10053.681792,9680.663542,26.341169579303205,1123,"MAX_TOKENS"
+"2026-09-01T23:29:05.309688Z","deliverance","edwardcapriolo/Qwen3-0.6B-JQ4","builtin-coding-2","coding",2,1549,332,256,15997.005792,11413.616624999999,22.341735172833527,963,"MAX_TOKENS"
+"2026-09-01T23:29:23.760569Z","deliverance","edwardcapriolo/Qwen3-0.6B-JQ4","builtin-extraction-1","extraction",1,515,335,256,18443.662375,12861.288417,19.826940484667308,804,"MAX_TOKENS"
+"2026-09-01T23:29:52.210301Z","deliverance","edwardcapriolo/Qwen3-0.6B-JQ4","builtin-extraction-1","extraction",2,1478,618,256,28443.6665,13574.219791,18.785610070132392,1005,"MAX_TOKENS"
+"2026-09-01T23:30:06.804255Z","deliverance","edwardcapriolo/Qwen3-0.6B-JQ4","builtin-stem-1","stem",1,270,50,256,14585.560875,14226.024,17.92489595125103,1199,"MAX_TOKENS"

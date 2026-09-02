@@ -1,6 +1,7 @@
 package io.teknek.deliverance.model;
 
 import io.dropwizard.metrics5.Counter;
+import io.dropwizard.metrics5.MetricName;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.dropwizard.metrics5.Snapshot;
 import io.dropwizard.metrics5.Timer;
@@ -53,11 +54,38 @@ public final class InferenceProfiler {
         return new ProfilingTimer(metricRegistry.timer(name), totals);
     }
 
+    public static Timer timer(MetricRegistry metricRegistry, String name, String... tags) {
+        MetricName metricName = MetricName.build(name).tagged(tags);
+        String displayName = displayName(metricName);
+        TIMER_NAMES.add(displayName);
+        TimingTotals totals = TIMER_TOTALS.computeIfAbsent(displayName, ignored -> new TimingTotals());
+        return new ProfilingTimer(metricRegistry.timer(metricName), totals);
+    }
+
     public static Counter counter(MetricRegistry metricRegistry, String name) {
         Counter counter = metricRegistry.counter(name);
         COUNTER_NAMES.add(name);
         COUNTERS.computeIfAbsent(name, ignored -> Collections.newSetFromMap(new ConcurrentHashMap<>())).add(counter);
         return counter;
+    }
+
+    public static Counter counter(MetricRegistry metricRegistry, String name, String... tags) {
+        MetricName metricName = MetricName.build(name).tagged(tags);
+        String displayName = displayName(metricName);
+        Counter counter = metricRegistry.counter(metricName);
+        COUNTER_NAMES.add(displayName);
+        COUNTERS.computeIfAbsent(displayName, ignored -> Collections.newSetFromMap(new ConcurrentHashMap<>())).add(counter);
+        return counter;
+    }
+
+    public static String displayName(MetricName metricName) {
+        if (metricName.getTags().isEmpty()) {
+            return metricName.getKey();
+        }
+        String tags = metricName.getTags().entrySet().stream()
+                .map(entry -> entry.getKey() + "=" + entry.getValue())
+                .collect(java.util.stream.Collectors.joining(","));
+        return metricName.getKey() + "{" + tags + "}";
     }
 
     public static void printSummary(String label, int maxRows) {
@@ -66,6 +94,7 @@ public final class InferenceProfiler {
         }
         System.out.println("[profile] " + label);
         TIMER_NAMES.stream()
+                .filter(name -> !name.startsWith("tensorplan.jit."))
                 .map(name -> timerDelta(name, TIMER_BASELINES.getOrDefault(name, TimerBaseline.ZERO)))
                 .filter(snapshot -> snapshot.count() > 0)
                 .sorted(Comparator.comparingDouble(TimerDelta::estimatedTotalNanos).reversed())
@@ -79,6 +108,29 @@ public final class InferenceProfiler {
                     "[profile] %-45s count=%8d total_ms=%10.3f mean_us=%10.3f%n",
                     snapshot.name(), count, totalMs, meanUs);
         });
+        printJitSummary();
+    }
+
+    private static void printJitSummary() {
+        var jitTimers = TIMER_NAMES.stream()
+                .filter(name -> name.startsWith("tensorplan.jit."))
+                .map(name -> timerDelta(name, TIMER_BASELINES.getOrDefault(name, TimerBaseline.ZERO)))
+                .filter(snapshot -> snapshot.count() > 0)
+                .sorted(Comparator.comparing(TimerDelta::name))
+                .toList();
+        if (jitTimers.isEmpty()) {
+            return;
+        }
+        System.out.println("[profile-jit] tensorplan.jit");
+        jitTimers.forEach(snapshot -> {
+            long count = snapshot.count();
+            double meanNanos = snapshot.meanNanos();
+            double totalMs = (count * meanNanos) / 1_000_000.0;
+            double meanUs = meanNanos / 1_000.0;
+            System.out.printf(java.util.Locale.ROOT,
+                    "[profile-jit] %-70s count=%8d total_ms=%10.3f mean_us=%10.3f%n",
+                    snapshot.name(), count, totalMs, meanUs);
+        });
     }
 
     public static long counterValue(String name) {
@@ -86,8 +138,16 @@ public final class InferenceProfiler {
         return current - COUNTER_BASELINES.getOrDefault(name, 0L);
     }
 
+    public static long counterValue(MetricName metricName) {
+        return counterValue(displayName(metricName));
+    }
+
     public static boolean shouldPrintCounter(String name) {
         return COUNTER_NAMES.contains(name);
+    }
+
+    public static boolean shouldPrintCounter(MetricName metricName) {
+        return shouldPrintCounter(displayName(metricName));
     }
 
     private record TimerDelta(String name, long count, double estimatedTotalNanos) {

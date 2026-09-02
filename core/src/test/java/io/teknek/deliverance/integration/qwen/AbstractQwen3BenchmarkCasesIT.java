@@ -75,9 +75,9 @@ abstract class AbstractQwen3BenchmarkCasesIT {
                     response.generatedTokens.size(), response.totalTimeMs, tokensPerSecond, response.finishReason);
             InferenceProfiler.printSummary("case=" + caseId + " turn=" + (turn + 1), 30);
             model.getMetricRegistry().getCounters().entrySet().stream()
-                    .filter(entry -> InferenceProfiler.shouldPrintCounter(entry.getKey().getKey()))
-                    .forEach(entry -> System.out.println("[profile-counter] " + entry.getKey().getKey()
-                            + " count=" + InferenceProfiler.counterValue(entry.getKey().getKey())));
+                    .filter(entry -> InferenceProfiler.shouldPrintCounter(entry.getKey()))
+                    .forEach(entry -> System.out.println("[profile-counter] " + InferenceProfiler.displayName(entry.getKey())
+                            + " count=" + InferenceProfiler.counterValue(entry.getKey())));
             assertFalse(response.responseTextWithSpecialTokens.isBlank());
         }
     }
