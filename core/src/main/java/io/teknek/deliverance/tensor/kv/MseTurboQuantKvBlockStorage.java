@@ -63,6 +63,16 @@ final class MseTurboQuantKvBlockStorage implements KvBlockStorage {
                 metricRegistry, encoded);
     }
 
+    static MseTurboQuantKvBlockStorage fromEncoded(DType dtype, int layers, int tokenCount, int blockSize, int kvLength,
+            TensorAllocator allocator, MetricRegistry metricRegistry, MseTurboQuantCodec.EncodedRows encodedRows) {
+        return new MseTurboQuantKvBlockStorage(dtype, layers, tokenCount, blockSize, kvLength, allocator,
+                metricRegistry, encodedRows);
+    }
+
+    MseTurboQuantCodec.EncodedRows encodedRows() {
+        return encodedRows;
+    }
+
     @Override
     public KvBlockLayout layout() {
         return KvBlockLayout.MSE_TURBOQUANT;
