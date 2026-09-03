@@ -51,6 +51,20 @@ public final class KvBlockDiskStore implements AutoCloseable {
     private record DiskEntry(Path metaPath, Path binPath, Metadata metadata, long totalBytes) {
     }
 
+    private record NamespaceKey(int formatVersion, String modelCacheId, String adapterFingerprint,
+            String tokenizerFingerprint, String runtimeSalt, String ropeConfigHash, String attentionConfigHash,
+            int blockSize, int layers, int kvLength, DType keyDType, DType valueDType, KvBlockLayout layout,
+            int turboQuantBits, int tensorParallelSize, int tensorParallelRank, long assignmentEpoch,
+            String localShardId) {
+        private static NamespaceKey from(KvBlockKey key) {
+            return new NamespaceKey(key.formatVersion(), key.modelCacheId(), key.adapterFingerprint(),
+                    key.tokenizerFingerprint(), key.runtimeSalt(), key.ropeConfigHash(), key.attentionConfigHash(),
+                    key.blockSize(), key.layers(), key.kvLength(), key.keyDType(), key.valueDType(), key.layout(),
+                    key.turboQuantBits(), key.tensorParallelSize(), key.tensorParallelRank(), key.assignmentEpoch(),
+                    key.localShardId());
+        }
+    }
+
     private final Path root;
     private final MetricRegistry metricRegistry;
     private final TensorAllocator allocator;
@@ -199,7 +213,7 @@ public final class KvBlockDiskStore implements AutoCloseable {
         Path tmpMeta = metaPath.resolveSibling(metaPath.getFileName() + ".tmp");
         Path tmpBin = binPath.resolveSibling(binPath.getFileName() + ".tmp");
         try {
-            Files.createDirectories(root);
+            Files.createDirectories(metaPath.getParent());
             Metadata metadata = new Metadata(1, task.key(), task.payload().length, task.checksumCrc32(), 0L,
                     System.currentTimeMillis());
             byte[] metaBytes = JsonUtils.om.writeValueAsBytes(metadata);
@@ -366,7 +380,7 @@ public final class KvBlockDiskStore implements AutoCloseable {
             return List.of();
         }
         ArrayList<DiskEntry> entries = new ArrayList<>();
-        try (var stream = Files.list(root)) {
+        try (var stream = Files.walk(root, 2)) {
             for (Path metaPath : stream.filter(path -> path.getFileName().toString().endsWith(".meta.json")).toList()) {
                 try {
                     Metadata metadata = JsonUtils.om.readValue(metaPath.toFile(), Metadata.class);
@@ -384,17 +398,29 @@ public final class KvBlockDiskStore implements AutoCloseable {
     }
 
     private Path metaPath(KvBlockKey key) {
-        return root.resolve(keyHash(key) + ".meta.json");
+        return namespacePath(key).resolve(keyHash(key) + ".meta.json");
     }
 
     private Path binPath(KvBlockKey key) {
-        return root.resolve(keyHash(key) + ".bin");
+        return namespacePath(key).resolve(keyHash(key) + ".bin");
+    }
+
+    private Path namespacePath(KvBlockKey key) {
+        return root.resolve(namespaceHash(key));
+    }
+
+    private String namespaceHash(KvBlockKey key) {
+        return hashJson(NamespaceKey.from(key));
     }
 
     private String keyHash(KvBlockKey key) {
+        return hashJson(key);
+    }
+
+    private String hashJson(Object value) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(JsonUtils.om.writeValueAsBytes(key)));
+            return HexFormat.of().formatHex(digest.digest(JsonUtils.om.writeValueAsBytes(value)));
         } catch (NoSuchAlgorithmException | IOException e) {
             throw new RuntimeException(e);
         }

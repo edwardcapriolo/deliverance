@@ -10,8 +10,12 @@ import io.teknek.deliverance.tensor.TensorShape;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -86,8 +90,7 @@ class KvBlockDiskStoreTest {
                     session.sessionId()));
         }
         writerManager.close();
-        Path bin = Files.list(tempDir).filter(path -> path.getFileName().toString().endsWith(".bin")).findFirst()
-                .orElseThrow();
+        Path bin = firstFileWithSuffix(".bin");
         Files.write(bin, new byte[] {1, 2, 3});
 
         KvBlockManager readerManager = new KvBlockManager(metricRegistry, settings, allocator);
@@ -117,8 +120,32 @@ class KvBlockDiskStoreTest {
         }
         writerManager.close();
 
-        long binCount = Files.list(tempDir).filter(path -> path.getFileName().toString().endsWith(".bin")).count();
+        long binCount = countFilesWithSuffix(".bin");
         assertEquals(1, binCount);
+    }
+
+    @Test
+    void modelFingerprintsAreStoredInSeparateNamespaceDirectories() throws Exception {
+        KvBufferCacheSettings settings = diskSettings();
+        KvBlockKey firstModelKey = key("test-model-a", 0, 0L, 10L);
+        KvBlockKey secondModelKey = key("test-model-b", 0, 0L, 10L);
+
+        KvBlockManager writerManager = new KvBlockManager(metricRegistry, settings, allocator);
+        try (KvCacheSession session = session(settings)) {
+            writeFullBlock(session, 10.0f);
+            session.attachCommittedBlock(writerManager.admitAndRetain(firstModelKey, session.detachCommittedBlock(0),
+                    session.sessionId()));
+        }
+        try (KvCacheSession session = session(settings)) {
+            writeFullBlock(session, 20.0f);
+            session.attachCommittedBlock(writerManager.admitAndRetain(secondModelKey, session.detachCommittedBlock(0),
+                    session.sessionId()));
+        }
+        writerManager.close();
+
+        assertEquals(2, namespaceDirectories().size());
+        assertEquals(2, countFilesWithSuffix(".bin"));
+        assertEquals(2, countFilesWithSuffix(".meta.json"));
     }
 
     private KvBufferCacheSettings diskSettings() {
@@ -161,8 +188,32 @@ class KvBlockDiskStoreTest {
     }
 
     private KvBlockKey key(int blockIndex, long parentHash, long blockHash) {
-        return new KvBlockKey(1, "test-model", "none", "test-tokenizer", "", "test-rope", "test-attention",
+        return key("test-model", blockIndex, parentHash, blockHash);
+    }
+
+    private KvBlockKey key(String modelCacheId, int blockIndex, long parentHash, long blockHash) {
+        return new KvBlockKey(1, modelCacheId, "none", "test-tokenizer", "", "test-rope", "test-attention",
                 blockIndex, parentHash, blockHash, 2, 2, 1, 32, DType.I8, DType.I8, KvBlockLayout.DENSE, 0,
                 1, 0, 0L, "local");
+    }
+
+    private Path firstFileWithSuffix(String suffix) throws IOException {
+        try (var paths = Files.walk(tempDir)) {
+            return paths.filter(path -> Files.isRegularFile(path) && path.getFileName().toString().endsWith(suffix))
+                    .findFirst().orElseThrow();
+        }
+    }
+
+    private long countFilesWithSuffix(String suffix) throws IOException {
+        try (var paths = Files.walk(tempDir)) {
+            return paths.filter(path -> Files.isRegularFile(path) && path.getFileName().toString().endsWith(suffix))
+                    .count();
+        }
+    }
+
+    private Set<Path> namespaceDirectories() throws IOException {
+        try (var paths = Files.list(tempDir)) {
+            return paths.filter(Files::isDirectory).collect(Collectors.toSet());
+        }
     }
 }
