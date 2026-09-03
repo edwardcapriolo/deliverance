@@ -10,6 +10,7 @@ import io.teknek.deliverance.tensor.TensorShape;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -50,8 +51,9 @@ class KvBlockDiskStoreTurboQuantIT {
         }
         writerManager.close();
 
-        assertEquals(1, Files.list(tempDir).filter(path -> path.getFileName().toString().endsWith(".bin")).count());
-        assertEquals(1, Files.list(tempDir).filter(path -> path.getFileName().toString().endsWith(".meta.json")).count());
+        assertEquals(1, countNamespaceDirectories());
+        assertEquals(1, countFilesWithSuffix(".bin"));
+        assertEquals(1, countFilesWithSuffix(".meta.json"));
 
         KvBlockManager readerManager = new KvBlockManager(metricRegistry, settings, allocator);
         try (KvCacheSession session = session(settings)) {
@@ -103,5 +105,18 @@ class KvBlockDiskStoreTurboQuantIT {
         return new KvBlockKey(1, "test-model", "none", "test-tokenizer", "", "test-rope", "test-attention",
                 0, 0L, 10L, 2, 2, 1, 32, DType.F32, DType.F32, KvBlockLayout.MSE_TURBOQUANT, 4,
                 1, 0, 0L, "local");
+    }
+
+    private long countFilesWithSuffix(String suffix) throws IOException {
+        try (var paths = Files.walk(tempDir)) {
+            return paths.filter(path -> Files.isRegularFile(path) && path.getFileName().toString().endsWith(suffix))
+                    .count();
+        }
+    }
+
+    private long countNamespaceDirectories() throws IOException {
+        try (var paths = Files.list(tempDir)) {
+            return paths.filter(Files::isDirectory).count();
+        }
     }
 }
