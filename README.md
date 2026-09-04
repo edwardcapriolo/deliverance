@@ -32,11 +32,15 @@ Generation:
 - granitemoehybrid / Granite 4.0
 - nemotron_labs_diffusion / Nemotron Labs Diffusion
 
-### Learning and Developer docs
+### Release Notes
 
+- [0.0.15 release notes: State of Diffusion](release-notes/0.0.15.md) Nemotron diffusion, shared KV blocks, dense/TurboQuant disk cache, native/GPU fixes, and HTTP performance work
 - [0.0.14 release notes: The Fourteenth Floor](release-notes/0.0.14.md) LoRA runtime hot-swap, embedding parity, TP/GKE, Spring AI, native locality, and operational charting
 - [0.0.12 release notes: Corner Stone](release-notes/0.0.12.md) Granite, Antares, packed Q4, LoRA merge, uniform top-p, Dead to Rights, and Spring client support
 - [0.0.10 release notes](release-notes/0.0.10.md) Detailed notes for the Qwen3, JQ4, tensor-parallel, GPU, nanocode, and benchmarking release
+
+### Learning and Developer docs
+
 - [Qwen3 support](core/qwen3_support.md) Documents Qwen3 integration status, tests, and limitations
 - [Nemotron Labs Diffusion support](core/nemotron_labs_diffusion.md) Explains AR, diffusion, linear self-speculation, KVCache2, benchmark scripts, and QOD configs
 - [Granite 4.0 / GraniteMoeHybrid support](core/granite_support.md) Documents dense Antares and hybrid Granite support, Mamba/MoE notes, and current limitations
