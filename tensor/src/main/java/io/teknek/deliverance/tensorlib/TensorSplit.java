@@ -9,6 +9,14 @@ public class TensorSplit {
         this.length = y;
     }
 
+    public long offset() {
+        return offset;
+    }
+
+    public long length() {
+        return length;
+    }
+
     @Override
     public String toString() {
         return "TSplit{" +

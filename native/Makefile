@@ -35,6 +35,11 @@ SRC_DIR := src/main/c/simd
 SRCS    := $(wildcard $(SRC_DIR)/*.c)
 OBJS    := $(SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 LIB     := $(LIB_DIR)/$(LIB_NAME).$(LIB_EXT)
+TENSOR2_SRC_DIR := src/main/c/tensor2
+TENSOR2_SRCS    := $(wildcard $(TENSOR2_SRC_DIR)/*.c)
+TENSOR2_OBJS    := $(TENSOR2_SRCS:$(TENSOR2_SRC_DIR)/%.c=$(OBJ_DIR)/tensor2/%.o)
+TENSOR2_LIB_NAME ?= libdeliverance_tensor2
+TENSOR2_LIB      := $(LIB_DIR)/$(TENSOR2_LIB_NAME).$(LIB_EXT)
 
 # GPU‐accelerated build (optional; enabled if CFLAGS2 is set)
 OBJ2_DIR := $(OBJ_DIR)/gpu
@@ -44,11 +49,14 @@ OBJS2    := $(SRCS2:$(SRC2_DIR)/%.c=$(OBJ2_DIR)/%.o)
 LIB2     := $(LIB_DIR)/$(LIB_NAME)gpu.$(LIB_EXT)
 BF16_TEST := $(OBJ_DIR)/test_bf16_gemm
 GPU_HEADER_TEST := $(OBJ_DIR)/test_gpu_header.o
+TENSOR2_NATIVE_TEST := $(OBJ_DIR)/test_tensor2_native
 
 all: $(LIB)
 ifdef CFLAGS2
 all: $(LIB2)
 endif
+
+tensor2: $(TENSOR2_LIB)
 
 #───────────────────────────────────────────────────────────────────────────────
 # 1) Build the core SIMD library (static .a on all platforms)
@@ -59,6 +67,14 @@ $(LIB): $(OBJS)
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 	mkdir -p $(OBJ_DIR)
 	$(CC) -c $< -o $@ $(CFLAGS)
+
+$(OBJ_DIR)/tensor2/%.o: $(TENSOR2_SRC_DIR)/%.c
+	mkdir -p $(OBJ_DIR)/tensor2
+	$(CC) -c $< -o $@ $(CFLAGS)
+
+$(TENSOR2_LIB): $(TENSOR2_OBJS)
+	mkdir -p $(LIB_DIR)
+	$(AR) $(LDFLAGS) -o $(TENSOR2_LIB) $^
 
 #───────────────────────────────────────────────────────────────────────────────
 # 2) GPU target: either DLL on Windows or static .a on others
@@ -114,6 +130,13 @@ $(GPU_HEADER_TEST): src/test/c/test_gpu_header.c
 
 test-gpu-header-run: $(GPU_HEADER_TEST)
 	@echo "GPU header signature compile test passed"
+
+$(TENSOR2_NATIVE_TEST): src/test/c/test_tensor2_native.c src/main/c/tensor2/tensor2_native.c
+	mkdir -p $(OBJ_DIR)
+	$(CC) $(CFLAGS) -Isrc/main/c/tensor2 $^ -o $@ $(TEST_LDFLAGS)
+
+test-tensor2-native-run: $(TENSOR2_NATIVE_TEST)
+	$(TENSOR2_NATIVE_TEST)
 
 test-bf16-gemm-run: test-gpu-header-run
 

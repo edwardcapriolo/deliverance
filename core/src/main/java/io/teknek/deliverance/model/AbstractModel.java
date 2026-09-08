@@ -58,6 +58,7 @@ import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensorlib.PlannedTensor;
 import io.teknek.deliverance.tensorlib.TensorPlan;
 import io.teknek.deliverance.tensorlib.TensorPlanAdaptiveSplitTuner;
@@ -189,6 +190,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     protected KvPrefixSnapshotCache kvPrefixSnapshotCache;
     protected KvBlockManager kvBlockManager;
     protected final ConfigurableTensorProvider configurableTensorProvider;
+    protected final Lighter lighter;
     protected final MetricRegistry metricRegistry;
     protected final TensorAllocator tensorAllocator;
     private final KvBufferCacheSettings kvBufferCacheSettings;
@@ -283,6 +285,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         this.configurableTensorProvider = provider;
         this.tensorOperations.put(TensorProviderKind.SIMD, provider.get());
         this.metricRegistry = metricRegistry;
+        this.lighter = new Lighter(metricRegistry);
         this.tensorAllocator = tensorAllocator;
         this.kvBufferCacheSettings = kvBufferCacheSettings;
         this.kvBufferCache = new KvBufferCache(this, kvBufferCacheSettings);
@@ -1565,6 +1568,10 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
 
     public ConfigurableTensorProvider getConfigurableTensorProvider() {
         return configurableTensorProvider;
+    }
+
+    public Lighter getLighter() {
+        return lighter;
     }
 
     public void runChunks(String operation, int offset, int length, int splitSize, Optional<AbstractTensor> localityTensor,

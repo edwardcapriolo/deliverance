@@ -8,6 +8,8 @@ import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor2.MultiplyAccumulate;
+import io.teknek.deliverance.tensor2.TensorRef;
 
 import java.util.function.Function;
 import java.util.Optional;
@@ -21,6 +23,8 @@ import java.util.stream.IntStream;
  * partial outputs from all ranks must be summed to recover the full MLP output.</p>
  */
 public final class TensorParallelMlp {
+    private static final boolean USE_TENSOR2_LIGHTER_MACCUMULATE = false;
+
     private TensorParallelMlp() {
     }
 
@@ -118,7 +122,15 @@ public final class TensorParallelMlp {
             }
             model.emitLayerDebug(layerIndex, "mlp_after_activation", gate);
             try (Timer.Context ignoredMultiply = InferenceProfiler.timer(model.getMetricRegistry(), "tensorparallelmlp.multiply").time()) {
-                tensorProvider.get().maccumulate(gate, up, 0, localHiddenLength);
+                if (USE_TENSOR2_LIGHTER_MACCUMULATE) {
+                    try (TensorRef gateRef = TensorRef.borrowed(gate); TensorRef upRef = TensorRef.borrowed(up)) {
+                        model.getLighter().multiplyAccumulate(new MultiplyAccumulate(upRef)
+                                .into(gateRef)
+                                .offsetAndLength(0, localHiddenLength));
+                    }
+                } else {
+                    tensorProvider.get().maccumulate(gate, up, 0, localHiddenLength);
+                }
             }
             model.emitLayerDebug(layerIndex, "mlp_after_multiply", gate);
 
