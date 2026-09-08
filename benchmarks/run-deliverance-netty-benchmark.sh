@@ -50,8 +50,8 @@ EXEC_ARGS="\
 -cp %classpath \
 io.teknek.deliverance.benchmark.InferenceBenchmark \
 --engine deliverance \
---owner tjake \
---model gemma-2-2b-it-JQ4 \
+--owner edwardcapriolo \
+--model Qwen3-0.6B-JQ4 \
 ${DELIVERANCE_BENCHMARK_ARGS:-$DEFAULT_BENCHMARK_ARGS}"
 
 mvn -q -pl core \

@@ -147,6 +147,10 @@ public final class TensorPlan {
         return new AlternateJitBuilder(planName, candidateName, operation);
     }
 
+    public ChunkedBuilder chunked(String operation, long offset, long length) {
+        return new ChunkedBuilder(operation, offset, length);
+    }
+
     public TensorPlan forcedRunMode(RunMode runMode) {
         this.runMode = Objects.requireNonNull(runMode, "runMode");
         return this;
@@ -154,6 +158,51 @@ public final class TensorPlan {
 
     public RunMode runMode() {
         return runMode;
+    }
+
+    public final class ChunkedBuilder {
+        private final String operation;
+        private final long offset;
+        private final long length;
+        private Integer splitCount;
+
+        private ChunkedBuilder(String operation, long offset, long length) {
+            if (length < 0) {
+                throw new IllegalArgumentException("length must be >= 0");
+            }
+            this.operation = Objects.requireNonNull(operation, "operation");
+            this.offset = offset;
+            this.length = length;
+        }
+
+        public ChunkedBuilder splitCount(int splitCount) {
+            if (splitCount < 1) {
+                throw new IllegalArgumentException("splitCount must be >= 1");
+            }
+            this.splitCount = splitCount;
+            return this;
+        }
+
+        public void run(Chunk action) {
+            Objects.requireNonNull(action, "action");
+            int splitsCount = splitCount == null ? Math.max(1, pool.getCoreCount()) : splitCount;
+            List<TensorSplit> splits = TensorLib.calculateTSplits(offset, length, splitsCount);
+            if (useTensorRuntime()) {
+                runtime.runChunks(operation, Math.toIntExact(offset), Math.toIntExact(length), splits.size(),
+                        Optional.empty(), action::run);
+                return;
+            }
+            List<ForkJoinTask<?>> tasks = new ArrayList<>();
+            for (TensorSplit split : splits) {
+                tasks.add(pool.getUnderlying().submit(() -> action.run(split.offset(), split.length())));
+            }
+            tasks.forEach(ForkJoinTask::join);
+        }
+    }
+
+    @FunctionalInterface
+    public interface Chunk {
+        void run(long offset, long length);
     }
 
     public final class AlternateJitBuilder {

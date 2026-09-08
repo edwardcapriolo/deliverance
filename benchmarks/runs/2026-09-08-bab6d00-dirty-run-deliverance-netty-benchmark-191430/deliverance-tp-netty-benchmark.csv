@@ -1,0 +1,2 @@
+timestamp,engine,model,case_id,category,turn,prompt_chars,prompt_tokens,generated_tokens,total_ms,generation_ms,tokens_per_second,response_chars,finish_reason
+"2026-09-08T23:15:21.187045Z","deliverance","edwardcapriolo/Qwen3-0.6B-JQ4:tp4x2","builtin-reasoning-1","reasoning",1,592,128,256,37688.858792,26753.502291999997,9.531462356472549,1044,"MAX_TOKENS"
