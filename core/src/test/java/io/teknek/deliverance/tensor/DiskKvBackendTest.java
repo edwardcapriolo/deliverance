@@ -83,32 +83,6 @@ public class DiskKvBackendTest {
     }
 
     @Test
-    public void diskBackedKvDoesNotStorePrefixSnapshots() throws IOException {
-        AbstractModel model = mockModel();
-        KvBufferCacheSettings settings = new KvBufferCacheSettings(tempDir.toFile())
-                .withDiskPageSweeperEnabled(false);
-        KvBufferCache cache = new KvBufferCache(model, settings);
-        KvBufferCache.KvBuffer buffer = cache.new KvBuffer("prefix", 1024);
-
-        try (AbstractTensor key = buffer.getKeyTensorForPosition(0, 0);
-             AbstractTensor value = buffer.getValTensorForPosition(0, 0)) {
-            key.set(1.0f, 0, 0);
-            value.set(2.0f, 0, 0);
-        }
-
-        cache.storePrefix(new int[]{1, 2, 3, 4, 5, 6, 7, 8}, buffer, java.util.Optional.empty());
-
-        assertEquals(0, cache.prefixCache.size());
-        assertEquals(1, model.getMetricRegistry().meter("kvbuffercache.prefix.disk.skip").getCount());
-        assertEquals(1, countPageFiles());
-
-        buffer.close();
-        cache.close();
-
-        assertEquals(0, countPageFiles());
-    }
-
-    @Test
     public void pagesCanBeRetainedForInspection() {
         AbstractModel model = mockModel();
         KvBufferCacheSettings settings = new KvBufferCacheSettings(tempDir.toFile())

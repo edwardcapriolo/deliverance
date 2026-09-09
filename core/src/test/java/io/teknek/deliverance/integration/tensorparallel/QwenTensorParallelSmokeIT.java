@@ -195,7 +195,7 @@ public class QwenTensorParallelSmokeIT {
 
                 var longPrompt = coordinatorModel.promptSupport().get().builder()
                         .addTemplateArg("enable_thinking", true)
-                        .addSystemMessage("You are a concise assistant. Keep replies short. This repeated prefix exists to exercise tensor parallel prefix cache storage and restore mechanics without using compressed KV snapshots.")
+                        .addSystemMessage("You are a concise assistant. Keep replies short. This repeated prefix exists to exercise tensor parallel shared KVCache2 block storage and restore mechanics.")
                         .addUserMessage("hi")
                         .build();
                 GeneratorParameters shortParameters = new GeneratorParameters()

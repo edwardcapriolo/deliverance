@@ -8,15 +8,10 @@ import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.tensor.impl.BFloat16BufferTensor;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
-import net.jpountz.lz4.LZ4Compressor;
-import net.jpountz.lz4.LZ4Exception;
-import net.jpountz.lz4.LZ4Factory;
-import net.jpountz.lz4.LZ4FastDecompressor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
-import java.lang.foreign.MemorySegment;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.nio.ShortBuffer;
@@ -41,111 +36,22 @@ import java.util.concurrent.atomic.AtomicInteger;
  * owning buffer closes unless explicitly retained for inspection. A background sweeper can also remove stale closed or
  * orphaned page files from the working directory.</p>
  *
- * <p>This cache stores complete block-aligned prompt prefixes. For a prompt with 9 runtime tokens and a block
- * size of 8, only the first 8 tokens are eligible for reuse; the suffix token must still be run through the model
- * at position 8. The cache key is the token prefix plus an optional salt supplied by generation parameters.</p>
- *
- * <p>This class guarantees only the mechanical cache behavior: block-aligned lookup, snapshot storage, and copying the
- * stored key/value rows back into another KV buffer. Tests in {@code KvBufferCachePrefixTest} assert that round trip at
- * the tensor-value level.</p>
- *
- * <p>Whether using this cache preserves generated output is a larger model-execution invariant involving
- * {@code AbstractModel.generate}, split prefill, attention, quantization, and the selected tensor provider. See
- * {@code core/PrefixCache.md} for the project-level contract and caveats.</p>
+ * <p>Cross-request prefix reuse is owned by KVCache2 shared immutable blocks, not this old active-page cache.</p>
  */
 public class KvBufferCache implements Closeable {
 
-    public record CacheKey (Optional<String> salt, List<Integer> prefixTokens){
-    }
-    public record PrefixEntry(KvBuffer buffer, int length, boolean temporary) {
-        public PrefixEntry(KvBuffer buffer, int length) {
-            this(buffer, length, false);
-        }
-
-        public void closeIfTemporary() {
-            if (temporary && buffer != null) {
-                buffer.close();
-            }
-        }
-    }
-
-    public interface StoredPrefixEntry extends AutoCloseable {
-        PrefixEntry toPrefixEntry();
-
-        int length();
-
-        @Override
-        void close();
-    }
-
-    private record RawStoredPrefixEntry(KvBuffer buffer, int length) implements StoredPrefixEntry {
-        @Override
-        public PrefixEntry toPrefixEntry() {
-            return new PrefixEntry(buffer, length, false);
-        }
-
-        @Override
-        public void close() {
-            buffer.close();
-        }
-    }
-
-    private record Lz4StoredPrefixEntry(byte[] compressed, int uncompressedBytes, int length) implements StoredPrefixEntry {
-        @Override
-        public PrefixEntry toPrefixEntry() {
-            throw new UnsupportedOperationException("LZ4 prefix entries require cache context to hydrate");
-        }
-
-        @Override
-        public void close() {
-            // compressed byte arrays are owned by the JVM GC
-        }
-    }
-
-    private record MseTurboQuantStoredPrefixEntry(MseTurboQuantCodec.EncodedRows encoded, int length)
-            implements StoredPrefixEntry {
-        @Override
-        public PrefixEntry toPrefixEntry() {
-            throw new UnsupportedOperationException("MSE TurboQuant prefix entries require cache context to hydrate");
-        }
-
-        @Override
-        public void close() {
-            // packed code and norm arrays are owned by the JVM GC
-        }
-    }
-
     private static final Logger logger = LoggerFactory.getLogger(KvBufferCache.class);
-    private static final LZ4Factory LZ4_FACTORY = LZ4Factory.fastestInstance();
 
     private final AbstractModel model;
     private final KvBufferCacheSettings kvBufferCacheSettings;
-    private final int blockSize;
     private final Set<Path> activeDiskPages = Collections.synchronizedSet(new HashSet<>());
     private final Map<Path, Long> diskPageBytes = Collections.synchronizedMap(new HashMap<>());
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private ScheduledExecutorService diskSweeperExecutor;
 
-    public final Map<CacheKey, StoredPrefixEntry> prefixCache = Collections.synchronizedMap(
-            new LinkedHashMap<CacheKey, StoredPrefixEntry>(16, 0.75f, true) {
-                public boolean removeEldestEntry(Map.Entry<CacheKey, StoredPrefixEntry> eldest) {
-                    boolean evict = size() > kvBufferCacheSettings.getMaxEntries();
-                    if (evict && eldest != null && eldest.getValue() != null) {
-                        model.getMetricRegistry().meter("kvbuffercache.evict").mark();
-                        try {
-                            eldest.getValue().close();
-                        } catch (RuntimeException e) {
-                            logger.warn("could not close tensor in cache", e);
-                        }
-                    }
-                    return evict;
-                }
-            });
-
     public KvBufferCache(AbstractModel model, KvBufferCacheSettings kvBufferCacheSettings) {
         this.model = model;
         this.kvBufferCacheSettings = kvBufferCacheSettings;
-        this.blockSize = kvBufferCacheSettings.getBlockSize();
         prepareDiskWorkingDirectory();
         startDiskPageSweeper();
     }
@@ -253,303 +159,6 @@ public class KvBufferCache implements Closeable {
         }
     }
 
-    public PrefixEntry lookupPrefix(int[] tokens, Optional<String> salt) {
-        if (kvBufferCacheSettings.getPrefixCacheMode() != KvBufferCacheSettings.PrefixCacheMode.SNAPSHOT) {
-            model.getMetricRegistry().meter("kvbuffercache.lookup.skip.mode").mark();
-            return null;
-        }
-        StoredPrefixEntry best = null;
-        int limit = kvBufferCacheSettings.getMaxPrefixTokensPerPrompt();
-        for (int prefixLen : checkpointLengths(Math.min(tokens.length, limit))) {
-            StoredPrefixEntry e = prefixCache.get(new CacheKey(salt, prefixTokens(tokens, prefixLen)));
-            if (e != null) {
-                best = e;
-            }
-        }
-        model.getMetricRegistry().meter("kvbuffercache.lookup").mark();
-        if (best != null && best.length() >= blockSize && best.length() % blockSize == 0) {
-            model.getMetricRegistry().meter("kvbuffercache.hits").mark();
-            return toPrefixEntry(best);
-        }
-        model.getMetricRegistry().meter("kvbuffercache.misses").mark();
-        return null;
-    }
-
-    public void storePrefix(int[] tokens, KvBuffer buffer, Optional<String> salt) {
-        long storeStart = System.nanoTime();
-        if (kvBufferCacheSettings.getPrefixCacheMode() != KvBufferCacheSettings.PrefixCacheMode.SNAPSHOT) {
-            model.getMetricRegistry().meter("kvbuffercache.prefix.store.skip.mode").mark();
-            return;
-        }
-        if (!kvBufferCacheSettings.isEphemeral()) {
-            model.getMetricRegistry().meter("kvbuffercache.prefix.disk.skip").mark();
-            return;
-        }
-        if (kvBufferCacheSettings.getMaxEntries() < 1){
-            return;
-        }
-        try {
-        int limit = kvBufferCacheSettings.getMaxPrefixTokensPerPrompt();
-        for (int prefixLen : checkpointLengths(Math.min(tokens.length, limit))) {
-            KvBuffer snapshot = getEphemeralKvBuffer();
-            copyPrefix(buffer, snapshot, prefixLen);
-            StoredPrefixEntry entry = toStoredPrefixEntry(snapshot, prefixLen);
-            StoredPrefixEntry previous = prefixCache.putIfAbsent(new CacheKey(salt, prefixTokens(tokens, prefixLen)), entry);
-            if (previous != null) {
-                entry.close();
-            }
-        }
-        } finally {
-            InferenceProfiler.timer(model.getMetricRegistry(), "kvbuffercache.prefix.store")
-                    .update(System.nanoTime() - storeStart, TimeUnit.NANOSECONDS);
-        }
-    }
-
-    private PrefixEntry toPrefixEntry(StoredPrefixEntry stored) {
-        if (stored instanceof RawStoredPrefixEntry raw) {
-            return raw.toPrefixEntry();
-        }
-        if (stored instanceof Lz4StoredPrefixEntry lz4) {
-            return hydrateLz4PrefixEntry(lz4);
-        }
-        if (stored instanceof MseTurboQuantStoredPrefixEntry turboQuant) {
-            return hydrateMseTurboQuantPrefixEntry(turboQuant);
-        }
-        throw new IllegalStateException("unknown prefix entry type " + stored.getClass());
-    }
-
-    private StoredPrefixEntry toStoredPrefixEntry(KvBuffer snapshot, int prefixLen) {
-        if (kvBufferCacheSettings.getPrefixCompression() == KvBufferCacheSettings.PrefixCompression.NONE) {
-            return new RawStoredPrefixEntry(snapshot, prefixLen);
-        }
-        if (kvBufferCacheSettings.getPrefixCompression() == KvBufferCacheSettings.PrefixCompression.LZ4) {
-            try {
-                return compressPrefixEntry(snapshot, prefixLen);
-            } finally {
-                snapshot.close();
-            }
-        }
-        if (kvBufferCacheSettings.getPrefixCompression() == KvBufferCacheSettings.PrefixCompression.MSE_TURBOQUANT) {
-            try {
-                return encodeMseTurboQuantPrefixEntry(snapshot, prefixLen);
-            } finally {
-                snapshot.close();
-            }
-        }
-        throw new UnsupportedOperationException("Unsupported prefix compression " + kvBufferCacheSettings.getPrefixCompression());
-    }
-
-    private Lz4StoredPrefixEntry compressPrefixEntry(KvBuffer snapshot, int prefixLen) {
-        long start = System.nanoTime();
-        byte[] raw = serializePrefix(snapshot, prefixLen);
-        LZ4Compressor compressor = LZ4_FACTORY.fastCompressor();
-        byte[] compressed = compressor.compress(raw);
-        InferenceProfiler.timer(model.getMetricRegistry(), "kvbuffercache.prefix.lz4.compress")
-                .update(System.nanoTime() - start, TimeUnit.NANOSECONDS);
-        InferenceProfiler.counter(model.getMetricRegistry(), "kvbuffercache.prefix.lz4.uncompressed.bytes").inc(raw.length);
-        InferenceProfiler.counter(model.getMetricRegistry(), "kvbuffercache.prefix.lz4.compressed.bytes").inc(compressed.length);
-        return new Lz4StoredPrefixEntry(compressed, raw.length, prefixLen);
-    }
-
-    private PrefixEntry hydrateLz4PrefixEntry(Lz4StoredPrefixEntry stored) {
-        long start = System.nanoTime();
-        byte[] raw = new byte[stored.uncompressedBytes()];
-        try {
-            LZ4FastDecompressor decompressor = LZ4_FACTORY.fastDecompressor();
-            decompressor.decompress(stored.compressed(), 0, raw, 0, raw.length);
-        } catch (LZ4Exception e) {
-            model.getMetricRegistry().meter("kvbuffercache.prefix.lz4.decompress.error").mark();
-            throw new IllegalStateException("Unable to decompress prefix cache entry", e);
-        }
-        KvBuffer hydrated = getEphemeralKvBuffer();
-        deserializePrefix(raw, hydrated, stored.length());
-        InferenceProfiler.timer(model.getMetricRegistry(), "kvbuffercache.prefix.lz4.decompress")
-                .update(System.nanoTime() - start, TimeUnit.NANOSECONDS);
-        return new PrefixEntry(hydrated, stored.length(), true);
-    }
-
-    private MseTurboQuantStoredPrefixEntry encodeMseTurboQuantPrefixEntry(KvBuffer snapshot, int prefixLen) {
-        long start = System.nanoTime();
-        int bitWidth = kvBufferCacheSettings.getPrefixTurboQuantBits();
-        int kvLength = model.getLocalKvLength();
-        int layers = model.getConfig().numberOfLayers;
-        int rows = Math.multiplyExact(Math.multiplyExact(layers, prefixLen), 2);
-        MseTurboQuantCodec.EncodedRows encoded = MseTurboQuantCodec.allocate(rows, kvLength, bitWidth);
-        MseTurboQuantCodec.Scratch scratch = new MseTurboQuantCodec.Scratch(encoded.rotatedDim());
-        int rowIndex = 0;
-        for (int layer = 0; layer < layers; layer++) {
-            for (int pos = 0; pos < prefixLen; pos++) {
-                try (AbstractTensor key = snapshot.getKeyTensorForPosition(layer, pos)) {
-                    rowIndex = MseTurboQuantCodec.encodeRow(key, encoded, rowIndex, model.getMetricRegistry(), scratch);
-                }
-                try (AbstractTensor value = snapshot.getValTensorForPosition(layer, pos)) {
-                    rowIndex = MseTurboQuantCodec.encodeRow(value, encoded, rowIndex, model.getMetricRegistry(), scratch);
-                }
-            }
-        }
-        long rawBytes = (long) rows * kvLength * model.getWorkingDType().size();
-        InferenceProfiler.timer(model.getMetricRegistry(), "kvbuffercache.prefix.turboquant.encode")
-                .update(System.nanoTime() - start, TimeUnit.NANOSECONDS);
-        InferenceProfiler.counter(model.getMetricRegistry(), "kvbuffercache.prefix.turboquant.raw.bytes").inc(rawBytes);
-        InferenceProfiler.counter(model.getMetricRegistry(), "kvbuffercache.prefix.turboquant.encoded.bytes").inc(encoded.encodedBytes());
-        return new MseTurboQuantStoredPrefixEntry(encoded, prefixLen);
-    }
-
-    private PrefixEntry hydrateMseTurboQuantPrefixEntry(MseTurboQuantStoredPrefixEntry stored) {
-        long start = System.nanoTime();
-        KvBuffer hydrated = getEphemeralKvBuffer();
-        int layers = model.getConfig().numberOfLayers;
-        MseTurboQuantCodec.Scratch scratch = new MseTurboQuantCodec.Scratch(stored.encoded().rotatedDim());
-        int rowIndex = 0;
-        for (int layer = 0; layer < layers; layer++) {
-            for (int pos = 0; pos < stored.length(); pos++) {
-                try (AbstractTensor key = hydrated.getKeyTensorForPosition(layer, pos)) {
-                    rowIndex = MseTurboQuantCodec.decodeRow(stored.encoded(), key, rowIndex, model.getMetricRegistry(), scratch);
-                }
-                try (AbstractTensor value = hydrated.getValTensorForPosition(layer, pos)) {
-                    rowIndex = MseTurboQuantCodec.decodeRow(stored.encoded(), value, rowIndex, model.getMetricRegistry(), scratch);
-                }
-            }
-        }
-        hydrated.setCurrentContextPosition(stored.length());
-        InferenceProfiler.timer(model.getMetricRegistry(), "kvbuffercache.prefix.turboquant.decode")
-                .update(System.nanoTime() - start, TimeUnit.NANOSECONDS);
-        return new PrefixEntry(hydrated, stored.length(), true);
-    }
-
-    private byte[] serializePrefix(KvBuffer buffer, int prefixLen) {
-        int rowBytes = model.getLocalKvLength() * model.getWorkingDType().size();
-        int layers = model.getConfig().numberOfLayers;
-        byte[] bytes = new byte[Math.multiplyExact(Math.multiplyExact(layers, prefixLen), rowBytes * 2)];
-        MemorySegment destination = MemorySegment.ofArray(bytes);
-        int offset = 0;
-        for (int layer = 0; layer < layers; layer++) {
-            for (int pos = 0; pos < prefixLen; pos++) {
-                offset = copyRowBytes(buffer.getKeyTensorForPosition(layer, pos), destination, offset, rowBytes);
-                offset = copyRowBytes(buffer.getValTensorForPosition(layer, pos), destination, offset, rowBytes);
-            }
-        }
-        return bytes;
-    }
-
-    private int copyRowBytes(AbstractTensor row, MemorySegment destination, int offset, int rowBytes) {
-        try (row) {
-            destination.asSlice(offset, rowBytes)
-                    .copyFrom(row.getMemorySegment().asSlice(row.getMemorySegmentOffset(0), rowBytes));
-            return offset + rowBytes;
-        }
-    }
-
-    private void deserializePrefix(byte[] bytes, KvBuffer buffer, int prefixLen) {
-        int rowBytes = model.getLocalKvLength() * model.getWorkingDType().size();
-        int layers = model.getConfig().numberOfLayers;
-        MemorySegment source = MemorySegment.ofArray(bytes);
-        int offset = 0;
-        for (int layer = 0; layer < layers; layer++) {
-            for (int pos = 0; pos < prefixLen; pos++) {
-                offset = restoreRowBytes(source, offset, buffer.getKeyTensorForPosition(layer, pos), rowBytes);
-                offset = restoreRowBytes(source, offset, buffer.getValTensorForPosition(layer, pos), rowBytes);
-            }
-        }
-        buffer.setCurrentContextPosition(prefixLen);
-    }
-
-    private int restoreRowBytes(MemorySegment source, int offset, AbstractTensor row, int rowBytes) {
-        try (row) {
-            row.getMemorySegment().asSlice(row.getMemorySegmentOffset(0), rowBytes)
-                    .copyFrom(source.asSlice(offset, rowBytes));
-            return offset + rowBytes;
-        }
-    }
-
-    List<Integer> checkpointLengths(int tokenLength) {
-        if (tokenLength < blockSize) {
-            return List.of();
-        }
-        int largest = (tokenLength / blockSize) * blockSize;
-        if (largest < blockSize) {
-            return List.of();
-        }
-        if (kvBufferCacheSettings.getPrefixCheckpointPolicy() == KvBufferCacheSettings.PrefixCheckpointPolicy.FIXED_BLOCKS) {
-            ArrayList<Integer> fixed = new ArrayList<>();
-            for (int prefixLen = blockSize; prefixLen <= largest; prefixLen += blockSize) {
-                fixed.add(prefixLen);
-            }
-            return fixed;
-        }
-        if (kvBufferCacheSettings.getPrefixCheckpointPolicy() == KvBufferCacheSettings.PrefixCheckpointPolicy.START_AND_END) {
-            int max = kvBufferCacheSettings.getMaxPrefixCheckpointsPerPrompt();
-            int startCount = (max + 1) / 2;
-            int endCount = max - startCount;
-            LinkedHashSet<Integer> selected = new LinkedHashSet<>();
-            for (int prefixLen = blockSize; prefixLen <= largest && selected.size() < startCount; prefixLen += blockSize) {
-                selected.add(prefixLen);
-            }
-            for (int prefixLen = largest - ((endCount - 1) * blockSize); prefixLen <= largest; prefixLen += blockSize) {
-                if (prefixLen >= blockSize) {
-                    selected.add(prefixLen);
-                }
-            }
-            return selected.stream().sorted().toList();
-        }
-        int max = kvBufferCacheSettings.getMaxPrefixCheckpointsPerPrompt();
-        LinkedHashSet<Integer> selected = new LinkedHashSet<>();
-        for (Integer anchor : kvBufferCacheSettings.getPrefixCheckpointAnchors()) {
-            int aligned = (anchor / blockSize) * blockSize;
-            if (aligned >= blockSize && aligned <= largest) {
-                selected.add(aligned);
-            }
-            if (selected.size() >= Math.max(0, max - 1)) {
-                break;
-            }
-        }
-        selected.add(largest);
-        ArrayList<Integer> result = new ArrayList<>(selected);
-        result.sort(Integer::compareTo);
-        if (result.size() > max) {
-            ArrayList<Integer> trimmed = new ArrayList<>(result.subList(0, max - 1));
-            trimmed.add(largest);
-            return trimmed.stream().distinct().sorted().toList();
-        }
-        return result;
-    }
-
-    private static List<Integer> prefixTokens(int[] tokens, int prefixLen) {
-        ArrayList<Integer> prefix = new ArrayList<>(prefixLen);
-        for (int i = 0; i < prefixLen; i++) {
-            prefix.add(tokens[i]);
-        }
-        return prefix;
-    }
-
-    public void copyPrefix(KvBuffer src, KvBuffer dest, int length) {
-        long copyStart = System.nanoTime();
-        long copiedBytes = 0;
-        Config c = model.getConfig();
-        int layers = c.numberOfLayers;
-        for (int layer = 0; layer < layers; layer++) {
-            for (int pos = 0; pos < length; pos++) {
-                AbstractTensor srcK = src.getKeyTensorForPosition(layer, pos);
-                AbstractTensor srcV = src.getValTensorForPosition(layer, pos);
-
-                AbstractTensor dstK = dest.getKeyTensorForPosition(layer, pos);
-                AbstractTensor dstV = dest.getValTensorForPosition(layer, pos);
-                copiedBytes += (long) srcK.size() * model.getWorkingDType().size();
-                copiedBytes += (long) srcV.size() * model.getWorkingDType().size();
-                dstK.copyFrom(srcK, 0, 0, (int) srcK.size());
-                dstV.copyFrom(srcV, 0, 0, (int) srcV.size());
-                srcK.close();
-                srcV.close();
-                dstK.close();
-                dstV.close();
-            }
-        }
-        dest.setCurrentContextPosition(length);
-        InferenceProfiler.timer(model.getMetricRegistry(), "kvbuffercache.prefix.copy")
-                .update(System.nanoTime() - copyStart, TimeUnit.NANOSECONDS);
-        InferenceProfiler.counter(model.getMetricRegistry(), "kvbuffercache.prefix.copy.bytes").inc(copiedBytes);
-    }
-
     public KvBuffer getEphemeralKvBuffer() {
         return new KvBuffer(UUID.randomUUID().toString(), 1 << 20);
     }
@@ -560,7 +169,6 @@ public class KvBufferCache implements Closeable {
             if (diskSweeperExecutor != null) {
                 diskSweeperExecutor.shutdownNow();
             }
-            prefixCache.entrySet().iterator().forEachRemaining(e -> e.getValue().close());
         }
     }
 

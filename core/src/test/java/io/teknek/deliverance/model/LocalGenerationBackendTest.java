@@ -47,7 +47,7 @@ class LocalGenerationBackendTest {
     private final TensorAllocator allocator = new ArrayQueueTensorAllocator(metricRegistry);
 
     @Test
-    void kvCache2GenerationDoesNotUsePrefixCache() {
+    void kvCache2SharedBlockModeUsesSharedLookupAndAdmission() {
         AbstractModel model = mock(AbstractModel.class);
         KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
                 .withBlockSize(2)
@@ -60,20 +60,21 @@ class LocalGenerationBackendTest {
         when(model.prefixCacheMode()).thenReturn(KvBufferCacheSettings.PrefixCacheMode.SHARED_BLOCKS);
         when(model.activeLoraAdapterId()).thenReturn(Optional.empty());
         when(model.newKvCacheSession()).thenReturn(kvSession);
+        when(model.restoreSharedPrefixToKvSession(same(promptTokens), eq(Optional.of("")), same(kvSession))).thenReturn(2);
         when(model.batchForward(any(int[].class), anyInt(), same(kvSession))).thenReturn(prefillResult);
 
         LocalGenerationBackend backend = new LocalGenerationBackend(model);
 
         try (GenerationBackend.GenerationSession session = backend.open(UUID.randomUUID(), promptTokens,
                 new GeneratorParameters())) {
-            assertEquals(0, session.prefixLength());
+            assertEquals(2, session.prefixLength());
             AbstractTensor actual = session.prefill(GenerationCursor.from(promptTokens, session.prefixLength()));
             assertEquals(prefillResult, actual);
         }
 
-        verify(model, never()).restoreSharedPrefixToKvSession(same(promptTokens), eq(Optional.of("")), same(kvSession));
-        verify(model).batchForward(assertIntArrayEquals(promptTokens), eq(0), same(kvSession));
-        verify(model, never()).storeSharedPrefixFromKvSession(same(promptTokens), same(kvSession), eq(Optional.of("")));
+        verify(model).restoreSharedPrefixToKvSession(same(promptTokens), eq(Optional.of("")), same(kvSession));
+        verify(model).batchForward(assertIntArrayEquals(new int[] {3, 4}), eq(2), same(kvSession));
+        verify(model).storeSharedPrefixFromKvSession(same(promptTokens), same(kvSession), eq(Optional.of("")));
         verify(model, never()).kvPrefixSnapshotCache();
     }
 
