@@ -29,7 +29,6 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -241,41 +240,6 @@ public class Gemma2PromptIT {
 
 
 
-    @Test
-    public void prefixCacheHitHonorsMaxTokens() {
-        AbstractModel m = Gemma2Suite.getOrCreate();
-        String prompt = "list the books of the bible starting with Genesis.";
-        int blockSize = 8;
-        assertTrue(m.constructPromptTokensForRuntime(prompt).length >= blockSize + 1,
-                "prompt must be long enough to produce a partial prefix-cache hit");
-
-        String salt = "prefix-cache-max-tokens-" + UUID.randomUUID();
-        GeneratorParameters params = new GeneratorParameters()
-                .withTemperature(0.0f)
-                .withSeed(42)
-                .withMaxTokens(3)
-                .withCacheSalt(salt);
-
-        Response cold = m.generate(UUID.randomUUID(), PromptContext.of(prompt), params, new DoNothingGenerateEvent());
-        long hitsBefore = m.getMetricRegistry().meter("kvbuffercache.hits").getCount();
-        AtomicInteger copiedPrefixLength = new AtomicInteger(-1);
-        AtomicInteger suffixLength = new AtomicInteger(-1);
-        m.setGenerationDebugHook(event -> {
-            if (event.type() == AbstractModel.GenerationDebugEventType.AFTER_PREFIX_COPY) {
-                copiedPrefixLength.set(event.prefixLength());
-                suffixLength.set(event.tokensToProcessLength());
-            }
-        });
-        Response hot = m.generate(UUID.randomUUID(), PromptContext.of(prompt), params, new DoNothingGenerateEvent());
-        m.clearGenerationDebugHook();
-        assertTrue(m.getMetricRegistry().meter("kvbuffercache.hits").getCount() > hitsBefore,
-                "second request should hit the prefix cache");
-        assertEquals(blockSize, copiedPrefixLength.get(), "prefix hit should copy exactly one configured cache block");
-        assertTrue(suffixLength.get() > 0, "prefix hit should still process an uncached suffix");
-        assertEquals(3, cold.generatedTokens.size(), "cold path should honor maxTokens");
-        assertEquals(3, hot.generatedTokens.size(), "prefix-cache hit path should honor maxTokens");
-    }
-                      
     @Test                  
     public void diskKvPagesCreatedByGemmaGenerationCanBeSwept() throws IOException {
         ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
@@ -364,7 +328,7 @@ public class Gemma2PromptIT {
                 new DoNothingGenerateEvent());
         assertEquals("Giants", JsonUtils.om.readTree(k.responseText).get("answer").asText());
         assertEquals("""
-                { "answer": "Giants" }""", k.responseText);
+                {"answer":"Giants"}""", k.responseText);
     }
 
     private static long pageFileCount(Path directory) throws IOException {

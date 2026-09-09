@@ -43,9 +43,6 @@ public class HttpTensorParallelRankServer implements AutoCloseable {
         server.setExecutor(executor);
         server.createContext("/batchForward", exchange -> tracked(exchange, "/batchForward", () -> handleBatchForward(exchange, service)));
         server.createContext("/forward", exchange -> tracked(exchange, "/forward", () -> handleForward(exchange, service)));
-        server.createContext("/probePrefix", exchange -> tracked(exchange, "/probePrefix", () -> handleProbePrefix(exchange, service)));
-        server.createContext("/restorePrefix", exchange -> tracked(exchange, "/restorePrefix", () -> handleRestorePrefix(exchange, service)));
-        server.createContext("/storePrefix", exchange -> tracked(exchange, "/storePrefix", () -> handleStorePrefix(exchange, service)));
         server.createContext("/closeSession", exchange -> tracked(exchange, "/closeSession", () -> handleCloseSession(exchange, service)));
     }
 
@@ -128,31 +125,6 @@ public class HttpTensorParallelRankServer implements AutoCloseable {
         CloseSessionRequest request = JsonUtils.om.readValue(exchange.getRequestBody(), CloseSessionRequest.class);
         service.closeSession(request.sessionId());
         exchange.sendResponseHeaders(204, -1);
-        exchange.close();
-    }
-
-    private void handleProbePrefix(HttpExchange exchange, TensorParallelRankService service) throws IOException {
-        PrefixCacheProbeRequest request = JsonUtils.om.readValue(exchange.getRequestBody(), PrefixCacheProbeRequest.class);
-        writeJson(exchange, service.probePrefix(request));
-    }
-
-    private void handleRestorePrefix(HttpExchange exchange, TensorParallelRankService service) throws IOException {
-        PrefixCacheRestoreRequest request = JsonUtils.om.readValue(exchange.getRequestBody(), PrefixCacheRestoreRequest.class);
-        writeJson(exchange, service.restorePrefix(request));
-    }
-
-    private void handleStorePrefix(HttpExchange exchange, TensorParallelRankService service) throws IOException {
-        PrefixCacheStoreRequest request = JsonUtils.om.readValue(exchange.getRequestBody(), PrefixCacheStoreRequest.class);
-        service.storePrefix(request);
-        exchange.sendResponseHeaders(204, -1);
-        exchange.close();
-    }
-
-    private void writeJson(HttpExchange exchange, Object payload) throws IOException {
-        byte[] response = JsonUtils.om.writeValueAsBytes(payload);
-        exchange.getResponseHeaders().add("Content-Type", "application/json");
-        exchange.sendResponseHeaders(200, response.length);
-        exchange.getResponseBody().write(response);
         exchange.close();
     }
 

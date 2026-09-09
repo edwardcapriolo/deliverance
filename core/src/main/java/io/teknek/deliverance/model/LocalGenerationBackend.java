@@ -5,6 +5,7 @@ import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.kv.KvCacheSession;
 
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -21,7 +22,8 @@ public final class LocalGenerationBackend implements GenerationBackend {
     }
 
     /**
-     * Opens a local generation session. Prefix-cache reuse is intentionally disabled; KV session state is request-local.
+     * Opens a local generation session. KVCache2 models can reuse shared immutable KV blocks; old KvBuffer prefix-cache
+     * reuse remains disabled.
      */
     @Override
     public GenerationSession open(UUID sessionId, int[] promptTokens, GeneratorParameters parameters) {
@@ -33,16 +35,29 @@ public final class LocalGenerationBackend implements GenerationBackend {
 
     private final class LocalKvCache2GenerationSession implements GenerationSession {
         private final int[] promptTokens;
+        private final Optional<String> effectiveCacheSalt;
         private final KvCacheSession kvSession;
+        private final int prefixLength;
 
         private LocalKvCache2GenerationSession(int[] promptTokens, GeneratorParameters parameters) {
             this.promptTokens = promptTokens;
+            this.effectiveCacheSalt = withActiveAdapterScope(parameters.cacheSalt);
             this.kvSession = model.newKvCacheSession();
+            this.prefixLength = model.restoreSharedPrefixToKvSession(promptTokens, effectiveCacheSalt, kvSession);
+            if (prefixLength > 0) {
+                model.emitGenerationDebug(new AbstractModel.GenerationDebugEvent(
+                        AbstractModel.GenerationDebugEventType.AFTER_PREFIX_COPY,
+                        promptTokens,
+                        prefixLength,
+                        prefixLength,
+                        promptTokens.length - prefixLength,
+                        null));
+            }
         }
 
         @Override
         public int prefixLength() {
-            return 0;
+            return prefixLength;
         }
 
         @Override
@@ -50,6 +65,7 @@ public final class LocalGenerationBackend implements GenerationBackend {
             AbstractTensor last;
             if (cursor.hasTokensToProcess()) {
                 last = model.batchForward(cursor.tokensToProcess(), cursor.startPosition(), kvSession);
+                model.storeSharedPrefixFromKvSession(promptTokens, kvSession, effectiveCacheSalt);
             } else {
                 kvSession.crop(cursor.replayPosition());
                 last = model.forward(cursor.replayToken(), cursor.replayPosition(), kvSession);
@@ -57,7 +73,7 @@ public final class LocalGenerationBackend implements GenerationBackend {
             model.emitGenerationDebug(new AbstractModel.GenerationDebugEvent(
                     AbstractModel.GenerationDebugEventType.AFTER_PROMPT_PREFILL,
                     promptTokens,
-                    0,
+                    prefixLength,
                     cursor.startPosition(),
                     cursor.tokensToProcess().length,
                     null));
@@ -133,6 +149,18 @@ public final class LocalGenerationBackend implements GenerationBackend {
         public void close() {
             kvBuffer.close();
         }
+    }
+
+    /**
+     * Namespaces shared KVCache2 prefix blocks by active LoRA adapter so cached KV state is not reused across different
+     * effective weights.
+     */
+    private Optional<String> withActiveAdapterScope(Optional<String> callerSalt) {
+        Optional<String> adapterId = model.activeLoraAdapterId();
+        if (adapterId.isEmpty()) {
+            return callerSalt;
+        }
+        return Optional.of("lora:" + adapterId.get() + "|" + callerSalt.orElse(""));
     }
 
 }

@@ -1,11 +1,13 @@
 package io.teknek.deliverance.model.tensorparallel;
 
+import com.google.common.base.Preconditions;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.tensorparallel.transport.TensorParallelRankService;
 import io.teknek.deliverance.tensor.AbstractTensor;
-import io.teknek.deliverance.tensor.KvBufferCache;
+import io.teknek.deliverance.tensor.kv.KvCacheSession;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -14,49 +16,47 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class InProcessTensorParallelRankService implements TensorParallelRankService, AutoCloseable {
     private final AbstractModel model;
-    private final Map<UUID, KvBufferCache.KvBuffer> kvBuffers = new ConcurrentHashMap<>();
+    private final Map<UUID, KvCacheSession> kvSessions = new ConcurrentHashMap<>();
 
     public InProcessTensorParallelRankService(AbstractModel model) {
+        Preconditions.checkArgument(model.usesKvCache2Generation(), "Tensor parallel generation requires KVCache2");
         this.model = model;
     }
 
     @Override
     public synchronized AbstractTensor batchForward(UUID sessionId, int[] tokenIds, int startPosition) {
-        KvBufferCache.KvBuffer buffer = kvBuffer(sessionId);
-        buffer.setCurrentContextPosition(startPosition);
+        KvCacheSession kvSession = kvSession(sessionId);
         try (var ignored = model.getTensorParallelCollectives().enterSession(sessionId)) {
-            return model.batchForward(tokenIds, startPosition, buffer);
+            return model.batchForward(tokenIds, startPosition, kvSession);
         }
     }
 
     @Override
     public synchronized AbstractTensor forward(UUID sessionId, int tokenId, int position) {
-        KvBufferCache.KvBuffer buffer = kvBuffer(sessionId);
+        KvCacheSession kvSession = kvSession(sessionId);
         try (var ignored = model.getTensorParallelCollectives().enterSession(sessionId)) {
-            return model.forward(tokenId, position, buffer, java.util.Optional.empty());
-        } finally {
-            buffer.incrementContextPosition();
+            return model.forward(tokenId, position, kvSession, Optional.empty());
         }
     }
 
     public void closeSession(UUID sessionId) {
-        KvBufferCache.KvBuffer kvBuffer = kvBuffers.remove(sessionId);
-        if (kvBuffer != null) {
-            kvBuffer.close();
+        KvCacheSession kvSession = kvSessions.remove(sessionId);
+        if (kvSession != null) {
+            kvSession.close();
         }
         model.getTensorParallelCollectives().closeSession(sessionId);
     }
 
     @Override
     public void close() {
-        for (KvBufferCache.KvBuffer kvBuffer : kvBuffers.values()) {
-            kvBuffer.close();
+        for (KvCacheSession kvSession : kvSessions.values()) {
+            kvSession.close();
         }
-        kvBuffers.clear();
+        kvSessions.clear();
         model.close();
     }
 
-    private KvBufferCache.KvBuffer kvBuffer(UUID sessionId) {
-        return kvBuffers.computeIfAbsent(sessionId, ignored -> model.newKvBuffer());
+    private KvCacheSession kvSession(UUID sessionId) {
+        return kvSessions.computeIfAbsent(sessionId, ignored -> model.newKvCacheSession());
     }
 }
