@@ -6,6 +6,9 @@ import io.teknek.deliverance.model.GenerationBackend;
 import io.teknek.deliverance.model.GenerationCursor;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
+import io.teknek.deliverance.model.tensorparallel.transport.SharedKvPrefixRestoreRequest;
+import io.teknek.deliverance.model.tensorparallel.transport.SharedKvPrefixRestoreResult;
+import io.teknek.deliverance.model.tensorparallel.transport.SharedKvPrefixStoreRequest;
 import io.teknek.deliverance.model.tensorparallel.transport.TensorParallelRankService;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.tensor.AbstractTensor;
@@ -142,20 +145,28 @@ public class TensorParallelGenerationGroup implements AutoCloseable {
 
         @Override
         public GenerationSession open(UUID sessionId, int[] promptTokens, GeneratorParameters parameters) {
-            return new TensorParallelGenerationSession(sessionId, promptTokens);
+            String cacheSalt = parameters.cacheSalt.orElse("");
+            int prefixLength = restoreSharedKvPrefix(sessionId, promptTokens, cacheSalt);
+            return new TensorParallelGenerationSession(sessionId, promptTokens, cacheSalt, prefixLength);
         }
     }
 
     private final class TensorParallelGenerationSession implements GenerationBackend.GenerationSession {
         private final UUID sessionId;
+        private final int[] promptTokens;
+        private final String cacheSalt;
+        private final int prefixLength;
 
-        private TensorParallelGenerationSession(UUID sessionId, int[] promptTokens) {
+        private TensorParallelGenerationSession(UUID sessionId, int[] promptTokens, String cacheSalt, int prefixLength) {
             this.sessionId = sessionId;
+            this.promptTokens = promptTokens;
+            this.cacheSalt = cacheSalt;
+            this.prefixLength = prefixLength;
         }
 
         @Override
         public int prefixLength() {
-            return 0;
+            return prefixLength;
         }
 
         @Override
@@ -163,6 +174,7 @@ public class TensorParallelGenerationGroup implements AutoCloseable {
             AbstractTensor output;
             if (cursor.hasTokensToProcess()) {
                 output = TensorParallelGenerationGroup.this.batchForward(sessionId, cursor.tokensToProcess(), cursor.startPosition());
+                storeSharedKvPrefix(sessionId, promptTokens, cacheSalt);
             } else {
                 output = TensorParallelGenerationGroup.this.forward(sessionId, cursor.replayToken(), cursor.replayPosition());
             }
@@ -281,6 +293,56 @@ public class TensorParallelGenerationGroup implements AutoCloseable {
             outputs.get(i).close();
         }
         return rankZero;
+    }
+
+    int restoreSharedKvPrefix(UUID sessionId, int[] promptTokens, String cacheSalt) {
+        List<Future<SharedKvPrefixRestoreResult>> futures = new ArrayList<>();
+        try {
+            for (RankEndpoint endpoint : endpoints) {
+                futures.add(executor.submit(() -> endpoint.service()
+                        .restoreSharedKvPrefix(new SharedKvPrefixRestoreRequest(sessionId, promptTokens, cacheSalt))));
+            }
+            Integer agreedLength = null;
+            boolean mismatch = false;
+            for (int i = 0; i < futures.size(); i++) {
+                SharedKvPrefixRestoreResult result = await("restoreSharedKvPrefix", endpoints.get(i), futures.get(i),
+                        timeoutSettings.rankOperationTimeout());
+                if (result.prefixLength() <= 0) {
+                    mismatch = true;
+                    continue;
+                }
+                if (agreedLength == null) {
+                    agreedLength = result.prefixLength();
+                } else if (agreedLength != result.prefixLength()) {
+                    mismatch = true;
+                }
+            }
+            if (mismatch) {
+                closeSession(sessionId);
+                return 0;
+            }
+            return agreedLength == null ? 0 : agreedLength;
+        } catch (Exception e) {
+            cancelAll(futures);
+            closeSession(sessionId);
+            throw new RuntimeException("Tensor-parallel shared KV prefix restore failed", e);
+        }
+    }
+
+    void storeSharedKvPrefix(UUID sessionId, int[] promptTokens, String cacheSalt) {
+        List<Future<?>> futures = new ArrayList<>();
+        try {
+            for (RankEndpoint endpoint : endpoints) {
+                futures.add(executor.submit(() -> endpoint.service()
+                        .storeSharedKvPrefix(new SharedKvPrefixStoreRequest(sessionId, promptTokens, cacheSalt))));
+            }
+            for (int i = 0; i < futures.size(); i++) {
+                await("storeSharedKvPrefix", endpoints.get(i), futures.get(i), timeoutSettings.rankOperationTimeout());
+            }
+        } catch (Exception e) {
+            cancelAll(futures);
+            throw new RuntimeException("Tensor-parallel shared KV prefix store failed", e);
+        }
     }
 
     private void closeSession(UUID sessionId) {

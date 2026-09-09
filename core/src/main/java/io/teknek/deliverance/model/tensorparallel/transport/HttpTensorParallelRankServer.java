@@ -43,6 +43,8 @@ public class HttpTensorParallelRankServer implements AutoCloseable {
         server.setExecutor(executor);
         server.createContext("/batchForward", exchange -> tracked(exchange, "/batchForward", () -> handleBatchForward(exchange, service)));
         server.createContext("/forward", exchange -> tracked(exchange, "/forward", () -> handleForward(exchange, service)));
+        server.createContext("/restoreSharedKvPrefix", exchange -> tracked(exchange, "/restoreSharedKvPrefix", () -> handleRestoreSharedKvPrefix(exchange, service)));
+        server.createContext("/storeSharedKvPrefix", exchange -> tracked(exchange, "/storeSharedKvPrefix", () -> handleStoreSharedKvPrefix(exchange, service)));
         server.createContext("/closeSession", exchange -> tracked(exchange, "/closeSession", () -> handleCloseSession(exchange, service)));
     }
 
@@ -125,6 +127,28 @@ public class HttpTensorParallelRankServer implements AutoCloseable {
         CloseSessionRequest request = JsonUtils.om.readValue(exchange.getRequestBody(), CloseSessionRequest.class);
         service.closeSession(request.sessionId());
         exchange.sendResponseHeaders(204, -1);
+        exchange.close();
+    }
+
+    private void handleRestoreSharedKvPrefix(HttpExchange exchange, TensorParallelRankService service) throws IOException {
+        SharedKvPrefixRestoreRequest request = JsonUtils.om.readValue(exchange.getRequestBody(),
+                SharedKvPrefixRestoreRequest.class);
+        writeJson(exchange, service.restoreSharedKvPrefix(request));
+    }
+
+    private void handleStoreSharedKvPrefix(HttpExchange exchange, TensorParallelRankService service) throws IOException {
+        SharedKvPrefixStoreRequest request = JsonUtils.om.readValue(exchange.getRequestBody(),
+                SharedKvPrefixStoreRequest.class);
+        service.storeSharedKvPrefix(request);
+        exchange.sendResponseHeaders(204, -1);
+        exchange.close();
+    }
+
+    private void writeJson(HttpExchange exchange, Object payload) throws IOException {
+        byte[] response = JsonUtils.om.writeValueAsBytes(payload);
+        exchange.getResponseHeaders().add("Content-Type", "application/json");
+        exchange.sendResponseHeaders(200, response.length);
+        exchange.getResponseBody().write(response);
         exchange.close();
     }
 
