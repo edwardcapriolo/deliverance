@@ -16,6 +16,8 @@ public class HttpTensorParallelRankTransportTest {
     @Test
     public void clientCallsBatchAndSingleTokenForwardOverHttp() {
         AtomicReference<UUID> closedSession = new AtomicReference<>();
+        AtomicReference<SharedKvPrefixRestoreRequest> restoredPrefix = new AtomicReference<>();
+        AtomicReference<SharedKvPrefixStoreRequest> storedPrefix = new AtomicReference<>();
         TensorParallelRankService service = new TensorParallelRankService() {
             @Override
             public AbstractTensor batchForward(UUID sessionId, int[] tokenIds, int startPosition) {
@@ -39,6 +41,17 @@ public class HttpTensorParallelRankTransportTest {
             public void closeSession(UUID sessionId) {
                 closedSession.set(sessionId);
             }
+
+            @Override
+            public SharedKvPrefixRestoreResult restoreSharedKvPrefix(SharedKvPrefixRestoreRequest request) {
+                restoredPrefix.set(request);
+                return new SharedKvPrefixRestoreResult(8);
+            }
+
+            @Override
+            public void storeSharedKvPrefix(SharedKvPrefixStoreRequest request) {
+                storedPrefix.set(request);
+            }
         };
 
         try (HttpTensorParallelRankServer server = new HttpTensorParallelRankServer(
@@ -55,6 +68,14 @@ public class HttpTensorParallelRankTransportTest {
                         TensorDisplayUtil.pretty2dDisplayAll(single).trim());
             }
             UUID sessionId = UUID.randomUUID();
+            SharedKvPrefixRestoreResult restore = client.restoreSharedKvPrefix(
+                    new SharedKvPrefixRestoreRequest(sessionId, new int[]{1, 2, 3, 4}, "salt"));
+            assertEquals(8, restore.prefixLength());
+            assertEquals(sessionId, restoredPrefix.get().sessionId());
+            assertEquals("salt", restoredPrefix.get().cacheSalt());
+            client.storeSharedKvPrefix(new SharedKvPrefixStoreRequest(sessionId, new int[]{1, 2, 3, 4}, "salt"));
+            assertEquals(sessionId, storedPrefix.get().sessionId());
+            assertEquals("salt", storedPrefix.get().cacheSalt());
             client.closeSession(sessionId);
             assertEquals(sessionId, closedSession.get());
         }

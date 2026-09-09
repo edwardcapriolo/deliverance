@@ -2,6 +2,9 @@ package io.teknek.deliverance.model.tensorparallel;
 
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.tensorparallel.transport.SharedKvPrefixRestoreRequest;
+import io.teknek.deliverance.model.tensorparallel.transport.SharedKvPrefixRestoreResult;
+import io.teknek.deliverance.model.tensorparallel.transport.SharedKvPrefixStoreRequest;
 import io.teknek.deliverance.model.tensorparallel.transport.TensorParallelRankService;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.kv.KvCacheSession;
@@ -36,6 +39,22 @@ public class InProcessTensorParallelRankService implements TensorParallelRankSer
         KvCacheSession kvSession = kvSession(sessionId);
         try (var ignored = model.getTensorParallelCollectives().enterSession(sessionId)) {
             return model.forward(tokenId, position, kvSession, Optional.empty());
+        }
+    }
+
+    @Override
+    public synchronized SharedKvPrefixRestoreResult restoreSharedKvPrefix(SharedKvPrefixRestoreRequest request) {
+        KvCacheSession kvSession = kvSession(request.sessionId());
+        int prefixLength = model.restoreSharedPrefixToKvSession(request.tokenIds(), Optional.ofNullable(request.cacheSalt()),
+                kvSession);
+        return new SharedKvPrefixRestoreResult(prefixLength);
+    }
+
+    @Override
+    public synchronized void storeSharedKvPrefix(SharedKvPrefixStoreRequest request) {
+        KvCacheSession kvSession = kvSessions.get(request.sessionId());
+        if (kvSession != null) {
+            model.storeSharedPrefixFromKvSession(request.tokenIds(), kvSession, Optional.ofNullable(request.cacheSalt()));
         }
     }
 

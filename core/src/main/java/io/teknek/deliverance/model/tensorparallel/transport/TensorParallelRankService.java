@@ -12,5 +12,12 @@ public interface TensorParallelRankService {
 
     AbstractTensor forward(UUID sessionId, int tokenId, int position);
 
+    default SharedKvPrefixRestoreResult restoreSharedKvPrefix(SharedKvPrefixRestoreRequest request) {
+        return new SharedKvPrefixRestoreResult(0);
+    }
+
+    default void storeSharedKvPrefix(SharedKvPrefixStoreRequest request) {
+    }
+
     void closeSession(UUID sessionId);
 }
