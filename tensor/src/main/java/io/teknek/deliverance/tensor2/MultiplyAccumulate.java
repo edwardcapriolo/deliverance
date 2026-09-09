@@ -1,15 +1,15 @@
 package io.teknek.deliverance.tensor2;
 
 public class MultiplyAccumulate {
-    private final TensorRef b;
-    private TensorRef a;
+    private final TensorRef source;
+    private TensorRef destination;
     private int offset;
     private int length;
-    public MultiplyAccumulate(TensorRef b){
-        this.b = b;
+    public MultiplyAccumulate(TensorRef source){
+        this.source = source;
     }
-    public MultiplyAccumulate into(TensorRef a){
-        this.a = a;
+    public MultiplyAccumulate into(TensorRef destination){
+        this.destination = destination;
         return this;
     }
     public MultiplyAccumulate offsetAndLength(int offset, int length){
@@ -18,16 +18,16 @@ public class MultiplyAccumulate {
         return this;
     }
 
-    public TensorRef getB() {
-        return b;
+    public TensorRef getSource() {
+        return source;
     }
 
-    public TensorRef getA() {
-        return a;
+    public TensorRef getDestination() {
+        return destination;
     }
 
-    public void setA(TensorRef a) {
-        this.a = a;
+    public void setDestination(TensorRef destination) {
+        this.destination = destination;
     }
 
     public int getOffset() {
