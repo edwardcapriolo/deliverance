@@ -14,6 +14,7 @@ import io.teknek.deliverance.model.DefaultCausalLanguageModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.CausalLanguageModel;
 import io.teknek.deliverance.model.DoNothingGenerateEvent;
+import io.teknek.deliverance.model.GenerateEvent;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.model.tensorparallel.GossipParallelMembership;
 import io.teknek.deliverance.model.tensorparallel.GossipParallelSettings;
@@ -268,7 +269,12 @@ public final class InferenceBenchmark {
                 parameters.withSeed(options.seed);
             }
             applyGuidance(benchmarkCase, parameters);
-            Response response = runner.generate(UUID.randomUUID(), promptContext, parameters);
+            GenerateEvent generateEvent = responseEvent(options, runner.modelName(), benchmarkCase, turn + 1, warmup);
+            Response response = runner.generate(UUID.randomUUID(), promptContext, parameters, generateEvent);
+            if (options.printResponse && !warmup) {
+                System.out.println();
+                System.out.println("[deliverance-response-end]");
+            }
             messages.add(new ChatMessage("assistant", response.responseText));
             if (!warmup) {
                 double generationMs = Math.max(0.0, response.totalTimeMs - response.timeToFirstTokenMs);
@@ -297,9 +303,11 @@ public final class InferenceBenchmark {
                 printProgress("deliverance", runner.modelName(), benchmarkCase, turn + 1,
                         response.promptTokens, response.generatedTokens.size(), response.totalTimeMs, tokensPerSecond,
                         response.finishReason == null ? "" : response.finishReason.name());
-                runner.printProfileSummary("case=" + benchmarkCase.id + " turn=" + (turn + 1), 30);
-                runner.printProfileCounters();
-                runner.printAllocatorMetrics();
+                if (!options.quietMetrics) {
+                    runner.printProfileSummary("case=" + benchmarkCase.id + " turn=" + (turn + 1), 30);
+                    runner.printProfileCounters();
+                    runner.printAllocatorMetrics();
+                }
             } else {
                 System.out.printf(Locale.ROOT,
                         "[deliverance] warmup complete case=%s category=%s turn=%d generated=%d total_ms=%.1f%n",
@@ -308,10 +316,29 @@ public final class InferenceBenchmark {
                         turn + 1,
                         response.generatedTokens.size(),
                         response.totalTimeMs);
-                runner.printProfileSummary("warmup case=" + benchmarkCase.id + " turn=" + (turn + 1), 30);
-                runner.printProfileCounters();
-                runner.printAllocatorMetrics();
+                if (!options.quietMetrics) {
+                    runner.printProfileSummary("warmup case=" + benchmarkCase.id + " turn=" + (turn + 1), 30);
+                    runner.printProfileCounters();
+                    runner.printAllocatorMetrics();
+                }
             }
+        }
+    }
+
+    private static GenerateEvent responseEvent(Options options, String model, BenchmarkCase benchmarkCase, int turn,
+            boolean warmup) {
+        if (!options.printResponse || warmup) {
+            return new DoNothingGenerateEvent();
+        }
+        System.out.printf("[deliverance-response] model=%s case=%s turn=%d%n", model, benchmarkCase.id, turn);
+        return new StreamingGenerateEvent();
+    }
+
+    private static final class StreamingGenerateEvent implements GenerateEvent {
+        @Override
+        public void emit(int next, String nextRaw, String nextCleaned, float timing) {
+            System.out.print(nextCleaned);
+            System.out.flush();
         }
     }
 
@@ -321,7 +348,8 @@ public final class InferenceBenchmark {
 
         Optional<PromptSupport> promptSupport();
 
-        Response generate(UUID sessionId, PromptContext promptContext, GeneratorParameters parameters);
+        Response generate(UUID sessionId, PromptContext promptContext, GeneratorParameters parameters,
+                GenerateEvent generateEvent);
 
         void printRuntime();
 
@@ -356,8 +384,9 @@ public final class InferenceBenchmark {
         }
 
         @Override
-        public Response generate(UUID sessionId, PromptContext promptContext, GeneratorParameters parameters) {
-            return model.generate(sessionId, promptContext, parameters, new DoNothingGenerateEvent());
+        public Response generate(UUID sessionId, PromptContext promptContext, GeneratorParameters parameters,
+                GenerateEvent generateEvent) {
+            return model.generate(sessionId, promptContext, parameters, generateEvent);
         }
 
         @Override
@@ -566,8 +595,9 @@ public final class InferenceBenchmark {
         }
 
         @Override
-        public Response generate(UUID sessionId, PromptContext promptContext, GeneratorParameters parameters) {
-            return group.generate(sessionId, coordinatorModel, promptContext, parameters, new DoNothingGenerateEvent());
+        public Response generate(UUID sessionId, PromptContext promptContext, GeneratorParameters parameters,
+                GenerateEvent generateEvent) {
+            return group.generate(sessionId, coordinatorModel, promptContext, parameters, generateEvent);
         }
 
         @Override
@@ -795,6 +825,12 @@ public final class InferenceBenchmark {
                 totalMs,
                 tokensPerSecond,
                 finishReason);
+    }
+
+    private static void printResponse(String engine, String model, BenchmarkCase benchmarkCase, int turn,
+            String responseText) {
+        System.out.printf("[%s-response] model=%s case=%s turn=%d%n%s%n[%s-response-end]%n",
+                engine, model, benchmarkCase.id, turn, responseText, engine);
     }
 
     /** Builds a prompt context from chat messages, falling back to a raw transcript if no template is available. */
@@ -1033,6 +1069,8 @@ public final class InferenceBenchmark {
         private int kvContextRowsPerPageTarget = 32;
         private String tensorProvider = "auto";
         private boolean profileStages = false;
+        private boolean printResponse = false;
+        private boolean quietMetrics = false;
         private Path modelConfig;
         private Path suiteFile;
         private Path output = Path.of("target/inference-benchmark.csv");
@@ -1076,6 +1114,8 @@ public final class InferenceBenchmark {
                     case "--model-config" -> options.modelConfig = Path.of(args[++i]);
                     case "--tensor-provider" -> options.tensorProvider = args[++i].toLowerCase(Locale.ROOT);
                     case "--profile-stages" -> options.profileStages = true;
+                    case "--print-response" -> options.printResponse = true;
+                    case "--quiet-metrics" -> options.quietMetrics = true;
                     case "--suite-file" -> options.suiteFile = Path.of(args[++i]);
                     case "--output" -> options.output = Path.of(args[++i]);
                     case "--jsonl-output" -> options.jsonlOutput = Path.of(args[++i]);
@@ -1149,6 +1189,8 @@ public final class InferenceBenchmark {
                       --model-config PATH                 AutoModelForCausaLm JSON builder config
                       --tensor-provider auto|native-simd|native-gpu|panama Tensor provider for local Deliverance runner, default auto
                       --profile-stages                   Print accumulated broad-stage timing after each Deliverance turn
+                      --print-response                   Print measured generated response text
+                      --quiet-metrics                    Suppress profile/counter/allocator detail output
                       --suite-file PATH                  FastChat MT-Bench question.jsonl; default built-in subset
                       --output PATH                      CSV output path, default target/inference-benchmark.csv
                       --jsonl-output PATH                Optional JSONL transcript output path

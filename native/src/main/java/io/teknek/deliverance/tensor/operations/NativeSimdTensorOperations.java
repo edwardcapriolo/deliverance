@@ -44,7 +44,7 @@ public class NativeSimdTensorOperations implements TensorOperations {
     private final int parallelSplitSize;
 
     public NativeSimdTensorOperations(TensorOperations delegate) {
-      this(delegate, 64);
+      this(delegate, 32);
     }
 
     public NativeSimdTensorOperations(TensorOperations delegate, int parallelSplitSize) {

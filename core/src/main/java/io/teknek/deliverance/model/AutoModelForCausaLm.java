@@ -111,8 +111,6 @@ public class AutoModelForCausaLm {
 
 
     public static class Builder {
-        private static final double DEFAULT_SIMD_PARALLEL_SPLIT_SIZE_MULTIPLIER = 6.0;
-        private static final double DEFAULT_PANAMA_PARALLEL_SPLIT_SIZE_MULTIPLIER = 0.5;
         private static final int SIMD_PARALLEL_SPLIT_ALIGNMENT = 16;
         private static final int PANAMA_PARALLEL_SPLIT_ALIGNMENT = 4;
 
@@ -642,15 +640,14 @@ public class AutoModelForCausaLm {
                       model={}
                       primaryProvider={} parallelSplitSize={}
                       registeredProviders=[{}]
-                      parallelSplitPolicy=availableProcessors={} defaultSimdMultiplier={} defaultPanamaMultiplier={} simdAlignment={} panamaAlignment={} fixedOverrides={} multiplierOverrides={}
+                      parallelSplitPolicy=availableProcessors={} defaultMultipliers=disabled simdAlignment={} panamaAlignment={} fixedOverrides={} multiplierOverrides={}
                       modelType={} workingMemoryType={} quantizedMemoryType={}
                       tensorRuntimeMode={} groupedDecodeQkvSplitSize={} gpuProvider={} gpuPrefill={} gpuDecode={} gpuDecodeAttention={} gpuDiffusionBlockProjection={} packedBlockAttention={} packedPrefill={} trackKvReadViews={} maxBatchSize={}
                       prefixCacheMode={} kvBlockStoragePolicy={} kvTurboQuantBits={} kvKeyDType={} kvValueDType={} sharedPrefixBlockCacheMaxBytes={} sharedPrefixDiskCacheEnabled={} sharedPrefixDiskCacheMaxBytes={}
                       generationOptions={}
                     """,
                     fetch.getName(), primary.name(), primary.parallelSplitSize(), model.tensorOperationsSummary(),
-                    Runtime.getRuntime().availableProcessors(), DEFAULT_SIMD_PARALLEL_SPLIT_SIZE_MULTIPLIER,
-                    DEFAULT_PANAMA_PARALLEL_SPLIT_SIZE_MULTIPLIER, SIMD_PARALLEL_SPLIT_ALIGNMENT,
+                    Runtime.getRuntime().availableProcessors(), SIMD_PARALLEL_SPLIT_ALIGNMENT,
                     PANAMA_PARALLEL_SPLIT_ALIGNMENT, parallelSplitSizeFixed, parallelSplitSizeMultiplier,
                     model.modelDType, model.workingDType, model.workingQType,
                     tensorRuntimeMode.orElse(TensorRuntimeMode.DISABLED), groupedDecodeQkvSplitSize.orElse(null),
@@ -828,9 +825,8 @@ public class AutoModelForCausaLm {
                 return new ParallelSplitSizedTensorOperations(operations, fixed);
             }
             Double configuredMultiplier = parallelSplitSizeMultiplier.get(kind);
-            Double multiplier = configuredMultiplier != null ? configuredMultiplier : defaultParallelSplitSizeMultiplier(kind);
-            if (multiplier != null) {
-                int splitSize = multiplierSplitSize(kind, multiplier, configuredMultiplier != null);
+            if (configuredMultiplier != null) {
+                int splitSize = multiplierSplitSize(kind, configuredMultiplier, true);
                 return new ParallelSplitSizedTensorOperations(operations, splitSize);
             }
             return operations;
@@ -863,14 +859,6 @@ public class AutoModelForCausaLm {
 
         private static int roundUp(int value, int alignment) {
             return ((value + alignment - 1) / alignment) * alignment;
-        }
-
-        private Double defaultParallelSplitSizeMultiplier(TensorProviderKind kind) {
-            return switch (kind) {
-                case SIMD -> DEFAULT_SIMD_PARALLEL_SPLIT_SIZE_MULTIPLIER;
-                case PANAMA -> DEFAULT_PANAMA_PARALLEL_SPLIT_SIZE_MULTIPLIER;
-                default -> null;
-            };
         }
 
         private Optional<TensorOperations> tryLoadTensorOperations(String className) {

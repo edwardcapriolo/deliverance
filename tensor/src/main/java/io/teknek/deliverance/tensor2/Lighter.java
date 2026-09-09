@@ -47,14 +47,15 @@ public class Lighter {
     }
 
     public void multiplyAccumulate(MultiplyAccumulate multiplyAccumulate, Map<String, String> tags){
-        TensorRef a = multiplyAccumulate.getA();
-        TensorRef b = multiplyAccumulate.getB();
-        Preconditions.checkArgument(a != null, "Destination tensor must be set");
-        Preconditions.checkArgument(b != null, "Source tensor must be set");
-        Preconditions.checkArgument(a.device().equals(b.device()), "Tensors must be on the same device");
-        Preconditions.checkArgument(a.dims() == b.dims(), "Tensors must have the same rank");
-        Preconditions.checkArgument(a.shape().last() == b.shape().last(), "Tensors must have the same last dimension");
-        Preconditions.checkArgument(b.shape().first() == 1 || a.shape().first() == b.shape().first(),
+        TensorRef source = multiplyAccumulate.getSource();
+        TensorRef destination = multiplyAccumulate.getDestination();
+        Preconditions.checkArgument(destination != null, "Destination tensor must be set");
+        Preconditions.checkArgument(source != null, "Source tensor must be set");
+        Preconditions.checkArgument(destination.device().equals(source.device()), "Tensors must be on the same device");
+        Preconditions.checkArgument(destination.dims() == source.dims(), "Tensors must have the same rank");
+        Preconditions.checkArgument(destination.shape().last() == source.shape().last(),
+                "Tensors must have the same last dimension");
+        Preconditions.checkArgument(source.shape().first() == 1 || destination.shape().first() == source.shape().first(),
                 "Source tensor must be broadcastable over destination rows");
 
         for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
@@ -63,7 +64,7 @@ public class Lighter {
             metricRegistry.meter(new MetricName("tensor2.multiply_accumulate", metricTags)).mark();
             Timer timer = metricRegistry.timer(new MetricName("tensor2.multiply_accumulate.time", metricTags));
             long startNanos = System.nanoTime();
-            Either<OpSupport, Void> result = entry.getValue().multiplyAccumulate(a, b,
+            Either<OpSupport, Void> result = entry.getValue().multiplyAccumulate(destination, source,
                     multiplyAccumulate.getOffset(), multiplyAccumulate.getLength());
             if (result.isRight()) {
                 timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
