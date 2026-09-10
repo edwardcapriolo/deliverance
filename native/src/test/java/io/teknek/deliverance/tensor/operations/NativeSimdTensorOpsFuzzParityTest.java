@@ -55,6 +55,37 @@ public class NativeSimdTensorOpsFuzzParityTest {
         }
     }
 
+    @ParameterizedTest(name = "native-only {0}")
+    @MethodSource("nativeOnlyI8Q4Cases")
+    public void nativeSimdI8Q4ValidWindowsDoNotDelegate(Case c) {
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
+            TensorAllocator allocator = new ArrayQueueTensorAllocator(new MetricRegistry());
+            TensorOperations panama = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, allocator, pool);
+            TensorOperations simd = new NativeSimdTensorOperations(new ThrowingDelegateTensorOperations());
+
+            int inputCols = alignToBlock(c.inputColumnOffset() + c.columnLength);
+            int weightCols = alignToBlock(c.weightColumnOffset() + c.columnLength);
+            int rows = c.bRowOffset + c.rowChunkSize + 3;
+            int resultCols = c.rRowOffset + c.bRowOffset + c.rowChunkSize + 3;
+
+            try (FloatBufferTensor denseInput = deterministicInput(c.batchSize, inputCols, c.seed);
+                 FloatBufferTensor denseWeight0 = deterministicWeight(rows, weightCols, c.seed + 17);
+                 FloatBufferTensor denseWeight1 = deterministicWeight(rows, weightCols, c.seed + 31);
+                 AbstractTensor input = convertInput(denseInput, c.inputType);
+                 AbstractTensor weight0 = convertWeight(denseWeight0, c.weightType);
+                 AbstractTensor weight1 = convertWeight(denseWeight1, c.weightType)) {
+                switch (c.op) {
+                    case BATCH_DOT -> assertBatchDotProduct(c, panama, panama, simd, Optional.empty(), input,
+                            weight0, resultCols);
+                    case DOT_CHUNK -> assertDotProductChunk(c, panama, panama, simd, Optional.empty(), input,
+                            weight0, resultCols);
+                    case BATCH_CHUNK -> assertDotProductBatchChunk(c, panama, panama, simd, Optional.empty(), input,
+                            weight0, weight1, resultCols);
+                }
+            }
+        }
+    }
+
     @ParameterizedTest(name = "{0}")
     @MethodSource("elementwiseCases")
     public void nativeSimdElementwiseFamilyMatchesPanama(ElementwiseCase c) {
@@ -446,6 +477,37 @@ public class NativeSimdTensorOpsFuzzParityTest {
         return cases.stream().map(Arguments::of);
     }
 
+    private static Stream<Arguments> nativeOnlyI8Q4Cases() {
+        return Stream.of(
+                Arguments.of(new Case("i8q4_dot_chunk_aligned_offset_small_tail", Op.DOT_CHUNK,
+                        3, 96, 0, 0, 0, 16, 21, DType.I8, DType.Q4, 1001)),
+                Arguments.of(new Case("i8q4_dot_chunk_aligned_offset_exact_tile", Op.DOT_CHUNK,
+                        3, 128, 0, 0, 0, 32, 16, DType.I8, DType.Q4, 1002)),
+                Arguments.of(new Case("i8q4_dot_chunk_aligned_offset_large", Op.DOT_CHUNK,
+                        3, 256, 0, 0, 0, 64, 128, DType.I8, DType.Q4, 1003)),
+                Arguments.of(new Case("i8q4_batch_dot_aligned_offset_small_tail", Op.BATCH_DOT,
+                        3, 96, 0, 0, 0, 16, 21, DType.I8, DType.Q4, 1004)),
+                Arguments.of(new Case("i8q4_batch_chunk_aligned_offset_small_tail", Op.BATCH_CHUNK,
+                        3, 96, 0, 0, 0, 16, 21, DType.I8, DType.Q4, 1005)),
+                Arguments.of(new Case("i8q4_dot_chunk_unaligned_offset_1", Op.DOT_CHUNK,
+                        3, 96, 0, 0, 0, 1, 16, DType.I8, DType.Q4, 1006)),
+                Arguments.of(new Case("i8q4_dot_chunk_unaligned_offset_8", Op.DOT_CHUNK,
+                        3, 96, 0, 0, 0, 8, 16, DType.I8, DType.Q4, 1007)),
+                Arguments.of(new Case("i8q4_dot_chunk_unaligned_offset_15", Op.DOT_CHUNK,
+                        3, 96, 0, 0, 0, 15, 16, DType.I8, DType.Q4, 1008)),
+                Arguments.of(new Case("i8q4_dot_chunk_small_chunk_1", Op.DOT_CHUNK,
+                        3, 96, 0, 0, 0, 0, 1, DType.I8, DType.Q4, 1009)),
+                Arguments.of(new Case("i8q4_dot_chunk_small_chunk_8", Op.DOT_CHUNK,
+                        3, 96, 0, 0, 0, 0, 8, DType.I8, DType.Q4, 1010)),
+                Arguments.of(new Case("i8q4_dot_chunk_unaligned_offset_36_chunk_36", Op.DOT_CHUNK,
+                        3, 96, 0, 0, 0, 36, 36, DType.I8, DType.Q4, 1011)),
+                Arguments.of(new Case("i8q4_batch_dot_unaligned_offset_8", Op.BATCH_DOT,
+                        3, 96, 0, 0, 0, 8, 16, DType.I8, DType.Q4, 1012)),
+                Arguments.of(new Case("i8q4_batch_chunk_unaligned_offset_8", Op.BATCH_CHUNK,
+                        3, 96, 0, 0, 0, 8, 16, DType.I8, DType.Q4, 1013))
+        );
+    }
+
     private static Stream<Arguments> elementwiseCases() {
         List<ElementwiseCase> cases = new ArrayList<>();
         int id = 0;
@@ -595,6 +657,21 @@ public class NativeSimdTensorOpsFuzzParityTest {
         public String toString() {
             return name + " op=" + op + " size=" + size + " offset=" + offset + " length=" + length
                     + " seed=" + seed;
+        }
+    }
+
+    private static final class ThrowingDelegateTensorOperations extends NaiveTensorOperations {
+        @Override
+        public void batchDotProduct(AbstractTensor result, AbstractTensor input, AbstractTensor weight,
+                int inputColumnOffset, int weightColumnOffset, int columnLength, int resultRowOffset,
+                int weightRowOffset, int rowChunkSize) {
+            throw new AssertionError("Native SIMD delegated batchDotProduct for a case expected to be native");
+        }
+
+        @Override
+        public void dotProductBatchChunk(AbstractTensor[] result, AbstractTensor input, AbstractTensor[] weights,
+                int offset, int length, int chunkStart, int chunkSize) {
+            throw new AssertionError("Native SIMD delegated dotProductBatchChunk for a case expected to be native");
         }
     }
 }

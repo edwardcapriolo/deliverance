@@ -277,10 +277,12 @@ public class NativeSimdTensorOperations implements TensorOperations {
     private boolean optimizedBatchDotProductSupports(AbstractTensor a, AbstractTensor b,
             int aColumnOffset, int bColumnOffset, int columnLength, int bRowOffset, int rowChunkSize) {
         if (a.dType() == DType.I8 || a.dType() == DType.Q4 || b.dType() == DType.I8 || b.dType() == DType.Q4) {
-            if (a.dType() == DType.I8 && b.dType() == DType.Q4
-                    && (rowChunkSize < 16 || bRowOffset % 16 != 0)) {
-                return false;
-            }
+            // Historical guard kept for reference. It forced I8xQ4 row windows with small chunks or non-16 row
+            // offsets to delegate, but native-only fuzz coverage now verifies those windows run correctly in SIMD.
+            // if (a.dType() == DType.I8 && b.dType() == DType.Q4
+            //         && (rowChunkSize < 16 || bRowOffset % 16 != 0)) {
+            //     return false;
+            // }
             return aColumnOffset % Q8ByteBufferTensor.BLOCK_SIZE == 0
                     && bColumnOffset % Q8ByteBufferTensor.BLOCK_SIZE == 0
                     && columnLength % Q8ByteBufferTensor.BLOCK_SIZE == 0;
