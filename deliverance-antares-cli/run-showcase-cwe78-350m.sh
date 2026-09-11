@@ -3,8 +3,9 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+JAR=$(sh "$SCRIPT_DIR/resolve_antares_cli_jar.sh")
 
-java -jar "$SCRIPT_DIR/target/deliverance-antares-cli-0.0.12-SNAPSHOT-all.jar" \
+java -jar "$JAR" \
   --repo "$ROOT_DIR/nanocode-deliverance/showcase-security-repo" \
   --endpoint "${DELIVERANCE_ANTARES_ENDPOINT:-http://127.0.0.1:18086/v1}" \
   --model "${DELIVERANCE_ANTARES_MODEL:-antares-350m-JQ4}" \

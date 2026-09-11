@@ -109,6 +109,7 @@ class MultiModelConfiguration {
     private final boolean gpuDecodeAttention;
     private final boolean gpuProvider;
     private final int simdParallelSplitSize;
+    private final int maxPrefillBatchSize;
 
     public MultiModelConfiguration(MultiModelProperties multiModelProperties, MetricRegistry metricRegistry,
                                      TensorAllocator arrayQueueTensorAllocator,
@@ -138,10 +139,11 @@ class MultiModelConfiguration {
                                       @Value("${deliverance.kv.shared-prefix.disk-cache.writer-queue-size:128}") int kvSharedPrefixDiskCacheWriterQueueSize,
                                       @Value("${deliverance.grouped-decode-qkv-split-size:0}") int groupedDecodeQkvSplitSize,
                                       @Value("${deliverance.gpu.prefill:false}") boolean gpuPrefill,
-                                      @Value("${deliverance.gpu.decode:false}") boolean gpuDecode,
-                                      @Value("${deliverance.gpu.decode-attention:false}") boolean gpuDecodeAttention,
-                                      @Value("${deliverance.gpu.provider:true}") boolean gpuProvider,
-                                      @Value("${deliverance.tensor.operations.simd.parallel-split-size:0}") int simdParallelSplitSize){
+                                       @Value("${deliverance.gpu.decode:false}") boolean gpuDecode,
+                                       @Value("${deliverance.gpu.decode-attention:false}") boolean gpuDecodeAttention,
+                                       @Value("${deliverance.gpu.provider:true}") boolean gpuProvider,
+                                       @Value("${deliverance.max-prefill-batch-size:0}") int maxPrefillBatchSize,
+                                       @Value("${deliverance.tensor.operations.simd.parallel-split-size:0}") int simdParallelSplitSize){
         this.multiModelProperties = multiModelProperties;
         this.metricRegistry = metricRegistry;
         this.arrayQueueTensorAllocator = arrayQueueTensorAllocator;
@@ -174,6 +176,7 @@ class MultiModelConfiguration {
         this.gpuDecode = gpuDecode;
         this.gpuDecodeAttention = gpuDecodeAttention;
         this.gpuProvider = gpuProvider;
+        this.maxPrefillBatchSize = maxPrefillBatchSize;
         this.simdParallelSplitSize = simdParallelSplitSize;
     }
 
@@ -217,6 +220,9 @@ class MultiModelConfiguration {
                 .withKvBufferCacheSettings(kvBufferCacheSettings());
         if (groupedDecodeQkvSplitSize > 0) {
             builder.withGroupedDecodeQkvSplitSize(groupedDecodeQkvSplitSize);
+        }
+        if (maxPrefillBatchSize > 0) {
+            builder.withMaxPrefillBatchSize(maxPrefillBatchSize);
         }
         builder.withGpuPrefill(gpuPrefill)
                 .withGpuDecode(gpuDecode)

@@ -1,6 +1,7 @@
 package io.teknek.deliverance.model.granitemoehybrid;
 
 import io.dropwizard.metrics5.MetricRegistry;
+import io.dropwizard.metrics5.Timer;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.EmbedInput;
 import io.teknek.deliverance.generator.FeedForward;
@@ -12,6 +13,7 @@ import io.teknek.deliverance.generator.TransformerBlock;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelContext;
 import io.teknek.deliverance.safetensors.Config;
@@ -19,6 +21,7 @@ import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorAllocator;
+import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 
@@ -49,6 +52,31 @@ public class GraniteMoeHybridModel extends AbstractModel {
             this.configurableTensorProvider.get().registerModelTensor(this.embedTokenWeights);
         }
         return new EmbedInput(this) {
+            @Override
+            public AbstractTensor batchInputsToEmbeddings(int[] inputTokens, int startPos) {
+                try (Timer.Context ignored = InferenceProfiler.timer(parent.getMetricRegistry(), "embedinput.batch_inputs").time()) {
+                    int hidden = parent.getConfig().embeddingLength;
+                    AbstractTensor embeddings = parent.getTensorAllocator()
+                            .getDirty(GraniteMoeHybridModel.this.workingDType, TensorShape.of(inputTokens.length, hidden));
+                    for (int i = 0; i < inputTokens.length; i++) {
+                        AbstractTensor tokenEmbedding = GraniteMoeHybridModel.this.embedTokenWeights.slice(true, inputTokens[i]);
+                        AbstractTensor source = tokenEmbedding;
+                        if (tokenEmbedding.dType() != GraniteMoeHybridModel.this.workingDType) {
+                            source = GraniteMoeHybridModel.this.configurableTensorProvider.get()
+                                    .quantize(tokenEmbedding, GraniteMoeHybridModel.this.workingDType, 0, hidden);
+                        }
+                        embeddings.copyFrom(source, 0, embeddings.getOffset(i, 0), hidden);
+                        if (source != tokenEmbedding) {
+                            source.close();
+                        }
+                    }
+                    if (parent.getConfig().embeddingMultiplier != null) {
+                        GraniteMoeHybridModel.this.scale(parent.getConfig().embeddingMultiplier, embeddings, 0, hidden);
+                    }
+                    return embeddings;
+                }
+            }
+
             @Override
             public AbstractTensor inputTokenToEmbedding(int inputToken, int position) {
                 AbstractTensor tokenEmbedding = GraniteMoeHybridModel.this.embedTokenWeights.slice(true, inputToken);
