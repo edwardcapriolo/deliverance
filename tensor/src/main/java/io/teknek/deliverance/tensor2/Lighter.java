@@ -74,6 +74,32 @@ public class Lighter {
         throw new IllegalStateException("No tensor operations support multiplyAccumulate");
     }
 
+    public void scale(Scale scale) {
+        scale(scale, Map.of());
+    }
+
+    public void scale(Scale scale, Map<String, String> tags) {
+        TensorRef target = scale.getTarget();
+        Preconditions.checkArgument(target != null, "Target tensor must be set");
+        Preconditions.checkArgument(scale.getOffset() >= 0 && scale.getLength() >= 0
+                && scale.getOffset() + scale.getLength() <= target.shape().last(), "Scale window out of bounds");
+
+        for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
+            Map<String, String> metricTags = new HashMap<>(tags);
+            metricTags.put("ops", entry.getKey().name());
+            metricRegistry.meter(new MetricName("tensor2.scale", metricTags)).mark();
+            Timer timer = metricRegistry.timer(new MetricName("tensor2.scale.time", metricTags));
+            long startNanos = System.nanoTime();
+            Either<OpSupport, Void> result = entry.getValue().scale(scale.getFactor(), target,
+                    scale.getOffset(), scale.getLength());
+            if (result.isRight()) {
+                timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+                return;
+            }
+        }
+        throw new IllegalStateException("No tensor operations support scale");
+    }
+
     /*
     //this would be like if we wanted to pass hints along which tensorProviderKind to chose etc
     public void multiplyAccumulate(MultiplyAccumulate multiplyAccumulate, Map<String, String> tags, ExecutionHints hints){

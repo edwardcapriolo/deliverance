@@ -85,7 +85,7 @@ public class GeneratorSampler {
 
             if (abstractModel.config.logitMultiplier != null) {
                 LOGGER.debug("scaling logits logitMultiplier: {}", abstractModel.config.logitMultiplier);
-                abstractModel.configurableTensorProvider.get().scale(1.0f / abstractModel.config.logitMultiplier,
+                abstractModel.scale(1.0f / abstractModel.config.logitMultiplier,
                         logits, 0, abstractModel.config.vocabularySize);
             }
             int maxi = Integer.MIN_VALUE;

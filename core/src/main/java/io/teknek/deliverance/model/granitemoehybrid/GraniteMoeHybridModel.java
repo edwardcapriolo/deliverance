@@ -68,7 +68,7 @@ public class GraniteMoeHybridModel extends AbstractModel {
                     source.close();
                 }
                 if (parent.getConfig().embeddingMultiplier != null) {
-                    GraniteMoeHybridModel.this.configurableTensorProvider.get().scale(parent.getConfig().embeddingMultiplier,
+                    GraniteMoeHybridModel.this.scale(parent.getConfig().embeddingMultiplier,
                             embedding, 0, parent.getConfig().embeddingLength);
                 }
                 return embedding;

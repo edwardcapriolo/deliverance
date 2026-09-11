@@ -113,7 +113,7 @@ public class Gemma4Model extends LlamaModel {
                         source.close();
                     }
                 }
-                configurableTensorProvider.get().scale(embeddingScalingFactor, embedding, 0, config.embeddingLength);
+                scale(embeddingScalingFactor, embedding, 0, config.embeddingLength);
                 return embedding;
             }
         };
@@ -489,7 +489,7 @@ public class Gemma4Model extends LlamaModel {
         for (int b = 0; b < tokenIds.length; b++) {
             copyPerLayerEmbeddingRow(tokenIds[b], tokenIdentity, b, packedLength);
         }
-        configurableTensorProvider.get().scale(perLayerEmbeddingScale(), tokenIdentity, 0, packedLength);
+        scale(perLayerEmbeddingScale(), tokenIdentity, 0, packedLength);
     }
 
     /**
@@ -499,7 +499,7 @@ public class Gemma4Model extends LlamaModel {
     void computeProjectedPerLayerInputs(AbstractTensor embeddings, AbstractTensor projected, int packedLength, Gemma4Config gemma4Config) {
         configurableTensorProvider.get().dotProductChunk(projected, embeddings, perLayerModelProjectionWeights, 0,
                 gemma4Config.embeddingLength, 0, packedLength);
-        configurableTensorProvider.get().scale(perLayerModelProjectionScale(), projected, 0, packedLength);
+        scale(perLayerModelProjectionScale(), projected, 0, packedLength);
         Gemma4RmsNormSupport.applyInPlace(projected, gemma4Config.numberOfLayers,
                 gemma4Config.hiddenSizePerLayerInput, gemma4Config.layerNormEps, perLayerProjectionNormWeights);
     }

@@ -21,4 +21,15 @@ class NaiveOps implements TensorOps {
         }
         return Either.Right(null);
     }
+
+    @Override
+    public Either<OpSupport, Void> scale(float factor, TensorRef target, int offset, int length) {
+        Preconditions.checkArgument(offset >= 0 && length >= 0 && offset + length <= target.shape().last());
+        for (int row = 0; row < target.shape().first(); row++) {
+            for (int column = offset; column < offset + length; column++) {
+                target.underlying().set(target.underlying().get(row, column) * factor, row, column);
+            }
+        }
+        return Either.Right(null);
+    }
 }

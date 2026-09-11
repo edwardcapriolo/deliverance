@@ -59,6 +59,8 @@ import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.Scale;
+import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensorlib.PlannedTensor;
 import io.teknek.deliverance.tensorlib.TensorPlan;
 import io.teknek.deliverance.tensorlib.TensorPlanAdaptiveSplitTuner;
@@ -1594,6 +1596,10 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
 
     public Lighter getLighter() {
         return lighter;
+    }
+
+    public void scale(float factor, AbstractTensor target, int offset, int length) {
+        lighter.scale(new Scale(factor).target(TensorRef.borrowed(target)).offsetAndLength(offset, length));
     }
 
     public void runChunks(String operation, int offset, int length, int splitSize, Optional<AbstractTensor> localityTensor,

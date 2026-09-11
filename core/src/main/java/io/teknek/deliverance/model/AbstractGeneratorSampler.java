@@ -120,8 +120,7 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
 
             if (model.config.logitMultiplier != null) {
                 LOGGER.debug("scaling logits logitMultiplier: {}", model.config.logitMultiplier);
-                model.configurableTensorProvider.get().scale(1.0f / model.config.logitMultiplier,
-                        logits, 0, model.config.vocabularySize);
+                model.scale(1.0f / model.config.logitMultiplier, logits, 0, model.config.vocabularySize);
             }
 
             if (model.config.finalLogitSoftCapping != null) {
@@ -430,7 +429,7 @@ class DeliveranceSampler extends AbstractGeneratorSampler {
             sum += logits.get(0, i);
         }
 
-        model.configurableTensorProvider.get().scale(((float) (1.0/sum)), logits, (int) offset, (int) length );
+        model.scale(((float) (1.0 / sum)), logits, (int) offset, (int) length);
 
     }
 

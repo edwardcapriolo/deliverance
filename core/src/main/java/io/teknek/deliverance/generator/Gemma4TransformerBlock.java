@@ -108,7 +108,7 @@ public class Gemma4TransformerBlock extends TransformerBlock {
         }
         AbstractTensor lnattn = maybeApplyNorm(postAttention, postAttentionNorm);
         if (model.getConfig().residualMultiplier != null) {
-            configurableTensorProvider.get().scale(model.getConfig().residualMultiplier, lnattn, 0, model.getConfig().embeddingLength);
+            model.scale(model.getConfig().residualMultiplier, lnattn, 0, model.getConfig().embeddingLength);
         }
         configurableTensorProvider.get().accumulate(lnattn, embedding, 0, model.getConfig().embeddingLength);
         logIfInteresting("post_attn_residual", lnattn);
@@ -127,7 +127,7 @@ public class Gemma4TransformerBlock extends TransformerBlock {
             lnpostFF = maybeApplyNorm(postFF, postFFNorm);
         }
         if (model.getConfig().residualMultiplier != null) {
-            configurableTensorProvider.get().scale(model.getConfig().residualMultiplier, lnpostFF, 0, model.getConfig().embeddingLength);
+            model.scale(model.getConfig().residualMultiplier, lnpostFF, 0, model.getConfig().embeddingLength);
         }
         configurableTensorProvider.get().accumulate(lnpostFF, lnattn, 0, model.getConfig().embeddingLength);
         logIfInteresting("post_ff_residual", lnpostFF);
@@ -159,7 +159,7 @@ public class Gemma4TransformerBlock extends TransformerBlock {
         }
 
         if (layerScalar != 1.0f) {
-            configurableTensorProvider.get().scale(layerScalar, lnpostFF, 0, model.getConfig().embeddingLength);
+            model.scale(layerScalar, lnpostFF, 0, model.getConfig().embeddingLength);
         }
         logIfInteresting("final", lnpostFF);
 

@@ -159,7 +159,7 @@ public class MixtureOfExpertsBlock implements FeedForward {
                     }
 
                     try (Timer.Context ignoredScale = InferenceProfiler.timer(model.getMetricRegistry(), "mixtureofexpertsblock.expert_scale_accumulate").time()) {
-                        model.configurableTensorProvider.get().scale(gateWeight, moeResult, 0, model.config.embeddingLength);
+                        model.scale(gateWeight, moeResult, 0, model.config.embeddingLength);
 
                         if (i == 0) {
                             result.slice(b).copyFrom(moeResult, 0,0, model.config.embeddingLength);

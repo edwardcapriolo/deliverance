@@ -567,7 +567,7 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
     private TokenConfidence tokenFromLogits(AbstractTensor logits, AbstractTensor argMax, float temperature,
             Random random, boolean requireConfidence) {
         if (temperature > 0.0f) {
-            configurableTensorProvider.get().scale(1.0f / temperature, logits, 0, config.vocabularySize);
+            scale(1.0f / temperature, logits, 0, config.vocabularySize);
             configurableTensorProvider.get().softMax(logits, 0, config.vocabularySize);
             float sample = random.nextFloat();
             float cumulative = 0.0f;
