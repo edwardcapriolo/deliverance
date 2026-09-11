@@ -1,6 +1,6 @@
 {
   "outputHeadQuantization": "Q4",
-  "maxBatchSize": 512,
+  "maxPrefillBatchSize": 2048,
   "tensorRuntimeMode": "DISABLED",
   "parallelSplitSizeFixed": {
     "SIMD": 64

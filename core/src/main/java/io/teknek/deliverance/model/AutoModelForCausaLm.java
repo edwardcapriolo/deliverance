@@ -134,7 +134,7 @@ public class AutoModelForCausaLm {
         private LoraAdapterModelFetcher loraAdapterFetcher;
         private final EnumMap<TensorProviderKind, TensorOperations> additionalTensorOperations = new EnumMap<>(TensorProviderKind.class);
         private boolean download = true;
-        private int maxBatchSize = AbstractModel.DEFAULT_MAX_BATCH_SIZE;
+        private int maxPrefillBatchSize = AbstractModel.DEFAULT_MAX_PREFILL_BATCH_SIZE;
         private SketchesSettings sketchesSettings = SketchesSettings.DEFAULT;
         private boolean gpuPrefill;
         private boolean gpuDecode;
@@ -272,11 +272,11 @@ public class AutoModelForCausaLm {
             return this;
         }
 
-        public Builder withMaxBatchSize(int maxBatchSize) {
-            if (maxBatchSize < 1) {
-                throw new IllegalArgumentException("maxBatchSize must be >= 1");
+        public Builder withMaxPrefillBatchSize(int maxPrefillBatchSize) {
+            if (maxPrefillBatchSize < 1) {
+                throw new IllegalArgumentException("maxPrefillBatchSize must be >= 1");
             }
-            this.maxBatchSize = maxBatchSize;
+            this.maxPrefillBatchSize = maxPrefillBatchSize;
             return this;
         }
 
@@ -457,7 +457,7 @@ public class AutoModelForCausaLm {
             config.generationOptions().ifPresent(this::withGenerationOptions);
             config.packedPrefill().ifPresent(this::withPackedPrefill);
             config.download().ifPresent(this::withDownload);
-            config.maxBatchSize().ifPresent(this::withMaxBatchSize);
+            config.maxPrefillBatchSize().or(config::maxBatchSize).ifPresent(this::withMaxPrefillBatchSize);
             config.tensorRuntimeMode().ifPresent(this::withTensorRuntimeMode);
             config.parallelSplitSizeFixed().ifPresent(map -> map.forEach(this::withParallelSplitSizeFixed));
             config.parallelSplitSizeMultiplier().ifPresent(map -> map.forEach(this::withParallelSplitSizeMultiplier));
@@ -541,7 +541,7 @@ public class AutoModelForCausaLm {
             copy.parallelSplitSizeMultiplier.putAll(this.parallelSplitSizeMultiplier);
             copy.groupedDecodeQkvSplitSize = this.groupedDecodeQkvSplitSize;
             copy.download = this.download;
-            copy.maxBatchSize = this.maxBatchSize;
+            copy.maxPrefillBatchSize = this.maxPrefillBatchSize;
             copy.sketchesSettings = this.sketchesSettings;
             copy.gpuPrefill = this.gpuPrefill;
             copy.gpuDecode = this.gpuDecode;
@@ -611,7 +611,7 @@ public class AutoModelForCausaLm {
                     ? Optional.empty()
                     : Optional.of(LoraAdapter.fromPretrained(loraAdapterFetcher, mr));
             AbstractModel model = constructModel(modelRoot, loraAdapter);
-            model.setMaxBatchSize(maxBatchSize);
+            model.setMaxPrefillBatchSize(maxPrefillBatchSize);
             model.setTensorProviderExplicit(tensorProviderExplicit);
             model.setGpuPrefillEnabled(gpuPrefill);
             model.setGpuDecodeEnabled(gpuDecode);
@@ -642,7 +642,7 @@ public class AutoModelForCausaLm {
                       registeredProviders=[{}]
                       parallelSplitPolicy=availableProcessors={} defaultMultipliers=disabled simdAlignment={} panamaAlignment={} fixedOverrides={} multiplierOverrides={}
                       modelType={} workingMemoryType={} quantizedMemoryType={}
-                      tensorRuntimeMode={} groupedDecodeQkvSplitSize={} gpuProvider={} gpuPrefill={} gpuDecode={} gpuDecodeAttention={} gpuDiffusionBlockProjection={} packedBlockAttention={} packedPrefill={} trackKvReadViews={} maxBatchSize={}
+                      tensorRuntimeMode={} groupedDecodeQkvSplitSize={} gpuProvider={} gpuPrefill={} gpuDecode={} gpuDecodeAttention={} gpuDiffusionBlockProjection={} packedBlockAttention={} packedPrefill={} trackKvReadViews={} maxPrefillBatchSize={}
                       prefixCacheMode={} kvBlockStoragePolicy={} kvTurboQuantBits={} kvKeyDType={} kvValueDType={} sharedPrefixBlockCacheMaxBytes={} sharedPrefixDiskCacheEnabled={} sharedPrefixDiskCacheMaxBytes={}
                       generationOptions={}
                     """,
@@ -652,7 +652,7 @@ public class AutoModelForCausaLm {
                     model.modelDType, model.workingDType, model.workingQType,
                     tensorRuntimeMode.orElse(TensorRuntimeMode.DISABLED), groupedDecodeQkvSplitSize.orElse(null),
                     gpuProvider, gpuPrefill, gpuDecode, gpuDecodeAttention, gpuDiffusionBlockProjection, packedBlockAttention, packedPrefill,
-                    trackKvReadViews, maxBatchSize,
+                    trackKvReadViews, maxPrefillBatchSize,
                     settings.getPrefixCacheMode(), settings.getKvBlockStoragePolicy(), settings.getKvTurboQuantBits(),
                     settings.getKvKeyDType(), settings.getKvValueDType(), settings.getSharedPrefixBlockCacheMaxBytes(),
                     settings.isSharedPrefixDiskCacheEnabled(), settings.getSharedPrefixDiskCacheMaxBytes(),
@@ -971,8 +971,8 @@ public class AutoModelForCausaLm {
             return download;
         }
 
-        public int getMaxBatchSize() {
-            return maxBatchSize;
+        public int getMaxPrefillBatchSize() {
+            return maxPrefillBatchSize;
         }
 
         public boolean isGpuPrefill() {

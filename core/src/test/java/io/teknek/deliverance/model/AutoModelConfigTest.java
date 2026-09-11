@@ -34,7 +34,7 @@ public class AutoModelConfigTest {
                     "threshold": 0.0
                   },
                   "download": false,
-                  "maxBatchSize": 17,
+                  "maxPrefillBatchSize": 17,
                   "kvBufferCache": {
                     "maxEntries": 0,
                     "blockSize": 16,
@@ -78,7 +78,7 @@ public class AutoModelConfigTest {
         assertEquals(32, builder.getGenerationOptions().get("blockLength"));
         assertEquals(0.0, ((Number) builder.getGenerationOptions().get("threshold")).doubleValue());
         assertFalse(builder.isDownload());
-        assertEquals(17, builder.getMaxBatchSize());
+        assertEquals(17, builder.getMaxPrefillBatchSize());
         assertEquals(0, builder.getSettings().getMaxEntries());
         assertEquals(16, builder.getSettings().getBlockSize());
         assertEquals(128, builder.getSettings().getMaxPrefixTokensPerPrompt());

@@ -95,7 +95,8 @@ import static io.teknek.deliverance.tensor.DebugSupport.debug;
 public abstract class AbstractModel implements Generator, Classifier, TensorPlanAdaptiveSplitTuner {
     static final Logger logger = LoggerFactory.getLogger(AbstractModel.class);
 
-    public static final int DEFAULT_MAX_BATCH_SIZE = 512;
+    public static final int DEFAULT_MAX_PREFILL_BATCH_SIZE = 512;
+    private static final int[] ADAPTIVE_PREFILL_BATCH_SIZE_CANDIDATES = { 256, 512, 1024, 2048 };
     private static final long PREFILL_PROGRESS_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(3);
     private static final ThreadLocal<PrefillProgress> PREFILL_PROGRESS = new ThreadLocal<>();
 
@@ -215,7 +216,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     protected ClassifyOutput classifyOutput;
     protected WrappedForkJoinPool pool;
     protected PreTrainedTokenizer preTrainedTokenizer;
-    protected int maxBatchSize = DEFAULT_MAX_BATCH_SIZE;
+    protected int maxPrefillBatchSize = DEFAULT_MAX_PREFILL_BATCH_SIZE;
     protected TensorPlan modelLineagePlan;
     private final ConcurrentMap<String, TensorPlan.ImmutableTensor> modelLineageTensors = new ConcurrentHashMap<>();
     private final Queue<ModelLineageEntry> modelLineageEntries = new ConcurrentLinkedQueue<>();
@@ -914,11 +915,11 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         return Optional.ofNullable(gossipParallelMembership);
     }
 
-    void setMaxBatchSize(int maxBatchSize) {
-        if (maxBatchSize < 1) {
-            throw new IllegalArgumentException("maxBatchSize must be >= 1");
+    void setMaxPrefillBatchSize(int maxPrefillBatchSize) {
+        if (maxPrefillBatchSize < 1) {
+            throw new IllegalArgumentException("maxPrefillBatchSize must be >= 1");
         }
-        this.maxBatchSize = maxBatchSize;
+        this.maxPrefillBatchSize = maxPrefillBatchSize;
     }
 
     void setGossipParallelMembership(GossipParallelMembership gossipParallelMembership) {
@@ -1256,15 +1257,15 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "abstractmodel.batch_forward").time()) {
             AbstractTensor lastBatchOutput = null;
 
-            CausualWhisperer.LOGGER.debug("batchForward from 0 to token_ids.length {} max_batch_size {} per iteration",
-                    token_ids.length, maxBatchSize);
+            CausualWhisperer.LOGGER.debug("batchForward from 0 to token_ids.length {} max_prefill_batch_size {} per iteration",
+                    token_ids.length, maxPrefillBatchSize);
             PrefillProgress previousProgress = PREFILL_PROGRESS.get();
             PrefillProgress progress = new PrefillProgress(token_ids.length, startPos, System.nanoTime());
             PREFILL_PROGRESS.set(progress);
             try {
-                for (int i = 0; i < token_ids.length; i += maxBatchSize) {
+                for (int i = 0; i < token_ids.length; i += maxPrefillBatchSize) {
                     throwIfGenerationInterrupted();
-                    int[] batch = Arrays.copyOfRange(token_ids, i, Math.min(token_ids.length, i + maxBatchSize));
+                    int[] batch = Arrays.copyOfRange(token_ids, i, Math.min(token_ids.length, i + maxPrefillBatchSize));
                     progress.chunkStart = i;
                     progress.chunkTokens = batch.length;
                     AbstractTensor inputEmbeddings = embedInput.batchInputsToEmbeddings(batch, startPos + i);
@@ -1297,29 +1298,11 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     public AbstractTensor batchForward(int[] tokenIds, int startPos, KvCacheSession kvSession,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "abstractmodel.batch_forward").time()) {
-            AbstractTensor lastBatchOutput = null;
             PrefillProgress previousProgress = PREFILL_PROGRESS.get();
             PrefillProgress progress = new PrefillProgress(tokenIds.length, startPos, System.nanoTime());
             PREFILL_PROGRESS.set(progress);
             try {
-                for (int i = 0; i < tokenIds.length; i += maxBatchSize) {
-                    throwIfGenerationInterrupted();
-                    int[] batch = Arrays.copyOfRange(tokenIds, i, Math.min(tokenIds.length, i + maxBatchSize));
-                    progress.chunkStart = i;
-                    progress.chunkTokens = batch.length;
-                    AbstractTensor inputEmbeddings = embedInput.batchInputsToEmbeddings(batch, startPos + i);
-                    PlannedTensor plannedEmbeddings = plannedInputEmbeddings("input_embeddings", inputEmbeddings,
-                            io.teknek.deliverance.generator.ForwardPhase.PREFILL);
-                    lastBatchOutput = forward(plannedEmbeddings, startPos + i, kvSession, tensorReducer,
-                            io.teknek.deliverance.generator.ForwardPhase.PREFILL).tensor();
-                    kvSession.advanceLength(startPos + i + batch.length);
-                    int processed = Math.min(tokenIds.length, i + batch.length);
-                    long now = System.nanoTime();
-                    if (processed < tokenIds.length && now >= progress.nextLogNanos) {
-                        logPrefillProgress(progress, progress.chunkStart, config.numberOfLayers, config.numberOfLayers, now);
-                        progress.nextLogNanos = now + PREFILL_PROGRESS_INTERVAL_NANOS;
-                    }
-                }
+                return adaptiveBatchForward(tokenIds, startPos, kvSession, tensorReducer, progress);
             } finally {
                 if (previousProgress == null) {
                     PREFILL_PROGRESS.remove();
@@ -1327,8 +1310,72 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
                     PREFILL_PROGRESS.set(previousProgress);
                 }
             }
-            return lastBatchOutput;
         }
+    }
+
+    private AbstractTensor adaptiveBatchForward(int[] tokenIds, int startPos, KvCacheSession kvSession,
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer, PrefillProgress progress) {
+        List<PrefillBatchSizeCandidate> batchSizes = adaptivePrefillBatchSizes(tokenIds.length);
+        if (batchSizes.size() == 1) {
+            return batchForwardWithMaxBatchSize(tokenIds, startPos, kvSession, tensorReducer, progress,
+                    batchSizes.getFirst().effectiveBatchSize());
+        }
+
+        AtomicReference<AbstractTensor> output = new AtomicReference<>();
+        TensorPlan.AlternateJitBuilder builder = new TensorPlan(configurableTensorProvider.get(), pool, metricRegistry, this)
+                .alternateJit("abstractmodel.prefill.max_prefill_batch_size", batchSizes.getFirst().name(),
+                        () -> output.set(batchForwardWithMaxBatchSize(tokenIds, startPos, kvSession, tensorReducer,
+                                progress, batchSizes.getFirst().effectiveBatchSize())));
+        for (int i = 1; i < batchSizes.size(); i++) {
+            PrefillBatchSizeCandidate candidate = batchSizes.get(i);
+            builder.alternate(candidate.name(),
+                    () -> output.set(batchForwardWithMaxBatchSize(tokenIds, startPos, kvSession, tensorReducer,
+                            progress, candidate.effectiveBatchSize())));
+        }
+        builder.run();
+        return output.get();
+    }
+
+    private record PrefillBatchSizeCandidate(String name, int effectiveBatchSize) { }
+
+    private List<PrefillBatchSizeCandidate> adaptivePrefillBatchSizes(int tokenCount) {
+        if (tokenCount <= 0) {
+            return List.of(new PrefillBatchSizeCandidate("batch" + maxPrefillBatchSize, maxPrefillBatchSize));
+        }
+        List<PrefillBatchSizeCandidate> batchSizes = new ArrayList<>();
+        int previousEffective = -1;
+        for (int candidate : ADAPTIVE_PREFILL_BATCH_SIZE_CANDIDATES) {
+            int effective = Math.min(Math.min(candidate, maxPrefillBatchSize), tokenCount);
+            if (effective != previousEffective) {
+                batchSizes.add(new PrefillBatchSizeCandidate("batch" + candidate, effective));
+                previousEffective = effective;
+            }
+        }
+        return batchSizes;
+    }
+
+    private AbstractTensor batchForwardWithMaxBatchSize(int[] tokenIds, int startPos, KvCacheSession kvSession,
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer, PrefillProgress progress, int prefillBatchSize) {
+        AbstractTensor lastBatchOutput = null;
+        for (int i = 0; i < tokenIds.length; i += prefillBatchSize) {
+            throwIfGenerationInterrupted();
+            int[] batch = Arrays.copyOfRange(tokenIds, i, Math.min(tokenIds.length, i + prefillBatchSize));
+            progress.chunkStart = i;
+            progress.chunkTokens = batch.length;
+            AbstractTensor inputEmbeddings = embedInput.batchInputsToEmbeddings(batch, startPos + i);
+            PlannedTensor plannedEmbeddings = plannedInputEmbeddings("input_embeddings", inputEmbeddings,
+                    io.teknek.deliverance.generator.ForwardPhase.PREFILL);
+            lastBatchOutput = forward(plannedEmbeddings, startPos + i, kvSession, tensorReducer,
+                    io.teknek.deliverance.generator.ForwardPhase.PREFILL).tensor();
+            kvSession.advanceLength(startPos + i + batch.length);
+            int processed = Math.min(tokenIds.length, i + batch.length);
+            long now = System.nanoTime();
+            if (processed < tokenIds.length && now >= progress.nextLogNanos) {
+                logPrefillProgress(progress, progress.chunkStart, config.numberOfLayers, config.numberOfLayers, now);
+                progress.nextLogNanos = now + PREFILL_PROGRESS_INTERVAL_NANOS;
+            }
+        }
+        return lastBatchOutput;
     }
 
     public AbstractTensor forward(int token_id, int pos, KvBufferCache.KvBuffer kvbuf) {

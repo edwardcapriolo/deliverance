@@ -3,7 +3,7 @@
   "workingQuantType": "I8",
   "outputHeadQuantization": "Q4",
   "gpuPrefill": false,
-  "maxBatchSize": 512,
+  "maxPrefillBatchSize": 2048,
   "kvBufferCache": {
     "maxEntries": 0,
     "maxPrefixTokensPerPrompt": 0,

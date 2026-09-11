@@ -620,7 +620,7 @@ public class NativeSimdTensorOperations implements TensorOperations {
     }
 
     @Override
-    @Efficiency("vector")
+    @Efficiency(Efficiency.Kind.VECTOR)
     public AbstractTensor quantize(AbstractTensor t, DType qtype, int offset, int length) {
         return delegate.quantize(t, qtype, offset, length);
     }
