@@ -46,6 +46,11 @@ public class GraniteMoeHybridModel extends AbstractModel {
     }
 
     @Override
+    public boolean usesKvCache2Generation() {
+        return true;
+    }
+
+    @Override
     protected EmbedInput loadInputWeights() {
         if (this.embedTokenWeights == null) {
             this.embedTokenWeights = quantize(this.weights.load("model.embed_tokens.weight"), this.workingDType);
@@ -162,15 +167,20 @@ public class GraniteMoeHybridModel extends AbstractModel {
                 );
             } else if ("attention".equals(graniteConfig.layerTypes.get(i))) {
                 String attentionPrefix = base + "self_attn.";
+                String qName = attentionPrefix + "q_proj.weight";
+                String kName = attentionPrefix + "k_proj.weight";
+                String vName = attentionPrefix + "v_proj.weight";
+                String oName = attentionPrefix + "o_proj.weight";
                 attention = new GraniteMoeHybridAttention(
                         this,
                         i,
-                        quantize(this.weights.load(attentionPrefix + "q_proj.weight"), qType),
-                        quantize(this.weights.load(attentionPrefix + "k_proj.weight"), qType),
-                        quantize(this.weights.load(attentionPrefix + "v_proj.weight"), qType),
-                        quantize(this.weights.load(attentionPrefix + "o_proj.weight"), qType),
+                        quantize(this.weights.load(qName), qType),
+                        quantize(this.weights.load(kName), qType),
+                        quantize(this.weights.load(vName), qType),
+                        quantize(this.weights.load(oName), qType),
                         this.configurableTensorProvider,
-                        this.metricRegistry
+                        this.metricRegistry,
+                        qName, kName, vName, oName
                 );
             } else {
                 throw new IllegalArgumentException("Unsupported GraniteMoeHybrid layer type: " + graniteConfig.layerTypes.get(i));

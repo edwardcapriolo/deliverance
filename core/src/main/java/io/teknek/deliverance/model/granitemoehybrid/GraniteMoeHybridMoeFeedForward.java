@@ -77,16 +77,30 @@ public class GraniteMoeHybridMoeFeedForward implements FeedForward {
         try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), METRIC_COUNT_EXPERTS).time()) {
             expertCounts = countSelectedExperts(tokens, selectedExperts);
         }
-        for (int expert = 0; expert < config.numLocalExperts; expert++) {
-            int tokenCount = expertCounts[expert];
-            if (tokenCount == 0) {
-                continue;
-            }
-            try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), METRIC_EXPERT).time()) {
-                forwardExpert(input, output, tensorReducer, selectedExperts, selectedWeights, expert, tokenCount);
+        int maxTokenCount = maxTokenCount(expertCounts);
+        if (maxTokenCount > 0) {
+            try (ExpertScratch scratch = new ExpertScratch(input.dType(), maxTokenCount)) {
+                for (int expert = 0; expert < config.numLocalExperts; expert++) {
+                    int tokenCount = expertCounts[expert];
+                    if (tokenCount == 0) {
+                        continue;
+                    }
+                    try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), METRIC_EXPERT).time()) {
+                        forwardExpert(input, output, tensorReducer, selectedExperts, selectedWeights, expert, tokenCount,
+                                scratch);
+                    }
+                }
             }
         }
         return output;
+    }
+
+    private int maxTokenCount(int[] expertCounts) {
+        int max = 0;
+        for (int count : expertCounts) {
+            max = Math.max(max, count);
+        }
+        return max;
     }
 
     private void route(AbstractTensor input, int[] selectedExperts, float[] selectedWeights) {
@@ -154,16 +168,15 @@ public class GraniteMoeHybridMoeFeedForward implements FeedForward {
 
     private void forwardExpert(AbstractTensor input, AbstractTensor output,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer, int[] selectedExperts, float[] selectedWeights,
-            int expert, int tokenCount) {
-        try (AbstractTensor expertInput = model.getTensorAllocator().getDirty(input.dType(),
-                TensorShape.of(tokenCount, config.embeddingLength));
-             AbstractTensor inputProjection = model.makeTensor(tokenCount, config.hiddenLength * 2);
-             AbstractTensor hidden = model.makeTensor(tokenCount, config.hiddenLength);
-             AbstractTensor down = model.makeTensor(tokenCount, config.embeddingLength);
+            int expert, int tokenCount, ExpertScratch scratch) {
+        try (AbstractTensor expertInput = scratch.expertInput.firstRowsView(tokenCount);
+             AbstractTensor inputProjection = scratch.inputProjection.firstRowsView(tokenCount);
+             AbstractTensor hidden = scratch.hidden.firstRowsView(tokenCount);
+             AbstractTensor down = scratch.down.firstRowsView(tokenCount);
              AbstractTensor inputWeights = expertInputWeights.slice(expert);
              AbstractTensor outputWeights = expertOutputWeights.slice(expert)) {
-            int[] sourceRows = new int[tokenCount];
-            float[] routeWeights = new float[tokenCount];
+            int[] sourceRows = scratch.sourceRows;
+            float[] routeWeights = scratch.routeWeights;
             try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), METRIC_EXPERT_COPY_ROWS).time()) {
                 copySelectedRows(input, selectedExperts, selectedWeights, expert, expertInput, sourceRows, routeWeights);
             }
@@ -187,7 +200,7 @@ public class GraniteMoeHybridMoeFeedForward implements FeedForward {
                 }
             }
             try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), METRIC_EXPERT_SCATTER_ADD).time()) {
-                scatterAdd(output, down, sourceRows, routeWeights);
+                scatterAdd(output, down, sourceRows, routeWeights, tokenCount);
             }
         }
     }
@@ -220,13 +233,41 @@ public class GraniteMoeHybridMoeFeedForward implements FeedForward {
         }
     }
 
-    private void scatterAdd(AbstractTensor output, AbstractTensor down, int[] sourceRows, float[] routeWeights) {
-        for (int row = 0; row < sourceRows.length; row++) {
+    private void scatterAdd(AbstractTensor output, AbstractTensor down, int[] sourceRows, float[] routeWeights,
+            int tokenCount) {
+        for (int row = 0; row < tokenCount; row++) {
             int outputRow = sourceRows[row];
             float weight = routeWeights[row];
             for (int col = 0; col < config.embeddingLength; col++) {
                 output.set(output.get(outputRow, col) + down.get(row, col) * weight, outputRow, col);
             }
+        }
+    }
+
+    private final class ExpertScratch implements AutoCloseable {
+        private final AbstractTensor expertInput;
+        private final AbstractTensor inputProjection;
+        private final AbstractTensor hidden;
+        private final AbstractTensor down;
+        private final int[] sourceRows;
+        private final float[] routeWeights;
+
+        private ExpertScratch(io.teknek.deliverance.DType inputDType, int rows) {
+            this.expertInput = model.getTensorAllocator().getDirty(inputDType,
+                    TensorShape.of(rows, config.embeddingLength));
+            this.inputProjection = model.makeTensor(rows, config.hiddenLength * 2);
+            this.hidden = model.makeTensor(rows, config.hiddenLength);
+            this.down = model.makeTensor(rows, config.embeddingLength);
+            this.sourceRows = new int[rows];
+            this.routeWeights = new float[rows];
+        }
+
+        @Override
+        public void close() {
+            down.close();
+            hidden.close();
+            inputProjection.close();
+            expertInput.close();
         }
     }
 }

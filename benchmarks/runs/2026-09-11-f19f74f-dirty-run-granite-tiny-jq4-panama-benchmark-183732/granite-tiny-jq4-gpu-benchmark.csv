@@ -1,0 +1,2 @@
+timestamp,engine,model,case_id,category,turn,prompt_chars,prompt_tokens,generated_tokens,total_ms,generation_ms,tokens_per_second,response_chars,finish_reason
+"2026-09-11T22:38:38.188489Z","deliverance","edwardcapriolo/granite-4.0-h-tiny-JQ4","builtin-reasoning-1","reasoning",1,779,149,10,49705.337334,14199.759417000001,0.6338135552652511,51,"MAX_TOKENS"

@@ -38,10 +38,9 @@ cd "$SCRIPT_DIR"
 MAVEN_OPTS="${MAVEN_OPTS:-} -XX:TieredStopAtLevel=1" mvn -q -pl core -am -DskipTests compile
 
 DEFAULT_BENCHMARK_ARGS="\
---tensor-provider native-gpu \
 --output-head-quantization Q4 \
 --pool-size 16 \
---max-tokens 256 \
+--max-tokens 10 \
 --warmup-cases 0 \
 --profile-stages \
 --output $BENCHMARK_RUN_DIR/granite-tiny-jq4-gpu-benchmark.csv \

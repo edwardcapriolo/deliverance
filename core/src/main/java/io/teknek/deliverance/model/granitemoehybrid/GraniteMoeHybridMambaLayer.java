@@ -7,6 +7,7 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
+import io.teknek.deliverance.tensor.kv.KvCacheSession;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import jdk.incubator.vector.FloatVector;
@@ -53,6 +54,7 @@ public class GraniteMoeHybridMambaLayer implements SelfAttention {
     private final float[] dValues;
     private final float[] normValues;
     private final Map<KvBufferCache.KvBuffer, MambaState> states = Collections.synchronizedMap(new WeakHashMap<>());
+    private final Map<KvCacheSession, MambaState> kvCache2States = Collections.synchronizedMap(new WeakHashMap<>());
 
     public GraniteMoeHybridMambaLayer(AbstractModel model, GraniteMoeHybridConfig config,
             AbstractTensor inProjWeights, AbstractTensor convWeights, Optional<AbstractTensor> convBias,
@@ -91,14 +93,30 @@ public class GraniteMoeHybridMambaLayer implements SelfAttention {
     @Override
     public AbstractTensor forward(AbstractTensor input, int startPosition, KvBufferCache.KvBuffer kvMem,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
+        if (startPosition == 0) {
+            states.remove(kvMem);
+        }
+        MambaState state = states.computeIfAbsent(kvMem, ignored -> new MambaState(convDim, config.mambaDConv,
+                config.mambaNHeads, config.mambaDHead, config.mambaDState));
+        return forwardWithState(input, startPosition, state, tensorReducer);
+    }
+
+    @Override
+    public AbstractTensor forward(AbstractTensor input, int startPosition, KvCacheSession kvSession,
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer, io.teknek.deliverance.generator.ForwardPhase phase) {
+        if (startPosition == 0) {
+            kvCache2States.remove(kvSession);
+        }
+        MambaState state = kvCache2States.computeIfAbsent(kvSession, ignored -> new MambaState(convDim, config.mambaDConv,
+                config.mambaNHeads, config.mambaDHead, config.mambaDState));
+        return forwardWithState(input, startPosition, state, tensorReducer);
+    }
+
+    private AbstractTensor forwardWithState(AbstractTensor input, int startPosition, MambaState state,
+            Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
         try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), METRIC_FORWARD).time()) {
             int sequenceLength = input.shape().first();
             int projectionSize = intermediateSize + convDim + config.mambaNHeads;
-            if (startPosition == 0) {
-                states.remove(kvMem);
-            }
-            MambaState state = states.computeIfAbsent(kvMem, ignored2 -> new MambaState(convDim, config.mambaDConv,
-                    config.mambaNHeads, config.mambaDHead, config.mambaDState));
             try (AbstractTensor projected = model.makeTensor(sequenceLength, projectionSize);
                  AbstractTensor scanOutput = model.makeTensor(sequenceLength, intermediateSize)) {
                 try (Timer.Context ignored2 = InferenceProfiler.timer(model.getMetricRegistry(), METRIC_IN_PROJECTION).time()) {

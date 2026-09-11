@@ -126,6 +126,19 @@ public abstract class AbstractTensor implements AutoCloseable, ReadableTensor {
     }
 
     /**
+     * Returns a non-owning view over the first {@code rows} of a dense 2D tensor.
+     *
+     * <p>This is intended for reusable scratch buffers where callers need exact temporary matmul shapes without
+     * reallocating backing storage for every smaller row count.</p>
+     */
+    public AbstractTensor firstRowsView(int rows) {
+        Preconditions.checkArgument(dims() == 2, "firstRowsView requires a 2D tensor");
+        Preconditions.checkArgument(!shape.isSparse(), "firstRowsView requires a dense tensor");
+        Preconditions.checkArgument(rows >= 0 && rows <= shape.first(), "rows outside tensor shape");
+        return this.make(0, rows * shape.last(), TensorShape.of(rows, shape.last()), false);
+    }
+
+    /**
      * Copies a logical slice into a newly allocated tensor owned by the caller.
      *
      * <p>Unlike {@link #slice(int...)}, this method does not return a view into this tensor's backing storage and does
