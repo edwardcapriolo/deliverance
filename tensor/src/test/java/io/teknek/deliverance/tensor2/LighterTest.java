@@ -99,6 +99,28 @@ class LighterTest {
                 Map.of("phase", "test", "ops", "NAIVE"))).getCount());
     }
 
+    @Test
+    void scaleUsesPanama() {
+        MetricRegistry metricRegistry = new MetricRegistry();
+        Lighter lighter = lighterWithUnsupportedSimd(metricRegistry);
+        TensorRef target = lighter.allocate(DType.F32, TensorShape.of(1, 3));
+        target.underlying().set(2.0f, 0, 0);
+        target.underlying().set(3.0f, 0, 1);
+        target.underlying().set(4.0f, 0, 2);
+
+        lighter.scale(new Scale(10.0f).target(target).offsetAndLength(1, 2), Map.of("phase", "test"));
+
+        assertEquals(2.0f, target.underlying().get(0, 0));
+        assertEquals(30.0f, target.underlying().get(0, 1));
+        assertEquals(40.0f, target.underlying().get(0, 2));
+        assertEquals(1, metricRegistry.meter(new MetricName("tensor2.scale",
+                Map.of("phase", "test", "ops", "SIMD"))).getCount());
+        assertEquals(1, metricRegistry.meter(new MetricName("tensor2.scale",
+                Map.of("phase", "test", "ops", "PANAMA"))).getCount());
+        assertEquals(0, metricRegistry.meter(new MetricName("tensor2.scale",
+                Map.of("phase", "test", "ops", "NAIVE"))).getCount());
+    }
+
     private static Lighter lighterWithUnsupportedSimd(MetricRegistry metricRegistry) {
         return new Lighter(metricRegistry, Map.of(
                 TensorProviderKind.SIMD, (a, b, offset, length) -> io.teknek.dysfx.Either.Left(OpSupport.Unsupported),

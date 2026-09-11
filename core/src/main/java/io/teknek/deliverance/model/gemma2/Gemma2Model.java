@@ -132,7 +132,7 @@ public class Gemma2Model extends LlamaModel {
                     }
                     embedding.copyFrom(at, 0, 0, config.embeddingLength);
                     // This is important for Gemma, but not for Llama
-                    configurableTensorProvider.get().scale(embeddingScalingFactor, embedding, 0, config.embeddingLength);
+                    scale(embeddingScalingFactor, embedding, 0, config.embeddingLength);
                     return embedding;
             }
         };
