@@ -29,6 +29,7 @@ public record AutoModelConfig(
         Optional<Boolean> packedBlockAttention,
         Optional<Boolean> packedPrefill,
         Optional<Boolean> download,
+        Optional<Integer> maxPrefillBatchSize,
         Optional<Integer> maxBatchSize,
         Optional<TensorRuntimeMode> tensorRuntimeMode,
         Optional<Map<TensorProviderKind, Integer>> parallelSplitSizeFixed,
@@ -50,6 +51,7 @@ public record AutoModelConfig(
         packedBlockAttention = packedBlockAttention == null ? Optional.empty() : packedBlockAttention;
         packedPrefill = packedPrefill == null ? Optional.empty() : packedPrefill;
         download = download == null ? Optional.empty() : download;
+        maxPrefillBatchSize = maxPrefillBatchSize == null ? Optional.empty() : maxPrefillBatchSize;
         maxBatchSize = maxBatchSize == null ? Optional.empty() : maxBatchSize;
         tensorRuntimeMode = tensorRuntimeMode == null ? Optional.empty() : tensorRuntimeMode;
         parallelSplitSizeFixed = parallelSplitSizeFixed == null ? Optional.empty() : parallelSplitSizeFixed;

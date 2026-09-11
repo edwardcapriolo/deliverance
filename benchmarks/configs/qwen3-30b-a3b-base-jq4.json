@@ -1,5 +1,5 @@
 {
-  "maxBatchSize": 512,
+  "maxPrefillBatchSize": 2048,
   "kvBufferCache": {
     "maxEntries": 10000,
     "blockSize": 32,

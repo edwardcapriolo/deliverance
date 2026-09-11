@@ -13,6 +13,7 @@ import java.util.stream.IntStream;
 
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.Efficiency;
 import io.teknek.deliverance.tensor.SparseOffset;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.UnsafeDirectByteBuffer;
@@ -32,6 +33,7 @@ public final class Q4ByteBufferTensor extends AbstractTensor {
     private final String name;
     private final MemorySegment segment;
 
+    @Efficiency(Efficiency.Kind.CURSOR)
     public Q4ByteBufferTensor(AbstractTensor ft) {
         this(ft.shape());
         Preconditions.checkArgument(ft.getDType() != DType.Q4, "This should never happen, likely a bug");

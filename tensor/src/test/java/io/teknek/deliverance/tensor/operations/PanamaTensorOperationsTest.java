@@ -79,6 +79,30 @@ public class PanamaTensorOperationsTest {
     }
 
     @Test
+    void quantizeQ4ToF32UsesVectorPath() {
+        FloatBufferTensor source = new FloatBufferTensor(2, 64);
+        for (int row = 0; row < source.shape().first(); row++) {
+            for (int column = 0; column < source.shape().last(); column++) {
+                source.set((row + 1) * (column - 31.5f), row, column);
+            }
+        }
+        Q4ByteBufferTensor q4 = new Q4ByteBufferTensor(source);
+        FloatBufferTensor expected = new FloatBufferTensor(q4);
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
+            PanamaTensorOperations ops = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
+                    Mockito.mock(TensorAllocator.class), pool);
+            AbstractTensor actual = ops.quantize(q4, DType.F32, 0, 64);
+            assertEquals(expected.dType(), actual.dType());
+            assertEquals(expected.shape(), actual.shape());
+            for (int row = 0; row < expected.shape().first(); row++) {
+                for (int column = 0; column < expected.shape().last(); column++) {
+                    assertEquals(expected.get(row, column), actual.get(row, column), 0.0001f);
+                }
+            }
+        }
+    }
+
+    @Test
     void dotProductChunkBf16Q4Test() {
         AbstractTensor a = new FloatBufferTensor(1, 32);
         for (int i = 0; i < 32; i++) {

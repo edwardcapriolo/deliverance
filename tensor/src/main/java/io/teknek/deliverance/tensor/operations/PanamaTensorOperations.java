@@ -2064,7 +2064,7 @@ public final class PanamaTensorOperations implements TensorOperations {
     }
 
     @Override
-    @Efficiency("vector")
+    @Efficiency(Efficiency.Kind.VECTOR)
     public AbstractTensor quantize(AbstractTensor t, DType qtype, int offset, int length) {
         Preconditions.checkArgument(t.dims() == 2);
         if ((t.dType() == DType.BF16 && qtype == DType.F32) || (t.dType() == DType.F32 && qtype == DType.BF16)) {
@@ -2094,8 +2094,40 @@ public final class PanamaTensorOperations implements TensorOperations {
                 case F32 -> quantizeBF16_F32((BFloat16BufferTensor) t, offset, length);
                 default -> throw new UnsupportedOperationException("BF16 => " + qtype);
             };
+            case Q4 -> switch (qtype) {
+                case F32 -> quantizeQ4_F32((Q4ByteBufferTensor) t, offset, length);
+                default -> throw new UnsupportedOperationException("Q4 => " + qtype);
+            };
             default -> throw new UnsupportedOperationException("" + t.dType());
         };
+    }
+
+    public FloatBufferTensor quantizeQ4_F32(Q4ByteBufferTensor qt, final int offset, int length) {
+        Preconditions.checkArgument(offset % Q4ByteBufferTensor.BLOCK_SIZE == 0,
+                "Q4 to F32 conversion must start on a Q4 block boundary");
+        Preconditions.checkArgument(length % Q4ByteBufferTensor.BLOCK_SIZE == 0,
+                "Q4 to F32 conversion length must be a multiple of Q4 block size");
+        FloatBufferTensor output = new FloatBufferTensor(qt.shape());
+        for (int row = 0; row < qt.shape().first(); row++) {
+            for (int column = offset; column < offset + length; column += Q4ByteBufferTensor.BLOCK_SIZE) {
+                ByteVector packed = qt.getVector(ByteVector.SPECIES_128, row, column);
+                FloatVector scale = FloatVector.broadcast(FloatVector.SPECIES_512,
+                        qt.getFactorForIndex(row, column));
+
+                FloatVector low = ((FloatVector) packed.lanewise(VectorOperators.AND, Q4_BYTE_MASK_128)
+                        .sub(Q4_BYTE_SUB_128)
+                        .convertShape(VectorOperators.B2F, FloatVector.SPECIES_512, 0))
+                        .mul(scale);
+                FloatVector high = ((FloatVector) packed.lanewise(VectorOperators.ASHR, Q4_BYTE_SHIFT_128)
+                        .lanewise(VectorOperators.AND, Q4_BYTE_MASK_128)
+                        .sub(Q4_BYTE_SUB_128)
+                        .convertShape(VectorOperators.B2F, FloatVector.SPECIES_512, 0))
+                        .mul(scale);
+                output.intoTensor(low, row, column);
+                output.intoTensor(high, row, column + Q4ByteBufferTensor.HALF_BLOCK);
+            }
+        }
+        return output;
     }
 
     @Override

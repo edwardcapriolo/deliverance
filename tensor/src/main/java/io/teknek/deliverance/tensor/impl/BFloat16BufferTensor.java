@@ -22,7 +22,7 @@ public class BFloat16BufferTensor extends AbstractTensor {
     private final String name;
     private final MemorySegment segment;
 
-    @Efficiency("cursor")
+    @Efficiency(Efficiency.Kind.CURSOR)
     public BFloat16BufferTensor(AbstractTensor ft) {
         this(ft.shape());
         Preconditions.checkArgument(ft.getDType() != DType.BF16, "This should never happen, likely a bug");

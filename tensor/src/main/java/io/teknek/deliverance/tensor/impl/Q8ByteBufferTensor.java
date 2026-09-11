@@ -33,7 +33,7 @@ public class Q8ByteBufferTensor extends AbstractTensor {
     private final String name;
     private final MemorySegment segment;
 
-    @Efficiency("cursor")
+    @Efficiency(Efficiency.Kind.CURSOR)
     public Q8ByteBufferTensor(AbstractTensor ft) {
         this(ft.shape());
         Preconditions.checkArgument(ft.getDType() != DType.I8, "This should never happen, likely a bug");

@@ -9,5 +9,10 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.CONSTRUCTOR, ElementType.METHOD, ElementType.TYPE})
 public @interface Efficiency {
-    String value();
+    Kind value();
+
+    enum Kind {
+        CURSOR,
+        VECTOR
+    }
 }

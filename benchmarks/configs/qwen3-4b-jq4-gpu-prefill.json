@@ -3,7 +3,7 @@
   "workingQuantType": "I8",
   "outputHeadQuantization": "Q4",
   "gpuPrefill": true,
-  "maxBatchSize": 512,
+  "maxPrefillBatchSize": 2048,
   "tensorRuntimeMode": "ENFORCE",
   "kvBufferCache": {
     "maxEntries": 0,
