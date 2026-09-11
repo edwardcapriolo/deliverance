@@ -3,8 +3,9 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+JAR=$(sh "$SCRIPT_DIR/resolve_antares_cli_jar.sh")
 
-java -cp "$SCRIPT_DIR/target/deliverance-antares-cli-0.0.12-SNAPSHOT-all.jar" \
+java -cp "$JAR" \
   io.teknek.deliverance.antares.VulnerabilityLocalizationSmokeBenchmark \
   --case-id showcase-cwe78 \
   --repo "$ROOT_DIR/nanocode-deliverance/showcase-security-repo" \

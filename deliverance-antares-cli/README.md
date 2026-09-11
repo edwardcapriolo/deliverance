@@ -21,7 +21,7 @@ Run the bundled CWE-78 showcase in another terminal:
 Equivalent direct command:
 
 ```bash
-java -jar deliverance-antares-cli/target/deliverance-antares-cli-0.0.12-SNAPSHOT-all.jar \
+java -jar "$(sh deliverance-antares-cli/resolve_antares_cli_jar.sh)" \
   --repo nanocode-deliverance/showcase-security-repo \
   --endpoint http://127.0.0.1:18085/v1 \
   --model antares-1b-JQ4 \
