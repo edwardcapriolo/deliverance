@@ -1,0 +1,7 @@
+label,owner,model,config,tokens,wall_ms,cpu_ms,cpu_util,tok_s
+"qwen06b","edwardcapriolo","Qwen3-0.6B-JQ4","/Users/edward.capriolo/dev/ai-code/del2/benchmarks/configs/qwen3-0.6b-jq4.json",100,1401.336,5611.727,4.004554,71.360
+"qwen06b","edwardcapriolo","Qwen3-0.6B-JQ4","/Users/edward.capriolo/dev/ai-code/del2/benchmarks/configs/qwen3-0.6b-jq4.json",500,8745.310,17054.253,1.950103,57.173
+"qwen4b","edwardcapriolo","Qwen3-4B-JQ4","/Users/edward.capriolo/dev/ai-code/del2/benchmarks/configs/qwen3-4b-jq4.json",100,4707.110,20300.237,4.312675,21.244
+"qwen4b","edwardcapriolo","Qwen3-4B-JQ4","/Users/edward.capriolo/dev/ai-code/del2/benchmarks/configs/qwen3-4b-jq4.json",500,28162.598,87107.855,3.093033,17.754
+"gemma2b","tjake","gemma-2-2b-it-JQ4","",100,3732.463,14510.985,3.887777,26.792
+"gemma2b","tjake","gemma-2-2b-it-JQ4","",500,14497.506,53057.696,3.659781,34.489
