@@ -51,7 +51,7 @@ BF16_TEST := $(OBJ_DIR)/test_bf16_gemm
 GPU_HEADER_TEST := $(OBJ_DIR)/test_gpu_header.o
 TENSOR2_NATIVE_TEST := $(OBJ_DIR)/test_tensor2_native
 
-all: $(LIB)
+all: $(LIB) $(TENSOR2_LIB)
 ifdef CFLAGS2
 all: $(LIB2)
 endif

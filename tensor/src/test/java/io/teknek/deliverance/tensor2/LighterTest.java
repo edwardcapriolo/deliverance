@@ -7,6 +7,7 @@ import io.teknek.deliverance.tensor.TensorShape;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -119,6 +120,54 @@ class LighterTest {
                 Map.of("phase", "test", "ops", "PANAMA"))).getCount());
         assertEquals(0, metricRegistry.meter(new MetricName("tensor2.scale",
                 Map.of("phase", "test", "ops", "NAIVE"))).getCount());
+    }
+
+    @Test
+    void batchDotProductUsesSimdBeforePanama() {
+        MetricRegistry metricRegistry = new MetricRegistry();
+        AtomicBoolean simdUsed = new AtomicBoolean(false);
+        AtomicBoolean panamaUsed = new AtomicBoolean(false);
+        TensorOps simd = new NaiveOps() {
+            @Override
+            public io.teknek.dysfx.Either<OpSupport, Void> batchDotProduct(BatchDotProduct operation) {
+                simdUsed.set(true);
+                return super.batchDotProduct(operation);
+            }
+        };
+        TensorOps panama = new PanamaOps() {
+            @Override
+            public io.teknek.dysfx.Either<OpSupport, Void> batchDotProduct(BatchDotProduct operation) {
+                panamaUsed.set(true);
+                return super.batchDotProduct(operation);
+            }
+        };
+        Lighter lighter = new Lighter(metricRegistry, Map.of(
+                TensorProviderKind.SIMD, simd,
+                TensorProviderKind.PANAMA, panama,
+                TensorProviderKind.NAIVE, new NaiveOps()
+        ));
+        TensorRef a = lighter.allocate(DType.F32, TensorShape.of(1, 2));
+        TensorRef b = lighter.allocate(DType.F32, TensorShape.of(1, 2));
+        TensorRef result = lighter.allocate(DType.F32, TensorShape.of(1, 1));
+        a.underlying().set(2.0f, 0, 0);
+        a.underlying().set(3.0f, 0, 1);
+        b.underlying().set(5.0f, 0, 0);
+        b.underlying().set(7.0f, 0, 1);
+
+        lighter.batchDotProduct(new BatchDotProduct()
+                .result(result)
+                .a(a)
+                .b(b)
+                .columnLength(2)
+                .rowChunkSize(1), Map.of("phase", "test"));
+
+        assertEquals(31.0f, result.underlying().get(0, 0));
+        assertEquals(true, simdUsed.get());
+        assertEquals(false, panamaUsed.get());
+        assertEquals(1, metricRegistry.meter(new MetricName("tensor2.batch_dot_product",
+                Map.of("phase", "test", "ops", "SIMD"))).getCount());
+        assertEquals(0, metricRegistry.meter(new MetricName("tensor2.batch_dot_product",
+                Map.of("phase", "test", "ops", "PANAMA"))).getCount());
     }
 
     private static Lighter lighterWithUnsupportedSimd(MetricRegistry metricRegistry) {

@@ -59,6 +59,62 @@ class PanamaOps implements TensorOps {
     }
 
     @Override
+    public Either<OpSupport, Void> batchDotProduct(BatchDotProduct operation) {
+        TensorRef result = operation.result();
+        TensorRef a = operation.a();
+        TensorRef b = operation.b();
+        if (result.dType() != DType.F32 || a.dType() != DType.F32 || b.dType() != DType.F32) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        new F32BatchDotProductGemmer(operation).matmul();
+        return Either.Right(null);
+    }
+
+    private static final class F32BatchDotProductGemmer {
+        private final BatchDotProduct operation;
+
+        private F32BatchDotProductGemmer(BatchDotProduct operation) {
+            this.operation = operation;
+        }
+
+        private void matmul() {
+            TensorRef result = operation.result();
+            TensorRef a = operation.a();
+            TensorRef b = operation.b();
+            Tensor resultTensor = result.underlying();
+            Tensor aTensor = a.underlying();
+            Tensor bTensor = b.underlying();
+            int bEnd = operation.bRowOffset() + operation.rowChunkSize();
+            for (int resultRow = 0; resultRow < result.shape().first(); resultRow++) {
+                int aRow = operation.aRowOffset() + resultRow;
+                for (int bRow = operation.bRowOffset(); bRow < bEnd; bRow++) {
+                    resultTensor.set(dot(a, b, aTensor, bTensor, aRow, bRow), resultRow,
+                            bRow + operation.resultRowOffset());
+                }
+            }
+        }
+
+        private float dot(TensorRef a, TensorRef b, Tensor aTensor, Tensor bTensor, int aRow, int bRow) {
+            FloatVector acc = FloatVector.zero(F32_SPECIES);
+            int k = 0;
+            int upperBound = F32_SPECIES.loopBound(operation.columnLength());
+            for (; k < upperBound; k += F32_SPECIES.length()) {
+                FloatVector av = FloatVector.fromMemorySegment(F32_SPECIES, aTensor.getMemorySegment(),
+                        memoryOffset(a, aRow, operation.aColumnOffset() + k), ByteOrder.LITTLE_ENDIAN);
+                FloatVector bv = FloatVector.fromMemorySegment(F32_SPECIES, bTensor.getMemorySegment(),
+                        memoryOffset(b, bRow, operation.bColumnOffset() + k), ByteOrder.LITTLE_ENDIAN);
+                acc = av.fma(bv, acc);
+            }
+            float sum = acc.reduceLanes(VectorOperators.ADD);
+            for (; k < operation.columnLength(); k++) {
+                sum += aTensor.get(aRow, operation.aColumnOffset() + k)
+                        * bTensor.get(bRow, operation.bColumnOffset() + k);
+            }
+            return sum;
+        }
+    }
+
+    @Override
     public Either<OpSupport, Void> scale(float factor, TensorRef target, int offset, int length) {
         Preconditions.checkArgument(offset >= 0 && length >= 0 && offset + length <= target.shape().last());
         if (target.dType() == DType.F32) {

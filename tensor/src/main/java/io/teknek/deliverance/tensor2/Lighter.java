@@ -34,6 +34,11 @@ public class Lighter {
         this.tensorOperations.putAll(tensorOperations);
     }
 
+    public void putTensorOperations(TensorProviderKind kind, TensorOps ops) {
+        tensorOperations.put(java.util.Objects.requireNonNull(kind, "kind"),
+                java.util.Objects.requireNonNull(ops, "ops"));
+    }
+
     public TensorRef allocate(DType dType, TensorShape shape) {
         return allocator.allocate(dType, shape, "cpu");
     }
@@ -72,6 +77,52 @@ public class Lighter {
             }
         }
         throw new IllegalStateException("No tensor operations support multiplyAccumulate");
+    }
+
+    public void batchDotProduct(BatchDotProduct operation) {
+        batchDotProduct(operation, Map.of());
+    }
+
+    public void batchDotProduct(BatchDotProduct operation, Map<String, String> tags) {
+        TensorRef result = operation.result();
+        TensorRef a = operation.a();
+        TensorRef b = operation.b();
+        Preconditions.checkArgument(result != null, "Result tensor must be set");
+        Preconditions.checkArgument(a != null, "A tensor must be set");
+        Preconditions.checkArgument(b != null, "B tensor must be set");
+        Preconditions.checkArgument(result.device().equals(a.device()) && result.device().equals(b.device()),
+                "Tensors must be on the same device");
+        Preconditions.checkArgument(result.dType() == DType.F32, "Batch dot output must be F32");
+        Preconditions.checkArgument(result.dims() == 2 && a.dims() == 2 && b.dims() == 2,
+                "Batch dot requires 2D tensors");
+        Preconditions.checkArgument(operation.aRowOffset() >= 0
+                && operation.aRowOffset() + result.shape().first() <= a.shape().first(),
+                "A row window is out of bounds");
+        Preconditions.checkArgument(operation.aColumnOffset() >= 0 && operation.bColumnOffset() >= 0
+                && operation.columnLength() >= 0
+                && operation.aColumnOffset() + operation.columnLength() <= a.shape().last()
+                && operation.bColumnOffset() + operation.columnLength() <= b.shape().last(),
+                "Column window is out of bounds");
+        Preconditions.checkArgument(operation.bRowOffset() >= 0 && operation.rowChunkSize() >= 0
+                && operation.bRowOffset() + operation.rowChunkSize() <= b.shape().first(),
+                "B row window is out of bounds");
+        Preconditions.checkArgument(operation.resultRowOffset() >= 0
+                && operation.resultRowOffset() + operation.bRowOffset() + operation.rowChunkSize()
+                <= result.shape().last(), "Result row offset is out of bounds");
+
+        for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
+            Map<String, String> metricTags = new HashMap<>(tags);
+            metricTags.put("ops", entry.getKey().name());
+            metricRegistry.meter(new MetricName("tensor2.batch_dot_product", metricTags)).mark();
+            Timer timer = metricRegistry.timer(new MetricName("tensor2.batch_dot_product.time", metricTags));
+            long startNanos = System.nanoTime();
+            Either<OpSupport, Void> outcome = entry.getValue().batchDotProduct(operation);
+            if (outcome.isRight()) {
+                timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+                return;
+            }
+        }
+        throw new IllegalStateException("No tensor operations support batchDotProduct");
     }
 
     public void scale(Scale scale) {
