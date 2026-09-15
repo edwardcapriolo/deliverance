@@ -56,6 +56,7 @@ Generation:
 - [Quantize On Demand](core/quantize_on_demand.md) Explains local Q4 model generation, cache reuse, and provenance files
 - [Benchmarking](core/benchmarking.md) Explains benchmark scripts, profile output, CSV/JSONL artifacts, and QOD benchmark workflow
 - [Tuning with InferenceProfiler](core/tuning_with_inference_profiler.md) Walks through finding a Qwen4B hotspot, fusing activation/multiply/quantize, and validating Java/native wins
+- [Lighter and Tensor2](core/lighter_tensor2.md) Explains the explicit tensor2 provider model, SIMD batch-dot path, and Qwen prefill win
 - [Tensor engines and JQ4](core/tensor_engines_and_jq4.md) Explains why tensor kernels, safetensors, and Q4 layout matter for local inference
 - [TensorPlan](tensor/tensor_plan.md) Documents the lazy tensor workflow, ownership model, ASCII plans, and MLP fusion replay benchmark
 - [JQ4 tensor format](core/jq4_tensor_format.md) Documents Deliverance's Q4 tensor representation and sidecar scale tensors

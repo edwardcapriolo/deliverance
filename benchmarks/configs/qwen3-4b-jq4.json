@@ -1,6 +1,6 @@
 {
   "outputHeadQuantization": "Q4",
-  "maxPrefillBatchSize": 2048,
+  "maxPrefillBatchSize": 512,
   "tensorRuntimeMode": "DISABLED",
   "groupedDecodeQkvSplitSize": 8,
   "parallelSplitSizeFixed": {

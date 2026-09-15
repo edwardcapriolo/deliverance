@@ -64,11 +64,12 @@ public class ArrayQueueTensorAllocator implements TensorAllocator {
             case Q4 -> new Q4ByteBufferTensor(shape);
             default -> throw new RuntimeException("Unsupported tensor type: " + dType);
         };
-        if (currentBytes.addAndGet(t.size()) < bytesCapacity) {
+        long bytes = t.size() * t.dType().size();
+        if (currentBytes.addAndGet(bytes) < bytesCapacity) {
             t.setOwnerCache(this);
         } else {
             cacheFull.mark();
-            currentBytes.addAndGet(-t.size());
+            currentBytes.addAndGet(-bytes);
         }
         return t;
     }

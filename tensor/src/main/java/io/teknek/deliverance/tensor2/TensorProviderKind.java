@@ -1,6 +1,6 @@
 package io.teknek.deliverance.tensor2;
 
-enum TensorProviderKind {
+public enum TensorProviderKind {
     GPU,
     SIMD,
     PANAMA,

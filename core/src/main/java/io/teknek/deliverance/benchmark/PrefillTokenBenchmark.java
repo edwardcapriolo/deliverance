@@ -62,8 +62,21 @@ public final class PrefillTokenBenchmark {
         OperatingSystemMXBean os = (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
         long cpuStart = os.getProcessCpuTime();
         long wallStart = System.nanoTime();
-        try (AbstractTensor output = model.batchForward(tokenIds, 0)) {
-            // The returned final hidden state is intentionally unused; this benchmark measures prefill only.
+        try (AutoCloseable ignored = AbstractModel.withPrefillProgressListener(event -> {
+            long cpuNanos = os.getProcessCpuTime() - cpuStart;
+            double cpuMs = cpuNanos / 1_000_000.0d;
+            double cpuUtil = event.elapsedSeconds() == 0.0d ? 0.0d
+                    : cpuNanos / (event.elapsedSeconds() * 1_000_000_000.0d);
+            System.out.printf(Locale.ROOT,
+                    "[prefill-token-progress] label=%s model=%s/%s tokens=%d/%d chunk=%d-%d layers=%d/%d elapsed=%.1fs eta=%s rate=%.1f tok/s cpu_ms=%.1f cpu_util=%.3f%n",
+                    options.label, options.owner, options.model, event.estimatedProcessedTokens(),
+                    event.totalTokens(), event.chunkStartPosition(), event.chunkEndPosition(),
+                    event.processedLayers(), event.totalLayers(), event.elapsedSeconds(),
+                    seconds(event.remainingSeconds()), event.tokensPerSecond(), cpuMs, cpuUtil);
+        })) {
+            try (AbstractTensor output = model.batchForward(tokenIds, 0)) {
+                // The returned final hidden state is intentionally unused; this benchmark measures prefill only.
+            }
         }
         long wallNanos = System.nanoTime() - wallStart;
         long cpuNanos = os.getProcessCpuTime() - cpuStart;
@@ -81,6 +94,13 @@ public final class PrefillTokenBenchmark {
             InferenceProfiler.printCounters();
         }
         appendCsv(options, tokenCount, wallMs, cpuMs, cpuUtil, tokPerSecond);
+    }
+
+    private static String seconds(double seconds) {
+        if (!Double.isFinite(seconds)) {
+            return "unknown";
+        }
+        return String.format(Locale.ROOT, "%.1fs", seconds);
     }
 
     private static int[] deterministicTokens(int tokenCount, int vocabularySize) {

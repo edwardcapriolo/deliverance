@@ -58,6 +58,7 @@ import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.tensorlib.TensorRuntime;
 import io.teknek.deliverance.tensorlib.TensorRuntimeMode;
 import io.teknek.deliverance.tensorlib.TensorRuntimeNative;
+import io.teknek.deliverance.tensor2.TensorOps;
 import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
 import io.teknek.deliverance.toolcallparser.LlamaToolCallParser;
 import io.teknek.deliverance.toolcallparser.QwenToolCallParser;
@@ -628,9 +629,28 @@ public class AutoModelForCausaLm {
             if (!tensorProviderExplicit) {
                 model.addTensorOperations(hydrateTensorOperations());
             }
+            installNativeTensor2Ops(model);
             logBuilderState(model);
             model.init();
             return model;
+        }
+
+        private void installNativeTensor2Ops(AbstractModel model) {
+            nativeTensor2Ops().ifPresent(ops -> model.getLighter().putTensorOperations(
+                    io.teknek.deliverance.tensor2.TensorProviderKind.SIMD, ops));
+        }
+
+        private Optional<TensorOps> nativeTensor2Ops() {
+            try {
+                Class<?> nativeOpsClass = Class.forName("io.teknek.deliverance.tensor2.NativeOps");
+                boolean available = (Boolean) nativeOpsClass.getMethod("isAvailable").invoke(null);
+                if (!available) {
+                    return Optional.empty();
+                }
+                return Optional.of((TensorOps) nativeOpsClass.getConstructor().newInstance());
+            } catch (ReflectiveOperationException | LinkageError e) {
+                return Optional.empty();
+            }
         }
 
         private void logBuilderState(AbstractModel model) {

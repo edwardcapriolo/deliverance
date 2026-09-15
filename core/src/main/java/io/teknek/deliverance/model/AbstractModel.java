@@ -101,6 +101,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     private static final int[] ADAPTIVE_PREFILL_BATCH_SIZE_CANDIDATES = { 256, 512, 1024, 2048 };
     private static final long PREFILL_PROGRESS_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(3);
     private static final ThreadLocal<PrefillProgress> PREFILL_PROGRESS = new ThreadLocal<>();
+    private static final ThreadLocal<Consumer<PrefillProgressEvent>> PREFILL_PROGRESS_LISTENER = new ThreadLocal<>();
 
     private static final class PrefillProgress {
         private final int totalTokens;
@@ -116,6 +117,23 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
             this.startNanos = startNanos;
             this.nextLogNanos = startNanos + PREFILL_PROGRESS_INTERVAL_NANOS;
         }
+    }
+
+    public record PrefillProgressEvent(int estimatedProcessedTokens, int totalTokens, int chunkStartPosition,
+            int chunkEndPosition, int processedLayers, int totalLayers, double elapsedSeconds,
+            double remainingSeconds, double tokensPerSecond) {
+    }
+
+    public static AutoCloseable withPrefillProgressListener(Consumer<PrefillProgressEvent> listener) {
+        Consumer<PrefillProgressEvent> previous = PREFILL_PROGRESS_LISTENER.get();
+        PREFILL_PROGRESS_LISTENER.set(Objects.requireNonNull(listener, "listener"));
+        return () -> {
+            if (previous == null) {
+                PREFILL_PROGRESS_LISTENER.remove();
+            } else {
+                PREFILL_PROGRESS_LISTENER.set(previous);
+            }
+        };
     }
 
     public enum GenerationDebugEventType {
@@ -1514,6 +1532,13 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
                 : (progress.totalTokens - estimatedProcessedTokens) / tokensPerSecond;
         int chunkStartPosition = progress.startPos + progress.chunkStart;
         int chunkEndPosition = chunkStartPosition + progress.chunkTokens - 1;
+        PrefillProgressEvent event = new PrefillProgressEvent(estimatedProcessedTokens, progress.totalTokens,
+                chunkStartPosition, chunkEndPosition, processedLayers, totalLayers, elapsedSeconds, remainingSeconds,
+                tokensPerSecond);
+        Consumer<PrefillProgressEvent> listener = PREFILL_PROGRESS_LISTENER.get();
+        if (listener != null) {
+            listener.accept(event);
+        }
         logger.info("prefill progress tokens={}/{} chunk={}-{} layers={}/{} elapsed={} eta={} rate={} tok/s",
                 estimatedProcessedTokens,
                 progress.totalTokens,
