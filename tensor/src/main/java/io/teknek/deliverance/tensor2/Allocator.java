@@ -27,7 +27,8 @@ class Allocator {
             // TODO: evict or repurpose unused tensors from other shape pools when retained memory grows too large.
             tensor = dType == DType.F32 ? new F32Tensor(shape) : new BF16Tensor(shape);
         }
-        return new TensorRef(new TensorRefState(LeaseState.USED, this, tensor, shape, dType, stride(shape), device, null));
+        return new TensorRef(new TensorRefState(LeaseState.USED, this, tensor, shape, dType, stride(shape), device,
+                java.util.Map.of(), null));
     }
 
     void close(TensorRefState state) {

@@ -77,7 +77,7 @@ class PanamaOpsTest {
         Allocator allocator = new Allocator();
         TensorRef a = allocator.allocate(DType.F32, TensorShape.of(1, 3));
         TensorRef b = new TensorRef(new TensorRefState(LeaseState.USED, allocator, a.underlying(),
-                TensorShape.of(1, 3), DType.BF16, 0, "cpu", null));
+                TensorShape.of(1, 3), DType.BF16, 0, "cpu", java.util.Map.of(), null));
 
         Either<OpSupport, Void> result = new PanamaOps().multiplyAccumulate(a, b, 0, 3);
 
