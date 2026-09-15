@@ -1,0 +1,3 @@
+label,owner,model,config,tokens,wall_ms,cpu_ms,cpu_util,tok_s
+"qwen4b-i8-kv","edwardcapriolo","Qwen3-4B-JQ4","/Users/edward.capriolo/dev/ai-code/del2/benchmarks/configs/qwen3-4b-jq4-i8-kv-prefill-smoke.json",100,4210.578,20324.328,4.826969,23.750
+"qwen4b-i8-kv","edwardcapriolo","Qwen3-4B-JQ4","/Users/edward.capriolo/dev/ai-code/del2/benchmarks/configs/qwen3-4b-jq4-i8-kv-prefill-smoke.json",500,36490.926,292107.463,8.004934,13.702

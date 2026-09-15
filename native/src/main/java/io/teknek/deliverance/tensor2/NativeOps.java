@@ -5,6 +5,8 @@ import io.teknek.deliverance.tensor.operations.tensor2native.Tensor2Native;
 import io.teknek.deliverance.tensor.operations.util.JarSupport;
 import io.teknek.dysfx.Either;
 
+import java.lang.foreign.MemorySegment;
+
 public class NativeOps implements TensorOps {
     private static final boolean loaded = loadOnce();
 
@@ -49,7 +51,14 @@ public class NativeOps implements TensorOps {
         TensorRef result = operation.result();
         TensorRef a = operation.a();
         TensorRef b = operation.b();
-        if (result.dType() != DType.F32 || a.dType() != DType.F32 || b.dType() != DType.F32) {
+        if (result.dType() != DType.F32 || a.dType() != DType.F32) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        TensorRef q8Scale = Q8Layout.scale(b);
+        if (b.dType() == DType.I8 && q8Scale != null && q8Aligned(operation)) {
+            return batchDotProductF32Q8(operation, q8Scale);
+        }
+        if (b.dType() != DType.F32) {
             return Either.Left(OpSupport.Unsupported);
         }
         int status = Tensor2Native.tensor2_batch_dot_f32_f32(
@@ -68,5 +77,37 @@ public class NativeOps implements TensorOps {
                 a.stride(),
                 b.stride());
         return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
+    }
+
+    private Either<OpSupport, Void> batchDotProductF32Q8(BatchDotProduct operation, TensorRef q8Scale) {
+        TensorRef result = operation.result();
+        TensorRef a = operation.a();
+        TensorRef b = operation.b();
+        MemorySegment resultSegment = result.underlying().getMemorySegment()
+                .asSlice(memoryOffset(result, 0, operation.resultRowOffset() + operation.bRowOffset()));
+        MemorySegment aSegment = a.underlying().getMemorySegment()
+                .asSlice(memoryOffset(a, operation.aRowOffset(), operation.aColumnOffset()));
+        MemorySegment bSegment = b.underlying().getMemorySegment()
+                .asSlice(memoryOffset(b, operation.bRowOffset(), operation.bColumnOffset()));
+        MemorySegment bScales = q8Scale.underlying().getMemorySegment().asSlice(memoryOffset(q8Scale,
+                operation.bRowOffset(), Q8Layout.scaleColumn(operation.bColumnOffset())));
+        try {
+            int status = Tensor2Native.tensor2_batch_dot_f32_q8(resultSegment, aSegment, bSegment, bScales,
+                    (int) result.shape().first(), operation.rowChunkSize(), operation.columnLength(),
+                    result.stride(), a.stride(), b.stride(), q8Scale.stride());
+            return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
+        } catch (LinkageError | RuntimeException e) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+    }
+
+    private static boolean q8Aligned(BatchDotProduct operation) {
+        return operation.aColumnOffset() % Q8Layout.BLOCK_SIZE == 0
+                && operation.bColumnOffset() % Q8Layout.BLOCK_SIZE == 0
+                && operation.columnLength() % Q8Layout.BLOCK_SIZE == 0;
+    }
+
+    private static long memoryOffset(TensorRef tensor, int row, int column) {
+        return tensor.underlying().getMemorySegmentOffset(tensor.shape().getOffset(row, column));
     }
 }

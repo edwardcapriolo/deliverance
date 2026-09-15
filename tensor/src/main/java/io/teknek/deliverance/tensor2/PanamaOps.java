@@ -3,6 +3,7 @@ package io.teknek.deliverance.tensor2;
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.DType;
 import io.teknek.dysfx.Either;
+import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.IntVector;
 import jdk.incubator.vector.ShortVector;
@@ -14,6 +15,8 @@ import java.nio.ByteOrder;
 
 class PanamaOps implements TensorOps {
     private static final VectorSpecies<Float> F32_SPECIES = FloatVector.SPECIES_PREFERRED;
+    private static final VectorSpecies<Byte> Q8_BYTE_SPECIES = ByteVector.SPECIES_128;
+    private static final VectorSpecies<Float> Q8_FLOAT_SPECIES = FloatVector.SPECIES_512;
     private static final IntVector BF16_BYTE_SHIFT_256 = IntVector.broadcast(IntVector.SPECIES_256, 16);
 
     @Override
@@ -63,11 +66,25 @@ class PanamaOps implements TensorOps {
         TensorRef result = operation.result();
         TensorRef a = operation.a();
         TensorRef b = operation.b();
-        if (result.dType() != DType.F32 || a.dType() != DType.F32 || b.dType() != DType.F32) {
+        if (result.dType() != DType.F32 || a.dType() != DType.F32) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        TensorRef q8Scale = Q8Layout.scale(b);
+        if (b.dType() == DType.I8 && q8Scale != null && q8Aligned(operation)) {
+            new F32Q8BatchDotProductGemmer(operation, q8Scale).matmul();
+            return Either.Right(null);
+        }
+        if (b.dType() != DType.F32) {
             return Either.Left(OpSupport.Unsupported);
         }
         new F32BatchDotProductGemmer(operation).matmul();
         return Either.Right(null);
+    }
+
+    private static boolean q8Aligned(BatchDotProduct operation) {
+        return operation.aColumnOffset() % Q8Layout.BLOCK_SIZE == 0
+                && operation.bColumnOffset() % Q8Layout.BLOCK_SIZE == 0
+                && operation.columnLength() % Q8Layout.BLOCK_SIZE == 0;
     }
 
     private static final class F32BatchDotProductGemmer {
@@ -111,6 +128,62 @@ class PanamaOps implements TensorOps {
                         * bTensor.get(bRow, operation.bColumnOffset() + k);
             }
             return sum;
+        }
+    }
+
+    private static final class F32Q8BatchDotProductGemmer {
+        private final BatchDotProduct operation;
+        private final TensorRef q8Scale;
+
+        private F32Q8BatchDotProductGemmer(BatchDotProduct operation, TensorRef q8Scale) {
+            this.operation = operation;
+            this.q8Scale = q8Scale;
+        }
+
+        private void matmul() {
+            TensorRef result = operation.result();
+            TensorRef a = operation.a();
+            TensorRef b = operation.b();
+            Tensor resultTensor = result.underlying();
+            Tensor aTensor = a.underlying();
+            Tensor bTensor = b.underlying();
+            int bEnd = operation.bRowOffset() + operation.rowChunkSize();
+            for (int resultRow = 0; resultRow < result.shape().first(); resultRow++) {
+                int aRow = operation.aRowOffset() + resultRow;
+                for (int bRow = operation.bRowOffset(); bRow < bEnd; bRow++) {
+                    resultTensor.set(dot(a, b, aTensor, bTensor, aRow, bRow), resultRow,
+                            bRow + operation.resultRowOffset());
+                }
+            }
+        }
+
+        private float dot(TensorRef a, TensorRef b, Tensor aTensor, Tensor bTensor, int aRow, int bRow) {
+            FloatVector acc0 = FloatVector.zero(Q8_FLOAT_SPECIES);
+            FloatVector acc1 = FloatVector.zero(Q8_FLOAT_SPECIES);
+            int aColumn = operation.aColumnOffset();
+            int bColumn = operation.bColumnOffset();
+            int end = operation.aColumnOffset() + operation.columnLength();
+            for (; aColumn < end; aColumn += Q8Layout.BLOCK_SIZE, bColumn += Q8Layout.BLOCK_SIZE) {
+                FloatVector scale = FloatVector.broadcast(Q8_FLOAT_SPECIES,
+                        q8Scale.underlying().get(bRow, Q8Layout.scaleColumn(bColumn)));
+                long bOffset0 = memoryOffset(b, bRow, bColumn);
+                long bOffset1 = memoryOffset(b, bRow, bColumn + Q8Layout.BLOCK_SIZE / 2);
+                ByteVector bytes0 = ByteVector.fromMemorySegment(Q8_BYTE_SPECIES, bTensor.getMemorySegment(),
+                        bOffset0, ByteOrder.LITTLE_ENDIAN);
+                ByteVector bytes1 = ByteVector.fromMemorySegment(Q8_BYTE_SPECIES, bTensor.getMemorySegment(),
+                        bOffset1, ByteOrder.LITTLE_ENDIAN);
+                FloatVector bv0 = ((FloatVector) bytes0.convertShape(VectorOperators.B2F, Q8_FLOAT_SPECIES, 0))
+                        .mul(scale);
+                FloatVector bv1 = ((FloatVector) bytes1.convertShape(VectorOperators.B2F, Q8_FLOAT_SPECIES, 0))
+                        .mul(scale);
+                FloatVector av0 = FloatVector.fromMemorySegment(Q8_FLOAT_SPECIES, aTensor.getMemorySegment(),
+                        memoryOffset(a, aRow, aColumn), ByteOrder.LITTLE_ENDIAN);
+                FloatVector av1 = FloatVector.fromMemorySegment(Q8_FLOAT_SPECIES, aTensor.getMemorySegment(),
+                        memoryOffset(a, aRow, aColumn + Q8Layout.BLOCK_SIZE / 2), ByteOrder.LITTLE_ENDIAN);
+                acc0 = av0.fma(bv0, acc0);
+                acc1 = av1.fma(bv1, acc1);
+            }
+            return acc0.add(acc1).reduceLanes(VectorOperators.ADD);
         }
     }
 

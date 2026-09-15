@@ -1,0 +1,20 @@
+{
+  "outputHeadQuantization": "Q4",
+  "maxPrefillBatchSize": 512,
+  "tensorRuntimeMode": "DISABLED",
+  "groupedDecodeQkvSplitSize": 8,
+  "parallelSplitSizeFixed": {
+    "SIMD": 32
+  },
+  "kvBufferCache": {
+    "maxEntries": 10000,
+    "blockSize": 32,
+    "maxPrefixTokensPerPrompt": 8192,
+    "prefixCheckpointPolicy": "START_AND_END",
+    "maxPrefixCheckpointsPerPrompt": 4,
+    "contextRowsPerPageTarget": 32,
+    "kvBlockStoragePolicy": "DENSE",
+    "kvKeyDType": "I8",
+    "kvValueDType": "I8"
+  }
+}

@@ -83,9 +83,9 @@ class LighterTest {
         TensorRef f32A = lighter.allocate(DType.F32, TensorShape.of(1, 1));
         TensorRef f32B = lighter.allocate(DType.F32, TensorShape.of(1, 1));
         TensorRef a = new TensorRef(new TensorRefState(LeaseState.USED, null, f32A.underlying(), f32A.shape(),
-                DType.BF16, f32A.stride(), f32A.device(), null));
+                DType.BF16, f32A.stride(), f32A.device(), Map.of(), null));
         TensorRef b = new TensorRef(new TensorRefState(LeaseState.USED, null, f32B.underlying(), f32B.shape(),
-                DType.BF16, f32B.stride(), f32B.device(), null));
+                DType.BF16, f32B.stride(), f32B.device(), Map.of(), null));
         a.underlying().set(2.0f, 0, 0);
         b.underlying().set(3.0f, 0, 0);
 

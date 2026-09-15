@@ -3,10 +3,12 @@ package io.teknek.deliverance.tensor2;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import io.teknek.dysfx.exception.UnreachableException;
 
 import java.lang.foreign.MemorySegment;
 
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class TensorRef implements AutoCloseable {
@@ -18,6 +20,13 @@ public class TensorRef implements AutoCloseable {
     }
 
     public static TensorRef borrowed(AbstractTensor tensor) {
+        Map<String, TensorRef> sidecars = tensor instanceof Q8ByteBufferTensor q8
+                ? Map.of(Q8Layout.SCALE_SIDECAR, borrowed(q8.getBlockF()))
+                : Map.of();
+        return borrowed(tensor, sidecars);
+    }
+
+    private static TensorRef borrowed(AbstractTensor tensor, Map<String, TensorRef> sidecars) {
         return new TensorRef(new TensorRefState(LeaseState.USED, null, new Tensor() {
             @Override
             public float get(int... dims) {
@@ -48,7 +57,7 @@ public class TensorRef implements AutoCloseable {
             public int getMemorySegmentOffset(int offset) {
                 return tensor.getMemorySegmentOffset(offset);
             }
-        }, tensor.shape(), tensor.dType(), tensor.getStride(), "cpu", null));
+        }, tensor.shape(), tensor.dType(), tensor.getStride(), "cpu", sidecars, null));
     }
 
     private TensorRefState requireOpen() {
@@ -75,6 +84,10 @@ public class TensorRef implements AutoCloseable {
         return requireOpen().stride();
     }
 
+    TensorRef sidecar(String name) {
+        return requireOpen().sidecars().get(name);
+    }
+
     public TensorShape getShape(){
         return requireOpen().shape();
     }
@@ -94,6 +107,7 @@ public class TensorRef implements AutoCloseable {
         if (!state.compareAndSet(current, closed)) {
             throw new UnreachableException("Double close on tensor");
         }
+        current.sidecars().values().forEach(TensorRef::close);
         if (current.allocator() != null) {
             current.allocator().close(current);
         }

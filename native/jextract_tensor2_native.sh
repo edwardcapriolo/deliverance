@@ -21,4 +21,9 @@ cd "$HEADER_DIR"
   -I "$HEADER_DIR" \
   -l deliverance_tensor2 \
   --header-class-name Tensor2Native \
+  --include-function tensor2_batch_dot_f32_f32 \
+  --include-function tensor2_batch_dot_f32_q8 \
+  --include-typedef tensor2_status \
+  --include-constant TENSOR2_OK \
+  --include-constant TENSOR2_UNSUPPORTED \
   tensor2_native.h

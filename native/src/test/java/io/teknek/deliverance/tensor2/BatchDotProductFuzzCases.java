@@ -49,6 +49,39 @@ final class BatchDotProductFuzzCases {
         return cases.stream().map(Arguments::of);
     }
 
+    static Stream<Arguments> q8Cases() {
+        List<Case> cases = new ArrayList<>();
+        int id = 0;
+        int[] resultRows = {1, 2, 3, 5, 8};
+        int[] bRows = {1, 2, 3, 5, 8, 16, 31, 64};
+        int[] columns = {32, 64, 96, 128, 256};
+        int[] columnOffsets = {0, 32, 64};
+        for (int rows : resultRows) {
+            for (int bRowCount : bRows) {
+                for (int k : columns) {
+                    int aColumnOffset = columnOffsets[id % columnOffsets.length];
+                    int bColumnOffset = columnOffsets[(id + 1) % columnOffsets.length];
+                    int bRowOffset = id % 3;
+                    int resultRowOffset = id % 2;
+                    cases.add(new Case("q8_fixed_rows_" + rows + "_brows_" + bRowCount + "_k_" + k,
+                            rows, id % 5, aColumnOffset, bColumnOffset, k, resultRowOffset,
+                            bRowOffset, bRowCount, id++));
+                }
+            }
+        }
+        Random random = new Random(SEED ^ 0x51deca5eL);
+        for (int i = 0; i < 96; i++) {
+            int rows = resultRows[random.nextInt(resultRows.length)];
+            int k = columns[random.nextInt(columns.length)];
+            int aColumnOffset = columnOffsets[random.nextInt(columnOffsets.length)];
+            int bColumnOffset = columnOffsets[random.nextInt(columnOffsets.length)];
+            int rowChunkSize = bRows[random.nextInt(bRows.length)];
+            cases.add(new Case("q8_fuzz_" + i, rows, random.nextInt(6), aColumnOffset, bColumnOffset, k,
+                    random.nextInt(4), random.nextInt(5), rowChunkSize, random.nextInt()));
+        }
+        return cases.stream().map(Arguments::of);
+    }
+
     record Case(String name, int resultRows, int aRowOffset, int aColumnOffset, int bColumnOffset,
             int columnLength, int resultRowOffset, int bRowOffset, int rowChunkSize, int seed) {
         int aRows() {

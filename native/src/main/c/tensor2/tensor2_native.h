@@ -1,6 +1,8 @@
 #ifndef TENSOR2_NATIVE_H
 #define TENSOR2_NATIVE_H
 
+#include <stdint.h>
+
 typedef enum tensor2_status {
     TENSOR2_OK = 0,
     TENSOR2_UNSUPPORTED = 1
@@ -21,5 +23,18 @@ tensor2_status tensor2_batch_dot_f32_f32(
         int result_stride,
         int a_stride,
         int b_stride);
+
+tensor2_status tensor2_batch_dot_f32_q8(
+        float *result,
+        const float *a,
+        const int8_t *b,
+        const float *b_scales,
+        int result_rows,
+        int b_rows,
+        int column_length,
+        int result_stride,
+        int a_stride,
+        int b_stride,
+        int b_scale_stride);
 
 #endif
