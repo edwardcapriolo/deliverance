@@ -87,6 +87,25 @@
             </argLine>
           </configuration>
         </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-failsafe-plugin</artifactId>
+          <version>${surefire.version}</version>
+          <configuration>
+            <includes>
+              <include>**/*IT.java</include>
+            </includes>
+            <excludedGroups>${excludedITGroups}</excludedGroups>
+            <argLine>
+              -XX:-UseCompactObjectHeaders
+              --add-opens java.base/java.nio=ALL-UNNAMED
+              --add-modules jdk.incubator.vector
+              -Djdk.attach.allowAttachSelf=true
+              --enable-native-access=ALL-UNNAMED
+              -Djava.library.path=${build.directory}/native-lib-only/${os.detected.classifier}
+            </argLine>
+          </configuration>
+        </plugin>
 
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>

@@ -47,7 +47,17 @@ class Tensor2LighterMultiplyFuzzTest {
                 TensorProviderKind.PANAMA, new PanamaOps(),
                 TensorProviderKind.NAIVE, new NaiveOps())));
         Candidate simd = new Candidate("SIMD", false, new Lighter(nullMetricRegistry(), Map.of(
-                TensorProviderKind.SIMD, (a, b, offset, length) -> Either.Left(OpSupport.Unsupported),
+                TensorProviderKind.SIMD, new TensorOps() {
+                    @Override
+                    public Either<OpSupport, Void> multiplyAccumulate(TensorRef a, TensorRef b, int offset, int length) {
+                        return Either.Left(OpSupport.Unsupported);
+                    }
+
+                    @Override
+                    public Either<OpSupport, Void> scale(float factor, TensorRef target, int offset, int length) {
+                        return Either.Left(OpSupport.Unsupported);
+                    }
+                },
                 TensorProviderKind.PANAMA, new PanamaOps(),
                 TensorProviderKind.NAIVE, new NaiveOps())));
         return MultiplyAccumulateFuzzCases.cases()

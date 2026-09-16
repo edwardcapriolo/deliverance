@@ -79,6 +79,11 @@ public class NativeOps implements TensorOps {
         return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
     }
 
+    @Override
+    public Either<OpSupport, Void> scale(float factor, TensorRef target, int offset, int length) {
+        return Either.Left(OpSupport.Unsupported);
+    }
+
     private Either<OpSupport, Void> batchDotProductF32Q8(BatchDotProduct operation, TensorRef q8Scale) {
         TensorRef result = operation.result();
         TensorRef a = operation.a();
