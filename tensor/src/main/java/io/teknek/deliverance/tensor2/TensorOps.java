@@ -9,7 +9,5 @@ public interface TensorOps {
           return Either.Left(OpSupport.Unsupported);
      }
 
-     default Either<OpSupport, Void> scale(float factor, TensorRef target, int offset, int length) {
-          return Either.Left(OpSupport.Unsupported);
-     }
+     Either<OpSupport, Void> scale(float factor, TensorRef target, int offset, int length);
 }

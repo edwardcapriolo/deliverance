@@ -14,10 +14,17 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 public class Lighter {
+
+    public static final String TENSOR_OP_KEY = "tensor_ops";
+    public static final String TENSOR_TYPE = "tensor_type";
+    public static final String LENGTH = "length";
+
+
     private final Allocator allocator = new Allocator();
     private final MetricRegistry metricRegistry;
     //something like this must be initialized  so later we can pick the right one
     private final EnumMap<TensorProviderKind, TensorOps> tensorOperations = new EnumMap<>(TensorProviderKind.class);
+
     public Lighter(){
         this(new MetricRegistry());
     }
@@ -65,13 +72,14 @@ public class Lighter {
 
         for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
             Map<String, String> metricTags = new HashMap<>(tags);
-            metricTags.put("ops", entry.getKey().name());
-            metricRegistry.meter(new MetricName("tensor2.multiply_accumulate", metricTags)).mark();
+            metricTags.put(TENSOR_OP_KEY, entry.getKey().name());
+
             Timer timer = metricRegistry.timer(new MetricName("tensor2.multiply_accumulate.time", metricTags));
             long startNanos = System.nanoTime();
             Either<OpSupport, Void> result = entry.getValue().multiplyAccumulate(destination, source,
                     multiplyAccumulate.getOffset(), multiplyAccumulate.getLength());
             if (result.isRight()) {
+                metricRegistry.meter(new MetricName("tensor2.multiply_accumulate", metricTags)).mark();
                 timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
                 return;
             }
@@ -112,12 +120,13 @@ public class Lighter {
 
         for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
             Map<String, String> metricTags = new HashMap<>(tags);
-            metricTags.put("ops", entry.getKey().name());
-            metricRegistry.meter(new MetricName("tensor2.batch_dot_product", metricTags)).mark();
+            metricTags.put(TENSOR_OP_KEY, entry.getKey().name());
+
             Timer timer = metricRegistry.timer(new MetricName("tensor2.batch_dot_product.time", metricTags));
             long startNanos = System.nanoTime();
             Either<OpSupport, Void> outcome = entry.getValue().batchDotProduct(operation);
             if (outcome.isRight()) {
+                metricRegistry.meter(new MetricName("tensor2.batch_dot_product", metricTags)).mark();
                 timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
                 return;
             }
@@ -137,27 +146,21 @@ public class Lighter {
 
         for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
             Map<String, String> metricTags = new HashMap<>(tags);
-            metricTags.put("ops", entry.getKey().name());
-            metricRegistry.meter(new MetricName("tensor2.scale", metricTags)).mark();
+            metricTags.put(TENSOR_OP_KEY, entry.getKey().name());
+            metricTags.put(LENGTH, String.valueOf(scale.getLength()));
+            metricTags.put(TENSOR_TYPE, scale.getTarget().dType().name());
             Timer timer = metricRegistry.timer(new MetricName("tensor2.scale.time", metricTags));
             long startNanos = System.nanoTime();
             Either<OpSupport, Void> result = entry.getValue().scale(scale.getFactor(), target,
                     scale.getOffset(), scale.getLength());
             if (result.isRight()) {
+                metricRegistry.meter(new MetricName("tensor2.scale", metricTags)).mark();
                 timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
                 return;
             }
         }
         throw new IllegalStateException("No tensor operations support scale");
     }
-
-    /*
-    //this would be like if we wanted to pass hints along which tensorProviderKind to chose etc
-    public void multiplyAccumulate(MultiplyAccumulate multiplyAccumulate, Map<String, String> tags, ExecutionHints hints){
-        //chack that a and b are same device
-        //check that a and b are same size
-
-    }*/
 
     public TensorRef to(TensorRef a, String device){
         //ask the allocator to do this

@@ -20,8 +20,7 @@ public class Tensor2Native extends Tensor2Native$shared {
 
     static final Arena LIBRARY_ARENA = Arena.ofAuto();
 
-    static final SymbolLookup SYMBOL_LOOKUP = SymbolLookup.libraryLookup(System.mapLibraryName("deliverance_tensor2"), LIBRARY_ARENA)
-            .or(SymbolLookup.loaderLookup())
+    static final SymbolLookup SYMBOL_LOOKUP = SymbolLookup.loaderLookup()
             .or(Linker.nativeLinker().defaultLookup());
 
     private static final int TENSOR2_OK = (int)0L;
@@ -186,4 +185,3 @@ public class Tensor2Native extends Tensor2Native$shared {
         }
     }
 }
-

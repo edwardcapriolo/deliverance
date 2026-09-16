@@ -4,6 +4,7 @@ import io.dropwizard.metrics5.MetricName;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.dysfx.Either;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -67,13 +68,13 @@ class LighterTest {
 
         lighter.multiplyAccumulate(new MultiplyAccumulate(b).into(a).offsetAndLength(0, 1), Map.of("phase", "test"));
 
-        assertEquals(1, metricRegistry.meter(new MetricName("tensor2.multiply_accumulate",
-                Map.of("phase", "test", "ops", "SIMD"))).getCount());
-        Map<String, String> tags = Map.of("phase", "test", "ops", "PANAMA");
+        assertEquals(0, metricRegistry.meter(new MetricName("tensor2.multiply_accumulate",
+                Map.of("phase", "test", Lighter.TENSOR_OP_KEY, "SIMD"))).getCount());
+        Map<String, String> tags = Map.of("phase", "test", Lighter.TENSOR_OP_KEY, "PANAMA");
         assertEquals(1, metricRegistry.meter(new MetricName("tensor2.multiply_accumulate", tags)).getCount());
         assertEquals(1, metricRegistry.timer(new MetricName("tensor2.multiply_accumulate.time", tags)).getCount());
         assertEquals(0, metricRegistry.meter(new MetricName("tensor2.multiply_accumulate",
-                Map.of("phase", "test", "ops", "NAIVE"))).getCount());
+                Map.of("phase", "test", Lighter.TENSOR_OP_KEY, "NAIVE"))).getCount());
     }
 
     @Test
@@ -92,12 +93,12 @@ class LighterTest {
         lighter.multiplyAccumulate(new MultiplyAccumulate(b).into(a).offsetAndLength(0, 1), Map.of("phase", "test"));
 
         assertEquals(6.0f, a.underlying().get(0, 0));
+        assertEquals(0, metricRegistry.meter(new MetricName("tensor2.multiply_accumulate",
+                Map.of("phase", "test", Lighter.TENSOR_OP_KEY, "SIMD"))).getCount());
+        assertEquals(0, metricRegistry.meter(new MetricName("tensor2.multiply_accumulate",
+                Map.of("phase", "test", Lighter.TENSOR_OP_KEY, "PANAMA"))).getCount());
         assertEquals(1, metricRegistry.meter(new MetricName("tensor2.multiply_accumulate",
-                Map.of("phase", "test", "ops", "SIMD"))).getCount());
-        assertEquals(1, metricRegistry.meter(new MetricName("tensor2.multiply_accumulate",
-                Map.of("phase", "test", "ops", "PANAMA"))).getCount());
-        assertEquals(1, metricRegistry.meter(new MetricName("tensor2.multiply_accumulate",
-                Map.of("phase", "test", "ops", "NAIVE"))).getCount());
+                Map.of("phase", "test", Lighter.TENSOR_OP_KEY, "NAIVE"))).getCount());
     }
 
     @Test
@@ -114,12 +115,13 @@ class LighterTest {
         assertEquals(2.0f, target.underlying().get(0, 0));
         assertEquals(30.0f, target.underlying().get(0, 1));
         assertEquals(40.0f, target.underlying().get(0, 2));
-        assertEquals(1, metricRegistry.meter(new MetricName("tensor2.scale",
-                Map.of("phase", "test", "ops", "SIMD"))).getCount());
-        assertEquals(1, metricRegistry.meter(new MetricName("tensor2.scale",
-                Map.of("phase", "test", "ops", "PANAMA"))).getCount());
         assertEquals(0, metricRegistry.meter(new MetricName("tensor2.scale",
-                Map.of("phase", "test", "ops", "NAIVE"))).getCount());
+                Map.of("phase", "test", Lighter.TENSOR_OP_KEY, "SIMD"))).getCount());
+        assertEquals(1, metricRegistry.meter(new MetricName("tensor2.scale",
+                Map.of("phase", "test", Lighter.TENSOR_OP_KEY, "PANAMA", Lighter.LENGTH, "2",
+                        Lighter.TENSOR_TYPE, DType.F32.name()))).getCount());
+        assertEquals(0, metricRegistry.meter(new MetricName("tensor2.scale",
+                Map.of("phase", "test", Lighter.TENSOR_OP_KEY, "NAIVE"))).getCount());
     }
 
     @Test
@@ -165,14 +167,24 @@ class LighterTest {
         assertEquals(true, simdUsed.get());
         assertEquals(false, panamaUsed.get());
         assertEquals(1, metricRegistry.meter(new MetricName("tensor2.batch_dot_product",
-                Map.of("phase", "test", "ops", "SIMD"))).getCount());
+                Map.of("phase", "test", Lighter.TENSOR_OP_KEY, "SIMD"))).getCount());
         assertEquals(0, metricRegistry.meter(new MetricName("tensor2.batch_dot_product",
-                Map.of("phase", "test", "ops", "PANAMA"))).getCount());
+                Map.of("phase", "test", Lighter.TENSOR_OP_KEY, "PANAMA"))).getCount());
     }
 
     private static Lighter lighterWithUnsupportedSimd(MetricRegistry metricRegistry) {
         return new Lighter(metricRegistry, Map.of(
-                TensorProviderKind.SIMD, (a, b, offset, length) -> io.teknek.dysfx.Either.Left(OpSupport.Unsupported),
+                TensorProviderKind.SIMD, new TensorOps() {
+                    @Override
+                    public Either<OpSupport, Void> multiplyAccumulate(TensorRef a, TensorRef b, int offset, int length) {
+                        return Either.Left(OpSupport.Unsupported);
+                    }
+
+                    @Override
+                    public Either<OpSupport, Void> scale(float factor, TensorRef target, int offset, int length) {
+                        return Either.Left(OpSupport.Unsupported);
+                    }
+                },
                 TensorProviderKind.PANAMA, new PanamaOps(),
                 TensorProviderKind.NAIVE, new NaiveOps()
         ));

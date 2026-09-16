@@ -10,6 +10,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.Map;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -74,10 +75,10 @@ class Tensor2LighterBatchDotProductFuzzTest {
     }
 
     static Stream<Arguments> casesAndCandidates() {
-        Candidate panama = new Candidate("PANAMA", true, new Lighter(nullMetricRegistry(), Map.of(
+        Candidate panama = new Candidate("PANAMA", true, () -> new Lighter(nullMetricRegistry(), Map.of(
                 TensorProviderKind.PANAMA, new PanamaOps(),
                 TensorProviderKind.NAIVE, new NaiveOps())));
-        Candidate simd = new Candidate("SIMD", NativeOps.isAvailable(), new Lighter(nullMetricRegistry(), Map.of(
+        Candidate simd = new Candidate("SIMD", NativeOps.isAvailable(), () -> new Lighter(nullMetricRegistry(), Map.of(
                 TensorProviderKind.SIMD, new NativeOps(),
                 TensorProviderKind.PANAMA, new PanamaOps(),
                 TensorProviderKind.NAIVE, new NaiveOps())));
@@ -86,10 +87,10 @@ class Tensor2LighterBatchDotProductFuzzTest {
     }
 
     static Stream<Arguments> q8CasesAndCandidates() {
-        Candidate panama = new Candidate("PANAMA", true, new Lighter(nullMetricRegistry(), Map.of(
+        Candidate panama = new Candidate("PANAMA", true, () -> new Lighter(nullMetricRegistry(), Map.of(
                 TensorProviderKind.PANAMA, new PanamaOps(),
                 TensorProviderKind.NAIVE, new NaiveOps())));
-        Candidate simd = new Candidate("SIMD", NativeOps.isAvailable(), new Lighter(nullMetricRegistry(), Map.of(
+        Candidate simd = new Candidate("SIMD", NativeOps.isAvailable(), () -> new Lighter(nullMetricRegistry(), Map.of(
                 TensorProviderKind.SIMD, new NativeOps(),
                 TensorProviderKind.PANAMA, new PanamaOps(),
                 TensorProviderKind.NAIVE, new NaiveOps())));
@@ -140,7 +141,11 @@ class Tensor2LighterBatchDotProductFuzzTest {
         return new Q8ByteBufferTensor(dense);
     }
 
-    private record Candidate(String name, boolean enabled, Lighter lighter) {
+    private record Candidate(String name, boolean enabled, Supplier<Lighter> lighterFactory) {
+        Lighter lighter() {
+            return lighterFactory.get();
+        }
+
         @Override
         public String toString() {
             return name;
