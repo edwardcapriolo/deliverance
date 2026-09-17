@@ -37,4 +37,12 @@ tensor2_status tensor2_batch_dot_f32_q8(
         int b_stride,
         int b_scale_stride);
 
+tensor2_status tensor2_scale_f32(
+        float *target,
+        float factor,
+        int rows,
+        int offset,
+        int length,
+        int stride);
+
 #endif

@@ -38,6 +38,7 @@ import io.teknek.deliverance.tensor.kv.CacheExecutionMode;
 import io.teknek.deliverance.tensor.kv.KvCacheSession;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensorlib.TensorPlan;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -567,7 +568,14 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
     private TokenConfidence tokenFromLogits(AbstractTensor logits, AbstractTensor argMax, float temperature,
             Random random, boolean requireConfidence) {
         if (temperature > 0.0f) {
-            scale(1.0f / temperature, logits, 0, config.vocabularySize);
+            TensorPlan plan = new TensorPlan(primaryTensorOperations(), getPool(), getMetricRegistry(), this);
+            plan.mutable("nemotron.logits", logits)
+                    .scale(1.0f / temperature)
+                    .dotInTime("nemotron_labs_diffusion.temperature_scale",
+                            getLighter().providersFor(io.teknek.deliverance.tensor2.TensorProviderKind.SIMD,
+                                    io.teknek.deliverance.tensor2.TensorProviderKind.PANAMA),
+                            getLighter().providerFor(io.teknek.deliverance.tensor2.TensorProviderKind.NAIVE))
+                    .materialize();
             configurableTensorProvider.get().softMax(logits, 0, config.vocabularySize);
             float sample = random.nextFloat();
             float cumulative = 0.0f;

@@ -9,7 +9,9 @@ import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.dysfx.Either;
 
 import java.util.EnumMap;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -24,6 +26,21 @@ public class Lighter {
     private final MetricRegistry metricRegistry;
     //something like this must be initialized  so later we can pick the right one
     private final EnumMap<TensorProviderKind, TensorOps> tensorOperations = new EnumMap<>(TensorProviderKind.class);
+
+    public record ProviderSelection(Lighter lighter, Map<TensorProviderKind, TensorOps> providers) {
+        public ProviderSelection {
+            java.util.Objects.requireNonNull(lighter, "lighter");
+            providers = Collections.unmodifiableMap(new LinkedHashMap<>(java.util.Objects.requireNonNull(providers,
+                    "providers")));
+        }
+    }
+
+    public record ProviderChoice(Lighter lighter, TensorProviderKind kind) {
+        public ProviderChoice {
+            java.util.Objects.requireNonNull(lighter, "lighter");
+            java.util.Objects.requireNonNull(kind, "kind");
+        }
+    }
 
     public Lighter(){
         this(new MetricRegistry());
@@ -44,6 +61,28 @@ public class Lighter {
     public void putTensorOperations(TensorProviderKind kind, TensorOps ops) {
         tensorOperations.put(java.util.Objects.requireNonNull(kind, "kind"),
                 java.util.Objects.requireNonNull(ops, "ops"));
+    }
+
+    public Map<TensorProviderKind, TensorOps> tensorOperations() {
+        return Map.copyOf(tensorOperations);
+    }
+
+    public ProviderSelection providersFor(TensorProviderKind... kinds) {
+        LinkedHashMap<TensorProviderKind, TensorOps> selected = new LinkedHashMap<>();
+        for (TensorProviderKind kind : kinds) {
+            TensorOps ops = tensorOperations.get(java.util.Objects.requireNonNull(kind, "kind"));
+            if (ops != null) {
+                selected.put(kind, ops);
+            }
+        }
+        return new ProviderSelection(this, selected);
+    }
+
+    public ProviderChoice providerFor(TensorProviderKind kind) {
+        if (!tensorOperations.containsKey(java.util.Objects.requireNonNull(kind, "kind"))) {
+            throw new IllegalStateException("No tensor operations registered for " + kind);
+        }
+        return new ProviderChoice(this, kind);
     }
 
     public TensorRef allocate(DType dType, TensorShape shape) {
@@ -139,27 +178,46 @@ public class Lighter {
     }
 
     public void scale(Scale scale, Map<String, String> tags) {
-        TensorRef target = scale.getTarget();
-        Preconditions.checkArgument(target != null, "Target tensor must be set");
-        Preconditions.checkArgument(scale.getOffset() >= 0 && scale.getLength() >= 0
-                && scale.getOffset() + scale.getLength() <= target.shape().last(), "Scale window out of bounds");
-
+        validateScale(scale);
         for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
-            Map<String, String> metricTags = new HashMap<>(tags);
-            metricTags.put(TENSOR_OP_KEY, entry.getKey().name());
-            metricTags.put(LENGTH, String.valueOf(scale.getLength()));
-            metricTags.put(TENSOR_TYPE, scale.getTarget().dType().name());
-            Timer timer = metricRegistry.timer(new MetricName("tensor2.scale.time", metricTags));
-            long startNanos = System.nanoTime();
-            Either<OpSupport, Void> result = entry.getValue().scale(scale.getFactor(), target,
-                    scale.getOffset(), scale.getLength());
-            if (result.isRight()) {
-                metricRegistry.meter(new MetricName("tensor2.scale", metricTags)).mark();
-                timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+            if (scaleWithProvider(scale, tags, entry.getKey(), entry.getValue())) {
                 return;
             }
         }
         throw new IllegalStateException("No tensor operations support scale");
+    }
+
+    public boolean scale(Scale scale, Map<String, String> tags, TensorProviderKind kind) {
+        validateScale(scale);
+        TensorOps ops = tensorOperations.get(java.util.Objects.requireNonNull(kind, "kind"));
+        if (ops == null) {
+            throw new IllegalStateException("No tensor operations registered for " + kind);
+        }
+        return scaleWithProvider(scale, tags, kind, ops);
+    }
+
+    private void validateScale(Scale scale) {
+        TensorRef target = scale.getTarget();
+        Preconditions.checkArgument(target != null, "Target tensor must be set");
+        Preconditions.checkArgument(scale.getOffset() >= 0 && scale.getLength() >= 0
+                && scale.getOffset() + scale.getLength() <= target.shape().last(), "Scale window out of bounds");
+    }
+
+    private boolean scaleWithProvider(Scale scale, Map<String, String> tags, TensorProviderKind kind, TensorOps ops) {
+        TensorRef target = scale.getTarget();
+        Map<String, String> metricTags = new HashMap<>(tags);
+        metricTags.put(TENSOR_OP_KEY, kind.name());
+        metricTags.put(LENGTH, String.valueOf(scale.getLength()));
+        metricTags.put(TENSOR_TYPE, scale.getTarget().dType().name());
+        Timer timer = metricRegistry.timer(new MetricName("tensor2.scale.time", metricTags));
+        long startNanos = System.nanoTime();
+        Either<OpSupport, Void> result = ops.scale(scale.getFactor(), target, scale.getOffset(), scale.getLength());
+        if (result.isRight()) {
+            metricRegistry.meter(new MetricName("tensor2.scale", metricTags)).mark();
+            timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+            return true;
+        }
+        return false;
     }
 
     public TensorRef to(TensorRef a, String device){

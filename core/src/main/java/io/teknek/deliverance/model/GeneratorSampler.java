@@ -5,6 +5,7 @@ import io.teknek.deliverance.generator.LayerNorm;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.VectorTensorMathUtils;
+import io.teknek.deliverance.tensorlib.TensorPlan;
 import net.jafama.FastMath;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -85,8 +86,16 @@ public class GeneratorSampler {
 
             if (abstractModel.config.logitMultiplier != null) {
                 LOGGER.debug("scaling logits logitMultiplier: {}", abstractModel.config.logitMultiplier);
-                abstractModel.scale(1.0f / abstractModel.config.logitMultiplier,
-                        logits, 0, abstractModel.config.vocabularySize);
+                TensorPlan plan = new TensorPlan(abstractModel.primaryTensorOperations(), abstractModel.getPool(),
+                        abstractModel.getMetricRegistry(), abstractModel);
+                plan.mutable("logits", logits)
+                        .scale(1.0f / abstractModel.config.logitMultiplier)
+                        .dotInTime(abstractModel.getLighter().providersFor(
+                                        io.teknek.deliverance.tensor2.TensorProviderKind.SIMD,
+                                        io.teknek.deliverance.tensor2.TensorProviderKind.PANAMA),
+                                abstractModel.getLighter().providerFor(
+                                        io.teknek.deliverance.tensor2.TensorProviderKind.NAIVE))
+                        .materialize();
             }
             int maxi = Integer.MIN_VALUE;
             double maxv = Double.NEGATIVE_INFINITY;

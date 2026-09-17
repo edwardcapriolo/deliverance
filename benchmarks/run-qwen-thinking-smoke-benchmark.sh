@@ -31,5 +31,5 @@ cd "$ROOT_DIR"
 mvn -q -pl core \
   -Dexec.classpathScope=test \
   -Dexec.executable="$JAVA_BIN" \
-  -Dexec.args="-Djava.library.path=$NATIVE_LIB_DIR --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.deliverance.benchmark.ThinkingSmokeBenchmark --owner edwardcapriolo --model Qwen3-4B-JQ4 --model-config $MODEL_CONFIG --output $OUTPUT --max-tokens 768 --thinking true" \
+  -Dexec.args="$BENCHMARK_JVM_OPTS -Djava.library.path=$NATIVE_LIB_DIR --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.deliverance.benchmark.ThinkingSmokeBenchmark --owner edwardcapriolo --model Qwen3-4B-JQ4 --model-config $MODEL_CONFIG --output $OUTPUT --max-tokens 768 --thinking true" \
   org.codehaus.mojo:exec-maven-plugin:3.5.0:exec

@@ -5,13 +5,11 @@
   "packedPrefill": true,
   "maxPrefillBatchSize": 2048,
   "tensorRuntimeMode": "DISABLED",
-  "parallelSplitSizeFixed": {
-    "SIMD": 64
-  },
   "generationOptions": {
     "mode": "linear_spec",
     "blockLength": 32,
-    "threshold": 0.0
+    "threshold": 0.0,
+    "temperature": 0.7
   },
   "kvBufferCache": {
     "maxEntries": 10000,

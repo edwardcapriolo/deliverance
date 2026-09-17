@@ -81,7 +81,16 @@ public class NativeOps implements TensorOps {
 
     @Override
     public Either<OpSupport, Void> scale(float factor, TensorRef target, int offset, int length) {
-        return Either.Left(OpSupport.Unsupported);
+        if (!loaded || target.dType() != DType.F32) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        try {
+            int status = Tensor2Native.tensor2_scale_f32(target.underlying().getMemorySegment(), factor,
+                    (int) target.shape().first(), offset, length, target.stride());
+            return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
+        } catch (LinkageError | RuntimeException e) {
+            return Either.Left(OpSupport.Unsupported);
+        }
     }
 
     private Either<OpSupport, Void> batchDotProductF32Q8(BatchDotProduct operation, TensorRef q8Scale) {

@@ -1675,7 +1675,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
                 ignored -> new AdaptiveSplitState(minSplit, maxSplit, defaultSplit));
         int split = state.choose();
         if (InferenceProfiler.isEnabled()) {
-            InferenceProfiler.counter(metricRegistry, "tensorplan.jit.split", "plan", planName, "split",
+            InferenceProfiler.counter(metricRegistry, "tensorplan.dit.split", "plan", planName, "split",
                     Integer.toString(split)).inc();
         }
         return split;
@@ -1687,10 +1687,10 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         if (state != null) {
             boolean promoted = state.observe(split, elapsedNanos);
             if (InferenceProfiler.isEnabled()) {
-                InferenceProfiler.timer(metricRegistry, "tensorplan.jit.elapsed", "plan", planName, "split",
+                InferenceProfiler.timer(metricRegistry, "tensorplan.dit.elapsed", "plan", planName, "split",
                         Integer.toString(split)).update(elapsedNanos, TimeUnit.NANOSECONDS);
                 if (promoted) {
-                    InferenceProfiler.counter(metricRegistry, "tensorplan.jit.selected", "plan", planName, "split",
+                    InferenceProfiler.counter(metricRegistry, "tensorplan.dit.selected", "plan", planName, "split",
                             Integer.toString(state.selected())).inc();
                 }
             }
@@ -1703,7 +1703,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
                 ignored -> new AdaptiveAlternateState(candidates));
         String candidate = state.choose(candidates);
         if (InferenceProfiler.isEnabled()) {
-            InferenceProfiler.counter(metricRegistry, "tensorplan.jit.alternate.choice", "plan", planName,
+            InferenceProfiler.counter(metricRegistry, "tensorplan.dit.alternate.choice", "plan", planName,
                     "candidate", candidate).inc();
         }
         return candidate;
@@ -1715,10 +1715,10 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         if (state != null) {
             boolean promoted = state.observe(candidate, elapsedNanos);
             if (InferenceProfiler.isEnabled()) {
-                InferenceProfiler.timer(metricRegistry, "tensorplan.jit.alternate.elapsed", "plan", planName,
+                InferenceProfiler.timer(metricRegistry, "tensorplan.dit.alternate.elapsed", "plan", planName,
                         "candidate", candidate).update(elapsedNanos, TimeUnit.NANOSECONDS);
                 if (promoted) {
-                    InferenceProfiler.counter(metricRegistry, "tensorplan.jit.alternate.selected", "plan", planName,
+                    InferenceProfiler.counter(metricRegistry, "tensorplan.dit.alternate.selected", "plan", planName,
                             "candidate", state.selected()).inc();
                 }
             }

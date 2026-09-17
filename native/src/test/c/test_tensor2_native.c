@@ -59,5 +59,21 @@ int main(void) {
     if (q8_result[0] != 264.0f || q8_result[1] != 264.0f) {
         return 6;
     }
+    float scale_target[2 * 5] = {
+            1.0f, 2.0f, 3.0f, 4.0f, 5.0f,
+            6.0f, 7.0f, 8.0f, 9.0f, 10.0f
+    };
+    status = tensor2_scale_f32(scale_target, 2.0f, 2, 1, 3, 5);
+    if (status != TENSOR2_OK) {
+        return 7;
+    }
+    if (scale_target[0] != 1.0f || scale_target[1] != 4.0f || scale_target[2] != 6.0f
+            || scale_target[3] != 8.0f || scale_target[4] != 5.0f) {
+        return 8;
+    }
+    if (scale_target[5] != 6.0f || scale_target[6] != 14.0f || scale_target[7] != 16.0f
+            || scale_target[8] != 18.0f || scale_target[9] != 10.0f) {
+        return 9;
+    }
     return 0;
 }

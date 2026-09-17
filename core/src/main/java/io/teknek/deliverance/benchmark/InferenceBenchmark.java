@@ -103,6 +103,7 @@ public final class InferenceBenchmark {
      */
     public static void main(String[] args) throws Exception {
         Options options = Options.parse(args);
+        options.applyModelConfigDefaults();
         List<BenchmarkCase> cases = options.suiteFile == null ? builtInSuite() : loadMtBenchJsonl(options.suiteFile);
         if (options.maxCases > 0 && options.maxCases < cases.size()) {
             cases = cases.subList(0, options.maxCases);
@@ -1051,6 +1052,7 @@ public final class InferenceBenchmark {
         private int poolSize = 0;
         private int maxTokens = 256;
         private float temperature = 0.0f;
+        private boolean temperatureExplicit;
         private Integer seed = 42;
         private int warmupCases = 1;
         private int maxCases = 0;
@@ -1091,7 +1093,10 @@ public final class InferenceBenchmark {
                     case "--output-head-quantization" -> options.outputHeadQuantization = Optional.of(DType.valueOf(args[++i]));
                     case "--pool-size" -> options.poolSize = Integer.parseInt(args[++i]);
                     case "--max-tokens" -> options.maxTokens = Integer.parseInt(args[++i]);
-                    case "--temperature" -> options.temperature = Float.parseFloat(args[++i]);
+                    case "--temperature" -> {
+                        options.temperature = Float.parseFloat(args[++i]);
+                        options.temperatureExplicit = true;
+                    }
                     case "--seed" -> options.seed = "none".equalsIgnoreCase(args[++i]) ? null : Integer.parseInt(args[i]);
                     case "--warmup-cases" -> options.warmupCases = Integer.parseInt(args[++i]);
                     case "--max-cases" -> options.maxCases = Integer.parseInt(args[++i]);
@@ -1148,6 +1153,25 @@ public final class InferenceBenchmark {
                 throw new IllegalArgumentException("--tensor-parallel-collective-transport must be http or netty");
             }
             return options;
+        }
+
+        private void applyModelConfigDefaults() {
+            if (modelConfig == null || temperatureExplicit) {
+                return;
+            }
+            AutoModelConfig.fromJson(modelConfig).generationOptions()
+                    .map(generationOptions -> generationOptions.get("temperature"))
+                    .ifPresent(value -> temperature = floatValue(value, "generationOptions.temperature"));
+        }
+
+        private static float floatValue(Object value, String name) {
+            if (value instanceof Number number) {
+                return number.floatValue();
+            }
+            if (value instanceof String string) {
+                return Float.parseFloat(string);
+            }
+            throw new IllegalArgumentException(name + " must be a number, got " + value);
         }
 
         private static String stripTrailingSlash(String value) {

@@ -1,0 +1,6 @@
+timestamp,engine,model,case_id,category,turn,prompt_chars,prompt_tokens,generated_tokens,total_ms,generation_ms,tokens_per_second,response_chars,finish_reason
+"2026-09-17T03:22:10.342367Z","deliverance","edwardcapriolo/Nemotron-Labs-Diffusion-3B-JQ4","builtin-reasoning-1","reasoning",1,637,136,256,101105.2265625,96982.4083545,2.629342829556242,1067,"MAX_TOKENS"
+"2026-09-17T03:23:46.819786Z","deliverance","edwardcapriolo/Nemotron-Labs-Diffusion-3B-JQ4","builtin-reasoning-1","reasoning",2,1843,416,256,96441.8046875,88754.3441875,2.873098802479955,1024,"MAX_TOKENS"
+"2026-09-17T03:24:46.225037Z","deliverance","edwardcapriolo/Nemotron-Labs-Diffusion-3B-JQ4","builtin-math-1","math",1,427,97,256,59393.5703125,57572.2736045,4.429215385026388,777,"MAX_TOKENS"
+"2026-09-17T03:25:46.577720Z","deliverance","edwardcapriolo/Nemotron-Labs-Diffusion-3B-JQ4","builtin-math-1","math",2,1423,395,256,60338.421875,53275.250209,4.786462738319,911,"MAX_TOKENS"
+"2026-09-17T03:27:26.580545Z","deliverance","edwardcapriolo/Nemotron-Labs-Diffusion-3B-JQ4","builtin-coding-1","coding",1,363,69,256,99990.625,98792.512792,2.58116726453636,1246,"MAX_TOKENS"

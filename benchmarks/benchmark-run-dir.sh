@@ -14,4 +14,7 @@ BENCHMARK_RUN_DIR=${BENCHMARK_RUN_DIR:-$BENCHMARK_ROOT/benchmarks/runs/$BENCHMAR
 mkdir -p "$BENCHMARK_RUN_DIR"
 export BENCHMARK_RUN_DIR
 
+BENCHMARK_JVM_OPTS=${BENCHMARK_JVM_OPTS:-"-XX:+UnlockDiagnosticVMOptions -XX:CompilerDirectivesFile=$BENCHMARK_ROOT/inlinerules.json -XX:+AlignVector"}
+export BENCHMARK_JVM_OPTS
+
 printf 'saving results to %s\n' "$BENCHMARK_RUN_DIR"
