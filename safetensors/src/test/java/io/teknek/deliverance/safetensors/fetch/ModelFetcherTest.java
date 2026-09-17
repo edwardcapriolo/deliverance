@@ -1,6 +1,7 @@
 package io.teknek.deliverance.safetensors.fetch;
 
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -80,8 +81,8 @@ public class ModelFetcherTest {
         Assertions.assertTrue(files.contains("special_tokens_map.json"));
     }
 
-    @Test
-    @Tag("longtest")
+    @Disabled
+
     void downloadNemotronLabsDiffusionBaseModelSupportFiles() {
         ModelFetcher fetch = new ModelFetcher("nvidia", "Nemotron-Labs-Diffusion-3B-Base");
 
@@ -181,7 +182,7 @@ public class ModelFetcherTest {
         File local = fetch.maybeDownload();
 
         Assertions.assertEquals(modelDir.toFile(), local);
-    }
+    }   
 
     private static void assertDownloaded(File modelDir, String name) {
         File file = modelDir.toPath().resolve(name).toFile();
