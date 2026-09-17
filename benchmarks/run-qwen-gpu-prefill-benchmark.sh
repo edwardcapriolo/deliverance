@@ -34,5 +34,5 @@ cd "$SCRIPT_DIR"
 mvn -q -pl core \
   -Dexec.classpathScope=test \
   -Dexec.executable="$JAVA_BIN" \
-  -Dexec.args="-Djava.library.path=$NATIVE_LIB_DIR --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.deliverance.benchmark.InferenceBenchmark --engine deliverance --owner edwardcapriolo --model Qwen3-0.6B-JQ4 --model-config $MODEL_CONFIG ${DELIVERANCE_BENCHMARK_ARGS:---pool-size 16 --max-tokens 64 --warmup-cases 0 --max-cases 1 --profile-stages --output $BENCHMARK_RUN_DIR/qwen-gpu-prefill-benchmark.csv --jsonl-output $BENCHMARK_RUN_DIR/qwen-gpu-prefill-benchmark.jsonl}" \
+  -Dexec.args="$BENCHMARK_JVM_OPTS -Djava.library.path=$NATIVE_LIB_DIR --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.deliverance.benchmark.InferenceBenchmark --engine deliverance --owner edwardcapriolo --model Qwen3-0.6B-JQ4 --model-config $MODEL_CONFIG ${DELIVERANCE_BENCHMARK_ARGS:---pool-size 16 --max-tokens 64 --warmup-cases 0 --max-cases 1 --profile-stages --output $BENCHMARK_RUN_DIR/qwen-gpu-prefill-benchmark.csv --jsonl-output $BENCHMARK_RUN_DIR/qwen-gpu-prefill-benchmark.jsonl}" \
   org.codehaus.mojo:exec-maven-plugin:3.5.0:exec

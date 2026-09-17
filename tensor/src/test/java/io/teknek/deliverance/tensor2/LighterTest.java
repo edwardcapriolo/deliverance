@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class LighterTest {
 
@@ -172,22 +173,52 @@ class LighterTest {
                 Map.of("phase", "test", Lighter.TENSOR_OP_KEY, "PANAMA"))).getCount());
     }
 
+    @Test
+    void providersForKeepsRequestedOrderAndDropsMissingProviders() {
+        TensorOps simd = unsupportedOps();
+        TensorOps naive = new NaiveOps();
+        Lighter lighter = new Lighter(new MetricRegistry(), Map.of(
+                TensorProviderKind.SIMD, simd,
+                TensorProviderKind.NAIVE, naive
+        ));
+
+        Lighter.ProviderSelection providers = lighter.providersFor(TensorProviderKind.SIMD,
+                TensorProviderKind.PANAMA, TensorProviderKind.NAIVE);
+
+        assertEquals(java.util.List.of(TensorProviderKind.SIMD, TensorProviderKind.NAIVE),
+                providers.providers().keySet().stream().toList());
+        assertEquals(simd, providers.providers().get(TensorProviderKind.SIMD));
+        assertEquals(naive, providers.providers().get(TensorProviderKind.NAIVE));
+    }
+
+    @Test
+    void providerForRequiresRegisteredProvider() {
+        Lighter lighter = new Lighter(new MetricRegistry(), Map.of(TensorProviderKind.NAIVE, new NaiveOps()));
+
+        assertEquals(TensorProviderKind.NAIVE, lighter.providerFor(TensorProviderKind.NAIVE).kind());
+        assertThrows(IllegalStateException.class, () -> lighter.providerFor(TensorProviderKind.SIMD));
+    }
+
     private static Lighter lighterWithUnsupportedSimd(MetricRegistry metricRegistry) {
         return new Lighter(metricRegistry, Map.of(
-                TensorProviderKind.SIMD, new TensorOps() {
-                    @Override
-                    public Either<OpSupport, Void> multiplyAccumulate(TensorRef a, TensorRef b, int offset, int length) {
-                        return Either.Left(OpSupport.Unsupported);
-                    }
-
-                    @Override
-                    public Either<OpSupport, Void> scale(float factor, TensorRef target, int offset, int length) {
-                        return Either.Left(OpSupport.Unsupported);
-                    }
-                },
+                TensorProviderKind.SIMD, unsupportedOps(),
                 TensorProviderKind.PANAMA, new PanamaOps(),
                 TensorProviderKind.NAIVE, new NaiveOps()
         ));
+    }
+
+    private static TensorOps unsupportedOps() {
+        return new TensorOps() {
+            @Override
+            public Either<OpSupport, Void> multiplyAccumulate(TensorRef a, TensorRef b, int offset, int length) {
+                return Either.Left(OpSupport.Unsupported);
+            }
+
+            @Override
+            public Either<OpSupport, Void> scale(float factor, TensorRef target, int offset, int length) {
+                return Either.Left(OpSupport.Unsupported);
+            }
+        };
     }
 
 }

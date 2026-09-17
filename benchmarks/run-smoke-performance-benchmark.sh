@@ -50,6 +50,7 @@ run_model() {
 
   printf '\n[smoke] model=%s/%s label=%s\n' "$owner" "$model" "$label"
   EXEC_ARGS="\
+$BENCHMARK_JVM_OPTS \
 -Djava.library.path=$NATIVE_LIB_DIR \
 --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http \
 --add-opens java.base/java.nio=ALL-UNNAMED \

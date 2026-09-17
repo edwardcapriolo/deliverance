@@ -1,13 +1,28 @@
 package io.teknek.deliverance.tensor2;
 
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.TensorDisplayUtil;
 import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class NativeOpsBatchDotProductTest {
+    @Test
+    void nativeScaleF32ScalesRequestedWindow() {
+        AbstractTensor target = new FloatBufferTensor(TensorShape.of(2, 5));
+        fillSequential(target);
+
+        assertTrue(new NativeOps().scale(2.0f, TensorRef.borrowed(target), 1, 3).isRight());
+
+        assertEquals("[0][0]=  1.0000 [0][1]=  4.0000 [0][2]=  6.0000 [0][3]=  8.0000 [0][4]=  5.0000 \n"
+                + "[1][0]=  6.0000 [1][1]= 14.0000 [1][2]= 16.0000 [1][3]= 18.0000 [1][4]= 10.0000",
+                TensorDisplayUtil.pretty2dDisplayAll(target).trim());
+    }
+
     @Test
     void nativeBatchDotProductMatchesNaiveWithInputRowOffset() {
         Allocator allocator = new Allocator();
@@ -44,6 +59,24 @@ class NativeOpsBatchDotProductTest {
         for (int row = 0; row < tensor.shape().first(); row++) {
             for (int column = 0; column < tensor.shape().last(); column++) {
                 tensor.underlying().set(((row * 13 + column * 7 + seed) % 41 - 20) / 8.0f, row, column);
+            }
+        }
+    }
+
+    private static void fillSequential(TensorRef tensor) {
+        float value = 1.0f;
+        for (int row = 0; row < tensor.shape().first(); row++) {
+            for (int column = 0; column < tensor.shape().last(); column++) {
+                tensor.underlying().set(value++, row, column);
+            }
+        }
+    }
+
+    private static void fillSequential(AbstractTensor tensor) {
+        float value = 1.0f;
+        for (int row = 0; row < tensor.shape().first(); row++) {
+            for (int column = 0; column < tensor.shape().last(); column++) {
+                tensor.set(value++, row, column);
             }
         }
     }

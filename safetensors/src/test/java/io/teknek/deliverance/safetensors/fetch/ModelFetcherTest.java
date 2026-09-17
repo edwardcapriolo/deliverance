@@ -182,7 +182,7 @@ public class ModelFetcherTest {
         File local = fetch.maybeDownload();
 
         Assertions.assertEquals(modelDir.toFile(), local);
-    }   
+    }
 
     private static void assertDownloaded(File modelDir, String name) {
         File file = modelDir.toPath().resolve(name).toFile();

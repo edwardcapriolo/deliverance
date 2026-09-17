@@ -48,6 +48,7 @@ run_model() {
 
   printf '\n[prefill-smoke] model=%s/%s label=%s token_counts=%s\n' "$owner" "$model" "$label" "$PREFILL_TOKEN_COUNTS"
   EXEC_ARGS="\
+$BENCHMARK_JVM_OPTS \
 -Djava.library.path=$NATIVE_LIB_DIR \
 --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http \
 --add-opens java.base/java.nio=ALL-UNNAMED \

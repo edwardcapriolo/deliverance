@@ -23,4 +23,4 @@ mvn -q -pl tensor test-compile \
   org.codehaus.mojo:exec-maven-plugin:3.5.0:exec \
   -Dexec.classpathScope=test \
   -Dexec.executable="$JAVA_BIN" \
-  -Dexec.args="--add-modules jdk.incubator.vector --add-opens java.base/java.nio=ALL-UNNAMED -cp %classpath io.teknek.deliverance.tensorlib.TensorPlanMlpReplayBenchmark $OUTPUT_ARGS $RUNTIME_ARGS $SHAPE_ARGS"
+  -Dexec.args="$BENCHMARK_JVM_OPTS --add-modules jdk.incubator.vector --add-opens java.base/java.nio=ALL-UNNAMED -cp %classpath io.teknek.deliverance.tensorlib.TensorPlanMlpReplayBenchmark $OUTPUT_ARGS $RUNTIME_ARGS $SHAPE_ARGS"

@@ -95,7 +95,7 @@ public final class InferenceProfiler {
         }
         System.out.println("[profile] " + label);
         TIMER_NAMES.stream()
-                .filter(name -> !name.startsWith("tensorplan.jit."))
+                .filter(name -> !name.startsWith("tensorplan.dit."))
                 .map(name -> timerDelta(name, TIMER_BASELINES.getOrDefault(name, TimerBaseline.ZERO)))
                 .filter(snapshot -> snapshot.count() > 0)
                 .sorted(Comparator.comparingDouble(TimerDelta::estimatedTotalNanos).reversed())
@@ -109,27 +109,27 @@ public final class InferenceProfiler {
                     "[profile] %-45s count=%8d total_ms=%10.3f mean_us=%10.3f%n",
                     snapshot.name(), count, totalMs, meanUs);
         });
-        printJitSummary();
+        printDitSummary();
     }
 
-    private static void printJitSummary() {
-        var jitTimers = TIMER_NAMES.stream()
-                .filter(name -> name.startsWith("tensorplan.jit."))
+    private static void printDitSummary() {
+        var ditTimers = TIMER_NAMES.stream()
+                .filter(name -> name.startsWith("tensorplan.dit."))
                 .map(name -> timerDelta(name, TIMER_BASELINES.getOrDefault(name, TimerBaseline.ZERO)))
                 .filter(snapshot -> snapshot.count() > 0)
                 .sorted(Comparator.comparing(TimerDelta::name))
                 .toList();
-        if (jitTimers.isEmpty()) {
+        if (ditTimers.isEmpty()) {
             return;
         }
-        System.out.println("[profile-jit] tensorplan.jit");
-        jitTimers.forEach(snapshot -> {
+        System.out.println("[profile-dit] tensorplan.dit");
+        ditTimers.forEach(snapshot -> {
             long count = snapshot.count();
             double meanNanos = snapshot.meanNanos();
             double totalMs = (count * meanNanos) / 1_000_000.0;
             double meanUs = meanNanos / 1_000.0;
             System.out.printf(java.util.Locale.ROOT,
-                    "[profile-jit] %-70s count=%8d total_ms=%10.3f mean_us=%10.3f%n",
+                    "[profile-dit] %-70s count=%8d total_ms=%10.3f mean_us=%10.3f%n",
                     snapshot.name(), count, totalMs, meanUs);
         });
     }

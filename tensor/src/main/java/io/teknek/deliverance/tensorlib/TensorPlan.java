@@ -9,6 +9,10 @@ import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.Scale;
+import io.teknek.deliverance.tensor2.TensorProviderKind;
+import io.teknek.deliverance.tensor2.TensorRef;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -301,6 +305,14 @@ public final class TensorPlan {
          */
         public Tensor justInTime(int minSplit, int maxSplit) {
             return new Tensor(new JustInTimeNode(this.node, minSplit, maxSplit));
+        }
+
+        public Tensor dotInTime(Lighter.ProviderSelection providers, Lighter.ProviderChoice fallback) {
+            return dotInTime(this.node.label(), providers, fallback);
+        }
+
+        public Tensor dotInTime(String planName, Lighter.ProviderSelection providers, Lighter.ProviderChoice fallback) {
+            return new Tensor(new DotInTimeNode(this.node, planName, providers, fallback));
         }
 
         public TensorShape shape() {
@@ -925,6 +937,40 @@ public final class TensorPlan {
             return new Eval(out, in.owned(), in.mutable());
         }
 
+        Eval eval(String planName, Lighter.ProviderSelection providers, Lighter.ProviderChoice fallback) {
+            Eval in = input.eval();
+            AbstractTensor out = in.owned() || in.mutable() ? in.tensor() : copyOf(in.tensor());
+            run("tensorplan.dotintime.scale", 0, Optional.of(out), () -> scaleWithProviders(planName, out, providers,
+                    fallback));
+            return new Eval(out, in.owned(), in.mutable());
+        }
+
+        private void scaleWithProviders(String planName, AbstractTensor out, Lighter.ProviderSelection providers,
+                Lighter.ProviderChoice fallback) {
+            if (providers.lighter() != fallback.lighter()) {
+                throw new IllegalArgumentException("dotInTime providers and fallback must come from the same Lighter");
+            }
+            try (TensorRef target = TensorRef.borrowed(out)) {
+                TensorProviderKind selected = selectProvider(planName, providers);
+                if (selected != null) {
+                    long startNanos = System.nanoTime();
+                    if (providers.lighter().scale(scale(target, out), Map.of(), selected)) {
+                        observeProvider(planName, selected, System.nanoTime() - startNanos);
+                        return;
+                    }
+                    observeProvider(planName, selected, Long.MAX_VALUE / 4);
+                }
+                if (fallback.lighter().scale(scale(target, out), Map.of(), fallback.kind())) {
+                    return;
+                }
+            }
+            throw new IllegalStateException("No tensor operations support dotInTime scale");
+        }
+
+        private Scale scale(TensorRef target, AbstractTensor out) {
+            return new Scale(factor).target(target).offsetAndLength(0, (int) out.shape().last());
+        }
+
         @Override
         public TensorShape shape() {
             return input.shape();
@@ -939,6 +985,46 @@ public final class TensorPlan {
         @Override
         public String label() {
             return "scale";
+        }
+    }
+
+    private final class DotInTimeNode implements Node {
+        private final Node delegate;
+        private final String planName;
+        private final Lighter.ProviderSelection providers;
+        private final Lighter.ProviderChoice fallback;
+
+        private DotInTimeNode(Node delegate, String planName, Lighter.ProviderSelection providers,
+                Lighter.ProviderChoice fallback) {
+            this.delegate = Objects.requireNonNull(delegate, "delegate");
+            this.planName = Objects.requireNonNull(planName, "planName");
+            this.providers = Objects.requireNonNull(providers, "providers");
+            this.fallback = Objects.requireNonNull(fallback, "fallback");
+        }
+
+        @Override
+        public Eval eval() {
+            if (delegate instanceof ScaleNode scaleNode) {
+                return scaleNode.eval(planName, providers, fallback);
+            }
+            throw new IllegalStateException("dotInTime currently supports scale nodes only");
+        }
+
+        @Override
+        public TensorShape shape() {
+            return delegate.shape();
+        }
+
+        @Override
+        public void render(StringBuilder sb, String indent, boolean last) {
+            renderLine(sb, indent, last, "dotInTime(" + planName + " " + providers.providers().keySet()
+                    + " fallback=" + fallback.kind() + ") -> " + compactShape(shape()));
+            delegate.render(sb, indent + (last ? "   " : "│  "), true);
+        }
+
+        @Override
+        public String label() {
+            return "dotInTime";
         }
     }
 
@@ -1163,6 +1249,29 @@ public final class TensorPlan {
         copy.copyFrom(tensor, 0, 0, (int) tensor.size());
         tensor.locality().ifPresent(copy::setLocality);
         return copy;
+    }
+
+    private TensorProviderKind selectProvider(String planName, Lighter.ProviderSelection providers) {
+        if (providers.providers().isEmpty()) {
+            return null;
+        }
+        if (adaptiveSplitTuner == null) {
+            return providers.providers().keySet().iterator().next();
+        }
+        List<String> candidates = providers.providers().keySet().stream().map(Enum::name).toList();
+        String selected = adaptiveSplitTuner.chooseAlternate(planName, candidates);
+        for (TensorProviderKind provider : providers.providers().keySet()) {
+            if (provider.name().equals(selected)) {
+                return provider;
+            }
+        }
+        return providers.providers().keySet().iterator().next();
+    }
+
+    private void observeProvider(String planName, TensorProviderKind provider, long elapsedNanos) {
+        if (adaptiveSplitTuner != null) {
+            adaptiveSplitTuner.observeAlternate(planName, provider.name(), elapsedNanos);
+        }
     }
 
     private void applyActivationInPlace(AbstractTensor tensor, ActivationFunction.Type activation) {

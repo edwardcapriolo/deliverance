@@ -42,6 +42,7 @@ DEFAULT_BENCHMARK_ARGS="\
 --jsonl-output $BENCHMARK_RUN_DIR/nemotron-ar-q4-benchmark.jsonl"
 
 EXEC_ARGS="\
+$BENCHMARK_JVM_OPTS \
 -Djava.library.path=$NATIVE_LIB_DIR \
 --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http \
 --add-opens java.base/java.nio=ALL-UNNAMED \

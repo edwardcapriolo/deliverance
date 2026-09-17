@@ -46,6 +46,7 @@ fi
 
 printf '\n[prefill-deep] model=%s/%s label=%s token_counts=%s\n' "$PREFILL_OWNER" "$PREFILL_MODEL" "$PREFILL_LABEL" "$PREFILL_TOKEN_COUNTS"
 EXEC_ARGS="\
+$BENCHMARK_JVM_OPTS \
 -Djava.library.path=$NATIVE_LIB_DIR \
 --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http \
 --add-opens java.base/java.nio=ALL-UNNAMED \

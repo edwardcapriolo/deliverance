@@ -7,7 +7,13 @@
             "+io.teknek.deliverance.tensor.operations.PanamaTensorOperations*::mpack*",
             "+io.teknek.deliverance.tensor.AbstractTensor::getOffset*",
             "+io.teknek.deliverance.tensor.*::getVector*",
-            "+io.teknek.deliverance.tensor.impl.*::getVector*"
+            "+io.teknek.deliverance.tensor.impl.*::getVector*",
+            "+io.teknek.deliverance.tensor2.PanamaOps::scale*",
+            "+io.teknek.deliverance.tensor2.PanamaOps::memoryOffset*",
+            "+io.teknek.deliverance.tensor2.TensorRef::requireOpen*",
+            "+io.teknek.deliverance.tensor2.TensorRef::underlying*",
+            "+io.teknek.deliverance.tensor2.TensorRef::shape*",
+            "+io.teknek.deliverance.tensor2.TensorRef::stride*"
         ]
     }
 ]

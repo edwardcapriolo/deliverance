@@ -16,4 +16,4 @@ mvn -q -pl tensor test-compile \
   org.codehaus.mojo:exec-maven-plugin:3.5.0:exec \
   -Dexec.classpathScope=test \
   -Dexec.executable="$JAVA_BIN" \
-  -Dexec.args="--add-modules jdk.incubator.vector --add-opens java.base/java.nio=ALL-UNNAMED -cp %classpath io.teknek.deliverance.tensorlib.VariableMlpFusionReplayBenchmark --output $BENCHMARK_RUN_DIR/variable-mlp-fusion-replay.csv --json-output $BENCHMARK_RUN_DIR/variable-mlp-fusion-replay.json ${VARIABLE_MLP_REPLAY_ARGS:---m-values 1,32,128,256,403 --hidden 3072}"
+  -Dexec.args="$BENCHMARK_JVM_OPTS --add-modules jdk.incubator.vector --add-opens java.base/java.nio=ALL-UNNAMED -cp %classpath io.teknek.deliverance.tensorlib.VariableMlpFusionReplayBenchmark --output $BENCHMARK_RUN_DIR/variable-mlp-fusion-replay.csv --json-output $BENCHMARK_RUN_DIR/variable-mlp-fusion-replay.json ${VARIABLE_MLP_REPLAY_ARGS:---m-values 1,32,128,256,403 --hidden 3072}"

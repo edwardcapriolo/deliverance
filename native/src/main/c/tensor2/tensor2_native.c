@@ -198,3 +198,59 @@ tensor2_status tensor2_batch_dot_f32_q8(
     return TENSOR2_OK;
 #endif
 }
+
+tensor2_status tensor2_scale_f32(
+        float *target,
+        float factor,
+        int rows,
+        int offset,
+        int length,
+        int stride) {
+    if (target == 0) {
+        return TENSOR2_UNSUPPORTED;
+    }
+    if (rows < 0 || offset < 0 || length < 0 || stride < 0) {
+        return TENSOR2_UNSUPPORTED;
+    }
+#if defined(TENSOR2_ARM_NEON)
+    float32x4_t scale = vdupq_n_f32(factor);
+    for (int row = 0; row < rows; row++) {
+        float *row_ptr = target + row * stride + offset;
+        int column = 0;
+        int upper = (length / 4) * 4;
+        for (; column < upper; column += 4) {
+            float32x4_t values = vld1q_f32(row_ptr + column);
+            vst1q_f32(row_ptr + column, vmulq_f32(values, scale));
+        }
+        for (; column < length; column++) {
+            row_ptr[column] *= factor;
+        }
+    }
+    return TENSOR2_OK;
+#elif defined(__AVX2__)
+    __m256 scale = _mm256_set1_ps(factor);
+    for (int row = 0; row < rows; row++) {
+        float *row_ptr = target + row * stride + offset;
+        int column = 0;
+#if defined(__AVX512F__)
+        __m512 scale512 = _mm512_set1_ps(factor);
+        int upper512 = (length / 16) * 16;
+        for (; column < upper512; column += 16) {
+            __m512 values = _mm512_loadu_ps(row_ptr + column);
+            _mm512_storeu_ps(row_ptr + column, _mm512_mul_ps(values, scale512));
+        }
+#endif
+        int upper256 = (length / 8) * 8;
+        for (; column < upper256; column += 8) {
+            __m256 values = _mm256_loadu_ps(row_ptr + column);
+            _mm256_storeu_ps(row_ptr + column, _mm256_mul_ps(values, scale));
+        }
+        for (; column < length; column++) {
+            row_ptr[column] *= factor;
+        }
+    }
+    return TENSOR2_OK;
+#else
+    return TENSOR2_UNSUPPORTED;
+#endif
+}
