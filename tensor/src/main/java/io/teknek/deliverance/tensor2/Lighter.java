@@ -93,6 +93,56 @@ public class Lighter {
         return allocator.allocate(dType, shape, device);
     }
 
+    public boolean shouldQuantizeForEfficiency(TensorRef current, DType desired) {
+        Preconditions.checkArgument(current != null, "Current tensor must be set");
+        Preconditions.checkArgument(desired != null, "Desired dtype must be set");
+        Long currentBytes = allocatedBytes(current.dType(), current.shape());
+        Long desiredBytes = allocatedBytes(desired, current.shape());
+        return currentBytes != null && desiredBytes != null && desiredBytes < currentBytes;
+    }
+
+    public TensorRef reshape(TensorRef input, DType outputDType) {
+        Preconditions.checkArgument(input != null, "Input tensor must be set");
+        Preconditions.checkArgument(outputDType != null, "Output dtype must be set");
+        TensorRef output = allocate(outputDType, input.shape(), input.device());
+        for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
+            Map<String, String> metricTags = new HashMap<>();
+            metricTags.put(TENSOR_OP_KEY, entry.getKey().name());
+            metricTags.put("input_type", input.dType().name());
+            metricTags.put("output_type", outputDType.name());
+
+            Timer timer = metricRegistry.timer(new MetricName("tensor2.reshape.time", metricTags));
+            long startNanos = System.nanoTime();
+            Either<OpSupport, Void> result = entry.getValue().reshape(input, output);
+            if (result.isRight()) {
+                metricRegistry.meter(new MetricName("tensor2.reshape", metricTags)).mark();
+                timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+                return output;
+            }
+        }
+        output.close();
+        throw new IllegalStateException("No tensor operations support reshape from " + input.dType() + " to "
+                + outputDType);
+    }
+
+    private Long allocatedBytes(DType dType, TensorShape shape) {
+        long values = shape.size();
+        return switch (dType) {
+            case F32, BF16 -> values * dType.size();
+            case I8 -> shape.last() % Q8Layout.BLOCK_SIZE == 0
+                    && shape.sparseColumnOffset() % Q8Layout.BLOCK_SIZE == 0
+                    && shape.sparseColumnLength() % Q8Layout.BLOCK_SIZE == 0
+                    ? values + Q8Layout.scaleShape(shape).size() * DType.F32.size()
+                    : null;
+            case Q4 -> shape.last() % Q4Layout.BLOCK_SIZE == 0
+                    && shape.sparseColumnOffset() % Q4Layout.BLOCK_SIZE == 0
+                    && shape.sparseColumnLength() % Q4Layout.BLOCK_SIZE == 0
+                    ? values / 2 + Q4Layout.scaleShape(shape).size() * DType.F32.size()
+                    : null;
+            default -> null;
+        };
+    }
+
     public void multiplyAccumulate(MultiplyAccumulate multiplyAccumulate){
         multiplyAccumulate(multiplyAccumulate, Map.of());
     }

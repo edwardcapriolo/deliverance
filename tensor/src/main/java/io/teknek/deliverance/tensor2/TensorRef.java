@@ -3,6 +3,7 @@ package io.teknek.deliverance.tensor2;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import io.teknek.dysfx.exception.UnreachableException;
 
@@ -20,9 +21,11 @@ public class TensorRef implements AutoCloseable {
     }
 
     public static TensorRef borrowed(AbstractTensor tensor) {
-        Map<String, TensorRef> sidecars = tensor instanceof Q8ByteBufferTensor q8
-                ? Map.of(Q8Layout.SCALE_SIDECAR, borrowed(q8.getBlockF()))
-                : Map.of();
+        Map<String, TensorRef> sidecars = switch (tensor) {
+            case Q8ByteBufferTensor q8 -> Map.of(Q8Layout.SCALE_SIDECAR, borrowed(q8.getBlockF()));
+            case Q4ByteBufferTensor q4 -> Map.of(Q4Layout.SCALE_SIDECAR, borrowed(q4.getBlockF()));
+            default -> Map.of();
+        };
         return borrowed(tensor, sidecars);
     }
 

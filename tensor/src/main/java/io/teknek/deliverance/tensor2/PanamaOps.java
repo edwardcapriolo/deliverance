@@ -15,9 +15,219 @@ import java.nio.ByteOrder;
 
 class PanamaOps implements TensorOps {
     private static final VectorSpecies<Float> F32_SPECIES = FloatVector.SPECIES_PREFERRED;
+    private static final VectorSpecies<Float> F32_BF16_SPECIES = FloatVector.SPECIES_256;
+    private static final VectorSpecies<Short> BF16_SPECIES = ShortVector.SPECIES_128;
     private static final VectorSpecies<Byte> Q8_BYTE_SPECIES = ByteVector.SPECIES_128;
     private static final VectorSpecies<Float> Q8_FLOAT_SPECIES = FloatVector.SPECIES_512;
+    private static final FloatVector F32_ROUND_UP_512 = FloatVector.broadcast(FloatVector.SPECIES_512, 0.5f);
     private static final IntVector BF16_BYTE_SHIFT_256 = IntVector.broadcast(IntVector.SPECIES_256, 16);
+    private static final IntVector BF16_ROUND_BIAS = IntVector.broadcast(IntVector.SPECIES_256, 0x7fff);
+    private static final IntVector BF16_ROUND_LSB_MASK = IntVector.broadcast(IntVector.SPECIES_256, 1);
+
+    @Override
+    public Either<OpSupport, Void> reshape(TensorRef input, TensorRef output) {
+        Preconditions.checkArgument(input.dims() == 2 && output.dims() == 2, "Reshape requires 2D tensors");
+        Preconditions.checkArgument(input.shape().equals(output.shape()), "Input and output shapes must match");
+        if (input.dType() == output.dType()) {
+            copySameDType(input, output);
+            return Either.Right(null);
+        }
+        if (input.dType() == DType.F32 && output.dType() == DType.BF16) {
+            reshapeF32ToBF16(input, output);
+            return Either.Right(null);
+        }
+        if (input.dType() == DType.BF16 && output.dType() == DType.F32) {
+            reshapeBF16ToF32(input, output);
+            return Either.Right(null);
+        }
+        if (output.dType() == DType.I8) {
+            reshapeToI8(input, output);
+            return Either.Right(null);
+        }
+        if (output.dType() == DType.Q4) {
+            reshapeToQ4(input, output);
+            return Either.Right(null);
+        }
+        if ((input.dType() == DType.I8 || input.dType() == DType.Q4)
+                && (output.dType() == DType.F32 || output.dType() == DType.BF16)) {
+            reshapeQuantizedToDense(input, output);
+            return Either.Right(null);
+        }
+        return Either.Left(OpSupport.Unsupported);
+    }
+
+    private void copySameDType(TensorRef input, TensorRef output) {
+        long bytes = physicalBytes(input);
+        output.underlying().getMemorySegment().asSlice(0, bytes)
+                .copyFrom(input.underlying().getMemorySegment().asSlice(0, bytes));
+        if (input.dType() == DType.I8) {
+            copySidecar(Q8Layout.scale(input), Q8Layout.scale(output));
+        } else if (input.dType() == DType.Q4) {
+            copySidecar(Q4Layout.scale(input), Q4Layout.scale(output));
+        }
+    }
+
+    private void copySidecar(TensorRef input, TensorRef output) {
+        Preconditions.checkArgument(input != null && output != null, "Quantized tensors require scale sidecars");
+        long bytes = input.shape().size() * DType.F32.size();
+        output.underlying().getMemorySegment().asSlice(0, bytes)
+                .copyFrom(input.underlying().getMemorySegment().asSlice(0, bytes));
+    }
+
+    private long physicalBytes(TensorRef tensor) {
+        return switch (tensor.dType()) {
+            case F32, BF16, I8 -> tensor.shape().size() * tensor.dType().size();
+            case Q4 -> tensor.shape().size() / 2;
+            default -> throw new IllegalArgumentException("Unsupported dtype " + tensor.dType());
+        };
+    }
+
+    private void reshapeF32ToBF16(TensorRef input, TensorRef output) {
+        Tensor inputTensor = input.underlying();
+        Tensor outputTensor = output.underlying();
+        for (int row = 0; row < input.shape().first(); row++) {
+            int column = 0;
+            int upperBound = F32_BF16_SPECIES.loopBound(input.shape().last());
+            for (; column < upperBound; column += F32_BF16_SPECIES.length()) {
+                FloatVector values = FloatVector.fromMemorySegment(F32_BF16_SPECIES, inputTensor.getMemorySegment(),
+                        memoryOffset(input, row, column), ByteOrder.LITTLE_ENDIAN);
+                IntVector bits = values.reinterpretAsInts();
+                IntVector rounded = bits.add(BF16_ROUND_BIAS)
+                        .add(bits.lanewise(VectorOperators.LSHR, BF16_BYTE_SHIFT_256)
+                                .lanewise(VectorOperators.AND, BF16_ROUND_LSB_MASK));
+                var bf16 = rounded.lanewise(VectorOperators.LSHR, BF16_BYTE_SHIFT_256)
+                        .convertShape(VectorOperators.I2S, BF16_SPECIES, 0);
+                ((ShortVector) bf16).intoMemorySegment(outputTensor.getMemorySegment(), memoryOffset(output, row, column),
+                        ByteOrder.LITTLE_ENDIAN);
+            }
+            for (; column < input.shape().last(); column++) {
+                outputTensor.set(inputTensor.get(row, column), row, column);
+            }
+        }
+    }
+
+    private void reshapeBF16ToF32(TensorRef input, TensorRef output) {
+        Tensor inputTensor = input.underlying();
+        Tensor outputTensor = output.underlying();
+        for (int row = 0; row < input.shape().first(); row++) {
+            int column = 0;
+            int upperBound = F32_BF16_SPECIES.loopBound(input.shape().last());
+            for (; column < upperBound; column += F32_BF16_SPECIES.length()) {
+                var values = ShortVector.fromMemorySegment(BF16_SPECIES, inputTensor.getMemorySegment(),
+                                memoryOffset(input, row, column), ByteOrder.LITTLE_ENDIAN)
+                        .convertShape(VectorOperators.S2I, IntVector.SPECIES_256, 0)
+                        .lanewise(VectorOperators.LSHL, BF16_BYTE_SHIFT_256)
+                        .reinterpretAsFloats();
+                values.intoMemorySegment(outputTensor.getMemorySegment(), memoryOffset(output, row, column),
+                        ByteOrder.LITTLE_ENDIAN);
+            }
+            for (; column < input.shape().last(); column++) {
+                outputTensor.set(inputTensor.get(row, column), row, column);
+            }
+        }
+    }
+
+    private void reshapeToI8(TensorRef input, TensorRef output) {
+        TensorRef scale = Q8Layout.scale(output);
+        Preconditions.checkArgument(scale != null, "I8 output must have scale sidecar");
+        if (input.dType() == DType.F32) {
+            reshapeF32ToI8(input, output, scale);
+            return;
+        }
+        reshapeDenseToI8Scalar(input, output, scale);
+    }
+
+    private void reshapeF32ToI8(TensorRef input, TensorRef output, TensorRef scale) {
+        Tensor inputTensor = input.underlying();
+        Tensor outputTensor = output.underlying();
+        for (int row = 0; row < input.shape().first(); row++) {
+            for (int column = 0; column < input.shape().last(); column += Q8Layout.BLOCK_SIZE) {
+                FloatVector v0 = FloatVector.fromMemorySegment(Q8_FLOAT_SPECIES, inputTensor.getMemorySegment(),
+                        memoryOffset(input, row, column), ByteOrder.LITTLE_ENDIAN);
+                FloatVector v1 = FloatVector.fromMemorySegment(Q8_FLOAT_SPECIES, inputTensor.getMemorySegment(),
+                        memoryOffset(input, row, column + Q8Layout.BLOCK_SIZE / 2), ByteOrder.LITTLE_ENDIAN);
+                float max = v0.abs().max(v1.abs()).reduceLanes(VectorOperators.MAX);
+                float factor = max / Byte.MAX_VALUE;
+                float inverse = max != 0.0f ? Byte.MAX_VALUE / max : 0.0f;
+                scale.underlying().set(factor, row, Q8Layout.scaleColumn(column));
+                FloatVector inv = FloatVector.broadcast(Q8_FLOAT_SPECIES, inverse);
+                ByteVector b0 = v0.mul(inv).add(F32_ROUND_UP_512)
+                        .convertShape(VectorOperators.F2B, Q8_BYTE_SPECIES, 0).reinterpretAsBytes();
+                ByteVector b1 = v1.mul(inv).add(F32_ROUND_UP_512)
+                        .convertShape(VectorOperators.F2B, Q8_BYTE_SPECIES, 0).reinterpretAsBytes();
+                b0.intoMemorySegment(outputTensor.getMemorySegment(), memoryOffset(output, row, column),
+                        ByteOrder.LITTLE_ENDIAN);
+                b1.intoMemorySegment(outputTensor.getMemorySegment(), memoryOffset(output, row,
+                        column + Q8Layout.BLOCK_SIZE / 2), ByteOrder.LITTLE_ENDIAN);
+            }
+        }
+    }
+
+    private void reshapeDenseToI8Scalar(TensorRef input, TensorRef output, TensorRef scale) {
+        I8Tensor outputTensor = (I8Tensor) output.underlying();
+        for (int row = 0; row < input.shape().first(); row++) {
+            for (int column = 0; column < input.shape().last(); column += Q8Layout.BLOCK_SIZE) {
+                float max = 0.0f;
+                for (int i = 0; i < Q8Layout.BLOCK_SIZE; i++) {
+                    max = Math.max(max, Math.abs(input.underlying().get(row, column + i)));
+                }
+                float factor = max / Byte.MAX_VALUE;
+                float inverse = max != 0.0f ? Byte.MAX_VALUE / max : 0.0f;
+                scale.underlying().set(factor, row, Q8Layout.scaleColumn(column));
+                for (int i = 0; i < Q8Layout.BLOCK_SIZE; i++) {
+                    outputTensor.setRawByte((byte) Math.round(input.underlying().get(row, column + i) * inverse), row,
+                            column + i);
+                }
+            }
+        }
+    }
+
+    private void reshapeToQ4(TensorRef input, TensorRef output) {
+        TensorRef scale = Q4Layout.scale(output);
+        Preconditions.checkArgument(scale != null, "Q4 output must have scale sidecar");
+        Q4Tensor outputTensor = (Q4Tensor) output.underlying();
+        for (int row = 0; row < input.shape().first(); row++) {
+            for (int column = 0; column < input.shape().last(); column += Q4Layout.BLOCK_SIZE) {
+                float max = 0.0f;
+                for (int i = 0; i < Q4Layout.BLOCK_SIZE; i++) {
+                    float value = input.underlying().get(row, column + i);
+                    if (Math.abs(value) > Math.abs(max)) {
+                        max = value;
+                    }
+                }
+                float factor = max / -8.0f;
+                float inverse = factor != 0.0f ? 1.0f / factor : 0.0f;
+                scale.underlying().set(factor, row, Q4Layout.blockIndex(column));
+                for (int i = 0; i < Q4Layout.HALF_BLOCK; i++) {
+                    int low = q4Nibble(input.underlying().get(row, column + i) * inverse);
+                    int high = q4Nibble(input.underlying().get(row, column + Q4Layout.HALF_BLOCK + i) * inverse);
+                    outputTensor.setPackedByte((byte) (low | (high << 4)), row, Q4Layout.blockIndex(column), i);
+                }
+            }
+        }
+    }
+
+    private void reshapeQuantizedToDense(TensorRef input, TensorRef output) {
+        if (output.dType() == DType.F32) {
+            for (int row = 0; row < input.shape().first(); row++) {
+                for (int column = 0; column < input.shape().last(); column++) {
+                    output.underlying().set(input.underlying().get(row, column), row, column);
+                }
+            }
+            return;
+        }
+        TensorRef f32 = new Lighter().allocate(DType.F32, input.shape());
+        try {
+            reshapeQuantizedToDense(input, f32);
+            reshapeF32ToBF16(f32, output);
+        } finally {
+            f32.close();
+        }
+    }
+
+    private int q4Nibble(float value) {
+        return Math.max(0, Math.min(15, (int) (value + 8.5f)));
+    }
 
     @Override
     public Either<OpSupport, Void> multiplyAccumulate(TensorRef a, TensorRef b, int offset, int length) {

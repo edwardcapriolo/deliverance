@@ -18,6 +18,7 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.model.TensorProviderKind;
 import io.teknek.deliverance.tensor2.ScaledSoftMax;
+import io.teknek.deliverance.tensor2.TensorRefBackedTensor;
 import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensorlib.TensorPlan;
 
@@ -448,6 +449,15 @@ public class KvCacheSelfAttention extends BaseCausalSelfAttention {
             return;
         }
         if (destination.dType() == DType.BF16 || destination.dType() == DType.I8) {
+            if (destination.dType() == DType.BF16 && canUseLighterReshapeForKvPack(source, destination)) {
+                try (TensorRef sourceRef = TensorRef.borrowed(source);
+                     AbstractTensor converted = new TensorRefBackedTensor(model.getLighter().reshape(sourceRef,
+                             destination.dType()))) {
+                    destination.copyFrom(converted, 0, destination.getOffset(destinationRowStart, 0),
+                            (int) converted.size());
+                }
+                return;
+            }
             try (AbstractTensor converted = configurableTensorProvider.get().quantize(source, destination.dType(), 0,
                     (int) source.shape().last())) {
                 destination.copyFrom(converted, 0, destination.getOffset(destinationRowStart, 0),
@@ -457,6 +467,16 @@ public class KvCacheSelfAttention extends BaseCausalSelfAttention {
         }
         throw new UnsupportedOperationException("Unsupported KV pack conversion " + source.dType() + " -> "
                 + destination.dType());
+    }
+
+    private boolean canUseLighterReshapeForKvPack(AbstractTensor source, AbstractTensor destination) {
+        return source.dims() == 2
+                && destination.dims() == 2
+                && source.shape().last() == destination.shape().last()
+                && !source.shape().isSparse()
+                && !destination.shape().isSparse()
+                && (source.dType() == DType.F32 || source.dType() == DType.BF16)
+                && destination.dType() == DType.BF16;
     }
 
     private void decodePagedAttention(AbstractTensor output, AbstractTensor query, AbstractTensor currentKeys,
