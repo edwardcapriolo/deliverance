@@ -6,8 +6,11 @@ import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.TensorMutability;
-import io.teknek.deliverance.tensor.VectorTensorMathUtils;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
+import io.teknek.deliverance.tensor2.CompositeOps;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.ScaledSoftMax;
+import io.teknek.deliverance.tensor2.TensorRef;
 
 public interface TensorOperations {
 
@@ -139,8 +142,6 @@ public interface TensorOperations {
     /**
      * For each position multiply value by the scale factor
      */
-    void scale(float factor, AbstractTensor x, int offset, int length);
-
     /** Returns the maximum value over a contiguous window in one row of a tensor. */
     default float max(AbstractTensor input, int row, int offset, int length) {
         Preconditions.checkArgument(row >= 0 && row < input.shape().first(), "row out of bounds");
@@ -214,38 +215,6 @@ public interface TensorOperations {
                 output.set((float) net.jafama.FastMath.exp(input.get(row, i)), row, i);
             }
         }
-    }
-
-    default void scaledSoftMax(AbstractTensor x, int offset, int length, float scale, Float softcap) {
-        Preconditions.checkArgument(x.shape().first() == 1);
-        TensorMutability.requireWritable(x, "scaledSoftMax");
-        int limit = offset + length;
-        float maxVal = transformForAttentionSoftmax(x.get(0, offset), scale, softcap);
-        for (int i = offset + 1; i < limit; i++) {
-            float value = transformForAttentionSoftmax(x.get(0, i), scale, softcap);
-            if (value > maxVal) {
-                maxVal = value;
-            }
-        }
-        for (int i = offset; i < limit; i++) {
-            x.set(transformForAttentionSoftmax(x.get(0, i), scale, softcap) - maxVal, 0, i);
-        }
-        exp(x, x, offset, length);
-        float sum = sum(x, 0, offset, length);
-        float invSum = 1.0f / sum;
-        scale(invSum, x, offset, length);
-    }
-
-    default void softMax(AbstractTensor x, int offset, int length) {
-        scaledSoftMax(x, offset, length, 1.0f, null);
-    }
-
-    private static float transformForAttentionSoftmax(float value, float scale, Float softcap) {
-        float scaled = value * scale;
-        if (softcap == null) {
-            return scaled;
-        }
-        return (float) net.jafama.FastMath.tanh(scaled / softcap) * softcap;
     }
 
     /**
@@ -367,7 +336,12 @@ public interface TensorOperations {
                 batchDotProduct(attn, query, keyPage, queryOffset, kvOffset, headSize, globalRow, 0, rows);
                 globalRow += rows;
             }
-            scaledSoftMax(attn, 0, visibleRows, scale, softcap);
+            try (TensorRef attnRef = TensorRef.borrowed(attn)) {
+                new CompositeOps(new Lighter()).scaledSoftMax(new ScaledSoftMax(scale)
+                        .target(attnRef)
+                        .offsetAndLength(0, visibleRows)
+                        .softcap(softcap));
+            }
             globalRow = 0;
             for (AbstractTensor valuePage : valuePages) {
                 if (globalRow >= visibleRows) {

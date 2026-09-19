@@ -339,11 +339,6 @@ public class Qwen3MoeFeedForwardCharacterizationTest {
         }
 
         @Override
-        public void scale(float factor, AbstractTensor x, int offset, int length) {
-            delegate.scale(factor, x, offset, length);
-        }
-
-        @Override
         public AbstractTensor quantize(AbstractTensor t, DType qtype, int offset, int length) {
             return delegate.quantize(t, qtype, offset, length);
         }

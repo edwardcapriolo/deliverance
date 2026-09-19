@@ -1,5 +1,25 @@
 #include "tensor2_native.h"
 
+static float bf16_to_f32(uint16_t value) {
+    union {
+        uint32_t bits;
+        float f;
+    } converted;
+    converted.bits = ((uint32_t) value) << 16;
+    return converted.f;
+}
+
+static uint16_t f32_to_bf16(float value) {
+    union {
+        uint32_t bits;
+        float f;
+    } converted;
+    converted.f = value;
+    uint32_t lsb = (converted.bits >> 16) & 1u;
+    converted.bits += 0x7fffu + lsb;
+    return (uint16_t) (converted.bits >> 16);
+}
+
 int main(void) {
     float input[4 * 4] = {
             1.0f, 2.0f, 3.0f, 4.0f,
@@ -74,6 +94,27 @@ int main(void) {
     if (scale_target[5] != 6.0f || scale_target[6] != 14.0f || scale_target[7] != 16.0f
             || scale_target[8] != 18.0f || scale_target[9] != 10.0f) {
         return 9;
+    }
+    uint16_t bf16_target[2 * 9];
+    for (int i = 0; i < 18; i++) {
+        bf16_target[i] = f32_to_bf16((float) (i + 1));
+    }
+    status = tensor2_scale_bf16(bf16_target, -1.5f, 2, 2, 5, 9);
+    if (status != TENSOR2_OK) {
+        return 10;
+    }
+    for (int row = 0; row < 2; row++) {
+        for (int column = 0; column < 9; column++) {
+            float expected = (float) (row * 9 + column + 1);
+            if (column >= 2 && column < 7) {
+                expected *= -1.5f;
+            }
+            float actual = bf16_to_f32(bf16_target[row * 9 + column]);
+            float diff = actual > expected ? actual - expected : expected - actual;
+            if (diff > 0.05f) {
+                return 11;
+            }
+        }
     }
     return 0;
 }

@@ -570,11 +570,6 @@ public class NativeSimdTensorOperations implements TensorOperations {
     }
 
     @Override
-    public void scale(float factor, AbstractTensor x, int offset, int length) {
-        delegate.scale(factor, x, offset, length);
-    }
-
-    @Override
     public void exp(AbstractTensor input, AbstractTensor output, int offset, int length) {
         TensorMutability.requireWritable(output, "exp");
         if (input.dType() == DType.F32

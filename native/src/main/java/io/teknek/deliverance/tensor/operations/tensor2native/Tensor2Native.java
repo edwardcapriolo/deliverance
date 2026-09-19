@@ -249,4 +249,69 @@ public class Tensor2Native extends Tensor2Native$shared {
            throw new AssertionError("should not reach here", ex$);
         }
     }
+
+    private static class tensor2_scale_bf16 {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.of(
+            Tensor2Native.C_INT,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_FLOAT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT
+        );
+
+        public static final MemorySegment ADDR = SYMBOL_LOOKUP.findOrThrow("tensor2_scale_bf16");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /**
+     * Function descriptor for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_scale_bf16(uint16_t *target, float factor, int rows, int offset, int length, int stride)
+     * }
+     */
+    public static FunctionDescriptor tensor2_scale_bf16$descriptor() {
+        return tensor2_scale_bf16.DESC;
+    }
+
+    /**
+     * Downcall method handle for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_scale_bf16(uint16_t *target, float factor, int rows, int offset, int length, int stride)
+     * }
+     */
+    public static MethodHandle tensor2_scale_bf16$handle() {
+        return tensor2_scale_bf16.HANDLE;
+    }
+
+    /**
+     * Address for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_scale_bf16(uint16_t *target, float factor, int rows, int offset, int length, int stride)
+     * }
+     */
+    public static MemorySegment tensor2_scale_bf16$address() {
+        return tensor2_scale_bf16.ADDR;
+    }
+
+    /**
+     * {@snippet lang=c :
+     * tensor2_status tensor2_scale_bf16(uint16_t *target, float factor, int rows, int offset, int length, int stride)
+     * }
+     */
+    public static int tensor2_scale_bf16(MemorySegment target, float factor, int rows, int offset, int length, int stride) {
+        var mh$ = tensor2_scale_bf16.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("tensor2_scale_bf16", target, factor, rows, offset, length, stride);
+            }
+            return (int)mh$.invokeExact(target, factor, rows, offset, length, stride);
+        } catch (Error | RuntimeException ex) {
+           throw ex;
+        } catch (Throwable ex$) {
+           throw new AssertionError("should not reach here", ex$);
+        }
+    }
 }

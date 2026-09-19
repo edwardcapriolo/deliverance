@@ -9,7 +9,9 @@ import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensor2.CompositeOps;
 import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.MultiplyInPlace;
 import io.teknek.deliverance.tensor2.Scale;
 import io.teknek.deliverance.tensor2.TensorProviderKind;
 import io.teknek.deliverance.tensor2.TensorRef;
@@ -21,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.ForkJoinTask;
 import java.util.concurrent.ForkJoinPool;
 import java.util.stream.IntStream;
@@ -35,6 +38,8 @@ import org.slf4j.LoggerFactory;
  */
 public final class TensorPlan {
     private static final Logger LOGGER = LoggerFactory.getLogger(TensorPlan.class);
+    private static final int SCALE_DOT_IN_TIME_CHUNK_MULTIPLE = 16;
+    private static final long SCALE_DOT_IN_TIME_MIN_PARALLEL_ELEMENTS = 4096;
     public enum RunMode {
         DEFAULT,
         CALLER_THREAD
@@ -44,6 +49,7 @@ public final class TensorPlan {
     private final WrappedForkJoinPool pool;
     private final MetricRegistry metricRegistry;
     private final TensorRuntime runtime;
+    private final Lighter lighter;
     private final String ownerClass;
     private final TensorPlanAdaptiveSplitTuner adaptiveSplitTuner;
     private RunMode runMode = RunMode.DEFAULT;
@@ -68,10 +74,17 @@ public final class TensorPlan {
 
     public TensorPlan(TensorOperations operations, WrappedForkJoinPool pool, MetricRegistry metricRegistry,
             Object owner, TensorRuntime runtime) {
+        this(operations, pool, metricRegistry, owner, runtime, new Lighter(metricRegistry == null ? new MetricRegistry()
+                : metricRegistry));
+    }
+
+    public TensorPlan(TensorOperations operations, WrappedForkJoinPool pool, MetricRegistry metricRegistry,
+            Object owner, TensorRuntime runtime, Lighter lighter) {
         this.operations = Objects.requireNonNull(operations, "operations");
         this.pool = Objects.requireNonNull(pool, "pool");
         this.metricRegistry = metricRegistry;
         this.runtime = runtime;
+        this.lighter = Objects.requireNonNull(lighter, "lighter");
         this.ownerClass = owner == null ? "UNKNOWN" : owner.getClass().getSimpleName();
         this.adaptiveSplitTuner = owner instanceof TensorPlanAdaptiveSplitTuner tuner ? tuner : null;
     }
@@ -307,6 +320,11 @@ public final class TensorPlan {
             return new Tensor(new JustInTimeNode(this.node, minSplit, maxSplit));
         }
 
+        /** Adds split-count candidates to the following {@link #dotInTime} adaptive execution choice. */
+        public Tensor dotInTimeSplits(int minSplit, int maxSplit) {
+            return new Tensor(new DotInTimeSplitsNode(this.node, minSplit, maxSplit));
+        }
+
         public Tensor dotInTime(Lighter.ProviderSelection providers, Lighter.ProviderChoice fallback) {
             return dotInTime(this.node.label(), providers, fallback);
         }
@@ -452,6 +470,27 @@ public final class TensorPlan {
         }
     }
 
+    private record ScaleCandidate(TensorProviderKind provider, int splitCount, String name) {
+        private ScaleCandidate {
+            Objects.requireNonNull(provider, "provider");
+            Objects.requireNonNull(name, "name");
+            if (splitCount < 1) {
+                throw new IllegalArgumentException("splitCount must be >= 1");
+            }
+        }
+    }
+
+    private record ScaleCandidateExecution(boolean supported, int chunks, int tailLength, int length) {
+        private ScaleCandidateExecution {
+            if (chunks < 1) {
+                throw new IllegalArgumentException("chunks must be >= 1");
+            }
+            if (tailLength < 0 || length < 0) {
+                throw new IllegalArgumentException("lengths must be >= 0");
+            }
+        }
+    }
+
     private final class TimedNode implements Node {
         private final String metricName;
         private final Node delegate;
@@ -529,6 +568,43 @@ public final class TensorPlan {
         @Override
         public void render(StringBuilder sb, String indent, boolean last) {
             renderLine(sb, indent, last, "justInTime splits=" + minSplit + ".." + maxSplit + " -> "
+                    + delegate.label() + " " + compactShape(shape()));
+            delegate.render(sb, indent + (last ? "   " : "│  "), true);
+        }
+
+        @Override
+        public String label() {
+            return delegate.label();
+        }
+    }
+
+    private final class DotInTimeSplitsNode implements Node {
+        private final Node delegate;
+        private final int minSplit;
+        private final int maxSplit;
+
+        private DotInTimeSplitsNode(Node delegate, int minSplit, int maxSplit) {
+            if (minSplit < 1 || maxSplit < minSplit) {
+                throw new IllegalArgumentException("invalid dotInTime split range");
+            }
+            this.delegate = Objects.requireNonNull(delegate, "delegate");
+            this.minSplit = minSplit;
+            this.maxSplit = maxSplit;
+        }
+
+        @Override
+        public Eval eval() {
+            throw new UnsupportedOperationException("dotInTimeSplits must be composed with dotInTime");
+        }
+
+        @Override
+        public TensorShape shape() {
+            return delegate.shape();
+        }
+
+        @Override
+        public void render(StringBuilder sb, String indent, boolean last) {
+            renderLine(sb, indent, last, "dotInTimeSplits=" + minSplit + ".." + maxSplit + " -> "
                     + delegate.label() + " " + compactShape(shape()));
             delegate.render(sb, indent + (last ? "   " : "│  "), true);
         }
@@ -932,8 +1008,13 @@ public final class TensorPlan {
         public Eval eval() {
             Eval in = input.eval();
             AbstractTensor out = in.owned() || in.mutable() ? in.tensor() : copyOf(in.tensor());
-            run("tensorplan.scale", 0, Optional.of(out), () -> operations.scale(factor, out, 0,
-                    (int) out.shape().last()));
+            run("tensorplan.scale", 0, Optional.of(out), () -> {
+                try (TensorRef outRef = TensorRef.borrowed(out)) {
+                    new CompositeOps(lighter, metricRegistry).multiplyInPlace(new MultiplyInPlace(factor)
+                            .target(outRef)
+                            .offsetAndLength(0, (int) out.shape().last()));
+                }
+            });
             return new Eval(out, in.owned(), in.mutable());
         }
 
@@ -941,30 +1022,98 @@ public final class TensorPlan {
             Eval in = input.eval();
             AbstractTensor out = in.owned() || in.mutable() ? in.tensor() : copyOf(in.tensor());
             run("tensorplan.dotintime.scale", 0, Optional.of(out), () -> scaleWithProviders(planName, out, providers,
-                    fallback));
+                    fallback, null));
+            return new Eval(out, in.owned(), in.mutable());
+        }
+
+        Eval eval(String planName, Lighter.ProviderSelection providers, Lighter.ProviderChoice fallback,
+                DotInTimeSplitsNode splits) {
+            Eval in = input.eval();
+            AbstractTensor out = in.owned() || in.mutable() ? in.tensor() : copyOf(in.tensor());
+            run("tensorplan.dotintime.scale", 0, Optional.of(out), () -> scaleWithProviders(planName, out, providers,
+                    fallback, splits));
             return new Eval(out, in.owned(), in.mutable());
         }
 
         private void scaleWithProviders(String planName, AbstractTensor out, Lighter.ProviderSelection providers,
-                Lighter.ProviderChoice fallback) {
+                Lighter.ProviderChoice fallback, DotInTimeSplitsNode splits) {
             if (providers.lighter() != fallback.lighter()) {
                 throw new IllegalArgumentException("dotInTime providers and fallback must come from the same Lighter");
             }
             try (TensorRef target = TensorRef.borrowed(out)) {
-                TensorProviderKind selected = selectProvider(planName, providers);
+                ScaleCandidate selected = selectScaleCandidate(planName, out, providers, splits);
                 if (selected != null) {
                     long startNanos = System.nanoTime();
-                    if (providers.lighter().scale(scale(target, out), Map.of(), selected)) {
-                        observeProvider(planName, selected, System.nanoTime() - startNanos);
+                    ScaleCandidateExecution execution = scaleWithCandidate(providers.lighter(), target, out, selected);
+                    if (execution.supported()) {
+                        observeCandidate(planName, selected, execution, System.nanoTime() - startNanos);
                         return;
                     }
-                    observeProvider(planName, selected, Long.MAX_VALUE / 4);
+                    observeCandidate(planName, selected, execution, Long.MAX_VALUE / 4);
                 }
-                if (fallback.lighter().scale(scale(target, out), Map.of(), fallback.kind())) {
+                if (scaleWithCandidate(fallback.lighter(), target, out, new ScaleCandidate(fallback.kind(), 1,
+                        fallback.kind().name())).supported()) {
                     return;
                 }
             }
             throw new IllegalStateException("No tensor operations support dotInTime scale");
+        }
+
+        private ScaleCandidateExecution scaleWithCandidate(Lighter candidateLighter, TensorRef target, AbstractTensor out,
+                ScaleCandidate candidate) {
+            if (candidate.splitCount() <= 1) {
+                return new ScaleCandidateExecution(candidateLighter.scale(scale(target, out), Map.of(),
+                        candidate.provider()), 1, 0, (int) out.shape().last());
+            }
+            List<TensorSplit> chunks = scaleChunks(0, (int) out.shape().last(), candidate.splitCount());
+            AtomicBoolean supported = new AtomicBoolean(true);
+            List<ForkJoinTask<?>> tasks = new ArrayList<>();
+            for (TensorSplit chunk : chunks) {
+                int chunkOffset = Math.toIntExact(chunk.offset());
+                int chunkLength = Math.toIntExact(chunk.length());
+                tasks.add(pool.getUnderlying().submit(() -> {
+                    if (!candidateLighter.scale(new Scale(factor).target(target).offsetAndLength(chunkOffset,
+                            chunkLength), Map.of("split", Integer.toString(candidate.splitCount())),
+                            candidate.provider())) {
+                        supported.set(false);
+                    }
+                }));
+            }
+            tasks.forEach(ForkJoinTask::join);
+            return new ScaleCandidateExecution(supported.get(), chunks.size(), tailLength(chunks),
+                    (int) out.shape().last());
+        }
+
+        private int tailLength(List<TensorSplit> chunks) {
+            TensorSplit last = chunks.getLast();
+            return last.length() % SCALE_DOT_IN_TIME_CHUNK_MULTIPLE == 0 ? 0 : Math.toIntExact(last.length());
+        }
+
+        private List<TensorSplit> scaleChunks(int offset, int length, int splitCount) {
+            if (splitCount <= 1 || length <= SCALE_DOT_IN_TIME_CHUNK_MULTIPLE) {
+                return List.of(new TensorSplit(offset, length));
+            }
+            int alignedLength = (length / SCALE_DOT_IN_TIME_CHUNK_MULTIPLE) * SCALE_DOT_IN_TIME_CHUNK_MULTIPLE;
+            if (alignedLength == 0) {
+                return List.of(new TensorSplit(offset, length));
+            }
+            int alignedBlocks = alignedLength / SCALE_DOT_IN_TIME_CHUNK_MULTIPLE;
+            int chunks = Math.min(splitCount, alignedBlocks);
+            int baseBlocks = alignedBlocks / chunks;
+            int extraBlocks = alignedBlocks % chunks;
+            List<TensorSplit> result = new ArrayList<>(chunks + 1);
+            int cursor = offset;
+            for (int chunk = 0; chunk < chunks; chunk++) {
+                int blocks = baseBlocks + (chunk < extraBlocks ? 1 : 0);
+                int chunkLength = blocks * SCALE_DOT_IN_TIME_CHUNK_MULTIPLE;
+                result.add(new TensorSplit(cursor, chunkLength));
+                cursor += chunkLength;
+            }
+            int tailLength = length - alignedLength;
+            if (tailLength > 0) {
+                result.add(new TensorSplit(cursor, tailLength));
+            }
+            return result;
         }
 
         private Scale scale(TensorRef target, AbstractTensor out) {
@@ -1006,6 +1155,9 @@ public final class TensorPlan {
         public Eval eval() {
             if (delegate instanceof ScaleNode scaleNode) {
                 return scaleNode.eval(planName, providers, fallback);
+            }
+            if (delegate instanceof DotInTimeSplitsNode splits && splits.delegate instanceof ScaleNode scaleNode) {
+                return scaleNode.eval(planName, providers, fallback, splits);
             }
             throw new IllegalStateException("dotInTime currently supports scale nodes only");
         }
@@ -1251,26 +1403,58 @@ public final class TensorPlan {
         return copy;
     }
 
-    private TensorProviderKind selectProvider(String planName, Lighter.ProviderSelection providers) {
+    private ScaleCandidate selectScaleCandidate(String planName, AbstractTensor out, Lighter.ProviderSelection providers,
+            DotInTimeSplitsNode splits) {
         if (providers.providers().isEmpty()) {
             return null;
         }
+        List<ScaleCandidate> candidates = scaleCandidates(out, providers, splits);
         if (adaptiveSplitTuner == null) {
-            return providers.providers().keySet().iterator().next();
+            return candidates.getFirst();
         }
-        List<String> candidates = providers.providers().keySet().stream().map(Enum::name).toList();
-        String selected = adaptiveSplitTuner.chooseAlternate(planName, candidates);
-        for (TensorProviderKind provider : providers.providers().keySet()) {
-            if (provider.name().equals(selected)) {
-                return provider;
+        List<String> candidateNames = candidates.stream().map(ScaleCandidate::name).toList();
+        String selected = adaptiveSplitTuner.chooseAlternate(planName, candidateNames);
+        for (ScaleCandidate candidate : candidates) {
+            if (candidate.name().equals(selected)) {
+                return candidate;
             }
         }
-        return providers.providers().keySet().iterator().next();
+        return candidates.getFirst();
     }
 
-    private void observeProvider(String planName, TensorProviderKind provider, long elapsedNanos) {
+    private List<ScaleCandidate> scaleCandidates(AbstractTensor out, Lighter.ProviderSelection providers,
+            DotInTimeSplitsNode splits) {
+        List<ScaleCandidate> candidates = new ArrayList<>();
+        if (splits == null || scaleWorkElements(out) < SCALE_DOT_IN_TIME_MIN_PARALLEL_ELEMENTS) {
+            for (TensorProviderKind provider : providers.providers().keySet()) {
+                candidates.add(new ScaleCandidate(provider, 1, provider.name()));
+            }
+            return candidates;
+        }
+        int maxSplit = Math.min(splits.maxSplit, Math.max(1, (int) out.shape().last()));
+        int minSplit = Math.min(splits.minSplit, maxSplit);
+        for (TensorProviderKind provider : providers.providers().keySet()) {
+            for (int split = minSplit; split <= maxSplit; split++) {
+                candidates.add(new ScaleCandidate(provider, split, provider.name() + " split=" + split));
+            }
+        }
+        return candidates;
+    }
+
+    private static long scaleWorkElements(AbstractTensor out) {
+        return out.shape().first() * out.shape().last();
+    }
+
+    private void observeCandidate(String planName, ScaleCandidate candidate, ScaleCandidateExecution execution,
+            long elapsedNanos) {
         if (adaptiveSplitTuner != null) {
-            adaptiveSplitTuner.observeAlternate(planName, provider.name(), elapsedNanos);
+            adaptiveSplitTuner.observeAlternate(planName, candidate.name(), elapsedNanos, Map.of(
+                    "provider", candidate.provider().name(),
+                    "split", Integer.toString(candidate.splitCount()),
+                    "length", Integer.toString(execution.length()),
+                    "chunks", Integer.toString(execution.chunks()),
+                    "chunk_multiple", Integer.toString(SCALE_DOT_IN_TIME_CHUNK_MULTIPLE),
+                    "tail", Integer.toString(execution.tailLength())));
         }
     }
 

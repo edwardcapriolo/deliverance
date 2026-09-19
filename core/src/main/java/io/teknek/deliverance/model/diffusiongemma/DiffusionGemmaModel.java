@@ -30,6 +30,8 @@ import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensor2.ScaledSoftMax;
+import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 
 import java.util.ArrayList;
@@ -540,7 +542,11 @@ public final class DiffusionGemmaModel extends AbstractModel {
                                             keyPosition);
                                 }
                             }
-                            ops.scaledSoftMax(scores, 0, sequenceLength, scale, null);
+                            try (TensorRef scoresRef = TensorRef.borrowed(scores)) {
+                                getCompositeOps().scaledSoftMax(new ScaledSoftMax(scale)
+                                        .target(scoresRef)
+                                        .offsetAndLength(0, sequenceLength));
+                            }
                             ops.saxpy(scores, valueBatch, outputRow, kvOffset, queryOffset, headDim, 0, 0,
                                     sequenceLength);
                         }

@@ -2,7 +2,9 @@ package io.teknek.deliverance.model.nemotronlabsdiffusion;
 
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.tensor.AbstractTensor;
-import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensor2.CompositeOps;
+import io.teknek.deliverance.tensor2.MultiplyInPlace;
+import io.teknek.deliverance.tensor2.TensorRef;
 import net.jafama.FastMath;
 
 import java.util.Map;
@@ -64,12 +66,12 @@ final class NemotronLabsDiffusionRope {
                 * StrictMath.log(1.0 + StrictMath.floor((double) position / originalMaxPositionEmbeddings)));
     }
 
-    void apply(AbstractTensor query, AbstractTensor key, int queryHeads, int keyValueHeads, TensorOperations ops) {
+    void apply(AbstractTensor query, AbstractTensor key, int queryHeads, int keyValueHeads, CompositeOps ops) {
         apply(query, key, 0, queryHeads, keyValueHeads, ops);
     }
 
     void apply(AbstractTensor query, AbstractTensor key, int startPosition, int queryHeads, int keyValueHeads,
-            TensorOperations ops) {
+            CompositeOps ops) {
         Preconditions.checkArgument(query.dims() == 2 && key.dims() == 2, "query/key must be 2D");
         Preconditions.checkArgument(query.shape().first() == key.shape().first(), "query/key rows must match");
         for (int row = 0; row < query.shape().first(); row++) {
@@ -78,8 +80,10 @@ final class NemotronLabsDiffusionRope {
             applyToTensor(key, row, absolutePosition, keyValueHeads);
             float queryScale = llama4QueryScale(absolutePosition);
             if (queryScale != 1.0f) {
-                try (AbstractTensor queryRow = query.slice(row)) {
-                    ops.scale(queryScale, queryRow, 0, queryHeads * headDim);
+                try (AbstractTensor queryRow = query.slice(row);
+                     TensorRef queryRef = TensorRef.borrowed(queryRow)) {
+                    ops.multiplyInPlace(new MultiplyInPlace(queryScale).target(queryRef)
+                            .offsetAndLength(0, queryHeads * headDim));
                 }
             }
         }

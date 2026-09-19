@@ -45,4 +45,12 @@ tensor2_status tensor2_scale_f32(
         int length,
         int stride);
 
+tensor2_status tensor2_scale_bf16(
+        uint16_t *target,
+        float factor,
+        int rows,
+        int offset,
+        int length,
+        int stride);
+
 #endif

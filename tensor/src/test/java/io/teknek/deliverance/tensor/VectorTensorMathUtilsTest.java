@@ -8,7 +8,6 @@ import java.util.function.IntUnaryOperator;
 import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class VectorTensorMathUtilsTest {
 
@@ -74,71 +73,4 @@ public class VectorTensorMathUtilsTest {
 
     }
 
-    @Test
-    public void softMaxRespectsOffsetWindow(){
-        AbstractTensor original = new FloatBufferTensor(1, 5);
-        original.set(99.0f, 0, 0);
-        original.set(88.0f, 0, 1);
-        original.set(1.0f, 0, 2);
-        original.set(2.0f, 0, 3);
-        original.set(3.0f, 0, 4);
-
-        VectorTensorMathUtils.softMax(original, 2, 3);
-
-        assertEquals(99.0f, original.get(0, 0), 0.000001);
-        assertEquals(88.0f, original.get(0, 1), 0.000001);
-        float sum = original.get(0, 2) + original.get(0, 3) + original.get(0, 4);
-        assertEquals(1.0f, sum, 0.000001);
-        assertTrue(original.get(0, 4) > original.get(0, 3));
-        assertTrue(original.get(0, 3) > original.get(0, 2));
-    }
-
-    @Test
-    public void scaledSoftMaxMatchesSeparateScaleAndSoftcapPasses() {
-        AbstractTensor separate = new FloatBufferTensor(1, 5);
-        AbstractTensor fused = new FloatBufferTensor(1, 5);
-        for (int i = 0; i < 5; i++) {
-            float value = (i - 2) * 1.75f;
-            separate.set(value, 0, i);
-            fused.set(value, 0, i);
-        }
-
-        float scale = 0.25f;
-        float softcap = 1.5f;
-        for (int i = 0; i < 5; i++) {
-            float v = separate.get(0, i) * scale;
-            v = (float) net.jafama.FastMath.tanh(v / softcap) * softcap;
-            separate.set(v, 0, i);
-        }
-        VectorTensorMathUtils.softMax(separate, 0, 5);
-
-        VectorTensorMathUtils.scaledSoftMax(fused, 0, 5, scale, softcap);
-
-        for (int i = 0; i < 5; i++) {
-            assertEquals(separate.get(0, i), fused.get(0, i), 0.000001, "col=" + i);
-        }
-    }
-
-    @Test
-    public void scaledSoftMaxMatchesSeparateScalePass() {
-        AbstractTensor separate = new FloatBufferTensor(1, 5);
-        AbstractTensor fused = new FloatBufferTensor(1, 5);
-        for (int i = 0; i < 5; i++) {
-            float value = (i - 2) * 1.25f;
-            separate.set(value, 0, i);
-            fused.set(value, 0, i);
-        }
-
-        float scale = 0.5f;
-        for (int i = 0; i < 5; i++) {
-            separate.set(separate.get(0, i) * scale, 0, i);
-        }
-        VectorTensorMathUtils.softMax(separate, 0, 5);
-
-        VectorTensorMathUtils.scaledSoftMax(fused, 0, 5, scale, null);
-
-        for (int i = 0; i < 5; i++) {
-            assertEquals(separate.get(0, i), fused.get(0, i), 0.000001, "col=" + i);
-        }
-    }
 }

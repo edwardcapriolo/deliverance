@@ -1,0 +1,2 @@
+timestamp,engine,model,case_id,category,turn,prompt_chars,prompt_tokens,generated_tokens,total_ms,generation_ms,tokens_per_second,response_chars,finish_reason
+"2026-09-18T23:02:18.165898Z","deliverance","edwardcapriolo/Nemotron-Labs-Diffusion-3B-JQ4","builtin-reasoning-1","reasoning",1,637,136,256,107444.6875,102298.114833,2.4927145570207556,1003,"MAX_TOKENS"

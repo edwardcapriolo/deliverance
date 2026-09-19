@@ -81,11 +81,6 @@ public final class ParallelSplitSizedTensorOperations implements TensorOperation
     }
 
     @Override
-    public void scale(float factor, AbstractTensor x, int offset, int length) {
-        delegate.scale(factor, x, offset, length);
-    }
-
-    @Override
     public float max(AbstractTensor input, int row, int offset, int length) {
         return delegate.max(input, row, offset, length);
     }

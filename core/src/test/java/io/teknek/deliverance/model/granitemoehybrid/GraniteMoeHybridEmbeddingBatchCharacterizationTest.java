@@ -12,6 +12,10 @@ import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.deliverance.tensor.operations.MachineSpec;
 import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
+import io.teknek.deliverance.tensor2.CompositeOps;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.MultiplyInPlace;
+import io.teknek.deliverance.tensor2.TensorRef;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -107,6 +111,7 @@ class GraniteMoeHybridEmbeddingBatchCharacterizationTest {
         private final TensorAllocator allocator = new ArrayQueueTensorAllocator(new MetricRegistry());
         private final WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
         private final PanamaTensorOperations panama = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, allocator, pool);
+        private final CompositeOps compositeOps = new CompositeOps(new Lighter(new MetricRegistry()));
         private int singleEmbeddingAllocations;
         private int scaleCalls;
 
@@ -121,7 +126,10 @@ class GraniteMoeHybridEmbeddingBatchCharacterizationTest {
 
         private void scale(float factor, AbstractTensor target, int offset, int length) {
             scaleCalls++;
-            panama.scale(factor, target, offset, length);
+            try (TensorRef targetRef = TensorRef.borrowed(target)) {
+                compositeOps.multiplyInPlace(new MultiplyInPlace(factor).target(targetRef).offsetAndLength(offset,
+                        length));
+            }
         }
 
         private void resetCounts() {

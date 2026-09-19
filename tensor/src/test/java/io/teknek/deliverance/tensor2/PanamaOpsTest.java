@@ -1,17 +1,9 @@
 package io.teknek.deliverance.tensor2;
 
 import io.teknek.deliverance.DType;
-import io.teknek.deliverance.math.WrappedForkJoinPool;
-import io.teknek.deliverance.tensor.TensorDisplayUtil;
 import io.teknek.deliverance.tensor.TensorShape;
-import io.teknek.deliverance.tensor.impl.BFloat16BufferTensor;
-import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
-import io.teknek.deliverance.tensor.operations.MachineSpec;
-import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
-import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.dysfx.Either;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 
 import java.util.List;
 
@@ -85,48 +77,36 @@ class PanamaOpsTest {
     }
 
     @Test
-    void scaleF32MatchesPanamaTensorOperations() {
+    void scaleF32MatchesReference() {
         Allocator allocator = new Allocator();
-        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
-            PanamaTensorOperations oldOps = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
-                    Mockito.mock(TensorAllocator.class), pool);
-            for (ScaleCase scaleCase : scaleCases()) {
-                TensorRef actual = allocator.allocate(DType.F32, TensorShape.of(scaleCase.rows(), scaleCase.columns()));
-                FloatBufferTensor expected = new FloatBufferTensor(scaleCase.rows(), scaleCase.columns());
-                fill(actual, 1.0f);
-                fill(expected, 1.0f);
+        for (ScaleCase scaleCase : scaleCases()) {
+            TensorRef actual = allocator.allocate(DType.F32, TensorShape.of(scaleCase.rows(), scaleCase.columns()));
+            float[][] expected = filledReference(scaleCase.rows(), scaleCase.columns(), 1.0f);
+            fill(actual, 1.0f);
+            multiplyReference(expected, scaleCase.factor(), scaleCase.offset(), scaleCase.length());
 
-                oldOps.scale(scaleCase.factor(), expected, scaleCase.offset(), scaleCase.length());
-                Either<OpSupport, Void> result = new PanamaOps().scale(scaleCase.factor(), actual,
-                        scaleCase.offset(), scaleCase.length());
+            Either<OpSupport, Void> result = new PanamaOps().scale(scaleCase.factor(), actual,
+                    scaleCase.offset(), scaleCase.length());
 
-                assertTrue(result.isRight(), scaleCase::toString);
-                assertEquals(TensorDisplayUtil.pretty2dDisplayAll(expected).trim(), pretty(actual).trim(),
-                        scaleCase::toString);
-            }
+            assertTrue(result.isRight(), scaleCase::toString);
+            assertReference(expected, actual, 1.0e-6f, scaleCase.toString());
         }
     }
 
     @Test
-    void scaleBF16MatchesPanamaTensorOperations() {
+    void scaleBF16MatchesReference() {
         Allocator allocator = new Allocator();
-        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
-            PanamaTensorOperations oldOps = new PanamaTensorOperations(MachineSpec.Type.AVX_256,
-                    Mockito.mock(TensorAllocator.class), pool);
-            for (ScaleCase scaleCase : scaleCases()) {
-                TensorRef actual = allocator.allocate(DType.BF16, TensorShape.of(scaleCase.rows(), scaleCase.columns()));
-                BFloat16BufferTensor expected = new BFloat16BufferTensor(scaleCase.rows(), scaleCase.columns());
-                fill(actual, 1.0f);
-                fill(expected, 1.0f);
+        for (ScaleCase scaleCase : scaleCases()) {
+            TensorRef actual = allocator.allocate(DType.BF16, TensorShape.of(scaleCase.rows(), scaleCase.columns()));
+            float[][] expected = filledReference(scaleCase.rows(), scaleCase.columns(), 1.0f);
+            fill(actual, 1.0f);
+            multiplyReference(expected, scaleCase.factor(), scaleCase.offset(), scaleCase.length());
 
-                oldOps.scale(scaleCase.factor(), expected, scaleCase.offset(), scaleCase.length());
-                Either<OpSupport, Void> result = new PanamaOps().scale(scaleCase.factor(), actual,
-                        scaleCase.offset(), scaleCase.length());
+            Either<OpSupport, Void> result = new PanamaOps().scale(scaleCase.factor(), actual,
+                    scaleCase.offset(), scaleCase.length());
 
-                assertTrue(result.isRight(), scaleCase::toString);
-                assertEquals(TensorDisplayUtil.pretty2dDisplayAll(expected).trim(), pretty(actual).trim(),
-                        scaleCase::toString);
-            }
+            assertTrue(result.isRight(), scaleCase::toString);
+            assertReference(expected, actual, scaleCase.toString());
         }
     }
 
@@ -139,32 +119,41 @@ class PanamaOpsTest {
         }
     }
 
-    private static void fill(FloatBufferTensor tensor, float start) {
+    private static float[][] filledReference(int rows, int columns, float start) {
+        float[][] values = new float[rows][columns];
         float value = start;
-        for (int row = 0; row < tensor.shape().first(); row++) {
-            for (int column = 0; column < tensor.shape().last(); column++) {
-                tensor.set(value++, row, column);
+        for (int row = 0; row < rows; row++) {
+            for (int column = 0; column < columns; column++) {
+                values[row][column] = value++;
+            }
+        }
+        return values;
+    }
+
+    private static void multiplyReference(float[][] values, float factor, int offset, int length) {
+        for (float[] row : values) {
+            for (int column = offset; column < offset + length; column++) {
+                row[column] *= factor;
             }
         }
     }
 
-    private static void fill(BFloat16BufferTensor tensor, float start) {
-        float value = start;
-        for (int row = 0; row < tensor.shape().first(); row++) {
-            for (int column = 0; column < tensor.shape().last(); column++) {
-                tensor.set(value++, row, column);
+    private static void assertReference(float[][] expected, TensorRef actual, float tolerance, String label) {
+        for (int row = 0; row < expected.length; row++) {
+            for (int column = 0; column < expected[row].length; column++) {
+                assertEquals(expected[row][column], actual.underlying().get(row, column), tolerance,
+                        label + " row=" + row + " column=" + column);
             }
         }
     }
 
-    private static String pretty(TensorRef tensor) {
-        StringBuilder builder = new StringBuilder();
-        for (int row = 0; row < tensor.shape().first(); row++) {
-            for (int column = 0; column < tensor.shape().last(); column++) {
-                builder.append(String.format("[%d][%d]=%8.4f ", row, column, tensor.underlying().get(row, column)));
+    private static void assertReference(float[][] expected, TensorRef actual, String label) {
+        for (int row = 0; row < expected.length; row++) {
+            for (int column = 0; column < expected[row].length; column++) {
+                float tolerance = Math.max(0.08f, Math.abs(expected[row][column]) * 0.01f);
+                assertEquals(expected[row][column], actual.underlying().get(row, column), tolerance,
+                        label + " row=" + row + " column=" + column);
             }
-            builder.append('\n');
         }
-        return builder.toString();
     }
 }

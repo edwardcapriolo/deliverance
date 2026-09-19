@@ -2,10 +2,9 @@ package io.teknek.deliverance.model.diffusiongemma;
 
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
-import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
-import io.teknek.deliverance.tensor.operations.MachineSpec;
-import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
+import io.teknek.deliverance.tensor2.CompositeOps;
+import io.teknek.deliverance.tensor2.Lighter;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -61,8 +60,7 @@ class LinearTemperatureScheduleLogitsProcessorTest {
             int maxDenoisingSteps) {
         MetricRegistry metrics = new MetricRegistry();
         return new LinearTemperatureScheduleLogitsProcessor(tMin, tMax, maxDenoisingSteps,
-                new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, new ArrayQueueTensorAllocator(metrics), pool),
-                metrics);
+                new CompositeOps(new Lighter(metrics), metrics), metrics);
     }
 
     private static FloatBufferTensor ones(int rows, int cols) {

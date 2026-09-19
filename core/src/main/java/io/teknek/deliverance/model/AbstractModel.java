@@ -58,8 +58,10 @@ import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensor2.CompositeOps;
 import io.teknek.deliverance.tensor2.Lighter;
-import io.teknek.deliverance.tensor2.Scale;
+import io.teknek.deliverance.tensor2.MultiplyInPlace;
+import io.teknek.deliverance.tensor2.ScaledSoftMax;
 import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensorlib.PlannedTensor;
 import io.teknek.deliverance.tensorlib.TensorPlan;
@@ -212,6 +214,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     protected KvBlockManager kvBlockManager;
     protected final ConfigurableTensorProvider configurableTensorProvider;
     protected final Lighter lighter;
+    protected final CompositeOps compositeOps;
     protected final MetricRegistry metricRegistry;
     protected final TensorAllocator tensorAllocator;
     private final KvBufferCacheSettings kvBufferCacheSettings;
@@ -307,6 +310,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         this.tensorOperations.put(TensorProviderKind.SIMD, provider.get());
         this.metricRegistry = metricRegistry;
         this.lighter = new Lighter(metricRegistry);
+        this.compositeOps = new CompositeOps(lighter, metricRegistry);
         this.tensorAllocator = tensorAllocator;
         this.kvBufferCacheSettings = kvBufferCacheSettings;
         this.kvBufferCache = new KvBufferCache(this, kvBufferCacheSettings);
@@ -1176,8 +1180,11 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         metricRegistry.timer("classify.2_accumulate_scores_bias").time(() ->
         classifyOutput.getClassificationBias().ifPresent(bias ->
                 configurableTensorProvider.get().accumulate(scores, bias, 0, classes)) );
-        metricRegistry.timer("classify.3_softmax_scores").time(() ->
-        configurableTensorProvider.get().softMax(scores, 0, classes));
+        metricRegistry.timer("classify.3_softmax_scores").time(() -> {
+            try (TensorRef scoresRef = TensorRef.borrowed(scores)) {
+                compositeOps.scaledSoftMax(new ScaledSoftMax(1.0f).target(scoresRef).offsetAndLength(0, classes));
+            }
+        });
         SortedMap<String, Float> result = new TreeMap<>();
         for (int i = 0; i < classes; i++) {
             String label = config.classifcationLabels.get().inverse().get(i);
@@ -1623,8 +1630,14 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         return lighter;
     }
 
+    public CompositeOps getCompositeOps() {
+        return compositeOps;
+    }
+
     public void scale(float factor, AbstractTensor target, int offset, int length) {
-        lighter.scale(new Scale(factor).target(TensorRef.borrowed(target)).offsetAndLength(offset, length));
+        try (TensorRef targetRef = TensorRef.borrowed(target)) {
+            compositeOps.multiplyInPlace(new MultiplyInPlace(factor).target(targetRef).offsetAndLength(offset, length));
+        }
     }
 
     public void runChunks(String operation, int offset, int length, int splitSize, Optional<AbstractTensor> localityTensor,
@@ -1711,18 +1724,36 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
 
     @Override
     public void observeAlternate(String planName, String candidate, long elapsedNanos) {
+        observeAlternate(planName, candidate, elapsedNanos, Map.of());
+    }
+
+    @Override
+    public void observeAlternate(String planName, String candidate, long elapsedNanos, Map<String, String> tags) {
         AdaptiveAlternateState state = adaptiveAlternateStates.get(planName);
         if (state != null) {
             boolean promoted = state.observe(candidate, elapsedNanos);
             if (InferenceProfiler.isEnabled()) {
-                InferenceProfiler.timer(metricRegistry, "tensorplan.dit.alternate.elapsed", "plan", planName,
-                        "candidate", candidate).update(elapsedNanos, TimeUnit.NANOSECONDS);
+                InferenceProfiler.timer(metricRegistry, "tensorplan.dit.alternate.elapsed",
+                        profilerTags(planName, candidate, tags)).update(elapsedNanos, TimeUnit.NANOSECONDS);
                 if (promoted) {
                     InferenceProfiler.counter(metricRegistry, "tensorplan.dit.alternate.selected", "plan", planName,
                             "candidate", state.selected()).inc();
                 }
             }
         }
+    }
+
+    private static String[] profilerTags(String planName, String candidate, Map<String, String> tags) {
+        List<String> entries = new ArrayList<>(2 + tags.size() * 2);
+        entries.add("plan");
+        entries.add(planName);
+        entries.add("candidate");
+        entries.add(candidate);
+        tags.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(entry -> {
+            entries.add(entry.getKey());
+            entries.add(entry.getValue());
+        });
+        return entries.toArray(String[]::new);
     }
 
     private static String adaptiveSplitKey(String planName, TensorShape shape) {

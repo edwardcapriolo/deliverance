@@ -17,6 +17,8 @@ import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.model.TensorProviderKind;
+import io.teknek.deliverance.tensor2.ScaledSoftMax;
+import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensorlib.TensorPlan;
 
 import java.util.Collections;
@@ -590,7 +592,12 @@ public class KvCacheSelfAttention extends BaseCausalSelfAttention {
                                 keyPosition);
                     }
                 }
-                ops.scaledSoftMax(scores, 0, visibleRows, attentionScale, config.attnLogitSoftCapping);
+                try (TensorRef scoresRef = TensorRef.borrowed(scores)) {
+                    model.getCompositeOps().scaledSoftMax(new ScaledSoftMax(attentionScale)
+                            .target(scoresRef)
+                            .offsetAndLength(0, visibleRows)
+                            .softcap(config.attnLogitSoftCapping));
+                }
                 ops.saxpy(scores, values, outputRow, kvOffset, queryOffset, config.headSize, 0, 0, visibleRows);
             }
         }

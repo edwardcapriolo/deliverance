@@ -7,8 +7,9 @@ import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorDisplayUtil;
-import io.teknek.deliverance.tensor.VectorTensorMathUtils;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
+import io.teknek.deliverance.tensor2.ScaledSoftMax;
+import io.teknek.deliverance.tensor2.TensorRef;
 import net.jafama.FastMath;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -84,7 +85,10 @@ public class MixtureOfExpertsBlock implements FeedForward {
                 }
 
                 try (Timer.Context ignoredSoftmax = InferenceProfiler.timer(model.getMetricRegistry(), "mixtureofexpertsblock.router_softmax").time()) {
-                    model.configurableTensorProvider.get().softMax(expertResults,0, numberOfExperts);
+                    try (TensorRef expertResultsRef = TensorRef.borrowed(expertResults)) {
+                        model.getCompositeOps().scaledSoftMax(new ScaledSoftMax(1.0f).target(expertResultsRef)
+                                .offsetAndLength(0, numberOfExperts));
+                    }
                 }
 
                 try (Timer.Context ignoredTopk = InferenceProfiler.timer(model.getMetricRegistry(), "mixtureofexpertsblock.router_topk").time()) {

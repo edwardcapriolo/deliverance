@@ -24,6 +24,7 @@ cd "$HEADER_DIR"
   --include-function tensor2_batch_dot_f32_f32 \
   --include-function tensor2_batch_dot_f32_q8 \
   --include-function tensor2_scale_f32 \
+  --include-function tensor2_scale_bf16 \
   --include-typedef tensor2_status \
   --include-constant TENSOR2_OK \
   --include-constant TENSOR2_UNSUPPORTED \

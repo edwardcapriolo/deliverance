@@ -2,6 +2,9 @@ package io.teknek.deliverance.model.gemma4;
 
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor2.CompositeOps;
+import io.teknek.deliverance.tensor2.MultiplyInPlace;
+import io.teknek.deliverance.tensor2.TensorRef;
 
 import java.util.function.BiFunction;
 
@@ -14,13 +17,17 @@ final class Gemma4PleSupport {
      */
     static void combinePerLayerInputs(
             ConfigurableTensorProvider configurableTensorProvider,
+            CompositeOps compositeOps,
             AbstractTensor projected,
             AbstractTensor tokenIdentity,
             float perLayerInputScale,
             int packedLength
     ) {
         configurableTensorProvider.get().accumulate(projected, tokenIdentity, 0, packedLength);
-        configurableTensorProvider.get().scale(perLayerInputScale, projected, 0, packedLength);
+        try (TensorRef projectedRef = TensorRef.borrowed(projected)) {
+            compositeOps.multiplyInPlace(new MultiplyInPlace(perLayerInputScale).target(projectedRef)
+                    .offsetAndLength(0, packedLength));
+        }
     }
 
     static AbstractTensor[] splitPerLayerInputs(
