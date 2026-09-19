@@ -6,7 +6,9 @@ import io.dropwizard.metrics5.Timer;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorMutability;
-import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensor2.CompositeOps;
+import io.teknek.deliverance.tensor2.MultiplyInPlace;
+import io.teknek.deliverance.tensor2.TensorRef;
 
 import java.util.Objects;
 
@@ -28,18 +30,18 @@ public final class LinearTemperatureScheduleLogitsProcessor implements Diffusion
     private final float tMin;
     private final float tMax;
     private final int maxDenoisingSteps;
-    private final TensorOperations tensorOperations;
+    private final CompositeOps compositeOps;
     private final MetricRegistry metricRegistry;
 
     public LinearTemperatureScheduleLogitsProcessor(float tMin, float tMax, int maxDenoisingSteps,
-            TensorOperations tensorOperations, MetricRegistry metricRegistry) {
+            CompositeOps compositeOps, MetricRegistry metricRegistry) {
         Preconditions.checkArgument(Float.isFinite(tMin) && tMin >= 0.0f, "tMin must be finite and >= 0");
         Preconditions.checkArgument(Float.isFinite(tMax) && tMax > tMin, "tMax must be finite and > tMin");
         Preconditions.checkArgument(maxDenoisingSteps > 0, "maxDenoisingSteps must be > 0");
         this.tMin = tMin;
         this.tMax = tMax;
         this.maxDenoisingSteps = maxDenoisingSteps;
-        this.tensorOperations = Objects.requireNonNull(tensorOperations, "tensorOperations");
+        this.compositeOps = Objects.requireNonNull(compositeOps, "compositeOps");
         this.metricRegistry = Objects.requireNonNull(metricRegistry, "metricRegistry");
     }
 
@@ -51,7 +53,10 @@ public final class LinearTemperatureScheduleLogitsProcessor implements Diffusion
             Preconditions.checkArgument(curStep >= 0 && curStep <= maxDenoisingSteps,
                     "curStep must be in [0, maxDenoisingSteps]");
             float temperature = temperature(curStep);
-            tensorOperations.scale(1.0f / temperature, logits, 0, (int) logits.shape().last());
+            try (TensorRef logitsRef = TensorRef.borrowed(logits)) {
+                compositeOps.multiplyInPlace(new MultiplyInPlace(1.0f / temperature).target(logitsRef)
+                        .offsetAndLength(0, (int) logits.shape().last()));
+            }
         }
     }
 

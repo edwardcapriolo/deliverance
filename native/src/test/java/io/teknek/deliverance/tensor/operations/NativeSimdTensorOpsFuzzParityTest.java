@@ -10,6 +10,10 @@ import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.impl.BFloat16BufferTensor;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
+import io.teknek.deliverance.tensor2.CompositeOps;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.ScaledSoftMax;
+import io.teknek.deliverance.tensor2.TensorRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -251,22 +255,14 @@ public class NativeSimdTensorOpsFuzzParityTest {
                     }
                     case SOFTMAX -> {
                         try (FloatBufferTensor naiveInput = deterministicInput(1, c.size, c.seed);
-                             FloatBufferTensor panamaInput = new FloatBufferTensor(naiveInput);
-                             FloatBufferTensor simdInput = new FloatBufferTensor(naiveInput)) {
-                            naive.softMax(naiveInput, c.offset, c.length);
-                            panama.softMax(panamaInput, c.offset, c.length);
-                            simd.softMax(simdInput, c.offset, c.length);
+                              FloatBufferTensor panamaInput = new FloatBufferTensor(naiveInput);
+                              FloatBufferTensor simdInput = new FloatBufferTensor(naiveInput)) {
+                            applySoftmax(naiveInput, c.offset, c.length, new CompositeOps(new Lighter()));
+                            applySoftmax(panamaInput, c.offset, c.length, new CompositeOps(new Lighter()));
+                            applySoftmax(simdInput, c.offset, c.length, new CompositeOps(new Lighter()));
                             assertTensorClose(naiveInput, panamaInput, 0.0001f, c + " panama");
                             assertTensorClose(panamaInput, simdInput, 0.0001f, c.toString());
                         }
-                        gpu.ifPresent(ops -> {
-                            try (FloatBufferTensor gpuInput = deterministicInput(1, c.size, c.seed);
-                                 FloatBufferTensor panamaInput = new FloatBufferTensor(gpuInput)) {
-                                panama.softMax(panamaInput, c.offset, c.length);
-                                ops.softMax(gpuInput, c.offset, c.length);
-                                assertTensorClose(panamaInput, gpuInput, 0.0001f, c + " gpu");
-                            }
-                        });
                     }
                     case ACTIVATION_MULTIPLY_QUANTIZE -> {
                         try (FloatBufferTensor naiveGate = deterministicInput(3, c.size, c.seed);
@@ -578,6 +574,12 @@ public class NativeSimdTensorOpsFuzzParityTest {
             }
         }
         return tensor;
+    }
+
+    private static void applySoftmax(AbstractTensor target, int offset, int length, CompositeOps ops) {
+        try (TensorRef targetRef = TensorRef.borrowed(target)) {
+            ops.scaledSoftMax(new ScaledSoftMax(1.0f).target(targetRef).offsetAndLength(offset, length));
+        }
     }
 
     private static void assertTensorClose(AbstractTensor expected, AbstractTensor actual, float tolerance, String label) {

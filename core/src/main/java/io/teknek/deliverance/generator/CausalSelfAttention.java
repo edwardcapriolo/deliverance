@@ -13,6 +13,8 @@ import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.KvPageTable;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensor2.ScaledSoftMax;
+import io.teknek.deliverance.tensor2.TensorRef;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -507,8 +509,12 @@ public class CausalSelfAttention extends BaseCausalSelfAttention {
                                 int visibleLength = startPosition + bi + 1;
                                 try (AbstractTensor attnRow = attn.slice(bi);
                                      AbstractTensor valueRow = valueBatch.slice(bi)) {
-                                    configurableTensorProvider.get().scaledSoftMax(attnRow, 0, visibleLength,
-                                            attentionScale, config.attnLogitSoftCapping);
+                                    try (TensorRef attnRowRef = TensorRef.borrowed(attnRow)) {
+                                        m.getCompositeOps().scaledSoftMax(new ScaledSoftMax(attentionScale)
+                                                .target(attnRowRef)
+                                                .offsetAndLength(0, visibleLength)
+                                                .softcap(config.attnLogitSoftCapping));
+                                    }
                                     configurableTensorProvider.get().saxpy(attnRow, packedValues, valueRow,
                                             xoffset, yoffset, config.headSize, 0, 0, visibleLength);
                                 }

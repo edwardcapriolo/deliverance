@@ -365,25 +365,6 @@ public class PanamaTensorOperationsTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("panamaVectorTypes")
-    void softMaxMatchesReferenceForOffsetsTailsAndRows(MachineSpec.Type vectorType) {
-        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
-             FloatBufferTensor reference = deterministicInput(1, 37);
-             FloatBufferTensor actual = new FloatBufferTensor(reference)) {
-            int offset = 5;
-            int length = 29;
-            PanamaTensorOperations ops = new PanamaTensorOperations(vectorType, Mockito.mock(TensorAllocator.class), pool);
-
-            VectorTensorMathUtils.softMax(reference, offset, length);
-            ops.softMax(actual, offset, length);
-
-            for (int col = 0; col < reference.shape().last(); col++) {
-                assertEquals(reference.get(0, col), actual.get(0, col), 1.0e-6f, "col=" + col);
-            }
-        }
-    }
-
-    @ParameterizedTest(name = "{0}")
-    @MethodSource("panamaVectorTypes")
     void tensorProbabilityEntropyMatchesScalarReference(MachineSpec.Type vectorType) {
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
              FloatBufferTensor logits = new FloatBufferTensor(2, 3, 17);

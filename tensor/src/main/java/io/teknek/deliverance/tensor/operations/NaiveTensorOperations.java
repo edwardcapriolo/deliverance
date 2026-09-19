@@ -104,15 +104,6 @@ public class NaiveTensorOperations implements TensorOperations {
     }
 
     @Override
-    public void scale(float factor, AbstractTensor x, int offset, int length) {
-        int limit = offset + length;
-
-        for (int b = 0; b < x.shape().first(); b++)
-            for (int i = offset; i < limit; ++i)
-                x.set(x.get(b, i) * factor, b, i);
-    }
-
-    @Override
     public float max(AbstractTensor input, int row, int offset, int length) {
         float max = input.get(row, offset);
         for (int i = offset + 1; i < offset + length; i++) {

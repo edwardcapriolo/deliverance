@@ -58,11 +58,6 @@ public class ConfigurableTensorProviderTest {
             }
 
             @Override
-            public void scale(float factor, AbstractTensor x, int offset, int length) {
-
-            }
-
-            @Override
             public AbstractTensor quantize(AbstractTensor t, DType qtype, int offset, int length) {
                 return null;
             }

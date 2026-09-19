@@ -3,6 +3,10 @@ package io.teknek.deliverance.tensor;
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensor2.CompositeOps;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.MultiplyInPlace;
+import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensorlib.TensorPlan;
 import net.jafama.FastMath;
 
@@ -68,6 +72,7 @@ public final class TensorNormalization {
                 }
             }
             final AbstractTensor weightForPlan = effectiveWeight;
+            CompositeOps compositeOps = new CompositeOps(new Lighter());
 
         try (AbstractTensor squared = output.make(TensorShape.of((int) input.shape().first(), hidden))) {
             TensorPlan plan = new TensorPlan(ops, pool).forcedRunMode(TensorPlan.RunMode.CALLER_THREAD);
@@ -103,8 +108,10 @@ public final class TensorNormalization {
                         int row = (int) rowOffset;
                         float sumSquares = ops.sum(square, row, 0, hidden);
                         float invRms = (float) (1.0 / FastMath.sqrt(sumSquares / hidden + eps));
-                        try (AbstractTensor outRow = out.slice(row)) {
-                            ops.scale(invRms, outRow, 0, hidden);
+                        try (AbstractTensor outRow = out.slice(row);
+                             TensorRef outRef = TensorRef.borrowed(outRow)) {
+                            compositeOps.multiplyInPlace(new MultiplyInPlace(invRms).target(outRef)
+                                    .offsetAndLength(0, hidden));
                         }
                     });
             if (weightForPlan != null) {

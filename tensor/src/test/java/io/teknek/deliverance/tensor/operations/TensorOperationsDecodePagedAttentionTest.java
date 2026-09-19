@@ -6,8 +6,11 @@ import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.AbstractTensorUtils;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
-import io.teknek.deliverance.tensor.VectorTensorMathUtils;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
+import io.teknek.deliverance.tensor2.CompositeOps;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.ScaledSoftMax;
+import io.teknek.deliverance.tensor2.TensorRef;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.ForkJoinPool;
@@ -106,7 +109,10 @@ class TensorOperationsDecodePagedAttentionTest {
                     }
                     globalOffset += rows;
                 }
-                VectorTensorMathUtils.scaledSoftMax(attn, 0, visibleRows, scale, softcap);
+                try (TensorRef attnRef = TensorRef.borrowed(attn)) {
+                    new CompositeOps(new Lighter()).scaledSoftMax(new ScaledSoftMax(scale).target(attnRef)
+                            .offsetAndLength(0, visibleRows).softcap(softcap));
+                }
                 for (int col = 0; col < headSize; col++) {
                     out.set(0.0f, 0, yoffset + col);
                 }

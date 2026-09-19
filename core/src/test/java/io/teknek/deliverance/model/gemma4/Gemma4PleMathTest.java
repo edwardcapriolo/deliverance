@@ -1,9 +1,12 @@
 package io.teknek.deliverance.model.gemma4;
 
+import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
+import io.teknek.deliverance.tensor2.CompositeOps;
+import io.teknek.deliverance.tensor2.Lighter;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -25,7 +28,7 @@ public class Gemma4PleMathTest {
 
             float scale = (float) (1.0 / Math.sqrt(2.0));
             Gemma4PleSupport.combinePerLayerInputs(new ConfigurableTensorProvider(new NaiveTensorOperations()),
-                    projected, tokenIdentity, scale, 4);
+                    new CompositeOps(new Lighter(new MetricRegistry())), projected, tokenIdentity, scale, 4);
 
             assertEquals(4.0f * scale, projected.get(0, 0), 1.0e-6f);
             assertEquals(6.0f * scale, projected.get(0, 1), 1.0e-6f);

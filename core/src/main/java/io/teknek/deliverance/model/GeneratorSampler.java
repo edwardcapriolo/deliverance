@@ -90,7 +90,8 @@ public class GeneratorSampler {
                         abstractModel.getMetricRegistry(), abstractModel);
                 plan.mutable("logits", logits)
                         .scale(1.0f / abstractModel.config.logitMultiplier)
-                        .dotInTime(abstractModel.getLighter().providersFor(
+                        .dotInTimeSplits(1, 4)
+                        .dotInTime("sampler.logit_scale", abstractModel.getLighter().providersFor(
                                         io.teknek.deliverance.tensor2.TensorProviderKind.SIMD,
                                         io.teknek.deliverance.tensor2.TensorProviderKind.PANAMA),
                                 abstractModel.getLighter().providerFor(
@@ -143,20 +144,6 @@ public class GeneratorSampler {
                     return logProbs ? new SamplerReturn(maxi, topNLogProbs) : new SamplerReturn(maxi);
                 }
             }
-
-            /*
-            //Applying Temperature (
-            //): The logits are divided by the temperature parameter before the softmax function is applied.
-            for (int i = 0; i < abstractModel.config.vocabularySize; i++) {
-                float v = logits.get(0, i) / temperature;
-                logits.set(v, 0, i);
-            }
-            VectorTensorMathUtils.softMax(logits, 0, (int) logits.size());
-            SortedMap<Float, List<Integer>> buck = VectorTensorMathUtils.valueBuckets(logits);
-
-            int percentile = VectorTensorMathUtils.percentile(buck, .99f, logits.size());
-            return logProbs ? new SamplerReturn(percentile, topNLogProbs) : new SamplerReturn(percentile);
-            */
 
             float sum = 0;
             for (int i = 0; i < abstractModel.config.vocabularySize; i++) {

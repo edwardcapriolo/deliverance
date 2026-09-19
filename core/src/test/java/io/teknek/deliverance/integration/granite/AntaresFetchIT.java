@@ -125,8 +125,7 @@ class AntaresFetchIT {
 
                 model.primaryTensorOperations().dotProductChunk(logits, normalized, outputWeights, 0,
                         model.getConfig().embeddingLength, 0, model.getConfig().vocabularySize);
-                model.primaryTensorOperations().scale(1.0f / model.getConfig().logitMultiplier, logits, 0,
-                        model.getConfig().vocabularySize);
+                model.scale(1.0f / model.getConfig().logitMultiplier, logits, 0, model.getConfig().vocabularySize);
 
                 assertClose("mean logits by position",
                         new float[]{-4.943235874176025f, -1.1108887195587158f, -1.0443177223205566f,

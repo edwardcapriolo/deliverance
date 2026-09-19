@@ -508,7 +508,8 @@ public class Gemma4Model extends LlamaModel {
      * Upstream combines token-identity and projected PLE components as `(identity + projected) / sqrt(2)`.
      */
     void combinePerLayerInputs(AbstractTensor projected, AbstractTensor tokenIdentity, int packedLength) {
-        Gemma4PleSupport.combinePerLayerInputs(configurableTensorProvider, projected, tokenIdentity, perLayerInputScale(), packedLength);
+        Gemma4PleSupport.combinePerLayerInputs(configurableTensorProvider, getCompositeOps(), projected, tokenIdentity,
+                perLayerInputScale(), packedLength);
     }
 
     AbstractTensor[] splitPerLayerInputs(AbstractTensor projected, int batchSize, int numberOfLayers, int hiddenSizePerLayerInput) {

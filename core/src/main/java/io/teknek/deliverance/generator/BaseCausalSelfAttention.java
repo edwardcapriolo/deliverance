@@ -6,6 +6,10 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor2.CompositeOps;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.ScaledSoftMax;
+import io.teknek.deliverance.tensor2.TensorRef;
 import net.jafama.FastMath;
 
 public abstract class BaseCausalSelfAttention implements SelfAttention {
@@ -24,11 +28,20 @@ public abstract class BaseCausalSelfAttention implements SelfAttention {
     }
 
     protected void softmax(AbstractTensor attn, int visibleLength) {
-        io.teknek.deliverance.tensor.VectorTensorMathUtils.softMax(attn, 0, visibleLength);
+        try (TensorRef attnRef = TensorRef.borrowed(attn)) {
+            new CompositeOps(new Lighter()).scaledSoftMax(new ScaledSoftMax(1.0f)
+                    .target(attnRef)
+                    .offsetAndLength(0, visibleLength));
+        }
     }
 
     protected void scaledSoftmax(AbstractTensor attn, int visibleLength, float scale, Float softcap) {
-        io.teknek.deliverance.tensor.VectorTensorMathUtils.scaledSoftMax(attn, 0, visibleLength, scale, softcap);
+        try (TensorRef attnRef = TensorRef.borrowed(attn)) {
+            new CompositeOps(new Lighter()).scaledSoftMax(new ScaledSoftMax(scale)
+                    .target(attnRef)
+                    .offsetAndLength(0, visibleLength)
+                    .softcap(softcap));
+        }
     }
 
     /** Packs visible KV rows from paged cache tensors into a dense front-packed tensor. */

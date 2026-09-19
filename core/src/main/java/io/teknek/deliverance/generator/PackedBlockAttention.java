@@ -10,6 +10,7 @@ import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.kv.KvReadView;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.tensor2.BatchDotProduct;
+import io.teknek.deliverance.tensor2.ScaledSoftMax;
 import io.teknek.deliverance.tensor2.TensorRef;
 
 import java.util.Optional;
@@ -73,7 +74,12 @@ final class PackedBlockAttention {
                                 int visibleRows = causalWithinBlock ? prefixRows + row + 1 : totalVisibleRows;
                                 try (AbstractTensor scoreRow = scores.slice(localRow);
                                      AbstractTensor outputRow = output.slice(row)) {
-                                    ops.scaledSoftMax(scoreRow, 0, visibleRows, scale, softcap);
+                                    try (TensorRef scoreRowRef = TensorRef.borrowed(scoreRow)) {
+                                        model.getCompositeOps().scaledSoftMax(new ScaledSoftMax(scale)
+                                                .target(scoreRowRef)
+                                                .offsetAndLength(0, visibleRows)
+                                                .softcap(softcap));
+                                    }
                                     ops.saxpy(scoreRow, values, outputRow, kvOffset, queryOffset, headSize, 0, 0,
                                             visibleRows);
                                 }
@@ -124,7 +130,12 @@ final class PackedBlockAttention {
                         int kvOffset = kvHead * headSize;
                         scoreRows(ops, scores, queryRow, prefixView, currentKeys, prefixRows, visibleRows,
                                 queryOffset, kvOffset, headSize);
-                        ops.scaledSoftMax(scores, 0, visibleRows, scale, softcap);
+                        try (TensorRef scoresRef = TensorRef.borrowed(scores)) {
+                            model.getCompositeOps().scaledSoftMax(new ScaledSoftMax(scale)
+                                    .target(scoresRef)
+                                    .offsetAndLength(0, visibleRows)
+                                    .softcap(softcap));
+                        }
                         accumulateRows(ops, scores, outputRow, prefixView, currentValues, prefixRows, visibleRows,
                                 kvOffset, queryOffset, headSize);
                     }

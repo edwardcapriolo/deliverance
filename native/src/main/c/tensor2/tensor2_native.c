@@ -1,5 +1,7 @@
 #include "tensor2_native.h"
 
+#include <string.h>
+
 #define TENSOR2_Q8_BLOCK_SIZE 32
 
 #if defined(__ARM_NEON__) || defined(__aarch64__) || defined(_M_ARM64)
@@ -35,6 +37,21 @@ static inline float tensor2_hsum16(__m512 v) {
 }
 #endif
 #endif
+
+static inline float tensor2_bf16_to_f32(uint16_t value) {
+    uint32_t bits = ((uint32_t) value) << 16;
+    float result;
+    memcpy(&result, &bits, sizeof(result));
+    return result;
+}
+
+static inline uint16_t tensor2_f32_to_bf16(float value) {
+    uint32_t bits;
+    memcpy(&bits, &value, sizeof(bits));
+    uint32_t lsb = (bits >> 16) & 1u;
+    bits += 0x7fffu + lsb;
+    return (uint16_t) (bits >> 16);
+}
 
 static inline float tensor2_dot_f32_f32(
         const float *a,
@@ -252,5 +269,81 @@ tensor2_status tensor2_scale_f32(
     return TENSOR2_OK;
 #else
     return TENSOR2_UNSUPPORTED;
+#endif
+}
+
+tensor2_status tensor2_scale_bf16(
+        uint16_t *target,
+        float factor,
+        int rows,
+        int offset,
+        int length,
+        int stride) {
+    if (target == 0) {
+        return TENSOR2_UNSUPPORTED;
+    }
+    if (rows < 0 || offset < 0 || length < 0 || stride < 0) {
+        return TENSOR2_UNSUPPORTED;
+    }
+#if defined(TENSOR2_ARM_NEON)
+    float32x4_t scale = vdupq_n_f32(factor);
+    for (int row = 0; row < rows; row++) {
+        uint16_t *row_ptr = target + row * stride + offset;
+        int column = 0;
+        int upper = (length / 8) * 8;
+        for (; column < upper; column += 8) {
+            uint16x8_t raw = vld1q_u16(row_ptr + column);
+            uint32x4_t lo_bits = vshll_n_u16(vget_low_u16(raw), 16);
+            uint32x4_t hi_bits = vshll_n_u16(vget_high_u16(raw), 16);
+            float32x4_t lo = vreinterpretq_f32_u32(lo_bits);
+            float32x4_t hi = vreinterpretq_f32_u32(hi_bits);
+            uint32x4_t lo_scaled = vreinterpretq_u32_f32(vmulq_f32(lo, scale));
+            uint32x4_t hi_scaled = vreinterpretq_u32_f32(vmulq_f32(hi, scale));
+            uint32x4_t lo_lsb = vandq_u32(vshrq_n_u32(lo_scaled, 16), vdupq_n_u32(1));
+            uint32x4_t hi_lsb = vandq_u32(vshrq_n_u32(hi_scaled, 16), vdupq_n_u32(1));
+            lo_scaled = vaddq_u32(lo_scaled, vaddq_u32(vdupq_n_u32(0x7fff), lo_lsb));
+            hi_scaled = vaddq_u32(hi_scaled, vaddq_u32(vdupq_n_u32(0x7fff), hi_lsb));
+            vst1q_u16(row_ptr + column, vcombine_u16(vshrn_n_u32(lo_scaled, 16), vshrn_n_u32(hi_scaled, 16)));
+        }
+        for (; column < length; column++) {
+            row_ptr[column] = tensor2_f32_to_bf16(tensor2_bf16_to_f32(row_ptr[column]) * factor);
+        }
+    }
+    return TENSOR2_OK;
+#elif defined(__AVX2__)
+    __m256 scale = _mm256_set1_ps(factor);
+    __m256i round_bias = _mm256_set1_epi32(0x7fff);
+    __m256i one = _mm256_set1_epi32(1);
+    for (int row = 0; row < rows; row++) {
+        uint16_t *row_ptr = target + row * stride + offset;
+        int column = 0;
+        int upper = (length / 8) * 8;
+        for (; column < upper; column += 8) {
+            __m128i raw16 = _mm_loadu_si128((const __m128i *) (row_ptr + column));
+            __m256i bits = _mm256_slli_epi32(_mm256_cvtepu16_epi32(raw16), 16);
+            __m256 values = _mm256_castsi256_ps(bits);
+            __m256 scaled = _mm256_mul_ps(values, scale);
+            __m256i scaled_bits = _mm256_castps_si256(scaled);
+            __m256i lsb = _mm256_and_si256(_mm256_srli_epi32(scaled_bits, 16), one);
+            scaled_bits = _mm256_add_epi32(scaled_bits, _mm256_add_epi32(round_bias, lsb));
+            uint32_t shifted[8] __attribute__((aligned(32)));
+            _mm256_store_si256((__m256i *) shifted, _mm256_srli_epi32(scaled_bits, 16));
+            for (int lane = 0; lane < 8; lane++) {
+                row_ptr[column + lane] = (uint16_t) shifted[lane];
+            }
+        }
+        for (; column < length; column++) {
+            row_ptr[column] = tensor2_f32_to_bf16(tensor2_bf16_to_f32(row_ptr[column]) * factor);
+        }
+    }
+    return TENSOR2_OK;
+#else
+    for (int row = 0; row < rows; row++) {
+        uint16_t *row_ptr = target + row * stride + offset;
+        for (int column = 0; column < length; column++) {
+            row_ptr[column] = tensor2_f32_to_bf16(tensor2_bf16_to_f32(row_ptr[column]) * factor);
+        }
+    }
+    return TENSOR2_OK;
 #endif
 }

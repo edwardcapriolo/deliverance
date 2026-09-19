@@ -2991,49 +2991,6 @@ public final class PanamaTensorOperations implements TensorOperations {
     }
 
     @Override
-    public void scale(float factor, AbstractTensor aBatch, int offset, int length) {
-
-        for (int ai = 0; ai < aBatch.shape().first(); ai++) {
-            AbstractTensor a = aBatch.slice(ai);
-            switch (a.dType()) {
-                case F32:
-                    scaleF32(factor, (FloatBufferTensor) a, offset, length);
-                    break;
-                case BF16:
-                    switch (vectorType) {
-                        case AVX_512:
-                            scaleBF16_512(factor, (BFloat16BufferTensor) a, offset, length);
-                            break;
-                        case AVX_256:
-                            scaleBF16_256(factor, (BFloat16BufferTensor) a, offset, length);
-                            break;
-                        default:
-                            throw new UnsupportedOperationException();
-                    }
-                    break;
-                default:
-                    throw new UnsupportedOperationException();
-            }
-        }
-    }
-
-    public void scaleF32(float factor, FloatBufferTensor a, int offset, int length) {
-        int upperBound = FloatVector.SPECIES_PREFERRED.loopBound(length) + offset;
-        int i = offset;
-
-        FloatVector sf = FloatVector.broadcast(FloatVector.SPECIES_PREFERRED, factor);
-        for (; i < upperBound; i += FloatVector.SPECIES_PREFERRED.length()) {
-            FloatVector va = a.getVector(FloatVector.SPECIES_PREFERRED, 0, i);
-            a.intoTensor(va.mul(sf), 0, i);
-        }
-
-        // tail
-        for (; i < (offset + length); i++) {
-            a.set(a.get(0, i) * factor, 0, i);
-        }
-    }
-
-    @Override
     public float max(AbstractTensor input, int row, int offset, int length) {
         Preconditions.checkArgument(input.dType() == DType.F32, "Panama max currently supports F32 tensors");
         return maxF32((FloatBufferTensor) input, row, offset, length);
@@ -3104,56 +3061,6 @@ public final class PanamaTensorOperations implements TensorOperations {
             for (int i = offset; i < limit; i++) {
                 output.set((float) FastMath.exp(input.get(row, i)), row, i);
             }
-        }
-    }
-
-    public void scaleBF16_512(float factor, BFloat16BufferTensor a, int offset, int length) {
-        int upperBound = FloatVector.SPECIES_512.loopBound(length) + offset;
-        int i = offset;
-
-        FloatVector sf = FloatVector.broadcast(FloatVector.SPECIES_512, factor);
-        for (; i < upperBound; i += FloatVector.SPECIES_512.length()) {
-            var va = a.getVector(ShortVector.SPECIES_256, 0, i)
-                    .convertShape(VectorOperators.S2I, IntVector.SPECIES_512, 0)
-                    .lanewise(VectorOperators.LSHL, BF16_BYTE_SHIFT_512)
-                    .reinterpretAsFloats();
-
-            var res = va.mul(sf)
-                    .reinterpretAsInts()
-                    .lanewise(VectorOperators.ASHR, BF16_BYTE_SHIFT_512)
-                    .convertShape(VectorOperators.I2S, ShortVector.SPECIES_256, 0);
-
-            a.intoTensor((ShortVector) res, 0, i);
-        }
-
-        // tail
-        for (; i < (offset + length); i++) {
-            a.set(a.get(0, i) * factor, 0, i);
-        }
-    }
-
-    public void scaleBF16_256(float factor, BFloat16BufferTensor a, int offset, int length) {
-        int upperBound = FloatVector.SPECIES_256.loopBound(length) + offset;
-        int i = offset;
-
-        FloatVector sf = FloatVector.broadcast(FloatVector.SPECIES_256, factor);
-        for (; i < upperBound; i += FloatVector.SPECIES_256.length()) {
-            var va = a.getVector(ShortVector.SPECIES_128, 0, i)
-                    .convertShape(VectorOperators.S2I, IntVector.SPECIES_256, 0)
-                    .lanewise(VectorOperators.LSHL, BF16_BYTE_SHIFT_256)
-                    .reinterpretAsFloats();
-
-            var res = va.mul(sf)
-                    .reinterpretAsInts()
-                    .lanewise(VectorOperators.ASHR, BF16_BYTE_SHIFT_256)
-                    .convertShape(VectorOperators.I2S, ShortVector.SPECIES_128, 0);
-
-            a.intoTensor((ShortVector) res, 0, i);
-        }
-
-        // tail
-        for (; i < (offset + length); i++) {
-            a.set(a.get(0, i) * factor, 0, i);
         }
     }
 

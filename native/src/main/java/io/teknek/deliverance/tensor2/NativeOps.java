@@ -81,12 +81,20 @@ public class NativeOps implements TensorOps {
 
     @Override
     public Either<OpSupport, Void> scale(float factor, TensorRef target, int offset, int length) {
-        if (!loaded || target.dType() != DType.F32) {
+        if (!loaded) {
             return Either.Left(OpSupport.Unsupported);
         }
         try {
-            int status = Tensor2Native.tensor2_scale_f32(target.underlying().getMemorySegment(), factor,
-                    (int) target.shape().first(), offset, length, target.stride());
+            int status;
+            if (target.dType() == DType.F32) {
+                status = Tensor2Native.tensor2_scale_f32(target.underlying().getMemorySegment(), factor,
+                        (int) target.shape().first(), offset, length, target.stride());
+            } else if (target.dType() == DType.BF16) {
+                status = Tensor2Native.tensor2_scale_bf16(target.underlying().getMemorySegment(), factor,
+                        (int) target.shape().first(), offset, length, target.stride());
+            } else {
+                return Either.Left(OpSupport.Unsupported);
+            }
             return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
         } catch (LinkageError | RuntimeException e) {
             return Either.Left(OpSupport.Unsupported);

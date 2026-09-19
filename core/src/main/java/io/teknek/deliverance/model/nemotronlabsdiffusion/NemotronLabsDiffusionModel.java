@@ -38,6 +38,8 @@ import io.teknek.deliverance.tensor.kv.CacheExecutionMode;
 import io.teknek.deliverance.tensor.kv.KvCacheSession;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensor2.ScaledSoftMax;
+import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensorlib.TensorPlan;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import org.slf4j.Logger;
@@ -571,12 +573,16 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
             TensorPlan plan = new TensorPlan(primaryTensorOperations(), getPool(), getMetricRegistry(), this);
             plan.mutable("nemotron.logits", logits)
                     .scale(1.0f / temperature)
+                    .dotInTimeSplits(1, 4)
                     .dotInTime("nemotron_labs_diffusion.temperature_scale",
                             getLighter().providersFor(io.teknek.deliverance.tensor2.TensorProviderKind.SIMD,
                                     io.teknek.deliverance.tensor2.TensorProviderKind.PANAMA),
                             getLighter().providerFor(io.teknek.deliverance.tensor2.TensorProviderKind.NAIVE))
                     .materialize();
-            configurableTensorProvider.get().softMax(logits, 0, config.vocabularySize);
+            try (TensorRef logitsRef = TensorRef.borrowed(logits)) {
+                getCompositeOps().scaledSoftMax(new ScaledSoftMax(1.0f).target(logitsRef)
+                        .offsetAndLength(0, config.vocabularySize));
+            }
             float sample = random.nextFloat();
             float cumulative = 0.0f;
             int selected = config.vocabularySize - 1;
@@ -590,7 +596,10 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
             return new TokenConfidence(selected, logits.get(0, selected));
         }
         if (requireConfidence) {
-            configurableTensorProvider.get().softMax(logits, 0, config.vocabularySize);
+            try (TensorRef logitsRef = TensorRef.borrowed(logits)) {
+                getCompositeOps().scaledSoftMax(new ScaledSoftMax(1.0f).target(logitsRef)
+                        .offsetAndLength(0, config.vocabularySize));
+            }
         }
         configurableTensorProvider.get().argMax(logits, argMax, 0, config.vocabularySize);
         return new TokenConfidence((int) argMax.get(0, 0), argMax.get(0, 1));
@@ -655,7 +664,7 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
     @Override
     public boolean applyRotaryEmbedding(AbstractTensor query, AbstractTensor key, int absolutePosition,
             int queryHeads, int keyValueHeads, int headSize, TensorOperations operations) {
-        rope.apply(query, key, absolutePosition, queryHeads, keyValueHeads, operations);
+        rope.apply(query, key, absolutePosition, queryHeads, keyValueHeads, getCompositeOps());
         return true;
     }
 
