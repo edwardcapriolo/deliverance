@@ -4,6 +4,7 @@ import com.google.common.base.Preconditions;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.TensorShape;
 
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
@@ -19,16 +20,47 @@ class Allocator {
     }
 
     TensorRef allocate(DType dType, TensorShape shape, String device) {
-        Preconditions.checkArgument(dType == DType.F32 || dType == DType.BF16, "Only F32 and BF16 tensors are supported for now");
         Preconditions.checkArgument(CPU.equals(device), "Only cpu tensors are supported for now");
+        if (dType == DType.I8 || dType == DType.Q4) {
+            return allocateQuantized(dType, shape, device);
+        }
+        Preconditions.checkArgument(dType == DType.F32 || dType == DType.BF16,
+                "Only F32, BF16, I8, and Q4 tensors are supported for now");
+        return allocateDense(dType, shape, device, Map.of());
+    }
+
+    private TensorRef allocateDense(DType dType, TensorShape shape, String device, Map<String, TensorRef> sidecars) {
         TensorPoolKey key = new TensorPoolKey(dType, shape, device);
         Tensor tensor = availableByShape.computeIfAbsent(key, ignored -> new ConcurrentLinkedQueue<>()).poll();
         if (tensor == null) {
-            // TODO: evict or repurpose unused tensors from other shape pools when retained memory grows too large.
-            tensor = dType == DType.F32 ? new F32Tensor(shape) : new BF16Tensor(shape);
+            tensor = newTensor(dType, shape);
         }
         return new TensorRef(new TensorRefState(LeaseState.USED, this, tensor, shape, dType, stride(shape), device,
-                java.util.Map.of(), null));
+                sidecars, null));
+    }
+
+    private TensorRef allocateQuantized(DType dType, TensorShape shape, String device) {
+        String sidecarName = dType == DType.I8 ? Q8Layout.SCALE_SIDECAR : Q4Layout.SCALE_SIDECAR;
+        TensorShape scaleShape = dType == DType.I8 ? Q8Layout.scaleShape(shape) : Q4Layout.scaleShape(shape);
+        TensorRef scale = allocate(DType.F32, scaleShape, device);
+        TensorRef tensor = allocateDense(dType, shape, device, Map.of(sidecarName, scale));
+        if (dType == DType.I8) {
+            ((I8Tensor) tensor.underlying()).attachScale(scale.underlying());
+        } else {
+            ((Q4Tensor) tensor.underlying()).attachScale(scale.underlying());
+        }
+        return tensor;
+    }
+
+    private Tensor newTensor(DType dType, TensorShape shape) {
+        // TODO: evict or repurpose unused tensors from other shape pools when retained memory grows too large.
+        return switch (dType) {
+            case F32 -> new F32Tensor(shape);
+            case BF16 -> new BF16Tensor(shape);
+            case I8 -> new I8Tensor(shape);
+            case Q4 -> new Q4Tensor(shape);
+            default -> throw new IllegalArgumentException("Unsupported tensor dtype " + dType);
+        };
     }
 
     void close(TensorRefState state) {

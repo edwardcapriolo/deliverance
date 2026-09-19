@@ -24,6 +24,84 @@ class NaiveOps implements TensorOps {
     }
 
     @Override
+    public Either<OpSupport, Void> reshape(TensorRef input, TensorRef output) {
+        Preconditions.checkArgument(input.dims() == 2 && output.dims() == 2, "Reshape requires 2D tensors");
+        Preconditions.checkArgument(input.shape().equals(output.shape()), "Input and output shapes must match");
+        if (output.dType() == DType.Q4) {
+            reshapeQ4(input, output);
+            return Either.Right(null);
+        }
+        if (output.dType() == DType.I8) {
+            reshapeI8(input, output);
+            return Either.Right(null);
+        }
+        if (output.dType() == DType.F32 || output.dType() == DType.BF16) {
+            for (int row = 0; row < input.shape().first(); row++) {
+                for (int column = 0; column < input.shape().last(); column++) {
+                    output.underlying().set(input.underlying().get(row, column), row, column);
+                }
+            }
+            return Either.Right(null);
+        }
+        return Either.Left(OpSupport.Unsupported);
+    }
+
+    private void reshapeI8(TensorRef input, TensorRef output) {
+        TensorRef scale = Q8Layout.scale(output);
+        Preconditions.checkArgument(scale != null, "I8 output must have scale sidecar");
+        I8Tensor outputTensor = (I8Tensor) output.underlying();
+        for (int row = 0; row < input.shape().first(); row++) {
+            for (int column = 0; column < input.shape().last(); column += Q8Layout.BLOCK_SIZE) {
+                float max = 0.0f;
+                for (int i = 0; i < Q8Layout.BLOCK_SIZE; i++) {
+                    float value = input.underlying().get(row, column + i);
+                    float abs = Math.abs(value);
+                    if (abs > max) {
+                        max = abs;
+                    }
+                }
+                float factor = max / Byte.MAX_VALUE;
+                float inverse = factor != 0.0f ? 1.0f / factor : 0.0f;
+                scale.underlying().set(factor, row, Q8Layout.scaleColumn(column));
+                for (int i = 0; i < Q8Layout.BLOCK_SIZE; i++) {
+                    outputTensor.setRawByte((byte) Math.round(input.underlying().get(row, column + i) * inverse),
+                            row, column + i);
+                }
+            }
+        }
+    }
+
+    private void reshapeQ4(TensorRef input, TensorRef output) {
+        TensorRef scale = Q4Layout.scale(output);
+        Preconditions.checkArgument(scale != null, "Q4 output must have scale sidecar");
+        Q4Tensor outputTensor = (Q4Tensor) output.underlying();
+        for (int row = 0; row < input.shape().first(); row++) {
+            for (int column = 0; column < input.shape().last(); column += Q4Layout.BLOCK_SIZE) {
+                float max = 0.0f;
+                for (int i = 0; i < Q4Layout.BLOCK_SIZE; i++) {
+                    float value = input.underlying().get(row, column + i);
+                    float abs = Math.abs(value);
+                    if (abs > Math.abs(max)) {
+                        max = value;
+                    }
+                }
+                float factor = max / -8.0f;
+                float inverse = factor != 0.0f ? 1.0f / factor : 0.0f;
+                scale.underlying().set(factor, row, Q4Layout.blockIndex(column));
+                for (int i = 0; i < Q4Layout.HALF_BLOCK; i++) {
+                    int low = q4Nibble(input.underlying().get(row, column + i) * inverse);
+                    int high = q4Nibble(input.underlying().get(row, column + Q4Layout.HALF_BLOCK + i) * inverse);
+                    outputTensor.setPackedByte((byte) (low | (high << 4)), row, Q4Layout.blockIndex(column), i);
+                }
+            }
+        }
+    }
+
+    private int q4Nibble(float value) {
+        return Math.max(0, Math.min(15, (int) (value + 8.5f)));
+    }
+
+    @Override
     public Either<OpSupport, Void> batchDotProduct(BatchDotProduct operation) {
         TensorRef result = operation.result();
         TensorRef a = operation.a();
