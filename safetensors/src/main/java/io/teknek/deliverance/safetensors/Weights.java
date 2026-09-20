@@ -108,6 +108,109 @@ public class Weights implements WeightLoader {
         }
     }
 
+    TensorRef loadRef(String name, TensorShardSpec shardSpec, Lighter lighter, WeightLoader sidecarLoader) {
+        TensorInfo info = tensorInfoMap.get(name);
+        if (info == null) {
+            throw new NoSuchElementException(name + " not found in weights");
+        }
+        if (info.shape.length != 2) {
+            throw new IllegalArgumentException("Tensor sharding only supported for 2D tensors: " + name);
+        }
+
+        int rows = Ints.checkedCast(info.shape[0]);
+        int cols = Ints.checkedCast(info.shape[1]);
+        ByteBuffer payload;
+        TensorShape shape;
+        TensorShardSpec sidecarSpec = shardSpec;
+        if (shardSpec.axis() == TensorShardAxis.ROWS) {
+            validateRange(shardSpec, rows, name);
+            int bytesPerRow = rawBytesPerRow(info.dType, cols, name);
+            payload = slicePayload(info.dataOffsets[0] + (long) shardSpec.startInclusive() * bytesPerRow,
+                    shardSpec.length() * bytesPerRow);
+            shape = TensorShape.of(shardSpec.length(), cols);
+        } else {
+            validateRange(shardSpec, cols, name);
+            if (info.dType == DType.I8) {
+                throw new UnsupportedOperationException("Column sharding for I8 tensors is not supported: " + name);
+            }
+            int bytesPerColumn = info.dType == DType.Q4 ? 0 : info.dType.size();
+            int sourceBytesPerRow = info.dType == DType.Q4 ? q4BytesPerRow(cols, name) : cols * bytesPerColumn;
+            int shardBytesPerRow = info.dType == DType.Q4
+                    ? q4BytesPerRow(shardSpec.length(), name)
+                    : shardSpec.length() * bytesPerColumn;
+            if (info.dType == DType.Q4) {
+                validateQ4ColumnRange(shardSpec, name);
+                sidecarSpec = new TensorShardSpec(TensorShardAxis.COLUMNS,
+                        shardSpec.startInclusive() / Q4ByteBufferTensor.BLOCK_SIZE,
+                        shardSpec.endExclusive() / Q4ByteBufferTensor.BLOCK_SIZE);
+            }
+            payload = ByteBuffer.allocateDirect(rows * shardBytesPerRow).order(ByteOrder.LITTLE_ENDIAN);
+            for (int row = 0; row < rows; row++) {
+                long sourceOffset = info.dataOffsets[0] + (long) row * sourceBytesPerRow
+                        + (info.dType == DType.Q4 ? shardSpec.startInclusive() / 2
+                                : (long) shardSpec.startInclusive() * bytesPerColumn);
+                ByteBuffer source = slicePayload(sourceOffset, shardBytesPerRow);
+                payload.put(source);
+            }
+            payload.flip();
+            shape = TensorShape.of(rows, shardSpec.length());
+        }
+
+        TensorRef ref = lighter.allocate(info.dType, shape);
+        try {
+            lighter.copyFrom(payload, ref);
+            if (info.dType == DType.Q4 || info.dType == DType.I8) {
+                TensorRef sourceScale = sidecarLoader.loadRef(name + ".qb", sidecarSpec);
+                try (sourceScale) {
+                    lighter.copyScale(sourceScale, ref);
+                }
+            }
+            return ref;
+        } catch (RuntimeException e) {
+            ref.close();
+            throw e;
+        }
+    }
+
+    private ByteBuffer slicePayload(long offset, int length) {
+        return bytes.duplicate()
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .position(Ints.checkedCast(offset))
+                .limit(Ints.checkedCast(offset + length))
+                .slice()
+                .order(ByteOrder.LITTLE_ENDIAN);
+    }
+
+    private static int rawBytesPerRow(DType dType, int cols, String name) {
+        if (dType == DType.Q4) {
+            return q4BytesPerRow(cols, name);
+        }
+        return cols * dType.size();
+    }
+
+    private static int q4BytesPerRow(int cols, String name) {
+        if (cols % Q4ByteBufferTensor.BLOCK_SIZE != 0) {
+            throw new IllegalArgumentException("Q4 sharding requires column count aligned to "
+                    + Q4ByteBufferTensor.BLOCK_SIZE + ": " + name);
+        }
+        return cols / 2;
+    }
+
+    private static void validateRange(TensorShardSpec shardSpec, int dimension, String name) {
+        if (shardSpec.endExclusive() > dimension) {
+            throw new IllegalArgumentException("Invalid " + shardSpec.axis().name().toLowerCase() + " range "
+                    + shardSpec.startInclusive() + "," + shardSpec.endExclusive() + " for " + name);
+        }
+    }
+
+    private static void validateQ4ColumnRange(TensorShardSpec shardSpec, String name) {
+        if (shardSpec.startInclusive() % Q4ByteBufferTensor.BLOCK_SIZE != 0
+                || shardSpec.endExclusive() % Q4ByteBufferTensor.BLOCK_SIZE != 0) {
+            throw new IllegalArgumentException("Q4 column sharding requires shard range aligned to "
+                    + Q4ByteBufferTensor.BLOCK_SIZE + ": " + name);
+        }
+    }
+
     /**
      * Converts safetensors shapes into Deliverance tensor shapes.
      *

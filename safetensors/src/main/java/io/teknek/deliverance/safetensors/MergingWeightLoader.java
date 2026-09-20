@@ -79,6 +79,15 @@ public class MergingWeightLoader implements WeightLoader {
     }
 
     @Override
+    public TensorRef loadRef(String name, TensorShardSpec shardSpec) {
+        if (adapter.deltaFor(name).isPresent()) {
+            throw new UnsupportedOperationException(
+                    "TensorRef loading does not support merged LoRA weights: " + name);
+        }
+        return delegate.loadRef(name, shardSpec);
+    }
+
+    @Override
     public AbstractTensor load(String name) {
         AbstractTensor base = delegate.load(name);
         return adapter.deltaFor(name).map(delta -> merge(base, delta)).orElse(base);

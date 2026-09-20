@@ -14,6 +14,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 
@@ -43,6 +44,7 @@ import io.teknek.deliverance.safetensors.LoraAdapter;
 import io.teknek.deliverance.safetensors.LoraLayerDelta;
 import io.teknek.deliverance.safetensors.ResolvedLoraAdapter;
 import io.teknek.deliverance.safetensors.WeightLoader;
+import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.safetensors.fetch.LoraAdapterModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
@@ -243,6 +245,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     protected TensorPlan modelLineagePlan;
     private final ConcurrentMap<String, TensorPlan.ImmutableTensor> modelLineageTensors = new ConcurrentHashMap<>();
     private final Queue<ModelLineageEntry> modelLineageEntries = new ConcurrentLinkedQueue<>();
+    private final Queue<TensorRef> modelTensorRefs = new ConcurrentLinkedQueue<>();
     private final Map<KvBufferCache.KvBuffer, KvCacheSession> kvCache2SessionAdapters = Collections.synchronizedMap(new WeakHashMap<>());
     private Optional<TensorRuntimeMode> tensorRuntimeMode = Optional.empty();
     private TensorRuntime tensorRuntime;
@@ -915,6 +918,8 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         kvBlockManager.close();
         kvCache2SessionAdapters.values().forEach(KvCacheSession::close);
         kvCache2SessionAdapters.clear();
+        modelTensorRefs.forEach(TensorRef::close);
+        modelTensorRefs.clear();
         closeTensorOperations();
         try {
             weights.close();
@@ -1953,6 +1958,25 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         modelLineageTensors.put(name, planned);
         modelLineageEntries.add(new ModelLineageEntry(name, tensor.shape().toString(), tensor.dType().name(), planned.plan()));
         return planned;
+    }
+
+    protected TensorRef registerModelTensorRef(TensorRef ref) {
+        modelTensorRefs.add(Objects.requireNonNull(ref, "ref"));
+        return ref;
+    }
+
+    protected TensorRef loadAndMaybeQuantizedExcluding1DTensors(String name,
+            Function<String, TensorRef> loader, DType qType) {
+        TensorRef ref = loader.apply(name);
+        if (ref.shape().first() == 1) {
+            return ref;
+        }
+        if (lighter.shouldQuantizeForEfficiency(ref, qType)) {
+            TensorRef quantized = lighter.reshape(ref, qType);
+            ref.close();
+            return quantized;
+        }
+        return ref;
     }
 
     public Optional<TensorPlan.ImmutableTensor> modelLineageTensor(String name) {

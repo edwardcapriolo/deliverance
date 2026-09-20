@@ -106,6 +106,15 @@ public final class SafetensorsShardWeightLoader implements WeightLoader {
     }
 
     @Override
+    public TensorRef loadRef(String name, TensorShardSpec shardSpec) {
+        Weights weights = weightMap.get(name);
+        if (weights == null) {
+            throw new RuntimeException("weight cant be found " + name + " list" + weightMap.keySet());
+        }
+        return weights.loadRef(name, shardSpec, lighter, this);
+    }
+
+    @Override
     public DType getModelDType() {
         return modelDType;
     }

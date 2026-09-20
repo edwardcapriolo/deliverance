@@ -4,6 +4,7 @@ import io.teknek.deliverance.safetensors.TensorShardAxis;
 import io.teknek.deliverance.safetensors.TensorShardSpec;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor2.TensorRef;
 
 /**
  * Applies tensor-parallel weight sharding policy to a regular weight loader.
@@ -40,11 +41,29 @@ public class TensorParallelWeightLoader {
         };
     }
 
+    public TensorRef loadRef(String weightName) {
+        if (!context.enabled()) {
+            return delegate.loadRef(weightName);
+        }
+        return switch (resolver.resolve(weightName)) {
+            case REPLICATED -> delegate.loadRef(weightName);
+            case QUERY_PROJECTION -> delegate.loadRef(weightName, rowShard(plan.attentionColumns()));
+            case KEY_VALUE_PROJECTION -> delegate.loadRef(weightName, rowShard(plan.keyValueColumns()));
+            case ATTENTION_OUTPUT_PROJECTION -> delegate.loadRef(weightName, columnShard(plan.attentionColumns()));
+            case MLP_INPUT_PROJECTION -> delegate.loadRef(weightName, rowShard(plan.mlpIntermediate()));
+            case MLP_OUTPUT_PROJECTION -> delegate.loadRef(weightName, columnShard(plan.mlpIntermediate()));
+        };
+    }
+
     private static TensorShardSpec rowShard(ShardRange range) {
         return new TensorShardSpec(TensorShardAxis.ROWS, range.startInclusive(), range.endExclusive());
     }
 
     private static TensorShardSpec columnShard(ShardRange range) {
         return new TensorShardSpec(TensorShardAxis.COLUMNS, range.startInclusive(), range.endExclusive());
+    }
+
+    public TensorParallelShardPlan getPlan() {
+        return plan;
     }
 }

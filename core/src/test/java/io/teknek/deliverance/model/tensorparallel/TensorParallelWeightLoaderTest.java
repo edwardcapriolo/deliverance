@@ -7,6 +7,7 @@ import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorInfo;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
+import io.teknek.deliverance.tensor2.TensorRef;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -19,11 +20,24 @@ public class TensorParallelWeightLoaderTest {
     @Test
     public void queryProjectionUsesAttentionRowShard() {
         RecordingWeightLoader delegate = new RecordingWeightLoader();
-        TensorParallelWeightLoader loader = loader(delegate, new StaticTensorParallelContext(1, 4));
+        StaticTensorParallelContext context = new StaticTensorParallelContext(1, 4);
+        TensorParallelWeightLoader loader = loader(delegate, context);
 
         loader.load("model.layers.0.self_attn.q_proj.weight").close();
-
+        ShardRange attentionRange = loader.getPlan().attentionColumns();
+        assertEquals(2048, attentionRange.length() * context.size());
+        assertEquals(new ShardRange(512, 1024), attentionRange);
         assertEquals(new TensorShardSpec(TensorShardAxis.ROWS, 512, 1024), delegate.lastShardSpec);
+    }
+
+    @Test
+    public void queryProjectionRefUsesAttentionRowShard() {
+        RecordingWeightLoader delegate = new RecordingWeightLoader();
+        TensorParallelWeightLoader loader = loader(delegate, new StaticTensorParallelContext(1, 4));
+
+        loader.loadRef("model.layers.0.self_attn.q_proj.weight").close();
+
+        assertEquals(new TensorShardSpec(TensorShardAxis.ROWS, 512, 1024), delegate.lastRefShardSpec);
     }
 
     @Test
@@ -92,6 +106,7 @@ public class TensorParallelWeightLoaderTest {
     private static final class RecordingWeightLoader implements WeightLoader {
         private String lastFullLoad;
         private TensorShardSpec lastShardSpec;
+        private TensorShardSpec lastRefShardSpec;
 
         @Override
         public Map<String, String> metadata() {
@@ -115,6 +130,20 @@ public class TensorParallelWeightLoaderTest {
             lastFullLoad = null;
             lastShardSpec = shardSpec;
             return new FloatBufferTensor(1, 1);
+        }
+
+        @Override
+        public TensorRef loadRef(String name) {
+            lastFullLoad = name;
+            lastRefShardSpec = null;
+            return TensorRef.borrowed(new FloatBufferTensor(1, 1));
+        }
+
+        @Override
+        public TensorRef loadRef(String name, TensorShardSpec shardSpec) {
+            lastFullLoad = null;
+            lastRefShardSpec = shardSpec;
+            return TensorRef.borrowed(new FloatBufferTensor(1, 1));
         }
 
         @Override

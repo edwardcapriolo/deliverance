@@ -391,6 +391,15 @@ public class DefaultWeightLoader implements WeightLoader {
     }
 
     @Override
+    public TensorRef loadRef(String name, TensorShardSpec shardSpec) {
+        Weights w = weightMap.get(name);
+        if (w == null) {
+            throw new RuntimeException("weight cant be found " + name + " list" + weightMap.keySet());
+        }
+        return w.loadRef(name, shardSpec, lighter, this);
+    }
+
+    @Override
     public AbstractTensor loadRows(String name, int rowOffset, int rowCount) {
         Weights direct = this.weightMap.get(name);
         if (direct != null) {

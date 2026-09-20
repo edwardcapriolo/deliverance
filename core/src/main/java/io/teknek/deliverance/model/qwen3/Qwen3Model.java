@@ -21,12 +21,12 @@ import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.tensor2.TensorRefBackedTensor;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 
 import java.util.Optional;
 import java.util.stream.IntStream;
-
-import static io.teknek.deliverance.tensor.AbstractTensorUtils.quantize;
 
 public class Qwen3Model extends LlamaModel {
 
@@ -74,12 +74,24 @@ public class Qwen3Model extends LlamaModel {
             String oName = attn + "o_proj.weight";
             String qNormName = attn + "q_norm.weight";
             String kNormName = attn + "k_norm.weight";
-            var qWeight = quantize(tensorParallelWeights.load(qName), qType);
-            var kWeight = quantize(tensorParallelWeights.load(kName), qType);
-            var vWeight = quantize(tensorParallelWeights.load(vName), qType);
-            var oWeight = quantize(tensorParallelWeights.load(oName), qType);
-            var qNormWeight = quantize(weights.load(qNormName), qType);
-            var kNormWeight = quantize(weights.load(kNormName), qType);
+            TensorRef qRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(qName,
+                    tensorParallelWeights::loadRef, qType));
+            TensorRef kRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(kName,
+                    tensorParallelWeights::loadRef, qType));
+            TensorRef vRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(vName,
+                    tensorParallelWeights::loadRef, qType));
+            TensorRef oRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(oName,
+                    tensorParallelWeights::loadRef, qType));
+            var qWeight = TensorRefBackedTensor.as(qRef, qType);
+            var kWeight = TensorRefBackedTensor.as(kRef, qType);
+            var vWeight = TensorRefBackedTensor.as(vRef, qType);
+            var oWeight = TensorRefBackedTensor.as(oRef, qType);
+            TensorRef qNormRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(qNormName,
+                    weights::loadRef, qType));
+            TensorRef kNormRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(kNormName,
+                    weights::loadRef, qType));
+            var qNormWeight = TensorRefBackedTensor.as(qNormRef, qNormRef.dType());
+            var kNormWeight = TensorRefBackedTensor.as(kNormRef, kNormRef.dType());
             registerModelLineageTensor(qName, qWeight);
             registerModelLineageTensor(kName, kWeight);
             registerModelLineageTensor(vName, vWeight);
@@ -104,9 +116,15 @@ public class Qwen3Model extends LlamaModel {
             String gateName = mlpPrefix + "gate_proj.weight";
             String downName = mlpPrefix + "down_proj.weight";
             String upName = mlpPrefix + "up_proj.weight";
-            var gateWeight = quantize(tensorParallelWeights.load(gateName), qType);
-            var downWeight = quantize(tensorParallelWeights.load(downName), qType);
-            var upWeight = quantize(tensorParallelWeights.load(upName), qType);
+            TensorRef gateRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(gateName,
+                    tensorParallelWeights::loadRef, qType));
+            TensorRef downRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(downName,
+                    tensorParallelWeights::loadRef, qType));
+            TensorRef upRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(upName,
+                    tensorParallelWeights::loadRef, qType));
+            var gateWeight = TensorRefBackedTensor.as(gateRef, qType);
+            var downWeight = TensorRefBackedTensor.as(downRef, qType);
+            var upWeight = TensorRefBackedTensor.as(upRef, qType);
             registerModelLineageTensor(gateName, gateWeight);
             registerModelLineageTensor(downName, downWeight);
             registerModelLineageTensor(upName, upWeight);
@@ -124,8 +142,12 @@ public class Qwen3Model extends LlamaModel {
 
             String inputNormName = base + "input_layernorm.weight";
             String postAttentionNormName = base + "post_attention_layernorm.weight";
-            var inputNormWeight = quantize(weights.load(inputNormName), qType);
-            var postAttentionNormWeight = quantize(weights.load(postAttentionNormName), qType);
+            TensorRef inputNormRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(inputNormName,
+                    weights::loadRef, qType));
+            TensorRef postAttentionNormRef = registerModelTensorRef(
+                    loadAndMaybeQuantizedExcluding1DTensors(postAttentionNormName, weights::loadRef, qType));
+            var inputNormWeight = TensorRefBackedTensor.as(inputNormRef, inputNormRef.dType());
+            var postAttentionNormWeight = TensorRefBackedTensor.as(postAttentionNormRef, postAttentionNormRef.dType());
             registerModelLineageTensor(inputNormName, inputNormWeight);
             registerModelLineageTensor(postAttentionNormName, postAttentionNormWeight);
 
@@ -148,4 +170,5 @@ public class Qwen3Model extends LlamaModel {
                 response.responseText);
         return response.copyWithText(parsed.content(), response.responseTextWithSpecialTokens, parsed.reasoning());
     }
+
 }

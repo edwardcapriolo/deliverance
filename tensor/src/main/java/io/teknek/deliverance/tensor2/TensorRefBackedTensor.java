@@ -1,8 +1,10 @@
 package io.teknek.deliverance.tensor2;
 
 import com.google.common.base.Preconditions;
+import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
 
 import java.lang.foreign.MemorySegment;
 
@@ -15,6 +17,20 @@ public final class TensorRefBackedTensor extends AbstractTensor {
     public TensorRefBackedTensor(TensorRef ref) {
         super(ref.dType(), ref.shape(), false);
         this.ref = java.util.Objects.requireNonNull(ref, "ref");
+    }
+
+    public static AbstractTensor as(TensorRef ref, DType expectedDType) {
+        Preconditions.checkNotNull(ref, "ref");
+        Preconditions.checkNotNull(expectedDType, "expectedDType");
+        Preconditions.checkArgument(ref.dType() == expectedDType,
+                "TensorRef dtype %s does not match expected dtype %s", ref.dType(), expectedDType);
+        return switch (expectedDType) {
+            case Q4 -> new Q4ByteBufferTensor(ref);
+            case I8 -> throw new UnsupportedOperationException("TensorRef-backed I8 adapter is not implemented");
+            case F32, F16, BF16 -> new TensorRefBackedTensor(ref);
+            default -> throw new UnsupportedOperationException(
+                    "TensorRef-backed adapter is not implemented for " + expectedDType);
+        };
     }
 
     @Override
@@ -56,6 +72,7 @@ public final class TensorRefBackedTensor extends AbstractTensor {
     public int getMemorySegmentOffset(int offset) {
         return ref.underlying().getMemorySegmentOffset(offset);
     }
+
 
     @Override
     public void copyFrom(AbstractTensor src, int srcOffset, int destOffset, int length) {

@@ -17,6 +17,7 @@ import io.teknek.deliverance.tensor.Efficiency;
 import io.teknek.deliverance.tensor.SparseOffset;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.UnsafeDirectByteBuffer;
+import io.teknek.deliverance.tensor2.TensorRef;
 import jdk.incubator.vector.ByteVector;
 import jdk.incubator.vector.VectorSpecies;
 import org.slf4j.Logger;
@@ -155,6 +156,25 @@ public final class Q4ByteBufferTensor extends AbstractTensor {
         }
 
         this.segment = MemorySegment.ofBuffer(this.b);
+    }
+
+    /** Creates a legacy Q4 view over tensor2-owned packed data and scale storage. */
+    public Q4ByteBufferTensor(TensorRef ref) {
+        super(DType.Q4, requireQ4(ref).shape(), true);
+        TensorRef scaleRef = ref.sidecar("q4.scale");
+        Preconditions.checkArgument(scaleRef != null, "Q4 tensor is missing its scale sidecar");
+        this.b = ref.memorySegment().asByteBuffer().order(ByteOrder.LITTLE_ENDIAN);
+        this.blockF = new FloatBufferTensor("tensor2-q4-scale",
+                scaleRef.memorySegment().asByteBuffer().order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer(),
+                scaleRef.shape(), true);
+        this.name = "tensor2-q4";
+        this.segment = MemorySegment.ofBuffer(this.b);
+    }
+
+    private static TensorRef requireQ4(TensorRef ref) {
+        Preconditions.checkNotNull(ref, "ref");
+        Preconditions.checkArgument(ref.dType() == DType.Q4, "TensorRef must have Q4 dtype");
+        return ref;
     }
 
     @Override
