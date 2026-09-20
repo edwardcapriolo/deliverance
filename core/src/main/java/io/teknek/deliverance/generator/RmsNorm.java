@@ -1,6 +1,5 @@
 package io.teknek.deliverance.generator;
 
-import io.dropwizard.metrics5.Histogram;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.dropwizard.metrics5.Timer;
 import io.teknek.deliverance.model.AbstractModel;

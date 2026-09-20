@@ -5,7 +5,6 @@ import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelConfig;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
-import io.teknek.deliverance.model.DoNothingGenerateEvent;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
@@ -62,9 +61,15 @@ abstract class AbstractQwen3BenchmarkCasesIT {
             messages.add(new ChatMessage("user", turns.get(turn)));
             PromptContext prompt = promptContext(model.promptSupport(), messages);
             InferenceProfiler.reset();
+            System.out.printf("[deliverance-response] model=%s case=%s turn=%d%n", modelName, caseId, turn + 1);
             Response response = model.generate(UUID.randomUUID(), prompt,
                     new GeneratorParameters().withTemperature(0.0f).withMaxTokens(128).withSeed(42),
-                    new DoNothingGenerateEvent());
+                    (next, nextRaw, nextCleaned, timing) -> {
+                        System.out.print(nextCleaned);
+                        System.out.flush();
+                    });
+            System.out.println();
+            System.out.println("[deliverance-response-end]");
             messages.add(new ChatMessage("assistant", response.responseText));
             double generationMs = Math.max(0.0, response.totalTimeMs - response.timeToFirstTokenMs);
             long decodeTokens = Math.max(0, response.generatedTokens.size() - 1L);

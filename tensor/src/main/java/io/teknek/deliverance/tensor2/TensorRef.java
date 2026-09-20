@@ -75,7 +75,7 @@ public class TensorRef implements AutoCloseable {
         return requireOpen().underlying();
     }
 
-    DType dType() {
+    public DType dType() {
         return requireOpen().dType();
     }
 
@@ -83,12 +83,20 @@ public class TensorRef implements AutoCloseable {
         return requireOpen().device();
     }
 
-    int stride() {
+    public int stride() {
         return requireOpen().stride();
     }
 
-    TensorRef sidecar(String name) {
+    public TensorRef sidecar(String name) {
         return requireOpen().sidecars().get(name);
+    }
+
+    public MemorySegment memorySegment() {
+        return underlying().getMemorySegment();
+    }
+
+    public int memorySegmentOffset(int offset) {
+        return underlying().getMemorySegmentOffset(offset);
     }
 
     public TensorShape getShape(){

@@ -32,6 +32,11 @@ public interface WeightLoader extends AutoCloseable {
         throw new UnsupportedOperationException("TensorRef weight loading not supported for " + getClass().getName());
     }
 
+    default TensorRef loadRef(String name, TensorShardSpec shardSpec) {
+        throw new UnsupportedOperationException("Sharded TensorRef weight loading not supported for "
+                + getClass().getName());
+    }
+
     default AbstractTensor loadRows(String name, int rowOffset, int rowCount) {
         throw new UnsupportedOperationException("Row slicing not supported for " + getClass().getName());
     }
