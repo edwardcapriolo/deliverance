@@ -3,6 +3,8 @@ package io.teknek.deliverance.safetensors;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorInfo;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.TensorRef;
 
 import java.util.Map;
 import java.nio.file.Path;
@@ -22,6 +24,14 @@ public interface WeightLoader extends AutoCloseable {
         throw new UnsupportedOperationException("Weight loading not supported for " + getClass().getName());
     }
 
+    /**
+     * Loads a tensor through the tensor2 bridge without copying its backing storage.
+     * Implementations may override this to construct a native tensor2 view directly.
+     */
+    default TensorRef loadRef(String name) {
+        throw new UnsupportedOperationException("TensorRef weight loading not supported for " + getClass().getName());
+    }
+
     default AbstractTensor loadRows(String name, int rowOffset, int rowCount) {
         throw new UnsupportedOperationException("Row slicing not supported for " + getClass().getName());
     }
@@ -38,6 +48,13 @@ public interface WeightLoader extends AutoCloseable {
     }
 
     DType getModelDType();
+
+    /**
+     * Supplies the model's tensor2 execution context before model initialization loads weights.
+     * Legacy loaders that do not expose tensor2 weights may leave this as a no-op.
+     */
+    default void setLighter(Lighter lighter) {
+    }
 
     default Optional<Path> modelRoot() {
         return Optional.empty();

@@ -3,6 +3,8 @@ package io.teknek.deliverance.safetensors;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorInfo;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.TensorRef;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.primitives.Ints;
 
@@ -16,6 +18,7 @@ import java.util.List;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -30,6 +33,7 @@ public final class SafetensorsShardWeightLoader implements WeightLoader {
     private final Map<String, Weights> weightMap;
     private final DType modelDType;
     private final int dataStartOffset;
+    private Lighter lighter;
 
     public SafetensorsShardWeightLoader(Path shardFile) {
         try {
@@ -75,12 +79,30 @@ public final class SafetensorsShardWeightLoader implements WeightLoader {
     }
 
     @Override
+    public void setLighter(Lighter lighter) {
+        Objects.requireNonNull(lighter, "lighter");
+        if (this.lighter != null && this.lighter != lighter) {
+            throw new IllegalStateException("Lighter is already configured for this weight loader");
+        }
+        this.lighter = lighter;
+    }
+
+    @Override
     public AbstractTensor load(String name) {
         Weights weights = weightMap.get(name);
         if (weights == null) {
             throw new RuntimeException("weight cant be found " + name + " list" + weightMap.keySet());
         }
         return weights.load(name);
+    }
+
+    @Override
+    public TensorRef loadRef(String name) {
+        Weights weights = weightMap.get(name);
+        if (weights == null) {
+            throw new RuntimeException("weight cant be found " + name + " list" + weightMap.keySet());
+        }
+        return weights.loadRef(name, lighter, this);
     }
 
     @Override

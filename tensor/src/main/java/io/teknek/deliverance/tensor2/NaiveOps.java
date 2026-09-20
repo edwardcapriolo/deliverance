@@ -35,7 +35,7 @@ class NaiveOps implements TensorOps {
             reshapeI8(input, output);
             return Either.Right(null);
         }
-        if (output.dType() == DType.F32 || output.dType() == DType.BF16) {
+        if (output.dType() == DType.F16 || output.dType() == DType.F32 || output.dType() == DType.BF16) {
             for (int row = 0; row < input.shape().first(); row++) {
                 for (int column = 0; column < input.shape().last(); column++) {
                     output.underlying().set(input.underlying().get(row, column), row, column);

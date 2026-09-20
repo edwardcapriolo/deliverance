@@ -5,6 +5,8 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorInfo;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.TensorRef;
 
 import java.util.Map;
 import java.nio.file.Path;
@@ -61,6 +63,19 @@ public class MergingWeightLoader implements WeightLoader {
     @Override
     public boolean isWeightPresent(String name) {
         return delegate.isWeightPresent(name);
+    }
+
+    @Override
+    public void setLighter(Lighter lighter) {
+        delegate.setLighter(lighter);
+    }
+
+    @Override
+    public TensorRef loadRef(String name) {
+        if (adapter.deltaFor(name).isPresent()) {
+            throw new UnsupportedOperationException("TensorRef loading does not support merged LoRA weights: " + name);
+        }
+        return delegate.loadRef(name);
     }
 
     @Override

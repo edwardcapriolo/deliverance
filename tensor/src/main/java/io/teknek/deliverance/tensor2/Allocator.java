@@ -24,8 +24,8 @@ class Allocator {
         if (dType == DType.I8 || dType == DType.Q4) {
             return allocateQuantized(dType, shape, device);
         }
-        Preconditions.checkArgument(dType == DType.F32 || dType == DType.BF16,
-                "Only F32, BF16, I8, and Q4 tensors are supported for now");
+        Preconditions.checkArgument(dType == DType.F32 || dType == DType.F16 || dType == DType.BF16,
+                "Only F32, F16, BF16, I8, and Q4 tensors are supported for now");
         return allocateDense(dType, shape, device, Map.of());
     }
 
@@ -56,6 +56,7 @@ class Allocator {
         // TODO: evict or repurpose unused tensors from other shape pools when retained memory grows too large.
         return switch (dType) {
             case F32 -> new F32Tensor(shape);
+            case F16 -> new F16Tensor(shape);
             case BF16 -> new BF16Tensor(shape);
             case I8 -> new I8Tensor(shape);
             case Q4 -> new Q4Tensor(shape);
