@@ -310,6 +310,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         this.tensorOperations.put(TensorProviderKind.SIMD, provider.get());
         this.metricRegistry = metricRegistry;
         this.lighter = new Lighter(metricRegistry);
+        w.setLighter(this.lighter);
         this.compositeOps = new CompositeOps(lighter, metricRegistry);
         this.tensorAllocator = tensorAllocator;
         this.kvBufferCacheSettings = kvBufferCacheSettings;

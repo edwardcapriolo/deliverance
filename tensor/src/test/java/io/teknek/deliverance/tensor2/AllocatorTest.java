@@ -26,6 +26,18 @@ class AllocatorTest {
     }
 
     @Test
+    void allocatesOwnedCpuF16Tensor() {
+        Allocator allocator = new Allocator();
+        TensorShape shape = TensorShape.of(2, 3);
+
+        try (TensorRef ref = allocator.allocate(DType.F16, shape)) {
+            assertEquals(shape, ref.shape());
+            assertEquals(DType.F16, ref.dType());
+            assertInstanceOf(F16Tensor.class, ref.underlying());
+        }
+    }
+
+    @Test
     void closeReturnsTensorToPoolForShape() throws Exception {
         Allocator allocator = new Allocator();
         TensorShape shape = TensorShape.of(2, 3);

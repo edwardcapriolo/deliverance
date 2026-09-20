@@ -16,6 +16,7 @@ import java.nio.ByteOrder;
 class PanamaOps implements TensorOps {
     private static final VectorSpecies<Float> F32_SPECIES = FloatVector.SPECIES_PREFERRED;
     private static final VectorSpecies<Float> F32_BF16_SPECIES = FloatVector.SPECIES_256;
+    private static final VectorSpecies<Integer> F16_INT_SPECIES = IntVector.SPECIES_256;
     private static final VectorSpecies<Short> BF16_SPECIES = ShortVector.SPECIES_128;
     private static final VectorSpecies<Byte> Q8_BYTE_SPECIES = ByteVector.SPECIES_128;
     private static final VectorSpecies<Float> Q8_FLOAT_SPECIES = FloatVector.SPECIES_512;
@@ -39,6 +40,25 @@ class PanamaOps implements TensorOps {
         if (input.dType() == DType.BF16 && output.dType() == DType.F32) {
             reshapeBF16ToF32(input, output);
             return Either.Right(null);
+        }
+        if (input.dType() == DType.F16 && output.dType() == DType.F32) {
+            reshapeF16ToF32(input, output);
+            return Either.Right(null);
+        }
+        if (input.dType() == DType.F16 && output.dType() == DType.BF16) {
+            reshapeF16ToBF16(input, output);
+            return Either.Right(null);
+        }
+        if (input.dType() == DType.F32 && output.dType() == DType.F16) {
+            reshapeF32ToF16(input, output);
+            return Either.Right(null);
+        }
+        if (input.dType() == DType.BF16 && output.dType() == DType.F16) {
+            reshapeBF16ToF16(input, output);
+            return Either.Right(null);
+        }
+        if (input.dType() == DType.F16) {
+            return Either.Left(OpSupport.Unsupported);
         }
         if (output.dType() == DType.I8) {
             reshapeToI8(input, output);
@@ -76,7 +96,7 @@ class PanamaOps implements TensorOps {
 
     private long physicalBytes(TensorRef tensor) {
         return switch (tensor.dType()) {
-            case F32, BF16, I8 -> tensor.shape().size() * tensor.dType().size();
+            case F32, F16, BF16, I8 -> tensor.shape().size() * tensor.dType().size();
             case Q4 -> tensor.shape().size() / 2;
             default -> throw new IllegalArgumentException("Unsupported dtype " + tensor.dType());
         };
@@ -125,6 +145,133 @@ class PanamaOps implements TensorOps {
                 outputTensor.set(inputTensor.get(row, column), row, column);
             }
         }
+    }
+
+    private void reshapeF16ToF32(TensorRef input, TensorRef output) {
+        for (int row = 0; row < input.shape().first(); row++) {
+            int column = 0;
+            int upperBound = F16_INT_SPECIES.loopBound(input.shape().last());
+            for (; column < upperBound; column += F16_INT_SPECIES.length()) {
+                IntVector bits = f16ToFloatBits(ShortVector.fromMemorySegment(BF16_SPECIES,
+                        input.underlying().getMemorySegment(), memoryOffset(input, row, column), ByteOrder.LITTLE_ENDIAN));
+                bits.reinterpretAsFloats().intoMemorySegment(output.underlying().getMemorySegment(),
+                        memoryOffset(output, row, column), ByteOrder.LITTLE_ENDIAN);
+            }
+            for (; column < input.shape().last(); column++) {
+                output.underlying().set(input.underlying().get(row, column), row, column);
+            }
+        }
+    }
+
+    private void reshapeF16ToBF16(TensorRef input, TensorRef output) {
+        for (int row = 0; row < input.shape().first(); row++) {
+            int column = 0;
+            int upperBound = F16_INT_SPECIES.loopBound(input.shape().last());
+            for (; column < upperBound; column += F16_INT_SPECIES.length()) {
+                IntVector bits = f16ToFloatBits(ShortVector.fromMemorySegment(BF16_SPECIES,
+                        input.underlying().getMemorySegment(), memoryOffset(input, row, column), ByteOrder.LITTLE_ENDIAN));
+                IntVector rounded = roundFloatBitsToBf16(bits);
+                ((ShortVector) rounded.lanewise(VectorOperators.LSHR, 16)
+                        .convertShape(VectorOperators.I2S, BF16_SPECIES, 0))
+                        .intoMemorySegment(output.underlying().getMemorySegment(), memoryOffset(output, row, column),
+                                ByteOrder.LITTLE_ENDIAN);
+            }
+            for (; column < input.shape().last(); column++) {
+                output.underlying().set(input.underlying().get(row, column), row, column);
+            }
+        }
+    }
+
+    private void reshapeF32ToF16(TensorRef input, TensorRef output) {
+        for (int row = 0; row < input.shape().first(); row++) {
+            int column = 0;
+            int upperBound = F16_INT_SPECIES.loopBound(input.shape().last());
+            for (; column < upperBound; column += F16_INT_SPECIES.length()) {
+                FloatVector values = FloatVector.fromMemorySegment(F32_BF16_SPECIES,
+                        input.underlying().getMemorySegment(), memoryOffset(input, row, column), ByteOrder.LITTLE_ENDIAN);
+                floatBitsToF16(values.reinterpretAsInts()).intoMemorySegment(output.underlying().getMemorySegment(),
+                        memoryOffset(output, row, column), ByteOrder.LITTLE_ENDIAN);
+            }
+            for (; column < input.shape().last(); column++) {
+                output.underlying().set(input.underlying().get(row, column), row, column);
+            }
+        }
+    }
+
+    private void reshapeBF16ToF16(TensorRef input, TensorRef output) {
+        for (int row = 0; row < input.shape().first(); row++) {
+            int column = 0;
+            int upperBound = F16_INT_SPECIES.loopBound(input.shape().last());
+            for (; column < upperBound; column += F16_INT_SPECIES.length()) {
+                ShortVector values = ShortVector.fromMemorySegment(BF16_SPECIES,
+                        input.underlying().getMemorySegment(), memoryOffset(input, row, column), ByteOrder.LITTLE_ENDIAN);
+                IntVector bits = ((IntVector) values.convertShape(VectorOperators.S2I, F16_INT_SPECIES, 0))
+                        .lanewise(VectorOperators.LSHL, 16);
+                floatBitsToF16(bits).intoMemorySegment(output.underlying().getMemorySegment(),
+                        memoryOffset(output, row, column), ByteOrder.LITTLE_ENDIAN);
+            }
+            for (; column < input.shape().last(); column++) {
+                output.underlying().set(input.underlying().get(row, column), row, column);
+            }
+        }
+    }
+
+    private IntVector f16ToFloatBits(ShortVector values) {
+        IntVector half = ((IntVector) values.convertShape(VectorOperators.S2I, F16_INT_SPECIES, 0))
+                .lanewise(VectorOperators.AND, 0xffff);
+        IntVector sign = half.lanewise(VectorOperators.AND, 0x8000).lanewise(VectorOperators.LSHL, 16);
+        IntVector exponent = half.lanewise(VectorOperators.LSHR, 10).lanewise(VectorOperators.AND, 0x1f);
+        IntVector mantissa = half.lanewise(VectorOperators.AND, 0x3ff);
+
+        IntVector normal = exponent.add(112).lanewise(VectorOperators.LSHL, 23)
+                .or(mantissa.lanewise(VectorOperators.LSHL, 13));
+
+        IntVector subnormalMantissa = mantissa;
+        IntVector subnormalShift = IntVector.zero(F16_INT_SPECIES);
+        for (int i = 0; i < 10; i++) {
+            VectorMask<Integer> needsShift = subnormalMantissa.compare(VectorOperators.LT, 0x400);
+            subnormalMantissa = subnormalMantissa.lanewise(VectorOperators.LSHL, 1, needsShift);
+            subnormalShift = subnormalShift.sub(1, needsShift);
+        }
+        IntVector subnormal = subnormalShift.add(103).lanewise(VectorOperators.LSHL, 23)
+                .or(subnormalMantissa.lanewise(VectorOperators.AND, 0x3ff).lanewise(VectorOperators.LSHL, 13));
+        IntVector special = IntVector.broadcast(F16_INT_SPECIES, 0x7f800000)
+                .or(mantissa.lanewise(VectorOperators.LSHL, 13));
+
+        VectorMask<Integer> isZero = exponent.compare(VectorOperators.EQ, 0).and(mantissa.compare(VectorOperators.EQ, 0));
+        VectorMask<Integer> isSubnormal = exponent.compare(VectorOperators.EQ, 0).and(mantissa.compare(VectorOperators.NE, 0));
+        VectorMask<Integer> isSpecial = exponent.compare(VectorOperators.EQ, 31);
+        IntVector result = normal.blend(subnormal, isSubnormal).blend(special, isSpecial).blend(sign, isZero);
+        return result.or(sign);
+    }
+
+    private IntVector roundFloatBitsToBf16(IntVector bits) {
+        return bits.add(BF16_ROUND_BIAS)
+                .add(bits.lanewise(VectorOperators.LSHR, 16).lanewise(VectorOperators.AND, BF16_ROUND_LSB_MASK));
+    }
+
+    private ShortVector floatBitsToF16(IntVector bits) {
+        IntVector sign = bits.lanewise(VectorOperators.LSHR, 16).lanewise(VectorOperators.AND, 0x8000);
+        IntVector absolute = bits.lanewise(VectorOperators.AND, 0x7fffffff);
+        IntVector normal = bits.sub(0x38000000).add(0x00001000)
+                .lanewise(VectorOperators.LSHR, 13).lanewise(VectorOperators.AND, 0x7fff);
+        VectorMask<Integer> overflow = absolute.compare(VectorOperators.GE, 0x47800000);
+        VectorMask<Integer> nan = absolute.compare(VectorOperators.GT, 0x7f800000);
+        VectorMask<Integer> underflow = absolute.compare(VectorOperators.LT, 0x33000000);
+        VectorMask<Integer> subnormal = absolute.compare(VectorOperators.LT, 0x38800000);
+        IntVector subnormalMantissa = absolute.lanewise(VectorOperators.AND, 0x7fffff).or(0x800000);
+        IntVector shift = IntVector.broadcast(F16_INT_SPECIES, 126)
+                .sub(absolute.lanewise(VectorOperators.LSHR, 23));
+        IntVector subnormalValue = subnormalMantissa.add(IntVector.broadcast(F16_INT_SPECIES, 1)
+                        .lanewise(VectorOperators.LSHL, shift.sub(1)))
+                .lanewise(VectorOperators.LSHR, shift);
+        IntVector infinity = IntVector.broadcast(F16_INT_SPECIES, 0x7c00);
+        IntVector nanValue = infinity.or(absolute.lanewise(VectorOperators.LSHR, 13)
+                .lanewise(VectorOperators.AND, 0x3ff));
+        IntVector result = normal.blend(subnormalValue, subnormal).blend(IntVector.zero(F16_INT_SPECIES), underflow)
+                .blend(infinity, overflow).blend(nanValue, nan)
+                .or(sign);
+        return (ShortVector) result.convertShape(VectorOperators.I2S, BF16_SPECIES, 0);
     }
 
     private void reshapeToI8(TensorRef input, TensorRef output) {
@@ -408,7 +555,31 @@ class PanamaOps implements TensorOps {
             scaleBF16(factor, target, offset, length);
             return Either.Right(null);
         }
+        if (target.dType() == DType.F16) {
+            scaleF16(factor, target, offset, length);
+            return Either.Right(null);
+        }
         return Either.Left(OpSupport.Unsupported);
+    }
+
+    private void scaleF16(float factor, TensorRef target, int offset, int length) {
+        FloatVector scale = FloatVector.broadcast(F32_BF16_SPECIES, factor);
+        int end = offset + length;
+        int column = offset;
+        int upperBound = offset + F16_INT_SPECIES.loopBound(length);
+        for (int row = 0; row < target.shape().first(); row++) {
+            column = offset;
+            for (; column < upperBound; column += F16_INT_SPECIES.length()) {
+                IntVector values = f16ToFloatBits(ShortVector.fromMemorySegment(BF16_SPECIES,
+                        target.underlying().getMemorySegment(), memoryOffset(target, row, column), ByteOrder.LITTLE_ENDIAN));
+                FloatVector scaled = values.reinterpretAsFloats().mul(scale);
+                floatBitsToF16(scaled.reinterpretAsInts()).intoMemorySegment(target.underlying().getMemorySegment(),
+                        memoryOffset(target, row, column), ByteOrder.LITTLE_ENDIAN);
+            }
+            for (; column < end; column++) {
+                target.underlying().set(target.underlying().get(row, column) * factor, row, column);
+            }
+        }
     }
 
     private void scaleF32(float factor, TensorRef target, int offset, int length) {

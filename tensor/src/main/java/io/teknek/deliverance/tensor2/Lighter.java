@@ -13,6 +13,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.nio.ByteBuffer;
+import java.lang.foreign.MemorySegment;
 import java.util.concurrent.TimeUnit;
 
 public class Lighter {
@@ -93,6 +95,40 @@ public class Lighter {
         return allocator.allocate(dType, shape, device);
     }
 
+    /** Copies a mapped raw tensor payload into tensor2-owned storage. */
+    public void copyFrom(ByteBuffer source, TensorRef target) {
+        Preconditions.checkArgument(source != null, "Source buffer must be set");
+        Preconditions.checkArgument(target != null, "Target tensor must be set");
+        long bytes = target.underlying().getMemorySegment().byteSize();
+        Preconditions.checkArgument(source.remaining() == bytes,
+                "Source bytes %s do not match target storage bytes %s", source.remaining(), bytes);
+        MemorySegment sourceSegment = MemorySegment.ofBuffer(source.slice());
+        target.underlying().getMemorySegment().copyFrom(sourceSegment);
+    }
+
+    /** Copies tensor2 storage, including quantization sidecars, between matching tensors. */
+    public void copyStorage(TensorRef source, TensorRef target) {
+        Preconditions.checkArgument(source != null && target != null, "Source and target tensors must be set");
+        Preconditions.checkArgument(source.dType() == target.dType(), "Tensor dtypes must match");
+        Preconditions.checkArgument(source.shape().equals(target.shape()), "Tensor shapes must match");
+        target.underlying().getMemorySegment().copyFrom(source.underlying().getMemorySegment());
+        if (source.dType() == DType.I8) {
+            copyStorage(Q8Layout.scale(source), Q8Layout.scale(target));
+        } else if (source.dType() == DType.Q4) {
+            copyStorage(Q4Layout.scale(source), Q4Layout.scale(target));
+        }
+    }
+
+    /** Copies a raw F32 scale tensor into a quantized tensor's scale sidecar. */
+    public void copyScale(TensorRef sourceScale, TensorRef quantizedTarget) {
+        Preconditions.checkArgument(quantizedTarget.dType() == DType.I8 || quantizedTarget.dType() == DType.Q4,
+                "Target must be quantized");
+        TensorRef targetScale = quantizedTarget.dType() == DType.I8
+                ? Q8Layout.scale(quantizedTarget)
+                : Q4Layout.scale(quantizedTarget);
+        copyStorage(sourceScale, targetScale);
+    }
+
     public boolean shouldQuantizeForEfficiency(TensorRef current, DType desired) {
         Preconditions.checkArgument(current != null, "Current tensor must be set");
         Preconditions.checkArgument(desired != null, "Desired dtype must be set");
@@ -128,7 +164,7 @@ public class Lighter {
     private Long allocatedBytes(DType dType, TensorShape shape) {
         long values = shape.size();
         return switch (dType) {
-            case F32, BF16 -> values * dType.size();
+            case F32, F16, BF16 -> values * dType.size();
             case I8 -> shape.last() % Q8Layout.BLOCK_SIZE == 0
                     && shape.sparseColumnOffset() % Q8Layout.BLOCK_SIZE == 0
                     && shape.sparseColumnLength() % Q8Layout.BLOCK_SIZE == 0

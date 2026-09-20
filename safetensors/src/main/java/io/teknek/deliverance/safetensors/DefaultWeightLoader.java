@@ -11,6 +11,8 @@ import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.impl.BFloat16BufferTensor;
 import io.teknek.deliverance.tensor.impl.Float16BufferTensor;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.TensorRef;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,6 +45,7 @@ public class DefaultWeightLoader implements WeightLoader {
     private final Map<String, Weights> weightMap;
     private final Path modelRoot;
     private final DType majorityDType;
+    private Lighter lighter;
 
 
     public DefaultWeightLoader(File baseDir){
@@ -65,6 +68,15 @@ public class DefaultWeightLoader implements WeightLoader {
     @Override
     public Optional<Path> modelRoot() {
         return Optional.of(modelRoot);
+    }
+
+    @Override
+    public void setLighter(Lighter lighter) {
+        Objects.requireNonNull(lighter, "lighter");
+        if (this.lighter != null && this.lighter != lighter) {
+            throw new IllegalStateException("Lighter is already configured for this weight loader");
+        }
+        this.lighter = lighter;
     }
 
     private static LoadedWeights openWeights(File baseDir) {
@@ -139,7 +151,7 @@ public class DefaultWeightLoader implements WeightLoader {
                                 .stream()
                                 .filter(x -> tensors.contains(x.getKey()))
                                 .collect(ImmutableMap.toImmutableMap(Map.Entry::getKey, Map.Entry::getValue));
-                        Weights mmapWeights = new Weights(metadata, mmapTensorInfoMap, buf, Optional.of(this));
+                         Weights mmapWeights = new Weights(metadata, mmapTensorInfoMap, buf, Optional.of(this));
                         for (String tensor : tensors) {
                             weightMap.put(tensor, mmapWeights);
                         }
@@ -367,6 +379,15 @@ public class DefaultWeightLoader implements WeightLoader {
             throw new RuntimeException("weight cant be found " +name + " list" + this.weightMap.keySet());
         }
         return w.load(name);
+    }
+
+    @Override
+    public TensorRef loadRef(String name) {
+        Weights w = weightMap.get(name);
+        if (w == null) {
+            throw new RuntimeException("weight cant be found " + name + " list" + weightMap.keySet());
+        }
+        return w.loadRef(name, lighter, this);
     }
 
     @Override

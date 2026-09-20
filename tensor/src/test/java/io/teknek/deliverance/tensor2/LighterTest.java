@@ -126,6 +126,28 @@ class LighterTest {
     }
 
     @Test
+    void scaleF16UsesPanama() {
+        MetricRegistry metricRegistry = new MetricRegistry();
+        Lighter lighter = lighterWithUnsupportedSimd(metricRegistry);
+        try (TensorRef target = lighter.allocate(DType.F16, TensorShape.of(1, 16))) {
+            target.underlying().set(2.0f, 0, 0);
+            for (int column = 1; column < target.shape().last(); column++) {
+                target.underlying().set(column, 0, column);
+            }
+
+            lighter.scale(new Scale(10.0f).target(target).offsetAndLength(1, 8), Map.of("phase", "test"));
+
+            assertEquals(2.0f, target.underlying().get(0, 0), 0.0f);
+            assertEquals(10.0f, target.underlying().get(0, 1), 0.0f);
+            assertEquals(80.0f, target.underlying().get(0, 8), 0.0f);
+            assertEquals(9.0f, target.underlying().get(0, 9), 0.0f);
+            assertEquals(1, metricRegistry.meter(new MetricName("tensor2.scale",
+                    Map.of("phase", "test", Lighter.TENSOR_OP_KEY, "PANAMA", Lighter.LENGTH, "8",
+                            Lighter.TENSOR_TYPE, DType.F16.name()))).getCount());
+        }
+    }
+
+    @Test
     void batchDotProductUsesSimdBeforePanama() {
         MetricRegistry metricRegistry = new MetricRegistry();
         AtomicBoolean simdUsed = new AtomicBoolean(false);

@@ -23,14 +23,22 @@ class Tensor2LighterReshapeFuzzTest {
     void shouldQuantizeForEfficiencyRequiresStrictlySmallerAllocatedStorage() {
         Lighter lighter = naiveOnly();
         try (TensorRef f32 = lighter.allocate(DType.F32, TensorShape.of(1, 64));
+             TensorRef f16 = lighter.allocate(DType.F16, TensorShape.of(1, 64));
              TensorRef bf16 = lighter.allocate(DType.BF16, TensorShape.of(1, 64));
              TensorRef i8 = lighter.allocate(DType.I8, TensorShape.of(1, 64));
              TensorRef q4 = lighter.allocate(DType.Q4, TensorShape.of(1, 64))) {
 
             assertFalse(lighter.shouldQuantizeForEfficiency(f32, DType.F32));
+            assertTrue(lighter.shouldQuantizeForEfficiency(f32, DType.F16));
             assertTrue(lighter.shouldQuantizeForEfficiency(f32, DType.BF16));
             assertTrue(lighter.shouldQuantizeForEfficiency(f32, DType.I8));
             assertTrue(lighter.shouldQuantizeForEfficiency(f32, DType.Q4));
+
+            assertFalse(lighter.shouldQuantizeForEfficiency(f16, DType.F32));
+            assertFalse(lighter.shouldQuantizeForEfficiency(f16, DType.F16));
+            assertFalse(lighter.shouldQuantizeForEfficiency(f16, DType.BF16));
+            assertTrue(lighter.shouldQuantizeForEfficiency(f16, DType.I8));
+            assertTrue(lighter.shouldQuantizeForEfficiency(f16, DType.Q4));
 
             assertFalse(lighter.shouldQuantizeForEfficiency(bf16, DType.F32));
             assertFalse(lighter.shouldQuantizeForEfficiency(bf16, DType.BF16));
@@ -91,20 +99,67 @@ class Tensor2LighterReshapeFuzzTest {
         }
     }
 
+    @Test
+    void panamaF16ConversionMatchesNaiveOnEdgeValuesAndTail() {
+        TensorShape shape = TensorShape.of(3, 13);
+        float[] values = {
+                0.0f, -0.0f, Float.MIN_VALUE, -Float.MIN_VALUE, 5.9604645e-8f,
+                -5.9604645e-8f, 6.1035156e-5f, -6.1035156e-5f, 1.0f,
+                -1.0f, 65504.0f, -65504.0f, Float.POSITIVE_INFINITY,
+                Float.NEGATIVE_INFINITY, Float.NaN
+        };
+        Lighter naive = naiveOnly();
+        Lighter panama = new Lighter(nullMetricRegistry(), Map.of(TensorProviderKind.PANAMA, new PanamaOps()));
+        try (TensorRef source = naive.allocate(DType.F32, shape);
+             TensorRef actualSource = panama.allocate(DType.F32, shape)) {
+            for (int row = 0; row < shape.first(); row++) {
+                for (int column = 0; column < shape.last(); column++) {
+                    float value = values[(row * shape.last() + column) % values.length];
+                    source.underlying().set(value, row, column);
+                    actualSource.underlying().set(value, row, column);
+                }
+            }
+            try (TensorRef expected = naive.reshape(source, DType.F16);
+                 TensorRef actual = panama.reshape(actualSource, DType.F16)) {
+                for (int row = 0; row < shape.first(); row++) {
+                    for (int column = 0; column < shape.last(); column++) {
+                        float expectedValue = expected.underlying().get(row, column);
+                        float actualValue = actual.underlying().get(row, column);
+                        if (Float.isNaN(expectedValue)) {
+                            assertTrue(Float.isNaN(actualValue));
+                        } else {
+                            assertEquals(expectedValue, actualValue, 0.0f,
+                                    "row=" + row + " column=" + column);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     static Stream<Arguments> reshapeCasesAndCandidates() {
         List<Candidate> candidates = List.of(
                 new Candidate("NAIVE", Tensor2LighterReshapeFuzzTest::naiveOnly),
                 new Candidate("PANAMA", () -> new Lighter(nullMetricRegistry(), Map.of(
                         TensorProviderKind.PANAMA, new PanamaOps()))));
-        return List.of(DType.F32, DType.BF16, DType.I8, DType.Q4).stream()
-                .flatMap(input -> List.of(DType.F32, DType.BF16, DType.I8, DType.Q4).stream()
+        return List.of(DType.F32, DType.F16, DType.BF16, DType.I8, DType.Q4).stream()
+                .flatMap(input -> List.of(DType.F32, DType.F16, DType.BF16, DType.I8, DType.Q4).stream()
                         .flatMap(output -> Stream.of(
                                 Arguments.of(input, output, 1, 32,
                                         input.ordinal() * 31 + output.ordinal()),
                                 Arguments.of(input, output, 3, 64,
                                         input.ordinal() * 37 + output.ordinal() + 11))
-                                .flatMap(args -> candidates.stream().map(candidate -> Arguments.of(args.get()[0],
-                                        args.get()[1], args.get()[2], args.get()[3], candidate, args.get()[4])))));
+                                .flatMap(args -> candidatesFor(candidates, input, output).stream()
+                                        .map(candidate -> Arguments.of(args.get()[0], args.get()[1], args.get()[2],
+                                                args.get()[3], candidate, args.get()[4])))));
+    }
+
+    private static List<Candidate> candidatesFor(List<Candidate> candidates, DType input, DType output) {
+        if ((input == DType.F16 || output == DType.F16)
+                && (input == DType.I8 || input == DType.Q4 || output == DType.I8 || output == DType.Q4)) {
+            return candidates.stream().filter(candidate -> candidate.name().equals("NAIVE")).toList();
+        }
+        return candidates;
     }
 
     private static TensorRef copy(Lighter lighter, TensorRef source) {
@@ -134,6 +189,7 @@ class Tensor2LighterReshapeFuzzTest {
             return Math.max(0.03f, Math.abs(expected) * 0.03f);
         }
         return switch (outputDType) {
+            case F16 -> Math.max(0.001f, Math.abs(expected) * 0.001f);
             case BF16 -> Math.max(0.01f, Math.abs(expected) * 0.01f);
             default -> 1.0e-6f;
         };

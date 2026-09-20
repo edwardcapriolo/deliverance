@@ -7,6 +7,8 @@ import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorInfo;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.impl.*;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.TensorRef;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -78,6 +80,34 @@ public class Weights implements WeightLoader {
         return loadTensorFromBuffer(name, info.dType, majorityDType, toTensorShape(info.shape), b, parent.orElse(this));
     }
 
+    TensorRef loadRef(String name, Lighter lighter, WeightLoader sidecarLoader) {
+        TensorInfo info = tensorInfoMap.get(name);
+        if (info == null) {
+            throw new NoSuchElementException(name + " not found in weights");
+        }
+        ByteBuffer b = bytes.duplicate()
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .position(Ints.checkedCast(info.dataOffsets[0]))
+                .limit(Ints.checkedCast(info.dataOffsets[1]))
+                .slice()
+                .order(ByteOrder.LITTLE_ENDIAN);
+        TensorShape shape = toTensorShape(info.shape);
+        TensorRef ref = lighter.allocate(info.dType, shape);
+        try {
+            lighter.copyFrom(b, ref);
+            if (info.dType == DType.Q4 || info.dType == DType.I8) {
+                TensorRef sourceScale = sidecarLoader.loadRef(name + ".qb");
+                try (sourceScale) {
+                    lighter.copyScale(sourceScale, ref);
+                }
+            }
+            return ref;
+        } catch (RuntimeException e) {
+            ref.close();
+            throw e;
+        }
+    }
+
     /**
      * Converts safetensors shapes into Deliverance tensor shapes.
      *
@@ -111,7 +141,7 @@ public class Weights implements WeightLoader {
                 t = new FloatBufferTensor(name, fb, shape, true);
                 break;
             case F16:
-                // If the majority of the weights are F32 then convert to F32
+                // Preserve the legacy loader behavior: F16 weights are promoted when F32 is the model majority dtype.
                 if (majorityDType == DType.F32) {
                     len = b.remaining() / DType.F16.size();
                     ByteBuffer bb = ByteBuffer.allocate(len * DType.F32.size()).order(ByteOrder.LITTLE_ENDIAN);
