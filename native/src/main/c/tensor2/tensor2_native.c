@@ -141,6 +141,302 @@ static inline float tensor2_dot_f32_q8(
 #endif
 }
 
+tensor2_status tensor2_dot_product_rows_f32_f32(
+        float *result,
+        const float *input,
+        const float *weights,
+        int result_rows,
+        int input_start,
+        int input_length,
+        int weight_row_start,
+        int weight_row_count,
+        int result_column_start,
+        int result_stride,
+        int input_stride,
+        int weight_stride) {
+    if (result == 0 || input == 0 || weights == 0) {
+        return TENSOR2_UNSUPPORTED;
+    }
+    if (result_rows < 0 || input_start < 0 || input_length < 0 || weight_row_start < 0
+            || weight_row_count < 0 || result_column_start < 0 || result_stride < 0
+            || input_stride < 0 || weight_stride < 0) {
+        return TENSOR2_UNSUPPORTED;
+    }
+
+    for (int result_row = 0; result_row < result_rows; result_row++) {
+        const int input_offset = result_row * input_stride + input_start;
+        for (int row = 0; row < weight_row_count; row++) {
+            const int weight_row = weight_row_start + row;
+            const int weight_offset = weight_row * weight_stride + input_start;
+            result[result_row * result_stride + result_column_start + row] =
+                    tensor2_dot_f32_f32(input, weights, input_offset, weight_offset, input_length);
+        }
+    }
+    return TENSOR2_OK;
+}
+
+tensor2_status tensor2_dot_product_rows_f32_q8(
+        float *result,
+        const float *input,
+        const int8_t *weights,
+        const float *weight_scales,
+        int result_rows,
+        int input_start,
+        int input_length,
+        int weight_row_start,
+        int weight_row_count,
+        int result_column_start,
+        int result_stride,
+        int input_stride,
+        int weight_stride,
+        int weight_scale_stride) {
+    if (result == 0 || input == 0 || weights == 0 || weight_scales == 0) {
+        return TENSOR2_UNSUPPORTED;
+    }
+    if (result_rows < 0 || input_start < 0 || input_length < 0 || weight_row_start < 0
+            || weight_row_count < 0 || result_column_start < 0 || result_stride < 0
+            || input_stride < 0 || weight_stride < 0 || weight_scale_stride < 0
+            || input_start % TENSOR2_Q8_BLOCK_SIZE != 0
+            || input_length % TENSOR2_Q8_BLOCK_SIZE != 0) {
+        return TENSOR2_UNSUPPORTED;
+    }
+
+#if !defined(TENSOR2_ARM_NEON) && !defined(__AVX2__)
+    return TENSOR2_UNSUPPORTED;
+#else
+    int scale_offset = input_start / TENSOR2_Q8_BLOCK_SIZE;
+    for (int result_row = 0; result_row < result_rows; result_row++) {
+        const float *input_row = input + result_row * input_stride + input_start;
+        for (int row = 0; row < weight_row_count; row++) {
+            const int weight_row = weight_row_start + row;
+            const int8_t *weight_row_ptr = weights + weight_row * weight_stride + input_start;
+            const float *scale_row = weight_scales + weight_row * weight_scale_stride + scale_offset;
+            result[result_row * result_stride + result_column_start + row] =
+                    tensor2_dot_f32_q8(input_row, weight_row_ptr, scale_row, input_length);
+        }
+    }
+    return TENSOR2_OK;
+#endif
+}
+
+static inline float tensor2_dot_bf16_q4(const uint16_t *input, const uint8_t *weights,
+        const float *scales, int column_length) {
+#if defined(TENSOR2_ARM_NEON)
+    float32x4_t acc = vdupq_n_f32(0.0f);
+    int8_t low[16] __attribute__((aligned(16)));
+    int8_t high[16] __attribute__((aligned(16)));
+    for (int block = 0; block < column_length / 32; block++) {
+        uint8x16_t packed = vld1q_u8(weights + block * 16);
+        vst1q_s8(low, vreinterpretq_s8_u8(vsubq_u8(vandq_u8(packed, vdupq_n_u8(15)), vdupq_n_u8(8))));
+        vst1q_s8(high, vreinterpretq_s8_u8(vsubq_u8(vshrq_n_u8(packed, 4), vdupq_n_u8(8))));
+        float32x4_t scale = vdupq_n_f32(scales[block]);
+        const uint16_t *values = input + block * 32;
+        for (int group = 0; group < 4; group++) {
+            int base = group * 4;
+            int32x4_t lowQ = vmovl_s16(vget_low_s16(vmovl_s8(vld1_s8(low + base))));
+            int32x4_t highQ = vmovl_s16(vget_low_s16(vmovl_s8(vld1_s8(high + base))));
+            uint32x4_t lowBits = vshlq_n_u32(vmovl_u16(vld1_u16(values + base)), 16);
+            uint32x4_t highBits = vshlq_n_u32(vmovl_u16(vld1_u16(values + base + 16)), 16);
+            acc = vmlaq_f32(acc, vreinterpretq_f32_u32(lowBits), vmulq_f32(vcvtq_f32_s32(lowQ), scale));
+            acc = vmlaq_f32(acc, vreinterpretq_f32_u32(highBits), vmulq_f32(vcvtq_f32_s32(highQ), scale));
+        }
+    }
+    return tensor2_hsum4(acc);
+#else
+    float sum = 0.0f;
+    for (int block = 0; block < column_length / 32; block++) {
+        float scale = scales[block];
+        const uint8_t *packed = weights + block * 16;
+        const uint16_t *values = input + block * 32;
+        for (int column = 0; column < 16; column++) {
+            uint8_t value = packed[column];
+            sum += tensor2_bf16_to_f32(values[column]) * ((float) ((value & 15) - 8)) * scale;
+            sum += tensor2_bf16_to_f32(values[column + 16]) * ((float) ((value >> 4) - 8)) * scale;
+        }
+    }
+    return sum;
+#endif
+}
+
+tensor2_status tensor2_dot_product_rows_bf16_q4(
+        void *result,
+        const uint16_t *input,
+        const uint8_t *weights,
+        const float *weight_scales,
+        int result_bf16,
+        int result_rows,
+        int input_column_start,
+        int weight_column_start,
+        int column_length,
+        int weight_row_start,
+        int weight_row_count,
+        int result_column_start,
+        int result_stride,
+        int input_stride,
+        int weight_stride,
+        int weight_scale_stride) {
+    if (result == 0 || input == 0 || weights == 0 || weight_scales == 0
+            || input_column_start % 32 != 0 || weight_column_start % 32 != 0 || column_length % 32 != 0) {
+        return TENSOR2_UNSUPPORTED;
+    }
+    int weightBlockOffset = weight_column_start / 32;
+    for (int resultRow = 0; resultRow < result_rows; resultRow++) {
+        const uint16_t *inputRow = input + resultRow * input_stride + input_column_start;
+        for (int row = 0; row < weight_row_count; row++) {
+            int weightRow = weight_row_start + row;
+            const uint8_t *packed = weights + weightRow * weight_stride / 2 + weightBlockOffset * 16;
+            const float *scales = weight_scales + weightRow * weight_scale_stride + weightBlockOffset;
+            float sum = tensor2_dot_bf16_q4(inputRow, packed, scales, column_length);
+            if (result_bf16) {
+                ((uint16_t *) result)[resultRow * result_stride + result_column_start + row]
+                        = tensor2_f32_to_bf16(sum);
+            } else {
+                ((float *) result)[resultRow * result_stride + result_column_start + row] = sum;
+            }
+        }
+    }
+    return TENSOR2_OK;
+}
+
+static inline float tensor2_dot_f32_q4(const float *input, const uint8_t *weights,
+        const float *scales, int column_length) {
+#if defined(TENSOR2_ARM_NEON)
+    float32x4_t acc = vdupq_n_f32(0.0f);
+    int8_t low[16] __attribute__((aligned(16)));
+    int8_t high[16] __attribute__((aligned(16)));
+    for (int block = 0; block < column_length / 32; block++) {
+        uint8x16_t packed = vld1q_u8(weights + block * 16);
+        vst1q_s8(low, vreinterpretq_s8_u8(vsubq_u8(vandq_u8(packed, vdupq_n_u8(15)), vdupq_n_u8(8))));
+        vst1q_s8(high, vreinterpretq_s8_u8(vsubq_u8(vshrq_n_u8(packed, 4), vdupq_n_u8(8))));
+        float32x4_t scale = vdupq_n_f32(scales[block]);
+        const float *values = input + block * 32;
+        for (int group = 0; group < 4; group++) {
+            int base = group * 4;
+            int32x4_t lowQ = vmovl_s16(vget_low_s16(vmovl_s8(vld1_s8(low + base))));
+            int32x4_t highQ = vmovl_s16(vget_low_s16(vmovl_s8(vld1_s8(high + base))));
+            acc = vmlaq_f32(acc, vld1q_f32(values + base), vmulq_f32(vcvtq_f32_s32(lowQ), scale));
+            acc = vmlaq_f32(acc, vld1q_f32(values + base + 16), vmulq_f32(vcvtq_f32_s32(highQ), scale));
+        }
+    }
+    return tensor2_hsum4(acc);
+#else
+    float sum = 0.0f;
+    int blocks = column_length / 32;
+    for (int block = 0; block < blocks; block++) {
+        float scale = scales[block];
+        const uint8_t *packed = weights + block * 16;
+        const float *values = input + block * 32;
+        for (int column = 0; column < 16; column++) {
+            uint8_t value = packed[column];
+            sum += values[column] * ((float) ((value & 0x0f) - 8)) * scale;
+            sum += values[column + 16] * ((float) ((value >> 4) - 8)) * scale;
+        }
+    }
+    return sum;
+#endif
+}
+
+tensor2_status tensor2_dot_product_rows_f32_q4(
+        float *result,
+        const float *input,
+        const uint8_t *weights,
+        const float *weight_scales,
+        int result_rows,
+        int input_column_start,
+        int weight_column_start,
+        int column_length,
+        int weight_row_start,
+        int weight_row_count,
+        int result_column_start,
+        int result_stride,
+        int input_stride,
+        int weight_stride,
+        int weight_scale_stride) {
+    if (result == 0 || input == 0 || weights == 0 || weight_scales == 0) {
+        return TENSOR2_UNSUPPORTED;
+    }
+    if (result_rows < 0 || input_column_start < 0 || weight_column_start < 0 || column_length < 0
+            || weight_row_start < 0 || weight_row_count < 0 || result_column_start < 0
+            || result_stride < 0 || input_stride < 0 || weight_stride < 0 || weight_scale_stride < 0
+            || input_column_start % 32 != 0 || weight_column_start % 32 != 0 || column_length % 32 != 0) {
+        return TENSOR2_UNSUPPORTED;
+    }
+    int weightBlockOffset = weight_column_start / 32;
+    for (int result_row = 0; result_row < result_rows; result_row++) {
+        const float *inputRow = input + result_row * input_stride + input_column_start;
+        for (int row = 0; row < weight_row_count; row++) {
+            int weightRow = weight_row_start + row;
+            const uint8_t *weightRowPtr = weights + weightRow * weight_stride / 2 + weightBlockOffset * 16;
+            const float *scaleRow = weight_scales + weightRow * weight_scale_stride + weightBlockOffset;
+            result[result_row * result_stride + result_column_start + row] =
+                    tensor2_dot_f32_q4(inputRow, weightRowPtr, scaleRow, column_length);
+        }
+    }
+    return TENSOR2_OK;
+}
+
+tensor2_status tensor2_saxpy_f32(
+        float alpha,
+        const float *x,
+        float *y,
+        int x_offset,
+        int y_offset,
+        int length) {
+    if (x == 0 || y == 0 || x_offset < 0 || y_offset < 0 || length < 0) {
+        return TENSOR2_UNSUPPORTED;
+    }
+#if defined(TENSOR2_ARM_NEON)
+    float32x4_t factor = vdupq_n_f32(alpha);
+    int i = 0;
+    int upper = (length / 4) * 4;
+    for (; i < upper; i += 4) {
+        float32x4_t xv = vld1q_f32(x + x_offset + i);
+        float32x4_t yv = vld1q_f32(y + y_offset + i);
+        vst1q_f32(y + y_offset + i, vmlaq_f32(yv, xv, factor));
+    }
+#elif defined(__AVX2__)
+    __m256 factor = _mm256_set1_ps(alpha);
+    int i = 0;
+    int upper = (length / 8) * 8;
+    for (; i < upper; i += 8) {
+        __m256 xv = _mm256_loadu_ps(x + x_offset + i);
+        __m256 yv = _mm256_loadu_ps(y + y_offset + i);
+        _mm256_storeu_ps(y + y_offset + i, _mm256_add_ps(yv, _mm256_mul_ps(xv, factor)));
+    }
+#else
+    int i = 0;
+#endif
+    for (; i < length; i++) {
+        y[y_offset + i] += alpha * x[x_offset + i];
+    }
+    return TENSOR2_OK;
+}
+
+tensor2_status tensor2_saxpy_f32_batch(
+        const float *alpha,
+        const float *x,
+        float *y,
+        int x_offset,
+        int y_offset,
+        int length,
+        int alpha_offset,
+        int x_row_offset,
+        int batch_size,
+        int x_stride) {
+    if (alpha == 0 || x == 0 || y == 0 || x_offset < 0 || y_offset < 0 || length < 0
+            || alpha_offset < 0 || x_row_offset < 0 || batch_size < 0 || x_stride < 0) {
+        return TENSOR2_UNSUPPORTED;
+    }
+    for (int row = 0; row < batch_size; row++) {
+        tensor2_status status = tensor2_saxpy_f32(alpha[alpha_offset + row],
+                x + (x_row_offset + row) * x_stride, y, x_offset, y_offset, length);
+        if (status != TENSOR2_OK) {
+            return status;
+        }
+    }
+    return TENSOR2_OK;
+}
+
 tensor2_status tensor2_batch_dot_f32_f32(
         float *result,
         const float *a,

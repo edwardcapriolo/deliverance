@@ -18,37 +18,39 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class NativeSimdSaxpyTest {
 
-    @ParameterizedTest(name = "scalar xoffset={0} yoffset={1} limit={2}")
+    @ParameterizedTest(name = "scalar {0}")
     @MethodSource("scalarCases")
-    public void scalarF32SaxpyMatchesNaiveReference(int xoffset, int yoffset, int limit) {
-        try (FloatBufferTensor x = vector(1, xoffset + limit + 3);
-              FloatBufferTensor expected = vector(1, yoffset + limit + 3);
+    public void scalarF32SaxpyMatchesNaiveReference(SaxpyCases.ScalarCase c) {
+        try (FloatBufferTensor x = vector(1, c.xOffset() + c.length() + 3);
+              FloatBufferTensor expected = vector(1, c.yOffset() + c.length() + 3);
               FloatBufferTensor actual = copy(expected);
               FloatBufferTensor panama = copy(expected)) {
-            new NaiveTensorOperations().saxpy(1.75f, x, expected, xoffset, yoffset, limit);
-            new NativeSimdTensorOperations(new NaiveTensorOperations()).saxpy(1.75f, x, actual, xoffset, yoffset, limit);
+            new NaiveTensorOperations().saxpy(1.75f, x, expected, c.xOffset(), c.yOffset(), c.length());
+            new NativeSimdTensorOperations(new NaiveTensorOperations()).saxpy(1.75f, x, actual,
+                    c.xOffset(), c.yOffset(), c.length());
 
             assertTensorClose(expected, actual);
-            panamaOps().saxpy(1.75f, x, panama, xoffset, yoffset, limit);
+            panamaOps().saxpy(1.75f, x, panama, c.xOffset(), c.yOffset(), c.length());
             assertTensorClose(expected, panama);
         }
     }
 
-    @ParameterizedTest(name = "batch xoffset={0} yoffset={1} limit={2} aOffset={3} xRowOffset={4} batch={5}")
+    @ParameterizedTest(name = "batch {0}")
     @MethodSource("batchCases")
-    public void batchedF32SaxpyMatchesNaiveReference(int xoffset, int yoffset, int limit, int aOffset,
-            int xRowOffset, int batchSize) {
-        try (FloatBufferTensor alpha = vector(1, aOffset + batchSize + 3);
-              FloatBufferTensor x = vector(xRowOffset + batchSize + 2, xoffset + limit + 3);
-              FloatBufferTensor expected = vector(1, yoffset + limit + 3);
+    public void batchedF32SaxpyMatchesNaiveReference(SaxpyCases.BatchCase c) {
+        try (FloatBufferTensor alpha = vector(1, c.alphaOffset() + c.batchSize() + 3);
+              FloatBufferTensor x = vector(c.xRowOffset() + c.batchSize() + 2, c.xOffset() + c.length() + 3);
+              FloatBufferTensor expected = vector(1, c.yOffset() + c.length() + 3);
               FloatBufferTensor actual = copy(expected);
               FloatBufferTensor panama = copy(expected)) {
-            new NaiveTensorOperations().saxpy(alpha, x, expected, xoffset, yoffset, limit, aOffset, xRowOffset, batchSize);
+            new NaiveTensorOperations().saxpy(alpha, x, expected, c.xOffset(), c.yOffset(), c.length(),
+                    c.alphaOffset(), c.xRowOffset(), c.batchSize());
             new NativeSimdTensorOperations(new NaiveTensorOperations()).saxpy(alpha, x, actual,
-                    xoffset, yoffset, limit, aOffset, xRowOffset, batchSize);
+                    c.xOffset(), c.yOffset(), c.length(), c.alphaOffset(), c.xRowOffset(), c.batchSize());
 
             assertTensorClose(expected, actual);
-            panamaOps().saxpy(alpha, x, panama, xoffset, yoffset, limit, aOffset, xRowOffset, batchSize);
+            panamaOps().saxpy(alpha, x, panama, c.xOffset(), c.yOffset(), c.length(), c.alphaOffset(),
+                    c.xRowOffset(), c.batchSize());
             assertTensorClose(expected, panama);
         }
     }
@@ -68,20 +70,11 @@ public class NativeSimdSaxpyTest {
     }
 
     private static Stream<Arguments> scalarCases() {
-        return Stream.of(
-                Arguments.of(0, 0, 32),
-                Arguments.of(3, 5, 31),
-                Arguments.of(2, 1, 9)
-        );
+        return SaxpyCases.scalarCases();
     }
 
     private static Stream<Arguments> batchCases() {
-        return Stream.of(
-                Arguments.of(0, 0, 32, 0, 0, 4),
-                Arguments.of(2, 3, 31, 1, 2, 5),
-                Arguments.of(1, 4, 9, 3, 1, 7),
-                Arguments.of(0, 2, 128, 0, 0, 32)
-        );
+        return SaxpyCases.batchCases();
     }
 
     private static FloatBufferTensor vector(int rows, int cols) {

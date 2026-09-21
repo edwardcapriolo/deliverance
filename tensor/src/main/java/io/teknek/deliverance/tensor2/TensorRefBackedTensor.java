@@ -13,6 +13,7 @@ import java.lang.foreign.MemorySegment;
  */
 public final class TensorRefBackedTensor extends AbstractTensor {
     private final TensorRef ref;
+    private boolean closed;
 
     public TensorRefBackedTensor(TensorRef ref) {
         super(ref.dType(), ref.shape(), false);
@@ -40,7 +41,11 @@ public final class TensorRefBackedTensor extends AbstractTensor {
 
     @Override
     protected AbstractTensor make(int heapOffset, int heapLength, TensorShape shape, boolean cacheSlices) {
-        throw new UnsupportedOperationException("TensorRef-backed tensor does not support creating views");
+        Preconditions.checkArgument(shape.dims() == 2 && shape.first() == 1 && ref.dims() == 2,
+                "TensorRef-backed views only support one-row 2D slices");
+        Preconditions.checkArgument(heapOffset % ref.shape().last() == 0,
+                "TensorRef-backed row view must be row aligned");
+        return new TensorRefBackedTensor(ref.slice(heapOffset / ref.shape().last()));
     }
 
     @Override
@@ -89,6 +94,9 @@ public final class TensorRefBackedTensor extends AbstractTensor {
 
     @Override
     public void close() {
-        ref.close();
+        if (!closed) {
+            closed = true;
+            ref.close();
+        }
     }
 }

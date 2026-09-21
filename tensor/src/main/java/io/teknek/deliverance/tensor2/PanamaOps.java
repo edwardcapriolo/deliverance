@@ -12,6 +12,7 @@ import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
 
 import java.nio.ByteOrder;
+import java.lang.foreign.MemorySegment;
 
 class PanamaOps implements TensorOps {
     private static final VectorSpecies<Float> F32_SPECIES = FloatVector.SPECIES_PREFERRED;
@@ -436,6 +437,87 @@ class PanamaOps implements TensorOps {
         }
         new F32BatchDotProductGemmer(operation).matmul();
         return Either.Right(null);
+    }
+
+    @Override
+    public Either<OpSupport, Void> dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
+            int inputStart, int inputLength, int weightRowStart, int weightRowCount, int outputColumnStart) {
+        return dotProductRows(output, input, weights, inputStart, inputStart, inputLength, weightRowStart,
+                weightRowCount, outputColumnStart);
+    }
+
+    @Override
+    public Either<OpSupport, Void> dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
+            int inputColumnStart, int weightColumnStart, int columnLength, int weightRowStart,
+            int weightRowCount, int outputColumnStart) {
+        if (output.dType() != DType.F32 || input.dType() != DType.F32
+                || (weights.dType() != DType.F32 && weights.dType() != DType.I8)) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        return batchDotProduct(new BatchDotProduct()
+                .result(output)
+                .a(input)
+                .b(weights)
+                .aColumnOffset(inputColumnStart)
+                .bColumnOffset(weightColumnStart)
+                .columnLength(columnLength)
+                .resultRowOffset(outputColumnStart - weightRowStart)
+                .bRowOffset(weightRowStart)
+                .rowChunkSize(weightRowCount));
+    }
+
+    @Override
+    public Either<OpSupport, Void> saxpy(float alpha, TensorRef x, TensorRef y, int xOffset, int yOffset,
+            int length) {
+        if (x.dType() != DType.F32 || y.dType() != DType.F32 || y.shape().first() != 1) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        saxpyF32(alpha, x, 0, y, 0, xOffset, yOffset, length);
+        return Either.Right(null);
+    }
+
+    @Override
+    public Either<OpSupport, Void> saxpy(TensorRef alpha, TensorRef x, TensorRef y, int xOffset, int yOffset,
+            int length, int alphaOffset, int xRowOffset, int batchSize) {
+        if (alpha.dType() != DType.F32 || x.dType() != DType.F32 || y.dType() != DType.F32
+                || y.shape().first() != 1) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        for (int row = 0; row < batchSize; row++) {
+            saxpyF32(alpha.get(0, alphaOffset + row), x, xRowOffset + row, y, 0,
+                    xOffset, yOffset, length);
+        }
+        return Either.Right(null);
+    }
+
+    private static void saxpyF32(float alpha, TensorRef x, int xRow, TensorRef y, int yRow,
+            int xOffset, int yOffset, int length) {
+        FloatVector factor = FloatVector.broadcast(F32_SPECIES, alpha);
+        MemorySegment xSegment = x.memorySegment();
+        MemorySegment ySegment = y.memorySegment();
+        long xBase = x.memorySegmentOffset(x.shape().getOffset(xRow, xOffset));
+        long yBase = y.memorySegmentOffset(y.shape().getOffset(yRow, yOffset));
+        int upper = F32_SPECIES.loopBound(length);
+        int column = 0;
+        for (; column < upper; column += F32_SPECIES.length()) {
+            long xAddress = xBase + (long) column * Float.BYTES;
+            long yAddress = yBase + (long) column * Float.BYTES;
+            FloatVector values = FloatVector.fromMemorySegment(F32_SPECIES, xSegment, xAddress,
+                    ByteOrder.LITTLE_ENDIAN);
+            FloatVector target = FloatVector.fromMemorySegment(F32_SPECIES, ySegment, yAddress,
+                    ByteOrder.LITTLE_ENDIAN);
+            target.add(values.mul(factor)).intoMemorySegment(ySegment, yAddress, ByteOrder.LITTLE_ENDIAN);
+        }
+        if (column < length) {
+            VectorMask<Float> mask = F32_SPECIES.indexInRange(column, length);
+            long xAddress = xBase + (long) column * Float.BYTES;
+            long yAddress = yBase + (long) column * Float.BYTES;
+            FloatVector values = FloatVector.fromMemorySegment(F32_SPECIES, xSegment, xAddress,
+                    ByteOrder.LITTLE_ENDIAN, mask);
+            FloatVector target = FloatVector.fromMemorySegment(F32_SPECIES, ySegment, yAddress,
+                    ByteOrder.LITTLE_ENDIAN, mask);
+            target.add(values.mul(factor)).intoMemorySegment(ySegment, yAddress, ByteOrder.LITTLE_ENDIAN, mask);
+        }
     }
 
     private static boolean q8Aligned(BatchDotProduct operation) {

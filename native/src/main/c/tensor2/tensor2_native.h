@@ -8,6 +8,91 @@ typedef enum tensor2_status {
     TENSOR2_UNSUPPORTED = 1
 } tensor2_status;
 
+tensor2_status tensor2_dot_product_rows_f32_f32(
+        float *result,
+        const float *input,
+        const float *weights,
+        int result_rows,
+        int input_start,
+        int input_length,
+        int weight_row_start,
+        int weight_row_count,
+        int result_column_start,
+        int result_stride,
+        int input_stride,
+        int weight_stride);
+
+tensor2_status tensor2_dot_product_rows_f32_q8(
+        float *result,
+        const float *input,
+        const int8_t *weights,
+        const float *weight_scales,
+        int result_rows,
+        int input_start,
+        int input_length,
+        int weight_row_start,
+        int weight_row_count,
+        int result_column_start,
+        int result_stride,
+        int input_stride,
+        int weight_stride,
+        int weight_scale_stride);
+
+tensor2_status tensor2_dot_product_rows_f32_q4(
+        float *result,
+        const float *input,
+        const uint8_t *weights,
+        const float *weight_scales,
+        int result_rows,
+        int input_column_start,
+        int weight_column_start,
+        int column_length,
+        int weight_row_start,
+        int weight_row_count,
+        int result_column_start,
+        int result_stride,
+        int input_stride,
+        int weight_stride,
+        int weight_scale_stride);
+
+tensor2_status tensor2_dot_product_rows_bf16_q4(
+        void *result,
+        const uint16_t *input,
+        const uint8_t *weights,
+        const float *weight_scales,
+        int result_bf16,
+        int result_rows,
+        int input_column_start,
+        int weight_column_start,
+        int column_length,
+        int weight_row_start,
+        int weight_row_count,
+        int result_column_start,
+        int result_stride,
+        int input_stride,
+        int weight_stride,
+        int weight_scale_stride);
+
+tensor2_status tensor2_saxpy_f32(
+        float alpha,
+        const float *x,
+        float *y,
+        int x_offset,
+        int y_offset,
+        int length);
+
+tensor2_status tensor2_saxpy_f32_batch(
+        const float *alpha,
+        const float *x,
+        float *y,
+        int x_offset,
+        int y_offset,
+        int length,
+        int alpha_offset,
+        int x_row_offset,
+        int batch_size,
+        int x_stride);
+
 tensor2_status tensor2_batch_dot_f32_f32(
         float *result,
         const float *a,

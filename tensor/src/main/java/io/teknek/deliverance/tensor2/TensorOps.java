@@ -13,5 +13,27 @@ public interface TensorOps {
           return Either.Left(OpSupport.Unsupported);
      }
 
+     default Either<OpSupport, Void> dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
+             int inputStart, int inputLength, int weightRowStart, int weightRowCount, int outputColumnStart) {
+          return dotProductRows(output, input, weights, inputStart, inputStart, inputLength, weightRowStart,
+                  weightRowCount, outputColumnStart);
+     }
+
+     default Either<OpSupport, Void> dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
+             int inputColumnStart, int weightColumnStart, int columnLength, int weightRowStart,
+             int weightRowCount, int outputColumnStart) {
+          return Either.Left(OpSupport.Unsupported);
+     }
+
      Either<OpSupport, Void> scale(float factor, TensorRef target, int offset, int length);
+
+     default Either<OpSupport, Void> saxpy(float alpha, TensorRef x, TensorRef y,
+             int xOffset, int yOffset, int length) {
+          return Either.Left(OpSupport.Unsupported);
+     }
+
+     default Either<OpSupport, Void> saxpy(TensorRef alpha, TensorRef x, TensorRef y,
+             int xOffset, int yOffset, int length, int alphaOffset, int xRowOffset, int batchSize) {
+          return Either.Left(OpSupport.Unsupported);
+     }
 }

@@ -19,6 +19,7 @@ lib_managed/
 logs/
 src_managed/
 target/
+.tools/jextract/
 reports/
 metastore_db/
 derby.log

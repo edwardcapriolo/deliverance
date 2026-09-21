@@ -42,6 +42,433 @@ public class Tensor2Native extends Tensor2Native$shared {
         return TENSOR2_UNSUPPORTED;
     }
 
+    private static class tensor2_dot_product_rows_f32_f32 {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.of(
+            Tensor2Native.C_INT,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT
+        );
+
+        public static final MemorySegment ADDR = SYMBOL_LOOKUP.findOrThrow("tensor2_dot_product_rows_f32_f32");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /**
+     * Function descriptor for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_dot_product_rows_f32_f32(float *result, const float *input, const float *weights, int result_rows, int input_start, int input_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int weight_stride)
+     * }
+     */
+    public static FunctionDescriptor tensor2_dot_product_rows_f32_f32$descriptor() {
+        return tensor2_dot_product_rows_f32_f32.DESC;
+    }
+
+    /**
+     * Downcall method handle for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_dot_product_rows_f32_f32(float *result, const float *input, const float *weights, int result_rows, int input_start, int input_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int weight_stride)
+     * }
+     */
+    public static MethodHandle tensor2_dot_product_rows_f32_f32$handle() {
+        return tensor2_dot_product_rows_f32_f32.HANDLE;
+    }
+
+    /**
+     * Address for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_dot_product_rows_f32_f32(float *result, const float *input, const float *weights, int result_rows, int input_start, int input_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int weight_stride)
+     * }
+     */
+    public static MemorySegment tensor2_dot_product_rows_f32_f32$address() {
+        return tensor2_dot_product_rows_f32_f32.ADDR;
+    }
+
+    /**
+     * {@snippet lang=c :
+     * tensor2_status tensor2_dot_product_rows_f32_f32(float *result, const float *input, const float *weights, int result_rows, int input_start, int input_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int weight_stride)
+     * }
+     */
+    public static int tensor2_dot_product_rows_f32_f32(MemorySegment result, MemorySegment input, MemorySegment weights, int result_rows, int input_start, int input_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int weight_stride) {
+        var mh$ = tensor2_dot_product_rows_f32_f32.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("tensor2_dot_product_rows_f32_f32", result, input, weights, result_rows, input_start, input_length, weight_row_start, weight_row_count, result_column_start, result_stride, input_stride, weight_stride);
+            }
+            return (int)mh$.invokeExact(result, input, weights, result_rows, input_start, input_length, weight_row_start, weight_row_count, result_column_start, result_stride, input_stride, weight_stride);
+        } catch (Error | RuntimeException ex) {
+           throw ex;
+        } catch (Throwable ex$) {
+           throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
+    private static class tensor2_dot_product_rows_f32_q8 {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.of(
+            Tensor2Native.C_INT,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT
+        );
+
+        public static final MemorySegment ADDR = SYMBOL_LOOKUP.findOrThrow("tensor2_dot_product_rows_f32_q8");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /**
+     * Function descriptor for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_dot_product_rows_f32_q8(float *result, const float *input, const int8_t *weights, const float *weight_scales, int result_rows, int input_start, int input_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int weight_stride, int weight_scale_stride)
+     * }
+     */
+    public static FunctionDescriptor tensor2_dot_product_rows_f32_q8$descriptor() {
+        return tensor2_dot_product_rows_f32_q8.DESC;
+    }
+
+    /**
+     * Downcall method handle for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_dot_product_rows_f32_q8(float *result, const float *input, const int8_t *weights, const float *weight_scales, int result_rows, int input_start, int input_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int weight_stride, int weight_scale_stride)
+     * }
+     */
+    public static MethodHandle tensor2_dot_product_rows_f32_q8$handle() {
+        return tensor2_dot_product_rows_f32_q8.HANDLE;
+    }
+
+    /**
+     * Address for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_dot_product_rows_f32_q8(float *result, const float *input, const int8_t *weights, const float *weight_scales, int result_rows, int input_start, int input_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int weight_stride, int weight_scale_stride)
+     * }
+     */
+    public static MemorySegment tensor2_dot_product_rows_f32_q8$address() {
+        return tensor2_dot_product_rows_f32_q8.ADDR;
+    }
+
+    /**
+     * {@snippet lang=c :
+     * tensor2_status tensor2_dot_product_rows_f32_q8(float *result, const float *input, const int8_t *weights, const float *weight_scales, int result_rows, int input_start, int input_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int weight_stride, int weight_scale_stride)
+     * }
+     */
+    public static int tensor2_dot_product_rows_f32_q8(MemorySegment result, MemorySegment input, MemorySegment weights, MemorySegment weight_scales, int result_rows, int input_start, int input_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int weight_stride, int weight_scale_stride) {
+        var mh$ = tensor2_dot_product_rows_f32_q8.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("tensor2_dot_product_rows_f32_q8", result, input, weights, weight_scales, result_rows, input_start, input_length, weight_row_start, weight_row_count, result_column_start, result_stride, input_stride, weight_stride, weight_scale_stride);
+            }
+            return (int)mh$.invokeExact(result, input, weights, weight_scales, result_rows, input_start, input_length, weight_row_start, weight_row_count, result_column_start, result_stride, input_stride, weight_stride, weight_scale_stride);
+        } catch (Error | RuntimeException ex) {
+           throw ex;
+        } catch (Throwable ex$) {
+           throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
+    private static class tensor2_dot_product_rows_f32_q4 {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.of(
+            Tensor2Native.C_INT,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT
+        );
+
+        public static final MemorySegment ADDR = SYMBOL_LOOKUP.findOrThrow("tensor2_dot_product_rows_f32_q4");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /**
+     * Function descriptor for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_dot_product_rows_f32_q4(float *result, const float *input, const uint8_t *weights, const float *weight_scales, int result_rows, int input_column_start, int weight_column_start, int column_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int weight_stride, int weight_scale_stride)
+     * }
+     */
+    public static FunctionDescriptor tensor2_dot_product_rows_f32_q4$descriptor() {
+        return tensor2_dot_product_rows_f32_q4.DESC;
+    }
+
+    /**
+     * Downcall method handle for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_dot_product_rows_f32_q4(float *result, const float *input, const uint8_t *weights, const float *weight_scales, int result_rows, int input_column_start, int weight_column_start, int column_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int weight_stride, int weight_scale_stride)
+     * }
+     */
+    public static MethodHandle tensor2_dot_product_rows_f32_q4$handle() {
+        return tensor2_dot_product_rows_f32_q4.HANDLE;
+    }
+
+    /**
+     * Address for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_dot_product_rows_f32_q4(float *result, const float *input, const uint8_t *weights, const float *weight_scales, int result_rows, int input_column_start, int weight_column_start, int column_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int weight_stride, int weight_scale_stride)
+     * }
+     */
+    public static MemorySegment tensor2_dot_product_rows_f32_q4$address() {
+        return tensor2_dot_product_rows_f32_q4.ADDR;
+    }
+
+    /**
+     * {@snippet lang=c :
+     * tensor2_status tensor2_dot_product_rows_f32_q4(float *result, const float *input, const uint8_t *weights, const float *weight_scales, int result_rows, int input_column_start, int weight_column_start, int column_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int weight_stride, int weight_scale_stride)
+     * }
+     */
+    public static int tensor2_dot_product_rows_f32_q4(MemorySegment result, MemorySegment input, MemorySegment weights, MemorySegment weight_scales, int result_rows, int input_column_start, int weight_column_start, int column_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int weight_stride, int weight_scale_stride) {
+        var mh$ = tensor2_dot_product_rows_f32_q4.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("tensor2_dot_product_rows_f32_q4", result, input, weights, weight_scales, result_rows, input_column_start, weight_column_start, column_length, weight_row_start, weight_row_count, result_column_start, result_stride, input_stride, weight_stride, weight_scale_stride);
+            }
+            return (int)mh$.invokeExact(result, input, weights, weight_scales, result_rows, input_column_start, weight_column_start, column_length, weight_row_start, weight_row_count, result_column_start, result_stride, input_stride, weight_stride, weight_scale_stride);
+        } catch (Error | RuntimeException ex) {
+           throw ex;
+        } catch (Throwable ex$) {
+           throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
+    private static class tensor2_dot_product_rows_bf16_q4 {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.of(
+            Tensor2Native.C_INT,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT
+        );
+
+        public static final MemorySegment ADDR = SYMBOL_LOOKUP.findOrThrow("tensor2_dot_product_rows_bf16_q4");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /**
+     * Function descriptor for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_dot_product_rows_bf16_q4(void *result, const uint16_t *input, const uint8_t *weights, const float *weight_scales, int result_bf16, int result_rows, int input_column_start, int weight_column_start, int column_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int weight_stride, int weight_scale_stride)
+     * }
+     */
+    public static FunctionDescriptor tensor2_dot_product_rows_bf16_q4$descriptor() {
+        return tensor2_dot_product_rows_bf16_q4.DESC;
+    }
+
+    /**
+     * Downcall method handle for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_dot_product_rows_bf16_q4(void *result, const uint16_t *input, const uint8_t *weights, const float *weight_scales, int result_bf16, int result_rows, int input_column_start, int weight_column_start, int column_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int weight_stride, int weight_scale_stride)
+     * }
+     */
+    public static MethodHandle tensor2_dot_product_rows_bf16_q4$handle() {
+        return tensor2_dot_product_rows_bf16_q4.HANDLE;
+    }
+
+    /**
+     * Address for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_dot_product_rows_bf16_q4(void *result, const uint16_t *input, const uint8_t *weights, const float *weight_scales, int result_bf16, int result_rows, int input_column_start, int weight_column_start, int column_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int weight_stride, int weight_scale_stride)
+     * }
+     */
+    public static MemorySegment tensor2_dot_product_rows_bf16_q4$address() {
+        return tensor2_dot_product_rows_bf16_q4.ADDR;
+    }
+
+    /**
+     * {@snippet lang=c :
+     * tensor2_status tensor2_dot_product_rows_bf16_q4(void *result, const uint16_t *input, const uint8_t *weights, const float *weight_scales, int result_bf16, int result_rows, int input_column_start, int weight_column_start, int column_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int weight_stride, int weight_scale_stride)
+     * }
+     */
+    public static int tensor2_dot_product_rows_bf16_q4(MemorySegment result, MemorySegment input, MemorySegment weights, MemorySegment weight_scales, int result_bf16, int result_rows, int input_column_start, int weight_column_start, int column_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int weight_stride, int weight_scale_stride) {
+        var mh$ = tensor2_dot_product_rows_bf16_q4.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("tensor2_dot_product_rows_bf16_q4", result, input, weights, weight_scales, result_bf16, result_rows, input_column_start, weight_column_start, column_length, weight_row_start, weight_row_count, result_column_start, result_stride, input_stride, weight_stride, weight_scale_stride);
+            }
+            return (int)mh$.invokeExact(result, input, weights, weight_scales, result_bf16, result_rows, input_column_start, weight_column_start, column_length, weight_row_start, weight_row_count, result_column_start, result_stride, input_stride, weight_stride, weight_scale_stride);
+        } catch (Error | RuntimeException ex) {
+           throw ex;
+        } catch (Throwable ex$) {
+           throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
+    private static class tensor2_saxpy_f32 {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.of(
+            Tensor2Native.C_INT,
+            Tensor2Native.C_FLOAT,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT
+        );
+
+        public static final MemorySegment ADDR = SYMBOL_LOOKUP.findOrThrow("tensor2_saxpy_f32");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /**
+     * Function descriptor for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_saxpy_f32(float alpha, const float *x, float *y, int x_offset, int y_offset, int length)
+     * }
+     */
+    public static FunctionDescriptor tensor2_saxpy_f32$descriptor() {
+        return tensor2_saxpy_f32.DESC;
+    }
+
+    /**
+     * Downcall method handle for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_saxpy_f32(float alpha, const float *x, float *y, int x_offset, int y_offset, int length)
+     * }
+     */
+    public static MethodHandle tensor2_saxpy_f32$handle() {
+        return tensor2_saxpy_f32.HANDLE;
+    }
+
+    /**
+     * Address for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_saxpy_f32(float alpha, const float *x, float *y, int x_offset, int y_offset, int length)
+     * }
+     */
+    public static MemorySegment tensor2_saxpy_f32$address() {
+        return tensor2_saxpy_f32.ADDR;
+    }
+
+    /**
+     * {@snippet lang=c :
+     * tensor2_status tensor2_saxpy_f32(float alpha, const float *x, float *y, int x_offset, int y_offset, int length)
+     * }
+     */
+    public static int tensor2_saxpy_f32(float alpha, MemorySegment x, MemorySegment y, int x_offset, int y_offset, int length) {
+        var mh$ = tensor2_saxpy_f32.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("tensor2_saxpy_f32", alpha, x, y, x_offset, y_offset, length);
+            }
+            return (int)mh$.invokeExact(alpha, x, y, x_offset, y_offset, length);
+        } catch (Error | RuntimeException ex) {
+           throw ex;
+        } catch (Throwable ex$) {
+           throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
+    private static class tensor2_saxpy_f32_batch {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.of(
+            Tensor2Native.C_INT,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT
+        );
+
+        public static final MemorySegment ADDR = SYMBOL_LOOKUP.findOrThrow("tensor2_saxpy_f32_batch");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /**
+     * Function descriptor for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_saxpy_f32_batch(const float *alpha, const float *x, float *y, int x_offset, int y_offset, int length, int alpha_offset, int x_row_offset, int batch_size, int x_stride)
+     * }
+     */
+    public static FunctionDescriptor tensor2_saxpy_f32_batch$descriptor() {
+        return tensor2_saxpy_f32_batch.DESC;
+    }
+
+    /**
+     * Downcall method handle for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_saxpy_f32_batch(const float *alpha, const float *x, float *y, int x_offset, int y_offset, int length, int alpha_offset, int x_row_offset, int batch_size, int x_stride)
+     * }
+     */
+    public static MethodHandle tensor2_saxpy_f32_batch$handle() {
+        return tensor2_saxpy_f32_batch.HANDLE;
+    }
+
+    /**
+     * Address for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_saxpy_f32_batch(const float *alpha, const float *x, float *y, int x_offset, int y_offset, int length, int alpha_offset, int x_row_offset, int batch_size, int x_stride)
+     * }
+     */
+    public static MemorySegment tensor2_saxpy_f32_batch$address() {
+        return tensor2_saxpy_f32_batch.ADDR;
+    }
+
+    /**
+     * {@snippet lang=c :
+     * tensor2_status tensor2_saxpy_f32_batch(const float *alpha, const float *x, float *y, int x_offset, int y_offset, int length, int alpha_offset, int x_row_offset, int batch_size, int x_stride)
+     * }
+     */
+    public static int tensor2_saxpy_f32_batch(MemorySegment alpha, MemorySegment x, MemorySegment y, int x_offset, int y_offset, int length, int alpha_offset, int x_row_offset, int batch_size, int x_stride) {
+        var mh$ = tensor2_saxpy_f32_batch.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("tensor2_saxpy_f32_batch", alpha, x, y, x_offset, y_offset, length, alpha_offset, x_row_offset, batch_size, x_stride);
+            }
+            return (int)mh$.invokeExact(alpha, x, y, x_offset, y_offset, length, alpha_offset, x_row_offset, batch_size, x_stride);
+        } catch (Error | RuntimeException ex) {
+           throw ex;
+        } catch (Throwable ex$) {
+           throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
     private static class tensor2_batch_dot_f32_f32 {
         public static final FunctionDescriptor DESC = FunctionDescriptor.of(
             Tensor2Native.C_INT,
@@ -315,3 +742,4 @@ public class Tensor2Native extends Tensor2Native$shared {
         }
     }
 }
+

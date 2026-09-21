@@ -45,6 +45,7 @@ import io.teknek.deliverance.safetensors.LoraLayerDelta;
 import io.teknek.deliverance.safetensors.ResolvedLoraAdapter;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.tensor2.TensorRefBackedTensor;
 import io.teknek.deliverance.safetensors.fetch.LoraAdapterModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
@@ -210,6 +211,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     protected EmbedInput embedInput;
     protected SampleOutput sampleOutput;
     protected TransformerBlock[] transformerBlocks;
+    protected io.teknek.deliverance.generator2.TransformerBlock2[] transformerBlocks2;
     protected KvBufferCache kvBufferCache;
     protected KvCacheManager kvCacheManager;
     protected KvPrefixSnapshotCache kvPrefixSnapshotCache;
@@ -313,6 +315,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         this.tensorOperations.put(TensorProviderKind.SIMD, provider.get());
         this.metricRegistry = metricRegistry;
         this.lighter = new Lighter(metricRegistry);
+        registerOptionalTensorRefNativeOps();
         w.setLighter(this.lighter);
         this.compositeOps = new CompositeOps(lighter, metricRegistry);
         this.tensorAllocator = tensorAllocator;
@@ -341,7 +344,9 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         this.modelLineagePlan = new TensorPlan(configurableTensorProvider.get(), pool, metricRegistry, this, tensorRuntime);
         logger.debug("model init start config={} inference_type={}", config.getClass().getSimpleName(), inferenceType);
         this.embedInput = inferenceType.isInput ? loadInputWeights() : null;
-        this.transformerBlocks = inferenceType.isFwdPass ? loadTransformerBlockWeights() : null;
+        boolean tensorRefExecution = inferenceType.isFwdPass && usesTensorRefExecution();
+        this.transformerBlocks = inferenceType.isFwdPass && !tensorRefExecution ? loadTransformerBlockWeights() : null;
+        this.transformerBlocks2 = tensorRefExecution ? loadTransformerBlockWeights2() : null;
         this.sampleOutput = inferenceType.isOutput ? loadOutputWeights() : null;
         this.classifyOutput = inferenceType.isClassify ? loadClassifierWeights() : null;
         this.poolingLayer = inferenceType.isPooling ? Optional.ofNullable(loadPoolingWeights()) : Optional.empty();
@@ -896,6 +901,31 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     protected abstract SampleOutput loadOutputWeights();
     protected abstract TransformerBlock[] loadTransformerBlockWeights();
 
+    /** Optional TensorRef-native transformer block path. */
+    protected io.teknek.deliverance.generator2.TransformerBlock2[] loadTransformerBlockWeights2() {
+        return null;
+    }
+
+    protected boolean usesTensorRefExecution() {
+        return false;
+    }
+
+    private void registerOptionalTensorRefNativeOps() {
+        try {
+            Class<?> nativeOpsClass = Class.forName("io.teknek.deliverance.tensor2.NativeOps");
+            boolean available = (Boolean) nativeOpsClass.getMethod("isAvailable").invoke(null);
+            if (available) {
+                Object nativeOps = nativeOpsClass.getConstructor().newInstance();
+                lighter.putTensorOperations(io.teknek.deliverance.tensor2.TensorProviderKind.SIMD,
+                        (io.teknek.deliverance.tensor2.TensorOps) nativeOps);
+            }
+        } catch (ClassNotFoundException ignored) {
+            // Native Tensor2 operations are optional for core/runtime deployments.
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            // Keep Panama/Naive Tensor2 providers available when native loading fails.
+        }
+    }
+
     @Override
     public void close() {
         registeredLoraAdapters.values().forEach(ResolvedLoraAdapter::close);
@@ -965,12 +995,27 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         return tensorAllocator.get(workingDType, s);
     }
 
+    /** Allocates a model-working-dtype tensor2 result owned by the caller. */
+    public TensorRef makeTensorRef(int... shape) {
+        return lighter.allocate(workingDType, TensorShape.of(shape));
+    }
+
     public AbstractTensor makeDenseTensor(int... shape) {
         return tensorAllocator.get(workingDType, TensorShape.of(shape));
     }
 
+    /** Allocates a dense model-working-dtype tensor2 result owned by the caller. */
+    public TensorRef makeDenseTensorRef(int... shape) {
+        return lighter.allocate(workingDType, TensorShape.of(shape));
+    }
+
     public AbstractTensor makeDenseTensor(TensorShape s) {
         return tensorAllocator.get(workingDType, s);
+    }
+
+    /** Allocates a dense model-working-dtype tensor2 result owned by the caller. */
+    public TensorRef makeDenseTensorRef(TensorShape s) {
+        return lighter.allocate(workingDType, s);
     }
 
     public DType getWorkingDType() {
@@ -1078,7 +1123,8 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         return promptTokens;
     }
 
-    SamplerReturn createNextToken(GeneratorParameters generatorParameters, GenerationEngine.Logits logits, GenerationEngine.PrefillOutput last,
+    SamplerReturn createNextToken(GeneratorParameters generatorParameters, GenerationEngine.Logits logits,
+                                  GenerationEngine.PrefillOutput last,
                                    ResponseContext responseContext, Random random, float temperature,
                                   Optional<LogitsProcessor> logitsProcessor, AbstractTensor argMaxScratch){
         try (AbstractTensor lastTokenOutput = last.copyLastTokenOutput(tensorAllocator)) {
@@ -1513,7 +1559,15 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
                 throwIfGenerationInterrupted();
                 int relativeLayer = i;
                 AbstractTensor ref = embedding.tensor();
-                embedding = transformerBlocks[relativeLayer].forward(embedding, startPos, kvSession, tensorReducer, phase);
+                if (transformerBlocks2 != null) {
+                    TensorRef inputRef = TensorRef.borrowed(embedding.tensor());
+                    TensorRef outputRef = transformerBlocks2[relativeLayer].forward(inputRef, startPos, kvSession,
+                            Optional.empty(), phase);
+                    embedding = new PlannedTensor(new TensorRefBackedTensor(outputRef), embedding.plan());
+                } else {
+                    embedding = transformerBlocks[relativeLayer].forward(embedding, startPos, kvSession,
+                            tensorReducer, phase);
+                }
                 emitLayerDebug(relativeLayer, "layer_output", embedding.tensor());
                 ref.close();
                 long now = System.nanoTime();

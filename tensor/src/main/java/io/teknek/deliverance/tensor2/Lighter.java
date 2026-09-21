@@ -259,6 +259,84 @@ public class Lighter {
         throw new IllegalStateException("No tensor operations support batchDotProduct");
     }
 
+    public void dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
+            int inputStart, int inputLength, int weightRowStart, int weightRowCount, int outputColumnStart) {
+        dotProductRows(output, input, weights, inputStart, inputStart, inputLength, weightRowStart,
+                weightRowCount, outputColumnStart);
+    }
+
+    public void dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
+            int inputColumnStart, int weightColumnStart, int columnLength, int weightRowStart,
+            int weightRowCount, int outputColumnStart) {
+        Preconditions.checkArgument(output != null, "Output tensor must be set");
+        Preconditions.checkArgument(input != null, "Input tensor must be set");
+        Preconditions.checkArgument(weights != null, "Weights tensor must be set");
+        Preconditions.checkArgument(output.dims() == 2 && input.dims() == 2 && weights.dims() == 2,
+                "dotProductRows requires 2D tensors");
+        Preconditions.checkArgument(output.shape().first() == input.shape().first(),
+                "Output and input row counts must match");
+        Preconditions.checkArgument(inputColumnStart >= 0 && weightColumnStart >= 0 && columnLength >= 0
+                        && inputColumnStart + columnLength <= input.shape().last()
+                        && weightColumnStart + columnLength <= weights.shape().last(),
+                "Input range is out of bounds");
+        Preconditions.checkArgument(weightRowStart >= 0 && weightRowCount >= 0
+                        && weightRowStart + weightRowCount <= weights.shape().first(),
+                "Weight row range is out of bounds");
+        Preconditions.checkArgument(outputColumnStart >= 0
+                        && outputColumnStart + weightRowCount <= output.shape().last(),
+                "Output column range is out of bounds");
+
+        for (TensorOps operations : tensorOperations.values()) {
+            Either<OpSupport, Void> outcome = operations.dotProductRows(output, input, weights,
+                    inputColumnStart, weightColumnStart, columnLength, weightRowStart, weightRowCount,
+                    outputColumnStart);
+            if (outcome.isRight()) {
+                return;
+            }
+        }
+        throw new IllegalStateException("No tensor operations support dotProductRows");
+    }
+
+    public void saxpy(float alpha, TensorRef x, TensorRef y, int xOffset, int yOffset, int length) {
+        Preconditions.checkArgument(x != null && y != null, "SAXPY tensors must be set");
+        Preconditions.checkArgument(x.dims() == 2 && y.dims() == 2 && y.shape().first() == 1,
+                "SAXPY requires 2D x and one-row y tensors");
+        Preconditions.checkArgument(xOffset >= 0 && yOffset >= 0 && length >= 0
+                        && xOffset + length <= x.shape().last()
+                        && yOffset + length <= y.shape().last(),
+                "SAXPY range is out of bounds");
+        for (TensorOps operations : tensorOperations.values()) {
+            if (operations.saxpy(alpha, x, y, xOffset, yOffset, length).isRight()) {
+                return;
+            }
+        }
+        throw new IllegalStateException("No tensor operations support saxpy");
+    }
+
+    public void saxpy(TensorRef alpha, TensorRef x, TensorRef y, int xOffset, int yOffset, int length,
+            int alphaOffset, int xRowOffset, int batchSize) {
+        Preconditions.checkArgument(alpha != null && x != null && y != null, "SAXPY tensors must be set");
+        Preconditions.checkArgument(alpha.dims() == 2 && x.dims() == 2 && y.dims() == 2
+                        && y.shape().first() == 1,
+                "Batch SAXPY requires 2D tensors and one-row y");
+        Preconditions.checkArgument(alphaOffset >= 0 && batchSize >= 0
+                        && alphaOffset + batchSize <= alpha.shape().last(),
+                "SAXPY alpha range is out of bounds");
+        Preconditions.checkArgument(xRowOffset >= 0 && xRowOffset + batchSize <= x.shape().first(),
+                "SAXPY x row range is out of bounds");
+        Preconditions.checkArgument(xOffset >= 0 && yOffset >= 0 && length >= 0
+                        && xOffset + length <= x.shape().last()
+                        && yOffset + length <= y.shape().last(),
+                "SAXPY range is out of bounds");
+        for (TensorOps operations : tensorOperations.values()) {
+            if (operations.saxpy(alpha, x, y, xOffset, yOffset, length, alphaOffset, xRowOffset,
+                    batchSize).isRight()) {
+                return;
+            }
+        }
+        throw new IllegalStateException("No tensor operations support batch saxpy");
+    }
+
     public void scale(Scale scale) {
         scale(scale, Map.of());
     }

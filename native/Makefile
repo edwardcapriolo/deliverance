@@ -62,7 +62,7 @@ tensor2: $(TENSOR2_LIB)
 # 1) Build the core SIMD library (static .a on all platforms)
 $(LIB): $(OBJS)
 	mkdir -p $(LIB_DIR)
-	$(AR) $(LDFLAGS) -o $(LIB) $^
+	$(CC) $(LDFLAGS) -o $(LIB) $^
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 	mkdir -p $(OBJ_DIR)
@@ -74,7 +74,7 @@ $(OBJ_DIR)/tensor2/%.o: $(TENSOR2_SRC_DIR)/%.c
 
 $(TENSOR2_LIB): $(TENSOR2_OBJS)
 	mkdir -p $(LIB_DIR)
-	$(AR) $(LDFLAGS) -o $(TENSOR2_LIB) $^
+	$(CC) $(LDFLAGS) -o $(TENSOR2_LIB) $^
 
 #───────────────────────────────────────────────────────────────────────────────
 # 2) GPU target: either DLL on Windows or static .a on others
@@ -104,7 +104,7 @@ else
 # Non‑Windows: just produce a static archive for GPU bits too
 $(LIB2): $(OBJS2)
 	mkdir -p $(LIB_DIR)
-	$(AR) $(LDFLAGS2) -o $(LIB2) $^
+	$(CC) $(LDFLAGS2) -o $(LIB2) $^
 
 endif
 

@@ -6,8 +6,8 @@ import io.teknek.deliverance.tensor.operations.util.JarSupport;
 import io.teknek.dysfx.Either;
 
 import java.lang.foreign.MemorySegment;
-
 public class NativeOps implements TensorOps {
+    private static Throwable loadFailure;
     private static final boolean loaded = loadOnce();
 
     private static boolean loadOnce() {
@@ -17,6 +17,7 @@ public class NativeOps implements TensorOps {
                 System.loadLibrary("deliverance_tensor2");
                 libraryLoaded = true;
             } catch (UnsatisfiedLinkError ignored) {
+                loadFailure = ignored;
                 return false;
             }
         }
@@ -24,13 +25,14 @@ public class NativeOps implements TensorOps {
             Tensor2Native.tensor2_batch_dot_f32_f32$address();
             return true;
         } catch (LinkageError | RuntimeException e) {
+            loadFailure = e;
             return false;
         }
     }
 
     public NativeOps() {
         if (!loaded) {
-            throw new IllegalStateException("tensor2 native operations are not available");
+            throw new IllegalStateException("tensor2 native operations are not available", loadFailure);
         }
     }
 
@@ -77,6 +79,114 @@ public class NativeOps implements TensorOps {
                 a.stride(),
                 b.stride());
         return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
+    }
+
+    @Override
+    public Either<OpSupport, Void> dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
+            int inputStart, int inputLength, int weightRowStart, int weightRowCount, int outputColumnStart) {
+        return dotProductRows(output, input, weights, inputStart, inputStart, inputLength, weightRowStart,
+                weightRowCount, outputColumnStart);
+    }
+
+    @Override
+    public Either<OpSupport, Void> dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
+            int inputColumnStart, int weightColumnStart, int columnLength, int weightRowStart,
+            int weightRowCount, int outputColumnStart) {
+        if (!loaded || (output.dType() != DType.F32 && output.dType() != DType.BF16)
+                || (input.dType() != DType.F32 && input.dType() != DType.BF16)) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        try {
+            if (input.dType() == DType.BF16 && weights.dType() == DType.Q4) {
+                TensorRef scales = Q4Layout.scale(weights);
+                if (scales == null) {
+                    return Either.Left(OpSupport.Unsupported);
+                }
+                int status = Tensor2Native.tensor2_dot_product_rows_bf16_q4(
+                        output.underlying().getMemorySegment(), input.underlying().getMemorySegment(),
+                        weights.underlying().getMemorySegment(), scales.underlying().getMemorySegment(),
+                        output.dType() == DType.BF16 ? 1 : 0, (int) output.shape().first(), inputColumnStart,
+                        weightColumnStart, columnLength, weightRowStart, weightRowCount, outputColumnStart,
+                        output.stride(), input.stride(), weights.stride(), scales.stride());
+                return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
+            }
+            if (weights.dType() == DType.Q4) {
+                TensorRef scales = Q4Layout.scale(weights);
+                if (scales == null) {
+                    return Either.Left(OpSupport.Unsupported);
+                }
+                int status = Tensor2Native.tensor2_dot_product_rows_f32_q4(
+                        output.underlying().getMemorySegment(), input.underlying().getMemorySegment(),
+                        weights.underlying().getMemorySegment(), scales.underlying().getMemorySegment(),
+                        (int) output.shape().first(), inputColumnStart, weightColumnStart, columnLength,
+                        weightRowStart, weightRowCount, outputColumnStart, output.stride(), input.stride(),
+                        weights.stride(), scales.stride());
+                return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
+            }
+            if (weights.dType() == DType.I8) {
+                TensorRef scales = Q8Layout.scale(weights);
+                if (scales == null || inputColumnStart != weightColumnStart
+                        || inputColumnStart % Q8Layout.BLOCK_SIZE != 0
+                        || columnLength % Q8Layout.BLOCK_SIZE != 0) {
+                    return Either.Left(OpSupport.Unsupported);
+                }
+                int status = Tensor2Native.tensor2_dot_product_rows_f32_q8(
+                        output.underlying().getMemorySegment(), input.underlying().getMemorySegment(),
+                        weights.underlying().getMemorySegment(), scales.underlying().getMemorySegment(),
+                        (int) output.shape().first(), inputColumnStart, columnLength, weightRowStart, weightRowCount,
+                        outputColumnStart, output.stride(), input.stride(), weights.stride(), scales.stride());
+                return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
+            }
+            if (weights.dType() != DType.F32) {
+                return Either.Left(OpSupport.Unsupported);
+            }
+            int status = Tensor2Native.tensor2_dot_product_rows_f32_f32(
+                    output.underlying().getMemorySegment(), input.underlying().getMemorySegment(),
+                    weights.underlying().getMemorySegment(), (int) output.shape().first(), inputColumnStart, columnLength,
+                    weightRowStart, weightRowCount, outputColumnStart, output.stride(), input.stride(),
+                    weights.stride());
+            return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
+        } catch (LinkageError | RuntimeException e) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+    }
+
+    @Override
+    public Either<OpSupport, Void> saxpy(float alpha, TensorRef x, TensorRef y, int xOffset, int yOffset,
+            int length) {
+        if (!loaded || x.dType() != DType.F32 || y.dType() != DType.F32 || y.shape().first() != 1) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        try {
+            int status = Tensor2Native.tensor2_saxpy_f32(alpha, x.memorySegment(), y.memorySegment(),
+                    xOffset, yOffset, length);
+            if (status != Tensor2Native.TENSOR2_OK()) {
+                return Either.Left(OpSupport.Unsupported);
+            }
+            return Either.Right(null);
+        } catch (LinkageError | RuntimeException e) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+    }
+
+    @Override
+    public Either<OpSupport, Void> saxpy(TensorRef alpha, TensorRef x, TensorRef y, int xOffset, int yOffset,
+            int length, int alphaOffset, int xRowOffset, int batchSize) {
+        if (!loaded || alpha.dType() != DType.F32 || x.dType() != DType.F32 || y.dType() != DType.F32
+                || y.shape().first() != 1) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        try {
+            int status = Tensor2Native.tensor2_saxpy_f32_batch(alpha.memorySegment(), x.memorySegment(),
+                    y.memorySegment(), xOffset, yOffset, length, alphaOffset, xRowOffset, batchSize,
+                    x.stride());
+            if (status != Tensor2Native.TENSOR2_OK()) {
+                return Either.Left(OpSupport.Unsupported);
+            }
+            return Either.Right(null);
+        } catch (LinkageError | RuntimeException e) {
+            return Either.Left(OpSupport.Unsupported);
+        }
     }
 
     @Override

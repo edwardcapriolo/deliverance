@@ -126,11 +126,62 @@ class NaiveOps implements TensorOps {
     }
 
     @Override
+    public Either<OpSupport, Void> dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
+            int inputStart, int inputLength, int weightRowStart, int weightRowCount, int outputColumnStart) {
+        return dotProductRows(output, input, weights, inputStart, inputStart, inputLength, weightRowStart,
+                weightRowCount, outputColumnStart);
+    }
+
+    @Override
+    public Either<OpSupport, Void> dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
+            int inputColumnStart, int weightColumnStart, int columnLength, int weightRowStart,
+            int weightRowCount, int outputColumnStart) {
+        if (output.dType() != DType.F32 && output.dType() != DType.BF16) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        for (int inputRow = 0; inputRow < input.shape().first(); inputRow++) {
+            for (int row = 0; row < weightRowCount; row++) {
+                float sum = 0.0f;
+                int weightRow = weightRowStart + row;
+                for (int column = 0; column < columnLength; column++) {
+                    sum += input.underlying().get(inputRow, inputColumnStart + column)
+                            * weights.underlying().get(weightRow, weightColumnStart + column);
+                }
+                output.underlying().set(sum, inputRow, outputColumnStart + row);
+            }
+        }
+        return Either.Right(null);
+    }
+
+    @Override
     public Either<OpSupport, Void> scale(float factor, TensorRef target, int offset, int length) {
         Preconditions.checkArgument(offset >= 0 && length >= 0 && offset + length <= target.shape().last());
         for (int row = 0; row < target.shape().first(); row++) {
             for (int column = offset; column < offset + length; column++) {
                 target.underlying().set(target.underlying().get(row, column) * factor, row, column);
+            }
+        }
+        return Either.Right(null);
+    }
+
+    @Override
+    public Either<OpSupport, Void> saxpy(float alpha, TensorRef x, TensorRef y, int xOffset, int yOffset,
+            int length) {
+        for (int column = 0; column < length; column++) {
+            y.underlying().set(y.underlying().get(0, yOffset + column)
+                    + alpha * x.underlying().get(0, xOffset + column), 0, yOffset + column);
+        }
+        return Either.Right(null);
+    }
+
+    @Override
+    public Either<OpSupport, Void> saxpy(TensorRef alpha, TensorRef x, TensorRef y, int xOffset, int yOffset,
+            int length, int alphaOffset, int xRowOffset, int batchSize) {
+        for (int row = 0; row < batchSize; row++) {
+            float factor = alpha.underlying().get(0, alphaOffset + row);
+            for (int column = 0; column < length; column++) {
+                y.underlying().set(y.underlying().get(0, yOffset + column)
+                        + factor * x.underlying().get(xRowOffset + row, xOffset + column), 0, yOffset + column);
             }
         }
         return Either.Right(null);
