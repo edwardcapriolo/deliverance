@@ -214,7 +214,7 @@ public class Qwen3Model extends LlamaModel {
                     tensorParallelWeights::loadRef, qType));
             TensorRef upRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(upName,
                     tensorParallelWeights::loadRef, qType));
-            MLPBlock2 mlp = new MLPBlock2(this, gateRef, upRef, downRef, lighter);
+            MLPBlock2 mlp = new MLPBlock2(this, gateRef, upRef, downRef, lighter, gateName, upName, downName);
 
             String inputNormName = base + "input_layernorm.weight";
             String postAttentionNormName = base + "post_attention_layernorm.weight";

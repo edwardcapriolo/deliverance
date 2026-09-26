@@ -11,6 +11,8 @@ import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.TrackedReadOnlyTensor;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.TensorRef;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -236,6 +238,30 @@ class KvCacheSessionTest {
             assertEquals(KvBlockLayout.DENSE, session.committedBlocks().getFirst().layout());
             assertTrue(session.committedBlocks().getFirst().encodedBytes() < 4L * 2 * kvLength * DType.F32.size());
         }
+    }
+
+    @Test
+    void tensorRefWritePathDoesNotUseOldTensorOperationsProvider() {
+        int kvLength = 64;
+        TensorOperations operations = Mockito.mock(TensorOperations.class);
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withBlockSize(4)
+                .withKvKeyDType(DType.I8)
+                .withKvValueDType(DType.I8);
+        Lighter lighter = new Lighter(metricRegistry);
+        KvCacheManager manager = new KvCacheManager(1, 8, kvLength, DType.F32, settings, allocator,
+                metricRegistry, false, operations, lighter);
+
+        try (KvCacheSession session = manager.openSession();
+             KvWriteCursor writer = session.writer(CacheExecutionMode.PREFILL_UPDATE_CACHE);
+             TensorRef key = lighter.allocate(DType.F32, TensorShape.of(1, kvLength));
+             TensorRef value = lighter.allocate(DType.F32, TensorShape.of(1, kvLength))) {
+            fill(key, 1.0f);
+            fill(value, 2.0f);
+            writer.write(0, 0, key, value);
+        }
+
+        Mockito.verifyNoInteractions(operations);
     }
 
     @Test
@@ -762,6 +788,12 @@ class KvCacheSessionTest {
             tensor.set(firstValue + (i % 17) * 0.125f, 0, i);
         }
         return tensor;
+    }
+
+    private void fill(TensorRef tensor, float firstValue) {
+        for (int i = 0; i < tensor.shape().last(); i++) {
+            tensor.set(firstValue + (i % 17) * 0.125f, 0, i);
+        }
     }
 
     private AbstractTensor statisticalRow(int layer, int position, int keyOrValue, int kvLength,

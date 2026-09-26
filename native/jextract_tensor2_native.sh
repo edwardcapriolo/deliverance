@@ -39,6 +39,7 @@ cd "$HEADER_DIR"
   --include-function tensor2_dot_product_rows_f32_q8 \
   --include-function tensor2_dot_product_rows_f32_q4 \
   --include-function tensor2_dot_product_rows_bf16_q4 \
+  --include-function tensor2_dot_product_rows_i8_q4 \
   --include-function tensor2_saxpy_f32 \
   --include-function tensor2_saxpy_f32_batch \
   --include-function tensor2_batch_dot_f32_f32 \

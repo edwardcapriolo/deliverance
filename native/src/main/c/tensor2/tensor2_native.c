@@ -1,4 +1,5 @@
 #include "tensor2_native.h"
+#include "../simd/vector_simd.h"
 
 #include <string.h>
 
@@ -372,6 +373,48 @@ tensor2_status tensor2_dot_product_rows_f32_q4(
                     tensor2_dot_f32_q4(inputRow, weightRowPtr, scaleRow, column_length);
         }
     }
+    return TENSOR2_OK;
+}
+
+tensor2_status tensor2_dot_product_rows_i8_q4(
+        float *result,
+        const int8_t *input,
+        const float *input_scales,
+        const uint8_t *weights,
+        const float *weight_scales,
+        int result_rows,
+        int input_column_start,
+        int weight_column_start,
+        int column_length,
+        int weight_row_start,
+        int weight_row_count,
+        int result_column_start,
+        int result_stride,
+        int input_stride,
+        int input_scale_stride,
+        int weight_stride,
+        int weight_scale_stride) {
+    if (result == 0 || input == 0 || input_scales == 0 || weights == 0 || weight_scales == 0) {
+        return TENSOR2_UNSUPPORTED;
+    }
+    if (result_rows < 0 || input_column_start < 0 || weight_column_start < 0 || column_length < 0
+            || weight_row_start < 0 || weight_row_count < 0 || result_column_start < 0
+            || result_stride < 0 || input_stride < 0 || input_scale_stride < 0
+            || weight_stride < 0 || weight_scale_stride < 0
+            || input_column_start % Q8_BLOCK_SIZE != 0
+            || weight_column_start % Q4_BLOCK_SIZE != 0
+            || column_length % Q8_BLOCK_SIZE != 0
+            || weight_stride % 2 != 0) {
+        return TENSOR2_UNSUPPORTED;
+    }
+    if (result_rows == 0 || weight_row_count == 0) {
+        return TENSOR2_OK;
+    }
+    gemm_q8_q4(0, input_scales, (const char *) input, input_column_start,
+            weight_scales, (const char *) weights, weight_column_start / 2,
+            result, weight_row_start - result_column_start, result_rows, weight_row_start,
+            weight_row_count, column_length, input_stride, input_scale_stride, weight_stride / 2,
+            weight_scale_stride, result_stride);
     return TENSOR2_OK;
 }
 

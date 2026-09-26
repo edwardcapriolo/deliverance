@@ -13,6 +13,7 @@ import jdk.incubator.vector.VectorSpecies;
 
 import java.nio.ByteOrder;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 
 class PanamaOps implements TensorOps {
     private static final VectorSpecies<Float> F32_SPECIES = FloatVector.SPECIES_PREFERRED;
@@ -21,7 +22,9 @@ class PanamaOps implements TensorOps {
     private static final VectorSpecies<Short> BF16_SPECIES = ShortVector.SPECIES_128;
     private static final VectorSpecies<Byte> Q8_BYTE_SPECIES = ByteVector.SPECIES_128;
     private static final VectorSpecies<Float> Q8_FLOAT_SPECIES = FloatVector.SPECIES_512;
-    private static final FloatVector F32_ROUND_UP_512 = FloatVector.broadcast(FloatVector.SPECIES_512, 0.5f);
+    private static final ByteVector Q4_MASK = ByteVector.broadcast(ByteVector.SPECIES_128, (byte) 0x0f);
+    private static final ByteVector Q4_ZERO = ByteVector.broadcast(ByteVector.SPECIES_128, (byte) 8);
+    private static final ByteVector Q4_SHIFT = ByteVector.broadcast(ByteVector.SPECIES_128, (byte) 4);
     private static final IntVector BF16_BYTE_SHIFT_256 = IntVector.broadcast(IntVector.SPECIES_256, 16);
     private static final IntVector BF16_ROUND_BIAS = IntVector.broadcast(IntVector.SPECIES_256, 0x7fff);
     private static final IntVector BF16_ROUND_LSB_MASK = IntVector.broadcast(IntVector.SPECIES_256, 1);
@@ -79,8 +82,9 @@ class PanamaOps implements TensorOps {
 
     private void copySameDType(TensorRef input, TensorRef output) {
         long bytes = physicalBytes(input);
-        output.underlying().getMemorySegment().asSlice(0, bytes)
-                .copyFrom(input.underlying().getMemorySegment().asSlice(0, bytes));
+        output.underlying().getMemorySegment().asSlice(output.memorySegmentOffset(output.shape().getOffset(0, 0)), bytes)
+                .copyFrom(input.underlying().getMemorySegment().asSlice(
+                        input.memorySegmentOffset(input.shape().getOffset(0, 0)), bytes));
         if (input.dType() == DType.I8) {
             copySidecar(Q8Layout.scale(input), Q8Layout.scale(output));
         } else if (input.dType() == DType.Q4) {
@@ -91,8 +95,9 @@ class PanamaOps implements TensorOps {
     private void copySidecar(TensorRef input, TensorRef output) {
         Preconditions.checkArgument(input != null && output != null, "Quantized tensors require scale sidecars");
         long bytes = input.shape().size() * DType.F32.size();
-        output.underlying().getMemorySegment().asSlice(0, bytes)
-                .copyFrom(input.underlying().getMemorySegment().asSlice(0, bytes));
+        output.underlying().getMemorySegment().asSlice(output.memorySegmentOffset(output.shape().getOffset(0, 0)), bytes)
+                .copyFrom(input.underlying().getMemorySegment().asSlice(
+                        input.memorySegmentOffset(input.shape().getOffset(0, 0)), bytes));
     }
 
     private long physicalBytes(TensorRef tensor) {
@@ -287,44 +292,47 @@ class PanamaOps implements TensorOps {
 
     private void reshapeF32ToI8(TensorRef input, TensorRef output, TensorRef scale) {
         Tensor inputTensor = input.underlying();
-        Tensor outputTensor = output.underlying();
+        MemorySegment inputSegment = inputTensor.getMemorySegment();
+        MemorySegment outputSegment = output.underlying().getMemorySegment();
         for (int row = 0; row < input.shape().first(); row++) {
             for (int column = 0; column < input.shape().last(); column += Q8Layout.BLOCK_SIZE) {
-                FloatVector v0 = FloatVector.fromMemorySegment(Q8_FLOAT_SPECIES, inputTensor.getMemorySegment(),
+                FloatVector v0 = FloatVector.fromMemorySegment(Q8_FLOAT_SPECIES, inputSegment,
                         memoryOffset(input, row, column), ByteOrder.LITTLE_ENDIAN);
-                FloatVector v1 = FloatVector.fromMemorySegment(Q8_FLOAT_SPECIES, inputTensor.getMemorySegment(),
+                FloatVector v1 = FloatVector.fromMemorySegment(Q8_FLOAT_SPECIES, inputSegment,
                         memoryOffset(input, row, column + Q8Layout.BLOCK_SIZE / 2), ByteOrder.LITTLE_ENDIAN);
                 float max = v0.abs().max(v1.abs()).reduceLanes(VectorOperators.MAX);
-                float factor = max / Byte.MAX_VALUE;
-                float inverse = max != 0.0f ? Byte.MAX_VALUE / max : 0.0f;
+                float inverse = 127f / max;
+                float factor = inverse != 0.0f ? 1.0f / inverse : 0.0f;
                 scale.underlying().set(factor, row, Q8Layout.scaleColumn(column));
-                FloatVector inv = FloatVector.broadcast(Q8_FLOAT_SPECIES, inverse);
-                ByteVector b0 = v0.mul(inv).add(F32_ROUND_UP_512)
-                        .convertShape(VectorOperators.F2B, Q8_BYTE_SPECIES, 0).reinterpretAsBytes();
-                ByteVector b1 = v1.mul(inv).add(F32_ROUND_UP_512)
-                        .convertShape(VectorOperators.F2B, Q8_BYTE_SPECIES, 0).reinterpretAsBytes();
-                b0.intoMemorySegment(outputTensor.getMemorySegment(), memoryOffset(output, row, column),
-                        ByteOrder.LITTLE_ENDIAN);
-                b1.intoMemorySegment(outputTensor.getMemorySegment(), memoryOffset(output, row,
-                        column + Q8Layout.BLOCK_SIZE / 2), ByteOrder.LITTLE_ENDIAN);
+
+                FloatVector q0 = v0.mul(FloatVector.broadcast(Q8_FLOAT_SPECIES, inverse));
+                FloatVector q1 = v1.mul(FloatVector.broadcast(Q8_FLOAT_SPECIES, inverse));
+                long out0 = memoryOffset(output, row, column);
+                long out1 = memoryOffset(output, row, column + Q8Layout.BLOCK_SIZE / 2);
+                for (int lane = 0; lane < Q8_FLOAT_SPECIES.length(); lane++) {
+                    outputSegment.set(ValueLayout.JAVA_BYTE, out0 + lane, (byte) Math.round(q0.lane(lane)));
+                    outputSegment.set(ValueLayout.JAVA_BYTE, out1 + lane, (byte) Math.round(q1.lane(lane)));
+                }
             }
         }
     }
 
     private void reshapeDenseToI8Scalar(TensorRef input, TensorRef output, TensorRef scale) {
-        I8Tensor outputTensor = (I8Tensor) output.underlying();
         for (int row = 0; row < input.shape().first(); row++) {
             for (int column = 0; column < input.shape().last(); column += Q8Layout.BLOCK_SIZE) {
-                float max = 0.0f;
+                float max = Float.MIN_VALUE;
                 for (int i = 0; i < Q8Layout.BLOCK_SIZE; i++) {
-                    max = Math.max(max, Math.abs(input.underlying().get(row, column + i)));
+                    float value = input.underlying().get(row, column + i);
+                    float abs = value < 0 ? -value : value;
+                    if (abs > max) {
+                        max = abs;
+                    }
                 }
-                float factor = max / Byte.MAX_VALUE;
-                float inverse = max != 0.0f ? Byte.MAX_VALUE / max : 0.0f;
+                float inverse = 127f / max;
+                float factor = inverse != 0.0f ? 1.0f / inverse : 0.0f;
                 scale.underlying().set(factor, row, Q8Layout.scaleColumn(column));
                 for (int i = 0; i < Q8Layout.BLOCK_SIZE; i++) {
-                    outputTensor.setRawByte((byte) Math.round(input.underlying().get(row, column + i) * inverse), row,
-                            column + i);
+                    output.set(input.underlying().get(row, column + i), row, column + i);
                 }
             }
         }
@@ -336,11 +344,14 @@ class PanamaOps implements TensorOps {
         Q4Tensor outputTensor = (Q4Tensor) output.underlying();
         for (int row = 0; row < input.shape().first(); row++) {
             for (int column = 0; column < input.shape().last(); column += Q4Layout.BLOCK_SIZE) {
-                float max = 0.0f;
+                float max = Float.MIN_VALUE;
+                float amax = Float.MIN_VALUE;
                 for (int i = 0; i < Q4Layout.BLOCK_SIZE; i++) {
                     float value = input.underlying().get(row, column + i);
-                    if (Math.abs(value) > Math.abs(max)) {
+                    float abs = value < 0 ? -value : value;
+                    if (abs > amax) {
                         max = value;
+                        amax = abs;
                     }
                 }
                 float factor = max / -8.0f;
@@ -374,7 +385,7 @@ class PanamaOps implements TensorOps {
     }
 
     private int q4Nibble(float value) {
-        return Math.max(0, Math.min(15, (int) (value + 8.5f)));
+        return Math.min(15, (byte) (value + 8.5f));
     }
 
     @Override
@@ -424,19 +435,66 @@ class PanamaOps implements TensorOps {
         TensorRef result = operation.result();
         TensorRef a = operation.a();
         TensorRef b = operation.b();
-        if (result.dType() != DType.F32 || a.dType() != DType.F32) {
+        if (result.dType() != DType.F32) {
             return Either.Left(OpSupport.Unsupported);
         }
-        TensorRef q8Scale = Q8Layout.scale(b);
-        if (b.dType() == DType.I8 && q8Scale != null && q8Aligned(operation)) {
-            new F32Q8BatchDotProductGemmer(operation, q8Scale).matmul();
-            return Either.Right(null);
-        }
-        if (b.dType() != DType.F32) {
-            return Either.Left(OpSupport.Unsupported);
-        }
-        new F32BatchDotProductGemmer(operation).matmul();
-        return Either.Right(null);
+        return switch (a.dType()) {
+            case F32 -> switch (b.dType()) {
+                case F32 -> {
+                    new F32BatchDotProductGemmer(operation).matmul();
+                    yield Either.Right(null);
+                }
+                case BF16 -> {
+                    new F32BF16BatchDotProductGemmer(operation).matmul();
+                    yield Either.Right(null);
+                }
+                case I8 -> {
+                    TensorRef q8Scale = Q8Layout.scale(b);
+                    if (q8Scale == null || !q8Aligned(operation)) {
+                        yield Either.Left(OpSupport.Unsupported);
+                    }
+                    new F32Q8BatchDotProductGemmer(operation, q8Scale).matmul();
+                    yield Either.Right(null);
+                }
+                case Q4 -> {
+                    TensorRef q4Scale = Q4Layout.scale(b);
+                    if (q4Scale == null || !q4Aligned(operation)) {
+                        yield Either.Left(OpSupport.Unsupported);
+                    }
+                    new F32Q4BatchDotProductGemmer(operation, q4Scale).matmul();
+                    yield Either.Right(null);
+                }
+                default -> Either.Left(OpSupport.Unsupported);
+            };
+            case BF16 -> switch (b.dType()) {
+                case BF16 -> {
+                    new BF16BF16BatchDotProductGemmer(operation).matmul();
+                    yield Either.Right(null);
+                }
+                case Q4 -> {
+                    TensorRef q4Scale = Q4Layout.scale(b);
+                    if (q4Scale == null || !q4Aligned(operation)) {
+                        yield Either.Left(OpSupport.Unsupported);
+                    }
+                    new BF16Q4BatchDotProductGemmer(operation, q4Scale).matmul();
+                    yield Either.Right(null);
+                }
+                default -> Either.Left(OpSupport.Unsupported);
+            };
+            case I8 -> switch (b.dType()) {
+                case Q4 -> {
+                    TensorRef q8Scale = Q8Layout.scale(a);
+                    TensorRef q4Scale = Q4Layout.scale(b);
+                    if (q8Scale == null || q4Scale == null || !q4Aligned(operation)) {
+                        yield Either.Left(OpSupport.Unsupported);
+                    }
+                    new I8Q4BatchDotProductGemmer(operation, q8Scale, q4Scale).matmul();
+                    yield Either.Right(null);
+                }
+                default -> Either.Left(OpSupport.Unsupported);
+            };
+            default -> Either.Left(OpSupport.Unsupported);
+        };
     }
 
     @Override
@@ -450,6 +508,32 @@ class PanamaOps implements TensorOps {
     public Either<OpSupport, Void> dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
             int inputColumnStart, int weightColumnStart, int columnLength, int weightRowStart,
             int weightRowCount, int outputColumnStart) {
+        if (output.dType() == DType.F32 && input.dType() == DType.I8 && weights.dType() == DType.Q4) {
+            TensorRef inputScale = Q8Layout.scale(input);
+            TensorRef weightScale = Q4Layout.scale(weights);
+            if (inputScale == null || weightScale == null
+                    || inputColumnStart % Q8Layout.BLOCK_SIZE != 0
+                    || weightColumnStart % Q4Layout.BLOCK_SIZE != 0
+                    || columnLength % Q8Layout.BLOCK_SIZE != 0) {
+                return Either.Left(OpSupport.Unsupported);
+            }
+            new I8Q4DotProductRowsGemmer(output, input, inputScale, weights, weightScale,
+                    inputColumnStart, weightColumnStart, columnLength, weightRowStart, weightRowCount,
+                    outputColumnStart).matmul();
+            return Either.Right(null);
+        }
+        if (output.dType() == DType.F32 && input.dType() == DType.F32 && weights.dType() == DType.Q4) {
+            TensorRef weightScale = Q4Layout.scale(weights);
+            if (weightScale == null
+                    || weightColumnStart % Q4Layout.BLOCK_SIZE != 0
+                    || columnLength % Q4Layout.BLOCK_SIZE != 0) {
+                return Either.Left(OpSupport.Unsupported);
+            }
+            new F32Q4DotProductRowsGemmer(output, input, weights, weightScale,
+                    inputColumnStart, weightColumnStart, columnLength, weightRowStart, weightRowCount,
+                    outputColumnStart).matmul();
+            return Either.Right(null);
+        }
         if (output.dType() != DType.F32 || input.dType() != DType.F32
                 || (weights.dType() != DType.F32 && weights.dType() != DType.I8)) {
             return Either.Left(OpSupport.Unsupported);
@@ -524,6 +608,12 @@ class PanamaOps implements TensorOps {
         return operation.aColumnOffset() % Q8Layout.BLOCK_SIZE == 0
                 && operation.bColumnOffset() % Q8Layout.BLOCK_SIZE == 0
                 && operation.columnLength() % Q8Layout.BLOCK_SIZE == 0;
+    }
+
+    private static boolean q4Aligned(BatchDotProduct operation) {
+        return operation.aColumnOffset() % Q4Layout.BLOCK_SIZE == 0
+                && operation.bColumnOffset() % Q4Layout.BLOCK_SIZE == 0
+                && operation.columnLength() % Q4Layout.BLOCK_SIZE == 0;
     }
 
     private static final class F32BatchDotProductGemmer {
@@ -623,6 +713,295 @@ class PanamaOps implements TensorOps {
                 acc1 = av1.fma(bv1, acc1);
             }
             return acc0.add(acc1).reduceLanes(VectorOperators.ADD);
+        }
+    }
+
+    private abstract static class BatchGemmer {
+        final BatchDotProduct operation;
+
+        BatchGemmer(BatchDotProduct operation) {
+            this.operation = operation;
+        }
+
+        final void matmul() {
+            TensorRef result = operation.result();
+            int bEnd = operation.bRowOffset() + operation.rowChunkSize();
+            for (int resultRow = 0; resultRow < result.shape().first(); resultRow++) {
+                int aRow = operation.aRowOffset() + resultRow;
+                for (int bRow = operation.bRowOffset(); bRow < bEnd; bRow++) {
+                    result.set(dot(aRow, bRow), resultRow, bRow + operation.resultRowOffset());
+                }
+            }
+        }
+
+        abstract float dot(int aRow, int bRow);
+    }
+
+    private static final class F32BF16BatchDotProductGemmer extends BatchGemmer {
+        F32BF16BatchDotProductGemmer(BatchDotProduct operation) {
+            super(operation);
+        }
+
+        @Override
+        float dot(int aRow, int bRow) {
+            TensorRef a = operation.a();
+            TensorRef b = operation.b();
+            FloatVector acc = FloatVector.zero(F32_BF16_SPECIES);
+            int k = 0;
+            int upperBound = F32_BF16_SPECIES.loopBound(operation.columnLength());
+            for (; k < upperBound; k += F32_BF16_SPECIES.length()) {
+                FloatVector av = FloatVector.fromMemorySegment(F32_BF16_SPECIES, a.memorySegment(),
+                        memoryOffset(a, aRow, operation.aColumnOffset() + k), ByteOrder.LITTLE_ENDIAN);
+                FloatVector bv = bf16Vector(b, bRow, operation.bColumnOffset() + k);
+                acc = av.fma(bv, acc);
+            }
+            float sum = acc.reduceLanes(VectorOperators.ADD);
+            for (; k < operation.columnLength(); k++) {
+                sum += a.get(aRow, operation.aColumnOffset() + k) * b.get(bRow, operation.bColumnOffset() + k);
+            }
+            return sum;
+        }
+    }
+
+    private static final class BF16BF16BatchDotProductGemmer extends BatchGemmer {
+        BF16BF16BatchDotProductGemmer(BatchDotProduct operation) {
+            super(operation);
+        }
+
+        @Override
+        float dot(int aRow, int bRow) {
+            TensorRef a = operation.a();
+            TensorRef b = operation.b();
+            FloatVector acc = FloatVector.zero(F32_BF16_SPECIES);
+            int k = 0;
+            int upperBound = F32_BF16_SPECIES.loopBound(operation.columnLength());
+            for (; k < upperBound; k += F32_BF16_SPECIES.length()) {
+                FloatVector av = bf16Vector(a, aRow, operation.aColumnOffset() + k);
+                FloatVector bv = bf16Vector(b, bRow, operation.bColumnOffset() + k);
+                acc = av.fma(bv, acc);
+            }
+            float sum = acc.reduceLanes(VectorOperators.ADD);
+            for (; k < operation.columnLength(); k++) {
+                sum += a.get(aRow, operation.aColumnOffset() + k) * b.get(bRow, operation.bColumnOffset() + k);
+            }
+            return sum;
+        }
+    }
+
+    private static final class F32Q4BatchDotProductGemmer extends BatchGemmer {
+        private final TensorRef weightScale;
+
+        F32Q4BatchDotProductGemmer(BatchDotProduct operation, TensorRef weightScale) {
+            super(operation);
+            this.weightScale = weightScale;
+        }
+
+        @Override
+        float dot(int aRow, int bRow) {
+            TensorRef a = operation.a();
+            TensorRef b = operation.b();
+            FloatVector sum = FloatVector.zero(FloatVector.SPECIES_512);
+            int aColumn = operation.aColumnOffset();
+            int bColumn = operation.bColumnOffset();
+            int end = operation.aColumnOffset() + operation.columnLength();
+            for (; aColumn < end; aColumn += Q4Layout.BLOCK_SIZE, bColumn += Q4Layout.BLOCK_SIZE) {
+                float scale = weightScale.get(bRow, Q4Layout.blockIndex(bColumn));
+                ByteVector packedWeights = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, b.memorySegment(),
+                        memoryOffset(b, bRow, bColumn), ByteOrder.LITTLE_ENDIAN);
+                FloatVector low = (FloatVector) packedWeights.lanewise(VectorOperators.AND, Q4_MASK)
+                        .sub(Q4_ZERO).convertShape(VectorOperators.B2F, FloatVector.SPECIES_512, 0);
+                FloatVector high = (FloatVector) packedWeights.lanewise(VectorOperators.ASHR, Q4_SHIFT)
+                        .lanewise(VectorOperators.AND, Q4_MASK).sub(Q4_ZERO)
+                        .convertShape(VectorOperators.B2F, FloatVector.SPECIES_512, 0);
+                FloatVector inputLow = FloatVector.fromMemorySegment(FloatVector.SPECIES_512, a.memorySegment(),
+                        memoryOffset(a, aRow, aColumn), ByteOrder.LITTLE_ENDIAN);
+                FloatVector inputHigh = FloatVector.fromMemorySegment(FloatVector.SPECIES_512, a.memorySegment(),
+                        memoryOffset(a, aRow, aColumn + Q4Layout.HALF_BLOCK), ByteOrder.LITTLE_ENDIAN);
+                sum = FloatVector.broadcast(FloatVector.SPECIES_512, scale)
+                        .fma(low.mul(inputLow).add(high.mul(inputHigh)), sum);
+            }
+            return sum.reduceLanes(VectorOperators.ADD);
+        }
+    }
+
+    private static final class BF16Q4BatchDotProductGemmer extends BatchGemmer {
+        private final TensorRef weightScale;
+
+        BF16Q4BatchDotProductGemmer(BatchDotProduct operation, TensorRef weightScale) {
+            super(operation);
+            this.weightScale = weightScale;
+        }
+
+        @Override
+        float dot(int aRow, int bRow) {
+            TensorRef a = operation.a();
+            TensorRef b = operation.b();
+            FloatVector sum = FloatVector.zero(FloatVector.SPECIES_512);
+            int aColumn = operation.aColumnOffset();
+            int bColumn = operation.bColumnOffset();
+            int end = operation.aColumnOffset() + operation.columnLength();
+            for (; aColumn < end; aColumn += Q4Layout.BLOCK_SIZE, bColumn += Q4Layout.BLOCK_SIZE) {
+                float scale = weightScale.get(bRow, Q4Layout.blockIndex(bColumn));
+                ByteVector packedWeights = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, b.memorySegment(),
+                        memoryOffset(b, bRow, bColumn), ByteOrder.LITTLE_ENDIAN);
+                FloatVector low = (FloatVector) packedWeights.lanewise(VectorOperators.AND, Q4_MASK)
+                        .sub(Q4_ZERO).convertShape(VectorOperators.B2F, FloatVector.SPECIES_512, 0);
+                FloatVector high = (FloatVector) packedWeights.lanewise(VectorOperators.ASHR, Q4_SHIFT)
+                        .lanewise(VectorOperators.AND, Q4_MASK).sub(Q4_ZERO)
+                        .convertShape(VectorOperators.B2F, FloatVector.SPECIES_512, 0);
+                FloatVector inputLow = bf16Vector512(a, aRow, aColumn);
+                FloatVector inputHigh = bf16Vector512(a, aRow, aColumn + Q4Layout.HALF_BLOCK);
+                sum = FloatVector.broadcast(FloatVector.SPECIES_512, scale)
+                        .fma(low.mul(inputLow).add(high.mul(inputHigh)), sum);
+            }
+            return sum.reduceLanes(VectorOperators.ADD);
+        }
+    }
+
+    private static final class I8Q4BatchDotProductGemmer extends BatchGemmer {
+        private final TensorRef inputScale;
+        private final TensorRef weightScale;
+
+        I8Q4BatchDotProductGemmer(BatchDotProduct operation, TensorRef inputScale, TensorRef weightScale) {
+            super(operation);
+            this.inputScale = inputScale;
+            this.weightScale = weightScale;
+        }
+
+        @Override
+        float dot(int aRow, int bRow) {
+            TensorRef a = operation.a();
+            TensorRef b = operation.b();
+            FloatVector sum = FloatVector.zero(FloatVector.SPECIES_512);
+            int aColumn = operation.aColumnOffset();
+            int bColumn = operation.bColumnOffset();
+            int end = operation.aColumnOffset() + operation.columnLength();
+            for (; aColumn < end; aColumn += Q8Layout.BLOCK_SIZE, bColumn += Q4Layout.BLOCK_SIZE) {
+                float scale = inputScale.get(aRow, Q8Layout.scaleColumn(aColumn))
+                        * weightScale.get(bRow, Q4Layout.blockIndex(bColumn));
+                ByteVector inputLowBytes = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, a.memorySegment(),
+                        memoryOffset(a, aRow, aColumn), ByteOrder.LITTLE_ENDIAN);
+                ByteVector inputHighBytes = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, a.memorySegment(),
+                        memoryOffset(a, aRow, aColumn + Q4Layout.HALF_BLOCK), ByteOrder.LITTLE_ENDIAN);
+                ShortVector inputLow = (ShortVector) inputLowBytes
+                        .convertShape(VectorOperators.B2S, ShortVector.SPECIES_256, 0);
+                ShortVector inputHigh = (ShortVector) inputHighBytes
+                        .convertShape(VectorOperators.B2S, ShortVector.SPECIES_256, 0);
+                ByteVector packedWeights = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, b.memorySegment(),
+                        memoryOffset(b, bRow, bColumn), ByteOrder.LITTLE_ENDIAN);
+                ShortVector low = (ShortVector) packedWeights.lanewise(VectorOperators.AND, Q4_MASK)
+                        .sub(Q4_ZERO).convertShape(VectorOperators.B2S, ShortVector.SPECIES_256, 0);
+                ShortVector high = (ShortVector) packedWeights.lanewise(VectorOperators.ASHR, Q4_SHIFT)
+                        .lanewise(VectorOperators.AND, Q4_MASK).sub(Q4_ZERO)
+                        .convertShape(VectorOperators.B2S, ShortVector.SPECIES_256, 0);
+                ShortVector products = low.mul(inputLow).add(high.mul(inputHigh));
+                FloatVector block = (FloatVector) products.convertShape(VectorOperators.S2F, FloatVector.SPECIES_512, 0);
+                sum = FloatVector.broadcast(FloatVector.SPECIES_512, scale).fma(block, sum);
+            }
+            return sum.reduceLanes(VectorOperators.ADD);
+        }
+    }
+
+    private static FloatVector bf16Vector(TensorRef tensor, int row, int column) {
+        return ShortVector.fromMemorySegment(BF16_SPECIES, tensor.memorySegment(), memoryOffset(tensor, row, column),
+                        ByteOrder.LITTLE_ENDIAN)
+                .convertShape(VectorOperators.S2I, IntVector.SPECIES_256, 0)
+                .lanewise(VectorOperators.LSHL, BF16_BYTE_SHIFT_256)
+                .reinterpretAsFloats();
+    }
+
+    private static FloatVector bf16Vector512(TensorRef tensor, int row, int column) {
+        return ShortVector.fromMemorySegment(ShortVector.SPECIES_256, tensor.memorySegment(),
+                        memoryOffset(tensor, row, column), ByteOrder.LITTLE_ENDIAN)
+                .convertShape(VectorOperators.S2I, IntVector.SPECIES_512, 0)
+                .lanewise(VectorOperators.LSHL, 16)
+                .reinterpretAsFloats();
+    }
+
+    private record I8Q4DotProductRowsGemmer(TensorRef output, TensorRef input, TensorRef inputScale,
+            TensorRef weights, TensorRef weightScale, int inputColumnStart, int weightColumnStart,
+            int columnLength, int weightRowStart, int weightRowCount, int outputColumnStart) {
+        private void matmul() {
+            for (int inputRow = 0; inputRow < input.shape().first(); inputRow++) {
+                for (int row = 0; row < weightRowCount; row++) {
+                    int weightRow = weightRowStart + row;
+                    output.set(dot(inputRow, weightRow), inputRow, outputColumnStart + row);
+                }
+            }
+        }
+
+        private float dot(int inputRow, int weightRow) {
+            FloatVector sum = FloatVector.zero(FloatVector.SPECIES_512);
+            int inputColumn = inputColumnStart;
+            int weightColumn = weightColumnStart;
+            int end = inputColumnStart + columnLength;
+            for (; inputColumn < end;
+                    inputColumn += Q8Layout.BLOCK_SIZE, weightColumn += Q4Layout.BLOCK_SIZE) {
+                float scale = inputScale.get(inputRow, Q8Layout.scaleColumn(inputColumn))
+                        * weightScale.get(weightRow, Q4Layout.blockIndex(weightColumn));
+                ByteVector inputLowBytes = ByteVector.fromMemorySegment(ByteVector.SPECIES_128,
+                        input.memorySegment(), memoryOffset(input, inputRow, inputColumn), ByteOrder.LITTLE_ENDIAN);
+                ByteVector inputHighBytes = ByteVector.fromMemorySegment(ByteVector.SPECIES_128,
+                        input.memorySegment(), memoryOffset(input, inputRow,
+                                inputColumn + Q4Layout.HALF_BLOCK), ByteOrder.LITTLE_ENDIAN);
+                ShortVector inputLow = (ShortVector) inputLowBytes
+                        .convertShape(VectorOperators.B2S, ShortVector.SPECIES_256, 0);
+                ShortVector inputHigh = (ShortVector) inputHighBytes
+                        .convertShape(VectorOperators.B2S, ShortVector.SPECIES_256, 0);
+                ByteVector packedWeights = ByteVector.fromMemorySegment(ByteVector.SPECIES_128,
+                        weights.memorySegment(), memoryOffset(weights, weightRow, weightColumn),
+                        ByteOrder.LITTLE_ENDIAN);
+                ShortVector low = (ShortVector) packedWeights.lanewise(VectorOperators.AND, Q4_MASK)
+                        .sub(Q4_ZERO).convertShape(VectorOperators.B2S, ShortVector.SPECIES_256, 0);
+                ShortVector high = (ShortVector) packedWeights.lanewise(VectorOperators.ASHR, Q4_SHIFT)
+                        .lanewise(VectorOperators.AND, Q4_MASK).sub(Q4_ZERO)
+                        .convertShape(VectorOperators.B2S, ShortVector.SPECIES_256, 0);
+                ShortVector products = low.mul(inputLow).add(high.mul(inputHigh));
+                FloatVector block = (FloatVector) products.convertShape(VectorOperators.S2F,
+                        FloatVector.SPECIES_512, 0);
+                sum = FloatVector.broadcast(FloatVector.SPECIES_512, scale).fma(block, sum);
+            }
+            return sum.reduceLanes(VectorOperators.ADD);
+        }
+    }
+
+    private record F32Q4DotProductRowsGemmer(TensorRef output, TensorRef input, TensorRef weights,
+            TensorRef weightScale, int inputColumnStart, int weightColumnStart, int columnLength,
+            int weightRowStart, int weightRowCount, int outputColumnStart) {
+        private void matmul() {
+            for (int inputRow = 0; inputRow < input.shape().first(); inputRow++) {
+                for (int row = 0; row < weightRowCount; row++) {
+                    int weightRow = weightRowStart + row;
+                    output.set(dot(inputRow, weightRow), inputRow, outputColumnStart + row);
+                }
+            }
+        }
+
+        private float dot(int inputRow, int weightRow) {
+            FloatVector sum = FloatVector.zero(FloatVector.SPECIES_512);
+            int inputColumn = inputColumnStart;
+            int weightColumn = weightColumnStart;
+            int end = inputColumnStart + columnLength;
+            for (; inputColumn < end;
+                    inputColumn += Q4Layout.BLOCK_SIZE, weightColumn += Q4Layout.BLOCK_SIZE) {
+                float scale = weightScale.get(weightRow, Q4Layout.blockIndex(weightColumn));
+                ByteVector packedWeights = ByteVector.fromMemorySegment(ByteVector.SPECIES_128,
+                        weights.memorySegment(), memoryOffset(weights, weightRow, weightColumn),
+                        ByteOrder.LITTLE_ENDIAN);
+                FloatVector low = (FloatVector) packedWeights.lanewise(VectorOperators.AND, Q4_MASK)
+                        .sub(Q4_ZERO).convertShape(VectorOperators.B2F, FloatVector.SPECIES_512, 0);
+                FloatVector high = (FloatVector) packedWeights.lanewise(VectorOperators.ASHR, Q4_SHIFT)
+                        .lanewise(VectorOperators.AND, Q4_MASK).sub(Q4_ZERO)
+                        .convertShape(VectorOperators.B2F, FloatVector.SPECIES_512, 0);
+                FloatVector inputLow = FloatVector.fromMemorySegment(FloatVector.SPECIES_512,
+                        input.memorySegment(), memoryOffset(input, inputRow, inputColumn), ByteOrder.LITTLE_ENDIAN);
+                FloatVector inputHigh = FloatVector.fromMemorySegment(FloatVector.SPECIES_512,
+                        input.memorySegment(), memoryOffset(input, inputRow, inputColumn + Q4Layout.HALF_BLOCK),
+                        ByteOrder.LITTLE_ENDIAN);
+                FloatVector block = low.mul(inputLow).add(high.mul(inputHigh));
+                sum = FloatVector.broadcast(FloatVector.SPECIES_512, scale).fma(block, sum);
+            }
+            return sum.reduceLanes(VectorOperators.ADD);
         }
     }
 

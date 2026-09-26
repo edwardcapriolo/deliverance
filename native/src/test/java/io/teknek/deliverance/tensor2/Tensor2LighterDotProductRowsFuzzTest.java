@@ -1,10 +1,13 @@
 package io.teknek.deliverance.tensor2;
 
+import io.dropwizard.metrics5.MetricName;
+import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
+import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -42,6 +45,122 @@ class Tensor2LighterDotProductRowsFuzzTest {
             actual.dotProductRows(actualOutput, actualInput, actualWeights, c.inputStart, c.inputLength,
                     c.weightRowStart, c.weightRowCount, c.outputColumnStart);
             assertEqual(c, expectedOutput, actualOutput, 0.01f);
+        }
+    }
+
+    @ParameterizedTest(name = "f32 GQA offsets {0}")
+    @MethodSource("candidates")
+    void f32DotProductRowsSupportsDifferentOperandOffsets(Candidate candidate) {
+        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+        Lighter expected = naiveOnly();
+        Lighter actual = candidate.lighter();
+        try (TensorRef expectedInput = expected.allocate(DType.F32, TensorShape.of(3, 48));
+             TensorRef expectedWeights = expected.allocate(DType.F32, TensorShape.of(6, 48));
+             TensorRef expectedOutput = expected.allocate(DType.F32, TensorShape.of(3, 7));
+             TensorRef actualInput = actual.allocate(DType.F32, TensorShape.of(3, 48));
+             TensorRef actualWeights = actual.allocate(DType.F32, TensorShape.of(6, 48));
+             TensorRef actualOutput = actual.allocate(DType.F32, TensorShape.of(3, 7))) {
+            fill(expectedInput, 71);
+            fill(expectedWeights, 89);
+            fill(actualInput, 71);
+            fill(actualWeights, 89);
+            expected.dotProductRows(expectedOutput, expectedInput, expectedWeights,
+                    16, 0, 16, 0, 5, 0);
+            actual.dotProductRows(actualOutput, actualInput, actualWeights,
+                    16, 0, 16, 0, 5, 0);
+            for (int row = 0; row < 3; row++) {
+                for (int column = 0; column < 5; column++) {
+                    assertEquals(expectedOutput.get(row, column), actualOutput.get(row, column), 0.01f,
+                            candidate.name() + " row=" + row + " column=" + column);
+                }
+            }
+        }
+    }
+
+    @ParameterizedTest(name = "strict f32 GQA offsets {0}")
+    @MethodSource("strictProductionCandidates")
+    void f32DotProductRowsSupportsDifferentOperandOffsetsWithoutFallback(ProviderCandidate candidate) {
+        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+        Lighter expected = naiveOnly();
+        MetricRegistry metrics = new MetricRegistry();
+        Lighter actual = new Lighter(metrics, Map.of(candidate.kind(), candidate.operations().get()));
+        try (TensorRef expectedInput = expected.allocate(DType.F32, TensorShape.of(3, 48));
+             TensorRef expectedWeights = expected.allocate(DType.F32, TensorShape.of(6, 48));
+             TensorRef expectedOutput = expected.allocate(DType.F32, TensorShape.of(3, 7));
+             TensorRef actualInput = actual.allocate(DType.F32, TensorShape.of(3, 48));
+             TensorRef actualWeights = actual.allocate(DType.F32, TensorShape.of(6, 48));
+             TensorRef actualOutput = actual.allocate(DType.F32, TensorShape.of(3, 7))) {
+            fill(expectedInput, 71);
+            fill(expectedWeights, 89);
+            fill(actualInput, 71);
+            fill(actualWeights, 89);
+            expected.dotProductRows(expectedOutput, expectedInput, expectedWeights,
+                    16, 0, 16, 0, 5, 0);
+            actual.dotProductRows(actualOutput, actualInput, actualWeights,
+                    16, 0, 16, 0, 5, 0);
+            for (int row = 0; row < 3; row++) {
+                for (int column = 0; column < 5; column++) {
+                    assertEquals(expectedOutput.get(row, column), actualOutput.get(row, column), 0.01f,
+                            candidate.name() + " row=" + row + " column=" + column);
+                }
+            }
+            assertEquals(1, metrics.meter(new MetricName("tensor2.dot_product_rows",
+                    Map.of(Lighter.TENSOR_OP_KEY, candidate.kind().name()))).getCount());
+            assertEquals(0, metrics.meter(new MetricName("tensor2.dot_product_rows",
+                    Map.of(Lighter.TENSOR_OP_KEY, TensorProviderKind.NAIVE.name()))).getCount());
+        }
+    }
+
+    @ParameterizedTest(name = "strict f32-q4 slice {0}")
+    @MethodSource("strictProductionCandidates")
+    void f32Q4DotProductRowsUsesLogicalSliceBaseWithoutFallback(ProviderCandidate candidate) {
+        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+        Lighter expected = naiveOnly();
+        MetricRegistry metrics = new MetricRegistry();
+        Lighter actual = new Lighter(metrics, Map.of(candidate.kind(), candidate.operations().get()));
+        try (TensorRef expectedInputParent = expected.allocate(DType.F32, TensorShape.of(4, 64));
+             TensorRef expectedOutputParent = expected.allocate(DType.F32, TensorShape.of(3, 5));
+             TensorRef actualInputParent = actual.allocate(DType.F32, TensorShape.of(4, 64));
+             TensorRef actualOutputParent = actual.allocate(DType.F32, TensorShape.of(3, 5));
+             Q4ByteBufferTensor expectedWeightTensor = q4Weights(4, 64, 123);
+             Q4ByteBufferTensor actualWeightTensor = q4Weights(4, 64, 123)) {
+            fill(expectedInputParent, 417);
+            fill(actualInputParent, 417);
+            TensorRef expectedWeightParent = TensorRef.borrowed(expectedWeightTensor);
+            TensorRef actualWeightParent = TensorRef.borrowed(actualWeightTensor);
+            try (TensorRef expectedInput = expectedInputParent.slice(2);
+                 TensorRef expectedWeights = expectedWeightParent.slice(1);
+                 TensorRef expectedOutput = expectedOutputParent.slice(1);
+                 TensorRef actualInput = actualInputParent.slice(2);
+                 TensorRef actualWeights = actualWeightParent.slice(1);
+                 TensorRef actualOutput = actualOutputParent.slice(1)) {
+                expected.dotProductRows(expectedOutput, expectedInput, expectedWeights, 0, 64, 0, 1, 2);
+                actual.dotProductRows(actualOutput, actualInput, actualWeights, 0, 64, 0, 1, 2);
+                assertEquals(expectedOutputParent.get(1, 2), actualOutputParent.get(1, 2), 0.001f,
+                        candidate.name());
+                assertEquals(0.0f, actualOutputParent.get(0, 2), 0.0f, "slice output must not write row zero");
+            }
+            assertEquals(1, metrics.meter(new MetricName("tensor2.dot_product_rows",
+                    Map.of(Lighter.TENSOR_OP_KEY, candidate.kind().name()))).getCount());
+            assertEquals(0, metrics.meter(new MetricName("tensor2.dot_product_rows",
+                    Map.of(Lighter.TENSOR_OP_KEY, TensorProviderKind.NAIVE.name()))).getCount());
+        }
+    }
+
+    @ParameterizedTest(name = "strict reshape slice {0}")
+    @MethodSource("strictPanamaCandidates")
+    void sameDTypeReshapeUsesLogicalSliceBaseWithoutFallback(ProviderCandidate candidate) {
+        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+        Lighter actual = new Lighter(new MetricRegistry(), Map.of(candidate.kind(), candidate.operations().get()));
+        try (TensorRef parent = actual.allocate(DType.F32, TensorShape.of(3, 64));
+             TensorRef slice = parent.slice(2)) {
+            fill(parent, 911);
+            try (TensorRef reshaped = actual.reshape(slice, DType.F32)) {
+                for (int column = 0; column < 64; column++) {
+                    assertEquals(parent.get(2, column), reshaped.get(0, column), 0.0f,
+                            candidate.name() + " column=" + column);
+                }
+            }
         }
     }
 
@@ -91,7 +210,31 @@ class Tensor2LighterDotProductRowsFuzzTest {
                     c.weightRowStart(), c.weightRowCount(), c.outputColumnStart());
             actual.dotProductRows(actualOutput, actualInput, actualWeights, c.inputStart(), c.inputLength(),
                     c.weightRowStart(), c.weightRowCount(), c.outputColumnStart());
-            assertEqual(c, expectedOutput, actualOutput, 0.08f);
+             assertEqual(c, expectedOutput, actualOutput, 0.001f);
+        }
+    }
+
+    @ParameterizedTest(name = "tensor2 q4 projection {0}")
+    @MethodSource("candidates")
+    void tensor2Q4ProjectionShapeMatchesNaive(Candidate candidate) {
+        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+        Lighter expected = naiveOnly();
+        Lighter actual = candidate.lighter();
+        try (TensorRef input = actual.allocate(DType.F32, TensorShape.of(4, 2048));
+             TensorRef denseWeights = actual.allocate(DType.F32, TensorShape.of(256, 2048));
+             TensorRef weights = actual.reshape(denseWeights, DType.Q4);
+             TensorRef expectedOutput = expected.allocate(DType.F32, TensorShape.of(4, 256));
+             TensorRef actualOutput = actual.allocate(DType.F32, TensorShape.of(4, 256))) {
+            fill(input, 417);
+            fill(denseWeights, 431);
+            expected.dotProductRows(expectedOutput, input, weights, 0, 2048, 0, 256, 0);
+            actual.dotProductRows(actualOutput, input, weights, 0, 2048, 0, 256, 0);
+            for (int row = 0; row < 4; row++) {
+                for (int column = 0; column < 256; column++) {
+                    assertEquals(expectedOutput.get(row, column), actualOutput.get(row, column), 0.001f,
+                            candidate.name() + " row=" + row + " column=" + column);
+                }
+            }
         }
     }
 
@@ -116,6 +259,110 @@ class Tensor2LighterDotProductRowsFuzzTest {
             actual.dotProductRows(actualOutput, actualInput, actualWeights, c.inputStart(), c.inputLength(),
                     c.weightRowStart(), c.weightRowCount(), c.outputColumnStart());
             assertEqual(c, expectedOutput, actualOutput, 0.08f);
+        }
+    }
+
+    @ParameterizedTest(name = "i8-q4 {0} {1}")
+    @MethodSource("i8Q4Cases")
+    void i8Q4DotProductRowsUsesProductionProvider(I8Q4Case c, ProviderCandidate candidate) {
+        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+        Lighter expected = naiveOnly();
+        MetricRegistry metrics = new MetricRegistry();
+        Lighter actual = new Lighter(metrics, Map.of(candidate.kind(), candidate.operations().get()));
+        try (TensorRef denseInput = actual.allocate(DType.F32, TensorShape.of(c.rows(), c.inputColumns()));
+             TensorRef input = quantizedInput(denseInput, c.seed());
+             Q4ByteBufferTensor denseWeights = q4Weights(c.weightRows(), c.weightColumns(), c.seed() + 17);
+             TensorRef weights = TensorRef.borrowed(denseWeights);
+             TensorRef expectedOutput = expected.allocate(DType.F32, TensorShape.of(c.rows(), c.outputColumns()));
+             TensorRef actualOutput = actual.allocate(DType.F32, TensorShape.of(c.rows(), c.outputColumns()))) {
+            expected.dotProductRows(expectedOutput, input, weights, c.inputColumnStart(), c.weightColumnStart(),
+                    c.columnLength(), c.weightRowStart(), c.weightRowCount(), c.outputColumnStart());
+            actual.dotProductRows(actualOutput, input, weights, c.inputColumnStart(), c.weightColumnStart(),
+                    c.columnLength(), c.weightRowStart(), c.weightRowCount(), c.outputColumnStart());
+
+            assertEqual(c, expectedOutput, actualOutput, 0.03f);
+            assertEquals(1, metrics.meter(new MetricName("tensor2.dot_product_rows",
+                    Map.of(Lighter.TENSOR_OP_KEY, candidate.kind().name()))).getCount());
+            assertEquals(0, metrics.meter(new MetricName("tensor2.dot_product_rows",
+                    Map.of(Lighter.TENSOR_OP_KEY, TensorProviderKind.NAIVE.name()))).getCount());
+        }
+    }
+
+    @ParameterizedTest(name = "strict i8-q4 batch-shape equivalence {0}")
+    @MethodSource("strictProductionCandidates")
+    void i8Q4DotProductRowsMatchesAcrossBatchShapes(ProviderCandidate candidate) {
+        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+        Lighter expected = naiveOnly();
+        MetricRegistry metrics = new MetricRegistry();
+        Lighter actual = new Lighter(metrics, Map.of(candidate.kind(), candidate.operations().get()));
+        Lighter quantizer = new Lighter(new MetricRegistry(), Map.of(TensorProviderKind.PANAMA, new PanamaOps()));
+        int rows = 5;
+        int columns = 32;
+        try (TensorRef denseBatch = quantizer.allocate(DType.F32, TensorShape.of(rows, columns));
+             TensorRef denseSingle = quantizer.allocate(DType.F32, TensorShape.of(1, columns));
+             TensorRef batchInput = quantizer.reshape(denseBatch, DType.I8);
+             TensorRef singleInput = quantizer.reshape(denseSingle, DType.I8);
+             Q4ByteBufferTensor denseWeights = q4Weights(columns, columns, 12_341);
+             TensorRef weights = TensorRef.borrowed(denseWeights);
+             TensorRef expectedBatch = expected.allocate(DType.F32, TensorShape.of(rows, columns));
+             TensorRef expectedSingle = expected.allocate(DType.F32, TensorShape.of(1, columns));
+             TensorRef actualBatch = actual.allocate(DType.F32, TensorShape.of(rows, columns));
+             TensorRef actualSingle = actual.allocate(DType.F32, TensorShape.of(1, columns))) {
+            fill(denseBatch, 12_347);
+            for (int column = 0; column < columns; column++) {
+                denseSingle.set(denseBatch.get(rows - 1, column), 0, column);
+            }
+            for (int chunkStart = 0; chunkStart < columns; chunkStart += 8) {
+                expected.dotProductRows(expectedBatch, batchInput, weights, 0, columns, chunkStart, 8, chunkStart);
+                expected.dotProductRows(expectedSingle, singleInput, weights, 0, columns, chunkStart, 8,
+                        chunkStart);
+                actual.dotProductRows(actualBatch, batchInput, weights, 0, columns, chunkStart, 8, chunkStart);
+                actual.dotProductRows(actualSingle, singleInput, weights, 0, columns, chunkStart, 8,
+                        chunkStart);
+            }
+
+            for (int column = 0; column < columns; column++) {
+                assertEquals(expectedBatch.get(rows - 1, column), actualBatch.get(rows - 1, column), 0.03f,
+                        candidate.name() + " batch oracle column=" + column);
+                assertEquals(expectedSingle.get(0, column), actualSingle.get(0, column), 0.03f,
+                        candidate.name() + " single oracle column=" + column);
+                assertEquals(actualBatch.get(rows - 1, column), actualSingle.get(0, column), 0.03f,
+                        candidate.name() + " batch versus single column=" + column);
+            }
+            assertEquals(8, metrics.meter(new MetricName("tensor2.dot_product_rows",
+                    Map.of(Lighter.TENSOR_OP_KEY, candidate.kind().name()))).getCount());
+            assertEquals(0, metrics.meter(new MetricName("tensor2.dot_product_rows",
+                    Map.of(Lighter.TENSOR_OP_KEY, TensorProviderKind.NAIVE.name()))).getCount());
+        }
+    }
+
+    @ParameterizedTest(name = "legacy i8-q4 projection {0}")
+    @MethodSource("legacyI8Q4ProjectionCases")
+    void i8Q4ProjectionMatchesLegacyTensorOperations(I8Q4Case c) {
+        Lighter tensorRefOps = new Lighter(new MetricRegistry(), Map.of(TensorProviderKind.PANAMA, new PanamaOps()));
+        try (FloatBufferTensor denseInput = denseInput(c.rows(), c.inputColumns(), c.seed());
+             FloatBufferTensor denseWeights = denseWeights(c.weightRows(), c.weightColumns(), c.seed() + 17);
+             Q8ByteBufferTensor legacyInput = new Q8ByteBufferTensor(denseInput);
+             Q4ByteBufferTensor legacyWeights = new Q4ByteBufferTensor(denseWeights);
+             FloatBufferTensor legacyOutput = new FloatBufferTensor(TensorShape.of(c.rows(), c.outputColumns()));
+             TensorRef inputF32 = tensorRefOps.allocate(DType.F32, TensorShape.of(c.rows(), c.inputColumns()));
+             TensorRef weightF32 = tensorRefOps.allocate(DType.F32, TensorShape.of(c.weightRows(), c.weightColumns()));
+             TensorRef tensorRefOutput = tensorRefOps.allocate(DType.F32, TensorShape.of(c.rows(), c.outputColumns()))) {
+            copy(denseInput, inputF32);
+            copy(denseWeights, weightF32);
+            try (TensorRef input = tensorRefOps.reshape(inputF32, DType.I8);
+                 TensorRef weights = tensorRefOps.reshape(weightF32, DType.Q4)) {
+                new NaiveTensorOperations().dotProductChunk(legacyOutput, legacyInput, legacyWeights,
+                        c.inputColumnStart(), c.columnLength(), c.weightRowStart(), c.weightRowCount());
+                tensorRefOps.dotProductRows(tensorRefOutput, input, weights, c.inputColumnStart(), c.weightColumnStart(),
+                        c.columnLength(), c.weightRowStart(), c.weightRowCount(), c.outputColumnStart());
+                for (int row = 0; row < c.rows(); row++) {
+                    for (int column = 0; column < c.outputColumns(); column++) {
+                        assertEquals(legacyOutput.get(row, column), tensorRefOutput.get(row, column), 0.03f,
+                                c + " row=" + row + " column=" + column);
+                    }
+                }
+            }
         }
     }
 
@@ -183,6 +430,39 @@ class Tensor2LighterDotProductRowsFuzzTest {
                 .map(c -> Arguments.of(c, candidate)));
     }
 
+    static Stream<Arguments> i8Q4Cases() {
+        List<I8Q4Case> cases = new ArrayList<>();
+        int id = 0;
+        int[] lengths = {32, 64, 96, 128, 160, 256, 768};
+        int[] rowCounts = {1, 3, 17, 33};
+        for (int length : lengths) {
+            int inputStart = (id % 2) * 32;
+            int weightStart = ((id + 1) % 2) * 32;
+            int weightRowCount = rowCounts[id % rowCounts.length];
+            cases.add(new I8Q4Case("i8_q4_" + id, 1 + id % 5, inputStart, weightStart, length,
+                    inputStart + length, weightStart + length, id % 5, weightRowCount, id % 7, id++));
+        }
+        return i8Q4Candidates().flatMap(candidate -> cases.stream().map(c -> Arguments.of(c, candidate)));
+    }
+
+    static Stream<Arguments> legacyI8Q4ProjectionCases() {
+        List<I8Q4Case> cases = new ArrayList<>();
+        int id = 0;
+        int[] lengths = {32, 64, 96, 128, 256, 768, 2048};
+        int[] rowCounts = {1, 3, 17, 33, 128};
+        int[] rows = {1, 4, 16};
+        for (int rowCount : rows) {
+            for (int length : lengths) {
+                int inputStart = (id % 3) * 32;
+                int weightStart = inputStart;
+                int weightRowCount = rowCounts[id % rowCounts.length];
+                cases.add(new I8Q4Case("legacy_i8_q4_" + id, rowCount, inputStart, weightStart, length,
+                        inputStart + length, weightStart + length, 0, weightRowCount, 0, id++));
+            }
+        }
+        return cases.stream().map(Arguments::of);
+    }
+
     private static Stream<Candidate> candidates() {
         return Stream.of(
                 new Candidate("PANAMA", true, () -> new Lighter(new io.dropwizard.metrics5.MetricRegistry(),
@@ -190,6 +470,22 @@ class Tensor2LighterDotProductRowsFuzzTest {
                 new Candidate("SIMD", NativeOps.isAvailable(), () -> new Lighter(new io.dropwizard.metrics5.MetricRegistry(),
                         Map.of(TensorProviderKind.SIMD, new NativeOps(), TensorProviderKind.PANAMA, new PanamaOps(),
                                 TensorProviderKind.NAIVE, new NaiveOps()))));
+    }
+
+    private static Stream<ProviderCandidate> i8Q4Candidates() {
+        return Stream.of(
+                new ProviderCandidate("PANAMA", true, TensorProviderKind.PANAMA, PanamaOps::new),
+                new ProviderCandidate("SIMD", NativeOps.isAvailable(), TensorProviderKind.SIMD, NativeOps::new));
+    }
+
+    private static Stream<ProviderCandidate> strictProductionCandidates() {
+        return Stream.of(
+                new ProviderCandidate("PANAMA", true, TensorProviderKind.PANAMA, PanamaOps::new),
+                new ProviderCandidate("SIMD", NativeOps.isAvailable(), TensorProviderKind.SIMD, NativeOps::new));
+    }
+
+    private static Stream<ProviderCandidate> strictPanamaCandidates() {
+        return Stream.of(new ProviderCandidate("PANAMA", true, TensorProviderKind.PANAMA, PanamaOps::new));
     }
 
     private static Lighter naiveOnly() {
@@ -206,12 +502,55 @@ class Tensor2LighterDotProductRowsFuzzTest {
         }
     }
 
+    private static void assertEqual(I8Q4Case c, TensorRef expected, TensorRef actual, float tolerance) {
+        for (int row = 0; row < c.rows(); row++) {
+            for (int column = 0; column < c.outputColumns(); column++) {
+                assertEquals(expected.underlying().get(row, column), actual.underlying().get(row, column), tolerance,
+                        c + " row=" + row + " column=" + column);
+            }
+        }
+    }
+
     private static void fill(TensorRef tensor, int seed) {
         for (int row = 0; row < tensor.shape().first(); row++) {
             for (int column = 0; column < tensor.shape().last(); column++) {
                 tensor.underlying().set(((row * 17 + column * 31 + seed) % 257 - 128) / 64.0f, row, column);
             }
         }
+    }
+
+    private static FloatBufferTensor denseInput(int rows, int columns, int seed) {
+        FloatBufferTensor tensor = new FloatBufferTensor(TensorShape.of(rows, columns));
+        for (int row = 0; row < rows; row++) {
+            for (int column = 0; column < columns; column++) {
+                tensor.set(((row * 17 + column * 31 + seed) % 257 - 128) / 64.0f, row, column);
+            }
+        }
+        return tensor;
+    }
+
+    private static FloatBufferTensor denseWeights(int rows, int columns, int seed) {
+        FloatBufferTensor tensor = new FloatBufferTensor(TensorShape.of(rows, columns));
+        for (int row = 0; row < rows; row++) {
+            for (int column = 0; column < columns; column++) {
+                tensor.set(((row * 13 + column * 19 + seed) % 251 - 125) / 96.0f, row, column);
+            }
+        }
+        return tensor;
+    }
+
+    private static void copy(FloatBufferTensor source, TensorRef target) {
+        for (int row = 0; row < source.shape().first(); row++) {
+            for (int column = 0; column < source.shape().last(); column++) {
+                target.set(source.get(row, column), row, column);
+            }
+        }
+    }
+
+    private static TensorRef quantizedInput(TensorRef dense, int seed) {
+        fill(dense, seed);
+        Lighter quantizer = new Lighter(new MetricRegistry(), Map.of(TensorProviderKind.PANAMA, new PanamaOps()));
+        return quantizer.reshape(dense, DType.I8);
     }
 
     private static Q8ByteBufferTensor q8Weights(int rows, int columns, int seed) {
@@ -260,6 +599,33 @@ class Tensor2LighterDotProductRowsFuzzTest {
         @Override
         public String toString() {
             return name;
+        }
+    }
+
+    private record ProviderCandidate(String name, boolean enabled, TensorProviderKind kind,
+            Supplier<TensorOps> operations) {
+        @Override
+        public String toString() {
+            return name;
+        }
+    }
+
+    private record I8Q4Case(String name, int rows, int inputColumnStart, int weightColumnStart, int columnLength,
+            int inputColumns, int weightColumns, int weightRowStart, int weightRowCount, int outputColumnStart,
+            int seed) {
+        int weightRows() {
+            return weightRowStart + weightRowCount;
+        }
+
+        int outputColumns() {
+            return outputColumnStart + weightRowCount + 2;
+        }
+
+        @Override
+        public String toString() {
+            return name + "[rows=" + rows + ", inputStart=" + inputColumnStart
+                    + ", weightStart=" + weightColumnStart + ", length=" + columnLength
+                    + ", weightRows=" + weightRowCount + "]";
         }
     }
 }

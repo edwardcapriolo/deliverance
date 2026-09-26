@@ -335,6 +335,69 @@ public class Tensor2Native extends Tensor2Native$shared {
         }
     }
 
+    private static class tensor2_dot_product_rows_i8_q4 {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.of(
+            Tensor2Native.C_INT,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT
+        );
+
+        public static final MemorySegment ADDR = SYMBOL_LOOKUP.findOrThrow("tensor2_dot_product_rows_i8_q4");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    public static FunctionDescriptor tensor2_dot_product_rows_i8_q4$descriptor() {
+        return tensor2_dot_product_rows_i8_q4.DESC;
+    }
+
+    public static MethodHandle tensor2_dot_product_rows_i8_q4$handle() {
+        return tensor2_dot_product_rows_i8_q4.HANDLE;
+    }
+
+    public static MemorySegment tensor2_dot_product_rows_i8_q4$address() {
+        return tensor2_dot_product_rows_i8_q4.ADDR;
+    }
+
+    public static int tensor2_dot_product_rows_i8_q4(MemorySegment result, MemorySegment input,
+            MemorySegment input_scales, MemorySegment weights, MemorySegment weight_scales, int result_rows,
+            int input_column_start, int weight_column_start, int column_length, int weight_row_start,
+            int weight_row_count, int result_column_start, int result_stride, int input_stride,
+            int input_scale_stride, int weight_stride, int weight_scale_stride) {
+        var mh$ = tensor2_dot_product_rows_i8_q4.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("tensor2_dot_product_rows_i8_q4", result, input, input_scales, weights,
+                        weight_scales, result_rows, input_column_start, weight_column_start, column_length,
+                        weight_row_start, weight_row_count, result_column_start, result_stride, input_stride,
+                        input_scale_stride, weight_stride, weight_scale_stride);
+            }
+            return (int)mh$.invokeExact(result, input, input_scales, weights, weight_scales, result_rows,
+                    input_column_start, weight_column_start, column_length, weight_row_start, weight_row_count,
+                    result_column_start, result_stride, input_stride, input_scale_stride, weight_stride,
+                    weight_scale_stride);
+        } catch (Error | RuntimeException ex) {
+            throw ex;
+        } catch (Throwable ex$) {
+            throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
     private static class tensor2_saxpy_f32 {
         public static final FunctionDescriptor DESC = FunctionDescriptor.of(
             Tensor2Native.C_INT,
@@ -742,4 +805,3 @@ public class Tensor2Native extends Tensor2Native$shared {
         }
     }
 }
-

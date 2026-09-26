@@ -324,7 +324,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         this.kvBlockManager = new KvBlockManager(metricRegistry, kvBufferCacheSettings, tensorAllocator);
         this.kvCacheManager = new KvCacheManager(c.numberOfLayers, c.contextLength,
                 c.kvLength / tensorParallelContext.size(), workingMemoryDType, kvBufferCacheSettings, tensorAllocator,
-                metricRegistry, false, configurableTensorProvider.get());
+                metricRegistry, false, configurableTensorProvider.get(), lighter);
         this.kvPrefixSnapshotCache = new KvPrefixSnapshotCache(c.numberOfLayers, c.contextLength,
                 c.kvLength / tensorParallelContext.size(), kvBufferCacheSettings.getBlockSize(),
                 kvBufferCacheSettings.getKvKeyDType(), kvBufferCacheSettings.getKvValueDType(),
@@ -447,7 +447,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         this.trackKvReadViewsEnabled = trackKvReadViewsEnabled;
         this.kvCacheManager = new KvCacheManager(config.numberOfLayers, config.contextLength,
                 config.kvLength / tensorParallelContext.size(), workingDType, kvBufferCacheSettings, tensorAllocator,
-                metricRegistry, trackKvReadViewsEnabled, configurableTensorProvider.get());
+                metricRegistry, trackKvReadViewsEnabled, configurableTensorProvider.get(), lighter);
     }
 
     public boolean isGpuPrefillEnabled() {
@@ -757,6 +757,10 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
 
     public void emitLayerDebug(int layerIndex, String stage, AbstractTensor hiddenStates) {
         layerDebugHook.accept(new LayerDebugEvent(layerIndex, stage, tensorParallelContext, hiddenStates));
+    }
+
+    public void emitLayerDebug(int layerIndex, String stage, TensorRef hiddenStates) {
+        emitLayerDebug(layerIndex, stage, new TensorRefBackedTensor(hiddenStates));
     }
 
     void emitGenerationDebug(GenerationDebugEvent event) {
@@ -1647,6 +1651,25 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         }
         InferenceProfiler.counter(metricRegistry, counterPrefix + ".copy_or_quantize").inc();
         return quantizeToWorkingQuantizedType(t);
+    }
+
+    /** Close-safe TensorRef equivalent of {@link #maybeQuantizeReadOnly(AbstractTensor, String)}. */
+    public TensorRefLease maybeQuantizeReadOnly(TensorRef t, String counterPrefix) {
+        if (t.dType() == workingQType) {
+            InferenceProfiler.counter(metricRegistry, counterPrefix + ".read_only").inc();
+            return new TensorRefLease(t, false);
+        }
+        InferenceProfiler.counter(metricRegistry, counterPrefix + ".copy_or_quantize").inc();
+        return new TensorRefLease(lighter.reshape(t, workingQType), true);
+    }
+
+    public record TensorRefLease(TensorRef tensor, boolean owned) implements AutoCloseable {
+        @Override
+        public void close() {
+            if (owned) {
+                tensor.close();
+            }
+        }
     }
 
     public PreTrainedTokenizer getTokenizer(){

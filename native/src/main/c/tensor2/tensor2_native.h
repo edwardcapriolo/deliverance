@@ -73,6 +73,25 @@ tensor2_status tensor2_dot_product_rows_bf16_q4(
         int weight_stride,
         int weight_scale_stride);
 
+tensor2_status tensor2_dot_product_rows_i8_q4(
+        float *result,
+        const int8_t *input,
+        const float *input_scales,
+        const uint8_t *weights,
+        const float *weight_scales,
+        int result_rows,
+        int input_column_start,
+        int weight_column_start,
+        int column_length,
+        int weight_row_start,
+        int weight_row_count,
+        int result_column_start,
+        int result_stride,
+        int input_stride,
+        int input_scale_stride,
+        int weight_stride,
+        int weight_scale_stride);
+
 tensor2_status tensor2_saxpy_f32(
         float alpha,
         const float *x,

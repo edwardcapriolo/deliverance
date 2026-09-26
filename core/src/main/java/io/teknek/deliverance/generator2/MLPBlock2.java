@@ -1,13 +1,21 @@
 package io.teknek.deliverance.generator2;
 
+import io.dropwizard.metrics5.Timer;
+import io.teknek.deliverance.generator.ForwardPhase;
+import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.tensor2.CompositeOps;
+import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.MultiplyAccumulate;
 import io.teknek.deliverance.tensor2.TensorRef;
 
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
+import java.util.function.Consumer;
+
 /** TensorRef-native SwiGLU MLP block used by Qwen3. */
-public final class MLPBlock2 {
+public class MLPBlock2 implements FeedForward2 {
     private final AbstractModel model;
     private final TensorRef gateWeights;
     private final TensorRef upWeights;
@@ -15,10 +23,17 @@ public final class MLPBlock2 {
     private final int hiddenLength;
     private final int embeddingLength;
     private final Lighter lighter;
-    private final CompositeOps compositeOps;
+    private final String gateWeightName;
+    private final String upWeightName;
+    private final String downWeightName;
 
     public MLPBlock2(AbstractModel model, TensorRef gateWeights, TensorRef upWeights, TensorRef downWeights,
             Lighter lighter) {
+        this(model, gateWeights, upWeights, downWeights, lighter, null, null, null);
+    }
+
+    public MLPBlock2(AbstractModel model, TensorRef gateWeights, TensorRef upWeights, TensorRef downWeights,
+            Lighter lighter, String gateWeightName, String upWeightName, String downWeightName) {
         this.model = java.util.Objects.requireNonNull(model, "model");
         this.gateWeights = java.util.Objects.requireNonNull(gateWeights, "gateWeights");
         this.upWeights = java.util.Objects.requireNonNull(upWeights, "upWeights");
@@ -26,27 +41,96 @@ public final class MLPBlock2 {
         this.hiddenLength = model.getConfig().hiddenLength;
         this.embeddingLength = model.getConfig().embeddingLength;
         this.lighter = java.util.Objects.requireNonNull(lighter, "lighter");
-        this.compositeOps = new CompositeOps(lighter, model.getMetricRegistry());
+        this.gateWeightName = gateWeightName;
+        this.upWeightName = upWeightName;
+        this.downWeightName = downWeightName;
+    }
+
+    @Override
+    public TensorRef forward(TensorRef input, Optional<Consumer<List<TensorRef>>> tensorReducer) {
+        return forward(input, tensorReducer, ForwardPhase.DECODE);
     }
 
     public TensorRef forward(TensorRef input) {
+        return forward(input, Optional.empty(), ForwardPhase.DECODE);
+    }
+
+    @Override
+    public TensorRef forward(TensorRef input, Optional<Consumer<List<TensorRef>>> tensorReducer, ForwardPhase phase) {
         int batchSize = input.shape().first();
+        if (model.getTensorParallelContext().enabled() && gateWeights.shape().first() != hiddenLength) {
+            throw new UnsupportedOperationException("TensorRef tensor-parallel MLP is not ported");
+        }
+        if (hasActiveLoraDelta()) {
+            throw new UnsupportedOperationException("TensorRef MLP LoRA is not ported");
+        }
         TensorRef gate = model.makeDenseTensorRef(batchSize, hiddenLength);
         TensorRef up = model.makeDenseTensorRef(batchSize, hiddenLength);
         TensorRef output = model.makeDenseTensorRef(batchSize, embeddingLength);
-        try {
-            lighter.dotProductRows(gate, input, gateWeights, 0, embeddingLength, 0, hiddenLength, 0);
-            lighter.dotProductRows(up, input, upWeights, 0, embeddingLength, 0, hiddenLength, 0);
-            compositeOps.silu(gate);
+        TensorRef downInput = null;
+        try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(), "mlpblock2.forward").time()) {
+            try (Timer.Context ignoredGate = InferenceProfiler.timer(model.getMetricRegistry(),
+                    "mlpblock2.gate_up_projection").time()) {
+                if (InferenceProfiler.isEnabled()) {
+                    InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock2.gate_input_" + input.dType()).inc();
+                    InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock2.gate_weight_" + gateWeights.dType()).inc();
+                    InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock2.up_weight_" + upWeights.dType()).inc();
+                }
+                model.runChunks("mlpblock2.gate_up_projection", 0, hiddenLength,
+                        model.primaryTensorOperations().parallelSplitSize(), Optional.empty(), (chunkStart, chunkSize) -> {
+                    lighter.dotProductRows(gate, input, gateWeights, 0, embeddingLength, chunkStart, chunkSize,
+                            chunkStart);
+                    lighter.dotProductRows(up, input, upWeights, 0, embeddingLength, chunkStart, chunkSize,
+                            chunkStart);
+                });
+            }
+            activate(gate, model.getConfig().activationFunction);
             lighter.multiplyAccumulate(new MultiplyAccumulate(up).into(gate).offsetAndLength(0, hiddenLength));
-            lighter.dotProductRows(output, gate, downWeights, 0, hiddenLength, 0, embeddingLength, 0);
+            downInput = gate.dType() == model.getWorkingQType()
+                    ? gate
+                    : lighter.reshape(gate, model.getWorkingQType());
+            if (InferenceProfiler.isEnabled()) {
+                InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock2.down_input_" + downInput.dType()).inc();
+                InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock2.down_weight_" + downWeights.dType()).inc();
+            }
+            TensorRef downInputForChunks = downInput;
+            try (Timer.Context ignoredDown = InferenceProfiler.timer(model.getMetricRegistry(),
+                    "mlpblock2.down_projection").time()) {
+                model.runChunks("mlpblock2.down_projection", 0, embeddingLength,
+                        model.primaryTensorOperations().parallelSplitSize(), Optional.empty(), (chunkStart, chunkSize) ->
+                                lighter.dotProductRows(output, downInputForChunks, downWeights, 0, hiddenLength,
+                                        chunkStart, chunkSize, chunkStart));
+            }
+            tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(output)));
             return output;
         } catch (RuntimeException | Error e) {
             output.close();
             throw e;
         } finally {
+            if (downInput != null && downInput != gate) {
+                downInput.close();
+            }
             gate.close();
             up.close();
         }
+    }
+
+    private void activate(TensorRef target, ActivationFunction.Type activationFunction) {
+        int batchSize = target.shape().first();
+        model.runChunks("mlpblock2.activation", 0, hiddenLength, model.primaryTensorOperations().parallelSplitSize(),
+                Optional.empty(), (chunkStart, chunkSize) -> {
+            int chunkEnd = chunkStart + chunkSize;
+            for (int column = chunkStart; column < chunkEnd; column++) {
+                for (int row = 0; row < batchSize; row++) {
+                    target.set(ActivationFunction.eval(activationFunction, target.get(row, column)), row, column);
+                }
+            }
+        });
+    }
+
+    private boolean hasActiveLoraDelta() {
+        return gateWeightName != null && model.activeLoraDeltaFor(gateWeightName).isPresent()
+                || upWeightName != null && model.activeLoraDeltaFor(upWeightName).isPresent()
+                || downWeightName != null && model.activeLoraDeltaFor(downWeightName).isPresent();
     }
 }

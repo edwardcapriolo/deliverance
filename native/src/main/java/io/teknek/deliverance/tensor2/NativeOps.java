@@ -64,9 +64,9 @@ public class NativeOps implements TensorOps {
             return Either.Left(OpSupport.Unsupported);
         }
         int status = Tensor2Native.tensor2_batch_dot_f32_f32(
-                result.underlying().getMemorySegment(),
-                a.underlying().getMemorySegment(),
-                b.underlying().getMemorySegment(),
+                baseSegment(result),
+                baseSegment(a),
+                baseSegment(b),
                 (int) result.shape().first(),
                 operation.aRowOffset(),
                 operation.aColumnOffset(),
@@ -93,18 +93,36 @@ public class NativeOps implements TensorOps {
             int inputColumnStart, int weightColumnStart, int columnLength, int weightRowStart,
             int weightRowCount, int outputColumnStart) {
         if (!loaded || (output.dType() != DType.F32 && output.dType() != DType.BF16)
-                || (input.dType() != DType.F32 && input.dType() != DType.BF16)) {
+                || (input.dType() != DType.F32 && input.dType() != DType.BF16 && input.dType() != DType.I8)) {
             return Either.Left(OpSupport.Unsupported);
         }
         try {
+            if (input.dType() == DType.I8 && weights.dType() == DType.Q4) {
+                TensorRef inputScales = Q8Layout.scale(input);
+                TensorRef weightScales = Q4Layout.scale(weights);
+                if (output.dType() != DType.F32 || inputScales == null || weightScales == null
+                        || inputColumnStart % Q8Layout.BLOCK_SIZE != 0
+                        || weightColumnStart % Q4Layout.BLOCK_SIZE != 0
+                        || columnLength % Q8Layout.BLOCK_SIZE != 0) {
+                    return Either.Left(OpSupport.Unsupported);
+                }
+                int status = Tensor2Native.tensor2_dot_product_rows_i8_q4(
+                        baseSegment(output), baseSegment(input), baseSegment(inputScales), baseSegment(weights),
+                        baseSegment(weightScales), (int) output.shape().first(), inputColumnStart, weightColumnStart,
+                        columnLength, weightRowStart, weightRowCount, outputColumnStart, output.stride(), input.stride(),
+                        inputScales.stride(), weights.stride(), weightScales.stride());
+                return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
+            }
+            if (input.dType() == DType.I8) {
+                return Either.Left(OpSupport.Unsupported);
+            }
             if (input.dType() == DType.BF16 && weights.dType() == DType.Q4) {
                 TensorRef scales = Q4Layout.scale(weights);
                 if (scales == null) {
                     return Either.Left(OpSupport.Unsupported);
                 }
                 int status = Tensor2Native.tensor2_dot_product_rows_bf16_q4(
-                        output.underlying().getMemorySegment(), input.underlying().getMemorySegment(),
-                        weights.underlying().getMemorySegment(), scales.underlying().getMemorySegment(),
+                        baseSegment(output), baseSegment(input), baseSegment(weights), baseSegment(scales),
                         output.dType() == DType.BF16 ? 1 : 0, (int) output.shape().first(), inputColumnStart,
                         weightColumnStart, columnLength, weightRowStart, weightRowCount, outputColumnStart,
                         output.stride(), input.stride(), weights.stride(), scales.stride());
@@ -112,12 +130,11 @@ public class NativeOps implements TensorOps {
             }
             if (weights.dType() == DType.Q4) {
                 TensorRef scales = Q4Layout.scale(weights);
-                if (scales == null) {
+                if (output.dType() != DType.F32 || input.dType() != DType.F32 || scales == null) {
                     return Either.Left(OpSupport.Unsupported);
                 }
                 int status = Tensor2Native.tensor2_dot_product_rows_f32_q4(
-                        output.underlying().getMemorySegment(), input.underlying().getMemorySegment(),
-                        weights.underlying().getMemorySegment(), scales.underlying().getMemorySegment(),
+                        baseSegment(output), baseSegment(input), baseSegment(weights), baseSegment(scales),
                         (int) output.shape().first(), inputColumnStart, weightColumnStart, columnLength,
                         weightRowStart, weightRowCount, outputColumnStart, output.stride(), input.stride(),
                         weights.stride(), scales.stride());
@@ -125,14 +142,14 @@ public class NativeOps implements TensorOps {
             }
             if (weights.dType() == DType.I8) {
                 TensorRef scales = Q8Layout.scale(weights);
-                if (scales == null || inputColumnStart != weightColumnStart
+                if (output.dType() != DType.F32 || input.dType() != DType.F32 || scales == null
+                        || inputColumnStart != weightColumnStart
                         || inputColumnStart % Q8Layout.BLOCK_SIZE != 0
                         || columnLength % Q8Layout.BLOCK_SIZE != 0) {
                     return Either.Left(OpSupport.Unsupported);
                 }
                 int status = Tensor2Native.tensor2_dot_product_rows_f32_q8(
-                        output.underlying().getMemorySegment(), input.underlying().getMemorySegment(),
-                        weights.underlying().getMemorySegment(), scales.underlying().getMemorySegment(),
+                        baseSegment(output), baseSegment(input), baseSegment(weights), baseSegment(scales),
                         (int) output.shape().first(), inputColumnStart, columnLength, weightRowStart, weightRowCount,
                         outputColumnStart, output.stride(), input.stride(), weights.stride(), scales.stride());
                 return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
@@ -140,12 +157,19 @@ public class NativeOps implements TensorOps {
             if (weights.dType() != DType.F32) {
                 return Either.Left(OpSupport.Unsupported);
             }
-            int status = Tensor2Native.tensor2_dot_product_rows_f32_f32(
-                    output.underlying().getMemorySegment(), input.underlying().getMemorySegment(),
-                    weights.underlying().getMemorySegment(), (int) output.shape().first(), inputColumnStart, columnLength,
-                    weightRowStart, weightRowCount, outputColumnStart, output.stride(), input.stride(),
-                    weights.stride());
-            return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
+            if (output.dType() != DType.F32 || input.dType() != DType.F32) {
+                return Either.Left(OpSupport.Unsupported);
+            }
+            return batchDotProduct(new BatchDotProduct()
+                    .result(output)
+                    .a(input)
+                    .b(weights)
+                    .aColumnOffset(inputColumnStart)
+                    .bColumnOffset(weightColumnStart)
+                    .columnLength(columnLength)
+                    .resultRowOffset(outputColumnStart - weightRowStart)
+                    .bRowOffset(weightRowStart)
+                    .rowChunkSize(weightRowCount));
         } catch (LinkageError | RuntimeException e) {
             return Either.Left(OpSupport.Unsupported);
         }
@@ -158,7 +182,9 @@ public class NativeOps implements TensorOps {
             return Either.Left(OpSupport.Unsupported);
         }
         try {
-            int status = Tensor2Native.tensor2_saxpy_f32(alpha, x.memorySegment(), y.memorySegment(),
+            MemorySegment xSegment = x.memorySegment().asSlice(x.memorySegmentOffset(x.shape().getOffset(0, 0)));
+            MemorySegment ySegment = y.memorySegment().asSlice(y.memorySegmentOffset(y.shape().getOffset(0, 0)));
+            int status = Tensor2Native.tensor2_saxpy_f32(alpha, xSegment, ySegment,
                     xOffset, yOffset, length);
             if (status != Tensor2Native.TENSOR2_OK()) {
                 return Either.Left(OpSupport.Unsupported);
@@ -177,8 +203,12 @@ public class NativeOps implements TensorOps {
             return Either.Left(OpSupport.Unsupported);
         }
         try {
-            int status = Tensor2Native.tensor2_saxpy_f32_batch(alpha.memorySegment(), x.memorySegment(),
-                    y.memorySegment(), xOffset, yOffset, length, alphaOffset, xRowOffset, batchSize,
+            MemorySegment alphaSegment = alpha.memorySegment().asSlice(
+                    alpha.memorySegmentOffset(alpha.shape().getOffset(0, 0)));
+            MemorySegment xSegment = x.memorySegment().asSlice(x.memorySegmentOffset(x.shape().getOffset(0, 0)));
+            MemorySegment ySegment = y.memorySegment().asSlice(y.memorySegmentOffset(y.shape().getOffset(0, 0)));
+            int status = Tensor2Native.tensor2_saxpy_f32_batch(alphaSegment, xSegment,
+                    ySegment, xOffset, yOffset, length, alphaOffset, xRowOffset, batchSize,
                     x.stride());
             if (status != Tensor2Native.TENSOR2_OK()) {
                 return Either.Left(OpSupport.Unsupported);
@@ -197,10 +227,10 @@ public class NativeOps implements TensorOps {
         try {
             int status;
             if (target.dType() == DType.F32) {
-                status = Tensor2Native.tensor2_scale_f32(target.underlying().getMemorySegment(), factor,
+                status = Tensor2Native.tensor2_scale_f32(baseSegment(target), factor,
                         (int) target.shape().first(), offset, length, target.stride());
             } else if (target.dType() == DType.BF16) {
-                status = Tensor2Native.tensor2_scale_bf16(target.underlying().getMemorySegment(), factor,
+                status = Tensor2Native.tensor2_scale_bf16(baseSegment(target), factor,
                         (int) target.shape().first(), offset, length, target.stride());
             } else {
                 return Either.Left(OpSupport.Unsupported);
@@ -241,5 +271,9 @@ public class NativeOps implements TensorOps {
 
     private static long memoryOffset(TensorRef tensor, int row, int column) {
         return tensor.underlying().getMemorySegmentOffset(tensor.shape().getOffset(row, column));
+    }
+
+    private static MemorySegment baseSegment(TensorRef tensor) {
+        return tensor.memorySegment().asSlice(tensor.memorySegmentOffset(tensor.shape().getOffset(0, 0)));
     }
 }

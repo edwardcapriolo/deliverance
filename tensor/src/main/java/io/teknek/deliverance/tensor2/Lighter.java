@@ -16,6 +16,7 @@ import java.util.Map;
 import java.nio.ByteBuffer;
 import java.lang.foreign.MemorySegment;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 public class Lighter {
 
@@ -28,6 +29,16 @@ public class Lighter {
     private final MetricRegistry metricRegistry;
     //something like this must be initialized  so later we can pick the right one
     private final EnumMap<TensorProviderKind, TensorOps> tensorOperations = new EnumMap<>(TensorProviderKind.class);
+    private volatile Consumer<ProviderEvent> providerObserver = ignored -> { };
+
+    public record ProviderEvent(String operation, TensorProviderKind kind, boolean supported,
+            DType outputType, DType inputType, DType weightType, Map<String, String> tags) {
+        public ProviderEvent {
+            java.util.Objects.requireNonNull(operation, "operation");
+            java.util.Objects.requireNonNull(kind, "kind");
+            tags = Collections.unmodifiableMap(new LinkedHashMap<>(java.util.Objects.requireNonNull(tags, "tags")));
+        }
+    }
 
     public record ProviderSelection(Lighter lighter, Map<TensorProviderKind, TensorOps> providers) {
         public ProviderSelection {
@@ -63,6 +74,10 @@ public class Lighter {
     public void putTensorOperations(TensorProviderKind kind, TensorOps ops) {
         tensorOperations.put(java.util.Objects.requireNonNull(kind, "kind"),
                 java.util.Objects.requireNonNull(ops, "ops"));
+    }
+
+    public void setProviderObserver(Consumer<ProviderEvent> providerObserver) {
+        this.providerObserver = java.util.Objects.requireNonNull(providerObserver, "providerObserver");
     }
 
     public Map<TensorProviderKind, TensorOps> tensorOperations() {
@@ -119,6 +134,41 @@ public class Lighter {
         }
     }
 
+    /** Copies logical elements using the same offset/length contract as {@code AbstractTensor.copyFrom}. */
+    public void copyFrom(TensorRef source, TensorRef target, int sourceOffset, int targetOffset, int length) {
+        Preconditions.checkArgument(source != null && target != null, "Source and target tensors must be set");
+        Preconditions.checkArgument(source.dType() == target.dType(), "Tensor dtypes must match");
+        Preconditions.checkArgument(sourceOffset >= 0 && targetOffset >= 0 && length >= 0,
+                "Copy offsets and length must be non-negative");
+        Preconditions.checkArgument((long) sourceOffset + length <= source.shape().size(),
+                "Source copy range out of bounds");
+        Preconditions.checkArgument((long) targetOffset + length <= target.shape().size(),
+                "Target copy range out of bounds");
+        long bytes = source.dType() == DType.Q4
+                ? length / 2L
+                : (long) length * source.dType().size();
+        target.memorySegment().asSlice(target.memorySegmentOffset(targetOffset), bytes)
+                .copyFrom(source.memorySegment().asSlice(source.memorySegmentOffset(sourceOffset), bytes));
+        if (source.dType() == DType.I8) {
+            copyScaleRange(Q8Layout.scale(source), Q8Layout.scale(target), sourceOffset, targetOffset,
+                    length, Q8Layout.BLOCK_SIZE);
+        } else if (source.dType() == DType.Q4) {
+            copyScaleRange(Q4Layout.scale(source), Q4Layout.scale(target), sourceOffset, targetOffset,
+                    length, Q4Layout.BLOCK_SIZE);
+        }
+    }
+
+    private void copyScaleRange(TensorRef source, TensorRef target, int sourceOffset, int targetOffset,
+            int length, int blockSize) {
+        Preconditions.checkArgument(source != null && target != null, "Quantized scale sidecars are required");
+        int sourceScaleOffset = sourceOffset / blockSize;
+        int targetScaleOffset = targetOffset / blockSize;
+        int scaleLength = length / blockSize;
+        long bytes = (long) scaleLength * DType.F32.size();
+        target.memorySegment().asSlice(target.memorySegmentOffset(targetScaleOffset), bytes)
+                .copyFrom(source.memorySegment().asSlice(source.memorySegmentOffset(sourceScaleOffset), bytes));
+    }
+
     /** Copies a raw F32 scale tensor into a quantized tensor's scale sidecar. */
     public void copyScale(TensorRef sourceScale, TensorRef quantizedTarget) {
         Preconditions.checkArgument(quantizedTarget.dType() == DType.I8 || quantizedTarget.dType() == DType.Q4,
@@ -141,11 +191,25 @@ public class Lighter {
         Preconditions.checkArgument(input != null, "Input tensor must be set");
         Preconditions.checkArgument(outputDType != null, "Output dtype must be set");
         TensorRef output = allocate(outputDType, input.shape(), input.device());
+        try {
+            reshape(input, output);
+            return output;
+        } catch (RuntimeException e) {
+            output.close();
+            throw e;
+        }
+    }
+
+    public void reshape(TensorRef input, TensorRef output) {
+        Preconditions.checkArgument(input != null, "Input tensor must be set");
+        Preconditions.checkArgument(output != null, "Output tensor must be set");
+        Preconditions.checkArgument(input.shape().equals(output.shape()), "Input and output shapes must match");
+        Preconditions.checkArgument(input.device().equals(output.device()), "Input and output devices must match");
         for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
             Map<String, String> metricTags = new HashMap<>();
             metricTags.put(TENSOR_OP_KEY, entry.getKey().name());
             metricTags.put("input_type", input.dType().name());
-            metricTags.put("output_type", outputDType.name());
+            metricTags.put("output_type", output.dType().name());
 
             Timer timer = metricRegistry.timer(new MetricName("tensor2.reshape.time", metricTags));
             long startNanos = System.nanoTime();
@@ -153,12 +217,58 @@ public class Lighter {
             if (result.isRight()) {
                 metricRegistry.meter(new MetricName("tensor2.reshape", metricTags)).mark();
                 timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
-                return output;
+                observe("reshape", entry.getKey(), true, output.dType(), input.dType(), null, Map.of());
+                return;
             }
+            metricRegistry.meter(new MetricName("tensor2.reshape.unsupported", metricTags)).mark();
+            observe("reshape", entry.getKey(), false, output.dType(), input.dType(), null, Map.of());
         }
-        output.close();
         throw new IllegalStateException("No tensor operations support reshape from " + input.dType() + " to "
-                + outputDType);
+                + output.dType());
+    }
+
+    public void copy(TensorRef source, int sourceOffset, TensorRef destination, int destinationOffset, int length) {
+        Preconditions.checkArgument(source != null, "Source tensor must be set");
+        Preconditions.checkArgument(destination != null, "Destination tensor must be set");
+        Preconditions.checkArgument(source.dType() == destination.dType(), "Source and destination dtype must match");
+        Preconditions.checkArgument(sourceOffset >= 0 && destinationOffset >= 0 && length >= 0,
+                "Copy offsets and length must be non-negative");
+        Preconditions.checkArgument(sourceOffset + length <= source.shape().size(), "Source copy range out of bounds");
+        Preconditions.checkArgument(destinationOffset + length <= destination.shape().size(),
+                "Destination copy range out of bounds");
+        long bytes = switch (source.dType()) {
+            case Q4 -> {
+                Preconditions.checkArgument(sourceOffset % 2 == 0 && destinationOffset % 2 == 0 && length % 2 == 0,
+                        "Q4 copy ranges must be byte-aligned");
+                yield length / 2L;
+            }
+            default -> (long) length * source.dType().size();
+        };
+        destination.memorySegment().asSlice(destination.memorySegmentOffset(destinationOffset), bytes)
+                .copyFrom(source.memorySegment().asSlice(source.memorySegmentOffset(sourceOffset), bytes));
+        if (source.dType() == DType.I8) {
+            copyQuantizedScale(Q8Layout.scale(source), Q8Layout.scale(destination), Q8Layout.BLOCK_SIZE,
+                    sourceOffset, destinationOffset, length);
+        } else if (source.dType() == DType.Q4) {
+            copyQuantizedScale(Q4Layout.scale(source), Q4Layout.scale(destination), Q4Layout.BLOCK_SIZE,
+                    sourceOffset, destinationOffset, length);
+        }
+    }
+
+    private void copyQuantizedScale(TensorRef sourceScale, TensorRef destinationScale, int blockSize,
+            int sourceOffset, int destinationOffset, int length) {
+        if (sourceScale == null || destinationScale == null) {
+            return;
+        }
+        Preconditions.checkArgument(sourceOffset % blockSize == 0 && destinationOffset % blockSize == 0
+                && length % blockSize == 0, "Quantized scale copy ranges must be block-aligned");
+        int sourceScaleOffset = sourceOffset / blockSize;
+        int destinationScaleOffset = destinationOffset / blockSize;
+        int scaleLength = length / blockSize;
+        destinationScale.memorySegment().asSlice(destinationScale.memorySegmentOffset(destinationScaleOffset),
+                (long) scaleLength * DType.F32.size())
+                .copyFrom(sourceScale.memorySegment().asSlice(sourceScale.memorySegmentOffset(sourceScaleOffset),
+                        (long) scaleLength * DType.F32.size()));
     }
 
     private Long allocatedBytes(DType dType, TensorShape shape) {
@@ -206,8 +316,13 @@ public class Lighter {
             if (result.isRight()) {
                 metricRegistry.meter(new MetricName("tensor2.multiply_accumulate", metricTags)).mark();
                 timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+                observe("multiply_accumulate", entry.getKey(), true, destination.dType(), destination.dType(),
+                        source.dType(), tags);
                 return;
             }
+            metricRegistry.meter(new MetricName("tensor2.multiply_accumulate.unsupported", metricTags)).mark();
+            observe("multiply_accumulate", entry.getKey(), false, destination.dType(), destination.dType(),
+                    source.dType(), tags);
         }
         throw new IllegalStateException("No tensor operations support multiplyAccumulate");
     }
@@ -253,8 +368,11 @@ public class Lighter {
             if (outcome.isRight()) {
                 metricRegistry.meter(new MetricName("tensor2.batch_dot_product", metricTags)).mark();
                 timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+                observe("batch_dot_product", entry.getKey(), true, result.dType(), a.dType(), b.dType(), tags);
                 return;
             }
+            metricRegistry.meter(new MetricName("tensor2.batch_dot_product.unsupported", metricTags)).mark();
+            observe("batch_dot_product", entry.getKey(), false, result.dType(), a.dType(), b.dType(), tags);
         }
         throw new IllegalStateException("No tensor operations support batchDotProduct");
     }
@@ -262,12 +380,19 @@ public class Lighter {
     public void dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
             int inputStart, int inputLength, int weightRowStart, int weightRowCount, int outputColumnStart) {
         dotProductRows(output, input, weights, inputStart, inputStart, inputLength, weightRowStart,
-                weightRowCount, outputColumnStart);
+                weightRowCount, outputColumnStart, Map.of());
     }
 
     public void dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
             int inputColumnStart, int weightColumnStart, int columnLength, int weightRowStart,
             int weightRowCount, int outputColumnStart) {
+        dotProductRows(output, input, weights, inputColumnStart, weightColumnStart, columnLength, weightRowStart,
+                weightRowCount, outputColumnStart, Map.of());
+    }
+
+    public void dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
+            int inputColumnStart, int weightColumnStart, int columnLength, int weightRowStart,
+            int weightRowCount, int outputColumnStart, Map<String, String> tags) {
         Preconditions.checkArgument(output != null, "Output tensor must be set");
         Preconditions.checkArgument(input != null, "Input tensor must be set");
         Preconditions.checkArgument(weights != null, "Weights tensor must be set");
@@ -286,13 +411,22 @@ public class Lighter {
                         && outputColumnStart + weightRowCount <= output.shape().last(),
                 "Output column range is out of bounds");
 
-        for (TensorOps operations : tensorOperations.values()) {
-            Either<OpSupport, Void> outcome = operations.dotProductRows(output, input, weights,
+        for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
+            Map<String, String> metricTags = new HashMap<>(tags);
+            metricTags.put(TENSOR_OP_KEY, entry.getKey().name());
+            Timer timer = metricRegistry.timer(new MetricName("tensor2.dot_product_rows.time", metricTags));
+            long startNanos = System.nanoTime();
+            Either<OpSupport, Void> outcome = entry.getValue().dotProductRows(output, input, weights,
                     inputColumnStart, weightColumnStart, columnLength, weightRowStart, weightRowCount,
                     outputColumnStart);
             if (outcome.isRight()) {
+                metricRegistry.meter(new MetricName("tensor2.dot_product_rows", metricTags)).mark();
+                timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+                observe("dot_product_rows", entry.getKey(), true, output.dType(), input.dType(), weights.dType(), tags);
                 return;
             }
+            metricRegistry.meter(new MetricName("tensor2.dot_product_rows.unsupported", metricTags)).mark();
+            observe("dot_product_rows", entry.getKey(), false, output.dType(), input.dType(), weights.dType(), tags);
         }
         throw new IllegalStateException("No tensor operations support dotProductRows");
     }
@@ -305,10 +439,20 @@ public class Lighter {
                         && xOffset + length <= x.shape().last()
                         && yOffset + length <= y.shape().last(),
                 "SAXPY range is out of bounds");
-        for (TensorOps operations : tensorOperations.values()) {
-            if (operations.saxpy(alpha, x, y, xOffset, yOffset, length).isRight()) {
+        for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
+            Map<String, String> metricTags = new HashMap<>();
+            metricTags.put(TENSOR_OP_KEY, entry.getKey().name());
+            metricTags.put("mode", "scalar");
+            Timer timer = metricRegistry.timer(new MetricName("tensor2.saxpy.time", metricTags));
+            long startNanos = System.nanoTime();
+            if (entry.getValue().saxpy(alpha, x, y, xOffset, yOffset, length).isRight()) {
+                metricRegistry.meter(new MetricName("tensor2.saxpy", metricTags)).mark();
+                timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+                observe("saxpy", entry.getKey(), true, y.dType(), x.dType(), null, Map.of("mode", "scalar"));
                 return;
             }
+            metricRegistry.meter(new MetricName("tensor2.saxpy.unsupported", metricTags)).mark();
+            observe("saxpy", entry.getKey(), false, y.dType(), x.dType(), null, Map.of("mode", "scalar"));
         }
         throw new IllegalStateException("No tensor operations support saxpy");
     }
@@ -328,11 +472,21 @@ public class Lighter {
                         && xOffset + length <= x.shape().last()
                         && yOffset + length <= y.shape().last(),
                 "SAXPY range is out of bounds");
-        for (TensorOps operations : tensorOperations.values()) {
-            if (operations.saxpy(alpha, x, y, xOffset, yOffset, length, alphaOffset, xRowOffset,
+        for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
+            Map<String, String> metricTags = new HashMap<>();
+            metricTags.put(TENSOR_OP_KEY, entry.getKey().name());
+            metricTags.put("mode", "batch");
+            Timer timer = metricRegistry.timer(new MetricName("tensor2.saxpy.time", metricTags));
+            long startNanos = System.nanoTime();
+            if (entry.getValue().saxpy(alpha, x, y, xOffset, yOffset, length, alphaOffset, xRowOffset,
                     batchSize).isRight()) {
+                metricRegistry.meter(new MetricName("tensor2.saxpy", metricTags)).mark();
+                timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+                observe("saxpy", entry.getKey(), true, y.dType(), x.dType(), alpha.dType(), Map.of("mode", "batch"));
                 return;
             }
+            metricRegistry.meter(new MetricName("tensor2.saxpy.unsupported", metricTags)).mark();
+            observe("saxpy", entry.getKey(), false, y.dType(), x.dType(), alpha.dType(), Map.of("mode", "batch"));
         }
         throw new IllegalStateException("No tensor operations support batch saxpy");
     }
@@ -379,9 +533,16 @@ public class Lighter {
         if (result.isRight()) {
             metricRegistry.meter(new MetricName("tensor2.scale", metricTags)).mark();
             timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+            observe("scale", kind, true, target.dType(), target.dType(), null, tags);
             return true;
         }
+        observe("scale", kind, false, target.dType(), target.dType(), null, tags);
         return false;
+    }
+
+    private void observe(String operation, TensorProviderKind kind, boolean supported, DType outputType,
+            DType inputType, DType weightType, Map<String, String> tags) {
+        providerObserver.accept(new ProviderEvent(operation, kind, supported, outputType, inputType, weightType, tags));
     }
 
     public TensorRef to(TensorRef a, String device){

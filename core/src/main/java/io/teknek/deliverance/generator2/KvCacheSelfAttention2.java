@@ -5,6 +5,8 @@ import io.dropwizard.metrics5.MetricRegistry;
 import io.dropwizard.metrics5.Timer;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.InferenceProfiler;
+import io.teknek.deliverance.DType;
+import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.kv.CacheExecutionMode;
 import io.teknek.deliverance.tensor.kv.AttentionPattern;
 import io.teknek.deliverance.tensor.kv.KvCacheSession;
@@ -15,11 +17,14 @@ import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.generator.ForwardPhase;
 
 import java.util.List;
+import java.util.Collections;
 import java.util.Optional;
+import java.util.concurrent.ForkJoinTask;
 import java.util.function.Consumer;
 
 /** TensorRef-native base for self-attention backed by KV cache v2. */
 public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
+    private static final int DEFAULT_GROUPED_DECODE_QKV_SPLIT_SIZE = 8;
     protected final AbstractModel model;
     protected final int layerIndex;
     protected final io.teknek.deliverance.safetensors.Config config;
@@ -39,6 +44,7 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
     protected final int headGroupSize;
     protected final float attentionScale;
     protected final Lighter lighter;
+    private final PackedBlockAttention2 packedBlockAttention;
 
     protected KvCacheSelfAttention2(AbstractModel model, int layerIndex, TensorRef queryAttentionWeights,
             TensorRef keyAttentionWeights, TensorRef valueAttentionWeights, TensorRef outputProjectionWeights,
@@ -69,6 +75,7 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
         this.attentionScale = config.attentionMultiplier != null
                 ? config.attentionMultiplier
                 : (float) (1.0 / StrictMath.sqrt(config.headSize));
+        this.packedBlockAttention = new PackedBlockAttention2(model, metricRegistry, layerIndex);
     }
 
     @Override
@@ -87,17 +94,23 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
 
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
                 "kvcacheselfattention2.forward").time()) {
+            model.emitLayerDebug(layerIndex, "attention_projection_input", input);
             TensorRef[] qkv = projectQkv(input, phase);
             try {
                 normalizeQueryKey(qkv[0], qkv[1]);
+                model.emitLayerDebug(layerIndex, "query_normalized", qkv[0]);
+                model.emitLayerDebug(layerIndex, "key_normalized", qkv[1]);
                 applyRotaryEmbedding(qkv[0], qkv[1], startPosition);
+                model.emitLayerDebug(layerIndex, "query_rope", qkv[0]);
+                model.emitLayerDebug(layerIndex, "key_rope", qkv[1]);
                 if (writesCache(mode)) {
                     writeKvRows(kvSession, mode, qkv[1], qkv[2], startPosition);
                 }
                 TensorRef attended = attend(qkv[0], qkv[1], qkv[2], kvSession, startPosition, mode,
                         tensorReducer, phase);
                 try {
-                    return projectOutput(attended, phase);
+                    model.emitLayerDebug(layerIndex, "attention_value", attended);
+                    return projectOutput(attended, tensorReducer, phase);
                 } finally {
                     attended.close();
                 }
@@ -117,53 +130,63 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
             KvCacheSession kvSession, int startPosition, CacheExecutionMode mode,
             Optional<Consumer<List<TensorRef>>> tensorReducer, ForwardPhase phase) {
         int batchSize = query.shape().first();
-        int capacity = startPosition + batchSize;
-        TensorRef packedKeys = model.makeDenseTensorRef(capacity, kvLength);
-        TensorRef packedValues = model.makeDenseTensorRef(capacity, kvLength);
-        TensorRef scores = model.makeDenseTensorRef(batchSize, capacity);
         TensorRef attended = model.makeDenseTensorRef(batchSize, attentionLength);
-        attended.memorySegment().fill((byte) 0);
-        try (KvReadView readView = kvSession.readView(layerIndex, startPosition, AttentionPattern.CAUSAL)) {
-            TensorRef prefixKeys = readView.copyVisibleKeysRef();
-            TensorRef prefixValues = readView.copyVisibleValuesRef();
-            try {
-                for (int row = 0; row < startPosition; row++) {
-                    copyRow(prefixKeys, row, packedKeys, row, kvLength);
-                    copyRow(prefixValues, row, packedValues, row, kvLength);
-                }
-                for (int row = 0; row < batchSize; row++) {
-                    copyRow(currentKeys, row, packedKeys, startPosition + row, kvLength);
-                    copyRow(currentValues, row, packedValues, startPosition + row, kvLength);
-                }
-
-                for (int head = 0; head < numberOfHeads; head++) {
-                    int queryOffset = head * config.headSize;
-                    int kvOffset = (head / headGroupSize) * config.headSize;
-                    lighter.dotProductRows(scores, query, packedKeys, queryOffset, kvOffset, config.headSize,
-                            0, capacity, 0);
-                    for (int row = 0; row < batchSize; row++) {
-                        int visibleLength = startPosition + row + 1;
-                        try (TensorRef scoreRow = scores.slice(row); TensorRef outputRow = attended.slice(row)) {
-                            compositeOps.scaledSoftMax(new io.teknek.deliverance.tensor2.ScaledSoftMax(attentionScale)
-                                    .target(scoreRow)
-                                    .offsetAndLength(0, visibleLength));
-                            lighter.saxpy(scoreRow, packedValues, outputRow, kvOffset, queryOffset,
-                                    config.headSize, 0, 0, visibleLength);
-                        }
+        try {
+            if (startPosition == 0) {
+                packedBlockAttention.forward(attended, query, currentKeys, currentValues, 0, batchSize, numberOfHeads,
+                        numberOfKeyValueHeads, config.headSize, attentionScale, config.attnLogitSoftCapping,
+                        mode != CacheExecutionMode.DENOISE_BLOCK_NO_UPDATE);
+                return attended;
+            }
+            try (KvReadView readView = kvSession.readView(layerIndex, startPosition, AttentionPattern.CAUSAL)) {
+                int capacity = startPosition + batchSize;
+                try (TensorRef packedKeys = lighter.allocate(readView.keyDType(), TensorShape.of(capacity, kvLength));
+                     TensorRef packedValues = lighter.allocate(readView.valueDType(), TensorShape.of(capacity, kvLength))) {
+                    try (Timer.Context ignoredPack = InferenceProfiler.timer(metricRegistry,
+                            "kvcacheselfattention2.pack_kv").time()) {
+                        copyPrefixRows(readView, packedKeys, packedValues, startPosition);
+                        copyCurrentRows(currentKeys, packedKeys, startPosition);
+                        copyCurrentRows(currentValues, packedValues, startPosition);
                     }
+                    packedBlockAttention.forward(attended, query, packedKeys, packedValues, startPosition, batchSize,
+                            numberOfHeads, numberOfKeyValueHeads, config.headSize, attentionScale,
+                            config.attnLogitSoftCapping, mode != CacheExecutionMode.DENOISE_BLOCK_NO_UPDATE);
                 }
                 return attended;
-            } finally {
-                prefixKeys.close();
-                prefixValues.close();
             }
         } catch (RuntimeException | Error e) {
             attended.close();
             throw e;
-        } finally {
-            packedKeys.close();
-            packedValues.close();
-            scores.close();
+        }
+    }
+
+    private void copyPrefixRows(KvReadView readView, TensorRef packedKeys, TensorRef packedValues, int rowCount) {
+        for (int row = 0; row < rowCount; row++) {
+            try (TensorRef keyRow = readView.keyRowRef(row); TensorRef valueRow = readView.valueRowRef(row)) {
+                copyRow(keyRow, 0, packedKeys, row, kvLength);
+                copyRow(valueRow, 0, packedValues, row, kvLength);
+            }
+        }
+    }
+
+    private TensorRef[] appendCurrentPage(TensorRef[] prefixPages, TensorRef currentPage) {
+        TensorRef[] pages = new TensorRef[prefixPages.length + 1];
+        System.arraycopy(prefixPages, 0, pages, 0, prefixPages.length);
+        pages[prefixPages.length] = currentPage;
+        return pages;
+    }
+
+    private void copyCurrentRows(TensorRef source, TensorRef destination, int destinationRowStart) {
+        if (source.dType() == destination.dType()) {
+            for (int row = 0; row < source.shape().first(); row++) {
+                copyRow(source, row, destination, destinationRowStart + row, source.shape().last());
+            }
+            return;
+        }
+        try (TensorRef converted = lighter.reshape(source, destination.dType())) {
+            for (int row = 0; row < converted.shape().first(); row++) {
+                copyRow(converted, row, destination, destinationRowStart + row, converted.shape().last());
+            }
         }
     }
 
@@ -176,12 +199,19 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
         TensorRef value = model.makeDenseTensorRef(batchSize, kvLength);
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
                 "kvcacheselfattention2.qkv_projection").time()) {
-            lighter.dotProductRows(query, input, queryAttentionWeights, 0, config.embeddingLength, 0,
-                    attentionLength, 0);
-            lighter.dotProductRows(key, input, keyAttentionWeights, 0, config.embeddingLength, 0,
-                    kvLength, 0);
-            lighter.dotProductRows(value, input, valueAttentionWeights, 0, config.embeddingLength, 0,
-                    kvLength, 0);
+            if (config.isGQA) {
+                projectGqaQkvPrefill(input, query, key, value, model.primaryTensorOperations().parallelSplitSize());
+            } else {
+                project(query, input, queryAttentionWeights, config.embeddingLength, attentionLength,
+                        "kvcacheselfattention2.q_projection", model.primaryTensorOperations().parallelSplitSize());
+                project(key, input, keyAttentionWeights, config.embeddingLength, kvLength,
+                        "kvcacheselfattention2.k_projection", model.primaryTensorOperations().parallelSplitSize());
+                project(value, input, valueAttentionWeights, config.embeddingLength, kvLength,
+                        "kvcacheselfattention2.v_projection", model.primaryTensorOperations().parallelSplitSize());
+            }
+            model.emitLayerDebug(layerIndex, "query_projection", query);
+            model.emitLayerDebug(layerIndex, "key_projection", key);
+            model.emitLayerDebug(layerIndex, "value_projection", value);
             return new TensorRef[] {query, key, value};
         } catch (RuntimeException | Error e) {
             query.close();
@@ -191,18 +221,105 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
         }
     }
 
-    protected final TensorRef projectOutput(TensorRef attended, ForwardPhase phase) {
+    private void projectGqaQkvPrefill(TensorRef input, TensorRef query, TensorRef key, TensorRef value,
+            int splitSize) {
+        ForkJoinTask<?> queryTask = model.getPool().getUnderlying().submit(() -> project(query, input,
+                queryAttentionWeights, config.embeddingLength, attentionLength,
+                "kvcacheselfattention2.q_projection", splitSize));
+        ForkJoinTask<?> keyTask = model.getPool().getUnderlying().submit(() -> project(key, input,
+                keyAttentionWeights, config.embeddingLength, kvLength,
+                "kvcacheselfattention2.k_projection", splitSize));
+        ForkJoinTask<?> valueTask = model.getPool().getUnderlying().submit(() -> project(value, input,
+                valueAttentionWeights, config.embeddingLength, kvLength,
+                "kvcacheselfattention2.v_projection", splitSize));
+        queryTask.join();
+        keyTask.join();
+        valueTask.join();
+    }
+
+    private void projectGqaQkvGroupedDecode(TensorRef input, TensorRef query, TensorRef key, TensorRef value) {
+        model.runChunks("kvcacheselfattention2.qkv_projection.grouped_decode", 0, attentionLength,
+                groupedDecodeQkvSplitSize(), Optional.empty(), (chunkStart, chunkSize) -> {
+            try (Timer.Context ignoredQ = InferenceProfiler.timer(metricRegistry,
+                    "kvcacheselfattention2.q_projection").time()) {
+                lighter.dotProductRows(query, input, queryAttentionWeights, 0, config.embeddingLength,
+                        chunkStart, chunkSize, chunkStart);
+            }
+            int kvChunkSize = Math.min(chunkSize, kvLength - chunkStart);
+            if (kvChunkSize <= 0) {
+                return;
+            }
+            try (Timer.Context ignoredK = InferenceProfiler.timer(metricRegistry,
+                    "kvcacheselfattention2.k_projection").time()) {
+                lighter.dotProductRows(key, input, keyAttentionWeights, 0, config.embeddingLength,
+                        chunkStart, kvChunkSize, chunkStart);
+            }
+            try (Timer.Context ignoredV = InferenceProfiler.timer(metricRegistry,
+                    "kvcacheselfattention2.v_projection").time()) {
+                lighter.dotProductRows(value, input, valueAttentionWeights, 0, config.embeddingLength,
+                        chunkStart, kvChunkSize, chunkStart);
+            }
+        });
+    }
+
+    private void project(TensorRef output, TensorRef input, TensorRef weight, int inputLength,
+            int outputLength, String metricName, int splitSize) {
+        model.runChunks(metricName, 0, outputLength, splitSize, Optional.empty(),
+                (chunkStart, chunkSize) -> {
+            try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, metricName).time()) {
+                lighter.dotProductRows(output, input, weight, 0, inputLength, chunkStart, chunkSize, chunkStart);
+            }
+        });
+    }
+
+    private int groupedDecodeQkvSplitSize() {
+        int configured = model.groupedDecodeQkvSplitSize().orElse(DEFAULT_GROUPED_DECODE_QKV_SPLIT_SIZE);
+        int poolSize = model.getPool() == null ? 1 : model.getPool().getCoreCount();
+        return Math.max(1, Math.min(Math.min(configured, poolSize), attentionLength));
+    }
+
+    protected final TensorRef projectOutput(TensorRef attended, Optional<Consumer<List<TensorRef>>> tensorReducer,
+            ForwardPhase phase) {
         Preconditions.checkArgument(attended.dims() == 2 && attended.shape().last() == attentionLength,
                 "Attention output must be [batch, attentionLength]");
         TensorRef output = model.makeDenseTensorRef(attended.shape().first(), config.embeddingLength);
-        try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
-                "kvcacheselfattention2.output_projection").time()) {
-            lighter.dotProductRows(output, attended, outputProjectionWeights, 0, attentionLength, 0,
-                    config.embeddingLength, 0);
+        output.memorySegment().fill((byte) 0);
+        TensorRef projectionInput = attended;
+        boolean closeProjectionInput = false;
+        try {
+            if (attended.dType() != model.getWorkingQType()) {
+                InferenceProfiler.counter(metricRegistry,
+                        "causalselfattention.maybe_quantize.output_projection.copy_or_quantize").inc();
+                projectionInput = lighter.reshape(attended, model.getWorkingQType());
+                closeProjectionInput = true;
+            } else {
+                InferenceProfiler.counter(metricRegistry,
+                        "causalselfattention.maybe_quantize.output_projection.read_only").inc();
+            }
+            model.emitLayerDebug(layerIndex, "attention_output_projection_input", projectionInput);
+            try (Timer.Context ignoredOutput = InferenceProfiler.timer(metricRegistry,
+                    "kvcacheselfattention2.output_projection").time()) {
+                TensorRef projectionInputForChunks = projectionInput;
+                model.runChunks("kvcacheselfattention2.output_projection", 0, config.embeddingLength,
+                        model.primaryTensorOperations().parallelSplitSize(), Optional.empty(), (chunkStart, chunkSize) ->
+                        {
+                            lighter.dotProductRows(output, projectionInputForChunks, outputProjectionWeights, 0,
+                                    attentionLength, chunkStart, chunkSize, chunkStart);
+                        });
+            }
+            if (model.getTensorParallelContext().enabled()) {
+                throw new UnsupportedOperationException("TensorRef attention output projection all-reduce is not ported");
+            }
+            model.emitLayerDebug(layerIndex, "attention_output", output);
+            tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(output)));
             return output;
         } catch (RuntimeException | Error e) {
             output.close();
             throw e;
+        } finally {
+            if (closeProjectionInput) {
+                projectionInput.close();
+            }
         }
     }
 

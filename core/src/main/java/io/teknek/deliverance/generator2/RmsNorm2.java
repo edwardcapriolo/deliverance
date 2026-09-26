@@ -1,47 +1,52 @@
 package io.teknek.deliverance.generator2;
 
+import io.dropwizard.metrics5.Timer;
 import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.generator.Gemma4RmsNormSupport;
-import io.teknek.deliverance.tensor.AbstractTensor;
-import io.teknek.deliverance.tensor2.CompositeOps;
 import io.teknek.deliverance.tensor2.TensorRef;
-import io.teknek.deliverance.tensor2.TensorRefBackedTensor;
+import net.jafama.FastMath;
 
 /** TensorRef-native RMSNorm layer. */
-public final class RmsNorm2 {
-    private final AbstractModel model;
-    private final TensorRef weights;
+public class RmsNorm2 extends LayerNorm2 {
     private final float weightAdjustment;
     private final float epsilon;
-    private final CompositeOps compositeOps;
+    protected Timer totalTime;
 
     public RmsNorm2(AbstractModel model, TensorRef weights, float weightAdjustment) {
-        this.model = java.util.Objects.requireNonNull(model, "model");
-        this.weights = java.util.Objects.requireNonNull(weights, "weights");
+        super(java.util.Objects.requireNonNull(model, "model"), null,
+                java.util.Objects.requireNonNull(weights, "weights"), model.getMetricRegistry());
         this.weightAdjustment = weightAdjustment;
         this.epsilon = model.getConfig().layerNormEps;
-        this.compositeOps = new CompositeOps(model.getLighter(), model.getMetricRegistry());
+        this.totalTime = metricReigstry.timer("rms_norm");
     }
 
-    public TensorRef forward(TensorRef input) {
+    @Override
+    public TensorRef forward(TensorRef input, int offset, int length) {
+        long start = System.currentTimeMillis();
         TensorRef output = model.makeDenseTensorRef(input.shape());
+        int limit = offset + length;
         try {
-            if (input.dType() == io.teknek.deliverance.DType.F32
-                    && output.dType() == io.teknek.deliverance.DType.F32
-                    && weights.dType() == io.teknek.deliverance.DType.F32) {
-                compositeOps.rmsNorm(output, input, weights, epsilon, weightAdjustment);
-            } else {
-                AbstractTensor inputTensor = new TensorRefBackedTensor(input);
-                AbstractTensor outputTensor = new TensorRefBackedTensor(output);
-                AbstractTensor weightTensor = new TensorRefBackedTensor(weights);
-                // The helper operates in place, so copy the input into the output first for mixed dtypes.
-                outputTensor.copyFrom(inputTensor, 0, 0, Math.toIntExact(input.shape().size()));
-                Gemma4RmsNormSupport.applyInPlaceSimd(outputTensor, 1, input.shape().last(), epsilon, weightTensor);
-            }
+            applyRmsNorm(input, output, offset, length, limit);
+            long end = System.currentTimeMillis();
+            totalTime.update(java.time.Duration.ofMillis(end - start));
             return output;
         } catch (RuntimeException | Error e) {
             output.close();
             throw e;
+        }
+    }
+
+    private void applyRmsNorm(TensorRef input, TensorRef output, int offset, int length, int limit) {
+        for (int row = 0; row < input.shape().first(); row++) {
+            double sumSquares = 0.0;
+            for (int column = offset; column < limit; column++) {
+                float value = input.get(row, column);
+                sumSquares += value * value;
+            }
+            double scale = 1.0 / FastMath.sqrt((sumSquares / length) + epsilon);
+            for (int column = offset; column < limit; column++) {
+                output.set((weightAdjustment + weights.get(0, column)) * ((float) scale * input.get(row, column)),
+                        row, column);
+            }
         }
     }
 }

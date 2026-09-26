@@ -49,6 +49,11 @@ public final class TensorRefBackedTensor extends AbstractTensor {
     }
 
     @Override
+    public AbstractTensor slice(boolean cacheInnerSlice, int... dims) {
+        return new TensorRefBackedTensor(ref.slice(dims));
+    }
+
+    @Override
     public float get(int... dims) {
         return ref.underlying().get(dims);
     }

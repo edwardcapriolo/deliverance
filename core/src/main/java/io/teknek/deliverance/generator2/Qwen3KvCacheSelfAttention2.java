@@ -1,12 +1,13 @@
 package io.teknek.deliverance.generator2;
 
 import io.dropwizard.metrics5.MetricRegistry;
-import io.teknek.deliverance.generator.Gemma4RmsNormSupport;
+import io.dropwizard.metrics5.Timer;
+import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.TensorRef;
-import io.teknek.deliverance.tensor2.TensorRefBackedTensor;
+
+import java.util.concurrent.ForkJoinTask;
 
 /** Qwen3 KV-cache attention with query/key RMSNorm hooks. */
 public final class Qwen3KvCacheSelfAttention2 extends KvCacheSelfAttention2 {
@@ -32,23 +33,32 @@ public final class Qwen3KvCacheSelfAttention2 extends KvCacheSelfAttention2 {
 
     @Override
     protected void normalizeQueryKey(TensorRef query, TensorRef key) {
-        // This is a temporary boundary to the existing SIMD RMSNorm kernel. The adapters are borrowed
-        // views; model-owned TensorRefs remain owned by the model and must not be closed here.
-        AbstractTensor queryTensor = new TensorRefBackedTensor(query);
-        AbstractTensor keyTensor = new TensorRefBackedTensor(key);
-        AbstractTensor queryWeights = new TensorRefBackedTensor(queryNormWeights);
-        AbstractTensor keyWeights = new TensorRefBackedTensor(keyNormWeights);
-        Gemma4RmsNormSupport.applyInPlaceSimd(queryTensor, localNumberOfHeads, headDimension,
-                config.layerNormEps, queryWeights);
-        Gemma4RmsNormSupport.applyInPlaceSimd(keyTensor, localNumberOfKeyValueHeads, headDimension,
-                config.layerNormEps, keyWeights);
+        ForkJoinTask<?> queryTask = model.getPool().getUnderlying().submit(() -> {
+            try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(),
+                    "kvcacheselfattention2.q_norm").time()) {
+                compositeOps.groupedRmsNormInPlace(query, localNumberOfHeads, headDimension,
+                        config.layerNormEps, queryNormWeights);
+            }
+        });
+        ForkJoinTask<?> keyTask = model.getPool().getUnderlying().submit(() -> {
+            try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(),
+                    "kvcacheselfattention2.k_norm").time()) {
+                compositeOps.groupedRmsNormInPlace(key, localNumberOfKeyValueHeads, headDimension,
+                        config.layerNormEps, keyNormWeights);
+            }
+        });
+        queryTask.join();
+        keyTask.join();
     }
 
     @Override
     protected void applyRotaryEmbedding(TensorRef query, TensorRef key, int startPosition) {
-        float[][] frequencies = config.ropeFreqs.orElseThrow(
-                () -> new IllegalStateException("Qwen3 configuration does not provide RoPE frequencies"));
-        compositeOps.rotaryEmbedding(query, localNumberOfHeads, headDimension, startPosition, frequencies);
-        compositeOps.rotaryEmbedding(key, localNumberOfKeyValueHeads, headDimension, startPosition, frequencies);
+        try (Timer.Context ignored = InferenceProfiler.timer(model.getMetricRegistry(),
+                "kvcacheselfattention2.rope").time()) {
+            float[][] frequencies = config.ropeFreqs.orElseThrow(
+                    () -> new IllegalStateException("Qwen3 configuration does not provide RoPE frequencies"));
+            compositeOps.rotaryEmbedding(query, localNumberOfHeads, headDimension, startPosition, frequencies);
+            compositeOps.rotaryEmbedding(key, localNumberOfKeyValueHeads, headDimension, startPosition, frequencies);
+        }
     }
 }

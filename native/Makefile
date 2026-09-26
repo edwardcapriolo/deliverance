@@ -72,7 +72,7 @@ $(OBJ_DIR)/tensor2/%.o: $(TENSOR2_SRC_DIR)/%.c
 	mkdir -p $(OBJ_DIR)/tensor2
 	$(CC) -c $< -o $@ $(CFLAGS)
 
-$(TENSOR2_LIB): $(TENSOR2_OBJS)
+$(TENSOR2_LIB): $(TENSOR2_OBJS) $(OBJ_DIR)/vector_simd.o
 	mkdir -p $(LIB_DIR)
 	$(CC) $(LDFLAGS) -o $(TENSOR2_LIB) $^
 
@@ -131,9 +131,9 @@ $(GPU_HEADER_TEST): src/test/c/test_gpu_header.c
 test-gpu-header-run: $(GPU_HEADER_TEST)
 	@echo "GPU header signature compile test passed"
 
-$(TENSOR2_NATIVE_TEST): src/test/c/test_tensor2_native.c src/main/c/tensor2/tensor2_native.c
+$(TENSOR2_NATIVE_TEST): src/test/c/test_tensor2_native.c src/main/c/tensor2/tensor2_native.c src/main/c/simd/vector_simd.c
 	mkdir -p $(OBJ_DIR)
-	$(CC) $(CFLAGS) -Isrc/main/c/tensor2 $^ -o $@ $(TEST_LDFLAGS)
+	$(CC) $(CFLAGS) -Isrc/main/c/tensor2 -Isrc/main/c/simd $^ -o $@ -lm $(TEST_LDFLAGS)
 
 test-tensor2-native-run: $(TENSOR2_NATIVE_TEST)
 	$(TENSOR2_NATIVE_TEST)

@@ -6,6 +6,7 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensor2.Lighter;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
@@ -22,6 +23,7 @@ public final class KvCacheManager {
     private final boolean trackReadViews;
     private final KvBufferCacheSettings settings;
     private final TensorOperations conversionOperations;
+    private final Lighter lighter;
 
     public KvCacheManager(int layers, int contextLength, int kvLength, DType dtype,
             KvBufferCacheSettings settings, TensorAllocator allocator, MetricRegistry metricRegistry) {
@@ -36,6 +38,13 @@ public final class KvCacheManager {
     public KvCacheManager(int layers, int contextLength, int kvLength, DType dtype,
             KvBufferCacheSettings settings, TensorAllocator allocator, MetricRegistry metricRegistry,
             boolean trackReadViews, @Nullable TensorOperations conversionOperations) {
+        this(layers, contextLength, kvLength, dtype, settings, allocator, metricRegistry, trackReadViews,
+                conversionOperations, new Lighter(metricRegistry));
+    }
+
+    public KvCacheManager(int layers, int contextLength, int kvLength, DType dtype,
+            KvBufferCacheSettings settings, TensorAllocator allocator, MetricRegistry metricRegistry,
+            boolean trackReadViews, @Nullable TensorOperations conversionOperations, Lighter lighter) {
         Preconditions.checkArgument(layers > 0, "layers must be > 0");
         Preconditions.checkArgument(contextLength > 0, "contextLength must be > 0");
         Preconditions.checkArgument(kvLength > 0, "kvLength must be > 0");
@@ -49,11 +58,12 @@ public final class KvCacheManager {
         this.metricRegistry = Objects.requireNonNull(metricRegistry, "metricRegistry");
         this.trackReadViews = trackReadViews;
         this.conversionOperations = conversionOperations;
+        this.lighter = Objects.requireNonNull(lighter, "lighter");
     }
 
     public KvCacheSession openSession() {
         metricRegistry.meter("kvcache.v2.session.open").mark();
         return new KvCacheSession(layers, contextLength, kvLength, blockSize, dtype, allocator, metricRegistry,
-                trackReadViews, settings, conversionOperations);
+                trackReadViews, settings, conversionOperations, lighter);
     }
 }

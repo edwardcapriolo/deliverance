@@ -5,12 +5,13 @@ import io.dropwizard.metrics5.MetricRegistry;
 import io.dropwizard.metrics5.Timer;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.model.InferenceProfiler;
-import io.teknek.deliverance.tensor.AbstractTensor;
-import io.teknek.deliverance.tensor.AbstractTensorUtils;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.tensor2.TensorRefBackedTensor;
 
 import javax.annotation.Nullable;
 import java.util.BitSet;
@@ -21,8 +22,8 @@ final class MutableKvBlock implements AutoCloseable {
     private final int blockSize;
     private final int layers;
     private final int kvLength;
-    private final AbstractTensor keyStorage;
-    private final AbstractTensor valueStorage;
+    private final TensorRef keyStorage;
+    private final TensorRef valueStorage;
     private final BitSet writtenRows;
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final KvBufferCacheSettings settings;
@@ -30,15 +31,16 @@ final class MutableKvBlock implements AutoCloseable {
     private final MetricRegistry metricRegistry;
     private final TensorOperations conversionOperations;
     private boolean committed;
+    private final Lighter lighter;
 
     MutableKvBlock(int blockIndex, int blockSize, int layers, int kvLength, DType dtype, TensorAllocator allocator,
             KvBufferCacheSettings settings, MetricRegistry metricRegistry) {
-        this(blockIndex, blockSize, layers, kvLength, dtype, allocator, settings, metricRegistry, null);
+        this(blockIndex, blockSize, layers, kvLength, dtype, allocator, settings, metricRegistry, null, null);
     }
 
     MutableKvBlock(int blockIndex, int blockSize, int layers, int kvLength, DType dtype, TensorAllocator allocator,
             KvBufferCacheSettings settings, MetricRegistry metricRegistry,
-            @Nullable TensorOperations conversionOperations) {
+            @Nullable TensorOperations conversionOperations, Lighter lighter) {
         this.blockIndex = blockIndex;
         this.blockSize = blockSize;
         this.layers = layers;
@@ -47,9 +49,10 @@ final class MutableKvBlock implements AutoCloseable {
         this.settings = settings;
         this.metricRegistry = metricRegistry;
         this.conversionOperations = conversionOperations;
-        this.keyStorage = allocator.getDirty(settings.getKvKeyDType(), TensorShape.of(layers, blockSize, kvLength));
-        this.valueStorage = allocator.getDirty(settings.getKvValueDType(), TensorShape.of(layers, blockSize, kvLength));
         this.writtenRows = new BitSet(layers * blockSize * 2);
+        this.lighter = lighter;
+        this.keyStorage = lighter.allocate(settings.getKvKeyDType(), TensorShape.of(layers, blockSize, kvLength));
+        this.valueStorage = lighter.allocate(settings.getKvValueDType(), TensorShape.of(layers, blockSize, kvLength));
     }
 
     int blockIndex() {
@@ -64,7 +67,7 @@ final class MutableKvBlock implements AutoCloseable {
         return position >= startPosition() && position < startPosition() + blockSize;
     }
 
-    void write(int layer, int position, AbstractTensor key, AbstractTensor value) {
+    void write(int layer, int position, TensorRef key, TensorRef value) {
         requireWritable();
         validateLayer(layer);
         Preconditions.checkArgument(containsPosition(position), "position not in mutable block");
@@ -83,35 +86,35 @@ final class MutableKvBlock implements AutoCloseable {
         }
     }
 
-    AbstractTensor keyRowCopy(int layer, int position, TensorAllocator allocator) {
+    TensorRef keyRowCopy(int layer, int position, TensorAllocator allocator) {
         return rowCopy(layer, position, 0, allocator);
     }
 
-    AbstractTensor valueRowCopy(int layer, int position, TensorAllocator allocator) {
+    TensorRef valueRowCopy(int layer, int position, TensorAllocator allocator) {
         return rowCopy(layer, position, 1, allocator);
     }
 
-    AbstractTensor keyRowView(int layer, int position) {
+    TensorRef keyRowView(int layer, int position) {
         return rowView(layer, position, 0);
     }
 
-    AbstractTensor valueRowView(int layer, int position) {
+    TensorRef valueRowView(int layer, int position) {
         return rowView(layer, position, 1);
     }
 
-    AbstractTensor keyPageView(int layer) {
+    TensorRef keyPageView(int layer) {
         return pageView(layer, 0);
     }
 
-    AbstractTensor valuePageView(int layer) {
+    TensorRef valuePageView(int layer) {
         return pageView(layer, 1);
     }
 
-    void copyKeyRows(int layer, int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart) {
+    void copyKeyRows(int layer, int positionStart, int rowCount, TensorRef destination, int destinationRowStart) {
         copyRows(layer, positionStart, rowCount, 0, destination, destinationRowStart);
     }
 
-    void copyValueRows(int layer, int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart) {
+    void copyValueRows(int layer, int positionStart, int rowCount, TensorRef destination, int destinationRowStart) {
         copyRows(layer, positionStart, rowCount, 1, destination, destinationRowStart);
     }
 
@@ -120,46 +123,48 @@ final class MutableKvBlock implements AutoCloseable {
         Preconditions.checkArgument(tokenCount >= 0 && tokenCount <= blockSize, "tokenCount out of bounds");
         committed = true;
         KvBlockStorage blockStorage = switch (settings.getKvBlockStoragePolicy()) {
-            case DENSE -> new DenseKvBlockStorage(layers, tokenCount, blockSize, kvLength, keyStorage, valueStorage);
+            case DENSE -> new DenseKvBlockStorage(layers, tokenCount, blockSize, kvLength,
+                    new TensorRefBackedTensor(keyStorage), new TensorRefBackedTensor(valueStorage));
             case MSE_TURBOQUANT -> tokenCount == blockSize
                     ? MseTurboQuantKvBlockStorage.encode(combinedStorageForTurboQuant(), layers, tokenCount, blockSize, kvLength,
                     settings.getKvTurboQuantBits(), allocator, metricRegistry)
-                    : new DenseKvBlockStorage(layers, tokenCount, blockSize, kvLength, keyStorage, valueStorage);
+                    : new DenseKvBlockStorage(layers, tokenCount, blockSize, kvLength,
+                            new TensorRefBackedTensor(keyStorage), new TensorRefBackedTensor(valueStorage));
         };
         return new KvBlock(blockIndex, blockSize, tokenCount, layers, kvLength, blockStorage);
     }
 
-    private AbstractTensor rowCopy(int layer, int position, int keyOrValue, TensorAllocator allocator) {
+    private TensorRef rowCopy(int layer, int position, int keyOrValue, TensorAllocator allocator) {
         requireOpen();
         validateLayer(layer);
         Preconditions.checkArgument(containsPosition(position), "position not in mutable block");
         int blockRow = position - startPosition();
         Preconditions.checkState(writtenRows.get(writtenIndex(layer, blockRow, keyOrValue)),
                 "KV row has not been written");
-        AbstractTensor storage = storage(keyOrValue);
-        AbstractTensor copy = allocator.getDirty(storage.dType(), TensorShape.of(1, kvLength));
-        copy.copyFrom(storage, storage.getOffset(layer, blockRow, 0), 0, kvLength);
+        TensorRef storage = storage(keyOrValue);
+        TensorRef copy = lighter.allocate(storage.dType(), TensorShape.of(1, kvLength));
+        lighter.copy(storage, storage.shape().getOffset(layer, blockRow, 0), copy, 0, kvLength);
         return copy;
     }
 
-    private AbstractTensor rowView(int layer, int position, int keyOrValue) {
+    private TensorRef rowView(int layer, int position, int keyOrValue) {
         requireOpen();
         validateLayer(layer);
         Preconditions.checkArgument(containsPosition(position), "position not in mutable block");
         int blockRow = position - startPosition();
         Preconditions.checkState(writtenRows.get(writtenIndex(layer, blockRow, keyOrValue)),
                 "KV row has not been written");
-        return storage(keyOrValue).slice(true, layer, blockRow);
+        return storage(keyOrValue).slice(layer, blockRow);
     }
 
-    private AbstractTensor pageView(int layer, int keyOrValue) {
+    private TensorRef pageView(int layer, int keyOrValue) {
         requireOpen();
         validateLayer(layer);
         Preconditions.checkArgument(keyOrValue == 0 || keyOrValue == 1, "keyOrValue must be 0 or 1");
-        return storage(keyOrValue).slice(true, layer);
+        return storage(keyOrValue).slice(layer);
     }
 
-    private void copyRows(int layer, int positionStart, int rowCount, int keyOrValue, AbstractTensor destination,
+    private void copyRows(int layer, int positionStart, int rowCount, int keyOrValue, TensorRef destination,
             int destinationRowStart) {
         requireOpen();
         validateLayer(layer);
@@ -178,63 +183,52 @@ final class MutableKvBlock implements AutoCloseable {
             Preconditions.checkState(writtenRows.get(writtenIndex(layer, blockRowStart + i, keyOrValue)),
                     "KV row has not been written");
         }
-        AbstractTensor storage = storage(keyOrValue);
+
+        TensorRef storage = storage(keyOrValue);
         Preconditions.checkArgument(destination.dType() == storage.dType(), "destination dtype must match KV dtype");
-        destination.copyFrom(storage, storage.getOffset(layer, blockRowStart, 0),
-                destination.getOffset(destinationRowStart, 0), rowCount * kvLength);
+
+        lighter.copy(storage, storage.shape().getOffset(layer, blockRowStart, 0), destination,
+                destination.shape().getOffset(destinationRowStart, 0), rowCount * kvLength);
     }
 
-    private AbstractTensor storage(int keyOrValue) {
+    private TensorRef storage(int keyOrValue) {
         return keyOrValue == 0 ? keyStorage : valueStorage;
     }
 
-    private void copyRowIntoStorage(AbstractTensor source, AbstractTensor destinationStorage, int layer, int blockRow,
+    private void copyRowIntoStorage(TensorRef source, TensorRef destinationStorage, int layer, int blockRow,
             String name) {
         if (source.dType() == destinationStorage.dType()) {
             try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
                     "kvcache.v2.write.copy.same_dtype." + destinationStorage.dType()).time()) {
-                destinationStorage.copyFrom(source, 0, destinationStorage.getOffset(layer, blockRow, 0), kvLength);
+                lighter.copy(source, 0, destinationStorage, destinationStorage.shape().getOffset(layer, blockRow, 0),
+                        kvLength);
             }
             return;
         }
-        AbstractTensor converted;
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
                 "kvcache.v2.write.quantize.to_" + destinationStorage.dType()).time()) {
-            converted = quantizeForStorage(source, destinationStorage.dType());
-        }
-        try (converted) {
-            Preconditions.checkArgument(converted.dType() == destinationStorage.dType(), name + " conversion failed");
-            try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
-                    "kvcache.v2.write.copy.converted.to_" + destinationStorage.dType()).time()) {
-                destinationStorage.copyFrom(converted, 0, destinationStorage.getOffset(layer, blockRow, 0), kvLength);
+            InferenceProfiler.counter(metricRegistry, "kvcache.v2.write.quantize.lighter").inc();
+            try (TensorRef destinationRow = destinationStorage.slice(layer, blockRow)) {
+                lighter.reshape(source, destinationRow);
             }
         }
     }
 
-    private AbstractTensor quantizeForStorage(AbstractTensor source, DType destinationDType) {
-        if (conversionOperations != null) {
-            InferenceProfiler.counter(metricRegistry, "kvcache.v2.write.quantize.provider").inc();
-            return conversionOperations.quantize(source, destinationDType, 0, kvLength);
-        }
-        InferenceProfiler.counter(metricRegistry, "kvcache.v2.write.quantize.constructor").inc();
-        return AbstractTensorUtils.quantize(source, destinationDType, true);
-    }
-
-    private AbstractTensor combinedStorageForTurboQuant() {
+    private TensorRefBackedTensor combinedStorageForTurboQuant() {
         Preconditions.checkArgument(keyStorage.dType() == DType.F32 && valueStorage.dType() == DType.F32,
                 "TurboQuant KV requires F32 key/value dense rows before compression");
-        AbstractTensor combined = allocator.getDirty(DType.F32, TensorShape.of(layers, 2, blockSize, kvLength));
+        TensorRef combined = lighter.allocate(DType.F32, TensorShape.of(layers, 2, blockSize, kvLength));
         for (int layer = 0; layer < layers; layer++) {
             for (int blockRow = 0; blockRow < blockSize; blockRow++) {
-                combined.copyFrom(keyStorage, keyStorage.getOffset(layer, blockRow, 0),
-                        combined.getOffset(layer, 0, blockRow, 0), kvLength);
-                combined.copyFrom(valueStorage, valueStorage.getOffset(layer, blockRow, 0),
-                        combined.getOffset(layer, 1, blockRow, 0), kvLength);
+                lighter.copy(keyStorage, keyStorage.shape().getOffset(layer, blockRow, 0), combined,
+                        combined.shape().getOffset(layer, 0, blockRow, 0), kvLength);
+                lighter.copy(valueStorage, valueStorage.shape().getOffset(layer, blockRow, 0), combined,
+                        combined.shape().getOffset(layer, 1, blockRow, 0), kvLength);
             }
         }
         keyStorage.close();
         valueStorage.close();
-        return combined;
+        return new TensorRefBackedTensor(combined);
     }
 
     private int writtenIndex(int layer, int blockRow, int keyOrValue) {
@@ -245,7 +239,7 @@ final class MutableKvBlock implements AutoCloseable {
         Preconditions.checkArgument(layer >= 0 && layer < layers, "layer out of bounds");
     }
 
-    private void validateRow(AbstractTensor row, String name) {
+    private void validateRow(TensorRef row, String name) {
         Preconditions.checkArgument(row.dims() == 2 && row.shape().first() == 1 && row.shape().last() == kvLength,
                 name + " must be [1, kvLength]");
     }

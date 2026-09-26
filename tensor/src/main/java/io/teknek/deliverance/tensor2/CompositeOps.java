@@ -176,6 +176,101 @@ public final class CompositeOps {
         }
     }
 
+    /** Applies independent in-place RMSNorm groups across each row, matching Q/K head RMSNorm semantics. */
+    public void groupedRmsNormInPlace(TensorRef target, int groups, int groupSize, float epsilon,
+            TensorRef weights) {
+        validateGroupedRmsNorm(target, groups, groupSize, weights);
+        if (target.dType() == io.teknek.deliverance.DType.F32
+                && (weights == null || weights.dType() == io.teknek.deliverance.DType.F32)) {
+            groupedRmsNormF32InPlace(target, groups, groupSize, epsilon, weights);
+            return;
+        }
+        groupedRmsNormScalarInPlace(target, groups, groupSize, epsilon, weights);
+    }
+
+    private void groupedRmsNormF32InPlace(TensorRef target, int groups, int groupSize, float epsilon,
+            TensorRef weights) {
+        MemorySegment targetMemory = target.memorySegment();
+        MemorySegment weightMemory = weights == null ? null : weights.memorySegment();
+        int rows = target.shape().first();
+        int upper = F32_SPECIES.loopBound(groupSize);
+        for (int row = 0; row < rows; row++) {
+            for (int group = 0; group < groups; group++) {
+                int offset = group * groupSize;
+                long base = target.memorySegmentOffset(target.shape().getOffset(row, offset));
+                FloatVector sum = FloatVector.zero(F32_SPECIES);
+                for (int i = 0; i < upper; i += F32_SPECIES.length()) {
+                    FloatVector values = FloatVector.fromMemorySegment(F32_SPECIES, targetMemory,
+                            base + (long) i * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+                    sum = values.fma(values, sum);
+                }
+                double sumSquares = sum.reduceLanes(VectorOperators.ADD);
+                for (int i = upper; i < groupSize; i++) {
+                    float value = targetMemory.get(java.lang.foreign.ValueLayout.JAVA_FLOAT,
+                            base + (long) i * Float.BYTES);
+                    sumSquares += value * value;
+                }
+                float invRms = (float) (1.0 / StrictMath.sqrt((sumSquares / groupSize) + epsilon));
+                FloatVector inv = FloatVector.broadcast(F32_SPECIES, invRms);
+                for (int i = 0; i < upper; i += F32_SPECIES.length()) {
+                    long address = base + (long) i * Float.BYTES;
+                    FloatVector values = FloatVector.fromMemorySegment(F32_SPECIES, targetMemory, address,
+                            ByteOrder.LITTLE_ENDIAN).mul(inv);
+                    if (weights != null) {
+                        values = values.mul(FloatVector.fromMemorySegment(F32_SPECIES, weightMemory,
+                                weights.memorySegmentOffset(weights.shape().getOffset(0, i)), ByteOrder.LITTLE_ENDIAN));
+                    }
+                    values.intoMemorySegment(targetMemory, address, ByteOrder.LITTLE_ENDIAN);
+                }
+                for (int i = upper; i < groupSize; i++) {
+                    long address = base + (long) i * Float.BYTES;
+                    float value = targetMemory.get(java.lang.foreign.ValueLayout.JAVA_FLOAT, address) * invRms;
+                    if (weights != null) {
+                        value *= weights.get(0, i);
+                    }
+                    targetMemory.set(java.lang.foreign.ValueLayout.JAVA_FLOAT, address, value);
+                }
+            }
+        }
+    }
+
+    private void groupedRmsNormScalarInPlace(TensorRef target, int groups, int groupSize, float epsilon,
+            TensorRef weights) {
+        int rows = target.shape().first();
+        for (int row = 0; row < rows; row++) {
+            for (int group = 0; group < groups; group++) {
+                int offset = group * groupSize;
+                double sumSquares = 0.0;
+                for (int i = 0; i < groupSize; i++) {
+                    float value = target.get(row, offset + i);
+                    sumSquares += value * value;
+                }
+                double invRms = 1.0 / StrictMath.sqrt((sumSquares / groupSize) + epsilon);
+                for (int i = 0; i < groupSize; i++) {
+                    float scaled = (float) (target.get(row, offset + i) * invRms);
+                    if (weights != null) {
+                        scaled *= weights.get(0, i);
+                    }
+                    target.set(scaled, row, offset + i);
+                }
+            }
+        }
+    }
+
+    private static void validateGroupedRmsNorm(TensorRef target, int groups, int groupSize, TensorRef weights) {
+        Preconditions.checkArgument(target != null, "RMSNorm target must be set");
+        Preconditions.checkArgument(target.dims() == 2, "RMSNorm target must be 2D");
+        Preconditions.checkArgument(groups >= 0 && groupSize > 0, "RMSNorm group shape is invalid");
+        Preconditions.checkArgument(target.shape().last() >= groups * groupSize,
+                "RMSNorm target does not contain all groups");
+        if (weights != null) {
+            Preconditions.checkArgument(weights.dims() == 2, "RMSNorm weights must be [1, groupSize]");
+            Preconditions.checkArgument(weights.shape().first() == 1, "RMSNorm weights must have one row");
+            Preconditions.checkArgument(weights.shape().last() >= groupSize,
+                    "RMSNorm weights must cover groupSize columns");
+        }
+    }
+
     /** Applies vectorized SiLU to an F32 tensor in place. */
     public void silu(TensorRef target) {
         Preconditions.checkArgument(target.dType() == io.teknek.deliverance.DType.F32,
@@ -206,7 +301,7 @@ public final class CompositeOps {
         }
     }
 
-    /** Adds a residual tensor into an F32 target using vector operations. */
+    /** Applies legacy residual semantics: {@code target = multiplier * target + residual}. */
     public void addResidual(TensorRef target, TensorRef residual, float multiplier) {
         Preconditions.checkArgument(target.dType() == io.teknek.deliverance.DType.F32
                         && residual.dType() == io.teknek.deliverance.DType.F32,
@@ -228,7 +323,7 @@ public final class CompositeOps {
                         ByteOrder.LITTLE_ENDIAN);
                 FloatVector additions = FloatVector.fromMemorySegment(F32_SPECIES, residualMemory, residualAddress,
                         ByteOrder.LITTLE_ENDIAN);
-                values.add(additions.mul(factor)).intoMemorySegment(targetMemory, targetAddress,
+                values.mul(factor).add(additions).intoMemorySegment(targetMemory, targetAddress,
                         ByteOrder.LITTLE_ENDIAN);
             }
             if (upper < columns) {
@@ -239,7 +334,7 @@ public final class CompositeOps {
                         ByteOrder.LITTLE_ENDIAN, mask);
                 FloatVector additions = FloatVector.fromMemorySegment(F32_SPECIES, residualMemory, residualAddress,
                         ByteOrder.LITTLE_ENDIAN, mask);
-                values.add(additions.mul(factor)).intoMemorySegment(targetMemory, targetAddress,
+                values.mul(factor).add(additions).intoMemorySegment(targetMemory, targetAddress,
                         ByteOrder.LITTLE_ENDIAN, mask);
             }
         }

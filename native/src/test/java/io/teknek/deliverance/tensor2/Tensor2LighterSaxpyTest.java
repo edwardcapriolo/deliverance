@@ -7,6 +7,8 @@ import io.teknek.deliverance.tensor.operations.SaxpyCases;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 import java.util.function.Supplier;
@@ -15,6 +17,31 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class Tensor2LighterSaxpyTest {
+    @Test
+    void nativeBatchSaxpyUsesSlicedAlphaAndOutputRows() {
+        Assumptions.assumeTrue(NativeOps.isAvailable(), "native tensor2 unavailable");
+        Lighter actual = new Lighter(new io.dropwizard.metrics5.MetricRegistry(),
+                Map.of(TensorProviderKind.SIMD, new NativeOps()));
+        try (TensorRef alpha = actual.allocate(DType.F32, TensorShape.of(3, 4));
+             TensorRef x = actual.allocate(DType.F32, TensorShape.of(4, 32));
+             TensorRef output = actual.allocate(DType.F32, TensorShape.of(3, 32));
+             TensorRef alphaRow = alpha.slice(1);
+             TensorRef outputRow = output.slice(2)) {
+            output.memorySegment().fill((byte) 0);
+            alpha.set(1.0f, 1, 0);
+            for (int column = 0; column < 16; column++) {
+                x.set(column + 1.0f, 0, column);
+            }
+
+            actual.saxpy(alphaRow, x, outputRow, 0, 0, 16, 0, 0, 1);
+
+            for (int column = 0; column < 16; column++) {
+                assertEquals(column + 1.0f, output.get(2, column), 0.0f, "column=" + column);
+                assertEquals(0.0f, output.get(0, column), 0.0f, "row zero column=" + column);
+            }
+        }
+    }
+
     @ParameterizedTest(name = "scalar {0}")
     @MethodSource("scalarCasesAndCandidates")
     void scalarSaxpyMatchesLegacyOracle(SaxpyCases.ScalarCase c, Candidate candidate) {
