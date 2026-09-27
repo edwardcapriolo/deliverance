@@ -98,6 +98,30 @@ class KvCacheSessionTest {
     }
 
     @Test
+    void densePageViewsCanBeClosedAndReacquired() {
+        KvCacheManager manager = new KvCacheManager(1, 8, 4, DType.F32,
+                new KvBufferCacheSettings(true).withBlockSize(2), allocator, metricRegistry);
+
+        try (KvCacheSession session = manager.openSession()) {
+            writePosition(session, 0, 1.0f, 1);
+            writePosition(session, 1, 2.0f, 1);
+            try (KvWriteCursor writer = session.writer(CacheExecutionMode.PREFILL_UPDATE_CACHE)) {
+                writer.advanceLength(2);
+            }
+
+            try (KvReadView first = session.readView(0, 2, AttentionPattern.CAUSAL)) {
+                try (AbstractTensor page = first.keyPages()[0]) {
+                    assertEquals(2.0f, page.get(0, 0), 0.0f);
+                }
+            }
+            try (KvReadView second = session.readView(0, 2, AttentionPattern.CAUSAL);
+                 AbstractTensor page = second.keyPages()[0]) {
+                assertEquals(2.0f, page.get(0, 0), 0.0f);
+            }
+        }
+    }
+
+    @Test
     void readViewRowReturnsNonCopyingReadOnlyView() {
         KvCacheManager manager = new KvCacheManager(1, 8, 4, DType.F32,
                 new KvBufferCacheSettings(true).withBlockSize(1), allocator, metricRegistry);

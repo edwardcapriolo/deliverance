@@ -112,7 +112,8 @@ public class TensorRef implements AutoCloseable {
         }
 
         TensorShape childShape = source.shape().slice(dims.length);
-        int baseOffset = source.shape().getOffset(dims);
+        int[] baseCoordinates = java.util.Arrays.copyOf(dims, sourceShape.length);
+        int baseOffset = source.shape().getOffset(baseCoordinates);
         Map<String, TensorRef> childSidecars = new java.util.HashMap<>();
         for (Map.Entry<String, TensorRef> sidecar : source.sidecars().entrySet()) {
             childSidecars.put(sidecar.getKey(), sidecar.getValue().slice(dims));

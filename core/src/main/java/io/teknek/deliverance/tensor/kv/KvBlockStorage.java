@@ -1,7 +1,7 @@
 package io.teknek.deliverance.tensor.kv;
 
 import io.teknek.deliverance.DType;
-import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor2.TensorRef;
 
 interface KvBlockStorage extends AutoCloseable {
     KvBlockLayout layout();
@@ -22,13 +22,13 @@ interface KvBlockStorage extends AutoCloseable {
 
     long encodedBytes();
 
-    AbstractTensor rowView(int layer, int blockRow, int keyOrValue);
+    TensorRef rowView(int layer, int blockRow, int keyOrValue);
 
-    AbstractTensor pageView(int layer, int keyOrValue);
+    TensorRef pageView(int layer, int keyOrValue);
 
-    void copyRow(int layer, int blockRow, int keyOrValue, AbstractTensor destination);
+    void copyRow(int layer, int blockRow, int keyOrValue, TensorRef destination);
 
-    void copyRows(int layer, int keyOrValue, int blockRowStart, int rowCount, AbstractTensor destination,
+    void copyRows(int layer, int keyOrValue, int blockRowStart, int rowCount, TensorRef destination,
             int destinationRowStart);
 
     @Override

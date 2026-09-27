@@ -42,7 +42,7 @@ public final class KvReadView implements AutoCloseable {
     }
 
     public TensorRef keyRowCopyRef(int position) {
-        return TensorRef.owned(session.keyRowCopy(layer, position));
+        return session.keyRowCopyRef(layer, position);
     }
 
     public AbstractTensor valueRowCopy(int position) {
@@ -50,7 +50,7 @@ public final class KvReadView implements AutoCloseable {
     }
 
     public TensorRef valueRowCopyRef(int position) {
-        return TensorRef.owned(session.valueRowCopy(layer, position));
+        return session.valueRowCopyRef(layer, position);
     }
 
     /**

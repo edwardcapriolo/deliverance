@@ -124,12 +124,12 @@ final class MutableKvBlock implements AutoCloseable {
         committed = true;
         KvBlockStorage blockStorage = switch (settings.getKvBlockStoragePolicy()) {
             case DENSE -> new DenseKvBlockStorage(layers, tokenCount, blockSize, kvLength,
-                    new TensorRefBackedTensor(keyStorage), new TensorRefBackedTensor(valueStorage));
+                    keyStorage, valueStorage, lighter);
             case MSE_TURBOQUANT -> tokenCount == blockSize
                     ? MseTurboQuantKvBlockStorage.encode(combinedStorageForTurboQuant(), layers, tokenCount, blockSize, kvLength,
                     settings.getKvTurboQuantBits(), allocator, metricRegistry)
                     : new DenseKvBlockStorage(layers, tokenCount, blockSize, kvLength,
-                            new TensorRefBackedTensor(keyStorage), new TensorRefBackedTensor(valueStorage));
+                            keyStorage, valueStorage, lighter);
         };
         return new KvBlock(blockIndex, blockSize, tokenCount, layers, kvLength, blockStorage);
     }

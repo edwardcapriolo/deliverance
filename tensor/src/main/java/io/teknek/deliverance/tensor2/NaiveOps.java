@@ -7,6 +7,44 @@ import io.teknek.dysfx.Either;
 class NaiveOps implements TensorOps {
 
     @Override
+    public Either<OpSupport, Void> argMax(TensorRef input, TensorRef output, int offset, int length) {
+        Preconditions.checkArgument(input.shape().first() == 1, "argMax expects one row");
+        Preconditions.checkArgument(output.shape().first() == 1 && output.shape().last() == 2,
+                "argMax output must have shape [1, 2]");
+        Preconditions.checkArgument(output.dType() == DType.F32, "argMax output must be F32");
+        Preconditions.checkArgument(offset >= 0 && length > 0 && offset + length <= input.shape().last(),
+                "argMax window out of bounds");
+        int maxIndex = offset;
+        float maxValue = input.get(0, offset);
+        for (int column = offset + 1; column < offset + length; column++) {
+            float value = input.get(0, column);
+            if (value > maxValue) {
+                maxIndex = column;
+                maxValue = value;
+            }
+        }
+        output.set(maxIndex, 0, 0);
+        output.set(maxValue, 0, 1);
+        return Either.Right(null);
+    }
+
+    @Override
+    public Either<OpSupport, Void> accumulate(TensorRef a, TensorRef b, int offset, int length) {
+        Preconditions.checkArgument(a.dims() == b.dims());
+        Preconditions.checkArgument(a.shape().last() == b.shape().last());
+        Preconditions.checkArgument(b.shape().first() == 1 || a.shape().first() == b.shape().first());
+        Preconditions.checkArgument(offset >= 0 && length >= 0 && offset + length <= a.shape().last());
+        boolean broadcast = b.shape().first() == 1;
+        for (int row = 0; row < a.shape().first(); row++) {
+            int sourceRow = broadcast ? 0 : row;
+            for (int column = offset; column < offset + length; column++) {
+                a.set(a.get(row, column) + b.get(sourceRow, column), row, column);
+            }
+        }
+        return Either.Right(null);
+    }
+
+    @Override
     public Either<OpSupport, Void> multiplyAccumulate(TensorRef a, TensorRef b, int offset, int length) {
         Preconditions.checkArgument(a.dims() == b.dims());
         Preconditions.checkArgument(a.shape().last() == b.shape().last());

@@ -10,7 +10,8 @@ import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.MseTurboQuantCodec;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorShape;
-import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.TensorRef;
 
 import javax.annotation.Nullable;
 import java.io.ByteArrayOutputStream;
@@ -68,6 +69,7 @@ public final class KvBlockDiskStore implements AutoCloseable {
     private final Path root;
     private final MetricRegistry metricRegistry;
     private final TensorAllocator allocator;
+    private final Lighter lighter;
     private final long maxBytes;
     private final long reservedFreeBytes;
     private final int admitMinTokens;
@@ -80,6 +82,7 @@ public final class KvBlockDiskStore implements AutoCloseable {
         this.root = root;
         this.metricRegistry = metricRegistry;
         this.allocator = allocator;
+        this.lighter = new Lighter(metricRegistry);
         this.maxBytes = maxBytes;
         this.reservedFreeBytes = reservedFreeBytes;
         this.admitMinTokens = admitMinTokens;
@@ -284,14 +287,16 @@ public final class KvBlockDiskStore implements AutoCloseable {
 
     private KvBlock deserializeDenseBlock(KvBlockKey key, byte[] payload) throws IOException {
         int cursor = 0;
-        AbstractTensor keyStorage = allocator.getDirty(key.keyDType(), TensorShape.of(key.layers(), key.blockSize(), key.kvLength()));
-        AbstractTensor valueStorage = allocator.getDirty(key.valueDType(), TensorShape.of(key.layers(), key.blockSize(), key.kvLength()));
+        TensorRef keyStorage = lighter.allocate(key.keyDType(),
+                TensorShape.of(key.layers(), key.blockSize(), key.kvLength()));
+        TensorRef valueStorage = lighter.allocate(key.valueDType(),
+                TensorShape.of(key.layers(), key.blockSize(), key.kvLength()));
         try {
             cursor = readTensor(payload, cursor, keyStorage);
             readTensor(payload, cursor, valueStorage);
             return new KvBlock(key.blockIndex(), key.blockSize(), key.tokenCount(), key.layers(), key.kvLength(),
                     new DenseKvBlockStorage(key.layers(), key.tokenCount(), key.blockSize(), key.kvLength(), keyStorage,
-                            valueStorage));
+                            valueStorage, lighter));
         } catch (RuntimeException | IOException e) {
             keyStorage.close();
             valueStorage.close();
@@ -317,35 +322,37 @@ public final class KvBlockDiskStore implements AutoCloseable {
                         key.kvLength(), allocator, metricRegistry, allocated));
     }
 
-    private void writeTensor(ByteArrayOutputStream out, AbstractTensor tensor) throws IOException {
-        int bytes = Math.toIntExact(tensor.size() * tensor.dType().size());
-        out.write(tensor.getMemorySegment().asSlice(tensor.getMemorySegmentOffset(0), bytes).toArray(ValueLayout.JAVA_BYTE));
-        if (tensor instanceof Q8ByteBufferTensor q8) {
-            AbstractTensor scale = q8.getBlockF();
-            int scaleBytes = Math.toIntExact(scale.size() * scale.dType().size());
-            out.write(scale.getMemorySegment().asSlice(scale.getMemorySegmentOffset(0), scaleBytes)
+    private void writeTensor(ByteArrayOutputStream out, TensorRef tensor) throws IOException {
+        int bytes = Math.toIntExact(tensor.shape().size() * tensor.dType().size());
+        out.write(tensor.memorySegment().asSlice(tensor.memorySegmentOffset(0), bytes).toArray(ValueLayout.JAVA_BYTE));
+        TensorRef scale = tensor.dType() == DType.I8 ? tensor.sidecar("q8.scale")
+                : tensor.dType() == DType.Q4 ? tensor.sidecar("q4.scale") : null;
+        if (scale != null) {
+            int scaleBytes = Math.toIntExact(scale.shape().size() * scale.dType().size());
+            out.write(scale.memorySegment().asSlice(scale.memorySegmentOffset(0), scaleBytes)
                     .toArray(ValueLayout.JAVA_BYTE));
         }
     }
 
-    private int readTensor(byte[] payload, int cursor, AbstractTensor tensor) throws IOException {
-        int bytes = Math.toIntExact(tensor.size() * tensor.dType().size());
+    private int readTensor(byte[] payload, int cursor, TensorRef tensor) throws IOException {
+        int bytes = Math.toIntExact(tensor.shape().size() * tensor.dType().size());
         copyIntoTensor(payload, cursor, tensor, bytes);
         cursor += bytes;
-        if (tensor instanceof Q8ByteBufferTensor q8) {
-            AbstractTensor scale = q8.getBlockF();
-            int scaleBytes = Math.toIntExact(scale.size() * scale.dType().size());
+        TensorRef scale = tensor.dType() == DType.I8 ? tensor.sidecar("q8.scale")
+                : tensor.dType() == DType.Q4 ? tensor.sidecar("q4.scale") : null;
+        if (scale != null) {
+            int scaleBytes = Math.toIntExact(scale.shape().size() * scale.dType().size());
             copyIntoTensor(payload, cursor, scale, scaleBytes);
             cursor += scaleBytes;
         }
         return cursor;
     }
 
-    private void copyIntoTensor(byte[] payload, int cursor, AbstractTensor tensor, int bytes) throws IOException {
+    private void copyIntoTensor(byte[] payload, int cursor, TensorRef tensor, int bytes) throws IOException {
         if (cursor + bytes > payload.length) {
             throw new IOException("KV disk payload is truncated");
         }
-        tensor.getMemorySegment().asSlice(tensor.getMemorySegmentOffset(0), bytes)
+        tensor.memorySegment().asSlice(tensor.memorySegmentOffset(0), bytes)
                 .copyFrom(java.lang.foreign.MemorySegment.ofArray(payload).asSlice(cursor, bytes));
     }
 

@@ -7,6 +7,7 @@ import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor2.TensorRef;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -36,6 +37,9 @@ class KvBlockDiskStoreTest {
         try (KvCacheSession session = session(settings)) {
             writeFullBlock(session, 10.0f);
             KvBlock block = session.detachCommittedBlock(0);
+            try (TensorRef keyRow = block.storage().rowView(0, 1, 0)) {
+                assertEquals(21.0f, keyRow.get(0, 0), 0.5f);
+            }
             session.attachCommittedBlock(writerManager.admitAndRetain(key, block, session.sessionId()));
         }
         writerManager.close();
@@ -44,6 +48,9 @@ class KvBlockDiskStoreTest {
         try (KvCacheSession session = session(settings)) {
             KvBlockLease lease = readerManager.retain(key, session.sessionId());
             assertNotNull(lease);
+            try (TensorRef keyRow = lease.block().storage().rowView(0, 1, 0)) {
+                assertEquals(21.0f, keyRow.get(0, 0), 0.5f);
+            }
             session.attachCommittedBlock(lease);
             assertEquals(2, session.length());
             try (AbstractTensor keyRow = session.keyRowCopy(0, 1);

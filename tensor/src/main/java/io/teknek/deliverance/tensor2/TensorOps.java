@@ -3,6 +3,14 @@ package io.teknek.deliverance.tensor2;
 import io.teknek.dysfx.Either;
 
 public interface TensorOps {
+     default Either<OpSupport, Void> argMax(TensorRef input, TensorRef output, int offset, int length) {
+          return Either.Left(OpSupport.Unsupported);
+     }
+
+     default Either<OpSupport, Void> accumulate(TensorRef a, TensorRef b, int offset, int length) {
+          return Either.Left(OpSupport.Unsupported);
+     }
+
      Either<OpSupport, Void> multiplyAccumulate(TensorRef a, TensorRef b, int offset, int length);
 
      default Either<OpSupport, Void> reshape(TensorRef input, TensorRef output) {

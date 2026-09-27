@@ -2,24 +2,27 @@ package io.teknek.deliverance.tensor.kv;
 
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.DType;
-import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.TensorRef;
 
 final class DenseKvBlockStorage implements KvBlockStorage {
     private final int layers;
     private final int tokenCount;
     private final int blockSize;
     private final int kvLength;
-    private final AbstractTensor keyStorage;
-    private final AbstractTensor valueStorage;
+    private final TensorRef keyStorage;
+    private final TensorRef valueStorage;
+    private final Lighter lighter;
 
-    DenseKvBlockStorage(int layers, int tokenCount, int blockSize, int kvLength, AbstractTensor keyStorage,
-            AbstractTensor valueStorage) {
+    DenseKvBlockStorage(int layers, int tokenCount, int blockSize, int kvLength, TensorRef keyStorage,
+            TensorRef valueStorage, Lighter lighter) {
         this.layers = layers;
         this.tokenCount = tokenCount;
         this.blockSize = blockSize;
         this.kvLength = kvLength;
         this.keyStorage = keyStorage;
         this.valueStorage = valueStorage;
+        this.lighter = lighter;
     }
 
     @Override
@@ -69,48 +72,48 @@ final class DenseKvBlockStorage implements KvBlockStorage {
     }
 
     @Override
-    public AbstractTensor rowView(int layer, int blockRow, int keyOrValue) {
+    public TensorRef rowView(int layer, int blockRow, int keyOrValue) {
         validate(layer, blockRow, keyOrValue);
-        return storage(keyOrValue).slice(true, layer, blockRow);
+        return storage(keyOrValue).slice(layer, blockRow);
     }
 
     @Override
-    public AbstractTensor pageView(int layer, int keyOrValue) {
+    public TensorRef pageView(int layer, int keyOrValue) {
         Preconditions.checkArgument(layer >= 0 && layer < layers, "layer out of bounds");
         Preconditions.checkArgument(keyOrValue == 0 || keyOrValue == 1, "keyOrValue must be 0 or 1");
-        return storage(keyOrValue).slice(true, layer);
+        return storage(keyOrValue).slice(layer);
     }
 
     @Override
-    public void copyRow(int layer, int blockRow, int keyOrValue, AbstractTensor destination) {
+    public void copyRow(int layer, int blockRow, int keyOrValue, TensorRef destination) {
         validate(layer, blockRow, keyOrValue);
-        AbstractTensor storage = storage(keyOrValue);
+        TensorRef storage = storage(keyOrValue);
         Preconditions.checkArgument(destination.dType() == storage.dType(), "destination dtype must match KV dtype");
-        destination.copyFrom(storage, storage.getOffset(layer, blockRow, 0), 0, kvLength);
+        lighter.copy(storage, storage.shape().getOffset(layer, blockRow, 0), destination, 0, kvLength);
     }
 
     @Override
-    public void copyRows(int layer, int keyOrValue, int blockRowStart, int rowCount, AbstractTensor destination,
+    public void copyRows(int layer, int keyOrValue, int blockRowStart, int rowCount, TensorRef destination,
             int destinationRowStart) {
         validateRange(layer, keyOrValue, blockRowStart, rowCount, destination, destinationRowStart);
         if (rowCount == 0) {
             return;
         }
-        AbstractTensor storage = storage(keyOrValue);
+        TensorRef storage = storage(keyOrValue);
         Preconditions.checkArgument(destination.dType() == storage.dType(), "destination dtype must match KV dtype");
-        destination.copyFrom(storage, storage.getOffset(layer, blockRowStart, 0),
-                destination.getOffset(destinationRowStart, 0), rowCount * kvLength);
+        lighter.copy(storage, storage.shape().getOffset(layer, blockRowStart, 0), destination,
+                destination.shape().getOffset(destinationRowStart, 0), rowCount * kvLength);
     }
 
-    private AbstractTensor storage(int keyOrValue) {
+    private TensorRef storage(int keyOrValue) {
         return keyOrValue == 0 ? keyStorage : valueStorage;
     }
 
-    AbstractTensor keyStorage() {
+    TensorRef keyStorage() {
         return keyStorage;
     }
 
-    AbstractTensor valueStorage() {
+    TensorRef valueStorage() {
         return valueStorage;
     }
 
@@ -120,7 +123,7 @@ final class DenseKvBlockStorage implements KvBlockStorage {
         Preconditions.checkArgument(keyOrValue == 0 || keyOrValue == 1, "keyOrValue must be 0 or 1");
     }
 
-    private void validateRange(int layer, int keyOrValue, int blockRowStart, int rowCount, AbstractTensor destination,
+    private void validateRange(int layer, int keyOrValue, int blockRowStart, int rowCount, TensorRef destination,
             int destinationRowStart) {
         Preconditions.checkArgument(layer >= 0 && layer < layers, "layer out of bounds");
         Preconditions.checkArgument(keyOrValue == 0 || keyOrValue == 1, "keyOrValue must be 0 or 1");

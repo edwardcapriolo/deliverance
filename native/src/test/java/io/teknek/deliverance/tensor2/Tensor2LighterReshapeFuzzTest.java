@@ -20,6 +20,37 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class Tensor2LighterReshapeFuzzTest {
     @org.junit.jupiter.api.Test
+    void f32ToI8ReshapeIntoNonzeroRowSlicePreservesRow() {
+        Lighter lighter = panamaOnly();
+        try (TensorRef source = lighter.allocate(DType.F32, TensorShape.of(3, 32));
+             TensorRef destination = lighter.allocate(DType.I8, TensorShape.of(3, 32));
+             TensorRef sourceRow = source.slice(2);
+             TensorRef destinationRow = destination.slice(2);
+             TensorRef expected = lighter.allocate(DType.F32, TensorShape.of(1, 32))) {
+            for (int column = 0; column < 32; column++) {
+                for (int row = 0; row < 3; row++) {
+                    float value = ((row * 13 + column * 7 + 71) % 41 - 20) / 16.0f;
+                    source.set(value, row, column);
+                    if (row == 2) {
+                        expected.set(value, 0, column);
+                    }
+                }
+            }
+            lighter.reshape(sourceRow, destinationRow);
+            try (TensorRef expectedI8 = lighter.reshape(expected, DType.I8)) {
+                for (int block = 0; block < 32 / Q8Layout.BLOCK_SIZE; block++) {
+                    assertEquals(expectedI8.sidecar("q8.scale").get(0, block),
+                            destination.sidecar("q8.scale").get(2, block), 0.0f, "block=" + block);
+                }
+            for (int column = 0; column < 32; column++) {
+                    assertEquals(expectedI8.get(0, column), destination.get(2, column), 0.0f,
+                        "column=" + column);
+                }
+            }
+        }
+    }
+
+    @org.junit.jupiter.api.Test
     void f32ToI8QuantizationIsRowIndependent() {
         Lighter lighter = panamaOnly();
         int columns = 32;

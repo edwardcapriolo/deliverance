@@ -1,5 +1,7 @@
 package io.teknek.deliverance.tensor2;
 
+// DO NOT IMPLEMENT JAVA LOOPS IN THIS PROVIDER PERIOD
+
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.DType;
 import io.teknek.dysfx.Either;
@@ -16,6 +18,149 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 
 class PanamaOps implements TensorOps {
+    @Override
+    public Either<OpSupport, Void> argMax(TensorRef input, TensorRef output, int offset, int length) {
+        if (input.dType() != DType.F32) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        Preconditions.checkArgument(input.shape().first() == 1, "argMax expects one row");
+        Preconditions.checkArgument(output.shape().first() == 1 && output.shape().last() == 2,
+                "argMax output must have shape [1, 2]");
+        Preconditions.checkArgument(output.dType() == DType.F32, "argMax output must be F32");
+        Preconditions.checkArgument(offset >= 0 && length > 0 && offset + length <= input.shape().last(),
+                "argMax window out of bounds");
+        int i = offset;
+        int upperBound = offset + F32_SPECIES.loopBound(length);
+        FloatVector maxVector = FloatVector.broadcast(F32_SPECIES, Float.NEGATIVE_INFINITY);
+        for (; i < upperBound; i += F32_SPECIES.length()) {
+            maxVector = maxVector.max(FloatVector.fromMemorySegment(F32_SPECIES, input.memorySegment(),
+                    memoryOffset(input, 0, i), ByteOrder.LITTLE_ENDIAN));
+        }
+        float maxValue = maxVector.reduceLanes(VectorOperators.MAX);
+        for (; i < offset + length; i++) {
+            maxValue = Math.max(maxValue, input.get(0, i));
+        }
+        int maxIndex = offset;
+        for (i = offset; i < offset + length; i++) {
+            if (input.get(0, i) == maxValue) {
+                maxIndex = i;
+                break;
+            }
+        }
+        output.set(maxIndex, 0, 0);
+        output.set(maxValue, 0, 1);
+        return Either.Right(null);
+    }
+
+    @Override
+    public Either<OpSupport, Void> accumulate(TensorRef a, TensorRef b, int offset, int length) {
+        boolean supported = a.dType() == DType.F32
+                ? b.dType() == DType.F32 || b.dType() == DType.Q4 || b.dType() == DType.BF16
+                : a.dType() == DType.BF16 && b.dType() == DType.BF16;
+        if (!supported) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        Preconditions.checkArgument(a.dims() == b.dims());
+        Preconditions.checkArgument(a.shape().last() == b.shape().last());
+        Preconditions.checkArgument(b.shape().first() == 1 || a.shape().first() == b.shape().first());
+        Preconditions.checkArgument(offset >= 0 && length >= 0 && offset + length <= a.shape().last());
+        boolean broadcast = b.shape().first() == 1;
+        for (int row = 0; row < a.shape().first(); row++) {
+            int sourceRow = broadcast ? 0 : row;
+            if (a.dType() == DType.F32 && b.dType() == DType.F32) {
+                accumulateF32(a, b, row, sourceRow, offset, length);
+            } else if (a.dType() == DType.F32 && b.dType() == DType.BF16) {
+                accumulateF32Bf16(a, b, row, sourceRow, offset, length);
+            } else if (a.dType() == DType.BF16 && b.dType() == DType.BF16) {
+                accumulateBf16(a, b, row, sourceRow, offset, length);
+            } else {
+                accumulateF32Q4(a, b, row, sourceRow, offset, length);
+            }
+        }
+        return Either.Right(null);
+    }
+
+    private void accumulateF32(TensorRef target, TensorRef source, int targetRow, int sourceRow,
+            int offset, int length) {
+        int i = offset;
+        int end = offset + length;
+        int upperBound = offset + F32_SPECIES.loopBound(length);
+        for (; i < upperBound; i += F32_SPECIES.length()) {
+            FloatVector a = FloatVector.fromMemorySegment(F32_SPECIES, target.memorySegment(),
+                    memoryOffset(target, targetRow, i), ByteOrder.LITTLE_ENDIAN);
+            FloatVector b = FloatVector.fromMemorySegment(F32_SPECIES, source.memorySegment(),
+                    memoryOffset(source, sourceRow, i), ByteOrder.LITTLE_ENDIAN);
+            a.add(b).intoMemorySegment(target.memorySegment(), memoryOffset(target, targetRow, i),
+                    ByteOrder.LITTLE_ENDIAN);
+        }
+        for (; i < end; i++) {
+            target.set(target.get(targetRow, i) + source.get(sourceRow, i), targetRow, i);
+        }
+    }
+
+    private void accumulateF32Bf16(TensorRef target, TensorRef source, int targetRow, int sourceRow,
+            int offset, int length) {
+        int i = offset;
+        int end = offset + length;
+        int upperBound = offset + F32_BF16_SPECIES.loopBound(length);
+        for (; i < upperBound; i += F32_BF16_SPECIES.length()) {
+            FloatVector a = FloatVector.fromMemorySegment(F32_BF16_SPECIES, target.memorySegment(),
+                    memoryOffset(target, targetRow, i), ByteOrder.LITTLE_ENDIAN);
+            a.add(bf16Vector(source, sourceRow, i)).intoMemorySegment(target.memorySegment(),
+                    memoryOffset(target, targetRow, i), ByteOrder.LITTLE_ENDIAN);
+        }
+        for (; i < end; i++) {
+            target.set(target.get(targetRow, i) + source.get(sourceRow, i), targetRow, i);
+        }
+    }
+
+    private void accumulateBf16(TensorRef target, TensorRef source, int targetRow, int sourceRow,
+            int offset, int length) {
+        int i = offset;
+        int end = offset + length;
+        int upperBound = offset + F32_BF16_SPECIES.loopBound(length);
+        for (; i < upperBound; i += F32_BF16_SPECIES.length()) {
+            FloatVector sum = bf16Vector(target, targetRow, i).add(bf16Vector(source, sourceRow, i));
+            IntVector rounded = roundFloatBitsToBf16(sum.reinterpretAsInts());
+            ShortVector result = (ShortVector) rounded.lanewise(VectorOperators.LSHR, 16)
+                    .convertShape(VectorOperators.I2S, BF16_SPECIES, 0);
+            result.intoMemorySegment(target.memorySegment(), memoryOffset(target, targetRow, i),
+                    ByteOrder.LITTLE_ENDIAN);
+        }
+        for (; i < end; i++) {
+            target.set(target.get(targetRow, i) + source.get(sourceRow, i), targetRow, i);
+        }
+    }
+
+    private void accumulateF32Q4(TensorRef target, TensorRef source, int targetRow, int sourceRow,
+            int offset, int length) {
+        int end = offset + length;
+        for (int column = offset; column < end; column += Q4Layout.BLOCK_SIZE) {
+            int blockLength = Math.min(Q4Layout.BLOCK_SIZE, end - column);
+            if (blockLength != Q4Layout.BLOCK_SIZE) {
+                for (int i = column; i < end; i++) {
+                    target.set(target.get(targetRow, i) + source.get(sourceRow, i), targetRow, i);
+                }
+                return;
+            }
+            float scale = Q4Layout.scale(source).get(sourceRow, Q4Layout.blockIndex(column));
+            ByteVector packed = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, source.memorySegment(),
+                    memoryOffset(source, sourceRow, column), ByteOrder.LITTLE_ENDIAN);
+            FloatVector low = (FloatVector) packed.lanewise(VectorOperators.AND, Q4_MASK)
+                    .sub(Q4_ZERO).convertShape(VectorOperators.B2F, FloatVector.SPECIES_512, 0);
+            FloatVector high = (FloatVector) packed.lanewise(VectorOperators.ASHR, Q4_SHIFT)
+                    .lanewise(VectorOperators.AND, Q4_MASK).sub(Q4_ZERO)
+                    .convertShape(VectorOperators.B2F, FloatVector.SPECIES_512, 0);
+            FloatVector lowTarget = FloatVector.fromMemorySegment(FloatVector.SPECIES_512, target.memorySegment(),
+                    memoryOffset(target, targetRow, column), ByteOrder.LITTLE_ENDIAN);
+            FloatVector highTarget = FloatVector.fromMemorySegment(FloatVector.SPECIES_512, target.memorySegment(),
+                    memoryOffset(target, targetRow, column + Q4Layout.HALF_BLOCK), ByteOrder.LITTLE_ENDIAN);
+            lowTarget.add(low.mul(scale)).intoMemorySegment(target.memorySegment(),
+                    memoryOffset(target, targetRow, column), ByteOrder.LITTLE_ENDIAN);
+            highTarget.add(high.mul(scale)).intoMemorySegment(target.memorySegment(),
+                    memoryOffset(target, targetRow, column + Q4Layout.HALF_BLOCK), ByteOrder.LITTLE_ENDIAN);
+        }
+    }
     private static final VectorSpecies<Float> F32_SPECIES = FloatVector.SPECIES_PREFERRED;
     private static final VectorSpecies<Float> F32_BF16_SPECIES = FloatVector.SPECIES_256;
     private static final VectorSpecies<Integer> F16_INT_SPECIES = IntVector.SPECIES_256;
@@ -1095,6 +1240,6 @@ class PanamaOps implements TensorOps {
     }
 
     private static long memoryOffset(TensorRef tensor, int row, int column) {
-        return tensor.underlying().getMemorySegmentOffset(tensor.shape().getOffset(row, column));
+        return tensor.memorySegmentOffset(tensor.shape().getOffset(row, column));
     }
 }
