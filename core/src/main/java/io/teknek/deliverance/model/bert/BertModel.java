@@ -9,6 +9,12 @@ import io.teknek.deliverance.embedding.PoolingType;
 import io.teknek.deliverance.embedding.SentenceTransformersEmbeddingRecipe;
 import io.teknek.deliverance.embedding.SentenceTransformersPooling;
 import io.teknek.deliverance.generator.*;
+import io.teknek.deliverance.math.ActivationFunction;
+import io.teknek.deliverance.generator2.BertMLPBlock2;
+import io.teknek.deliverance.generator2.BertSelfAttention2;
+import io.teknek.deliverance.generator2.BertTransformerBlock2;
+import io.teknek.deliverance.generator2.LayerNorm2;
+import io.teknek.deliverance.generator2.TransformerBlock2;
 import io.teknek.deliverance.grace.EncodeOptions;
 import io.teknek.deliverance.grace.Encoding;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
@@ -27,6 +33,9 @@ import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensorlib.TensorPlan;
 import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.tensor2.TensorRefBackedTensor;
+import io.teknek.deliverance.tensor.kv.KvCacheSession;
+import io.teknek.deliverance.tensorlib.PlannedTensorRef;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 
 import java.util.Arrays;
@@ -41,6 +50,13 @@ public class BertModel extends AbstractModel {
     private AbstractTensor tokenTypeEmbeddings;
     private AbstractTensor positionEmbeddings;
     private LayerNorm inputLayerNorm;
+    private TensorRef wordEmbeddingsRef;
+    private TensorRef tokenTypeEmbeddingsRef;
+    private TensorRef positionEmbeddingsRef;
+    private TensorRef inputLayerNormBiasRef;
+    private TensorRef inputLayerNormWeightRef;
+    private TensorRef poolingWeightRef;
+    private TensorRef poolingBiasRef;
     private SentenceTransformersEmbeddingRecipe embeddingRecipe = SentenceTransformersEmbeddingRecipe.defaultMeanNormalize();
 
     public BertModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer tokenizer, DType workingDType, DType workingQType,
@@ -52,6 +68,16 @@ public class BertModel extends AbstractModel {
         super(inferenceType, c, w, tokenizer, workingDType, workingQType, modelQType,
                 configurableTensorProvider, metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, toolCallParser, pool,
                 tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+    }
+
+    @Override
+    protected boolean usesTensorRefExecution() {
+        return true;
+    }
+
+    @Override
+    public boolean usesKvCache2Generation() {
+        return true;
     }
 
     protected AbstractTensor loadWeight(String name) {
@@ -91,13 +117,76 @@ public class BertModel extends AbstractModel {
                 loadWeight("embeddings.LayerNorm.weight"), new MetricRegistry(),
                 "model.weights.embeddings.LayerNorm.bias", "model.weights.embeddings.LayerNorm.weight");
 
+        wordEmbeddingsRef = registerModelTensorRef(weights.loadRef("embeddings.word_embeddings.weight"));
+        tokenTypeEmbeddingsRef = registerModelTensorRef(weights.loadRef("embeddings.token_type_embeddings.weight"));
+        positionEmbeddingsRef = registerModelTensorRef(weights.loadRef("embeddings.position_embeddings.weight"));
+        inputLayerNormBiasRef = registerModelTensorRef(weights.loadRef("embeddings.LayerNorm.bias"));
+        inputLayerNormWeightRef = registerModelTensorRef(weights.loadRef("embeddings.LayerNorm.weight"));
+
         return new EmbedInput(BertModel.this) {
             @Override
             public TensorRef inputTokenToEmbedding(int inputToken, int position) {
-                return TensorRef.owned(bertEmbeddings(new BertInput(new int[] { inputToken }, null, null,
-                        new int[] { position }, 1, 1)));
+                return bertEmbeddingsRef(new BertInput(new int[] { inputToken }, null, null,
+                        new int[] { position }, 1, 1));
             }
         };
+    }
+
+    @Override
+    protected TransformerBlock2[] loadTransformerBlockWeights2() {
+        DType qType = modelQType.orElse(modelDType);
+        TransformerBlock2[] blocks = new TransformerBlock2[config.numberOfLayers];
+        for (int i = 0; i < config.numberOfLayers; i++) {
+            String base = "encoder.layer." + i + ".";
+            String attention = base + "attention.";
+            TensorRef queryWeight = loadRef2(attention + "self.query.weight", qType);
+            TensorRef keyWeight = loadRef2(attention + "self.key.weight", qType);
+            TensorRef valueWeight = loadRef2(attention + "self.value.weight", qType);
+            TensorRef outputWeight = loadRef2(attention + "output.dense.weight", qType);
+            TensorRef queryBias = registerModelTensorRef(weights.loadRef(attention + "self.query.bias"));
+            TensorRef keyBias = registerModelTensorRef(weights.loadRef(attention + "self.key.bias"));
+            TensorRef valueBias = registerModelTensorRef(weights.loadRef(attention + "self.value.bias"));
+            TensorRef outputBias = registerModelTensorRef(weights.loadRef(attention + "output.dense.bias"));
+            BertSelfAttention2 selfAttention = new BertSelfAttention2(this, queryWeight, keyWeight, valueWeight,
+                    outputWeight, queryBias, keyBias, valueBias, outputBias, lighter);
+
+            TensorRef attentionNormBias = registerModelTensorRef(weights.loadRef(base + "attention.output.LayerNorm.bias"));
+            TensorRef attentionNormWeight = registerModelTensorRef(weights.loadRef(base + "attention.output.LayerNorm.weight"));
+            TensorRef intermediateWeight = loadRef2(base + "intermediate.dense.weight", qType);
+            TensorRef intermediateBias = registerModelTensorRef(weights.loadRef(base + "intermediate.dense.bias"));
+            TensorRef outputMlpWeight = loadRef2(base + "output.dense.weight", qType);
+            TensorRef outputMlpBias = registerModelTensorRef(weights.loadRef(base + "output.dense.bias"));
+            BertMLPBlock2 mlp = new BertMLPBlock2(this, intermediateWeight, outputMlpWeight,
+                    intermediateBias, outputMlpBias, lighter);
+            TensorRef outputNormBias = registerModelTensorRef(weights.loadRef(base + "output.LayerNorm.bias"));
+            TensorRef outputNormWeight = registerModelTensorRef(weights.loadRef(base + "output.LayerNorm.weight"));
+            blocks[i] = new BertTransformerBlock2(this, i, selfAttention,
+                    new LayerNorm2(this, attentionNormBias, attentionNormWeight, metricRegistry), mlp,
+                    new LayerNorm2(this, outputNormBias, outputNormWeight, metricRegistry));
+        }
+        return blocks;
+    }
+
+    private TensorRef loadRef2(String name, DType qType) {
+        return registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(name, weights::loadRef, qType));
+    }
+
+    private TensorRef bertEmbeddingsRef(BertInput input) {
+        TensorRef embedding = makeDenseTensorRef(input.flattenedLength(), config.embeddingLength);
+        for (int row = 0; row < input.flattenedLength(); row++) {
+            int token = input.inputIds()[row];
+            int tokenType = input.tokenTypeIds()[row];
+            int position = input.positionIds()[row];
+            for (int column = 0; column < config.embeddingLength; column++) {
+                embedding.set(wordEmbeddingsRef.get(token, column)
+                        + tokenTypeEmbeddingsRef.get(tokenType, column)
+                        + positionEmbeddingsRef.get(position, column), row, column);
+            }
+        }
+        TensorRef normalized = new LayerNorm2(this, inputLayerNormBiasRef, inputLayerNormWeightRef,
+                metricRegistry).forward(embedding);
+        embedding.close();
+        return normalized;
     }
 
     /**
@@ -219,9 +308,6 @@ public class BertModel extends AbstractModel {
 
     @Override
     protected float[] timedEmbedding(String input, PoolingType poolingType) {
-        if (poolingType != PoolingType.AVG) {
-            return super.timedEmbedding(input, poolingType);
-        }
         EncodeOptions encodeOptions = embeddingRecipe.maxSequenceLength().stream()
                 .mapToObj(maxLength -> EncodeOptions.defaults().withTruncation(TruncationOptions.maxLength(
                         Math.min(maxLength, config.contextLength))))
@@ -232,17 +318,41 @@ public class BertModel extends AbstractModel {
             throw new IllegalArgumentException("Encoded input length " + encoding.length()
                     + " exceeds context length " + config.contextLength);
         }
-        try (KvBufferCache.KvBuffer kvMem = kvBufferCache.getEphemeralKvBuffer();
-             AbstractTensor tokenEmbeddings = batchForward(BertInput.singleSequence(encoding.inputIds(),
-                     encoding.attentionMask(), null, null), kvMem)) {
-            SentenceTransformersPooling.Mode[] modes = embeddingRecipe.poolingModes()
-                    .toArray(SentenceTransformersPooling.Mode[]::new);
-            float[] embedding = SentenceTransformersPooling.pool(tokenEmbeddings, encoding.attentionMask(), 1,
-                    encoding.length(), modes)[0];
-            if (embeddingRecipe.normalize()) {
-                SentenceTransformersPooling.normalize(embedding);
+        BertInput bertInput = BertInput.singleSequence(encoding.inputIds(), encoding.attentionMask(), null, null);
+        try (KvCacheSession kvSession = newKvCacheSession()) {
+            TensorRef inputEmbeddings = bertEmbeddingsRef(bertInput);
+            PlannedTensorRef planned = forward(plannedInputEmbeddingsRef("bert_input_embeddings", inputEmbeddings,
+                    ForwardPhase.PREFILL), 0, kvSession, Optional.empty(), ForwardPhase.PREFILL,
+                    bertInput.batchSize(), bertInput.sequenceLength(), bertInput.attentionMask());
+            try (TensorRefBackedTensor tokenEmbeddings = new TensorRefBackedTensor(planned.tensor())) {
+                if (poolingType == PoolingType.MODEL) {
+                    if (poolingWeightRef == null || poolingBiasRef == null) {
+                        throw new UnsupportedOperationException("no pooling layer for this model");
+                    }
+                    try (TensorRef last = planned.tensor().slice(bertInput.sequenceLength() - 1);
+                         TensorRef pooled = makeDenseTensorRef(1, config.embeddingLength)) {
+                        lighter.dotProductRows(pooled, last, poolingWeightRef, 0, config.embeddingLength,
+                                0, config.embeddingLength, 0);
+                        for (int column = 0; column < config.embeddingLength; column++) {
+                            pooled.set(ActivationFunction.eval(config.activationFunction,
+                                    pooled.get(0, column) + poolingBiasRef.get(0, column)), 0, column);
+                        }
+                        float[] output = new float[config.embeddingLength];
+                        for (int column = 0; column < config.embeddingLength; column++) {
+                            output[column] = pooled.get(0, column);
+                        }
+                        return output;
+                    }
+                }
+                SentenceTransformersPooling.Mode[] modes = embeddingRecipe.poolingModes()
+                        .toArray(SentenceTransformersPooling.Mode[]::new);
+                float[] embedding = SentenceTransformersPooling.pool(tokenEmbeddings, bertInput.attentionMask(),
+                        bertInput.batchSize(), bertInput.sequenceLength(), modes)[0];
+                if (embeddingRecipe.normalize()) {
+                    SentenceTransformersPooling.normalize(embedding);
+                }
+                return embedding;
             }
-            return embedding;
         }
     }
 
@@ -282,6 +392,8 @@ public class BertModel extends AbstractModel {
         }
         final AbstractTensor poolerDenseWeight = loadWeight("pooler.dense.weight");
         final AbstractTensor poolerDenseBias = loadWeight("pooler.dense.bias");
+        poolingWeightRef = loadRef2("pooler.dense.weight", modelQType.orElse(modelDType));
+        poolingBiasRef = registerModelTensorRef(weights.loadRef("pooler.dense.bias"));
         return new PoolingLayer() {
             public AbstractTensor getPoolingWeights() {
                 return poolerDenseWeight;

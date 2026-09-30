@@ -212,7 +212,7 @@ tensor2_status tensor2_gemm_f32_q4(float *result, const float *a, const uint8_t 
         int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride, int a_stride,
         int b_stride, int b_scale_stride) {
     return tensor2_dot_product_rows_f32_q4(result, a, b, b_scales, result_rows, a_column_offset,
-            b_column_offset, column_length, b_row_offset, row_chunk_size, result_row_offset, result_stride,
+            b_column_offset, column_length, b_row_offset, row_chunk_size, result_row_offset + b_row_offset, result_stride,
             a_stride, b_stride, b_scale_stride);
 }
 
@@ -221,7 +221,7 @@ tensor2_status tensor2_gemm_i8_q4(float *result, const int8_t *a, const float *a
         int column_length, int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride,
         int a_stride, int a_scale_stride, int b_stride, int b_scale_stride) {
     return tensor2_dot_product_rows_i8_q4(result, a, a_scales, b, b_scales, result_rows, a_column_offset,
-            b_column_offset, column_length, b_row_offset, row_chunk_size, result_row_offset, result_stride,
+            b_column_offset, column_length, b_row_offset, row_chunk_size, result_row_offset + b_row_offset, result_stride,
             a_stride, a_scale_stride, b_stride, b_scale_stride);
 }
 

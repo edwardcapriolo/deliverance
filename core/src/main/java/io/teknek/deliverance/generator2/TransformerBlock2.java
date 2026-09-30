@@ -14,7 +14,7 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 /** TensorRef-native transformer block. */
-public final class TransformerBlock2 {
+public class TransformerBlock2 {
     private final AbstractModel model;
     final int layerIndex;
     final Optional<LayerNorm2> preAttentionNorm;
@@ -61,12 +61,20 @@ public final class TransformerBlock2 {
 
     public TensorRef forward(TensorRef embedding, int startPosition, KvCacheSession kvSession,
             Optional<Consumer<List<TensorRef>>> tensorReducer, ForwardPhase phase) {
+        return forward(embedding, startPosition, kvSession, tensorReducer, phase,
+                1, (int) embedding.shape().first(), null);
+    }
+
+    public TensorRef forward(TensorRef embedding, int startPosition, KvCacheSession kvSession,
+            Optional<Consumer<List<TensorRef>>> tensorReducer, ForwardPhase phase, int batchSize,
+            int sequenceLength, int[] attentionMask) {
         Timer timer = InferenceProfiler.timer(model.getMetricRegistry(), "transformerblock.forward");
         try (Timer.Context ignored = timer.time()) {
             TensorRef lnemb = preAttentionNorm.map(ln -> ln.forward(embedding)).orElse(embedding);
             TensorRef postAttention;
             try (AbstractModel.TensorRefLease qlnemb = preAttentionProjectionInput(lnemb)) {
-                postAttention = attention.forward(qlnemb.tensor(), startPosition, kvSession, tensorReducer, phase);
+                postAttention = attention.forward(qlnemb.tensor(), startPosition, kvSession, tensorReducer, phase,
+                        batchSize, sequenceLength, attentionMask);
             }
             TensorRef lnattn = maybeApplyNorm(postAttention, postAttentionNorm);
             applyResidual(lnattn, embedding, "post_attention_residual");
@@ -84,10 +92,12 @@ public final class TransformerBlock2 {
             model.emitLayerDebug(layerIndex, "post_ff_residual", lnpostFF);
 
             if (lnemb != embedding) lnemb.close();
-            if (lnattn != postAttention) lnattn.close();
-            else postAttention.close();
-            if (lnpreFF != lnattn) lnpreFF.close();
-            else lnattn.close();
+            if (lnpreFF != lnattn) {
+                lnattn.close();
+                lnpreFF.close();
+            } else {
+                lnattn.close();
+            }
 
             return maybeApplyNorm(lnpostFF, preResponseNorm);
         }
