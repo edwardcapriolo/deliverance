@@ -22,4 +22,10 @@ public interface SelfAttention2 {
             Optional<Consumer<List<TensorRef>>> tensorReducer, ForwardPhase phase) {
         throw new UnsupportedOperationException(getClass().getSimpleName() + " does not support KVCache2");
     }
+
+    default TensorRef forward(TensorRef input, int startPosition, KvCacheSession kvSession,
+            Optional<Consumer<List<TensorRef>>> tensorReducer, ForwardPhase phase, int batchSize,
+            int sequenceLength, int[] attentionMask) {
+        return forward(input, startPosition, kvSession, tensorReducer, phase);
+    }
 }

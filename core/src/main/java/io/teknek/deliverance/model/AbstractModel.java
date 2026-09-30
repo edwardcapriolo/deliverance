@@ -1603,7 +1603,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         return new PlannedTensor(embeddings, lineage);
     }
 
-    private PlannedTensorRef plannedInputEmbeddingsRef(String name, TensorRef embeddings,
+    protected PlannedTensorRef plannedInputEmbeddingsRef(String name, TensorRef embeddings,
             io.teknek.deliverance.generator.ForwardPhase phase) {
         TensorPlan.Tensor lineage = modelLineageTensor("model.embed_tokens.weight")
                 .map(upstream -> modelLineagePlan.input(name, upstream, embeddings))
@@ -1615,13 +1615,21 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
 
     public PlannedTensorRef forward(PlannedTensorRef embedding, int startPos, KvCacheSession kvSession,
             Optional<Consumer<List<TensorRef>>> tensorReducer, io.teknek.deliverance.generator.ForwardPhase phase) {
+        return forward(embedding, startPos, kvSession, tensorReducer, phase,
+                1, (int) embedding.tensor().shape().first(), null);
+    }
+
+    public PlannedTensorRef forward(PlannedTensorRef embedding, int startPos, KvCacheSession kvSession,
+            Optional<Consumer<List<TensorRef>>> tensorReducer, io.teknek.deliverance.generator.ForwardPhase phase,
+            int batchSize, int sequenceLength, int[] attentionMask) {
         Preconditions.checkState(transformerBlocks2 != null, "TensorRef transformer blocks are not initialized");
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "abstractmodel.forward_layers").time()) {
             emitLayerDebug(-1, "input", embedding.tensor());
             for (int layer = 0; layer < config.numberOfLayers; layer++) {
                 throwIfGenerationInterrupted();
                 TensorRef input = embedding.tensor();
-                TensorRef output = transformerBlocks2[layer].forward(input, startPos, kvSession, tensorReducer, phase);
+                TensorRef output = transformerBlocks2[layer].forward(input, startPos, kvSession, tensorReducer, phase,
+                        batchSize, sequenceLength, attentionMask);
                 embedding = new PlannedTensorRef(output, embedding.plan());
                 input.close();
                 emitLayerDebug(layer, "layer_output", output);
