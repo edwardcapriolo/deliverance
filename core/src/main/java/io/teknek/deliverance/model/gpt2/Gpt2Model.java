@@ -15,6 +15,7 @@ import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 
 import java.util.Optional;
@@ -39,13 +40,13 @@ public class Gpt2Model extends AbstractModel{
 
         return new EmbedInput(this) {
             @Override
-            public AbstractTensor inputTokenToEmbedding(int inputToken, int position) {
+            public TensorRef inputTokenToEmbedding(int inputToken, int position) {
                 AbstractTensor embedding = makeDenseTensor(1, config.embeddingLength);
                 for (int i = 0; i < config.embeddingLength; i++) {
                     float v = wte.get(inputToken, i) + wpe.get(position, i);
                     embedding.set(v, 0, i);
                 }
-                return embedding;
+                return TensorRef.owned(embedding);
             }
         };
     }

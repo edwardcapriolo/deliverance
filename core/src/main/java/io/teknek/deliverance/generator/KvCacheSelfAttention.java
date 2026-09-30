@@ -133,13 +133,19 @@ public class KvCacheSelfAttention extends BaseCausalSelfAttention {
              AbstractTensor keyBatch = model.makeDenseTensor(batchSize, kvLength);
              AbstractTensor valueBatch = model.makeDenseTensor(batchSize, kvLength);
              AbstractTensor attended = model.makeDenseTensor(batchSize, attentionLength)) {
+            model.emitLayerDebug(layerIndex, "attention_projection_input", projectionInput);
             projectQkv(projectionInput, queryBatch, keyBatch, valueBatch, phase);
             normalizeQueryKey(queryBatch, keyBatch);
+            model.emitLayerDebug(layerIndex, "query_normalized", queryBatch);
+            model.emitLayerDebug(layerIndex, "key_normalized", keyBatch);
             applyRotaryEmbedding(queryBatch, keyBatch, startPosition);
+            model.emitLayerDebug(layerIndex, "query_rope", queryBatch);
+            model.emitLayerDebug(layerIndex, "key_rope", keyBatch);
             if (writesCache(mode)) {
                 writeKvRows(kvSession, mode, keyBatch, valueBatch, startPosition);
             }
             attend(attended, queryBatch, keyBatch, valueBatch, kvSession, startPosition, batchSize, mode);
+            model.emitLayerDebug(layerIndex, "attention_value", attended);
             return outputProjection(attended, tensorReducer, phase);
         }
     }

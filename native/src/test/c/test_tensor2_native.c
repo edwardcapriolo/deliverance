@@ -116,5 +116,29 @@ int main(void) {
             }
         }
     }
+    int8_t i8_input[2 * 32];
+    uint8_t q4_weights[3 * 16];
+    for (int column = 0; column < 32; column++) {
+        i8_input[column] = 2;
+        i8_input[32 + column] = 4;
+    }
+    for (int column = 0; column < 16; column++) {
+        q4_weights[column] = 0x88;
+        q4_weights[16 + column] = 0x99;
+        q4_weights[32 + column] = 0xaa;
+    }
+    float i8_scales[2] = {0.5f, 0.25f};
+    float q4_scales[3] = {1.0f, 0.25f, 0.5f};
+    float i8_q4_result[2 * 5] = {0};
+    status = tensor2_dot_product_rows_i8_q4(i8_q4_result, i8_input, i8_scales, q4_weights, q4_scales,
+            2, 0, 0, 32, 1, 2, 2, 5, 32, 1, 32, 1);
+    if (status != TENSOR2_OK) {
+        return 12;
+    }
+    for (int row = 0; row < 2; row++) {
+        if (i8_q4_result[row * 5 + 2] != 8.0f || i8_q4_result[row * 5 + 3] != 32.0f) {
+            return 13;
+        }
+    }
     return 0;
 }

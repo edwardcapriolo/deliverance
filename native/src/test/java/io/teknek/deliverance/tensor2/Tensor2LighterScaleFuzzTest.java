@@ -5,6 +5,7 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.TensorShape;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -45,6 +46,28 @@ class Tensor2LighterScaleFuzzTest {
                     float tolerance = c.dType() == DType.BF16 ? bf16Tolerance(expected[row][column]) : 1.0e-5f;
                     assertEquals(expected[row][column], target.underlying().get(row, column), tolerance,
                             c + " row=" + row + " column=" + column);
+                }
+            }
+        }
+    }
+
+    @Test
+    void nativeScaleHonorsNonzeroRowSliceBase() {
+        Lighter lighter = new Lighter(new MetricRegistry(), Map.of(TensorProviderKind.SIMD, new NativeOps()));
+        for (DType dType : List.of(DType.F32, DType.BF16)) {
+            try (TensorRef target = lighter.allocate(dType, TensorShape.of(4, 17));
+                 TensorRef row = target.slice(2)) {
+                float[][] expected = fill(target, 9341L + dType.ordinal());
+                lighter.scale(new Scale(0.25f).target(row).offsetAndLength(1, 13));
+                for (int column = 1; column < 14; column++) {
+                    expected[2][column] *= 0.25f;
+                }
+                for (int parentRow = 0; parentRow < 4; parentRow++) {
+                    for (int column = 0; column < 17; column++) {
+                        float tolerance = dType == DType.BF16 ? bf16Tolerance(expected[parentRow][column]) : 1.0e-5f;
+                        assertEquals(expected[parentRow][column], target.get(parentRow, column), tolerance,
+                                dType + " row=" + parentRow + " column=" + column);
+                    }
                 }
             }
         }

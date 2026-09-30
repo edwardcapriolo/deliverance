@@ -126,13 +126,13 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
         }
         return new EmbedInput(this) {
             @Override
-            public AbstractTensor inputTokenToEmbedding(int inputToken, int unused) {
+            public TensorRef inputTokenToEmbedding(int inputToken, int unused) {
                 Preconditions.checkArgument(inputToken >= 0 && inputToken < embedTokenWeights.shape().first(),
                         "input token out of bounds");
                 AbstractTensor row = embedTokenWeights.slice(true, inputToken);
                 AbstractTensor embedding = parent.getTensorAllocator().getDirty(row.dType(), row.shape());
                 embedding.copyFrom(row, 0, 0, config.embeddingLength);
-                return embedding;
+                return TensorRef.owned(embedding);
             }
         };
     }

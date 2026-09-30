@@ -1,9 +1,9 @@
 package io.teknek.deliverance.tensor.kv;
 
 import com.google.common.base.Preconditions;
-import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor2.TensorRef;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -71,58 +71,58 @@ public final class KvBlock implements AutoCloseable {
         return storage;
     }
 
-    void copyKeyRow(int layer, int position, AbstractTensor destination) {
+    void copyKeyRow(int layer, int position, TensorRef destination) {
         copyRow(layer, position, 0, destination);
     }
 
-    void copyValueRow(int layer, int position, AbstractTensor destination) {
+    void copyValueRow(int layer, int position, TensorRef destination) {
         copyRow(layer, position, 1, destination);
     }
 
-    void copyKeyRows(int layer, int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart) {
+    void copyKeyRows(int layer, int positionStart, int rowCount, TensorRef destination, int destinationRowStart) {
         copyRows(layer, positionStart, rowCount, 0, destination, destinationRowStart);
     }
 
-    void copyValueRows(int layer, int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart) {
+    void copyValueRows(int layer, int positionStart, int rowCount, TensorRef destination, int destinationRowStart) {
         copyRows(layer, positionStart, rowCount, 1, destination, destinationRowStart);
     }
 
-    AbstractTensor keyRowCopy(int layer, int position, TensorAllocator allocator) {
+    TensorRef keyRowCopy(int layer, int position, TensorAllocator allocator) {
         return rowCopy(layer, position, 0, allocator);
     }
 
-    AbstractTensor valueRowCopy(int layer, int position, TensorAllocator allocator) {
+    TensorRef valueRowCopy(int layer, int position, TensorAllocator allocator) {
         return rowCopy(layer, position, 1, allocator);
     }
 
-    AbstractTensor keyRowView(int layer, int position) {
+    TensorRef keyRowView(int layer, int position) {
         return rowView(layer, position, 0);
     }
 
-    AbstractTensor valueRowView(int layer, int position) {
+    TensorRef valueRowView(int layer, int position) {
         return rowView(layer, position, 1);
     }
 
-    AbstractTensor keyPageView(int layer) {
+    TensorRef keyPageView(int layer) {
         requireOpen();
         validateLayer(layer);
         return storage.pageView(layer, 0);
     }
 
-    AbstractTensor valuePageView(int layer) {
+    TensorRef valuePageView(int layer) {
         requireOpen();
         validateLayer(layer);
         return storage.pageView(layer, 1);
     }
 
-    private AbstractTensor rowCopy(int layer, int position, int keyOrValue, TensorAllocator allocator) {
+    private TensorRef rowCopy(int layer, int position, int keyOrValue, TensorAllocator allocator) {
         requireOpen();
-        AbstractTensor copy = allocator.getDirty(storage.dtype(keyOrValue), TensorShape.of(1, kvLength));
+        TensorRef copy = TensorRef.owned(allocator.getDirty(storage.dtype(keyOrValue), TensorShape.of(1, kvLength)));
         copyRow(layer, position, keyOrValue, copy);
         return copy;
     }
 
-    private void copyRow(int layer, int position, int keyOrValue, AbstractTensor destination) {
+    private void copyRow(int layer, int position, int keyOrValue, TensorRef destination) {
         requireOpen();
         validateLayer(layer);
         Preconditions.checkArgument(containsPosition(position), "position not in block");
@@ -132,7 +132,7 @@ public final class KvBlock implements AutoCloseable {
         storage.copyRow(layer, blockRow, keyOrValue, destination);
     }
 
-    private void copyRows(int layer, int positionStart, int rowCount, int keyOrValue, AbstractTensor destination,
+    private void copyRows(int layer, int positionStart, int rowCount, int keyOrValue, TensorRef destination,
             int destinationRowStart) {
         requireOpen();
         validateLayer(layer);
@@ -145,7 +145,7 @@ public final class KvBlock implements AutoCloseable {
         storage.copyRows(layer, keyOrValue, positionStart - startPosition(), rowCount, destination, destinationRowStart);
     }
 
-    private AbstractTensor rowView(int layer, int position, int keyOrValue) {
+    private TensorRef rowView(int layer, int position, int keyOrValue) {
         requireOpen();
         validateLayer(layer);
         Preconditions.checkArgument(containsPosition(position), "position not in block");

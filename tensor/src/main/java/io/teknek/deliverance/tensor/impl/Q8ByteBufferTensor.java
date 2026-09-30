@@ -222,6 +222,7 @@ public class Q8ByteBufferTensor extends AbstractTensor {
     public void clear() {
         Preconditions.checkArgument(!b.isReadOnly(), "Can't clear a read-only buffer");
         segment.fill((byte) 0);
+        blockF.clear();
     }
 
     @Override

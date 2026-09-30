@@ -6,6 +6,7 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelConfig;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.InferenceProfiler;
+import io.teknek.deliverance.model.LocalGenerationBackend;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
@@ -62,12 +63,13 @@ abstract class AbstractQwen3BenchmarkCasesIT {
             PromptContext prompt = promptContext(model.promptSupport(), messages);
             InferenceProfiler.reset();
             System.out.printf("[deliverance-response] model=%s case=%s turn=%d%n", modelName, caseId, turn + 1);
-            Response response = model.generate(UUID.randomUUID(), prompt,
-                    new GeneratorParameters().withTemperature(0.0f).withMaxTokens(128).withSeed(42),
+            int maxTokens = Integer.getInteger("qwen.benchmark.maxTokens", 128);
+            Response response = model.generateWithBackendRef(UUID.randomUUID(), prompt,
+                    new GeneratorParameters().withTemperature(0.0f).withMaxTokens(maxTokens).withSeed(42),
                     (next, nextRaw, nextCleaned, timing) -> {
                         System.out.print(nextCleaned);
                         System.out.flush();
-                    });
+                    }, new LocalGenerationBackend(model));
             System.out.println();
             System.out.println("[deliverance-response-end]");
             messages.add(new ChatMessage("assistant", response.responseText));

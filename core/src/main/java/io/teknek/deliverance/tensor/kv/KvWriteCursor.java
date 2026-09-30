@@ -1,6 +1,7 @@
 package io.teknek.deliverance.tensor.kv;
 
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor2.TensorRef;
 
 /** Explicit write cursor for KV cache updates. */
 public final class KvWriteCursor implements AutoCloseable {
@@ -14,6 +15,13 @@ public final class KvWriteCursor implements AutoCloseable {
     }
 
     public void write(int layer, int position, AbstractTensor key, AbstractTensor value) {
+        if (closed) {
+            throw new IllegalStateException("KV write cursor is closed");
+        }
+        session.write(mode, layer, position, key, value);
+    }
+
+    public void write(int layer, int position, TensorRef key, TensorRef value) {
         if (closed) {
             throw new IllegalStateException("KV write cursor is closed");
         }

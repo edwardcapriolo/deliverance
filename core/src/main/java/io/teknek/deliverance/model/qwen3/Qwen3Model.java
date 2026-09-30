@@ -7,6 +7,10 @@ import io.teknek.deliverance.generator.Qwen3KvCacheSelfAttention;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.generator.RmsNorm;
 import io.teknek.deliverance.generator.TransformerBlock;
+import io.teknek.deliverance.generator2.MLPBlock2;
+import io.teknek.deliverance.generator2.Qwen3KvCacheSelfAttention2;
+import io.teknek.deliverance.generator2.RmsNorm2;
+import io.teknek.deliverance.generator2.TransformerBlock2;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.llama.LlamaModel;
@@ -55,6 +59,11 @@ public class Qwen3Model extends LlamaModel {
 
     @Override
     public boolean usesKvCache2Generation() {
+        return true;
+    }
+
+    @Override
+    protected boolean usesTensorRefExecution() {
         return true;
     }
 
@@ -160,6 +169,61 @@ public class Qwen3Model extends LlamaModel {
                     mlp,
                     configurableTensorProvider
             );
+        });
+        return blocks;
+    }
+
+    @Override
+    protected TransformerBlock2[] loadTransformerBlockWeights2() {
+        DType qType = modelQType.orElse(this.modelDType);
+        TensorParallelShardPlan tensorParallelPlan = TensorParallelPlanner.plan(config, tensorParallelContext);
+        TensorParallelWeightLoader tensorParallelWeights = new TensorParallelWeightLoader(weights,
+                tensorParallelContext, tensorParallelPlan, new DefaultTransformerWeightPolicyResolver());
+        TransformerBlock2[] blocks = new TransformerBlock2[config.numberOfLayers];
+        IntStream.range(0, config.numberOfLayers).parallel().forEach(i -> {
+            String base = "model.layers." + i + ".";
+            String attn = base + "self_attn.";
+            String qName = attn + "q_proj.weight";
+            String kName = attn + "k_proj.weight";
+            String vName = attn + "v_proj.weight";
+            String oName = attn + "o_proj.weight";
+            String qNormName = attn + "q_norm.weight";
+            String kNormName = attn + "k_norm.weight";
+            TensorRef qRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(qName,
+                    tensorParallelWeights::loadRef, qType));
+            TensorRef kRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(kName,
+                    tensorParallelWeights::loadRef, qType));
+            TensorRef vRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(vName,
+                    tensorParallelWeights::loadRef, qType));
+            TensorRef oRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(oName,
+                    tensorParallelWeights::loadRef, qType));
+            TensorRef qNormRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(qNormName,
+                    weights::loadRef, qType));
+            TensorRef kNormRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(kNormName,
+                    weights::loadRef, qType));
+            Qwen3KvCacheSelfAttention2 attention = new Qwen3KvCacheSelfAttention2(this, i, qRef, kRef, vRef, oRef,
+                    qNormRef, kNormRef, lighter, metricRegistry, qName, kName, vName, oName);
+
+            String mlpPrefix = base + "mlp.";
+            String gateName = mlpPrefix + "gate_proj.weight";
+            String downName = mlpPrefix + "down_proj.weight";
+            String upName = mlpPrefix + "up_proj.weight";
+            TensorRef gateRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(gateName,
+                    tensorParallelWeights::loadRef, qType));
+            TensorRef downRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(downName,
+                    tensorParallelWeights::loadRef, qType));
+            TensorRef upRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(upName,
+                    tensorParallelWeights::loadRef, qType));
+            MLPBlock2 mlp = new MLPBlock2(this, gateRef, upRef, downRef, lighter, gateName, upName, downName);
+
+            String inputNormName = base + "input_layernorm.weight";
+            String postAttentionNormName = base + "post_attention_layernorm.weight";
+            TensorRef inputNormRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(inputNormName,
+                    weights::loadRef, qType));
+            TensorRef postAttentionNormRef = registerModelTensorRef(
+                    loadAndMaybeQuantizedExcluding1DTensors(postAttentionNormName, weights::loadRef, qType));
+            blocks[i] = new TransformerBlock2(this, i, new RmsNorm2(this, inputNormRef, 0.0f), attention,
+                    new RmsNorm2(this, postAttentionNormRef, 0.0f), mlp);
         });
         return blocks;
     }

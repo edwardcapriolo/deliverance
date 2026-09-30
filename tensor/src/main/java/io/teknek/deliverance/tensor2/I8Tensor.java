@@ -75,6 +75,10 @@ class I8Tensor extends Tensor {
         return underlyingByteBuffer.get(shape.getOffset(row, column));
     }
 
+    byte getRawByte(int offset) {
+        return underlyingByteBuffer.get(offset);
+    }
+
     @Override
     public MemorySegment getMemorySegment() {
         return segment;

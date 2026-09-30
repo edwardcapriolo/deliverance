@@ -9,6 +9,8 @@ import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.MseTurboQuantCodec;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.tensor2.TensorRefBackedTensor;
 
 import java.util.concurrent.TimeUnit;
 
@@ -119,8 +121,8 @@ final class MseTurboQuantKvBlockStorage implements KvBlockStorage {
     }
 
     @Override
-    public AbstractTensor rowView(int layer, int blockRow, int keyOrValue) {
-        AbstractTensor decoded = allocator.getDirty(dtype, TensorShape.of(1, kvLength));
+    public TensorRef rowView(int layer, int blockRow, int keyOrValue) {
+        TensorRef decoded = TensorRef.owned(allocator.getDirty(dtype, TensorShape.of(1, kvLength)));
         try {
             decodeRow(layer, blockRow, keyOrValue, decoded);
             return decoded;
@@ -131,8 +133,8 @@ final class MseTurboQuantKvBlockStorage implements KvBlockStorage {
     }
 
     @Override
-    public AbstractTensor pageView(int layer, int keyOrValue) {
-        AbstractTensor decoded = allocator.getDirty(dtype, TensorShape.of(tokenCount, kvLength));
+    public TensorRef pageView(int layer, int keyOrValue) {
+        TensorRef decoded = TensorRef.owned(allocator.getDirty(dtype, TensorShape.of(tokenCount, kvLength)));
         try {
             copyRows(layer, keyOrValue, 0, tokenCount, decoded, 0);
             return decoded;
@@ -143,12 +145,12 @@ final class MseTurboQuantKvBlockStorage implements KvBlockStorage {
     }
 
     @Override
-    public void copyRow(int layer, int blockRow, int keyOrValue, AbstractTensor destination) {
+    public void copyRow(int layer, int blockRow, int keyOrValue, TensorRef destination) {
         decodeRow(layer, blockRow, keyOrValue, destination);
     }
 
     @Override
-    public void copyRows(int layer, int keyOrValue, int blockRowStart, int rowCount, AbstractTensor destination,
+    public void copyRows(int layer, int keyOrValue, int blockRowStart, int rowCount, TensorRef destination,
             int destinationRowStart) {
         validateRange(layer, keyOrValue, blockRowStart, rowCount, destination, destinationRowStart);
         if (rowCount == 0) {
@@ -157,8 +159,9 @@ final class MseTurboQuantKvBlockStorage implements KvBlockStorage {
         MseTurboQuantCodec.Scratch scratch = new MseTurboQuantCodec.Scratch(encodedRows.rotatedDim());
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, METRIC_PREFIX + ".block.decode.rows").time()) {
             for (int i = 0; i < rowCount; i++) {
-                try (AbstractTensor row = destination.slice(destinationRowStart + i)) {
-                    MseTurboQuantCodec.decodeRow(encodedRows, row, rowIndex(layer, blockRowStart + i, keyOrValue),
+                try (TensorRef row = destination.slice(destinationRowStart + i)) {
+                    AbstractTensor legacyRow = new TensorRefBackedTensor(row);
+                    MseTurboQuantCodec.decodeRow(encodedRows, legacyRow, rowIndex(layer, blockRowStart + i, keyOrValue),
                             null, scratch, METRIC_PREFIX + ".block.decode");
                 }
             }
@@ -166,13 +169,13 @@ final class MseTurboQuantKvBlockStorage implements KvBlockStorage {
         InferenceProfiler.counter(metricRegistry, METRIC_PREFIX + ".block.decode.rows.count").inc(rowCount);
     }
 
-    private void decodeRow(int layer, int blockRow, int keyOrValue, AbstractTensor destination) {
+    private void decodeRow(int layer, int blockRow, int keyOrValue, TensorRef destination) {
         validate(layer, blockRow, keyOrValue);
         Preconditions.checkArgument(destination.dims() == 2 && destination.shape().first() == 1
                 && destination.shape().last() == kvLength, "destination must be [1, kvLength]");
         Preconditions.checkArgument(destination.dType() == dtype, "destination dtype must match KV dtype");
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, METRIC_PREFIX + ".block.decode.row").time()) {
-            MseTurboQuantCodec.decodeRow(encodedRows, destination, rowIndex(layer, blockRow, keyOrValue), metricRegistry,
+            MseTurboQuantCodec.decodeRow(encodedRows, new TensorRefBackedTensor(destination), rowIndex(layer, blockRow, keyOrValue), metricRegistry,
                     new MseTurboQuantCodec.Scratch(encodedRows.rotatedDim()), METRIC_PREFIX + ".block.decode");
         }
     }
@@ -187,7 +190,7 @@ final class MseTurboQuantKvBlockStorage implements KvBlockStorage {
         Preconditions.checkArgument(keyOrValue == 0 || keyOrValue == 1, "keyOrValue must be 0 or 1");
     }
 
-    private void validateRange(int layer, int keyOrValue, int blockRowStart, int rowCount, AbstractTensor destination,
+    private void validateRange(int layer, int keyOrValue, int blockRowStart, int rowCount, TensorRef destination,
             int destinationRowStart) {
         Preconditions.checkArgument(layer >= 0 && layer < layers, "layer out of bounds");
         Preconditions.checkArgument(keyOrValue == 0 || keyOrValue == 1, "keyOrValue must be 0 or 1");

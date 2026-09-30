@@ -75,6 +75,10 @@ class Q4Tensor extends Tensor {
         return underlyingByteBuffer.get(byteIndex(shape.getOffset(row, column)));
     }
 
+    byte getRawPackedByte(int byteIndex) {
+        return underlyingByteBuffer.get(byteIndex);
+    }
+
     @Override
     public MemorySegment getMemorySegment() {
         return segment;

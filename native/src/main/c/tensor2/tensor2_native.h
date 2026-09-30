@@ -8,6 +8,110 @@ typedef enum tensor2_status {
     TENSOR2_UNSUPPORTED = 1
 } tensor2_status;
 
+tensor2_status tensor2_dot_product_rows_f32_f32(
+        float *result,
+        const float *input,
+        const float *weights,
+        int result_rows,
+        int input_start,
+        int input_length,
+        int weight_row_start,
+        int weight_row_count,
+        int result_column_start,
+        int result_stride,
+        int input_stride,
+        int weight_stride);
+
+tensor2_status tensor2_dot_product_rows_f32_q8(
+        float *result,
+        const float *input,
+        const int8_t *weights,
+        const float *weight_scales,
+        int result_rows,
+        int input_start,
+        int input_length,
+        int weight_row_start,
+        int weight_row_count,
+        int result_column_start,
+        int result_stride,
+        int input_stride,
+        int weight_stride,
+        int weight_scale_stride);
+
+tensor2_status tensor2_dot_product_rows_f32_q4(
+        float *result,
+        const float *input,
+        const uint8_t *weights,
+        const float *weight_scales,
+        int result_rows,
+        int input_column_start,
+        int weight_column_start,
+        int column_length,
+        int weight_row_start,
+        int weight_row_count,
+        int result_column_start,
+        int result_stride,
+        int input_stride,
+        int weight_stride,
+        int weight_scale_stride);
+
+tensor2_status tensor2_dot_product_rows_bf16_q4(
+        void *result,
+        const uint16_t *input,
+        const uint8_t *weights,
+        const float *weight_scales,
+        int result_bf16,
+        int result_rows,
+        int input_column_start,
+        int weight_column_start,
+        int column_length,
+        int weight_row_start,
+        int weight_row_count,
+        int result_column_start,
+        int result_stride,
+        int input_stride,
+        int weight_stride,
+        int weight_scale_stride);
+
+tensor2_status tensor2_dot_product_rows_i8_q4(
+        float *result,
+        const int8_t *input,
+        const float *input_scales,
+        const uint8_t *weights,
+        const float *weight_scales,
+        int result_rows,
+        int input_column_start,
+        int weight_column_start,
+        int column_length,
+        int weight_row_start,
+        int weight_row_count,
+        int result_column_start,
+        int result_stride,
+        int input_stride,
+        int input_scale_stride,
+        int weight_stride,
+        int weight_scale_stride);
+
+tensor2_status tensor2_saxpy_f32(
+        float alpha,
+        const float *x,
+        float *y,
+        int x_offset,
+        int y_offset,
+        int length);
+
+tensor2_status tensor2_saxpy_f32_batch(
+        const float *alpha,
+        const float *x,
+        float *y,
+        int x_offset,
+        int y_offset,
+        int length,
+        int alpha_offset,
+        int x_row_offset,
+        int batch_size,
+        int x_stride);
+
 tensor2_status tensor2_batch_dot_f32_f32(
         float *result,
         const float *a,
@@ -23,6 +127,76 @@ tensor2_status tensor2_batch_dot_f32_f32(
         int result_stride,
         int a_stride,
         int b_stride);
+
+tensor2_status tensor2_batch_dot_f32_bf16(
+        float *result,
+        const float *a,
+        const uint16_t *b,
+        int result_rows,
+        int a_row_offset,
+        int a_column_offset,
+        int b_column_offset,
+        int column_length,
+        int result_row_offset,
+        int b_row_offset,
+        int row_chunk_size,
+        int result_stride,
+        int a_stride,
+        int b_stride);
+
+tensor2_status tensor2_gemm_f32_bf16(
+        float *result,
+        const float *a,
+        const uint16_t *b,
+        int result_rows,
+        int a_row_offset,
+        int a_column_offset,
+        int b_column_offset,
+        int column_length,
+        int result_row_offset,
+        int b_row_offset,
+        int row_chunk_size,
+        int result_stride,
+        int a_stride,
+        int b_stride);
+
+tensor2_status tensor2_gemm_f32_q4(
+        float *result,
+        const float *a,
+        const uint8_t *b,
+        const float *b_scales,
+        int result_rows,
+        int a_row_offset,
+        int a_column_offset,
+        int b_column_offset,
+        int column_length,
+        int result_row_offset,
+        int b_row_offset,
+        int row_chunk_size,
+        int result_stride,
+        int a_stride,
+        int b_stride,
+        int b_scale_stride);
+
+tensor2_status tensor2_gemm_i8_q4(
+        float *result,
+        const int8_t *a,
+        const float *a_scales,
+        const uint8_t *b,
+        const float *b_scales,
+        int result_rows,
+        int a_row_offset,
+        int a_column_offset,
+        int b_column_offset,
+        int column_length,
+        int result_row_offset,
+        int b_row_offset,
+        int row_chunk_size,
+        int result_stride,
+        int a_stride,
+        int a_scale_stride,
+        int b_stride,
+        int b_scale_stride);
 
 tensor2_status tensor2_batch_dot_f32_q8(
         float *result,
@@ -52,5 +226,21 @@ tensor2_status tensor2_scale_bf16(
         int offset,
         int length,
         int stride);
+
+tensor2_status tensor2_exp_f32(
+        const float *input,
+        float *output,
+        int rows,
+        int offset,
+        int length,
+        int input_stride,
+        int output_stride);
+
+float tensor2_sum_f32(
+        const float *input,
+        int row,
+        int offset,
+        int length,
+        int input_stride);
 
 #endif

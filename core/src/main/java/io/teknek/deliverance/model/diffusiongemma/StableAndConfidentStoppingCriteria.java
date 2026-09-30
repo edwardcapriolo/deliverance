@@ -5,11 +5,9 @@ import io.dropwizard.metrics5.MetricRegistry;
 import io.dropwizard.metrics5.Timer;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.model.InferenceProfiler;
-import io.teknek.deliverance.tensor.AbstractTensor;
-import io.teknek.deliverance.tensor.TensorMutability;
 import io.teknek.deliverance.tensor.TensorProbability;
-import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
-import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.TensorRef;
 
 import java.util.Objects;
 
@@ -24,19 +22,19 @@ import java.util.Objects;
 public final class StableAndConfidentStoppingCriteria {
     private final int stabilityThreshold;
     private final float confidenceThreshold;
-    private final TensorOperations tensorOperations;
+    private final Lighter lighter;
     private final MetricRegistry metricRegistry;
-    private AbstractTensor previousArgmaxCanvas;
+    private TensorRef previousArgmaxCanvas;
     private int[] stableCounts;
 
     public StableAndConfidentStoppingCriteria(int stabilityThreshold, float confidenceThreshold,
-            TensorOperations tensorOperations, MetricRegistry metricRegistry) {
+            Lighter lighter, MetricRegistry metricRegistry) {
         Preconditions.checkArgument(stabilityThreshold >= 0, "stabilityThreshold must be >= 0");
         Preconditions.checkArgument(Float.isFinite(confidenceThreshold) && confidenceThreshold > 0.0f,
                 "confidenceThreshold must be finite and > 0");
         this.stabilityThreshold = stabilityThreshold;
         this.confidenceThreshold = confidenceThreshold;
-        this.tensorOperations = Objects.requireNonNull(tensorOperations, "tensorOperations");
+        this.lighter = Objects.requireNonNull(lighter, "lighter");
         this.metricRegistry = Objects.requireNonNull(metricRegistry, "metricRegistry");
     }
 
@@ -47,21 +45,21 @@ public final class StableAndConfidentStoppingCriteria {
      * {@code argmaxCanvas} is the current model-selected token canvas, normally shaped {@code [batch, canvasLength]}.
      * {@code logits} must be shaped {@code [batch, canvasLength, vocabSize]}.</p>
      */
-    public void shouldStop(AbstractTensor output, AbstractTensor argmaxCanvas, AbstractTensor logits) {
+    public void shouldStop(TensorRef output, TensorRef argmaxCanvas, TensorRef logits) {
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
                 "diffusiongemma.stopping.should_stop").time()) {
             validateOutput(output, argmaxCanvas);
             validateArgmaxCanvas(argmaxCanvas);
             validateLogits(logits, argmaxCanvas);
-            TensorMutability.requireWritable(output, "shouldStop");
             int batchSize = (int) argmaxCanvas.shape().first();
             int canvasLength = (int) argmaxCanvas.shape().last();
             ensureState(argmaxCanvas);
 
-            try (FloatBufferTensor tokenEntropy = new FloatBufferTensor(batchSize, canvasLength)) {
+            try (TensorRef tokenEntropy = lighter.allocate(io.teknek.deliverance.DType.F32,
+                    io.teknek.deliverance.tensor.TensorShape.of(batchSize, canvasLength))) {
                 try (Timer.Context ignoredEntropy = InferenceProfiler.timer(metricRegistry,
                         "diffusiongemma.stopping.entropy").time()) {
-                    TensorProbability.entropy(tokenEntropy, logits, tensorOperations);
+                    TensorProbability.entropy(tokenEntropy, logits, lighter);
                 }
                 try (Timer.Context ignoredDecision = InferenceProfiler.timer(metricRegistry,
                         "diffusiongemma.stopping.decision").time()) {
@@ -76,7 +74,7 @@ public final class StableAndConfidentStoppingCriteria {
                             stopCount++;
                         }
                     }
-                    previousArgmaxCanvas.copyFrom(argmaxCanvas, 0, 0, (int) argmaxCanvas.size());
+                    lighter.copy(argmaxCanvas, 0, previousArgmaxCanvas, 0, (int) argmaxCanvas.shape().size());
                     if (InferenceProfiler.isEnabled()) {
                         InferenceProfiler.counter(metricRegistry, "diffusiongemma.stopping.stop_true").inc(stopCount);
                         InferenceProfiler.counter(metricRegistry, "diffusiongemma.stopping.stop_false")
@@ -87,7 +85,7 @@ public final class StableAndConfidentStoppingCriteria {
         }
     }
 
-    private void ensureState(AbstractTensor argmaxCanvas) {
+    private void ensureState(TensorRef argmaxCanvas) {
         int batchSize = (int) argmaxCanvas.shape().first();
         if (previousArgmaxCanvas != null && previousArgmaxCanvas.shape().equals(argmaxCanvas.shape())) {
             return;
@@ -95,11 +93,11 @@ public final class StableAndConfidentStoppingCriteria {
         if (previousArgmaxCanvas != null) {
             previousArgmaxCanvas.close();
         }
-        previousArgmaxCanvas = new FloatBufferTensor(argmaxCanvas.shape());
+        previousArgmaxCanvas = lighter.allocate(io.teknek.deliverance.DType.F32, argmaxCanvas.shape());
         stableCounts = new int[batchSize];
     }
 
-    private boolean isStable(int batch, AbstractTensor argmaxCanvas) {
+    private boolean isStable(int batch, TensorRef argmaxCanvas) {
         for (int position = 0; position < argmaxCanvas.shape().last(); position++) {
             if (argmaxCanvas.get(batch, position) != previousArgmaxCanvas.get(batch, position)) {
                 return false;
@@ -108,7 +106,7 @@ public final class StableAndConfidentStoppingCriteria {
         return true;
     }
 
-    private static float meanEntropy(AbstractTensor tokenEntropy, int batch, int canvasLength) {
+    private static float meanEntropy(TensorRef tokenEntropy, int batch, int canvasLength) {
         float sum = 0.0f;
         for (int position = 0; position < canvasLength; position++) {
             sum += tokenEntropy.get(batch, position);
@@ -116,7 +114,7 @@ public final class StableAndConfidentStoppingCriteria {
         return sum / canvasLength;
     }
 
-    private static void validateOutput(AbstractTensor output, AbstractTensor argmaxCanvas) {
+    private static void validateOutput(TensorRef output, TensorRef argmaxCanvas) {
         Preconditions.checkArgument(output.dims() == 2 && output.shape().last() == 1,
                 "output must have shape [batch, 1]");
         Preconditions.checkArgument(output.shape().first() == argmaxCanvas.shape().first(),
@@ -124,14 +122,14 @@ public final class StableAndConfidentStoppingCriteria {
         Preconditions.checkArgument(output.dType() == DType.F32, "output must be F32");
     }
 
-    private static void validateArgmaxCanvas(AbstractTensor argmaxCanvas) {
+    private static void validateArgmaxCanvas(TensorRef argmaxCanvas) {
         Preconditions.checkArgument(argmaxCanvas.dims() == 2 && argmaxCanvas.shape().first() > 0
                         && argmaxCanvas.shape().last() > 0,
                 "argmaxCanvas must have shape [batch, canvasLength]");
         Preconditions.checkArgument(argmaxCanvas.dType() == DType.F32, "argmaxCanvas must be F32 token-id tensor");
     }
 
-    private static void validateLogits(AbstractTensor logits, AbstractTensor argmaxCanvas) {
+    private static void validateLogits(TensorRef logits, TensorRef argmaxCanvas) {
         Preconditions.checkArgument(logits.dims() == 3, "logits must have shape [batch, canvasLength, vocab]");
         Preconditions.checkArgument(logits.shape().dim(0) == argmaxCanvas.shape().first()
                         && logits.shape().dim(1) == argmaxCanvas.shape().last(),

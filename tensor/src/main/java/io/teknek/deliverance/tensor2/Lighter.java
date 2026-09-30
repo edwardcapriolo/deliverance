@@ -16,6 +16,7 @@ import java.util.Map;
 import java.nio.ByteBuffer;
 import java.lang.foreign.MemorySegment;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 public class Lighter {
 
@@ -28,6 +29,16 @@ public class Lighter {
     private final MetricRegistry metricRegistry;
     //something like this must be initialized  so later we can pick the right one
     private final EnumMap<TensorProviderKind, TensorOps> tensorOperations = new EnumMap<>(TensorProviderKind.class);
+    private volatile Consumer<ProviderEvent> providerObserver = ignored -> { };
+
+    public record ProviderEvent(String operation, TensorProviderKind kind, boolean supported,
+            DType outputType, DType inputType, DType weightType, Map<String, String> tags) {
+        public ProviderEvent {
+            java.util.Objects.requireNonNull(operation, "operation");
+            java.util.Objects.requireNonNull(kind, "kind");
+            tags = Collections.unmodifiableMap(new LinkedHashMap<>(java.util.Objects.requireNonNull(tags, "tags")));
+        }
+    }
 
     public record ProviderSelection(Lighter lighter, Map<TensorProviderKind, TensorOps> providers) {
         public ProviderSelection {
@@ -65,6 +76,10 @@ public class Lighter {
                 java.util.Objects.requireNonNull(ops, "ops"));
     }
 
+    public void setProviderObserver(Consumer<ProviderEvent> providerObserver) {
+        this.providerObserver = java.util.Objects.requireNonNull(providerObserver, "providerObserver");
+    }
+
     public Map<TensorProviderKind, TensorOps> tensorOperations() {
         return Map.copyOf(tensorOperations);
     }
@@ -95,6 +110,95 @@ public class Lighter {
         return allocator.allocate(dType, shape, device);
     }
 
+    /** Clears tensor payload and quantization sidecar storage. */
+    public void clear(TensorRef target) {
+        Preconditions.checkArgument(target != null, "Target tensor must be set");
+        long bytes = physicalBytes(target);
+        target.memorySegment().asSlice(target.memorySegmentOffset(0), bytes).fill((byte) 0);
+        if (target.dType() == DType.I8) {
+            clear(target.sidecar(Q8Layout.SCALE_SIDECAR));
+        } else if (target.dType() == DType.Q4) {
+            clear(target.sidecar(Q4Layout.SCALE_SIDECAR));
+        }
+    }
+
+    /** Materializes a dense tensor with its dimensions and coordinates reversed. */
+    public void transpose(Transpose transpose) {
+        TensorRef source = transpose.getSource();
+        TensorRef destination = transpose.getDestination();
+        Preconditions.checkArgument(source != null, "Source tensor must be set");
+        Preconditions.checkArgument(destination != null, "Destination tensor must be set");
+        Preconditions.checkArgument(source.dType() == destination.dType(), "Tensor dtypes must match");
+        Preconditions.checkArgument(!source.shape().isSparse() && !destination.shape().isSparse(),
+                "Cannot transpose sparse tensors");
+        Preconditions.checkArgument(source.dims() == destination.dims(), "Tensor ranks must match");
+        for (int dimension = 0; dimension < source.dims(); dimension++) {
+            Preconditions.checkArgument(destination.shape().dim(dimension)
+                            == source.shape().dim(source.dims() - dimension - 1),
+                    "Destination shape must reverse source shape");
+        }
+        int[] cursor = new int[source.dims()];
+        do {
+            int[] destinationCursor = new int[cursor.length];
+            for (int dimension = 0; dimension < cursor.length; dimension++) {
+                destinationCursor[dimension] = cursor[cursor.length - dimension - 1];
+            }
+            destination.set(source.get(cursor), destinationCursor);
+        } while (advance(cursor, source.shape()));
+    }
+
+    /** Materializes equal-sized logical chunks into caller-owned destination tensors. */
+    public void split(Split split) {
+        TensorRef source = split.getSource();
+        TensorRef[] destinations = split.getDestinations();
+        int chunks = split.getChunks();
+        int dimension = split.getDimension();
+        Preconditions.checkArgument(source != null, "Source tensor must be set");
+        Preconditions.checkArgument(destinations != null, "Destination tensors must be set");
+        Preconditions.checkArgument(!source.shape().isSparse(), "Cannot split sparse tensors");
+        Preconditions.checkArgument(chunks > 0 && destinations.length == chunks,
+                "Destination count must equal chunk count");
+        Preconditions.checkArgument(dimension >= 0 && dimension < source.dims(), "Split dimension out of bounds");
+        int dimensionSize = source.shape().dim(dimension);
+        Preconditions.checkArgument(dimensionSize % chunks == 0, "Chunks must be of equal size");
+        int[] expectedShape = source.shape().shapeArray();
+        expectedShape[dimension] = dimensionSize / chunks;
+        for (TensorRef destination : destinations) {
+            Preconditions.checkArgument(destination != null, "Destination tensor must be set");
+            Preconditions.checkArgument(destination.dType() == source.dType(), "Tensor dtypes must match");
+            Preconditions.checkArgument(!destination.shape().isSparse(), "Cannot split into sparse tensors");
+            Preconditions.checkArgument(java.util.Arrays.equals(destination.shape().shapeArray(), expectedShape),
+                    "Destination shape does not match split shape");
+        }
+
+        for (int chunk = 0; chunk < chunks; chunk++) {
+            int[] localCursor = new int[source.dims()];
+            do {
+                int[] sourceCursor = localCursor.clone();
+                sourceCursor[dimension] += chunk * expectedShape[dimension];
+                destinations[chunk].set(source.get(sourceCursor), localCursor);
+            } while (advance(localCursor, TensorShape.of(expectedShape)));
+        }
+    }
+
+    private boolean advance(int[] cursor, TensorShape shape) {
+        for (int dimension = cursor.length - 1; dimension >= 0; dimension--) {
+            if (++cursor[dimension] < shape.dim(dimension)) {
+                return true;
+            }
+            cursor[dimension] = 0;
+        }
+        return false;
+    }
+
+    private long physicalBytes(TensorRef tensor) {
+        return switch (tensor.dType()) {
+            case F32, F16, BF16, I8 -> tensor.shape().size() * tensor.dType().size();
+            case Q4 -> tensor.shape().size() / 2;
+            default -> throw new IllegalArgumentException("Unsupported dtype " + tensor.dType());
+        };
+    }
+
     /** Copies a mapped raw tensor payload into tensor2-owned storage. */
     public void copyFrom(ByteBuffer source, TensorRef target) {
         Preconditions.checkArgument(source != null, "Source buffer must be set");
@@ -119,6 +223,41 @@ public class Lighter {
         }
     }
 
+    /** Copies logical elements using the same offset/length contract as {@code AbstractTensor.copyFrom}. */
+    public void copyFrom(TensorRef source, TensorRef target, int sourceOffset, int targetOffset, int length) {
+        Preconditions.checkArgument(source != null && target != null, "Source and target tensors must be set");
+        Preconditions.checkArgument(source.dType() == target.dType(), "Tensor dtypes must match");
+        Preconditions.checkArgument(sourceOffset >= 0 && targetOffset >= 0 && length >= 0,
+                "Copy offsets and length must be non-negative");
+        Preconditions.checkArgument((long) sourceOffset + length <= source.shape().size(),
+                "Source copy range out of bounds");
+        Preconditions.checkArgument((long) targetOffset + length <= target.shape().size(),
+                "Target copy range out of bounds");
+        long bytes = source.dType() == DType.Q4
+                ? length / 2L
+                : (long) length * source.dType().size();
+        target.memorySegment().asSlice(target.memorySegmentOffset(targetOffset), bytes)
+                .copyFrom(source.memorySegment().asSlice(source.memorySegmentOffset(sourceOffset), bytes));
+        if (source.dType() == DType.I8) {
+            copyScaleRange(Q8Layout.scale(source), Q8Layout.scale(target), sourceOffset, targetOffset,
+                    length, Q8Layout.BLOCK_SIZE);
+        } else if (source.dType() == DType.Q4) {
+            copyScaleRange(Q4Layout.scale(source), Q4Layout.scale(target), sourceOffset, targetOffset,
+                    length, Q4Layout.BLOCK_SIZE);
+        }
+    }
+
+    private void copyScaleRange(TensorRef source, TensorRef target, int sourceOffset, int targetOffset,
+            int length, int blockSize) {
+        Preconditions.checkArgument(source != null && target != null, "Quantized scale sidecars are required");
+        int sourceScaleOffset = sourceOffset / blockSize;
+        int targetScaleOffset = targetOffset / blockSize;
+        int scaleLength = length / blockSize;
+        long bytes = (long) scaleLength * DType.F32.size();
+        target.memorySegment().asSlice(target.memorySegmentOffset(targetScaleOffset), bytes)
+                .copyFrom(source.memorySegment().asSlice(source.memorySegmentOffset(sourceScaleOffset), bytes));
+    }
+
     /** Copies a raw F32 scale tensor into a quantized tensor's scale sidecar. */
     public void copyScale(TensorRef sourceScale, TensorRef quantizedTarget) {
         Preconditions.checkArgument(quantizedTarget.dType() == DType.I8 || quantizedTarget.dType() == DType.Q4,
@@ -141,11 +280,25 @@ public class Lighter {
         Preconditions.checkArgument(input != null, "Input tensor must be set");
         Preconditions.checkArgument(outputDType != null, "Output dtype must be set");
         TensorRef output = allocate(outputDType, input.shape(), input.device());
+        try {
+            reshape(input, output);
+            return output;
+        } catch (RuntimeException e) {
+            output.close();
+            throw e;
+        }
+    }
+
+    public void reshape(TensorRef input, TensorRef output) {
+        Preconditions.checkArgument(input != null, "Input tensor must be set");
+        Preconditions.checkArgument(output != null, "Output tensor must be set");
+        Preconditions.checkArgument(input.shape().equals(output.shape()), "Input and output shapes must match");
+        Preconditions.checkArgument(input.device().equals(output.device()), "Input and output devices must match");
         for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
             Map<String, String> metricTags = new HashMap<>();
             metricTags.put(TENSOR_OP_KEY, entry.getKey().name());
             metricTags.put("input_type", input.dType().name());
-            metricTags.put("output_type", outputDType.name());
+            metricTags.put("output_type", output.dType().name());
 
             Timer timer = metricRegistry.timer(new MetricName("tensor2.reshape.time", metricTags));
             long startNanos = System.nanoTime();
@@ -153,12 +306,58 @@ public class Lighter {
             if (result.isRight()) {
                 metricRegistry.meter(new MetricName("tensor2.reshape", metricTags)).mark();
                 timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
-                return output;
+                observe("reshape", entry.getKey(), true, output.dType(), input.dType(), null, Map.of());
+                return;
             }
+            metricRegistry.meter(new MetricName("tensor2.reshape.unsupported", metricTags)).mark();
+            observe("reshape", entry.getKey(), false, output.dType(), input.dType(), null, Map.of());
         }
-        output.close();
         throw new IllegalStateException("No tensor operations support reshape from " + input.dType() + " to "
-                + outputDType);
+                + output.dType());
+    }
+
+    public void copy(TensorRef source, int sourceOffset, TensorRef destination, int destinationOffset, int length) {
+        Preconditions.checkArgument(source != null, "Source tensor must be set");
+        Preconditions.checkArgument(destination != null, "Destination tensor must be set");
+        Preconditions.checkArgument(source.dType() == destination.dType(), "Source and destination dtype must match");
+        Preconditions.checkArgument(sourceOffset >= 0 && destinationOffset >= 0 && length >= 0,
+                "Copy offsets and length must be non-negative");
+        Preconditions.checkArgument(sourceOffset + length <= source.shape().size(), "Source copy range out of bounds");
+        Preconditions.checkArgument(destinationOffset + length <= destination.shape().size(),
+                "Destination copy range out of bounds");
+        long bytes = switch (source.dType()) {
+            case Q4 -> {
+                Preconditions.checkArgument(sourceOffset % 2 == 0 && destinationOffset % 2 == 0 && length % 2 == 0,
+                        "Q4 copy ranges must be byte-aligned");
+                yield length / 2L;
+            }
+            default -> (long) length * source.dType().size();
+        };
+        destination.memorySegment().asSlice(destination.memorySegmentOffset(destinationOffset), bytes)
+                .copyFrom(source.memorySegment().asSlice(source.memorySegmentOffset(sourceOffset), bytes));
+        if (source.dType() == DType.I8) {
+            copyQuantizedScale(Q8Layout.scale(source), Q8Layout.scale(destination), Q8Layout.BLOCK_SIZE,
+                    sourceOffset, destinationOffset, length);
+        } else if (source.dType() == DType.Q4) {
+            copyQuantizedScale(Q4Layout.scale(source), Q4Layout.scale(destination), Q4Layout.BLOCK_SIZE,
+                    sourceOffset, destinationOffset, length);
+        }
+    }
+
+    private void copyQuantizedScale(TensorRef sourceScale, TensorRef destinationScale, int blockSize,
+            int sourceOffset, int destinationOffset, int length) {
+        if (sourceScale == null || destinationScale == null) {
+            return;
+        }
+        Preconditions.checkArgument(sourceOffset % blockSize == 0 && destinationOffset % blockSize == 0
+                && length % blockSize == 0, "Quantized scale copy ranges must be block-aligned");
+        int sourceScaleOffset = sourceOffset / blockSize;
+        int destinationScaleOffset = destinationOffset / blockSize;
+        int scaleLength = length / blockSize;
+        destinationScale.memorySegment().asSlice(destinationScale.memorySegmentOffset(destinationScaleOffset),
+                (long) scaleLength * DType.F32.size())
+                .copyFrom(sourceScale.memorySegment().asSlice(sourceScale.memorySegmentOffset(sourceScaleOffset),
+                        (long) scaleLength * DType.F32.size()));
     }
 
     private Long allocatedBytes(DType dType, TensorShape shape) {
@@ -181,6 +380,101 @@ public class Lighter {
 
     public void multiplyAccumulate(MultiplyAccumulate multiplyAccumulate){
         multiplyAccumulate(multiplyAccumulate, Map.of());
+    }
+
+    public void accumulate(Accumulate accumulate) {
+        accumulate(accumulate, Map.of());
+    }
+
+    public void argMax(ArgMax argMax) {
+        TensorRef input = argMax.getInput();
+        TensorRef output = argMax.getOutput();
+        Preconditions.checkArgument(input != null, "Input tensor must be set");
+        Preconditions.checkArgument(output != null, "Output tensor must be set");
+        for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
+            Either<OpSupport, Void> result = entry.getValue().argMax(input, output,
+                    argMax.getOffset(), argMax.getLength());
+            if (result.isRight()) {
+                return;
+            }
+        }
+        throw new IllegalStateException("No tensor operations support argMax");
+    }
+
+    public void max(Max max) {
+        TensorRef input = max.getSource();
+        TensorRef output = max.getDestination();
+        Preconditions.checkArgument(input != null, "Source tensor must be set");
+        Preconditions.checkArgument(output != null, "Destination tensor must be set");
+        for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
+            Either<OpSupport, Void> result = entry.getValue().max(input, max.getRow(), max.getOffset(),
+                    max.getLength(), output);
+            if (result.isRight()) {
+                return;
+            }
+        }
+        throw new IllegalStateException("No tensor operations support max");
+    }
+
+    public void exp(Exp exp) {
+        TensorRef input = exp.getSource();
+        TensorRef output = exp.getDestination();
+        Preconditions.checkArgument(input != null, "Source tensor must be set");
+        Preconditions.checkArgument(output != null, "Destination tensor must be set");
+        for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
+            Either<OpSupport, Void> result = entry.getValue().exp(input, output, exp.getOffset(), exp.getLength());
+            if (result.isRight()) {
+                return;
+            }
+        }
+        throw new IllegalStateException("No tensor operations support exp");
+    }
+
+    public void sum(Sum sum) {
+        TensorRef input = sum.getSource();
+        TensorRef output = sum.getDestination();
+        Preconditions.checkArgument(input != null, "Source tensor must be set");
+        Preconditions.checkArgument(output != null, "Destination tensor must be set");
+        for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
+            Either<OpSupport, Void> result = entry.getValue().sum(input, sum.getRow(), sum.getOffset(),
+                    sum.getLength(), output);
+            if (result.isRight()) {
+                return;
+            }
+        }
+        throw new IllegalStateException("No tensor operations support sum");
+    }
+
+    public void accumulate(Accumulate accumulate, Map<String, String> tags) {
+        TensorRef source = accumulate.getSource();
+        TensorRef destination = accumulate.getDestination();
+        Preconditions.checkArgument(destination != null, "Destination tensor must be set");
+        Preconditions.checkArgument(source != null, "Source tensor must be set");
+        Preconditions.checkArgument(destination.device().equals(source.device()), "Tensors must be on the same device");
+        Preconditions.checkArgument(destination.dims() == source.dims(), "Tensors must have the same rank");
+        Preconditions.checkArgument(destination.shape().last() == source.shape().last(),
+                "Tensors must have the same last dimension");
+        Preconditions.checkArgument(source.shape().first() == 1 || destination.shape().first() == source.shape().first(),
+                "Source tensor must be broadcastable over destination rows");
+        for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
+            Map<String, String> metricTags = new HashMap<>(tags);
+            metricTags.put(TENSOR_OP_KEY, entry.getKey().name());
+            Timer timer = metricRegistry.timer(new MetricName("tensor2.accumulate.time", metricTags));
+            long startNanos = System.nanoTime();
+            Either<OpSupport, Void> result = entry.getValue().accumulate(destination, source,
+                    accumulate.getOffset(), accumulate.getLength());
+            if (result.isRight()) {
+                metricRegistry.meter(new MetricName("tensor2.accumulate", metricTags)).mark();
+                timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+                observe("accumulate", entry.getKey(), true, destination.dType(), destination.dType(),
+                        source.dType(), tags);
+                return;
+            }
+            metricRegistry.meter(new MetricName("tensor2.accumulate.unsupported", metricTags)).mark();
+            observe("accumulate", entry.getKey(), false, destination.dType(), destination.dType(),
+                    source.dType(), tags);
+        }
+        throw new IllegalStateException("No tensor operations support accumulate");
     }
 
     public void multiplyAccumulate(MultiplyAccumulate multiplyAccumulate, Map<String, String> tags){
@@ -206,8 +500,13 @@ public class Lighter {
             if (result.isRight()) {
                 metricRegistry.meter(new MetricName("tensor2.multiply_accumulate", metricTags)).mark();
                 timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+                observe("multiply_accumulate", entry.getKey(), true, destination.dType(), destination.dType(),
+                        source.dType(), tags);
                 return;
             }
+            metricRegistry.meter(new MetricName("tensor2.multiply_accumulate.unsupported", metricTags)).mark();
+            observe("multiply_accumulate", entry.getKey(), false, destination.dType(), destination.dType(),
+                    source.dType(), tags);
         }
         throw new IllegalStateException("No tensor operations support multiplyAccumulate");
     }
@@ -253,10 +552,127 @@ public class Lighter {
             if (outcome.isRight()) {
                 metricRegistry.meter(new MetricName("tensor2.batch_dot_product", metricTags)).mark();
                 timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+                observe("batch_dot_product", entry.getKey(), true, result.dType(), a.dType(), b.dType(), tags);
                 return;
             }
+            metricRegistry.meter(new MetricName("tensor2.batch_dot_product.unsupported", metricTags)).mark();
+            observe("batch_dot_product", entry.getKey(), false, result.dType(), a.dType(), b.dType(), tags);
         }
         throw new IllegalStateException("No tensor operations support batchDotProduct");
+    }
+
+    public void dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
+            int inputStart, int inputLength, int weightRowStart, int weightRowCount, int outputColumnStart) {
+        dotProductRows(output, input, weights, inputStart, inputStart, inputLength, weightRowStart,
+                weightRowCount, outputColumnStart, Map.of());
+    }
+
+    public void dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
+            int inputColumnStart, int weightColumnStart, int columnLength, int weightRowStart,
+            int weightRowCount, int outputColumnStart) {
+        dotProductRows(output, input, weights, inputColumnStart, weightColumnStart, columnLength, weightRowStart,
+                weightRowCount, outputColumnStart, Map.of());
+    }
+
+    public void dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
+            int inputColumnStart, int weightColumnStart, int columnLength, int weightRowStart,
+            int weightRowCount, int outputColumnStart, Map<String, String> tags) {
+        Preconditions.checkArgument(output != null, "Output tensor must be set");
+        Preconditions.checkArgument(input != null, "Input tensor must be set");
+        Preconditions.checkArgument(weights != null, "Weights tensor must be set");
+        Preconditions.checkArgument(output.dims() == 2 && input.dims() == 2 && weights.dims() == 2,
+                "dotProductRows requires 2D tensors");
+        Preconditions.checkArgument(output.shape().first() == input.shape().first(),
+                "Output and input row counts must match");
+        Preconditions.checkArgument(inputColumnStart >= 0 && weightColumnStart >= 0 && columnLength >= 0
+                        && inputColumnStart + columnLength <= input.shape().last()
+                        && weightColumnStart + columnLength <= weights.shape().last(),
+                "Input range is out of bounds");
+        Preconditions.checkArgument(weightRowStart >= 0 && weightRowCount >= 0
+                        && weightRowStart + weightRowCount <= weights.shape().first(),
+                "Weight row range is out of bounds");
+        Preconditions.checkArgument(outputColumnStart >= 0
+                        && outputColumnStart + weightRowCount <= output.shape().last(),
+                "Output column range is out of bounds");
+
+        for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
+            Map<String, String> metricTags = new HashMap<>(tags);
+            metricTags.put(TENSOR_OP_KEY, entry.getKey().name());
+            Timer timer = metricRegistry.timer(new MetricName("tensor2.dot_product_rows.time", metricTags));
+            long startNanos = System.nanoTime();
+            Either<OpSupport, Void> outcome = entry.getValue().dotProductRows(output, input, weights,
+                    inputColumnStart, weightColumnStart, columnLength, weightRowStart, weightRowCount,
+                    outputColumnStart);
+            if (outcome.isRight()) {
+                metricRegistry.meter(new MetricName("tensor2.dot_product_rows", metricTags)).mark();
+                timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+                observe("dot_product_rows", entry.getKey(), true, output.dType(), input.dType(), weights.dType(), tags);
+                return;
+            }
+            metricRegistry.meter(new MetricName("tensor2.dot_product_rows.unsupported", metricTags)).mark();
+            observe("dot_product_rows", entry.getKey(), false, output.dType(), input.dType(), weights.dType(), tags);
+        }
+        throw new IllegalStateException("No tensor operations support dotProductRows");
+    }
+
+    public void saxpy(float alpha, TensorRef x, TensorRef y, int xOffset, int yOffset, int length) {
+        Preconditions.checkArgument(x != null && y != null, "SAXPY tensors must be set");
+        Preconditions.checkArgument(x.dims() == 2 && y.dims() == 2 && y.shape().first() == 1,
+                "SAXPY requires 2D x and one-row y tensors");
+        Preconditions.checkArgument(xOffset >= 0 && yOffset >= 0 && length >= 0
+                        && xOffset + length <= x.shape().last()
+                        && yOffset + length <= y.shape().last(),
+                "SAXPY range is out of bounds");
+        for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
+            Map<String, String> metricTags = new HashMap<>();
+            metricTags.put(TENSOR_OP_KEY, entry.getKey().name());
+            metricTags.put("mode", "scalar");
+            Timer timer = metricRegistry.timer(new MetricName("tensor2.saxpy.time", metricTags));
+            long startNanos = System.nanoTime();
+            if (entry.getValue().saxpy(alpha, x, y, xOffset, yOffset, length).isRight()) {
+                metricRegistry.meter(new MetricName("tensor2.saxpy", metricTags)).mark();
+                timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+                observe("saxpy", entry.getKey(), true, y.dType(), x.dType(), null, Map.of("mode", "scalar"));
+                return;
+            }
+            metricRegistry.meter(new MetricName("tensor2.saxpy.unsupported", metricTags)).mark();
+            observe("saxpy", entry.getKey(), false, y.dType(), x.dType(), null, Map.of("mode", "scalar"));
+        }
+        throw new IllegalStateException("No tensor operations support saxpy");
+    }
+
+    public void saxpy(TensorRef alpha, TensorRef x, TensorRef y, int xOffset, int yOffset, int length,
+            int alphaOffset, int xRowOffset, int batchSize) {
+        Preconditions.checkArgument(alpha != null && x != null && y != null, "SAXPY tensors must be set");
+        Preconditions.checkArgument(alpha.dims() == 2 && x.dims() == 2 && y.dims() == 2
+                        && y.shape().first() == 1,
+                "Batch SAXPY requires 2D tensors and one-row y");
+        Preconditions.checkArgument(alphaOffset >= 0 && batchSize >= 0
+                        && alphaOffset + batchSize <= alpha.shape().last(),
+                "SAXPY alpha range is out of bounds");
+        Preconditions.checkArgument(xRowOffset >= 0 && xRowOffset + batchSize <= x.shape().first(),
+                "SAXPY x row range is out of bounds");
+        Preconditions.checkArgument(xOffset >= 0 && yOffset >= 0 && length >= 0
+                        && xOffset + length <= x.shape().last()
+                        && yOffset + length <= y.shape().last(),
+                "SAXPY range is out of bounds");
+        for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
+            Map<String, String> metricTags = new HashMap<>();
+            metricTags.put(TENSOR_OP_KEY, entry.getKey().name());
+            metricTags.put("mode", "batch");
+            Timer timer = metricRegistry.timer(new MetricName("tensor2.saxpy.time", metricTags));
+            long startNanos = System.nanoTime();
+            if (entry.getValue().saxpy(alpha, x, y, xOffset, yOffset, length, alphaOffset, xRowOffset,
+                    batchSize).isRight()) {
+                metricRegistry.meter(new MetricName("tensor2.saxpy", metricTags)).mark();
+                timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+                observe("saxpy", entry.getKey(), true, y.dType(), x.dType(), alpha.dType(), Map.of("mode", "batch"));
+                return;
+            }
+            metricRegistry.meter(new MetricName("tensor2.saxpy.unsupported", metricTags)).mark();
+            observe("saxpy", entry.getKey(), false, y.dType(), x.dType(), alpha.dType(), Map.of("mode", "batch"));
+        }
+        throw new IllegalStateException("No tensor operations support batch saxpy");
     }
 
     public void scale(Scale scale) {
@@ -301,9 +717,16 @@ public class Lighter {
         if (result.isRight()) {
             metricRegistry.meter(new MetricName("tensor2.scale", metricTags)).mark();
             timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+            observe("scale", kind, true, target.dType(), target.dType(), null, tags);
             return true;
         }
+        observe("scale", kind, false, target.dType(), target.dType(), null, tags);
         return false;
+    }
+
+    private void observe(String operation, TensorProviderKind kind, boolean supported, DType outputType,
+            DType inputType, DType weightType, Map<String, String> tags) {
+        providerObserver.accept(new ProviderEvent(operation, kind, supported, outputType, inputType, weightType, tags));
     }
 
     public TensorRef to(TensorRef a, String device){

@@ -22,6 +22,7 @@ import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -124,7 +125,7 @@ public class Gemma2Model extends LlamaModel {
         }
         return new EmbedInput(this) {
             @Override
-            public AbstractTensor inputTokenToEmbedding(int inputToken, int position) {
+            public TensorRef inputTokenToEmbedding(int inputToken, int position) {
                     AbstractTensor embedding = makeDenseTensor(config.embeddingLength);
                     AbstractTensor at = wte.slice(true, inputToken);
                     if (wte.dType() != embedding.dType()) {
@@ -133,7 +134,7 @@ public class Gemma2Model extends LlamaModel {
                     embedding.copyFrom(at, 0, 0, config.embeddingLength);
                     // This is important for Gemma, but not for Llama
                     scale(embeddingScalingFactor, embedding, 0, config.embeddingLength);
-                    return embedding;
+                    return TensorRef.owned(embedding);
             }
         };
     }

@@ -7,6 +7,91 @@ import io.teknek.dysfx.Either;
 class NaiveOps implements TensorOps {
 
     @Override
+    public Either<OpSupport, Void> sum(TensorRef input, int row, int offset, int length, TensorRef output) {
+        Preconditions.checkArgument(input.dims() == 2, "sum expects a 2D input");
+        Preconditions.checkArgument(output.shape().first() == 1 && output.shape().last() == 1,
+                "sum output must have shape [1, 1]");
+        Preconditions.checkArgument(output.dType() == DType.F32, "sum output must be F32");
+        Preconditions.checkArgument(row >= 0 && row < input.shape().first(), "sum row out of bounds");
+        Preconditions.checkArgument(offset >= 0 && length > 0 && offset + length <= input.shape().last(),
+                "sum window out of bounds");
+        float sum = 0.0f;
+        for (int column = offset; column < offset + length; column++) {
+            sum += input.get(row, column);
+        }
+        output.set(sum, 0, 0);
+        return Either.Right(null);
+    }
+
+    @Override
+    public Either<OpSupport, Void> exp(TensorRef input, TensorRef output, int offset, int length) {
+        Preconditions.checkArgument(input.shape().equals(output.shape()), "Input and output shapes must match");
+        Preconditions.checkArgument(offset >= 0 && length >= 0 && offset + length <= input.shape().last(),
+                "exp window out of bounds");
+        for (int row = 0; row < input.shape().first(); row++) {
+            for (int column = offset; column < offset + length; column++) {
+                output.set((float) net.jafama.FastMath.exp(input.get(row, column)), row, column);
+            }
+        }
+        return Either.Right(null);
+    }
+
+    @Override
+    public Either<OpSupport, Void> max(TensorRef input, int row, int offset, int length, TensorRef output) {
+        Preconditions.checkArgument(input.dims() == 2, "max expects a 2D input");
+        Preconditions.checkArgument(output.shape().first() == 1 && output.shape().last() == 1,
+                "max output must have shape [1, 1]");
+        Preconditions.checkArgument(output.dType() == DType.F32, "max output must be F32");
+        Preconditions.checkArgument(row >= 0 && row < input.shape().first(), "max row out of bounds");
+        Preconditions.checkArgument(offset >= 0 && length > 0 && offset + length <= input.shape().last(),
+                "max window out of bounds");
+        float maximum = input.get(row, offset);
+        for (int column = offset + 1; column < offset + length; column++) {
+            maximum = Math.max(maximum, input.get(row, column));
+        }
+        output.set(maximum, 0, 0);
+        return Either.Right(null);
+    }
+
+    @Override
+    public Either<OpSupport, Void> argMax(TensorRef input, TensorRef output, int offset, int length) {
+        Preconditions.checkArgument(input.shape().first() == 1, "argMax expects one row");
+        Preconditions.checkArgument(output.shape().first() == 1 && output.shape().last() == 2,
+                "argMax output must have shape [1, 2]");
+        Preconditions.checkArgument(output.dType() == DType.F32, "argMax output must be F32");
+        Preconditions.checkArgument(offset >= 0 && length > 0 && offset + length <= input.shape().last(),
+                "argMax window out of bounds");
+        int maxIndex = offset;
+        float maxValue = input.get(0, offset);
+        for (int column = offset + 1; column < offset + length; column++) {
+            float value = input.get(0, column);
+            if (value > maxValue) {
+                maxIndex = column;
+                maxValue = value;
+            }
+        }
+        output.set(maxIndex, 0, 0);
+        output.set(maxValue, 0, 1);
+        return Either.Right(null);
+    }
+
+    @Override
+    public Either<OpSupport, Void> accumulate(TensorRef a, TensorRef b, int offset, int length) {
+        Preconditions.checkArgument(a.dims() == b.dims());
+        Preconditions.checkArgument(a.shape().last() == b.shape().last());
+        Preconditions.checkArgument(b.shape().first() == 1 || a.shape().first() == b.shape().first());
+        Preconditions.checkArgument(offset >= 0 && length >= 0 && offset + length <= a.shape().last());
+        boolean broadcast = b.shape().first() == 1;
+        for (int row = 0; row < a.shape().first(); row++) {
+            int sourceRow = broadcast ? 0 : row;
+            for (int column = offset; column < offset + length; column++) {
+                a.set(a.get(row, column) + b.get(sourceRow, column), row, column);
+            }
+        }
+        return Either.Right(null);
+    }
+
+    @Override
     public Either<OpSupport, Void> multiplyAccumulate(TensorRef a, TensorRef b, int offset, int length) {
         Preconditions.checkArgument(a.dims() == b.dims());
         Preconditions.checkArgument(a.shape().last() == b.shape().last());
@@ -126,11 +211,62 @@ class NaiveOps implements TensorOps {
     }
 
     @Override
+    public Either<OpSupport, Void> dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
+            int inputStart, int inputLength, int weightRowStart, int weightRowCount, int outputColumnStart) {
+        return dotProductRows(output, input, weights, inputStart, inputStart, inputLength, weightRowStart,
+                weightRowCount, outputColumnStart);
+    }
+
+    @Override
+    public Either<OpSupport, Void> dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
+            int inputColumnStart, int weightColumnStart, int columnLength, int weightRowStart,
+            int weightRowCount, int outputColumnStart) {
+        if (output.dType() != DType.F32 && output.dType() != DType.BF16) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        for (int inputRow = 0; inputRow < input.shape().first(); inputRow++) {
+            for (int row = 0; row < weightRowCount; row++) {
+                float sum = 0.0f;
+                int weightRow = weightRowStart + row;
+                for (int column = 0; column < columnLength; column++) {
+                    sum += input.underlying().get(inputRow, inputColumnStart + column)
+                            * weights.underlying().get(weightRow, weightColumnStart + column);
+                }
+                output.underlying().set(sum, inputRow, outputColumnStart + row);
+            }
+        }
+        return Either.Right(null);
+    }
+
+    @Override
     public Either<OpSupport, Void> scale(float factor, TensorRef target, int offset, int length) {
         Preconditions.checkArgument(offset >= 0 && length >= 0 && offset + length <= target.shape().last());
         for (int row = 0; row < target.shape().first(); row++) {
             for (int column = offset; column < offset + length; column++) {
                 target.underlying().set(target.underlying().get(row, column) * factor, row, column);
+            }
+        }
+        return Either.Right(null);
+    }
+
+    @Override
+    public Either<OpSupport, Void> saxpy(float alpha, TensorRef x, TensorRef y, int xOffset, int yOffset,
+            int length) {
+        for (int column = 0; column < length; column++) {
+            y.underlying().set(y.underlying().get(0, yOffset + column)
+                    + alpha * x.underlying().get(0, xOffset + column), 0, yOffset + column);
+        }
+        return Either.Right(null);
+    }
+
+    @Override
+    public Either<OpSupport, Void> saxpy(TensorRef alpha, TensorRef x, TensorRef y, int xOffset, int yOffset,
+            int length, int alphaOffset, int xRowOffset, int batchSize) {
+        for (int row = 0; row < batchSize; row++) {
+            float factor = alpha.underlying().get(0, alphaOffset + row);
+            for (int column = 0; column < length; column++) {
+                y.underlying().set(y.underlying().get(0, yOffset + column)
+                        + factor * x.underlying().get(xRowOffset + row, xOffset + column), 0, yOffset + column);
             }
         }
         return Either.Right(null);

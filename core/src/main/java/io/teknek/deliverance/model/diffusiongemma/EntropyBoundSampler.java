@@ -8,7 +8,8 @@ import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorProbability;
 import io.teknek.deliverance.tensor.TensorMutability;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
-import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.TensorRef;
 
 import java.util.Arrays;
 import java.util.Objects;
@@ -19,12 +20,12 @@ public final class EntropyBoundSampler {
     private final int canvasLength;
     private final int vocabSize;
     private final Random random;
-    private final TensorOperations tensorOperations;
+    private final Lighter lighter;
     private final MetricRegistry metricRegistry;
     private boolean[][] acceptedTokenMask;
 
     public EntropyBoundSampler(float entropyBound, int canvasLength, int vocabSize, Random random,
-            TensorOperations tensorOperations, MetricRegistry metricRegistry) {
+            Lighter lighter, MetricRegistry metricRegistry) {
         if (!Float.isFinite(entropyBound) || entropyBound <= 0.0f) {
             throw new IllegalArgumentException("entropyBound must be finite and > 0");
         }
@@ -38,7 +39,7 @@ public final class EntropyBoundSampler {
         this.canvasLength = canvasLength;
         this.vocabSize = vocabSize;
         this.random = Objects.requireNonNull(random, "random");
-        this.tensorOperations = Objects.requireNonNull(tensorOperations, "tensorOperations");
+        this.lighter = Objects.requireNonNull(lighter, "lighter");
         this.metricRegistry = Objects.requireNonNull(metricRegistry, "metricRegistry");
     }
 
@@ -83,7 +84,10 @@ public final class EntropyBoundSampler {
         try (FloatBufferTensor tokenEntropy = new FloatBufferTensor(batchSize, canvasLength)) {
             try (Timer.Context ignoredEntropy = InferenceProfiler.timer(metricRegistry,
                     "diffusiongemma.sampler.entropy").time()) {
-                TensorProbability.entropy(tokenEntropy, logits, tensorOperations);
+                try (TensorRef entropyRef = TensorRef.borrowed(tokenEntropy);
+                     TensorRef logitsRef = TensorRef.borrowed(logits)) {
+                    TensorProbability.entropy(entropyRef, logitsRef, lighter);
+                }
             }
             try (Timer.Context ignoredSelection = InferenceProfiler.timer(metricRegistry,
                     "diffusiongemma.sampler.accept_selection").time()) {

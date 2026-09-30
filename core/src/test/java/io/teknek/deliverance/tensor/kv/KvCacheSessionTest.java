@@ -11,6 +11,8 @@ import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.TrackedReadOnlyTensor;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.TensorRef;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -91,6 +93,30 @@ class KvCacheSessionTest {
                 assertEquals(3.0f, values.get(0, 0), 0.0f);
                 assertEquals(4.0f, values.get(1, 0), 0.0f);
                 assertEquals(5.0f, values.get(2, 0), 0.0f);
+            }
+        }
+    }
+
+    @Test
+    void densePageViewsCanBeClosedAndReacquired() {
+        KvCacheManager manager = new KvCacheManager(1, 8, 4, DType.F32,
+                new KvBufferCacheSettings(true).withBlockSize(2), allocator, metricRegistry);
+
+        try (KvCacheSession session = manager.openSession()) {
+            writePosition(session, 0, 1.0f, 1);
+            writePosition(session, 1, 2.0f, 1);
+            try (KvWriteCursor writer = session.writer(CacheExecutionMode.PREFILL_UPDATE_CACHE)) {
+                writer.advanceLength(2);
+            }
+
+            try (KvReadView first = session.readView(0, 2, AttentionPattern.CAUSAL)) {
+                try (AbstractTensor page = first.keyPages()[0]) {
+                    assertEquals(2.0f, page.get(0, 0), 0.0f);
+                }
+            }
+            try (KvReadView second = session.readView(0, 2, AttentionPattern.CAUSAL);
+                 AbstractTensor page = second.keyPages()[0]) {
+                assertEquals(2.0f, page.get(0, 0), 0.0f);
             }
         }
     }
@@ -236,6 +262,30 @@ class KvCacheSessionTest {
             assertEquals(KvBlockLayout.DENSE, session.committedBlocks().getFirst().layout());
             assertTrue(session.committedBlocks().getFirst().encodedBytes() < 4L * 2 * kvLength * DType.F32.size());
         }
+    }
+
+    @Test
+    void tensorRefWritePathDoesNotUseOldTensorOperationsProvider() {
+        int kvLength = 64;
+        TensorOperations operations = Mockito.mock(TensorOperations.class);
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+                .withBlockSize(4)
+                .withKvKeyDType(DType.I8)
+                .withKvValueDType(DType.I8);
+        Lighter lighter = new Lighter(metricRegistry);
+        KvCacheManager manager = new KvCacheManager(1, 8, kvLength, DType.F32, settings, allocator,
+                metricRegistry, false, operations, lighter);
+
+        try (KvCacheSession session = manager.openSession();
+             KvWriteCursor writer = session.writer(CacheExecutionMode.PREFILL_UPDATE_CACHE);
+             TensorRef key = lighter.allocate(DType.F32, TensorShape.of(1, kvLength));
+             TensorRef value = lighter.allocate(DType.F32, TensorShape.of(1, kvLength))) {
+            fill(key, 1.0f);
+            fill(value, 2.0f);
+            writer.write(0, 0, key, value);
+        }
+
+        Mockito.verifyNoInteractions(operations);
     }
 
     @Test
@@ -762,6 +812,12 @@ class KvCacheSessionTest {
             tensor.set(firstValue + (i % 17) * 0.125f, 0, i);
         }
         return tensor;
+    }
+
+    private void fill(TensorRef tensor, float firstValue) {
+        for (int i = 0; i < tensor.shape().last(); i++) {
+            tensor.set(firstValue + (i % 17) * 0.125f, 0, i);
+        }
     }
 
     private AbstractTensor statisticalRow(int layer, int position, int keyOrValue, int kvLength,

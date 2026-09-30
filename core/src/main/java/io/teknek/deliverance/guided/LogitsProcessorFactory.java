@@ -16,6 +16,7 @@ import io.teknek.sketches.guide.LazyIndexGuide;
 import io.teknek.sketches.guide.Vocabulary;
 import io.teknek.sketches.json.JsonSchemaRegexBuilder;
 import io.teknek.sketches.types.Choice;
+import io.teknek.deliverance.tensor2.TensorRef;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -67,6 +68,31 @@ public class LogitsProcessorFactory {
         }
         return Optional.empty();
         }
+    }
+
+    /** Builds the same guide state for the TensorRef-native generation boundary. */
+    public static Optional<LogitsProcessorRef> createRef(AbstractModel model, GeneratorParameters parameters,
+            SketchesSettings settings) {
+        MetricRegistry metrics = model.getMetricRegistry();
+        int modes = (parameters.guidedChoice.isPresent() ? 1 : 0)
+                + (parameters.guidedRegex.isPresent() ? 1 : 0)
+                + (parameters.guidedJson.isPresent() ? 1 : 0);
+        if (modes > 1) {
+            throw new IllegalArgumentException("Only one guided mode can be set");
+        }
+        if (parameters.guidedChoice.isPresent()) {
+            Choice choice = new Choice(parameters.guidedChoice.get());
+            return Optional.of(new GuideLogitsProcessorRef(
+                    new ChoiceGuide(encodeChoices(model, choice), model.getConfig().eosTokens), metrics));
+        }
+        if (parameters.guidedRegex.isPresent()) {
+            return Optional.of(new GuideLogitsProcessorRef(guideFor(model, parameters.guidedRegex.get(), settings), metrics));
+        }
+        if (parameters.guidedJson.isPresent()) {
+            return Optional.of(new GuideLogitsProcessorRef(
+                    guideFor(model, regexForJsonSchema(model, parameters.guidedJson.get()), settings), metrics));
+        }
+        return Optional.empty();
     }
 
     private static Map<String, List<Integer>> encodeChoices(AbstractModel model, Choice choice) {

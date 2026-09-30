@@ -3,12 +3,16 @@ package io.teknek.deliverance.tensor.kv;
 import com.google.common.base.Preconditions;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.ReadOnlyTensor;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TrackedReadOnlyTensor;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.tensor2.TensorRefBackedTensor;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -35,15 +39,12 @@ public final class KvCacheSession implements AutoCloseable {
     private final boolean trackReadViews;
     private final KvBufferCacheSettings settings;
     private final TensorOperations conversionOperations;
+    private final Lighter lighter;
     private final NavigableMap<Integer, KvBlock> committedBlocks = new TreeMap<>();
     private final NavigableMap<Integer, KvBlockLease> committedBlockLeases = new TreeMap<>();
     private final NavigableMap<Integer, MutableKvBlock> mutableBlocks = new TreeMap<>();
-    private final java.util.Map<PageCacheKey, AbstractTensor[]> densePageCache = new java.util.HashMap<>();
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private int length;
-
-    private record PageCacheKey(int layer, boolean key, int pageCount) {
-    }
 
     KvCacheSession(int layers, int contextLength, int kvLength, int blockSize, DType dtype,
             TensorAllocator allocator, MetricRegistry metricRegistry, boolean trackReadViews, KvBufferCacheSettings settings) {
@@ -53,6 +54,13 @@ public final class KvCacheSession implements AutoCloseable {
     KvCacheSession(int layers, int contextLength, int kvLength, int blockSize, DType dtype,
             TensorAllocator allocator, MetricRegistry metricRegistry, boolean trackReadViews,
             KvBufferCacheSettings settings, @Nullable TensorOperations conversionOperations) {
+        this(layers, contextLength, kvLength, blockSize, dtype, allocator, metricRegistry, trackReadViews, settings,
+                conversionOperations, new Lighter(metricRegistry));
+    }
+
+    KvCacheSession(int layers, int contextLength, int kvLength, int blockSize, DType dtype,
+            TensorAllocator allocator, MetricRegistry metricRegistry, boolean trackReadViews,
+            KvBufferCacheSettings settings, @Nullable TensorOperations conversionOperations, Lighter lighter) {
         this.sessionId = "kv2-session-" + SESSION_SEQUENCE.incrementAndGet();
         this.layers = layers;
         this.contextLength = contextLength;
@@ -64,6 +72,7 @@ public final class KvCacheSession implements AutoCloseable {
         this.trackReadViews = trackReadViews;
         this.settings = settings;
         this.conversionOperations = conversionOperations;
+        this.lighter = Objects.requireNonNull(lighter, "lighter");
     }
 
     public int length() {
@@ -108,11 +117,19 @@ public final class KvCacheSession implements AutoCloseable {
     }
 
     public AbstractTensor keyRowCopy(int layer, int position) {
-        return rowCopy(layer, position, true);
+        return new TensorRefBackedTensor(keyRowCopyRef(layer, position));
     }
 
     public AbstractTensor valueRowCopy(int layer, int position) {
-        return rowCopy(layer, position, false);
+        return new TensorRefBackedTensor(valueRowCopyRef(layer, position));
+    }
+
+    TensorRef keyRowCopyRef(int layer, int position) {
+        return rowCopyRef(layer, position, true);
+    }
+
+    TensorRef valueRowCopyRef(int layer, int position) {
+        return rowCopyRef(layer, position, false);
     }
 
     AbstractTensor keyRowView(int layer, int position) {
@@ -132,8 +149,57 @@ public final class KvCacheSession implements AutoCloseable {
         validatePosition(position);
         int blockIndex = position / blockSize;
         Preconditions.checkArgument(!committedBlocks.containsKey(blockIndex), "cannot overwrite committed KV block");
+        writeToMutableBlock(mutableBlock(blockIndex), layer, position, key, value);
+        metricRegistry.meter("kvcache.v2.row.write").mark();
+    }
+
+    void write(CacheExecutionMode mode, int layer, int position, TensorRef key, TensorRef value) {
+        requireOpen();
+        Preconditions.checkArgument(mode != CacheExecutionMode.DENOISE_BLOCK_NO_UPDATE
+                        && mode != CacheExecutionMode.READ_PREFIX_NO_UPDATE,
+                mode + " must not write KV rows");
+        validateLayer(layer);
+        validatePosition(position);
+        int blockIndex = position / blockSize;
+        Preconditions.checkArgument(!committedBlocks.containsKey(blockIndex), "cannot overwrite committed KV block");
         mutableBlock(blockIndex).write(layer, position, key, value);
         metricRegistry.meter("kvcache.v2.row.write").mark();
+    }
+
+    private void writeToMutableBlock(MutableKvBlock mutable, int layer, int position, AbstractTensor key,
+            AbstractTensor value) {
+        AbstractTensor convertedKey = null;
+        AbstractTensor convertedValue = null;
+        try {
+            AbstractTensor keyToWrite = key;
+            AbstractTensor valueToWrite = value;
+            if (conversionOperations != null && key.dType() != settings.getKvKeyDType()) {
+                try (var ignored = InferenceProfiler.timer(metricRegistry,
+                        "kvcache.v2.write.quantize.to_" + settings.getKvKeyDType()).time()) {
+                    InferenceProfiler.counter(metricRegistry, "kvcache.v2.write.quantize.provider").inc();
+                    convertedKey = conversionOperations.quantize(key, settings.getKvKeyDType(), 0, kvLength);
+                    keyToWrite = convertedKey;
+                }
+            }
+            if (conversionOperations != null && value.dType() != settings.getKvValueDType()) {
+                try (var ignored = InferenceProfiler.timer(metricRegistry,
+                        "kvcache.v2.write.quantize.to_" + settings.getKvValueDType()).time()) {
+                    InferenceProfiler.counter(metricRegistry, "kvcache.v2.write.quantize.provider").inc();
+                    convertedValue = conversionOperations.quantize(value, settings.getKvValueDType(), 0, kvLength);
+                    valueToWrite = convertedValue;
+                }
+            }
+            try (TensorRef keyRef = TensorRef.borrowed(keyToWrite); TensorRef valueRef = TensorRef.borrowed(valueToWrite)) {
+                mutable.write(layer, position, keyRef, valueRef);
+            }
+        } finally {
+            if (convertedKey != null) {
+                convertedKey.close();
+            }
+            if (convertedValue != null) {
+                convertedValue.close();
+            }
+        }
     }
 
     public void advanceLength(int newLength) {
@@ -158,8 +224,6 @@ public final class KvCacheSession implements AutoCloseable {
         committedBlockLeases.tailMap(lastBlockToKeep + 1, true).clear();
         mutableBlocks.tailMap(lastBlockToKeep + 1, true).values().forEach(MutableKvBlock::close);
         mutableBlocks.tailMap(lastBlockToKeep + 1, true).clear();
-        densePageCache.clear();
-
         if (rowsInLastBlock > 0 && rowsInLastBlock < blockSize) {
             splitCommittedTailBlock(lastBlockToKeep, newLength);
         }
@@ -174,12 +238,12 @@ public final class KvCacheSession implements AutoCloseable {
         }
         KvBlockLease lease = committedBlockLeases.remove(blockIndex);
         MutableKvBlock mutable = new MutableKvBlock(blockIndex, blockSize, layers, kvLength, dtype, allocator,
-                settings, metricRegistry, conversionOperations);
+                settings, metricRegistry, conversionOperations, lighter);
         try {
             for (int position = committed.startPosition(); position < newLength; position++) {
                 for (int layer = 0; layer < layers; layer++) {
-                    try (AbstractTensor key = committed.keyRowCopy(layer, position, allocator);
-                         AbstractTensor value = committed.valueRowCopy(layer, position, allocator)) {
+                    try (TensorRef key = committed.keyRowCopy(layer, position, allocator);
+                         TensorRef value = committed.valueRowCopy(layer, position, allocator)) {
                         mutable.write(layer, position, key, value);
                     }
                 }
@@ -203,7 +267,6 @@ public final class KvCacheSession implements AutoCloseable {
         Preconditions.checkState(lease == null, "cannot detach a leased KV block");
         KvBlock block = committedBlocks.remove(blockIndex);
         Preconditions.checkState(block != null, "no committed KV block at index " + blockIndex);
-        densePageCache.clear();
         return block;
     }
 
@@ -224,7 +287,6 @@ public final class KvCacheSession implements AutoCloseable {
         committedBlocks.put(block.blockIndex(), block);
         committedBlockLeases.put(block.blockIndex(), lease);
         length = Math.max(length, block.endPositionExclusive());
-        densePageCache.clear();
         metricRegistry.meter("kvcache.v2.block.attach").mark();
     }
 
@@ -296,9 +358,13 @@ public final class KvCacheSession implements AutoCloseable {
             if (committed != null) {
                 rowsInBlock = Math.min(rowsInBlock, committed.endPositionExclusive() - sourcePosition);
                 if (key) {
-                    committed.copyKeyRows(layer, sourcePosition, rowsInBlock, destination, destRow);
+                    try (TensorRef destinationRef = TensorRef.borrowed(destination)) {
+                        committed.copyKeyRows(layer, sourcePosition, rowsInBlock, destinationRef, destRow);
+                    }
                 } else {
-                    committed.copyValueRows(layer, sourcePosition, rowsInBlock, destination, destRow);
+                    try (TensorRef destinationRef = TensorRef.borrowed(destination)) {
+                        committed.copyValueRows(layer, sourcePosition, rowsInBlock, destinationRef, destRow);
+                    }
                 }
             } else {
                 MutableKvBlock mutable = mutableBlocks.get(blockIndex);
@@ -306,9 +372,13 @@ public final class KvCacheSession implements AutoCloseable {
                     throw new IllegalStateException("No KV block for position " + sourcePosition);
                 }
                 if (key) {
-                    mutable.copyKeyRows(layer, sourcePosition, rowsInBlock, destination, destRow);
+                    try (TensorRef destinationRef = TensorRef.borrowed(destination)) {
+                        mutable.copyKeyRows(layer, sourcePosition, rowsInBlock, destinationRef, destRow);
+                    }
                 } else {
-                    mutable.copyValueRows(layer, sourcePosition, rowsInBlock, destination, destRow);
+                    try (TensorRef destinationRef = TensorRef.borrowed(destination)) {
+                        mutable.copyValueRows(layer, sourcePosition, rowsInBlock, destinationRef, destRow);
+                    }
                 }
             }
             remaining -= rowsInBlock;
@@ -326,27 +396,8 @@ public final class KvCacheSession implements AutoCloseable {
             return new AbstractTensor[0];
         }
         int pageCount = (visibleTokens + blockSize - 1) / blockSize;
-        if (allVisiblePagesAreDense(pageCount)) {
-            PageCacheKey cacheKey = new PageCacheKey(layer, key, pageCount);
-            AbstractTensor[] cached = densePageCache.get(cacheKey);
-            if (cached != null) {
-                return cached;
-            }
-            AbstractTensor[] pages = buildPages(layer, pageCount, key);
-            densePageCache.put(cacheKey, pages);
-            return pages;
-        }
+        // TensorRef-backed pages are caller-owned views and are closed after each attention pass.
         return buildPages(layer, pageCount, key);
-    }
-
-    private boolean allVisiblePagesAreDense(int pageCount) {
-        for (int blockIndex = 0; blockIndex < pageCount; blockIndex++) {
-            KvBlock committed = committedBlocks.get(blockIndex);
-            if (committed != null && committed.layout() != KvBlockLayout.DENSE) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private AbstractTensor[] buildPages(int layer, int pageCount, boolean key) {
@@ -355,13 +406,15 @@ public final class KvCacheSession implements AutoCloseable {
             for (int blockIndex = 0; blockIndex < pageCount; blockIndex++) {
                 KvBlock committed = committedBlocks.get(blockIndex);
                 if (committed != null) {
-                    pages[blockIndex] = key ? committed.keyPageView(layer) : committed.valuePageView(layer);
+                    pages[blockIndex] = new TensorRefBackedTensor(
+                            key ? committed.keyPageView(layer) : committed.valuePageView(layer));
                 } else {
                     MutableKvBlock mutable = mutableBlocks.get(blockIndex);
                     if (mutable == null) {
                         throw new IllegalStateException("No KV block for block index " + blockIndex);
                     }
-                    pages[blockIndex] = key ? mutable.keyPageView(layer) : mutable.valuePageView(layer);
+                    pages[blockIndex] = new TensorRefBackedTensor(key ? mutable.keyPageView(layer)
+                            : mutable.valuePageView(layer));
                 }
             }
             return pages;
@@ -376,6 +429,10 @@ public final class KvCacheSession implements AutoCloseable {
     }
 
     private AbstractTensor rowCopy(int layer, int position, boolean key) {
+        return new TensorRefBackedTensor(rowCopyRef(layer, position, key));
+    }
+
+    private TensorRef rowCopyRef(int layer, int position, boolean key) {
         requireOpen();
         validateLayer(layer);
         Preconditions.checkArgument(position >= 0 && position < length, "position out of visible length");
@@ -399,13 +456,15 @@ public final class KvCacheSession implements AutoCloseable {
         AbstractTensor view;
         KvBlock committed = committedBlocks.get(blockIndex);
         if (committed != null) {
-            view = key ? committed.keyRowView(layer, position) : committed.valueRowView(layer, position);
+            view = new TensorRefBackedTensor(key ? committed.keyRowView(layer, position)
+                    : committed.valueRowView(layer, position));
         } else {
             MutableKvBlock mutable = mutableBlocks.get(blockIndex);
             if (mutable == null) {
                 throw new IllegalStateException("No KV block for position " + position);
             }
-            view = key ? mutable.keyRowView(layer, position) : mutable.valueRowView(layer, position);
+            view = new TensorRefBackedTensor(key ? mutable.keyRowView(layer, position)
+                    : mutable.valueRowView(layer, position));
         }
         return trackReadViews ? new TrackedReadOnlyTensor(view, true) : new ReadOnlyTensor(view, true);
     }
@@ -413,7 +472,7 @@ public final class KvCacheSession implements AutoCloseable {
     private MutableKvBlock mutableBlock(int blockIndex) {
         return mutableBlocks.computeIfAbsent(blockIndex,
                 index -> new MutableKvBlock(index, blockSize, layers, kvLength, dtype, allocator, settings,
-                        metricRegistry, conversionOperations));
+                        metricRegistry, conversionOperations, lighter));
     }
 
     private void commitFullBlocksBefore(int newLength) {
@@ -423,9 +482,6 @@ public final class KvCacheSession implements AutoCloseable {
             MutableKvBlock mutable = mutableBlocks.remove(blockIndex);
             committedBlocks.put(blockIndex, mutable.commit(blockSize));
             metricRegistry.meter("kvcache.v2.block.commit").mark();
-        }
-        if (!toCommit.isEmpty()) {
-            densePageCache.clear();
         }
     }
 
@@ -461,7 +517,6 @@ public final class KvCacheSession implements AutoCloseable {
             committedBlocks.clear();
             committedBlockLeases.clear();
             mutableBlocks.clear();
-            densePageCache.clear();
             metricRegistry.meter("kvcache.v2.session.close").mark();
         }
     }

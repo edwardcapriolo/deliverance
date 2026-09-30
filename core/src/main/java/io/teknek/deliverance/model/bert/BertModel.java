@@ -26,6 +26,7 @@ import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensorlib.TensorPlan;
+import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 
 import java.util.Arrays;
@@ -92,9 +93,9 @@ public class BertModel extends AbstractModel {
 
         return new EmbedInput(BertModel.this) {
             @Override
-            public AbstractTensor inputTokenToEmbedding(int inputToken, int position) {
-                return bertEmbeddings(new BertInput(new int[] { inputToken }, null, null,
-                        new int[] { position }, 1, 1));
+            public TensorRef inputTokenToEmbedding(int inputToken, int position) {
+                return TensorRef.owned(bertEmbeddings(new BertInput(new int[] { inputToken }, null, null,
+                        new int[] { position }, 1, 1)));
             }
         };
     }
