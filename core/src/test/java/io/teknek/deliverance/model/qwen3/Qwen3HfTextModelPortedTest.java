@@ -3,10 +3,18 @@ package io.teknek.deliverance.model.qwen3;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.JsonUtils;
+import io.teknek.deliverance.generator.GeneratorParameters;
+import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.GenerateEvent;
+import io.teknek.deliverance.model.GenerationCursor;
+import io.teknek.deliverance.model.GenerationEngineRef;
+import io.teknek.deliverance.model.LocalGenerationBackend;
+import io.teknek.deliverance.model.ResponseContext;
+import io.teknek.deliverance.model.SamplerReturn;
 import io.teknek.deliverance.model.hf.HfConfigTesterMixinPort;
 import io.teknek.deliverance.model.hf.HfGenerationTesterMixinPort;
 import io.teknek.deliverance.model.hf.HfModelTesterMixinPort;
@@ -14,6 +22,7 @@ import io.teknek.deliverance.model.hf.HfUnsupportedMixinPort;
 import io.teknek.deliverance.model.tensorparallel.SingleRankTensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.StaticTensorParallelContext;
 import io.teknek.deliverance.safetensors.Config;
+import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.DefaultWeightLoader;
 import io.teknek.deliverance.safetensors.SafeTensorWriter;
 import io.teknek.deliverance.tensor.AbstractTensor;
@@ -42,6 +51,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.LinkedHashMap;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -131,6 +141,26 @@ public class Qwen3HfTextModelPortedTest implements
             assertEquals(4, output.shape().first());
             assertEquals(model.getConfig().embeddingLength, output.shape().last());
             assertFinite(output);
+        }
+    }
+
+    @Test
+    public void tinyTensorRefGenerationRunsEndToEnd() {
+        Path modelDir = writeTinyCheckpoint(tempDir.resolve("qwen3-tiny-tensorref-generation"), tinyConfig(), 4321);
+        try (Qwen3Model model = loadTinyQwen3Model(modelDir)) {
+            GeneratorParameters parameters = new GeneratorParameters().withMaxTokens(2).withNtokens(8).withSeed(7);
+            int[] prompt = new int[]{3, 4, 5, 6};
+            LocalGenerationBackend backend = new LocalGenerationBackend(model);
+            try (io.teknek.deliverance.model.GenerationBackendRef.GenerationSessionRef session =
+                         backend.openRef(UUID.randomUUID(), prompt, parameters);
+                 io.teknek.deliverance.tensor2.TensorRef output = session.prefill(
+                         GenerationCursor.from(prompt, session.prefixLength()));
+                 io.teknek.deliverance.tensor2.TensorRef logits = new GenerationEngineRef().allocateLogits(model);
+                 io.teknek.deliverance.tensor2.TensorRef argMax = new GenerationEngineRef().allocateArgMaxScratch(model)) {
+                SamplerReturn sampled = new GenerationEngineRef().sample(model, parameters, output, logits, argMax,
+                        new ResponseContext(model), new java.util.Random(7));
+                assertTrue(sampled.getToken() >= 0 && sampled.getToken() < model.getConfig().vocabularySize);
+            }
         }
     }
 

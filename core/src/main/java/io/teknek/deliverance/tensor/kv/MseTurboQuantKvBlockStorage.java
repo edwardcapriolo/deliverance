@@ -159,8 +159,8 @@ final class MseTurboQuantKvBlockStorage implements KvBlockStorage {
         MseTurboQuantCodec.Scratch scratch = new MseTurboQuantCodec.Scratch(encodedRows.rotatedDim());
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, METRIC_PREFIX + ".block.decode.rows").time()) {
             for (int i = 0; i < rowCount; i++) {
-                try (TensorRef row = destination.slice(destinationRowStart + i);
-                     AbstractTensor legacyRow = new TensorRefBackedTensor(row)) {
+                try (TensorRef row = destination.slice(destinationRowStart + i)) {
+                    AbstractTensor legacyRow = new TensorRefBackedTensor(row);
                     MseTurboQuantCodec.decodeRow(encodedRows, legacyRow, rowIndex(layer, blockRowStart + i, keyOrValue),
                             null, scratch, METRIC_PREFIX + ".block.decode");
                 }

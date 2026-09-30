@@ -5,6 +5,7 @@ import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.operations.MachineSpec;
 import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
+import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.dropwizard.metrics5.MetricRegistry;
 import org.junit.jupiter.api.Test;
@@ -97,9 +98,8 @@ public class EntropyBoundSamplerTest {
         }
     }
 
-    private static PanamaTensorOperations tensorOperations(WrappedForkJoinPool pool) {
-        return new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, new ArrayQueueTensorAllocator(new MetricRegistry()),
-                pool);
+    private static Lighter tensorOperations(WrappedForkJoinPool pool) {
+        return new Lighter(new MetricRegistry());
     }
 
     private static AbstractTensor entropyFixtureLogits() {

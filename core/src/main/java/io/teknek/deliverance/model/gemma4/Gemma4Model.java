@@ -14,6 +14,8 @@ import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.*;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.tensor2.TensorRefBackedTensor;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -101,7 +103,7 @@ public class Gemma4Model extends LlamaModel {
         );
         return new EmbedInput(this) {
             @Override
-            public AbstractTensor inputTokenToEmbedding(int inputToken, int position) {
+            public TensorRef inputTokenToEmbedding(int inputToken, int position) {
                 AbstractTensor embedding = makeDenseTensor(config.embeddingLength);
                 try (AbstractTensor at = embedTokenWeights.slice(true, inputToken)) {
                     AbstractTensor source = at;
@@ -114,7 +116,7 @@ public class Gemma4Model extends LlamaModel {
                     }
                 }
                 scale(embeddingScalingFactor, embedding, 0, config.embeddingLength);
-                return embedding;
+                return TensorRef.owned(embedding);
             }
         };
     }
@@ -262,7 +264,7 @@ public class Gemma4Model extends LlamaModel {
             Timer.Context embedTimer = metricRegistry.timer("gemma4.batch_forward.embed").time();
             AbstractTensor inputEmbeddings;
             try {
-                inputEmbeddings = embedInput.batchInputsToEmbeddings(tokenIds, startPos);
+                inputEmbeddings = new TensorRefBackedTensor(embedInput.batchInputsToEmbeddings(tokenIds, startPos));
             } finally {
                 embedTimer.stop();
             }
@@ -293,7 +295,7 @@ public class Gemma4Model extends LlamaModel {
     public AbstractTensor forward(int tokenId, int pos, KvBufferCache.KvBuffer kvbuf,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
         return withSharedKeyValues(() -> {
-            AbstractTensor embedding = embedInput.inputTokenToEmbedding(tokenId, pos);
+            AbstractTensor embedding = new TensorRefBackedTensor(embedInput.inputTokenToEmbedding(tokenId, pos));
             AbstractTensor[] perLayerInputs = computePerLayerInputs(new int[]{tokenId}, embedding);
             return forwardGemma4(embedding, perLayerInputs, pos, kvbuf, tensorReducer);
         });

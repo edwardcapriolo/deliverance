@@ -29,6 +29,7 @@ import io.teknek.deliverance.tensor.TensorNormalization;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.tensor2.ScaledSoftMax;
 import io.teknek.deliverance.tensor2.TensorRef;
@@ -302,7 +303,7 @@ public final class DiffusionGemmaModel extends AbstractModel {
              AbstractTensor argmax = tensorAllocator.getDirty(DType.F32, TensorShape.of(1, 2))) {
             encodeTextToCache(promptIds, kvBuffer);
             new EntropyBoundSampler(1.0f, diffusionConfig.canvasLength, diffusionConfig.textConfig.vocabSize,
-                    new Random(seed), configurableTensorProvider.get(), metricRegistry).initializeCanvas(canvas);
+                    new Random(seed), getLighter(), metricRegistry).initializeCanvas(canvas);
 
             try (AbstractTensor hidden = forwardCanvas(canvas, null)) {
                 for (int position = 0; position < tokensToReturn; position++) {
@@ -333,7 +334,7 @@ public final class DiffusionGemmaModel extends AbstractModel {
                 "model.encoder.language_model.embed_tokens.weight");
         return new EmbedInput(this) {
             @Override
-            public AbstractTensor inputTokenToEmbedding(int inputToken, int position) {
+            public TensorRef inputTokenToEmbedding(int inputToken, int position) {
                 throw new UnsupportedOperationException("DiffusionGemma forward is not implemented yet");
             }
         };

@@ -36,6 +36,18 @@ public class NativeOps implements TensorOps {
         }
     }
 
+    @Override
+    public Either<OpSupport, Void> exp(TensorRef input, TensorRef output, int offset, int length) {
+        if (input.dType() != DType.F32 || output.dType() != DType.F32
+                || !input.shape().equals(output.shape()) || input.dims() != 2) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        int status = Tensor2Native.tensor2_exp_f32(baseSegment(input), baseSegment(output),
+                (int) input.shape().first(), offset, length, input.stride(), output.stride());
+        return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
+    }
+
+
     public static boolean isAvailable() {
         return loaded;
     }
@@ -53,8 +65,42 @@ public class NativeOps implements TensorOps {
         TensorRef result = operation.result();
         TensorRef a = operation.a();
         TensorRef b = operation.b();
+        if (result.dType() == DType.F32 && a.dType() == DType.F32 && b.dType() == DType.Q4) {
+            TensorRef scale = Q4Layout.scale(b);
+            if (scale == null) {
+                return Either.Left(OpSupport.Unsupported);
+            }
+            int status = Tensor2Native.tensor2_gemm_f32_q4(baseSegment(result), baseSegment(a), baseSegment(b),
+                    baseSegment(scale), (int) result.shape().first(), operation.aRowOffset(),
+                    operation.aColumnOffset(), operation.bColumnOffset(), operation.columnLength(),
+                    operation.resultRowOffset(), operation.bRowOffset(), operation.rowChunkSize(), result.stride(),
+                    a.stride(), b.stride(), scale.stride());
+            return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
+        }
+        if (result.dType() == DType.F32 && a.dType() == DType.I8 && b.dType() == DType.Q4) {
+            TensorRef inputScale = Q8Layout.scale(a);
+            TensorRef weightScale = Q4Layout.scale(b);
+            if (inputScale == null || weightScale == null) {
+                return Either.Left(OpSupport.Unsupported);
+            }
+            int status = Tensor2Native.tensor2_gemm_i8_q4(baseSegment(result), baseSegment(a),
+                    baseSegment(inputScale), baseSegment(b), baseSegment(weightScale), (int) result.shape().first(),
+                    operation.aRowOffset(), operation.aColumnOffset(), operation.bColumnOffset(),
+                    operation.columnLength(), operation.resultRowOffset(), operation.bRowOffset(),
+                    operation.rowChunkSize(), result.stride(), a.stride(), inputScale.stride(), b.stride(),
+                    weightScale.stride());
+            return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
+        }
         if (result.dType() != DType.F32 || a.dType() != DType.F32) {
             return Either.Left(OpSupport.Unsupported);
+        }
+        if (b.dType() == DType.BF16) {
+            int status = Tensor2Native.tensor2_gemm_f32_bf16(
+                    baseSegment(result), baseSegment(a), baseSegment(b),
+                    (int) result.shape().first(), operation.aRowOffset(), operation.aColumnOffset(),
+                    operation.bColumnOffset(), operation.columnLength(), operation.resultRowOffset(),
+                    operation.bRowOffset(), operation.rowChunkSize(), result.stride(), a.stride(), b.stride());
+            return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
         }
         TensorRef q8Scale = Q8Layout.scale(b);
         if (b.dType() == DType.I8 && q8Scale != null && q8Aligned(operation)) {
@@ -112,6 +158,30 @@ public class NativeOps implements TensorOps {
                         columnLength, weightRowStart, weightRowCount, outputColumnStart, output.stride(), input.stride(),
                         inputScales.stride(), weights.stride(), weightScales.stride());
                 return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
+            }
+            if (input.dType() == DType.F32 && weights.dType() == DType.BF16 && output.dType() == DType.F32) {
+                return batchDotProduct(new BatchDotProduct()
+                        .result(output).a(input).b(weights)
+                        .aColumnOffset(inputColumnStart).bColumnOffset(weightColumnStart)
+                        .columnLength(columnLength)
+                        .resultRowOffset(outputColumnStart - weightRowStart)
+                        .bRowOffset(weightRowStart).rowChunkSize(weightRowCount));
+            }
+            if (input.dType() == DType.F32 && weights.dType() == DType.Q4 && output.dType() == DType.F32) {
+                return batchDotProduct(new BatchDotProduct()
+                        .result(output).a(input).b(weights)
+                        .aColumnOffset(inputColumnStart).bColumnOffset(weightColumnStart)
+                        .columnLength(columnLength)
+                        .resultRowOffset(outputColumnStart - weightRowStart)
+                        .bRowOffset(weightRowStart).rowChunkSize(weightRowCount));
+            }
+            if (input.dType() == DType.I8 && weights.dType() == DType.Q4 && output.dType() == DType.F32) {
+                return batchDotProduct(new BatchDotProduct()
+                        .result(output).a(input).b(weights)
+                        .aColumnOffset(inputColumnStart).bColumnOffset(weightColumnStart)
+                        .columnLength(columnLength)
+                        .resultRowOffset(outputColumnStart - weightRowStart)
+                        .bRowOffset(weightRowStart).rowChunkSize(weightRowCount));
             }
             if (input.dType() == DType.I8) {
                 return Either.Left(OpSupport.Unsupported);

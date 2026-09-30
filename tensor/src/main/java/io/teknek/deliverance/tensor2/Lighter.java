@@ -401,6 +401,50 @@ public class Lighter {
         throw new IllegalStateException("No tensor operations support argMax");
     }
 
+    public void max(Max max) {
+        TensorRef input = max.getSource();
+        TensorRef output = max.getDestination();
+        Preconditions.checkArgument(input != null, "Source tensor must be set");
+        Preconditions.checkArgument(output != null, "Destination tensor must be set");
+        for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
+            Either<OpSupport, Void> result = entry.getValue().max(input, max.getRow(), max.getOffset(),
+                    max.getLength(), output);
+            if (result.isRight()) {
+                return;
+            }
+        }
+        throw new IllegalStateException("No tensor operations support max");
+    }
+
+    public void exp(Exp exp) {
+        TensorRef input = exp.getSource();
+        TensorRef output = exp.getDestination();
+        Preconditions.checkArgument(input != null, "Source tensor must be set");
+        Preconditions.checkArgument(output != null, "Destination tensor must be set");
+        for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
+            Either<OpSupport, Void> result = entry.getValue().exp(input, output, exp.getOffset(), exp.getLength());
+            if (result.isRight()) {
+                return;
+            }
+        }
+        throw new IllegalStateException("No tensor operations support exp");
+    }
+
+    public void sum(Sum sum) {
+        TensorRef input = sum.getSource();
+        TensorRef output = sum.getDestination();
+        Preconditions.checkArgument(input != null, "Source tensor must be set");
+        Preconditions.checkArgument(output != null, "Destination tensor must be set");
+        for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
+            Either<OpSupport, Void> result = entry.getValue().sum(input, sum.getRow(), sum.getOffset(),
+                    sum.getLength(), output);
+            if (result.isRight()) {
+                return;
+            }
+        }
+        throw new IllegalStateException("No tensor operations support sum");
+    }
+
     public void accumulate(Accumulate accumulate, Map<String, String> tags) {
         TensorRef source = accumulate.getSource();
         TensorRef destination = accumulate.getDestination();

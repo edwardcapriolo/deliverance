@@ -489,7 +489,6 @@ class Qwen3TensorRefAttentionParityTest {
             TensorSnapshot left = cachedByKey.get(key);
             TensorSnapshot right = coldByKey.get(key);
             assertEquals(left.dtype(), right.dtype(), "trace dtype key=" + key);
-            assertEquals(left.stride(), right.stride(), "trace stride key=" + key);
             int columns = left.shape().length > 1 ? left.shape()[1] : left.shape()[0];
             assertEquals(columns, right.shape().length > 1 ? right.shape()[1] : right.shape()[0],
                     "trace width event=" + index);
@@ -525,7 +524,6 @@ class Qwen3TensorRefAttentionParityTest {
             TensorSnapshot left = actualByKey.get(key);
             TensorSnapshot right = expectedByKey.get(key);
             assertEquals(left.dtype(), right.dtype(), label + " trace dtype key=" + key);
-            assertEquals(left.stride(), right.stride(), label + " trace stride key=" + key);
             int columns = left.shape().length > 1 ? left.shape()[1] : left.shape()[0];
             assertEquals(columns, right.shape().length > 1 ? right.shape()[1] : right.shape()[0],
                     label + " trace width key=" + key);

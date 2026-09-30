@@ -16,8 +16,76 @@ import jdk.incubator.vector.VectorSpecies;
 import java.nio.ByteOrder;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import net.jafama.FastMath;
 
 class PanamaOps implements TensorOps {
+    @Override
+    public Either<OpSupport, Void> sum(TensorRef input, int row, int offset, int length, TensorRef output) {
+        if (input.dType() != DType.F32) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        Preconditions.checkArgument(input.dims() == 2, "sum expects a 2D input");
+        Preconditions.checkArgument(output.shape().first() == 1 && output.shape().last() == 1,
+                "sum output must have shape [1, 1]");
+        Preconditions.checkArgument(output.dType() == DType.F32, "sum output must be F32");
+        Preconditions.checkArgument(row >= 0 && row < input.shape().first(), "sum row out of bounds");
+        Preconditions.checkArgument(offset >= 0 && length > 0 && offset + length <= input.shape().last(),
+                "sum window out of bounds");
+        int i = offset;
+        int upperBound = offset + F32_SPECIES.loopBound(length);
+        FloatVector sum = FloatVector.zero(F32_SPECIES);
+        for (; i < upperBound; i += F32_SPECIES.length()) {
+            sum = sum.add(FloatVector.fromMemorySegment(F32_SPECIES, input.memorySegment(),
+                    memoryOffset(input, row, i), ByteOrder.LITTLE_ENDIAN));
+        }
+        float result = sum.reduceLanes(VectorOperators.ADD);
+        for (; i < offset + length; i++) {
+            result += input.get(row, i);
+        }
+        output.set(result, 0, 0);
+        return Either.Right(null);
+    }
+
+    @Override
+    public Either<OpSupport, Void> exp(TensorRef input, TensorRef output, int offset, int length) {
+        Preconditions.checkArgument(input.shape().equals(output.shape()), "Input and output shapes must match");
+        Preconditions.checkArgument(offset >= 0 && length >= 0 && offset + length <= input.shape().last(),
+                "exp window out of bounds");
+        for (int row = 0; row < input.shape().first(); row++) {
+            for (int column = offset; column < offset + length; column++) {
+                output.set((float) FastMath.exp(input.get(row, column)), row, column);
+            }
+        }
+        return Either.Right(null);
+    }
+
+    @Override
+    public Either<OpSupport, Void> max(TensorRef input, int row, int offset, int length, TensorRef output) {
+        if (input.dType() != DType.F32) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        Preconditions.checkArgument(input.dims() == 2, "max expects a 2D input");
+        Preconditions.checkArgument(output.shape().first() == 1 && output.shape().last() == 1,
+                "max output must have shape [1, 1]");
+        Preconditions.checkArgument(output.dType() == DType.F32, "max output must be F32");
+        Preconditions.checkArgument(row >= 0 && row < input.shape().first(), "max row out of bounds");
+        Preconditions.checkArgument(offset >= 0 && length > 0 && offset + length <= input.shape().last(),
+                "max window out of bounds");
+        int i = offset;
+        int upperBound = offset + F32_SPECIES.loopBound(length);
+        FloatVector maximum = FloatVector.broadcast(F32_SPECIES, Float.NEGATIVE_INFINITY);
+        for (; i < upperBound; i += F32_SPECIES.length()) {
+            maximum = maximum.max(FloatVector.fromMemorySegment(F32_SPECIES, input.memorySegment(),
+                    memoryOffset(input, row, i), ByteOrder.LITTLE_ENDIAN));
+        }
+        float result = maximum.reduceLanes(VectorOperators.MAX);
+        for (; i < offset + length; i++) {
+            result = Math.max(result, input.get(row, i));
+        }
+        output.set(result, 0, 0);
+        return Either.Right(null);
+    }
+
     @Override
     public Either<OpSupport, Void> argMax(TensorRef input, TensorRef output, int offset, int length) {
         if (input.dType() != DType.F32) {
@@ -678,6 +746,18 @@ class PanamaOps implements TensorOps {
                     inputColumnStart, weightColumnStart, columnLength, weightRowStart, weightRowCount,
                     outputColumnStart).matmul();
             return Either.Right(null);
+        }
+        if (output.dType() == DType.F32 && input.dType() == DType.F32 && weights.dType() == DType.BF16) {
+            return batchDotProduct(new BatchDotProduct()
+                    .result(output)
+                    .a(input)
+                    .b(weights)
+                    .aColumnOffset(inputColumnStart)
+                    .bColumnOffset(weightColumnStart)
+                    .columnLength(columnLength)
+                    .resultRowOffset(outputColumnStart - weightRowStart)
+                    .bRowOffset(weightRowStart)
+                    .rowChunkSize(weightRowCount));
         }
         if (output.dType() != DType.F32 || input.dType() != DType.F32
                 || (weights.dType() != DType.F32 && weights.dType() != DType.I8)) {

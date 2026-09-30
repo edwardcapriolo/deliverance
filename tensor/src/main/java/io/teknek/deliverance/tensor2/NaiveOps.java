@@ -7,6 +7,53 @@ import io.teknek.dysfx.Either;
 class NaiveOps implements TensorOps {
 
     @Override
+    public Either<OpSupport, Void> sum(TensorRef input, int row, int offset, int length, TensorRef output) {
+        Preconditions.checkArgument(input.dims() == 2, "sum expects a 2D input");
+        Preconditions.checkArgument(output.shape().first() == 1 && output.shape().last() == 1,
+                "sum output must have shape [1, 1]");
+        Preconditions.checkArgument(output.dType() == DType.F32, "sum output must be F32");
+        Preconditions.checkArgument(row >= 0 && row < input.shape().first(), "sum row out of bounds");
+        Preconditions.checkArgument(offset >= 0 && length > 0 && offset + length <= input.shape().last(),
+                "sum window out of bounds");
+        float sum = 0.0f;
+        for (int column = offset; column < offset + length; column++) {
+            sum += input.get(row, column);
+        }
+        output.set(sum, 0, 0);
+        return Either.Right(null);
+    }
+
+    @Override
+    public Either<OpSupport, Void> exp(TensorRef input, TensorRef output, int offset, int length) {
+        Preconditions.checkArgument(input.shape().equals(output.shape()), "Input and output shapes must match");
+        Preconditions.checkArgument(offset >= 0 && length >= 0 && offset + length <= input.shape().last(),
+                "exp window out of bounds");
+        for (int row = 0; row < input.shape().first(); row++) {
+            for (int column = offset; column < offset + length; column++) {
+                output.set((float) net.jafama.FastMath.exp(input.get(row, column)), row, column);
+            }
+        }
+        return Either.Right(null);
+    }
+
+    @Override
+    public Either<OpSupport, Void> max(TensorRef input, int row, int offset, int length, TensorRef output) {
+        Preconditions.checkArgument(input.dims() == 2, "max expects a 2D input");
+        Preconditions.checkArgument(output.shape().first() == 1 && output.shape().last() == 1,
+                "max output must have shape [1, 1]");
+        Preconditions.checkArgument(output.dType() == DType.F32, "max output must be F32");
+        Preconditions.checkArgument(row >= 0 && row < input.shape().first(), "max row out of bounds");
+        Preconditions.checkArgument(offset >= 0 && length > 0 && offset + length <= input.shape().last(),
+                "max window out of bounds");
+        float maximum = input.get(row, offset);
+        for (int column = offset + 1; column < offset + length; column++) {
+            maximum = Math.max(maximum, input.get(row, column));
+        }
+        output.set(maximum, 0, 0);
+        return Either.Right(null);
+    }
+
+    @Override
     public Either<OpSupport, Void> argMax(TensorRef input, TensorRef output, int offset, int length) {
         Preconditions.checkArgument(input.shape().first() == 1, "argMax expects one row");
         Preconditions.checkArgument(output.shape().first() == 1 && output.shape().last() == 2,

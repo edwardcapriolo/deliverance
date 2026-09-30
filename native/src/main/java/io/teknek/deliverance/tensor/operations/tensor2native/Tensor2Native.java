@@ -362,39 +362,52 @@ public class Tensor2Native extends Tensor2Native$shared {
         public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
     }
 
+    /**
+     * Function descriptor for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_dot_product_rows_i8_q4(float *result, const int8_t *input, const float *input_scales, const uint8_t *weights, const float *weight_scales, int result_rows, int input_column_start, int weight_column_start, int column_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int input_scale_stride, int weight_stride, int weight_scale_stride)
+     * }
+     */
     public static FunctionDescriptor tensor2_dot_product_rows_i8_q4$descriptor() {
         return tensor2_dot_product_rows_i8_q4.DESC;
     }
 
+    /**
+     * Downcall method handle for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_dot_product_rows_i8_q4(float *result, const int8_t *input, const float *input_scales, const uint8_t *weights, const float *weight_scales, int result_rows, int input_column_start, int weight_column_start, int column_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int input_scale_stride, int weight_stride, int weight_scale_stride)
+     * }
+     */
     public static MethodHandle tensor2_dot_product_rows_i8_q4$handle() {
         return tensor2_dot_product_rows_i8_q4.HANDLE;
     }
 
+    /**
+     * Address for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_dot_product_rows_i8_q4(float *result, const int8_t *input, const float *input_scales, const uint8_t *weights, const float *weight_scales, int result_rows, int input_column_start, int weight_column_start, int column_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int input_scale_stride, int weight_stride, int weight_scale_stride)
+     * }
+     */
     public static MemorySegment tensor2_dot_product_rows_i8_q4$address() {
         return tensor2_dot_product_rows_i8_q4.ADDR;
     }
 
-    public static int tensor2_dot_product_rows_i8_q4(MemorySegment result, MemorySegment input,
-            MemorySegment input_scales, MemorySegment weights, MemorySegment weight_scales, int result_rows,
-            int input_column_start, int weight_column_start, int column_length, int weight_row_start,
-            int weight_row_count, int result_column_start, int result_stride, int input_stride,
-            int input_scale_stride, int weight_stride, int weight_scale_stride) {
+    /**
+     * {@snippet lang=c :
+     * tensor2_status tensor2_dot_product_rows_i8_q4(float *result, const int8_t *input, const float *input_scales, const uint8_t *weights, const float *weight_scales, int result_rows, int input_column_start, int weight_column_start, int column_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int input_scale_stride, int weight_stride, int weight_scale_stride)
+     * }
+     */
+    public static int tensor2_dot_product_rows_i8_q4(MemorySegment result, MemorySegment input, MemorySegment input_scales, MemorySegment weights, MemorySegment weight_scales, int result_rows, int input_column_start, int weight_column_start, int column_length, int weight_row_start, int weight_row_count, int result_column_start, int result_stride, int input_stride, int input_scale_stride, int weight_stride, int weight_scale_stride) {
         var mh$ = tensor2_dot_product_rows_i8_q4.HANDLE;
         try {
             if (TRACE_DOWNCALLS) {
-                traceDowncall("tensor2_dot_product_rows_i8_q4", result, input, input_scales, weights,
-                        weight_scales, result_rows, input_column_start, weight_column_start, column_length,
-                        weight_row_start, weight_row_count, result_column_start, result_stride, input_stride,
-                        input_scale_stride, weight_stride, weight_scale_stride);
+                traceDowncall("tensor2_dot_product_rows_i8_q4", result, input, input_scales, weights, weight_scales, result_rows, input_column_start, weight_column_start, column_length, weight_row_start, weight_row_count, result_column_start, result_stride, input_stride, input_scale_stride, weight_stride, weight_scale_stride);
             }
-            return (int)mh$.invokeExact(result, input, input_scales, weights, weight_scales, result_rows,
-                    input_column_start, weight_column_start, column_length, weight_row_start, weight_row_count,
-                    result_column_start, result_stride, input_stride, input_scale_stride, weight_stride,
-                    weight_scale_stride);
+            return (int)mh$.invokeExact(result, input, input_scales, weights, weight_scales, result_rows, input_column_start, weight_column_start, column_length, weight_row_start, weight_row_count, result_column_start, result_stride, input_stride, input_scale_stride, weight_stride, weight_scale_stride);
         } catch (Error | RuntimeException ex) {
-            throw ex;
+           throw ex;
         } catch (Throwable ex$) {
-            throw new AssertionError("should not reach here", ex$);
+           throw new AssertionError("should not reach here", ex$);
         }
     }
 
@@ -605,6 +618,304 @@ public class Tensor2Native extends Tensor2Native$shared {
         }
     }
 
+    private static class tensor2_batch_dot_f32_bf16 {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.of(
+            Tensor2Native.C_INT,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT
+        );
+
+        public static final MemorySegment ADDR = SYMBOL_LOOKUP.findOrThrow("tensor2_batch_dot_f32_bf16");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /**
+     * Function descriptor for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_batch_dot_f32_bf16(float *result, const float *a, const uint16_t *b, int result_rows, int a_row_offset, int a_column_offset, int b_column_offset, int column_length, int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride, int a_stride, int b_stride)
+     * }
+     */
+    public static FunctionDescriptor tensor2_batch_dot_f32_bf16$descriptor() {
+        return tensor2_batch_dot_f32_bf16.DESC;
+    }
+
+    /**
+     * Downcall method handle for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_batch_dot_f32_bf16(float *result, const float *a, const uint16_t *b, int result_rows, int a_row_offset, int a_column_offset, int b_column_offset, int column_length, int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride, int a_stride, int b_stride)
+     * }
+     */
+    public static MethodHandle tensor2_batch_dot_f32_bf16$handle() {
+        return tensor2_batch_dot_f32_bf16.HANDLE;
+    }
+
+    /**
+     * Address for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_batch_dot_f32_bf16(float *result, const float *a, const uint16_t *b, int result_rows, int a_row_offset, int a_column_offset, int b_column_offset, int column_length, int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride, int a_stride, int b_stride)
+     * }
+     */
+    public static MemorySegment tensor2_batch_dot_f32_bf16$address() {
+        return tensor2_batch_dot_f32_bf16.ADDR;
+    }
+
+    /**
+     * {@snippet lang=c :
+     * tensor2_status tensor2_batch_dot_f32_bf16(float *result, const float *a, const uint16_t *b, int result_rows, int a_row_offset, int a_column_offset, int b_column_offset, int column_length, int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride, int a_stride, int b_stride)
+     * }
+     */
+    public static int tensor2_batch_dot_f32_bf16(MemorySegment result, MemorySegment a, MemorySegment b, int result_rows, int a_row_offset, int a_column_offset, int b_column_offset, int column_length, int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride, int a_stride, int b_stride) {
+        var mh$ = tensor2_batch_dot_f32_bf16.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("tensor2_batch_dot_f32_bf16", result, a, b, result_rows, a_row_offset, a_column_offset, b_column_offset, column_length, result_row_offset, b_row_offset, row_chunk_size, result_stride, a_stride, b_stride);
+            }
+            return (int)mh$.invokeExact(result, a, b, result_rows, a_row_offset, a_column_offset, b_column_offset, column_length, result_row_offset, b_row_offset, row_chunk_size, result_stride, a_stride, b_stride);
+        } catch (Error | RuntimeException ex) {
+           throw ex;
+        } catch (Throwable ex$) {
+           throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
+    private static class tensor2_gemm_f32_bf16 {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.of(
+            Tensor2Native.C_INT,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT
+        );
+
+        public static final MemorySegment ADDR = SYMBOL_LOOKUP.findOrThrow("tensor2_gemm_f32_bf16");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /**
+     * Function descriptor for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_gemm_f32_bf16(float *result, const float *a, const uint16_t *b, int result_rows, int a_row_offset, int a_column_offset, int b_column_offset, int column_length, int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride, int a_stride, int b_stride)
+     * }
+     */
+    public static FunctionDescriptor tensor2_gemm_f32_bf16$descriptor() {
+        return tensor2_gemm_f32_bf16.DESC;
+    }
+
+    /**
+     * Downcall method handle for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_gemm_f32_bf16(float *result, const float *a, const uint16_t *b, int result_rows, int a_row_offset, int a_column_offset, int b_column_offset, int column_length, int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride, int a_stride, int b_stride)
+     * }
+     */
+    public static MethodHandle tensor2_gemm_f32_bf16$handle() {
+        return tensor2_gemm_f32_bf16.HANDLE;
+    }
+
+    /**
+     * Address for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_gemm_f32_bf16(float *result, const float *a, const uint16_t *b, int result_rows, int a_row_offset, int a_column_offset, int b_column_offset, int column_length, int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride, int a_stride, int b_stride)
+     * }
+     */
+    public static MemorySegment tensor2_gemm_f32_bf16$address() {
+        return tensor2_gemm_f32_bf16.ADDR;
+    }
+
+    /**
+     * {@snippet lang=c :
+     * tensor2_status tensor2_gemm_f32_bf16(float *result, const float *a, const uint16_t *b, int result_rows, int a_row_offset, int a_column_offset, int b_column_offset, int column_length, int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride, int a_stride, int b_stride)
+     * }
+     */
+    public static int tensor2_gemm_f32_bf16(MemorySegment result, MemorySegment a, MemorySegment b, int result_rows, int a_row_offset, int a_column_offset, int b_column_offset, int column_length, int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride, int a_stride, int b_stride) {
+        var mh$ = tensor2_gemm_f32_bf16.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("tensor2_gemm_f32_bf16", result, a, b, result_rows, a_row_offset, a_column_offset, b_column_offset, column_length, result_row_offset, b_row_offset, row_chunk_size, result_stride, a_stride, b_stride);
+            }
+            return (int)mh$.invokeExact(result, a, b, result_rows, a_row_offset, a_column_offset, b_column_offset, column_length, result_row_offset, b_row_offset, row_chunk_size, result_stride, a_stride, b_stride);
+        } catch (Error | RuntimeException ex) {
+           throw ex;
+        } catch (Throwable ex$) {
+           throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
+    private static class tensor2_gemm_f32_q4 {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.of(
+            Tensor2Native.C_INT,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT
+        );
+
+        public static final MemorySegment ADDR = SYMBOL_LOOKUP.findOrThrow("tensor2_gemm_f32_q4");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /**
+     * Function descriptor for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_gemm_f32_q4(float *result, const float *a, const uint8_t *b, const float *b_scales, int result_rows, int a_row_offset, int a_column_offset, int b_column_offset, int column_length, int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride, int a_stride, int b_stride, int b_scale_stride)
+     * }
+     */
+    public static FunctionDescriptor tensor2_gemm_f32_q4$descriptor() {
+        return tensor2_gemm_f32_q4.DESC;
+    }
+
+    /**
+     * Downcall method handle for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_gemm_f32_q4(float *result, const float *a, const uint8_t *b, const float *b_scales, int result_rows, int a_row_offset, int a_column_offset, int b_column_offset, int column_length, int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride, int a_stride, int b_stride, int b_scale_stride)
+     * }
+     */
+    public static MethodHandle tensor2_gemm_f32_q4$handle() {
+        return tensor2_gemm_f32_q4.HANDLE;
+    }
+
+    /**
+     * Address for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_gemm_f32_q4(float *result, const float *a, const uint8_t *b, const float *b_scales, int result_rows, int a_row_offset, int a_column_offset, int b_column_offset, int column_length, int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride, int a_stride, int b_stride, int b_scale_stride)
+     * }
+     */
+    public static MemorySegment tensor2_gemm_f32_q4$address() {
+        return tensor2_gemm_f32_q4.ADDR;
+    }
+
+    /**
+     * {@snippet lang=c :
+     * tensor2_status tensor2_gemm_f32_q4(float *result, const float *a, const uint8_t *b, const float *b_scales, int result_rows, int a_row_offset, int a_column_offset, int b_column_offset, int column_length, int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride, int a_stride, int b_stride, int b_scale_stride)
+     * }
+     */
+    public static int tensor2_gemm_f32_q4(MemorySegment result, MemorySegment a, MemorySegment b, MemorySegment b_scales, int result_rows, int a_row_offset, int a_column_offset, int b_column_offset, int column_length, int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride, int a_stride, int b_stride, int b_scale_stride) {
+        var mh$ = tensor2_gemm_f32_q4.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("tensor2_gemm_f32_q4", result, a, b, b_scales, result_rows, a_row_offset, a_column_offset, b_column_offset, column_length, result_row_offset, b_row_offset, row_chunk_size, result_stride, a_stride, b_stride, b_scale_stride);
+            }
+            return (int)mh$.invokeExact(result, a, b, b_scales, result_rows, a_row_offset, a_column_offset, b_column_offset, column_length, result_row_offset, b_row_offset, row_chunk_size, result_stride, a_stride, b_stride, b_scale_stride);
+        } catch (Error | RuntimeException ex) {
+           throw ex;
+        } catch (Throwable ex$) {
+           throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
+    private static class tensor2_gemm_i8_q4 {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.of(
+            Tensor2Native.C_INT,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT
+        );
+
+        public static final MemorySegment ADDR = SYMBOL_LOOKUP.findOrThrow("tensor2_gemm_i8_q4");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /**
+     * Function descriptor for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_gemm_i8_q4(float *result, const int8_t *a, const float *a_scales, const uint8_t *b, const float *b_scales, int result_rows, int a_row_offset, int a_column_offset, int b_column_offset, int column_length, int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride, int a_stride, int a_scale_stride, int b_stride, int b_scale_stride)
+     * }
+     */
+    public static FunctionDescriptor tensor2_gemm_i8_q4$descriptor() {
+        return tensor2_gemm_i8_q4.DESC;
+    }
+
+    /**
+     * Downcall method handle for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_gemm_i8_q4(float *result, const int8_t *a, const float *a_scales, const uint8_t *b, const float *b_scales, int result_rows, int a_row_offset, int a_column_offset, int b_column_offset, int column_length, int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride, int a_stride, int a_scale_stride, int b_stride, int b_scale_stride)
+     * }
+     */
+    public static MethodHandle tensor2_gemm_i8_q4$handle() {
+        return tensor2_gemm_i8_q4.HANDLE;
+    }
+
+    /**
+     * Address for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_gemm_i8_q4(float *result, const int8_t *a, const float *a_scales, const uint8_t *b, const float *b_scales, int result_rows, int a_row_offset, int a_column_offset, int b_column_offset, int column_length, int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride, int a_stride, int a_scale_stride, int b_stride, int b_scale_stride)
+     * }
+     */
+    public static MemorySegment tensor2_gemm_i8_q4$address() {
+        return tensor2_gemm_i8_q4.ADDR;
+    }
+
+    /**
+     * {@snippet lang=c :
+     * tensor2_status tensor2_gemm_i8_q4(float *result, const int8_t *a, const float *a_scales, const uint8_t *b, const float *b_scales, int result_rows, int a_row_offset, int a_column_offset, int b_column_offset, int column_length, int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride, int a_stride, int a_scale_stride, int b_stride, int b_scale_stride)
+     * }
+     */
+    public static int tensor2_gemm_i8_q4(MemorySegment result, MemorySegment a, MemorySegment a_scales, MemorySegment b, MemorySegment b_scales, int result_rows, int a_row_offset, int a_column_offset, int b_column_offset, int column_length, int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride, int a_stride, int a_scale_stride, int b_stride, int b_scale_stride) {
+        var mh$ = tensor2_gemm_i8_q4.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("tensor2_gemm_i8_q4", result, a, a_scales, b, b_scales, result_rows, a_row_offset, a_column_offset, b_column_offset, column_length, result_row_offset, b_row_offset, row_chunk_size, result_stride, a_stride, a_scale_stride, b_stride, b_scale_stride);
+            }
+            return (int)mh$.invokeExact(result, a, a_scales, b, b_scales, result_rows, a_row_offset, a_column_offset, b_column_offset, column_length, result_row_offset, b_row_offset, row_chunk_size, result_stride, a_stride, a_scale_stride, b_stride, b_scale_stride);
+        } catch (Error | RuntimeException ex) {
+           throw ex;
+        } catch (Throwable ex$) {
+           throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
     private static class tensor2_batch_dot_f32_q8 {
         public static final FunctionDescriptor DESC = FunctionDescriptor.of(
             Tensor2Native.C_INT,
@@ -804,4 +1115,135 @@ public class Tensor2Native extends Tensor2Native$shared {
            throw new AssertionError("should not reach here", ex$);
         }
     }
+
+    private static class tensor2_exp_f32 {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.of(
+            Tensor2Native.C_INT,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT
+        );
+
+        public static final MemorySegment ADDR = SYMBOL_LOOKUP.findOrThrow("tensor2_exp_f32");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /**
+     * Function descriptor for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_exp_f32(const float *input, float *output, int rows, int offset, int length, int input_stride, int output_stride)
+     * }
+     */
+    public static FunctionDescriptor tensor2_exp_f32$descriptor() {
+        return tensor2_exp_f32.DESC;
+    }
+
+    /**
+     * Downcall method handle for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_exp_f32(const float *input, float *output, int rows, int offset, int length, int input_stride, int output_stride)
+     * }
+     */
+    public static MethodHandle tensor2_exp_f32$handle() {
+        return tensor2_exp_f32.HANDLE;
+    }
+
+    /**
+     * Address for:
+     * {@snippet lang=c :
+     * tensor2_status tensor2_exp_f32(const float *input, float *output, int rows, int offset, int length, int input_stride, int output_stride)
+     * }
+     */
+    public static MemorySegment tensor2_exp_f32$address() {
+        return tensor2_exp_f32.ADDR;
+    }
+
+    /**
+     * {@snippet lang=c :
+     * tensor2_status tensor2_exp_f32(const float *input, float *output, int rows, int offset, int length, int input_stride, int output_stride)
+     * }
+     */
+    public static int tensor2_exp_f32(MemorySegment input, MemorySegment output, int rows, int offset, int length, int input_stride, int output_stride) {
+        var mh$ = tensor2_exp_f32.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("tensor2_exp_f32", input, output, rows, offset, length, input_stride, output_stride);
+            }
+            return (int)mh$.invokeExact(input, output, rows, offset, length, input_stride, output_stride);
+        } catch (Error | RuntimeException ex) {
+           throw ex;
+        } catch (Throwable ex$) {
+           throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
+    private static class tensor2_sum_f32 {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.of(
+            Tensor2Native.C_FLOAT,
+            Tensor2Native.C_POINTER,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT,
+            Tensor2Native.C_INT
+        );
+
+        public static final MemorySegment ADDR = SYMBOL_LOOKUP.findOrThrow("tensor2_sum_f32");
+
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /**
+     * Function descriptor for:
+     * {@snippet lang=c :
+     * float tensor2_sum_f32(const float *input, int row, int offset, int length, int input_stride)
+     * }
+     */
+    public static FunctionDescriptor tensor2_sum_f32$descriptor() {
+        return tensor2_sum_f32.DESC;
+    }
+
+    /**
+     * Downcall method handle for:
+     * {@snippet lang=c :
+     * float tensor2_sum_f32(const float *input, int row, int offset, int length, int input_stride)
+     * }
+     */
+    public static MethodHandle tensor2_sum_f32$handle() {
+        return tensor2_sum_f32.HANDLE;
+    }
+
+    /**
+     * Address for:
+     * {@snippet lang=c :
+     * float tensor2_sum_f32(const float *input, int row, int offset, int length, int input_stride)
+     * }
+     */
+    public static MemorySegment tensor2_sum_f32$address() {
+        return tensor2_sum_f32.ADDR;
+    }
+
+    /**
+     * {@snippet lang=c :
+     * float tensor2_sum_f32(const float *input, int row, int offset, int length, int input_stride)
+     * }
+     */
+    public static float tensor2_sum_f32(MemorySegment input, int row, int offset, int length, int input_stride) {
+        var mh$ = tensor2_sum_f32.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("tensor2_sum_f32", input, row, offset, length, input_stride);
+            }
+            return (float)mh$.invokeExact(input, row, offset, length, input_stride);
+        } catch (Error | RuntimeException ex) {
+           throw ex;
+        } catch (Throwable ex$) {
+           throw new AssertionError("should not reach here", ex$);
+        }
+    }
 }
+

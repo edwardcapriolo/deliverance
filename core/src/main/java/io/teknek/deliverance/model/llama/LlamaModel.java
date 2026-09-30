@@ -5,6 +5,9 @@ import com.google.common.base.Preconditions;
 import com.google.common.primitives.Ints;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.*;
+import io.teknek.deliverance.generator2.LayerNorm2;
+import io.teknek.deliverance.generator2.RmsNorm2;
+import io.teknek.deliverance.generator2.SampleOutputRef;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
@@ -17,6 +20,7 @@ import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -59,7 +63,7 @@ public class LlamaModel extends AbstractModel {
         return new EmbedInput(this) {
             @Override
             //TODO The second argument position was  double check that this is propper
-            public AbstractTensor inputTokenToEmbedding(int inputToken, int unused) {
+            public TensorRef inputTokenToEmbedding(int inputToken, int unused) {
                 if (embedTokenWeights.dType() == DType.BF16) {
                     // Handle old style model with BF16 embeddings
                     AbstractTensor embedding = makeDenseTensor(1, config.embeddingLength);
@@ -68,12 +72,12 @@ public class LlamaModel extends AbstractModel {
                         at = configurableTensorProvider.get().quantize(at, embedding.dType(), 0, config.embeddingLength);
                     }
                     embedding.copyFrom(at, 0, 0, config.embeddingLength);
-                    return embedding;
+                    return TensorRef.owned(embedding);
                 } else {
                     AbstractTensor at = embedTokenWeights.slice(true, inputToken);
                     AbstractTensor embedding = parent.getTensorAllocator().getDirty(at.dType(), at.shape());
                     embedding.copyFrom(at, 0, 0, config.embeddingLength);
-                    return embedding;
+                    return TensorRef.owned(embedding);
                 }
             }
         };
@@ -192,6 +196,40 @@ public class LlamaModel extends AbstractModel {
             @Override
             public AbstractTensor getOutputLogitsWeights() {
                 return classificationWeights;
+            }
+        };
+    }
+
+    @Override
+    protected SampleOutputRef loadOutputWeightsRef() {
+        DType qType = modelQType.orElse(this.modelDType);
+        TensorRef norm = weights.loadRef("model.norm.weight");
+        TensorRef head = weights.loadRef(
+                weights.isWeightPresent("lm_head.weight") ? "lm_head.weight" : "model.embed_tokens.weight");
+        if (lighter.shouldQuantizeForEfficiency(norm, qType)) {
+            TensorRef quantized = lighter.reshape(norm, qType);
+            norm.close();
+            norm = quantized;
+        }
+        if (outputHeadQuantization.isPresent() && lighter.shouldQuantizeForEfficiency(head,
+                outputHeadQuantization.get())) {
+            TensorRef quantized = lighter.reshape(head, outputHeadQuantization.get());
+            head.close();
+            head = quantized;
+        }
+        norm = registerModelTensorRef(norm);
+        head = registerModelTensorRef(head);
+        TensorRef finalNorm = norm;
+        TensorRef finalHead = head;
+        return new SampleOutputRef() {
+            @Override
+            public LayerNorm2 outputLayerNorm() {
+                return new RmsNorm2(LlamaModel.this, finalNorm, 0.0f);
+            }
+
+            @Override
+            public TensorRef outputLogitsWeights() {
+                return finalHead;
             }
         };
     }

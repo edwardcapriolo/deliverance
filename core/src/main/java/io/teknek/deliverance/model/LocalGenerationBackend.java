@@ -4,6 +4,7 @@ import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.kv.KvCacheSession;
+import io.teknek.deliverance.tensor2.TensorRef;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -14,11 +15,65 @@ import java.util.UUID;
  * <p>This backend owns the local KV state for a generation request. The shared {@link GenerationEngine} handles token
  * sampling and stop conditions.</p>
  */
-public final class LocalGenerationBackend implements GenerationBackend {
+public final class LocalGenerationBackend implements GenerationBackend, GenerationBackendRef {
     private final AbstractModel model;
 
     public LocalGenerationBackend(AbstractModel model) {
         this.model = java.util.Objects.requireNonNull(model, "model");
+    }
+
+    @Override
+    public void close() {
+    }
+
+    @Override
+    public GenerationSessionRef openRef(UUID sessionId, int[] promptTokens, GeneratorParameters parameters) {
+        if (!model.usesKvCache2Generation()) {
+            throw new UnsupportedOperationException("TensorRef generation requires KV-cache v2");
+        }
+        return new LocalTensorRefGenerationSession(promptTokens, parameters);
+    }
+
+    private final class LocalTensorRefGenerationSession implements GenerationSessionRef {
+        private final int[] promptTokens;
+        private final Optional<String> effectiveCacheSalt;
+        private final KvCacheSession kvSession;
+        private final int prefixLength;
+
+        private LocalTensorRefGenerationSession(int[] promptTokens, GeneratorParameters parameters) {
+            this.promptTokens = promptTokens;
+            this.effectiveCacheSalt = withActiveAdapterScope(parameters.cacheSalt);
+            this.kvSession = model.newKvCacheSession();
+            this.prefixLength = model.restoreSharedPrefixToKvSession(promptTokens, effectiveCacheSalt, kvSession);
+        }
+
+        @Override
+        public int prefixLength() {
+            return prefixLength;
+        }
+
+        @Override
+        public TensorRef prefill(GenerationCursor cursor) {
+            TensorRef last;
+            if (cursor.hasTokensToProcess()) {
+                last = model.batchForwardRef(cursor.tokensToProcess(), cursor.startPosition(), kvSession);
+                model.storeSharedPrefixFromKvSession(promptTokens, kvSession, effectiveCacheSalt);
+            } else {
+                kvSession.crop(cursor.replayPosition());
+                last = model.forwardRef(cursor.replayToken(), cursor.replayPosition(), kvSession);
+            }
+            return last;
+        }
+
+        @Override
+        public TensorRef decode(int tokenId, int position) {
+            return model.forwardRef(tokenId, position, kvSession);
+        }
+
+        @Override
+        public void close() {
+            kvSession.close();
+        }
     }
 
     /**

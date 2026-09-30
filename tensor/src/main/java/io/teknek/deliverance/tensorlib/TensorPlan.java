@@ -1,5 +1,6 @@
 package io.teknek.deliverance.tensorlib;
 
+import com.google.common.base.Preconditions;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.dropwizard.metrics5.Timer;
 import io.teknek.deliverance.DType;
@@ -102,6 +103,17 @@ public final class TensorPlan {
         return new Tensor(new InputNode(name, tensor, false));
     }
 
+    public Tensor input(String name, TensorRef tensor) {
+        Objects.requireNonNull(tensor, "tensor");
+        return new Tensor(new RefInputNode(name, tensor, false));
+    }
+
+    public Tensor input(String name, Tensor upstream, TensorRef materialized) {
+        Objects.requireNonNull(upstream, "upstream");
+        Objects.requireNonNull(materialized, "materialized");
+        return new Tensor(new RefImportedInputNode(name, upstream.node, materialized));
+    }
+
     /**
      * Adds a normal borrowed input tensor annotated with the TensorPlan node that produced it.
      *
@@ -122,6 +134,17 @@ public final class TensorPlan {
     public ImmutableTensor immutable(String name, AbstractTensor tensor) {
         ensureLocality(tensor);
         return new ImmutableTensor(new InputNode(name, tensor, false));
+    }
+
+    public ImmutableTensor immutable(String name, TensorRef tensor) {
+        Objects.requireNonNull(tensor, "tensor");
+        return new ImmutableTensor(new RefInputNode(name, tensor, false));
+    }
+
+    public Tensor input(String name, ImmutableTensor upstream, TensorRef materialized) {
+        Objects.requireNonNull(upstream, "upstream");
+        Objects.requireNonNull(materialized, "materialized");
+        return new Tensor(new RefImportedInputNode(name, upstream.node, materialized));
     }
 
     /** Adds an immutable tensor annotated with the model/plan immutable that produced it. */
@@ -344,6 +367,10 @@ public final class TensorPlan {
             return node.eval().tensor();
         }
 
+        public TensorRef materializeRef() {
+            return node.evalRef().tensor();
+        }
+
         public String plan() {
             StringBuilder sb = new StringBuilder();
             node.render(sb, "", true);
@@ -384,6 +411,11 @@ public final class TensorPlan {
         void map(FusedContext context, long offset, long length);
     }
 
+    @FunctionalInterface
+    public interface FusedRefMap {
+        void map(FusedRefContext context, long offset, long length);
+    }
+
     public final class FusedContext {
         private final Map<String, AbstractTensor> tensors;
 
@@ -400,12 +432,29 @@ public final class TensorPlan {
         }
     }
 
+    public final class FusedRefContext {
+        private final Map<String, TensorRef> tensors;
+
+        private FusedRefContext(Map<String, TensorRef> tensors) {
+            this.tensors = tensors;
+        }
+
+        public TensorRef tensor(String name) {
+            TensorRef tensor = tensors.get(name);
+            if (tensor == null) {
+                throw new IllegalArgumentException("Unknown fused tensor " + name);
+            }
+            return tensor;
+        }
+    }
+
     public final class FusedBuilder {
         private final String name;
         private final TensorShape shape;
         private final FusedExecution execution;
         private final Map<String, Node> inputs = new LinkedHashMap<>();
         private final List<FusedStep> steps = new ArrayList<>();
+        private final List<FusedRefStep> refSteps = new ArrayList<>();
         private String outputInputName;
         private Integer splitCount;
 
@@ -440,6 +489,15 @@ public final class TensorPlan {
             return this;
         }
 
+        public FusedBuilder mapRef(String description, TensorOp op, FusedRefMap map) {
+            return mapRef(description, op, null, map);
+        }
+
+        public FusedBuilder mapRef(String description, TensorOp op, String metricName, FusedRefMap map) {
+            refSteps.add(new FusedRefStep(description, op, metricName, map));
+            return this;
+        }
+
         /**
          * Overrides the default fused-node split count.
          *
@@ -458,12 +516,20 @@ public final class TensorPlan {
         public Tensor tensor() {
             return new Tensor(new FusedNode(name, shape, execution,
                     Collections.unmodifiableMap(new LinkedHashMap<>(inputs)), outputInputName,
-                    List.copyOf(steps), splitCount));
+                    List.copyOf(steps), List.copyOf(refSteps), splitCount));
         }
     }
 
     private record FusedStep(String description, TensorOp op, String metricName, FusedMap map) {
         private FusedStep {
+            Objects.requireNonNull(description, "description");
+            Objects.requireNonNull(op, "op");
+            Objects.requireNonNull(map, "map");
+        }
+    }
+
+    private record FusedRefStep(String description, TensorOp op, String metricName, FusedRefMap map) {
+        private FusedRefStep {
             Objects.requireNonNull(description, "description");
             Objects.requireNonNull(op, "op");
             Objects.requireNonNull(map, "map");
@@ -618,6 +684,10 @@ public final class TensorPlan {
     private interface Node {
         Eval eval();
 
+        default RefEval evalRef() {
+            throw new UnsupportedOperationException("TensorRef materialization is not ported for " + label());
+        }
+
         TensorShape shape();
 
         void render(StringBuilder sb, String indent, boolean last);
@@ -627,7 +697,77 @@ public final class TensorPlan {
         }
     }
 
+    private record RefInputNode(String name, TensorRef tensor, boolean mutable) implements Node {
+        private RefInputNode {
+            Objects.requireNonNull(name, "name");
+            Objects.requireNonNull(tensor, "tensor");
+        }
+
+        @Override
+        public Eval eval() {
+            throw new UnsupportedOperationException("Legacy materialization is not available for TensorRef input " + name);
+        }
+
+        @Override
+        public RefEval evalRef() {
+            return new RefEval(tensor, false, mutable);
+        }
+
+        @Override
+        public TensorShape shape() {
+            return tensor.shape();
+        }
+
+        @Override
+        public void render(StringBuilder sb, String indent, boolean last) {
+            renderLine(sb, indent, last, name + " " + compactShape(shape()) + " " + tensor.dType()
+                    + " " + (mutable ? "mutable-ref" : "borrowed-ref"));
+        }
+
+        @Override
+        public String label() {
+            return name;
+        }
+    }
+
+    private record RefImportedInputNode(String name, Node upstream, TensorRef tensor) implements Node {
+        private RefImportedInputNode {
+            Objects.requireNonNull(name, "name");
+            Objects.requireNonNull(upstream, "upstream");
+            Objects.requireNonNull(tensor, "tensor");
+        }
+
+        @Override
+        public Eval eval() {
+            throw new UnsupportedOperationException("Legacy materialization is not available for TensorRef input " + name);
+        }
+
+        @Override
+        public RefEval evalRef() {
+            return new RefEval(tensor, false, false);
+        }
+
+        @Override
+        public TensorShape shape() {
+            return tensor.shape();
+        }
+
+        @Override
+        public void render(StringBuilder sb, String indent, boolean last) {
+            renderLine(sb, indent, last, name + " <- " + upstream.label() + " " + compactShape(shape())
+                    + " " + tensor.dType() + " borrowed-ref");
+        }
+
+        @Override
+        public String label() {
+            return name;
+        }
+    }
+
     private record Eval(AbstractTensor tensor, boolean owned, boolean mutable) {
+    }
+
+    private record RefEval(TensorRef tensor, boolean owned, boolean mutable) {
     }
 
     private static void renderLine(StringBuilder sb, String indent, boolean last, String text) {
@@ -742,6 +882,27 @@ public final class TensorPlan {
         }
 
         @Override
+        public RefEval evalRef() {
+            RefEval a = input.evalRef();
+            RefEval b = weight.evalRef();
+            TensorRef result = lighter.allocate(DType.F32, shape());
+            try {
+                lighter.batchDotProduct(new io.teknek.deliverance.tensor2.BatchDotProduct()
+                        .result(result).a(a.tensor()).b(b.tensor())
+                        .aColumnOffset(0).bColumnOffset(0).columnLength((int) a.tensor().shape().last())
+                        .resultRowOffset(0).bRowOffset(0).rowChunkSize((int) b.tensor().shape().first()));
+                closeRefIfOwned(a);
+                closeRefIfOwned(b);
+                return new RefEval(result, true, true);
+            } catch (RuntimeException | Error e) {
+                result.close();
+                closeRefIfOwned(a);
+                closeRefIfOwned(b);
+                throw e;
+            }
+        }
+
+        @Override
         public TensorShape shape() {
             return TensorShape.of((int) input.shape().first(), (int) weight.shape().first());
         }
@@ -844,6 +1005,60 @@ public final class TensorPlan {
         }
 
         @Override
+        public RefEval evalRef() {
+            RefEval inputEval = input.evalRef();
+            RefEval gateWeightEval = gateWeight.evalRef();
+            RefEval upWeightEval = upWeight.evalRef();
+            RefEval downWeightEval = downWeight.evalRef();
+            int batchSize = (int) inputEval.tensor().shape().first();
+            int embeddingLength = (int) inputEval.tensor().shape().last();
+            int hiddenLength = (int) gateWeightEval.tensor().shape().first();
+            int outputLength = (int) downWeightEval.tensor().shape().first();
+            TensorRef gate = lighter.allocate(DType.F32, TensorShape.of(batchSize, hiddenLength));
+            TensorRef up = lighter.allocate(DType.F32, TensorShape.of(batchSize, hiddenLength));
+            TensorRef output = lighter.allocate(DType.F32, TensorShape.of(batchSize, outputLength));
+            TensorRef downInput = null;
+            try {
+                lighter.dotProductRows(gate, inputEval.tensor(), gateWeightEval.tensor(), 0, embeddingLength,
+                        0, hiddenLength, 0);
+                lighter.dotProductRows(up, inputEval.tensor(), upWeightEval.tensor(), 0, embeddingLength,
+                        0, hiddenLength, 0);
+                for (int row = 0; row < batchSize; row++) {
+                    for (int column = 0; column < hiddenLength; column++) {
+                        gate.set(ActivationFunction.eval(activation, gate.get(row, column)), row, column);
+                    }
+                }
+                lighter.multiplyAccumulate(new io.teknek.deliverance.tensor2.MultiplyAccumulate(up)
+                        .into(gate).offsetAndLength(0, hiddenLength));
+                downInput = gate.dType() == quantizedType ? gate : lighter.reshape(gate, quantizedType);
+                lighter.dotProductRows(output, downInput, downWeightEval.tensor(), 0, hiddenLength,
+                        0, outputLength, 0);
+                closeRefIfOwned(inputEval);
+                closeRefIfOwned(gateWeightEval);
+                closeRefIfOwned(upWeightEval);
+                closeRefIfOwned(downWeightEval);
+                if (downInput != gate) {
+                    downInput.close();
+                }
+                gate.close();
+                up.close();
+                return new RefEval(output, true, true);
+            } catch (RuntimeException | Error e) {
+                output.close();
+                if (downInput != null && downInput != gate) {
+                    downInput.close();
+                }
+                gate.close();
+                up.close();
+                closeRefIfOwned(inputEval);
+                closeRefIfOwned(gateWeightEval);
+                closeRefIfOwned(upWeightEval);
+                closeRefIfOwned(downWeightEval);
+                throw e;
+            }
+        }
+
+        @Override
         public TensorShape shape() {
             return TensorShape.of((int) input.shape().first(), (int) downWeight.shape().first());
         }
@@ -883,6 +1098,26 @@ public final class TensorPlan {
             // Java loop. Add a provider-backed activation op or fused physical lowering before relying on this broadly.
             applyActivationInPlace(out, activation);
             return new Eval(out, in.owned(), in.mutable());
+        }
+
+        @Override
+        public RefEval evalRef() {
+            RefEval in = input.evalRef();
+            TensorRef output = lighter.allocate(in.tensor().dType(), in.tensor().shape());
+            try {
+                lighter.copy(in.tensor(), 0, output, 0, (int) in.tensor().shape().size());
+                for (int row = 0; row < output.shape().first(); row++) {
+                    for (int column = 0; column < output.shape().last(); column++) {
+                        output.set(ActivationFunction.eval(activation, output.get(row, column)), row, column);
+                    }
+                }
+                closeRefIfOwned(in);
+                return new RefEval(output, true, true);
+            } catch (RuntimeException | Error e) {
+                output.close();
+                closeRefIfOwned(in);
+                throw e;
+            }
         }
 
         @Override
@@ -934,6 +1169,28 @@ public final class TensorPlan {
         }
 
         @Override
+        public RefEval evalRef() {
+            RefEval lhs = left.evalRef();
+            RefEval rhs = right.evalRef();
+            Preconditions.checkArgument(lhs.tensor().dims() == 2 && rhs.tensor().dims() == 2,
+                    "TensorRef multiply currently requires 2D tensors");
+            TensorRef output = lighter.allocate(lhs.tensor().dType(), lhs.tensor().shape());
+            try {
+                lighter.copy(lhs.tensor(), 0, output, 0, (int) lhs.tensor().shape().size());
+                lighter.multiplyAccumulate(new io.teknek.deliverance.tensor2.MultiplyAccumulate(rhs.tensor())
+                        .into(output).offsetAndLength(0, (int) output.shape().last()));
+                closeRefIfOwned(lhs);
+                closeRefIfOwned(rhs);
+                return new RefEval(output, true, true);
+            } catch (RuntimeException | Error e) {
+                output.close();
+                closeRefIfOwned(lhs);
+                closeRefIfOwned(rhs);
+                throw e;
+            }
+        }
+
+        @Override
         public TensorShape shape() {
             return left.shape();
         }
@@ -977,6 +1234,30 @@ public final class TensorPlan {
         }
 
         @Override
+        public RefEval evalRef() {
+            RefEval lhs = left.evalRef();
+            RefEval rhs = right.evalRef();
+            Preconditions.checkArgument(lhs.tensor().dims() == 2 && rhs.tensor().dims() == 2,
+                    "TensorRef add currently requires 2D tensors");
+            Preconditions.checkArgument(lhs.tensor().shape().equals(rhs.tensor().shape()),
+                    "TensorRef add inputs must have matching shapes");
+            TensorRef output = lighter.allocate(lhs.tensor().dType(), lhs.tensor().shape());
+            try {
+                lighter.copy(lhs.tensor(), 0, output, 0, (int) lhs.tensor().shape().size());
+                lighter.accumulate(new io.teknek.deliverance.tensor2.Accumulate(rhs.tensor())
+                        .into(output).offsetAndLength(0, (int) output.shape().last()));
+                closeRefIfOwned(lhs);
+                closeRefIfOwned(rhs);
+                return new RefEval(output, true, true);
+            } catch (RuntimeException | Error e) {
+                output.close();
+                closeRefIfOwned(lhs);
+                closeRefIfOwned(rhs);
+                throw e;
+            }
+        }
+
+        @Override
         public TensorShape shape() {
             return left.shape();
         }
@@ -1016,6 +1297,23 @@ public final class TensorPlan {
                 }
             });
             return new Eval(out, in.owned(), in.mutable());
+        }
+
+        @Override
+        public RefEval evalRef() {
+            RefEval in = input.evalRef();
+            TensorRef output = lighter.allocate(in.tensor().dType(), in.tensor().shape());
+            try {
+                lighter.copy(in.tensor(), 0, output, 0, (int) in.tensor().shape().size());
+                lighter.scale(new Scale(factor).target(output).offsetAndLength(0,
+                        (int) output.shape().last()));
+                closeRefIfOwned(in);
+                return new RefEval(output, true, true);
+            } catch (RuntimeException | Error e) {
+                output.close();
+                closeRefIfOwned(in);
+                throw e;
+            }
         }
 
         Eval eval(String planName, Lighter.ProviderSelection providers, Lighter.ProviderChoice fallback) {
@@ -1214,6 +1512,19 @@ public final class TensorPlan {
         }
 
         @Override
+        public RefEval evalRef() {
+            RefEval in = input.evalRef();
+            try {
+                TensorRef output = lighter.reshape(in.tensor(), dtype);
+                closeRefIfOwned(in);
+                return new RefEval(output, true, true);
+            } catch (RuntimeException | Error e) {
+                closeRefIfOwned(in);
+                throw e;
+            }
+        }
+
+        @Override
         public TensorShape shape() {
             return input.shape();
         }
@@ -1237,22 +1548,77 @@ public final class TensorPlan {
         private final Map<String, Node> inputs;
         private final String outputInputName;
         private final List<FusedStep> steps;
+        private final List<FusedRefStep> refSteps;
         private final Integer splitCount;
 
         private FusedNode(String name, TensorShape shape, FusedExecution execution, Map<String, Node> inputs,
-                String outputInputName, List<FusedStep> steps, Integer splitCount) {
+                String outputInputName, List<FusedStep> steps, List<FusedRefStep> refSteps, Integer splitCount) {
             this.name = name;
             this.shape = shape;
             this.execution = execution;
             this.inputs = inputs;
             this.outputInputName = outputInputName;
             this.steps = steps;
+            this.refSteps = refSteps;
             this.splitCount = splitCount;
         }
 
         @Override
         public Eval eval() {
             return evalWithSplitCount(splitCount);
+        }
+
+        @Override
+        public RefEval evalRef() {
+            if (refSteps.isEmpty()) {
+                throw new UnsupportedOperationException("TensorRef fused node has no Ref callbacks: " + name);
+            }
+            Map<String, RefEval> evals = new LinkedHashMap<>();
+            Map<String, TensorRef> tensors = new LinkedHashMap<>();
+            for (Map.Entry<String, Node> entry : inputs.entrySet()) {
+                RefEval eval = entry.getValue().evalRef();
+                evals.put(entry.getKey(), eval);
+                tensors.put(entry.getKey(), eval.tensor());
+            }
+            RefEval outputEval = outputInputName == null ? null : evals.get(outputInputName);
+            TensorRef output = outputEval == null ? lighter.allocate(DType.F32, shape) : outputEval.tensor();
+            tensors.put(name, output);
+            executeRef(tensors, splitCount);
+            evals.entrySet().stream()
+                    .filter(entry -> outputInputName == null || !outputInputName.equals(entry.getKey()))
+                    .map(Map.Entry::getValue)
+                    .forEach(TensorPlan::closeRefIfOwned);
+            return new RefEval(output, outputEval == null || outputEval.owned(), true);
+        }
+
+        private void executeRef(Map<String, TensorRef> tensors, Integer splitOverride) {
+            FusedRefContext context = new FusedRefContext(tensors);
+            if (execution == FusedExecution.INT_STREAM_COLUMNS) {
+                IntStream.range(0, (int) shape.last()).parallel()
+                        .forEach(column -> runRefSteps(context, column, 1));
+            } else if (execution == FusedExecution.INT_STREAM_ROWS) {
+                IntStream.range(0, (int) shape.first()).parallel()
+                        .forEach(row -> runRefSteps(context, row, 1));
+            } else {
+                List<TensorSplit> splits = TensorLib.calculateTSplits(0, shape.size(),
+                        splitOverride == null ? defaultSplitCount() : splitOverride);
+                List<ForkJoinTask<?>> tasks = new ArrayList<>();
+                for (TensorSplit split : splits) {
+                    tasks.add(pool.getUnderlying().submit(() -> runRefSteps(context, split.offset, split.length)));
+                }
+                tasks.forEach(ForkJoinTask::join);
+            }
+        }
+
+        private void runRefSteps(FusedRefContext context, long offset, long length) {
+            for (FusedRefStep step : refSteps) {
+                Timer.Context timer = startTimer(step.metricName());
+                try {
+                    step.map().map(context, offset, length);
+                } finally {
+                    stopTimer(timer);
+                }
+            }
         }
 
         private Eval evalWithSplitCount(Integer splitOverride) {
@@ -1391,6 +1757,12 @@ public final class TensorPlan {
     }
 
     private static void closeIfOwned(Eval eval) {
+        if (eval.owned()) {
+            eval.tensor().close();
+        }
+    }
+
+    private static void closeRefIfOwned(RefEval eval) {
         if (eval.owned()) {
             eval.tensor().close();
         }

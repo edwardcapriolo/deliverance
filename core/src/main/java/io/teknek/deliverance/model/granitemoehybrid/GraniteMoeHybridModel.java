@@ -23,6 +23,7 @@ import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 
 import java.util.Optional;
@@ -53,7 +54,7 @@ public class GraniteMoeHybridModel extends AbstractModel {
         }
         return new EmbedInput(this) {
             @Override
-            public AbstractTensor batchInputsToEmbeddings(int[] inputTokens, int startPos) {
+            public TensorRef batchInputsToEmbeddings(int[] inputTokens, int startPos) {
                 try (Timer.Context ignored = InferenceProfiler.timer(parent.getMetricRegistry(), "embedinput.batch_inputs").time()) {
                     int hidden = parent.getConfig().embeddingLength;
                     AbstractTensor embeddings = parent.getTensorAllocator()
@@ -73,12 +74,12 @@ public class GraniteMoeHybridModel extends AbstractModel {
                     if (parent.getConfig().embeddingMultiplier != null) {
                         GraniteMoeHybridModel.this.scale(parent.getConfig().embeddingMultiplier, embeddings, 0, hidden);
                     }
-                    return embeddings;
+                    return TensorRef.owned(embeddings);
                 }
             }
 
             @Override
-            public AbstractTensor inputTokenToEmbedding(int inputToken, int position) {
+            public TensorRef inputTokenToEmbedding(int inputToken, int position) {
                 AbstractTensor tokenEmbedding = GraniteMoeHybridModel.this.embedTokenWeights.slice(true, inputToken);
                 AbstractTensor source = tokenEmbedding;
                 if (tokenEmbedding.dType() != GraniteMoeHybridModel.this.workingDType) {
@@ -99,7 +100,7 @@ public class GraniteMoeHybridModel extends AbstractModel {
                     GraniteMoeHybridModel.this.scale(parent.getConfig().embeddingMultiplier,
                             embedding, 0, parent.getConfig().embeddingLength);
                 }
-                return embedding;
+                return TensorRef.owned(embedding);
             }
         };
     }

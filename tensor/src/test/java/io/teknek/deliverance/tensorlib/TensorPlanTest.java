@@ -7,6 +7,9 @@ import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorTestSupport;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.tensor.TensorShape;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.ForkJoinPool;
@@ -42,6 +45,26 @@ class TensorPlanTest {
             assertTrue(ascii.contains("up = batchDot"), ascii);
             assertTrue(ascii.contains("activate SILU"), ascii);
             assertTrue(ascii.contains("input [2x3] F32 borrowed"), ascii);
+        }
+    }
+
+    @Test
+    void refAddPlanMaterializesWithoutLegacyAdapter() {
+        Lighter lighter = new Lighter(new io.dropwizard.metrics5.MetricRegistry());
+        TensorPlan plan = new TensorPlan(new NaiveTensorOperations(), new WrappedForkJoinPool(new ForkJoinPool(1)));
+        try (TensorRef left = lighter.allocate(DType.F32, TensorShape.of(1, 3));
+             TensorRef right = lighter.allocate(DType.F32, TensorShape.of(1, 3))) {
+            left.set(1.0f, 0, 0);
+            left.set(2.0f, 0, 1);
+            left.set(3.0f, 0, 2);
+            right.set(4.0f, 0, 0);
+            right.set(5.0f, 0, 1);
+            right.set(6.0f, 0, 2);
+            try (TensorRef result = plan.input("left", left).add(plan.input("right", right)).materializeRef()) {
+                assertEquals(5.0f, result.get(0, 0));
+                assertEquals(7.0f, result.get(0, 1));
+                assertEquals(9.0f, result.get(0, 2));
+            }
         }
     }
 

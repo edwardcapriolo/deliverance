@@ -26,7 +26,9 @@ import io.teknek.deliverance.embedding.PoolingLayer;
 
 import io.teknek.deliverance.embedding.PoolingType;
 import io.teknek.deliverance.generator.*;
+import io.teknek.deliverance.generator2.SampleOutputRef;
 import io.teknek.deliverance.guided.LogitsProcessor;
+import io.teknek.deliverance.guided.LogitsProcessorRef;
 import io.teknek.deliverance.grace.EncodeOptions;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.ActivationFunction;
@@ -67,6 +69,7 @@ import io.teknek.deliverance.tensor2.MultiplyInPlace;
 import io.teknek.deliverance.tensor2.ScaledSoftMax;
 import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensorlib.PlannedTensor;
+import io.teknek.deliverance.tensorlib.PlannedTensorRef;
 import io.teknek.deliverance.tensorlib.TensorPlan;
 import io.teknek.deliverance.tensorlib.TensorPlanAdaptiveSplitTuner;
 import io.teknek.deliverance.tensorlib.TensorRuntime;
@@ -210,6 +213,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     protected final Optional<DType> outputHeadQuantization;
     protected EmbedInput embedInput;
     protected SampleOutput sampleOutput;
+    protected SampleOutputRef sampleOutputRef;
     protected TransformerBlock[] transformerBlocks;
     protected io.teknek.deliverance.generator2.TransformerBlock2[] transformerBlocks2;
     protected KvBufferCache kvBufferCache;
@@ -348,6 +352,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         this.transformerBlocks = inferenceType.isFwdPass && !tensorRefExecution ? loadTransformerBlockWeights() : null;
         this.transformerBlocks2 = tensorRefExecution ? loadTransformerBlockWeights2() : null;
         this.sampleOutput = inferenceType.isOutput ? loadOutputWeights() : null;
+        this.sampleOutputRef = inferenceType.isOutput && tensorRefExecution ? loadOutputWeightsRef() : null;
         this.classifyOutput = inferenceType.isClassify ? loadClassifierWeights() : null;
         this.poolingLayer = inferenceType.isPooling ? Optional.ofNullable(loadPoolingWeights()) : Optional.empty();
         initialized = true;
@@ -903,6 +908,12 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
 
     protected abstract EmbedInput loadInputWeights();
     protected abstract SampleOutput loadOutputWeights();
+
+    /** Loads output-head tensors directly in the TensorRef representation. */
+    protected SampleOutputRef loadOutputWeightsRef() {
+        throw new UnsupportedOperationException("TensorRef output weights are not implemented for "
+                + getClass().getName());
+    }
     protected abstract TransformerBlock[] loadTransformerBlockWeights();
 
     /** Optional TensorRef-native transformer block path. */
@@ -1148,6 +1159,16 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         return legacy.sample();
     }
 
+    SamplerReturn createNextTokenRef(GeneratorParameters parameters, TensorRef output, TensorRef logits,
+            ResponseContext responseContext, Random random, Optional<LogitsProcessorRef> processor,
+            TensorRef argMaxScratch) {
+        if (sampleOutputRef == null) {
+            throw new IllegalStateException("TensorRef output weights are not loaded");
+        }
+        return new DeliveranceSamplerRef(this, parameters, output, logits, sampleOutputRef.outputLayerNorm(),
+                sampleOutputRef.outputLogitsWeights(), random, responseContext, argMaxScratch, processor).sample();
+    }
+
     /**
      * S
      * @return Some if request should terminate None to continue
@@ -1215,6 +1236,14 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         Objects.requireNonNull(sessionId, "sessionId");
         Objects.requireNonNull(backend, "backend");
         return new GenerationEngine().generate(this, backend, sessionId, promptContext, generatorParameters, eventFired);
+    }
+
+    /** Runs standard generation through the TensorRef-native backend boundary. */
+    public Response generateWithBackendRef(UUID sessionId, PromptContext promptContext,
+            GeneratorParameters generatorParameters, GenerateEvent eventFired, GenerationBackendRef backend) {
+        Objects.requireNonNull(sessionId, "sessionId");
+        Objects.requireNonNull(backend, "backend");
+        return new GenerationEngineRef().generate(this, backend, sessionId, promptContext, generatorParameters, eventFired);
     }
 
     @Override
@@ -1351,7 +1380,8 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
                     int[] batch = Arrays.copyOfRange(token_ids, i, Math.min(token_ids.length, i + maxPrefillBatchSize));
                     progress.chunkStart = i;
                     progress.chunkTokens = batch.length;
-                    AbstractTensor inputEmbeddings = embedInput.batchInputsToEmbeddings(batch, startPos + i);
+                    AbstractTensor inputEmbeddings = new TensorRefBackedTensor(
+                            embedInput.batchInputsToEmbeddings(batch, startPos + i));
                     PlannedTensor plannedEmbeddings = plannedInputEmbeddings("input_embeddings", inputEmbeddings,
                             io.teknek.deliverance.generator.ForwardPhase.PREFILL);
                     lastBatchOutput = forward(plannedEmbeddings, startPos + i, kvbuf, tensorReducer,
@@ -1376,6 +1406,31 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
 
     public AbstractTensor batchForward(int[] tokenIds, int startPos, KvCacheSession kvSession) {
         return batchForward(tokenIds, startPos, kvSession, Optional.empty());
+    }
+
+    /** Direct TensorRef generation entrypoint for the KV-cache v2 path. */
+    public TensorRef batchForwardRef(int[] tokenIds, int startPos, KvCacheSession kvSession,
+            Optional<Consumer<List<TensorRef>>> tensorReducer) {
+        Preconditions.checkArgument(tokenIds.length > 0, "tokenIds must not be empty");
+        TensorRef lastBatchOutput = null;
+        for (int i = 0; i < tokenIds.length; i += maxPrefillBatchSize) {
+            int[] batch = Arrays.copyOfRange(tokenIds, i, Math.min(tokenIds.length, i + maxPrefillBatchSize));
+            TensorRef input = embedInput.batchInputsToEmbeddings(batch, startPos + i);
+            PlannedTensorRef planned = plannedInputEmbeddingsRef("input_embeddings", input,
+                    io.teknek.deliverance.generator.ForwardPhase.PREFILL);
+            PlannedTensorRef result = forward(planned, startPos + i, kvSession, tensorReducer,
+                    io.teknek.deliverance.generator.ForwardPhase.PREFILL);
+            if (lastBatchOutput != null) {
+                lastBatchOutput.close();
+            }
+            lastBatchOutput = result.tensor();
+            kvSession.advanceLength(startPos + i + batch.length);
+        }
+        return lastBatchOutput;
+    }
+
+    public TensorRef batchForwardRef(int[] tokenIds, int startPos, KvCacheSession kvSession) {
+        return batchForwardRef(tokenIds, startPos, kvSession, Optional.empty());
     }
 
     public AbstractTensor batchForward(int[] tokenIds, int startPos, KvCacheSession kvSession,
@@ -1445,7 +1500,8 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
             int[] batch = Arrays.copyOfRange(tokenIds, i, Math.min(tokenIds.length, i + prefillBatchSize));
             progress.chunkStart = i;
             progress.chunkTokens = batch.length;
-            AbstractTensor inputEmbeddings = embedInput.batchInputsToEmbeddings(batch, startPos + i);
+            AbstractTensor inputEmbeddings = new TensorRefBackedTensor(
+                    embedInput.batchInputsToEmbeddings(batch, startPos + i));
             PlannedTensor plannedEmbeddings = plannedInputEmbeddings("input_embeddings", inputEmbeddings,
                     io.teknek.deliverance.generator.ForwardPhase.PREFILL);
             lastBatchOutput = forward(plannedEmbeddings, startPos + i, kvSession, tensorReducer,
@@ -1481,7 +1537,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
             return forward(token_id, pos, kvCache2SessionFor(kvbuf), tensorReducer);
         }
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "abstractmodel.forward_token").time()) {
-        AbstractTensor embedding = embedInput.inputTokenToEmbedding(token_id, pos);
+        AbstractTensor embedding = new TensorRefBackedTensor(embedInput.inputTokenToEmbedding(token_id, pos));
         return forward(plannedInputEmbeddings("input_embedding", embedding,
                 io.teknek.deliverance.generator.ForwardPhase.DECODE), pos, kvbuf, tensorReducer,
                 io.teknek.deliverance.generator.ForwardPhase.DECODE).tensor();
@@ -1499,13 +1555,29 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     public AbstractTensor forward(int tokenId, int pos, KvCacheSession kvSession,
             Optional<Consumer<List<AbstractTensor>>> tensorReducer) {
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "abstractmodel.forward_token").time()) {
-            AbstractTensor embedding = embedInput.inputTokenToEmbedding(tokenId, pos);
+            AbstractTensor embedding = new TensorRefBackedTensor(embedInput.inputTokenToEmbedding(tokenId, pos));
             AbstractTensor result = forward(plannedInputEmbeddings("input_embedding", embedding,
                     io.teknek.deliverance.generator.ForwardPhase.DECODE), pos, kvSession, tensorReducer,
                     io.teknek.deliverance.generator.ForwardPhase.DECODE).tensor();
             kvSession.advanceLength(pos + 1);
             return result;
         }
+    }
+
+    /** Direct TensorRef decode entrypoint for the KV-cache v2 path. */
+    public TensorRef forwardRef(int tokenId, int pos, KvCacheSession kvSession,
+            Optional<Consumer<List<TensorRef>>> tensorReducer) {
+        TensorRef embedding = embedInput.inputTokenToEmbedding(tokenId, pos);
+        PlannedTensorRef planned = plannedInputEmbeddingsRef("input_embedding", embedding,
+                io.teknek.deliverance.generator.ForwardPhase.DECODE);
+        PlannedTensorRef result = forward(planned, pos, kvSession, tensorReducer,
+                io.teknek.deliverance.generator.ForwardPhase.DECODE);
+        kvSession.advanceLength(pos + 1);
+        return result.tensor();
+    }
+
+    public TensorRef forwardRef(int tokenId, int pos, KvCacheSession kvSession) {
+        return forwardRef(tokenId, pos, kvSession, Optional.empty());
     }
 
 
@@ -1529,6 +1601,33 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
                 .as(name);
         traceTensorPlan(getClass().getSimpleName(), "embedinput." + name, phase.name(), -1, "N/A", lineage.plan());
         return new PlannedTensor(embeddings, lineage);
+    }
+
+    private PlannedTensorRef plannedInputEmbeddingsRef(String name, TensorRef embeddings,
+            io.teknek.deliverance.generator.ForwardPhase phase) {
+        TensorPlan.Tensor lineage = modelLineageTensor("model.embed_tokens.weight")
+                .map(upstream -> modelLineagePlan.input(name, upstream, embeddings))
+                .orElseGet(() -> modelLineagePlan.input(name, embeddings))
+                .as(name);
+        traceTensorPlan(getClass().getSimpleName(), "embedinput." + name, phase.name(), -1, "N/A", lineage.plan());
+        return new PlannedTensorRef(embeddings, lineage);
+    }
+
+    public PlannedTensorRef forward(PlannedTensorRef embedding, int startPos, KvCacheSession kvSession,
+            Optional<Consumer<List<TensorRef>>> tensorReducer, io.teknek.deliverance.generator.ForwardPhase phase) {
+        Preconditions.checkState(transformerBlocks2 != null, "TensorRef transformer blocks are not initialized");
+        try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "abstractmodel.forward_layers").time()) {
+            emitLayerDebug(-1, "input", embedding.tensor());
+            for (int layer = 0; layer < config.numberOfLayers; layer++) {
+                throwIfGenerationInterrupted();
+                TensorRef input = embedding.tensor();
+                TensorRef output = transformerBlocks2[layer].forward(input, startPos, kvSession, tensorReducer, phase);
+                embedding = new PlannedTensorRef(output, embedding.plan());
+                input.close();
+                emitLayerDebug(layer, "layer_output", output);
+            }
+            return embedding;
+        }
     }
 
     public PlannedTensor forward(PlannedTensor embedding, int startPos, KvBufferCache.KvBuffer kvbuf,

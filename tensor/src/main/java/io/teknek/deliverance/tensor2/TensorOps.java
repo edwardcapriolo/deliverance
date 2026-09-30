@@ -3,6 +3,18 @@ package io.teknek.deliverance.tensor2;
 import io.teknek.dysfx.Either;
 
 public interface TensorOps {
+     default Either<OpSupport, Void> sum(TensorRef input, int row, int offset, int length, TensorRef output) {
+          return Either.Left(OpSupport.Unsupported);
+     }
+
+     default Either<OpSupport, Void> exp(TensorRef input, TensorRef output, int offset, int length) {
+          return Either.Left(OpSupport.Unsupported);
+     }
+
+     default Either<OpSupport, Void> max(TensorRef input, int row, int offset, int length, TensorRef output) {
+          return Either.Left(OpSupport.Unsupported);
+     }
+
      default Either<OpSupport, Void> argMax(TensorRef input, TensorRef output, int offset, int length) {
           return Either.Left(OpSupport.Unsupported);
      }
