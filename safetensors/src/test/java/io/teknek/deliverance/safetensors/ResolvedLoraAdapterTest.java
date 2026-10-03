@@ -79,6 +79,32 @@ public class ResolvedLoraAdapterTest {
     }
 
     @Test
+    void resolvesAdapterWeightsIntoRequestedBfloat16Dtype() throws IOException {
+        writeAdapterConfig(tempDir, 2, 4.0, "q_proj");
+        Map<String, AbstractTensor> tensors = new LinkedHashMap<>();
+        FloatBufferTensor loraA = new FloatBufferTensor(2, 3);
+        loraA.set(1.0f, 0, 0);
+        loraA.set(-2.0f, 0, 1);
+        loraA.set(3.0f, 1, 0);
+        FloatBufferTensor loraB = new FloatBufferTensor(4, 2);
+        loraB.set(2.0f, 0, 0);
+        loraB.set(-4.0f, 0, 1);
+        tensors.put(LoraTensorNames.loraA(Q_PROJ), loraA);
+        tensors.put(LoraTensorNames.loraB(Q_PROJ), loraB);
+        SafeTensorWriter.write(tempDir.resolve(LoraAdapter.SAFETENSORS_FILE_NAME), Map.of(), tensors);
+
+        try (LoraAdapter adapter = LoraAdapter.load(tempDir.toFile());
+             ResolvedLoraAdapter resolved = new ResolvedLoraAdapter(adapter, DType.BF16)) {
+            LoraLayerDelta delta = resolved.deltaFor(Q_PROJ).orElseThrow();
+
+            assertEquals(DType.BF16, delta.loraA().dType());
+            assertEquals(DType.BF16, delta.scaledLoraB().dType());
+            assertEquals(1.0f, delta.loraA().get(0, 0), 0.02f);
+            assertEquals(4.0f, delta.scaledLoraB().get(0, 0), 0.02f);
+        }
+    }
+
+    @Test
     void nonTargetedNameCachesEmpty() throws IOException {
         writeAdapterConfig(tempDir, 4, 8.0, "q_proj");
         writeQProjTensors(tempDir, 4, 8, 6);

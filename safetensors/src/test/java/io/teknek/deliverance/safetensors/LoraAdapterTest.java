@@ -2,6 +2,7 @@ package io.teknek.deliverance.safetensors;
 
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
+import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.safetensors.fetch.LoraAdapterModelFetcher;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -88,6 +89,42 @@ public class LoraAdapterTest {
         SafeTensorWriter.write(tempDir.resolve(LoraAdapter.SAFETENSORS_FILE_NAME), Map.of(), tensors);
 
         assertThrows(IllegalStateException.class, () -> LoraAdapter.load(tempDir.toFile()));
+    }
+
+    @Test
+    void loadFailsFastWhenLoraATensorHasNoMatchingLoraBTensor() throws IOException {
+        writeAdapterConfig(tempDir, 4, 8.0, "q_proj");
+
+        String base = "model.layers.0.self_attn.q_proj.weight";
+        SafeTensorWriter.write(tempDir.resolve(LoraAdapter.SAFETENSORS_FILE_NAME), Map.of(),
+                Map.of(LoraTensorNames.loraA(base), new FloatBufferTensor(4, 8)));
+
+        assertThrows(IllegalStateException.class, () -> LoraAdapter.load(tempDir.toFile()));
+    }
+
+    @Test
+    void missingAdapterWeightsAreReportedAsUncheckedIo() throws IOException {
+        writeAdapterConfig(tempDir, 4, 8.0, "q_proj");
+
+        assertThrows(java.io.UncheckedIOException.class, () -> LoraAdapter.load(tempDir.toFile()));
+    }
+
+    @Test
+    void recordsParseAndTensorLoadMetrics() throws IOException {
+        writeAdapterConfig(tempDir, 2, 4.0, "q_proj");
+        String base = "model.layers.0.self_attn.q_proj.weight";
+        SafeTensorWriter.write(tempDir.resolve(LoraAdapter.SAFETENSORS_FILE_NAME), Map.of(), Map.of(
+                LoraTensorNames.loraA(base), new FloatBufferTensor(2, 3),
+                LoraTensorNames.loraB(base), new FloatBufferTensor(4, 2)));
+        MetricRegistry metrics = new MetricRegistry();
+
+        try (LoraAdapter adapter = LoraAdapter.load(tempDir.toFile(), metrics)) {
+            LoraAdapter.LoraDelta delta = adapter.deltaFor(base).orElseThrow();
+            try (AbstractTensor ignoredA = delta.loraA(); AbstractTensor ignoredB = delta.loraB()) {
+            assertEquals(1, metrics.timer("loraadapter.parse_header").getCount());
+            assertEquals(1, metrics.timer("loraadapter.load_tensor").getCount());
+            }
+        }
     }
 
     /**
