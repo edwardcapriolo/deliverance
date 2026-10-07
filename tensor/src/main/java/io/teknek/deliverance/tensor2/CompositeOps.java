@@ -51,6 +51,37 @@ public final class CompositeOps {
         });
     }
 
+    /** Runs the provider-level paired projection used by the legacy gate/up fast path. */
+    public void dotProductBatchChunk(DotProductBatchChunk operation) {
+        lighter.dotProductBatchChunk(operation);
+    }
+
+    public TensorRef activationMultiplyQuantize(ActivationMultiplyQuantize operation) {
+        Objects.requireNonNull(operation, "operation");
+        TensorRef output = operation.output();
+        boolean owned = false;
+        if (output == null) {
+            output = lighter.allocate(operation.qtype(), operation.gate().shape());
+            operation.output(output);
+            owned = true;
+        }
+        try {
+            if (lighter.activationMultiplyQuantize(operation).isLeft()) {
+                throw new UnsupportedOperationException("No composite provider supports activationMultiplyQuantize");
+            }
+            return output;
+        } catch (RuntimeException | Error e) {
+            if (owned) {
+                output.close();
+            }
+            throw e;
+        }
+    }
+
+    public boolean supportsActivationMultiplyQuantize(ActivationMultiplyQuantize operation) {
+        return lighter.supportsActivationMultiplyQuantize(operation);
+    }
+
     public void softMax(ScaledSoftMax operation) {
         scaledSoftMax(operation);
     }

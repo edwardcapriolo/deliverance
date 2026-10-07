@@ -4,7 +4,8 @@
   "tensorRuntimeMode": "DISABLED",
   "groupedDecodeQkvSplitSize": 8,
   "parallelSplitSizeFixed": {
-    "SIMD": 32
+    "SIMD": 32,
+    "PANAMA": 8
   },
   "kvBufferCache": {
     "maxEntries": 10000,

@@ -13,6 +13,7 @@ import io.teknek.deliverance.tensor.kv.KvCacheSession;
 import io.teknek.deliverance.tensor.kv.KvReadView;
 import io.teknek.deliverance.tensor.kv.KvWriteCursor;
 import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.BatchDotProduct;
 import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.generator.ForwardPhase;
 
@@ -139,6 +140,22 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
                 return attended;
             }
             try (KvReadView readView = kvSession.readView(layerIndex, startPosition, AttentionPattern.CAUSAL)) {
+                if (mode == CacheExecutionMode.DECODE_UPDATE_CACHE && batchSize == 1) {
+                    TensorRef[] prefixKeyPages = readView.keyPageRefs();
+                    TensorRef[] prefixValuePages = null;
+                    try {
+                        prefixValuePages = readView.valuePageRefs();
+                        packedBlockAttention.decodePagedAttention(attended, query,
+                                appendCurrentPage(prefixKeyPages, currentKeys),
+                                appendCurrentPage(prefixValuePages, currentValues), startPosition + 1,
+                                numberOfHeads, numberOfKeyValueHeads, config.headSize, attentionScale,
+                                config.attnLogitSoftCapping);
+                    } finally {
+                        closePrefixPages(prefixKeyPages);
+                        closePrefixPages(prefixValuePages);
+                    }
+                    return attended;
+                }
                 int capacity = startPosition + batchSize;
                 try (TensorRef packedKeys = lighter.allocate(readView.keyDType(), TensorShape.of(capacity, kvLength));
                      TensorRef packedValues = lighter.allocate(readView.valueDType(), TensorShape.of(capacity, kvLength))) {
@@ -176,6 +193,15 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
         return pages;
     }
 
+    private void closePrefixPages(TensorRef[] pages) {
+        if (pages == null) {
+            return;
+        }
+        for (TensorRef page : pages) {
+            page.close();
+        }
+    }
+
     private void copyCurrentRows(TensorRef source, TensorRef destination, int destinationRowStart) {
         if (source.dType() == destination.dType()) {
             for (int row = 0; row < source.shape().first(); row++) {
@@ -200,14 +226,14 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
                 "kvcacheselfattention2.qkv_projection").time()) {
             if (config.isGQA) {
-                projectGqaQkvPrefill(input, query, key, value, model.primaryTensorOperations().parallelSplitSize());
+                projectGqaQkvPrefill(input, query, key, value, model.primaryTensorOperations().parallelSplitSize(), phase);
             } else {
                 project(query, input, queryAttentionWeights, config.embeddingLength, attentionLength,
-                        "kvcacheselfattention2.q_projection", model.primaryTensorOperations().parallelSplitSize());
+                        "kvcacheselfattention2.q_projection", model.primaryTensorOperations().parallelSplitSize(), phase);
                 project(key, input, keyAttentionWeights, config.embeddingLength, kvLength,
-                        "kvcacheselfattention2.k_projection", model.primaryTensorOperations().parallelSplitSize());
+                        "kvcacheselfattention2.k_projection", model.primaryTensorOperations().parallelSplitSize(), phase);
                 project(value, input, valueAttentionWeights, config.embeddingLength, kvLength,
-                        "kvcacheselfattention2.v_projection", model.primaryTensorOperations().parallelSplitSize());
+                        "kvcacheselfattention2.v_projection", model.primaryTensorOperations().parallelSplitSize(), phase);
             }
             model.emitLayerDebug(layerIndex, "query_projection", query);
             model.emitLayerDebug(layerIndex, "key_projection", key);
@@ -222,16 +248,16 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
     }
 
     private void projectGqaQkvPrefill(TensorRef input, TensorRef query, TensorRef key, TensorRef value,
-            int splitSize) {
+            int splitSize, ForwardPhase phase) {
         ForkJoinTask<?> queryTask = model.getPool().getUnderlying().submit(() -> project(query, input,
                 queryAttentionWeights, config.embeddingLength, attentionLength,
-                "kvcacheselfattention2.q_projection", splitSize));
+                "kvcacheselfattention2.q_projection", splitSize, phase));
         ForkJoinTask<?> keyTask = model.getPool().getUnderlying().submit(() -> project(key, input,
                 keyAttentionWeights, config.embeddingLength, kvLength,
-                "kvcacheselfattention2.k_projection", splitSize));
+                "kvcacheselfattention2.k_projection", splitSize, phase));
         ForkJoinTask<?> valueTask = model.getPool().getUnderlying().submit(() -> project(value, input,
                 valueAttentionWeights, config.embeddingLength, kvLength,
-                "kvcacheselfattention2.v_projection", splitSize));
+                "kvcacheselfattention2.v_projection", splitSize, phase));
         queryTask.join();
         keyTask.join();
         valueTask.join();
@@ -263,11 +289,19 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
     }
 
     private void project(TensorRef output, TensorRef input, TensorRef weight, int inputLength,
-            int outputLength, String metricName, int splitSize) {
+            int outputLength, String metricName, int splitSize, ForwardPhase phase) {
         model.runChunks(metricName, 0, outputLength, splitSize, Optional.empty(),
                 (chunkStart, chunkSize) -> {
             try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, metricName).time()) {
-                lighter.dotProductRows(output, input, weight, 0, inputLength, chunkStart, chunkSize, chunkStart);
+                if (phase == ForwardPhase.PREFILL && input.shape().first() > 1) {
+                    lighter.batchDotProduct(new BatchDotProduct()
+                            .result(output).a(input).b(weight)
+                            .aColumnOffset(0).bColumnOffset(0).columnLength(inputLength)
+                            .resultRowOffset(0).bRowOffset(chunkStart).rowChunkSize(chunkSize));
+                } else {
+                    lighter.dotProductRows(output, input, weight, 0, inputLength, chunkStart, chunkSize,
+                            chunkStart);
+                }
             }
         });
     }
@@ -303,8 +337,8 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
                 model.runChunks("kvcacheselfattention2.output_projection", 0, config.embeddingLength,
                         model.primaryTensorOperations().parallelSplitSize(), Optional.empty(), (chunkStart, chunkSize) ->
                         {
-                            lighter.dotProductRows(output, projectionInputForChunks, outputProjectionWeights, 0,
-                                    attentionLength, chunkStart, chunkSize, chunkStart);
+                             projectChunk(output, projectionInputForChunks, outputProjectionWeights,
+                                     attentionLength, chunkStart, chunkSize, phase);
                         });
             }
             if (model.getTensorParallelContext().enabled()) {
@@ -320,6 +354,18 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
             if (closeProjectionInput) {
                 projectionInput.close();
             }
+        }
+    }
+
+    private void projectChunk(TensorRef output, TensorRef input, TensorRef weight, int inputLength,
+            int chunkStart, int chunkSize, ForwardPhase phase) {
+        if (phase == ForwardPhase.PREFILL && input.shape().first() > 1) {
+            lighter.batchDotProduct(new BatchDotProduct()
+                    .result(output).a(input).b(weight)
+                    .aColumnOffset(0).bColumnOffset(0).columnLength(inputLength)
+                    .resultRowOffset(0).bRowOffset(chunkStart).rowChunkSize(chunkSize));
+        } else {
+            lighter.dotProductRows(output, input, weight, 0, inputLength, chunkStart, chunkSize, chunkStart);
         }
     }
 

@@ -65,6 +65,45 @@ class AllocatorTest {
     }
 
     @Test
+    void allocateZeroesReusedTensor() {
+        Allocator allocator = new Allocator();
+        TensorShape shape = TensorShape.of(1, 2);
+        try (TensorRef first = allocator.allocate(DType.F32, shape)) {
+            first.set(7.0f, 0, 0);
+            first.set(-3.0f, 0, 1);
+        }
+        try (TensorRef second = allocator.allocate(DType.F32, shape)) {
+            assertEquals(0.0f, second.get(0, 0));
+            assertEquals(0.0f, second.get(0, 1));
+        }
+    }
+
+    @Test
+    void allocateDirtyReusesContentsByDefault() {
+        Allocator allocator = new Allocator();
+        TensorShape shape = TensorShape.of(1, 1);
+        try (TensorRef first = allocator.allocate(DType.F32, shape)) {
+            first.set(7.0f, 0, 0);
+        }
+        try (TensorRef second = allocator.allocateDirty(DType.F32, shape)) {
+            assertEquals(7.0f, second.get(0, 0));
+        }
+    }
+
+    @Test
+    void disallowingDirtyAllocationsZeroesDirtyRequests() {
+        Allocator allocator = new Allocator();
+        allocator.allowDirtyTensors(false);
+        TensorShape shape = TensorShape.of(1, 1);
+        try (TensorRef first = allocator.allocate(DType.F32, shape)) {
+            first.set(7.0f, 0, 0);
+        }
+        try (TensorRef second = allocator.allocateDirty(DType.F32, shape)) {
+            assertEquals(0.0f, second.get(0, 0));
+        }
+    }
+
+    @Test
     void closedTensorRefCannotBeUsed() throws Exception {
         Allocator allocator = new Allocator();
         TensorRef ref = allocator.allocate(DType.F32, TensorShape.of(2, 3));

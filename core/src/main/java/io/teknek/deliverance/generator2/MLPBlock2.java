@@ -6,6 +6,9 @@ import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.BatchDotProduct;
+import io.teknek.deliverance.tensor2.DotProductBatchChunk;
+import io.teknek.deliverance.tensor2.ActivationMultiplyQuantize;
 import io.teknek.deliverance.tensor2.MultiplyAccumulate;
 import io.teknek.deliverance.tensor2.TensorRef;
 
@@ -78,17 +81,36 @@ public class MLPBlock2 implements FeedForward2 {
                 }
                 model.runChunks("mlpblock2.gate_up_projection", 0, hiddenLength,
                         model.primaryTensorOperations().parallelSplitSize(), Optional.empty(), (chunkStart, chunkSize) -> {
-                    lighter.dotProductRows(gate, input, gateWeights, 0, embeddingLength, chunkStart, chunkSize,
-                            chunkStart);
-                    lighter.dotProductRows(up, input, upWeights, 0, embeddingLength, chunkStart, chunkSize,
-                            chunkStart);
+                    DotProductBatchChunk paired = new DotProductBatchChunk()
+                            .results(gate, up)
+                            .input(input)
+                            .weights(gateWeights, upWeights)
+                            .inputColumnStart(0)
+                            .weightColumnStart(0)
+                            .columnLength(embeddingLength)
+                            .weightRowStart(chunkStart)
+                            .weightRowCount(chunkSize)
+                            .outputColumnStart(chunkStart);
+                    if (lighter.supportsDotProductBatchChunk(paired)) {
+                        model.getCompositeOps().dotProductBatchChunk(paired);
+                    } else {
+                        projectChunk(gate, input, gateWeights, embeddingLength, chunkStart, chunkSize, phase);
+                        projectChunk(up, input, upWeights, embeddingLength, chunkStart, chunkSize, phase);
+                    }
                 });
             }
-            activate(gate, model.getConfig().activationFunction);
-            lighter.multiplyAccumulate(new MultiplyAccumulate(up).into(gate).offsetAndLength(0, hiddenLength));
-            downInput = gate.dType() == model.getWorkingQType()
-                    ? gate
-                    : lighter.reshape(gate, model.getWorkingQType());
+            ActivationMultiplyQuantize fused = new ActivationMultiplyQuantize(gate, up,
+                    model.getConfig().activationFunction, model.getWorkingQType())
+                    .offsetAndLength(0, hiddenLength);
+            if (model.getCompositeOps().supportsActivationMultiplyQuantize(fused)) {
+                downInput = model.getCompositeOps().activationMultiplyQuantize(fused);
+            } else {
+                activate(gate, model.getConfig().activationFunction);
+                lighter.multiplyAccumulate(new MultiplyAccumulate(up).into(gate).offsetAndLength(0, hiddenLength));
+                downInput = gate.dType() == model.getWorkingQType()
+                        ? gate
+                        : lighter.reshape(gate, model.getWorkingQType());
+            }
             if (InferenceProfiler.isEnabled()) {
                 InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock2.down_input_" + downInput.dType()).inc();
                 InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock2.down_weight_" + downWeights.dType()).inc();
@@ -98,8 +120,8 @@ public class MLPBlock2 implements FeedForward2 {
                     "mlpblock2.down_projection").time()) {
                 model.runChunks("mlpblock2.down_projection", 0, embeddingLength,
                         model.primaryTensorOperations().parallelSplitSize(), Optional.empty(), (chunkStart, chunkSize) ->
-                                lighter.dotProductRows(output, downInputForChunks, downWeights, 0, hiddenLength,
-                                        chunkStart, chunkSize, chunkStart));
+                                projectChunk(output, downInputForChunks, downWeights, hiddenLength, chunkStart,
+                                        chunkSize, phase));
             }
             tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(output)));
             return output;
@@ -112,6 +134,18 @@ public class MLPBlock2 implements FeedForward2 {
             }
             gate.close();
             up.close();
+        }
+    }
+
+    private void projectChunk(TensorRef output, TensorRef input, TensorRef weight, int inputLength,
+            int chunkStart, int chunkSize, ForwardPhase phase) {
+        if (phase == ForwardPhase.PREFILL && input.shape().first() > 1) {
+            lighter.batchDotProduct(new BatchDotProduct()
+                    .result(output).a(input).b(weight)
+                    .aColumnOffset(0).bColumnOffset(0).columnLength(inputLength)
+                    .resultRowOffset(0).bRowOffset(chunkStart).rowChunkSize(chunkSize));
+        } else {
+            lighter.dotProductRows(output, input, weight, 0, inputLength, chunkStart, chunkSize, chunkStart);
         }
     }
 

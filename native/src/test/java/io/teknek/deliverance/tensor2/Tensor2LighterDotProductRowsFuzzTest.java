@@ -3,11 +3,17 @@ package io.teknek.deliverance.tensor2;
 import io.dropwizard.metrics5.MetricName;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.math.WrappedForkJoinPool;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
+import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
+import io.teknek.deliverance.tensor.operations.MachineSpec;
+import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
+import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -19,10 +25,88 @@ import java.util.Map;
 import java.util.Random;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
+import java.util.concurrent.ForkJoinPool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class Tensor2LighterDotProductRowsFuzzTest {
+    @org.junit.jupiter.api.Test
+    void qwen06GateUpProjectionCharacterization() {
+        Assumptions.assumeTrue(NativeOps.isAvailable(), "Native Tensor2 operations are unavailable");
+        MetricRegistry metrics = new MetricRegistry();
+        ArrayQueueTensorAllocator allocator = new ArrayQueueTensorAllocator(metrics);
+        int inputColumns = 1024;
+        int outputColumns = 3072;
+        int chunkSize = 64;
+        int repetitions = 32;
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(new ForkJoinPool(8));
+             FloatBufferTensor denseInput = denseInput(1, inputColumns, 17);
+             Q8ByteBufferTensor oldInput = new Q8ByteBufferTensor(denseInput);
+             Q4ByteBufferTensor oldGateWeights = q4Weights(outputColumns, inputColumns, 41);
+             Q4ByteBufferTensor oldUpWeights = q4Weights(outputColumns, inputColumns, 53);
+             FloatBufferTensor oldGateOutput = new FloatBufferTensor(TensorShape.of(1, outputColumns));
+             FloatBufferTensor oldUpOutput = new FloatBufferTensor(TensorShape.of(1, outputColumns));
+             TensorRef input = TensorRef.borrowed(oldInput);
+             TensorRef gateWeights = TensorRef.borrowed(oldGateWeights);
+             TensorRef upWeights = TensorRef.borrowed(oldUpWeights);
+             TensorRef newGateOutput = new Lighter(metrics, Map.of(TensorProviderKind.SIMD, new NativeOps()))
+                     .allocate(DType.F32, TensorShape.of(1, outputColumns));
+             TensorRef newUpOutput = new Lighter(metrics, Map.of(TensorProviderKind.SIMD, new NativeOps()))
+                     .allocate(DType.F32, TensorShape.of(1, outputColumns))) {
+            NativeSimdTensorOperations oldOps = new NativeSimdTensorOperations(
+                    new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, allocator, pool), chunkSize);
+            Lighter newOps = new Lighter(metrics, Map.of(TensorProviderKind.SIMD, new NativeOps()));
+            CompositeOps newComposite = new CompositeOps(newOps);
+            AbstractTensor[] oldOutputs = {oldGateOutput, oldUpOutput};
+            AbstractTensor[] oldWeights = {oldGateWeights, oldUpWeights};
+
+            for (int i = 0; i < 8; i++) {
+                runLegacyGateUp(oldOps, oldOutputs, oldInput, oldWeights, outputColumns, inputColumns, chunkSize);
+                runTensorRefGateUp(newComposite, newGateOutput, newUpOutput, input, gateWeights, upWeights,
+                        outputColumns, inputColumns, chunkSize);
+            }
+            long oldStart = System.nanoTime();
+            for (int i = 0; i < repetitions; i++) {
+                runLegacyGateUp(oldOps, oldOutputs, oldInput, oldWeights, outputColumns, inputColumns, chunkSize);
+            }
+            double oldMs = (System.nanoTime() - oldStart) / 1_000_000.0 / repetitions;
+            long newStart = System.nanoTime();
+            for (int i = 0; i < repetitions; i++) {
+                runTensorRefGateUp(newComposite, newGateOutput, newUpOutput, input, gateWeights, upWeights,
+                        outputColumns, inputColumns, chunkSize);
+            }
+            double newMs = (System.nanoTime() - newStart) / 1_000_000.0 / repetitions;
+            System.out.printf(java.util.Locale.ROOT,
+                    "[tensor2-gate-up-characterization] shape=1x%d->%d chunks=%d repetitions=%d "
+                            + "old_mean_ms=%.3f new_mean_ms=%.3f delta_ms=%.3f speedup=%.3fx%n",
+                    inputColumns, outputColumns, outputColumns / chunkSize, repetitions, oldMs, newMs,
+                    oldMs - newMs, oldMs / newMs);
+        }
+    }
+
+    private static void runLegacyGateUp(NativeSimdTensorOperations ops, AbstractTensor[] outputs,
+            AbstractTensor input, AbstractTensor[] weights, int outputColumns, int inputColumns, int chunkSize) {
+        for (int chunkStart = 0; chunkStart < outputColumns; chunkStart += chunkSize) {
+            ops.dotProductBatchChunk(outputs, input, weights, 0, inputColumns, chunkStart, chunkSize);
+        }
+    }
+
+    private static void runTensorRefGateUp(CompositeOps ops, TensorRef gateOutput, TensorRef upOutput, TensorRef input,
+            TensorRef gateWeights, TensorRef upWeights, int outputColumns, int inputColumns, int chunkSize) {
+        for (int chunkStart = 0; chunkStart < outputColumns; chunkStart += chunkSize) {
+            ops.dotProductBatchChunk(new DotProductBatchChunk()
+                    .results(gateOutput, upOutput)
+                    .input(input)
+                    .weights(gateWeights, upWeights)
+                    .inputColumnStart(0)
+                    .weightColumnStart(0)
+                    .columnLength(inputColumns)
+                    .weightRowStart(chunkStart)
+                    .weightRowCount(chunkSize)
+                    .outputColumnStart(chunkStart));
+        }
+    }
+
     @ParameterizedTest(name = "{0} {1}")
     @MethodSource("f32Cases")
     void f32DotProductRowsMatchesNaive(Case c, Candidate candidate) {
@@ -285,6 +369,72 @@ class Tensor2LighterDotProductRowsFuzzTest {
                     Map.of(Lighter.TENSOR_OP_KEY, candidate.kind().name()))).getCount());
             assertEquals(0, metrics.meter(new MetricName("tensor2.dot_product_rows",
                     Map.of(Lighter.TENSOR_OP_KEY, TensorProviderKind.NAIVE.name()))).getCount());
+        }
+    }
+
+    @ParameterizedTest(name = "Qwen3-0.6B query projection {0}")
+    @MethodSource("strictProductionCandidates")
+    void qwen06QueryProjectionShapeMatchesNaive(ProviderCandidate candidate) {
+        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+        Lighter expected = naiveOnly();
+        MetricRegistry metrics = new MetricRegistry();
+        Lighter actual = new Lighter(metrics, Map.of(candidate.kind(), candidate.operations().get()));
+        int embeddingLength = 1024;
+        int attentionLength = 2048;
+        int chunkSize = 64;
+        Lighter quantizer = new Lighter(new MetricRegistry(), Map.of(TensorProviderKind.PANAMA, new PanamaOps()));
+        try (TensorRef denseInput = actual.allocate(DType.F32, TensorShape.of(1, embeddingLength));
+             TensorRef input = quantizer.reshape(denseInput, DType.I8);
+             Q4ByteBufferTensor denseWeights = q4Weights(attentionLength, embeddingLength, 41);
+             TensorRef weights = TensorRef.borrowed(denseWeights);
+             TensorRef expectedOutput = expected.allocate(DType.F32, TensorShape.of(1, attentionLength));
+             TensorRef actualOutput = actual.allocate(DType.F32, TensorShape.of(1, attentionLength))) {
+            fill(denseInput, 17);
+            for (int chunkStart = 0; chunkStart < attentionLength; chunkStart += chunkSize) {
+                expected.dotProductRows(expectedOutput, input, weights, 0, embeddingLength, chunkStart, chunkSize,
+                        chunkStart);
+                actual.dotProductRows(actualOutput, input, weights, 0, embeddingLength, chunkStart, chunkSize,
+                        chunkStart);
+            }
+            for (int column = 0; column < attentionLength; column++) {
+                assertEquals(expectedOutput.get(0, column), actualOutput.get(0, column), 0.03f,
+                        candidate.name() + " column=" + column);
+            }
+            assertEquals(attentionLength / chunkSize,
+                    metrics.meter(new MetricName("tensor2.dot_product_rows",
+                            Map.of(Lighter.TENSOR_OP_KEY, candidate.kind().name()))).getCount());
+            assertEquals(0, metrics.meter(new MetricName("tensor2.dot_product_rows",
+                    Map.of(Lighter.TENSOR_OP_KEY, TensorProviderKind.NAIVE.name()))).getCount());
+        }
+    }
+
+    @ParameterizedTest(name = "Qwen3-0.6B MLP projection shapes {0}")
+    @MethodSource("strictProductionCandidates")
+    void qwen06MlpProjectionShapesMatchNaive(ProviderCandidate candidate) {
+        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+        Lighter expected = naiveOnly();
+        Lighter actual = new Lighter(new MetricRegistry(), Map.of(candidate.kind(), candidate.operations().get()));
+        Lighter quantizer = new Lighter(new MetricRegistry(), Map.of(TensorProviderKind.PANAMA, new PanamaOps()));
+        assertProjectionShape(expected, actual, quantizer, 1, 1024, 3072, 53, candidate.name() + " gate/up");
+        assertProjectionShape(expected, actual, quantizer, 1, 3072, 1024, 71, candidate.name() + " down");
+    }
+
+    private static void assertProjectionShape(Lighter expected, Lighter actual, Lighter quantizer, int rows, int inputColumns,
+            int outputColumns, int seed, String label) {
+        try (TensorRef denseInput = actual.allocate(DType.F32, TensorShape.of(rows, inputColumns));
+             TensorRef input = quantizer.reshape(denseInput, DType.I8);
+             Q4ByteBufferTensor denseWeights = q4Weights(outputColumns, inputColumns, seed + 11);
+             TensorRef weights = TensorRef.borrowed(denseWeights);
+             TensorRef expectedOutput = expected.allocate(DType.F32, TensorShape.of(rows, outputColumns));
+             TensorRef actualOutput = actual.allocate(DType.F32, TensorShape.of(rows, outputColumns))) {
+            fill(denseInput, seed);
+            expected.dotProductRows(expectedOutput, input, weights, 0, inputColumns, 0,
+                    outputColumns, 0);
+            actual.dotProductRows(actualOutput, input, weights, 0, inputColumns, 0, outputColumns, 0);
+            for (int column = 0; column < outputColumns; column++) {
+                assertEquals(expectedOutput.get(0, column), actualOutput.get(0, column), 0.01f,
+                        label + " column=" + column);
+            }
         }
     }
 

@@ -47,6 +47,29 @@ class Tensor2LighterBatchDotProductFuzzTest {
         }
     }
 
+    @ParameterizedTest(name = "shared i8-q4 {0} {1}")
+    @MethodSource("sharedI8Q4CasesAndCandidates")
+    void sharedI8Q4CasesMatchAcrossTensor2Providers(BatchDotProductFuzzCases.Case c, Candidate candidate) {
+        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+        Lighter expected = naiveOnly();
+        Lighter actual = candidate.lighter();
+        try (TensorRef expectedA = sharedOperand(expected, DType.I8, c.aRows(), c.aColumns(), c.seed(), false);
+             TensorRef expectedB = sharedOperand(expected, DType.Q4, c.bRows(), c.bColumns(), c.seed() + 17, true);
+             TensorRef expectedResult = expected.allocate(DType.F32, TensorShape.of(c.resultRows(), c.resultColumns()));
+             TensorRef actualA = sharedOperand(actual, DType.I8, c.aRows(), c.aColumns(), c.seed(), false);
+             TensorRef actualB = sharedOperand(actual, DType.Q4, c.bRows(), c.bColumns(), c.seed() + 17, true);
+             TensorRef actualResult = actual.allocate(DType.F32, TensorShape.of(c.resultRows(), c.resultColumns()))) {
+            expected.batchDotProduct(operation(c, expectedResult, expectedA, expectedB));
+            actual.batchDotProduct(operation(c, actualResult, actualA, actualB));
+            for (int row = 0; row < c.resultRows(); row++) {
+                for (int column = 0; column < c.resultColumns(); column++) {
+                    assertEquals(expectedResult.get(row, column), actualResult.get(row, column), 0.30f,
+                            c + " " + candidate.name() + " row=" + row + " column=" + column);
+                }
+            }
+        }
+    }
+
     @ParameterizedTest(name = "q8 {0} {1}")
     @MethodSource("q8CasesAndCandidates")
     void batchDotProductF32Q8MatchesNaiveLighter(BatchDotProductFuzzCases.Case c, Candidate candidate) {
@@ -124,6 +147,16 @@ class Tensor2LighterBatchDotProductFuzzTest {
                 .flatMap(args -> Stream.of(panama, simd).map(candidate -> Arguments.of(args.get()[0], candidate)));
     }
 
+    static Stream<Arguments> sharedI8Q4CasesAndCandidates() {
+        Candidate panama = new Candidate("PANAMA", true, () -> new Lighter(nullMetricRegistry(), Map.of(
+                TensorProviderKind.PANAMA, new PanamaOps(), TensorProviderKind.NAIVE, new NaiveOps())));
+        Candidate simd = new Candidate("SIMD", NativeOps.isAvailable(), () -> new Lighter(nullMetricRegistry(), Map.of(
+                TensorProviderKind.SIMD, new NativeOps(), TensorProviderKind.PANAMA, new PanamaOps(),
+                TensorProviderKind.NAIVE, new NaiveOps())));
+        return BatchDotProductFuzzCases.sharedI8Q4Cases()
+                .flatMap(args -> Stream.of(panama, simd).map(candidate -> Arguments.of(args.get()[0], candidate)));
+    }
+
     static Stream<Arguments> panamaStrictDTypeCases() {
         List<DTypeCase> denseCases = List.of(
                 new DTypeCase(DType.F32, DType.BF16, 0.03f),
@@ -166,6 +199,28 @@ class Tensor2LighterBatchDotProductFuzzTest {
         fill(dense, seed);
         if (dType == DType.F32) {
             return dense;
+        }
+        TensorRef converted = lighter.reshape(dense, dType);
+        dense.close();
+        return converted;
+    }
+
+    private static TensorRef sharedOperand(Lighter lighter, DType dType, int rows, int columns, int seed,
+            boolean weight) {
+        if (dType == DType.Q4) {
+            FloatBufferTensor dense = new FloatBufferTensor(TensorShape.of(rows, columns));
+            for (int row = 0; row < rows; row++) {
+                for (int column = 0; column < columns; column++) {
+                    dense.set(BatchDotProductFuzzCases.weightValue(row, column, seed), row, column);
+                }
+            }
+            return TensorRef.owned(new Q4ByteBufferTensor(dense));
+        }
+        TensorRef dense = lighter.allocate(DType.F32, TensorShape.of(rows, columns));
+        for (int row = 0; row < rows; row++) {
+            for (int column = 0; column < columns; column++) {
+                dense.set(BatchDotProductFuzzCases.inputValue(row, column, seed), row, column);
+            }
         }
         TensorRef converted = lighter.reshape(dense, dType);
         dense.close();

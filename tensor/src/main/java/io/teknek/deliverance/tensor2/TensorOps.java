@@ -42,8 +42,18 @@ public interface TensorOps {
      default Either<OpSupport, Void> dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
              int inputColumnStart, int weightColumnStart, int columnLength, int weightRowStart,
              int weightRowCount, int outputColumnStart) {
-          return Either.Left(OpSupport.Unsupported);
-     }
+           return Either.Left(OpSupport.Unsupported);
+      }
+
+      /** Provider-level paired projection; providers without a fused path remain unsupported. */
+      default Either<OpSupport, Void> dotProductBatchChunk(DotProductBatchChunk operation) {
+           return Either.Left(OpSupport.Unsupported);
+      }
+
+      default boolean supportsDotProductBatchChunk(DotProductBatchChunk operation) {
+           return false;
+      }
+
 
      Either<OpSupport, Void> scale(float factor, TensorRef target, int offset, int length);
 

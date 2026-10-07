@@ -92,6 +92,9 @@ public class AutoModelForCausaLm {
         if (fetcher.getName().startsWith("Qwen")){
             b.withToolCallParser(new QwenToolCallParser());
         }
+        if ("Qwen3-0.6B-JQ4".equalsIgnoreCase(fetcher.getName())) {
+            b.withParallelSplitSizeFixed(TensorProviderKind.SIMD, 64);
+        }
         if (fetcher.getName().startsWith("antares") || fetcher.getName().startsWith("granite-4.0-h")) {
             b.withToolCallParser(new QwenToolCallParser());
         }
@@ -120,6 +123,7 @@ public class AutoModelForCausaLm {
         private TensorAllocator allocator = new ArrayQueueTensorAllocator(mr);
         private DType workingMem = DType.F32;
         private DType workingQuant = DType.I8;
+        private boolean allowDirtyTensors = true;
         private ToolCallParser toolCallParser = new DefaultToolCallParser();
 
         private KvBufferCacheSettings settings = new KvBufferCacheSettings(true);
@@ -190,6 +194,11 @@ public class AutoModelForCausaLm {
         }
         public Builder withWorkingQuantType(DType type){
             this.workingQuant = type;
+            return this;
+        }
+
+        public Builder withAllowDirtyTensors(boolean allowDirtyTensors) {
+            this.allowDirtyTensors = allowDirtyTensors;
             return this;
         }
         public Builder withTensorProvider(ConfigurableTensorProvider provider){
@@ -526,6 +535,7 @@ public class AutoModelForCausaLm {
             copy.allocator = this.allocator;
             copy.workingMem = this.workingMem;
             copy.workingQuant = this.workingQuant;
+            copy.allowDirtyTensors = this.allowDirtyTensors;
             copy.toolCallParser = this.toolCallParser;
             copy.settings = this.settings;
             copy.provider = this.provider;
@@ -612,6 +622,7 @@ public class AutoModelForCausaLm {
                     ? Optional.empty()
                     : Optional.of(LoraAdapter.fromPretrained(loraAdapterFetcher, mr));
             AbstractModel model = constructModel(modelRoot, loraAdapter);
+            model.getLighter().allowDirtyTensors(allowDirtyTensors);
             model.setMaxPrefillBatchSize(maxPrefillBatchSize);
             model.setTensorProviderExplicit(tensorProviderExplicit);
             model.setGpuPrefillEnabled(gpuPrefill);
