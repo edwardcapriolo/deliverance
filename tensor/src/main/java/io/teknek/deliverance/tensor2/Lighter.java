@@ -13,6 +13,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.nio.ByteBuffer;
 import java.lang.foreign.MemorySegment;
 import java.util.concurrent.TimeUnit;
@@ -29,6 +30,8 @@ public class Lighter {
     private final MetricRegistry metricRegistry;
     //something like this must be initialized  so later we can pick the right one
     private final EnumMap<TensorProviderKind, TensorOps> tensorOperations = new EnumMap<>(TensorProviderKind.class);
+    private final EnumMap<TensorProviderKind, CompositeOpsProvider> compositeOperations =
+            new EnumMap<>(TensorProviderKind.class);
     private volatile Consumer<ProviderEvent> providerObserver = ignored -> { };
 
     public record ProviderEvent(String operation, TensorProviderKind kind, boolean supported,
@@ -74,6 +77,14 @@ public class Lighter {
     public void putTensorOperations(TensorProviderKind kind, TensorOps ops) {
         tensorOperations.put(java.util.Objects.requireNonNull(kind, "kind"),
                 java.util.Objects.requireNonNull(ops, "ops"));
+        if (ops instanceof CompositeOpsProvider composite) {
+            compositeOperations.put(kind, composite);
+        }
+    }
+
+    /** Controls whether allocateDirty may return pooled storage without zeroing it. */
+    public void allowDirtyTensors(boolean allowDirtyTensors) {
+        allocator.allowDirtyTensors(allowDirtyTensors);
     }
 
     public void setProviderObserver(Consumer<ProviderEvent> providerObserver) {
@@ -110,16 +121,14 @@ public class Lighter {
         return allocator.allocate(dType, shape, device);
     }
 
+    public TensorRef allocateDirty(DType dType, TensorShape shape) {
+        return allocator.allocateDirty(dType, shape);
+    }
+
     /** Clears tensor payload and quantization sidecar storage. */
     public void clear(TensorRef target) {
         Preconditions.checkArgument(target != null, "Target tensor must be set");
-        long bytes = physicalBytes(target);
-        target.memorySegment().asSlice(target.memorySegmentOffset(0), bytes).fill((byte) 0);
-        if (target.dType() == DType.I8) {
-            clear(target.sidecar(Q8Layout.SCALE_SIDECAR));
-        } else if (target.dType() == DType.Q4) {
-            clear(target.sidecar(Q4Layout.SCALE_SIDECAR));
-        }
+        allocator.clear(target);
     }
 
     /** Materializes a dense tensor with its dimensions and coordinates reversed. */
@@ -189,14 +198,6 @@ public class Lighter {
             cursor[dimension] = 0;
         }
         return false;
-    }
-
-    private long physicalBytes(TensorRef tensor) {
-        return switch (tensor.dType()) {
-            case F32, F16, BF16, I8 -> tensor.shape().size() * tensor.dType().size();
-            case Q4 -> tensor.shape().size() / 2;
-            default -> throw new IllegalArgumentException("Unsupported dtype " + tensor.dType());
-        };
     }
 
     /** Copies a mapped raw tensor payload into tensor2-owned storage. */
@@ -613,6 +614,58 @@ public class Lighter {
             observe("dot_product_rows", entry.getKey(), false, output.dType(), input.dType(), weights.dType(), tags);
         }
         throw new IllegalStateException("No tensor operations support dotProductRows");
+    }
+
+    public void dotProductBatchChunk(DotProductBatchChunk operation) {
+        Objects.requireNonNull(operation, "operation");
+        TensorRef[] results = operation.results();
+        TensorRef[] weights = operation.weights();
+        Preconditions.checkArgument(results != null && weights != null && results.length == weights.length
+                && results.length > 0, "Paired projection results and weights must have equal non-zero lengths");
+        Preconditions.checkArgument(operation.input() != null, "Paired projection input must be set");
+        for (int i = 0; i < results.length; i++) {
+            Preconditions.checkArgument(results[i] != null && weights[i] != null,
+                    "Paired projection tensors must be set");
+        }
+        for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
+            Either<OpSupport, Void> outcome = entry.getValue().dotProductBatchChunk(operation);
+            if (outcome.isRight()) {
+                observe("dot_product_batch_chunk", entry.getKey(), true, results[0].dType(),
+                        operation.input().dType(), weights[0].dType(), Map.of());
+                return;
+            }
+            observe("dot_product_batch_chunk", entry.getKey(), false, results[0].dType(),
+                    operation.input().dType(), weights[0].dType(), Map.of());
+        }
+        throw new UnsupportedOperationException("No tensor operations support dotProductBatchChunk");
+    }
+
+    public boolean supportsDotProductBatchChunk(DotProductBatchChunk operation) {
+        for (TensorOps ops : tensorOperations.values()) {
+            if (ops.supportsDotProductBatchChunk(operation)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    Either<OpSupport, Void> activationMultiplyQuantize(ActivationMultiplyQuantize operation) {
+        for (CompositeOpsProvider provider : compositeOperations.values()) {
+            Either<OpSupport, Void> outcome = provider.activationMultiplyQuantize(operation);
+            if (outcome.isRight()) {
+                return outcome;
+            }
+        }
+        return Either.Left(OpSupport.Unsupported);
+    }
+
+    boolean supportsActivationMultiplyQuantize(ActivationMultiplyQuantize operation) {
+        for (CompositeOpsProvider provider : compositeOperations.values()) {
+            if (provider.supportsActivationMultiplyQuantize(operation)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public void saxpy(float alpha, TensorRef x, TensorRef y, int xOffset, int yOffset, int length) {

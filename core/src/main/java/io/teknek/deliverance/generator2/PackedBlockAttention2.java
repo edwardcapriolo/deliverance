@@ -170,10 +170,12 @@ public final class PackedBlockAttention2 {
                                     .rowChunkSize(rows));
                             globalRow += rows;
                         }
+                        emitAttentionDebug("attention_scores", head, visibleRows - 1, scores);
                         model.getCompositeOps().scaledSoftMax(new ScaledSoftMax(scale)
                                 .target(scores)
                                 .offsetAndLength(0, visibleRows)
                                 .softcap(softcap));
+                        emitAttentionDebug("attention_probabilities", head, visibleRows - 1, scores);
                         globalRow = 0;
                         try (TensorRef outputRow = output.slice(0)) {
                             for (int pageIndex = 0; pageIndex < valuePages.length; pageIndex++) {

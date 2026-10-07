@@ -1,0 +1,3 @@
+timestamp,engine,model,case_id,category,turn,prompt_chars,prompt_tokens,generated_tokens,total_ms,generation_ms,tokens_per_second,response_chars,finish_reason
+"2026-09-19T20:20:34.447757Z","deliverance","edwardcapriolo/Qwen3-0.6B-JQ4","builtin-reasoning-1","reasoning",1,592,128,256,11419.894667,9637.548625000001,26.459010472696836,1029,"MAX_TOKENS"
+"2026-09-19T20:20:51.305865Z","deliverance","edwardcapriolo/Qwen3-0.6B-JQ4","builtin-reasoning-1","reasoning",2,1746,403,256,16837.147584,9326.628249999998,27.341070445259795,1067,"MAX_TOKENS"

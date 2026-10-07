@@ -42,7 +42,6 @@ public class LayerNorm2 {
     public TensorRef forward(TensorRef input, int offset, int length) {
         long start = System.currentTimeMillis();
         TensorRef output = model.makeDenseTensorRef(input.shape());
-        int limit = offset + length;
         try {
             performLayerNorm(input, output, weights, bias, model.getConfig().layerNormEps, offset, length,
                     model.getConfig().embeddingLength);
@@ -50,7 +49,11 @@ public class LayerNorm2 {
             totalTime.update(end - start);
             return output;
         } catch (RuntimeException | Error e) {
-            output.close();
+            try {
+                output.close();
+            } catch (RuntimeException | Error closeFailure) {
+                e.addSuppressed(closeFailure);
+            }
             throw e;
         }
     }

@@ -29,7 +29,8 @@ import static io.teknek.deliverance.tensor.TensorTestSupport.deterministicTensor
 class KvCacheQkvProjectionCharacterizationTest {
     private static final int BATCH_SIZE = 1;
     private static final int EMBEDDING_LENGTH = 1024;
-    private static final int ATTENTION_LENGTH = 1024;
+    // Qwen3-0.6B: 16 attention heads * 128 head size.
+    private static final int ATTENTION_LENGTH = 2048;
     private static final int KV_LENGTH = 1024;
     private static final int REPETITIONS = 32;
     private static final int SPLIT_SIZE = 64;

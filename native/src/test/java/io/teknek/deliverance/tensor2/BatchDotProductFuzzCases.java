@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Random;
 import java.util.stream.Stream;
 
-final class BatchDotProductFuzzCases {
+public final class BatchDotProductFuzzCases {
     private static final long SEED = 0xbadc0ffeeL;
 
     private BatchDotProductFuzzCases() {
@@ -49,6 +49,46 @@ final class BatchDotProductFuzzCases {
         return cases.stream().map(Arguments::of);
     }
 
+    public static Stream<Arguments> sharedI8Q4Cases() {
+        List<Case> cases = new ArrayList<>();
+        int id = 0;
+        int[] resultRows = {1, 2, 3, 5, 8, 13};
+        int[] rowChunks = {1, 2, 3, 5, 8, 16, 31, 64, 128};
+        int[] lengths = {32, 64, 96, 128, 160, 256, 768, 1024};
+        int[] offsets = {0, 32, 64};
+        for (int resultRowCount : resultRows) {
+            for (int rowChunkSize : rowChunks) {
+                for (int length : lengths) {
+                    int aColumnOffset = offsets[id % offsets.length];
+                    int bColumnOffset = offsets[(id + 1) % offsets.length];
+                    int bRowOffset = id % 5;
+                    cases.add(new Case("shared_i8_q4_" + id, resultRowCount, 0,
+                            aColumnOffset, bColumnOffset, length, bRowOffset + id % 3, bRowOffset,
+                            rowChunkSize, id++));
+                }
+            }
+        }
+        Random random = new Random(0x8a4f19L);
+        for (int i = 0; i < 128; i++) {
+            int resultRowCount = resultRows[random.nextInt(resultRows.length)];
+            int rowChunkSize = rowChunks[random.nextInt(rowChunks.length)];
+            int length = lengths[random.nextInt(lengths.length)];
+            int bRowOffset = random.nextInt(5);
+            cases.add(new Case("shared_i8_q4_random_" + i, resultRowCount, 0,
+                    offsets[random.nextInt(offsets.length)], offsets[random.nextInt(offsets.length)], length,
+                    bRowOffset + random.nextInt(4), bRowOffset, rowChunkSize, random.nextInt()));
+        }
+        return cases.stream().map(Arguments::of);
+    }
+
+    public static float inputValue(int row, int column, int seed) {
+        return ((row * 17 + column * 31 + seed) % 257 - 128) / 64.0f;
+    }
+
+    public static float weightValue(int row, int column, int seed) {
+        return ((row * 13 + column * 19 + seed) % 251 - 125) / 96.0f;
+    }
+
     static Stream<Arguments> q8Cases() {
         List<Case> cases = new ArrayList<>();
         int id = 0;
@@ -82,25 +122,25 @@ final class BatchDotProductFuzzCases {
         return cases.stream().map(Arguments::of);
     }
 
-    record Case(String name, int resultRows, int aRowOffset, int aColumnOffset, int bColumnOffset,
+    public record Case(String name, int resultRows, int aRowOffset, int aColumnOffset, int bColumnOffset,
             int columnLength, int resultRowOffset, int bRowOffset, int rowChunkSize, int seed) {
-        int aRows() {
+        public int aRows() {
             return aRowOffset + resultRows;
         }
 
-        int aColumns() {
+        public int aColumns() {
             return aColumnOffset + columnLength;
         }
 
-        int bRows() {
+        public int bRows() {
             return bRowOffset + rowChunkSize;
         }
 
-        int bColumns() {
+        public int bColumns() {
             return bColumnOffset + columnLength;
         }
 
-        int resultColumns() {
+        public int resultColumns() {
             return resultRowOffset + bRowOffset + rowChunkSize;
         }
 

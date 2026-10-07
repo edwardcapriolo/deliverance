@@ -51,11 +51,18 @@ $BENCHMARK_JVM_OPTS \
 io.teknek.deliverance.benchmark.InferenceBenchmark \
 --engine deliverance \
 --owner edwardcapriolo \
---model Qwen3-0.6B-JQ4 \
-${DELIVERANCE_BENCHMARK_ARGS:-$DEFAULT_BENCHMARK_ARGS}"
+  --model Qwen3-0.6B-JQ4 \
+  ${DELIVERANCE_BENCHMARK_ARGS:-$DEFAULT_BENCHMARK_ARGS}"
 
+PROFILE_OUTPUT="$BENCHMARK_RUN_DIR/qwen06b-single-benchmark.profile.log"
+printf '%s\n' "writing benchmark profile to $PROFILE_OUTPUT"
+
+set +e
 mvn -q -pl core \
   -Dexec.classpathScope=test \
   -Dexec.executable="$JAVA_BIN" \
   -Dexec.args="$EXEC_ARGS" \
-  org.codehaus.mojo:exec-maven-plugin:3.5.0:exec
+  org.codehaus.mojo:exec-maven-plugin:3.5.0:exec >"$PROFILE_OUTPUT" 2>&1
+MAVEN_STATUS=$?
+cat "$PROFILE_OUTPUT"
+exit "$MAVEN_STATUS"

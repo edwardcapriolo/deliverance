@@ -319,6 +319,20 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         this.tensorOperations.put(TensorProviderKind.SIMD, provider.get());
         this.metricRegistry = metricRegistry;
         this.lighter = new Lighter(metricRegistry);
+        this.lighter.setProviderObserver(event -> {
+            String operation = event.operation();
+            String providerName = event.kind().name().toLowerCase(java.util.Locale.ROOT);
+            metricRegistry.counter("tensor2.provider." + operation + "." + providerName + ".attempted").inc();
+            if (event.supported()) {
+                metricRegistry.counter("tensor2.provider." + operation + "." + providerName + ".supported").inc();
+                if (event.kind() == io.teknek.deliverance.tensor2.TensorProviderKind.NAIVE) {
+                    metricRegistry.counter("tensor2.provider.naive.selected").inc();
+                }
+            } else {
+                metricRegistry.counter("tensor2.provider." + operation + "." + providerName + ".unsupported").inc();
+                metricRegistry.counter("tensor2.provider.fallback").inc();
+            }
+        });
         registerOptionalTensorRefNativeOps();
         w.setLighter(this.lighter);
         this.compositeOps = new CompositeOps(lighter, metricRegistry);

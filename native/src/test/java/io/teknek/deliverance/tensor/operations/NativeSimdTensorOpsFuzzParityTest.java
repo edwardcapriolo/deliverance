@@ -24,6 +24,8 @@ import java.util.Optional;
 import java.util.Random;
 import java.util.stream.Stream;
 
+import io.teknek.deliverance.tensor2.BatchDotProductFuzzCases;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class NativeSimdTensorOpsFuzzParityTest {
@@ -88,6 +90,39 @@ public class NativeSimdTensorOpsFuzzParityTest {
                 }
             }
         }
+    }
+
+    @ParameterizedTest(name = "shared i8-q4 {0}")
+    @MethodSource("sharedI8Q4Cases")
+    public void sharedI8Q4CasesMatchAcrossLegacyProviders(BatchDotProductFuzzCases.Case c) {
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
+            TensorAllocator allocator = new ArrayQueueTensorAllocator(new MetricRegistry());
+            TensorOperations naive = new NaiveTensorOperations();
+            TensorOperations panama = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, allocator, pool);
+            TensorOperations simd = new NativeSimdTensorOperations(panama);
+            try (FloatBufferTensor denseInput = sharedInput(c.aRows(), c.aColumns(), c.seed());
+                 FloatBufferTensor denseWeight = sharedWeight(c.bRows(), c.bColumns(), c.seed() + 17);
+                 AbstractTensor input = AbstractTensorUtils.quantize(denseInput, DType.I8, true);
+                 AbstractTensor weight = AbstractTensorUtils.quantize(denseWeight, DType.Q4, true);
+                 FloatBufferTensor reference = new FloatBufferTensor(c.resultRows(), c.resultColumns());
+                 FloatBufferTensor expected = new FloatBufferTensor(c.resultRows(), c.resultColumns());
+                 FloatBufferTensor actual = new FloatBufferTensor(c.resultRows(), c.resultColumns())) {
+                naive.batchDotProduct(reference, input, weight, c.aColumnOffset(), c.bColumnOffset(),
+                        c.columnLength(), c.resultRowOffset(), c.bRowOffset(), c.rowChunkSize());
+                panama.registerModelTensor(weight);
+                panama.batchDotProduct(expected, input, weight, c.aColumnOffset(), c.bColumnOffset(),
+                        c.columnLength(), c.resultRowOffset(), c.bRowOffset(), c.rowChunkSize());
+                simd.registerModelTensor(weight);
+                simd.batchDotProduct(actual, input, weight, c.aColumnOffset(), c.bColumnOffset(),
+                        c.columnLength(), c.resultRowOffset(), c.bRowOffset(), c.rowChunkSize());
+                assertTensorClose(reference, expected, 0.30f, c + " panama");
+                assertTensorClose(expected, actual, 0.30f, c + " simd");
+            }
+        }
+    }
+
+    static Stream<Arguments> sharedI8Q4Cases() {
+        return BatchDotProductFuzzCases.sharedI8Q4Cases();
     }
 
     @ParameterizedTest(name = "{0}")
@@ -566,11 +601,31 @@ public class NativeSimdTensorOpsFuzzParityTest {
         return tensor;
     }
 
+    private static FloatBufferTensor sharedInput(int rows, int cols, int seed) {
+        FloatBufferTensor tensor = new FloatBufferTensor(rows, cols);
+        for (int row = 0; row < rows; row++) {
+            for (int col = 0; col < cols; col++) {
+                tensor.set(BatchDotProductFuzzCases.inputValue(row, col, seed), row, col);
+            }
+        }
+        return tensor;
+    }
+
     private static FloatBufferTensor deterministicWeight(int rows, int cols, int seed) {
         FloatBufferTensor tensor = new FloatBufferTensor(rows, cols);
         for (int row = 0; row < rows; row++) {
             for (int col = 0; col < cols; col++) {
                 tensor.set(((row * 43 + col * 19 + seed) % 251 - 125) / 80.0f, row, col);
+            }
+        }
+        return tensor;
+    }
+
+    private static FloatBufferTensor sharedWeight(int rows, int cols, int seed) {
+        FloatBufferTensor tensor = new FloatBufferTensor(rows, cols);
+        for (int row = 0; row < rows; row++) {
+            for (int col = 0; col < cols; col++) {
+                tensor.set(BatchDotProductFuzzCases.weightValue(row, col, seed), row, col);
             }
         }
         return tensor;

@@ -69,6 +69,15 @@ class AllocatorQuantizedTest {
     }
 
     @Test
+    void zeroedQ4AllocationRepresentsLogicalZero() {
+        Lighter lighter = new Lighter();
+        try (TensorRef q4 = lighter.allocate(DType.Q4, TensorShape.of(1, 32))) {
+            assertEquals(0.0f, q4.get(0, 0), 0.0f);
+            assertEquals(0.0f, q4.get(0, 16), 0.0f);
+        }
+    }
+
+    @Test
     void reattachesScaleSidecarWhenQ4TensorIsReused() {
         Lighter lighter = new Lighter();
         try (TensorRef first = lighter.allocate(DType.Q4, TensorShape.of(1, 32))) {

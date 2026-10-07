@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
 abstract class AbstractQwen3BenchmarkCasesIT {
@@ -82,9 +83,17 @@ abstract class AbstractQwen3BenchmarkCasesIT {
                     response.generatedTokens.size(), response.totalTimeMs, tokensPerSecond, response.finishReason);
             InferenceProfiler.printSummary("case=" + caseId + " turn=" + (turn + 1), 30);
             model.getMetricRegistry().getCounters().entrySet().stream()
-                    .filter(entry -> InferenceProfiler.shouldPrintCounter(entry.getKey()))
-                    .forEach(entry -> System.out.println("[profile-counter] " + InferenceProfiler.displayName(entry.getKey())
-                            + " count=" + InferenceProfiler.counterValue(entry.getKey())));
+                    .filter(entry -> InferenceProfiler.shouldPrintCounter(entry.getKey())
+                            || InferenceProfiler.displayName(entry.getKey()).startsWith("tensor2.provider."))
+                    .forEach(entry -> {
+                        long count = InferenceProfiler.displayName(entry.getKey()).startsWith("tensor2.provider.")
+                                ? entry.getValue().getCount()
+                                : InferenceProfiler.counterValue(entry.getKey());
+                        System.out.println("[profile-counter] " + InferenceProfiler.displayName(entry.getKey())
+                                + " count=" + count);
+                    });
+            assertEquals(0L, model.getMetricRegistry().counter("tensor2.provider.naive.selected").getCount(),
+                    "Qwen TensorRef production path must not select NaiveOps");
             assertFalse(response.responseTextWithSpecialTokens.isBlank());
         }
     }
