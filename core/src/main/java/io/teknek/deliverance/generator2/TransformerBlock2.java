@@ -77,14 +77,17 @@ public class TransformerBlock2 {
                         batchSize, sequenceLength, attentionMask);
             }
             TensorRef lnattn = maybeApplyNorm(postAttention, postAttentionNorm);
+            model.emitLayerDebug(layerIndex, "post_attention_norm", lnattn);
             applyResidual(lnattn, embedding, "post_attention_residual");
             model.emitLayerDebug(layerIndex, "post_attention_residual", lnattn);
 
             TensorRef lnpreFF = preFFNorm.map(ln -> ln.forward(lnattn)).orElse(lnattn);
+            model.emitLayerDebug(layerIndex, "pre_ff_norm", lnpreFF);
             TensorRef postFF;
             try (AbstractModel.TensorRefLease qlnemb2 = preFFProjectionInput(lnpreFF)) {
                 postFF = ffBlock.forward(qlnemb2.tensor(), tensorReducer, phase);
             }
+            model.emitLayerDebug(layerIndex, "post_ff_output", postFF);
 
             TensorRef lnpostFF = maybeApplyNorm(postFF, postFFNorm);
 

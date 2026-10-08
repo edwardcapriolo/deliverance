@@ -10,6 +10,11 @@ import io.teknek.deliverance.generator.RmsNorm;
 import io.teknek.deliverance.generator.SampleOutput;
 import io.teknek.deliverance.generator.SelfAttention;
 import io.teknek.deliverance.generator.TransformerBlock;
+import io.teknek.deliverance.generator2.CausalSelfAttention2;
+import io.teknek.deliverance.generator2.LayerNorm2;
+import io.teknek.deliverance.generator2.RmsNorm2;
+import io.teknek.deliverance.generator2.SampleOutputRef;
+import io.teknek.deliverance.generator2.TransformerBlock2;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
@@ -49,7 +54,11 @@ public class GraniteMoeHybridModel extends AbstractModel {
     @Override
     protected EmbedInput loadInputWeights() {
         if (this.embedTokenWeights == null) {
-            this.embedTokenWeights = quantize(this.weights.load("model.embed_tokens.weight"), this.workingDType);
+            // Keep quantized embeddings compressed. TensorRef generation only reads token rows;
+            // expanding the entire vocabulary matrix here makes Q4 model startup unnecessarily expensive.
+            AbstractTensor loaded = this.weights.load("model.embed_tokens.weight");
+            this.embedTokenWeights = ((GraniteMoeHybridConfig) this.config).denseAttentionOnly()
+                    ? loaded : quantize(loaded, this.workingDType);
             this.configurableTensorProvider.get().registerModelTensor(this.embedTokenWeights);
         }
         return new EmbedInput(this) {
@@ -132,6 +141,38 @@ public class GraniteMoeHybridModel extends AbstractModel {
     }
 
     @Override
+    protected SampleOutputRef loadOutputWeightsRef() {
+        DType qType = modelQType.orElse(this.modelDType);
+        TensorRef norm = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(
+                "model.norm.weight", weights::loadRef, qType));
+        String outputWeightName = weights.isWeightPresent("lm_head.weight")
+                ? "lm_head.weight" : "model.embed_tokens.weight";
+        TensorRef head = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(
+                outputWeightName, weights::loadRef, outputHeadQuantization.orElse(workingDType)));
+        return new SampleOutputRef() {
+            @Override
+            public LayerNorm2 outputLayerNorm() {
+                return new RmsNorm2(GraniteMoeHybridModel.this, norm, 0.0f);
+            }
+
+            @Override
+            public TensorRef outputLogitsWeights() {
+                return head;
+            }
+        };
+    }
+
+    @Override
+    protected boolean usesTensorRefExecution() {
+        return ((GraniteMoeHybridConfig) config).denseAttentionOnly();
+    }
+
+    @Override
+    public boolean usesKvCache2Generation() {
+        return ((GraniteMoeHybridConfig) config).denseAttentionOnly();
+    }
+
+    @Override
     protected boolean addBosToken() {
         return false;
     }
@@ -182,7 +223,7 @@ public class GraniteMoeHybridModel extends AbstractModel {
                     graniteConfig,
                     quantize(this.weights.load(base + "shared_mlp.input_linear.weight"), qType),
                     quantize(this.weights.load(base + "shared_mlp.output_linear.weight"), qType),
-                    this.configurableTensorProvider
+                    this.configurableTensorProvider, i
             );
             FeedForward feedForward = sharedMlp;
             if (graniteConfig.numLocalExperts > 0) {
@@ -212,6 +253,51 @@ public class GraniteMoeHybridModel extends AbstractModel {
                     Optional.empty(),
                     this.configurableTensorProvider
             );
+        });
+        return blocks;
+    }
+
+    @Override
+    protected TransformerBlock2[] loadTransformerBlockWeights2() {
+        GraniteMoeHybridConfig graniteConfig = (GraniteMoeHybridConfig) this.config;
+        if (!graniteConfig.denseAttentionOnly()) {
+            throw new UnsupportedOperationException("TensorRef Granite execution requires dense attention-only layers");
+        }
+        DType qType = modelQType.orElse(this.modelDType);
+        TransformerBlock2[] blocks = new TransformerBlock2[graniteConfig.numberOfLayers];
+        IntStream.range(0, graniteConfig.numberOfLayers).parallel().forEach(i -> {
+            String base = "model.layers." + i + ".";
+            String attentionPrefix = base + "self_attn.";
+            String qName = attentionPrefix + "q_proj.weight";
+            String kName = attentionPrefix + "k_proj.weight";
+            String vName = attentionPrefix + "v_proj.weight";
+            String oName = attentionPrefix + "o_proj.weight";
+            CausalSelfAttention2 attention = new CausalSelfAttention2(this, i,
+                    registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(qName, weights::loadRef, qType)),
+                    registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(kName, weights::loadRef, qType)),
+                    registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(vName, weights::loadRef, qType)),
+                    registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(oName, weights::loadRef, qType)),
+                    lighter, metricRegistry, qName, kName, vName, oName);
+
+            String inputName = base + "shared_mlp.input_linear.weight";
+            String outputName = base + "shared_mlp.output_linear.weight";
+            TensorRef inputRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(
+                    inputName, weights::loadRef, qType));
+            TensorRef outputRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(
+                    outputName, weights::loadRef, qType));
+            GraniteMoeHybridSharedMlp2 feedForward = new GraniteMoeHybridSharedMlp2(this, inputRef, outputRef, i);
+
+            String inputNormName = base + "input_layernorm.weight";
+            String postAttentionNormName = base + "post_attention_layernorm.weight";
+            blocks[i] = new TransformerBlock2(this, i,
+                    Optional.of(new RmsNorm2(this, registerModelTensorRef(
+                            loadAndMaybeQuantizedExcluding1DTensors(inputNormName, weights::loadRef, qType)), 0.0f)),
+                    attention,
+                    Optional.empty(),
+                    Optional.of(new RmsNorm2(this, registerModelTensorRef(
+                            loadAndMaybeQuantizedExcluding1DTensors(postAttentionNormName, weights::loadRef, qType)), 0.0f)),
+                    feedForward, Optional.empty(), Optional.empty(),
+                    configurableTensorProvider);
         });
         return blocks;
     }

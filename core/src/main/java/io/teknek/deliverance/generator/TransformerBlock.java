@@ -174,15 +174,18 @@ public class TransformerBlock {
             postAttention = attention.forward(qlnemb, position, kvBuffer, tensorReducer, phase);
         }
         AbstractTensor lnattn = maybeApplyNorm(postAttention, postAttentionNorm);
+        model.emitLayerDebug(layerIndex, "post_attention_norm", lnattn);
         applyResidual(lnattn, embedding, "post_attention_residual");
         model.emitLayerDebug(layerIndex, "post_attention_residual", lnattn);
 
         AbstractTensor lnpreFF = preFFNorm.map(ln -> ln.forward(lnattn)).orElse(lnattn);
+        model.emitLayerDebug(layerIndex, "pre_ff_norm", lnpreFF);
         AbstractTensor postFF;
         try (AbstractTensor qlnemb2 = model.maybeQuantizeReadOnly(lnpreFF,
                 "transformerblock.maybe_quantize.pre_ff")) {
             postFF = ffBlock.forward(qlnemb2, tensorReducer, phase);
         }
+        model.emitLayerDebug(layerIndex, "post_ff_output", postFF);
 
         AbstractTensor lnpostFF = maybeApplyNorm(postFF, postFFNorm);
 
@@ -215,6 +218,7 @@ public class TransformerBlock {
                 postAttention = attention.forward(qlnemb, position, kvBuffer, tensorReducer, phase);
             }
             AbstractTensor lnattn = maybeApplyNorm(postAttention, postAttentionNorm);
+            model.emitLayerDebug(layerIndex, "post_attention_norm", lnattn);
             applyResidual(lnattn, embedding.tensor(), "post_attention_residual");
             model.emitLayerDebug(layerIndex, "post_attention_residual", lnattn);
 
@@ -222,11 +226,13 @@ public class TransformerBlock {
             PlannedTensor plannedLnattn = new PlannedTensor(lnattn,
                     residualLineage.input("post_attention_residual", lnemb.plan(), lnattn).as("post_attention_residual"));
             PlannedTensor lnpreFF = preFFNorm.map(ln -> ln.forward(plannedLnattn)).orElse(plannedLnattn);
+            model.emitLayerDebug(layerIndex, "pre_ff_norm", lnpreFF.tensor());
             AbstractTensor postFF;
             try (AbstractTensor qlnemb2 = model.maybeQuantizeReadOnly(lnpreFF.tensor(),
                     "transformerblock.maybe_quantize.pre_ff")) {
                 postFF = ffBlock.forward(qlnemb2, tensorReducer, phase);
             }
+            model.emitLayerDebug(layerIndex, "post_ff_output", postFF);
 
             AbstractTensor lnpostFF = maybeApplyNorm(postFF, postFFNorm);
             applyResidual(lnpostFF, lnattn, "post_ff_residual");

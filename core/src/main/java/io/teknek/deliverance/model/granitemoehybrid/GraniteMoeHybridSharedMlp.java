@@ -26,6 +26,7 @@ public class GraniteMoeHybridSharedMlp implements FeedForward {
     private static final String METRIC_OUTPUT_PROJECTION = "granitemoehybrid.shared_mlp.output_projection";
 
     private final AbstractModel model;
+    private final int layerIndex;
     private final GraniteMoeHybridConfig config;
     private final AbstractTensor inputLinearWeights;
     private final AbstractTensor outputLinearWeights;
@@ -34,7 +35,14 @@ public class GraniteMoeHybridSharedMlp implements FeedForward {
     public GraniteMoeHybridSharedMlp(AbstractModel model, GraniteMoeHybridConfig config,
             AbstractTensor inputLinearWeights, AbstractTensor outputLinearWeights,
             ConfigurableTensorProvider configurableTensorProvider) {
+        this(model, config, inputLinearWeights, outputLinearWeights, configurableTensorProvider, -1);
+    }
+
+    public GraniteMoeHybridSharedMlp(AbstractModel model, GraniteMoeHybridConfig config,
+            AbstractTensor inputLinearWeights, AbstractTensor outputLinearWeights,
+            ConfigurableTensorProvider configurableTensorProvider, int layerIndex) {
         this.model = model;
+        this.layerIndex = layerIndex;
         this.config = config;
         this.inputLinearWeights = inputLinearWeights;
         this.outputLinearWeights = outputLinearWeights;
@@ -57,10 +65,12 @@ public class GraniteMoeHybridSharedMlp implements FeedForward {
                                     0, this.config.embeddingLength, chunkStart, chunkSize),
                             this.configurableTensorProvider.get().parallelSplitSize(), this.model.getPool());
                 }
+                this.model.emitLayerDebug(layerIndex, "shared_mlp_projected", projected);
 
                 try (Timer.Context ignored2 = InferenceProfiler.timer(this.model.getMetricRegistry(), METRIC_ACTIVATION_GATE).time()) {
                     applyActivationGate(projected, hidden, this.config.activationFunction, this.config.sharedIntermediateSize);
                 }
+                this.model.emitLayerDebug(layerIndex, "shared_mlp_hidden", hidden);
                 tensorReducer.ifPresent(func -> func.accept(List.of(hidden)));
 
                 AbstractTensor hiddenQ;
