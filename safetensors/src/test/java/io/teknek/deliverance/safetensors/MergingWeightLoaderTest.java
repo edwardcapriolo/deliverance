@@ -3,6 +3,7 @@ package io.teknek.deliverance.safetensors;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorInfo;
+import io.teknek.deliverance.tensor.impl.BFloat16BufferTensor;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
 import org.junit.jupiter.api.Test;
@@ -157,6 +158,60 @@ public class MergingWeightLoaderTest {
         } finally {
             if (adapter != null) {
                 adapter.close();
+            }
+        }
+    }
+
+    @Test
+    void rejectsPartialLoadsForTargetedTensor() throws IOException {
+        Path baseDir = tempDir.resolve("base");
+        Path adapterDir = tempDir.resolve("adapter");
+        writeBaseModel(baseDir, Map.of(Q_PROJ, matrix(new float[][] {
+                {1f, 2f, 3f, 4f},
+                {5f, 6f, 7f, 8f},
+                {9f, 10f, 11f, 12f},
+                {13f, 14f, 15f, 16f}})));
+        writeAdapter(adapterDir, RANK, 4.0, "q_proj", Map.of(
+                LoraTensorNames.loraA(Q_PROJ), matrix(new float[][] {{1f, 0f, 0f, 0f}, {0f, 1f, 0f, 0f}}),
+                LoraTensorNames.loraB(Q_PROJ), matrix(new float[][] {{1f, 0f}, {0f, 1f}, {1f, 1f}, {2f, 1f}})));
+
+        try (DefaultWeightLoader delegate = DefaultWeightLoader.open(baseDir.toFile());
+             LoraAdapter adapter = LoraAdapter.load(adapterDir.toFile())) {
+            MergingWeightLoader merging = new MergingWeightLoader(delegate, adapter, new NaiveTensorOperations());
+            assertThrows(UnsupportedOperationException.class, () -> merging.loadRows(Q_PROJ, 0, 2));
+            assertThrows(UnsupportedOperationException.class,
+                    () -> merging.load(Q_PROJ, new TensorShardSpec(TensorShardAxis.ROWS, 0, 2)));
+        }
+    }
+
+    @Test
+    void mergesIntoBfloat16BaseAfterConvertingAdapterWeights() throws IOException {
+        Path baseDir = tempDir.resolve("bf16-base");
+        Path adapterDir = tempDir.resolve("bf16-adapter");
+        BFloat16BufferTensor base = new BFloat16BufferTensor(2, 3);
+        base.set(1.0f, 0, 0);
+        base.set(2.0f, 0, 1);
+        base.set(3.0f, 0, 2);
+        base.set(4.0f, 1, 0);
+        base.set(5.0f, 1, 1);
+        base.set(6.0f, 1, 2);
+        SafeTensorWriter.writeModel(baseDir, Map.of(), Map.of(Q_PROJ, base));
+        base.close();
+        writeAdapter(adapterDir, 1, 1.0, "q_proj", Map.of(
+                LoraTensorNames.loraA(Q_PROJ), matrix(new float[][] {{1f, 2f, 3f}}),
+                LoraTensorNames.loraB(Q_PROJ), matrix(new float[][] {{2f}, {3f}})));
+
+        try (DefaultWeightLoader delegate = DefaultWeightLoader.open(baseDir.toFile());
+             LoraAdapter adapter = LoraAdapter.load(adapterDir.toFile())) {
+            MergingWeightLoader merging = new MergingWeightLoader(delegate, adapter, new NaiveTensorOperations());
+            try (AbstractTensor merged = merging.load(Q_PROJ)) {
+                assertEquals(DType.BF16, merged.dType());
+                assertEquals(3.0f, merged.get(0, 0), 0.05f);
+                assertEquals(6.0f, merged.get(0, 1), 0.05f);
+                assertEquals(9.0f, merged.get(0, 2), 0.05f);
+                assertEquals(7.0f, merged.get(1, 0), 0.05f);
+                assertEquals(11.0f, merged.get(1, 1), 0.05f);
+                assertEquals(15.0f, merged.get(1, 2), 0.05f);
             }
         }
     }
