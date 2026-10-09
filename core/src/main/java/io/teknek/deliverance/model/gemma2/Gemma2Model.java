@@ -5,6 +5,12 @@ package io.teknek.deliverance.model.gemma2;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.*;
+import io.teknek.deliverance.generator2.CausalSelfAttention2;
+import io.teknek.deliverance.generator2.MLPBlock2;
+import io.teknek.deliverance.generator2.RmsNorm2;
+import io.teknek.deliverance.generator2.TransformerBlock2;
+import io.teknek.deliverance.generator2.LayerNorm2;
+import io.teknek.deliverance.generator2.SampleOutputRef;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.FloatConversions;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
@@ -114,6 +120,93 @@ public class Gemma2Model extends LlamaModel {
         });
 
         return transformerBlocks;
+    }
+
+    @Override
+    protected boolean usesTensorRefExecution() {
+        return true;
+    }
+
+    @Override
+    public boolean usesKvCache2Generation() {
+        return true;
+    }
+
+    @Override
+    protected TransformerBlock2[] loadTransformerBlockWeights2() {
+        DType qType = modelQType.orElse(this.modelDType);
+        TensorParallelShardPlan tensorParallelPlan = TensorParallelPlanner.plan(config, tensorParallelContext);
+        TensorParallelWeightLoader tensorParallelWeights = new TensorParallelWeightLoader(weights,
+                tensorParallelContext, tensorParallelPlan, new DefaultTransformerWeightPolicyResolver());
+        TransformerBlock2[] blocks = new TransformerBlock2[config.numberOfLayers];
+        IntStream.range(0, config.numberOfLayers).parallel().forEach(i -> {
+            String base = "model.layers." + i + ".";
+            String attn = base + "self_attn.";
+            String qName = attn + "q_proj.weight";
+            String kName = attn + "k_proj.weight";
+            String vName = attn + "v_proj.weight";
+            String oName = attn + "o_proj.weight";
+            CausalSelfAttention2 attention = new CausalSelfAttention2(this, i,
+                    registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(qName,
+                            tensorParallelWeights::loadRef, qType)),
+                    registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(kName,
+                            tensorParallelWeights::loadRef, qType)),
+                    registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(vName,
+                            tensorParallelWeights::loadRef, qType)),
+                    registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(oName,
+                            tensorParallelWeights::loadRef, qType)),
+                    lighter, metricRegistry, qName, kName, vName, oName);
+
+            String mlp = base + "mlp.";
+            String gateName = mlp + "gate_proj.weight";
+            String downName = mlp + "down_proj.weight";
+            String upName = mlp + "up_proj.weight";
+            MLPBlock2 feedForward = new MLPBlock2(this,
+                    registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(gateName,
+                            tensorParallelWeights::loadRef, qType)),
+                    registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(upName,
+                            tensorParallelWeights::loadRef, qType)),
+                    registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(downName,
+                            tensorParallelWeights::loadRef, qType)),
+                    lighter, gateName, upName, downName);
+
+            blocks[i] = new TransformerBlock2(this, i,
+                    Optional.of(new RmsNorm2(this, registerModelTensorRef(
+                            loadAndMaybeQuantizedExcluding1DTensors(base + "input_layernorm.weight",
+                                    weights::loadRef, qType)), 1.0f)),
+                    attention,
+                    Optional.of(new RmsNorm2(this, registerModelTensorRef(
+                            loadAndMaybeQuantizedExcluding1DTensors(base + "post_attention_layernorm.weight",
+                                    weights::loadRef, qType)), 1.0f)),
+                    Optional.of(new RmsNorm2(this, registerModelTensorRef(
+                            loadAndMaybeQuantizedExcluding1DTensors(base + "pre_feedforward_layernorm.weight",
+                                    weights::loadRef, qType)), 1.0f)),
+                    feedForward,
+                    Optional.of(new RmsNorm2(this, registerModelTensorRef(
+                            loadAndMaybeQuantizedExcluding1DTensors(base + "post_feedforward_layernorm.weight",
+                                    weights::loadRef, qType)), 1.0f)),
+                    Optional.empty(), configurableTensorProvider);
+        });
+        return blocks;
+    }
+
+    @Override
+    protected SampleOutputRef loadOutputWeightsRef() {
+        DType qType = modelQType.orElse(this.modelDType);
+        TensorRef norm = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors("model.norm.weight",
+                weights::loadRef, qType));
+        TensorRef head = registerModelTensorRef(TensorRef.borrowed(wte));
+        return new SampleOutputRef() {
+            @Override
+            public LayerNorm2 outputLayerNorm() {
+                return new RmsNorm2(Gemma2Model.this, norm, 1.0f);
+            }
+
+            @Override
+            public TensorRef outputLogitsWeights() {
+                return head;
+            }
+        };
     }
 
     @Override

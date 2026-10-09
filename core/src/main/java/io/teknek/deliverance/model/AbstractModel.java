@@ -365,7 +365,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         boolean tensorRefExecution = inferenceType.isFwdPass && usesTensorRefExecution();
         this.transformerBlocks = inferenceType.isFwdPass && !tensorRefExecution ? loadTransformerBlockWeights() : null;
         this.transformerBlocks2 = tensorRefExecution ? loadTransformerBlockWeights2() : null;
-        this.sampleOutput = inferenceType.isOutput ? loadOutputWeights() : null;
+        this.sampleOutput = inferenceType.isOutput && !tensorRefExecution ? loadOutputWeights() : null;
         this.sampleOutputRef = inferenceType.isOutput && tensorRefExecution ? loadOutputWeightsRef() : null;
         this.classifyOutput = inferenceType.isClassify ? loadClassifierWeights() : null;
         this.poolingLayer = inferenceType.isPooling ? Optional.ofNullable(loadPoolingWeights()) : Optional.empty();
@@ -947,11 +947,15 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
                 Object nativeOps = nativeOpsClass.getConstructor().newInstance();
                 lighter.putTensorOperations(io.teknek.deliverance.tensor2.TensorProviderKind.SIMD,
                         (io.teknek.deliverance.tensor2.TensorOps) nativeOps);
+                logger.info("TensorRef native operations enabled");
+            } else {
+                logger.warn("TensorRef native operations unavailable; using Panama fallback");
             }
         } catch (ClassNotFoundException ignored) {
             // Native Tensor2 operations are optional for core/runtime deployments.
-        } catch (ReflectiveOperationException | RuntimeException ignored) {
-            // Keep Panama/Naive Tensor2 providers available when native loading fails.
+        } catch (ReflectiveOperationException | RuntimeException failure) {
+            logger.warn("TensorRef native operation discovery failed; using Panama fallback: {}",
+                    failure.toString());
         }
     }
 

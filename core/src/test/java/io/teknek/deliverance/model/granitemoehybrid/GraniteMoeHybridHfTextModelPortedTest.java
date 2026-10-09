@@ -23,6 +23,7 @@ import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
+import io.teknek.deliverance.tensor.kv.KvCacheSession;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorInfo;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
@@ -35,6 +36,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mockito;
 
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -238,6 +240,70 @@ public class GraniteMoeHybridHfTextModelPortedTest implements
     }
 
     @Test
+    public void tinyTensorRefForwardMatchesLegacyAtEveryLayerStage() {
+        Path modelDir = tempDir.resolve("granite-tensorref-characterization");
+        writeTinyCheckpoint(modelDir, tensorRefParityConfig(), 2_234);
+        int[] tokens = {3, 4, 5, 6};
+        Map<String, float[]> legacyStages = new LinkedHashMap<>();
+        Map<String, float[]> tensorRefStages = new LinkedHashMap<>();
+
+        try (GraniteMoeHybridModel legacy = loadTinyModelStatic(modelDir, false);
+             GraniteMoeHybridModel tensorRef = loadTinyModelStatic(modelDir, true);
+             KvBufferCache.KvBuffer legacySession = legacy.newKvBuffer();
+             KvCacheSession tensorRefSession = tensorRef.newKvCacheSession()) {
+            legacy.setLayerDebugHook(event -> recordStage(legacyStages, event));
+            tensorRef.setLayerDebugHook(event -> recordStage(tensorRefStages, event));
+            try (AbstractTensor ignored = legacy.batchForward(tokens, 0, legacySession);
+                 AbstractTensor ignoredRef = tensorRef.batchForward(tokens, 0, tensorRefSession)) {
+                // Stage snapshots are copied by recordStage before the models release their tensors.
+            }
+        }
+
+        assertEquals(legacyStages.keySet(), tensorRefStages.keySet());
+        for (String stage : legacyStages.keySet()) {
+            float[] expected = legacyStages.get(stage);
+            float[] actual = tensorRefStages.get(stage);
+            assertEquals(expected.length, actual.length, stage);
+            float maxDelta = 0.0f;
+            int maxIndex = -1;
+            for (int i = 0; i < expected.length; i++) {
+                float delta = Math.abs(expected[i] - actual[i]);
+                if (delta > maxDelta) {
+                    maxDelta = delta;
+                    maxIndex = i;
+                }
+            }
+            assertTrue(maxDelta < 1.0e-4f, stage + " max delta=" + maxDelta
+                    + " expected=" + Arrays.toString(Arrays.copyOf(expected, Math.min(4, expected.length)))
+                    + " actual=" + Arrays.toString(Arrays.copyOf(actual, Math.min(4, actual.length)))
+                    + " maxIndex=" + maxIndex + " maxExpected=" + expected[maxIndex]
+                    + " maxActual=" + actual[maxIndex]);
+        }
+    }
+
+    private static void recordStage(Map<String, float[]> stages, AbstractModel.LayerDebugEvent event) {
+        if (event.layerIndex() < 0 || !(event.stage().equals("post_attention_residual")
+                || event.stage().equals("attention_output")
+                || event.stage().equals("post_attention_norm")
+                || event.stage().equals("pre_ff_norm")
+                || event.stage().equals("post_ff_output")
+                || event.stage().equals("shared_mlp_projected")
+                || event.stage().equals("shared_mlp_hidden")
+                || event.stage().equals("post_ff_residual") || event.stage().equals("layer_output"))) {
+            return;
+        }
+        AbstractTensor tensor = event.hiddenStates();
+        float[] values = new float[(int) tensor.size()];
+        int index = 0;
+        for (int row = 0; row < tensor.shape().first(); row++) {
+            for (int column = 0; column < tensor.shape().last(); column++) {
+                values[index++] = tensor.get(row, column);
+            }
+        }
+        stages.put(event.layerIndex() + ":" + event.stage(), values);
+    }
+
+    @Test
     public void graniteMoeHybridDoesNotPrependBosBecauseChatTemplateOwnsSpecialTokens() {
         Path modelDir = tempDir.resolve("granite-moe-hybrid-no-bos");
         writeTinyCheckpoint(modelDir, tinyConfig(), 2334);
@@ -381,6 +447,10 @@ public class GraniteMoeHybridHfTextModelPortedTest implements
     }
 
     static GraniteMoeHybridModel loadTinyModelStatic(Path modelDir) {
+        return loadTinyModelStatic(modelDir, true);
+    }
+
+    static GraniteMoeHybridModel loadTinyModelStatic(Path modelDir, boolean tensorRef) {
         MetricRegistry metrics = new MetricRegistry();
         TensorAllocator allocator = new ArrayQueueTensorAllocator(metrics);
         WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
@@ -388,7 +458,17 @@ public class GraniteMoeHybridHfTextModelPortedTest implements
                 new DefaultWeightLoader(modelDir.toFile()), Mockito.mock(PreTrainedTokenizer.class), DType.F32, DType.I8,
                 Optional.empty(), new ConfigurableTensorProvider(new NaiveTensorOperations()), metrics, allocator,
                 new KvBufferCacheSettings(true), new DefaultToolCallParser(), pool,
-                new StaticTensorParallelContext(0, 1), new SingleRankTensorParallelCollectives(), Optional.empty());
+                new StaticTensorParallelContext(0, 1), new SingleRankTensorParallelCollectives(), Optional.empty()) {
+            @Override
+            protected boolean usesTensorRefExecution() {
+                return tensorRef && ((GraniteMoeHybridConfig) getConfig()).denseAttentionOnly();
+            }
+
+            @Override
+            public boolean usesKvCache2Generation() {
+                return tensorRef && ((GraniteMoeHybridConfig) getConfig()).denseAttentionOnly();
+            }
+        };
         model.init();
         return model;
     }
@@ -397,6 +477,13 @@ public class GraniteMoeHybridHfTextModelPortedTest implements
         return new GraniteMoeHybridConfig(64, 16, 32, 2, 1, 2, 1.0e-5f, 48, 1, 1,
                 ActivationFunction.Type.SILU, 10_000.0, null, null, 0.0f, 2.0f, 0.25f, 0.5f,
                 4.0f, 24, 0, 0, false, 0.01f, List.of("attention", "attention"), "rope",
+                4, 1, 8, 8, 4, 2, 16, true, false, List.of("GraniteMoeHybridForCausalLM"));
+    }
+
+    static GraniteMoeHybridConfig tensorRefParityConfig() {
+        return new GraniteMoeHybridConfig(64, 16, 32, 2, 1, 2, 1.0e-5f, 48, 1, 1,
+                ActivationFunction.Type.SILU, 10_000.0, null, null, 0.0f, 2.0f, 0.25f, 0.5f,
+                4.0f, 32, 0, 0, false, 0.01f, List.of("attention", "attention"), "rope",
                 4, 1, 8, 8, 4, 2, 16, true, false, List.of("GraniteMoeHybridForCausalLM"));
     }
 

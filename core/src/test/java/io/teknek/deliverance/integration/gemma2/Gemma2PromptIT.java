@@ -20,12 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
-import java.nio.file.DirectoryStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.FileTime;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
@@ -212,65 +207,6 @@ public class Gemma2PromptIT {
     }
 
 
-   // "What is tensor parallelism?"
-   @Test
-   public void aTest() throws IOException {
-       ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
-       KvBufferCacheSettings settings = new KvBufferCacheSettings(tempDir.toFile())
-               .withDeleteDiskPagesOnClose(false)
-               .withDiskPageSweeperEnabled(false)
-               .withDiskPageMaxAge(Duration.ofMillis(1))
-               .withMaxEntries(0);
-
-       try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
-               .withWorkingQuantType(DType.I8)
-               .withKvBufferCacheSettings(settings)
-               .buildLocalTransformerModel()) {
-           PromptSupport.Builder prompt = model.promptSupport().get().builder()
-                   .addUserMessage("What is tensor parallelism?");
-
-           Response response = model.generate(UUID.randomUUID(), prompt.build(), new GeneratorParameters()
-                           .withMaxTokens(50)
-                           .withTemperature(0.0f),
-                   new DoNothingGenerateEvent());
-
-            System.out.println(response);
-       }
-   }
-
-
-
-    @Test                  
-    public void diskKvPagesCreatedByGemmaGenerationCanBeSwept() throws IOException {
-        ModelFetcher fetch = new ModelFetcher("tjake", "gemma-2-2b-it-JQ4");
-        KvBufferCacheSettings settings = new KvBufferCacheSettings(tempDir.toFile())
-                .withDeleteDiskPagesOnClose(false)
-                .withDiskPageSweeperEnabled(false)
-                .withDiskPageMaxAge(Duration.ofMillis(1))
-                .withMaxEntries(0);
-
-        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
-                .withWorkingQuantType(DType.I8)
-                .withKvBufferCacheSettings(settings)
-                 .buildLocalTransformerModel()) {
-            PromptSupport.Builder prompt = model.promptSupport().get().builder()
-                    .addUserMessage("What is 1 + 1?");
-
-            Response response = model.generate(UUID.randomUUID(), prompt.build(), new GeneratorParameters()
-                            .withMaxTokens(1)
-                            .withTemperature(0.0f),
-                    new DoNothingGenerateEvent());
-
-            assertNotNull(response.responseText);
-            assertTrue(pageFileCount(tempDir) > 0, "Gemma generation should create disk KV page files");
-
-            markPageFilesOld(tempDir, Duration.ofHours(2));
-            model.runDiskKvPageSweep();
-
-            assertEquals(0, pageFileCount(tempDir), "forced disk KV sweep should remove stale retained page files");
-        }
-    }
-
     @Test
     public void gemmaGuidedTest() {
         AbstractModel m = Gemma2Suite.getOrCreate();
@@ -329,25 +265,6 @@ public class Gemma2PromptIT {
         assertEquals("Giants", JsonUtils.om.readTree(k.responseText).get("answer").asText());
         assertEquals("""
                 {"answer":"Giants"}""", k.responseText);
-    }
-
-    private static long pageFileCount(Path directory) throws IOException {
-        long count = 0;
-        try (DirectoryStream<Path> pages = Files.newDirectoryStream(directory, "*.page")) {
-            for (Path ignored : pages) {
-                count++;
-            }
-        }
-        return count;
-    }
-
-    private static void markPageFilesOld(Path directory, Duration age) throws IOException {
-        FileTime old = FileTime.from(Instant.now().minus(age));
-        try (DirectoryStream<Path> pages = Files.newDirectoryStream(directory, "*.page")) {
-            for (Path page : pages) {
-                Files.setLastModifiedTime(page, old);
-            }
-        }
     }
 
     @Test

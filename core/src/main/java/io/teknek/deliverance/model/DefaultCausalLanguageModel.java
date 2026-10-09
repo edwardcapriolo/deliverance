@@ -66,6 +66,10 @@ public final class DefaultCausalLanguageModel implements CausalLanguageModel {
         if (coordinatorModel.usesModelSpecificGeneration()) {
             return coordinatorModel.generate(sessionId, promptContext, generatorParameters, eventFired);
         }
+        if (coordinatorModel.usesKvCache2Generation() && backend instanceof GenerationBackendRef backendRef) {
+            return new GenerationEngineRef().generate(coordinatorModel, backendRef, sessionId, promptContext,
+                    generatorParameters, eventFired);
+        }
         return engine.generate(coordinatorModel, backend, sessionId, promptContext, generatorParameters, eventFired);
     }
 
