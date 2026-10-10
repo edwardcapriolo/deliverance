@@ -4,6 +4,7 @@ import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator2.PackedBlockAttention2;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
+import io.teknek.deliverance.math.VectorMath;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.AbstractTensor;
@@ -17,6 +18,9 @@ import io.teknek.deliverance.tensor.kv.KvCacheSession;
 import io.teknek.deliverance.tensor.kv.KvReadView;
 import io.teknek.deliverance.tensor.kv.KvWriteCursor;
 import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
+import io.teknek.deliverance.tensor.operations.MachineSpec;
+import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
+import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.tensor2.CompositeOps;
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.TensorRef;
@@ -27,6 +31,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.Optional;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ForkJoinPool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -60,6 +66,85 @@ class PackedBlockAttention2ParityTest {
                 tensorRef.forward(output, query, keys, values, 0, rows, heads, kvHeads, headSize,
                         1.0f / (float) Math.sqrt(headSize), null, true);
                 assertClose(legacyOutput, new TensorRefBackedTensor(output), 0.001f);
+            }
+        }
+    }
+
+    @Test
+    void qwen3FourBDecodeAttentionCharacterization() {
+        MetricRegistry metrics = new MetricRegistry();
+        Lighter lighter = new Lighter(metrics);
+        int heads = 32;
+        int kvHeads = 8;
+        int headSize = 128;
+        int visibleRows = 2048;
+        int pageRows = 32;
+        int attentionLength = heads * headSize;
+        int kvLength = kvHeads * headSize;
+        int pageCount = (visibleRows + pageRows - 1) / pageRows;
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(new ForkJoinPool(16))) {
+            AbstractModel model = parallelModel(metrics, lighter, pool);
+            TensorOperations legacyOps = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
+                    new ArrayQueueTensorAllocator(metrics), pool);
+            List<AbstractTensor> legacyKeys = new ArrayList<>();
+            List<AbstractTensor> legacyValues = new ArrayList<>();
+            List<TensorRef> refKeys = new ArrayList<>();
+            List<TensorRef> refValues = new ArrayList<>();
+            try (AbstractTensor query = tensor(1, attentionLength, 401);
+                 AbstractTensor legacyOutput = new FloatBufferTensor(TensorShape.of(1, attentionLength));
+                 TensorRef queryRef = TensorRef.borrowed(query);
+                 TensorRef refOutput = lighter.allocate(DType.F32, TensorShape.of(1, attentionLength))) {
+                for (int page = 0; page < pageCount; page++) {
+                    AbstractTensor key = tensor(pageRows, kvLength, 500 + page);
+                    AbstractTensor value = tensor(pageRows, kvLength, 700 + page);
+                    legacyKeys.add(key);
+                    legacyValues.add(value);
+                    refKeys.add(TensorRef.borrowed(key));
+                    refValues.add(TensorRef.borrowed(value));
+                }
+                AbstractTensor[] legacyKeyPages = legacyKeys.toArray(AbstractTensor[]::new);
+                AbstractTensor[] legacyValuePages = legacyValues.toArray(AbstractTensor[]::new);
+                TensorRef[] refKeyPages = refKeys.toArray(TensorRef[]::new);
+                TensorRef[] refValuePages = refValues.toArray(TensorRef[]::new);
+                float scale = 1.0f / (float) Math.sqrt(headSize);
+
+                for (int i = 0; i < 5; i++) {
+                    legacyOutput.clear();
+                    legacyOps.decodePagedAttention(legacyOutput, query, legacyKeyPages, legacyValuePages,
+                            visibleRows, heads, kvHeads, headSize, scale, null);
+                    lighter.clear(refOutput);
+                    new PackedBlockAttention2(model, metrics).decodePagedAttention(refOutput, queryRef, refKeyPages,
+                            refValuePages, visibleRows, heads, kvHeads, headSize, scale, null);
+                }
+                assertClose(legacyOutput, new TensorRefBackedTensor(refOutput), 1.0e-3f);
+
+                int repetitions = 20;
+                long legacyStart = System.nanoTime();
+                for (int i = 0; i < repetitions; i++) {
+                    legacyOutput.clear();
+                    legacyOps.decodePagedAttention(legacyOutput, query, legacyKeyPages, legacyValuePages,
+                            visibleRows, heads, kvHeads, headSize, scale, null);
+                }
+                long legacyNanos = System.nanoTime() - legacyStart;
+
+                PackedBlockAttention2 tensorRefAttention = new PackedBlockAttention2(model, metrics);
+                long refStart = System.nanoTime();
+                for (int i = 0; i < repetitions; i++) {
+                    lighter.clear(refOutput);
+                    tensorRefAttention.decodePagedAttention(refOutput, queryRef, refKeyPages, refValuePages,
+                            visibleRows, heads, kvHeads, headSize, scale, null);
+                }
+                long refNanos = System.nanoTime() - refStart;
+                System.out.printf("[qwen3-4b-decode-attention] visibleRows=%d heads=%d kvHeads=%d headSize=%d "
+                                + "legacy_ms=%.3f tensorRef_ms=%.3f legacy_tok_ms=%.3f tensorRef_tok_ms=%.3f%n",
+                        visibleRows, heads, kvHeads, headSize, legacyNanos / 1_000_000.0,
+                        refNanos / 1_000_000.0, legacyNanos / 1_000_000.0 / repetitions,
+                        refNanos / 1_000_000.0 / repetitions);
+            } finally {
+                refKeys.forEach(TensorRef::close);
+                refValues.forEach(TensorRef::close);
+                legacyKeys.forEach(AbstractTensor::close);
+                legacyValues.forEach(AbstractTensor::close);
             }
         }
     }
@@ -206,6 +291,21 @@ class PackedBlockAttention2ParityTest {
             int length = invocation.getArgument(2);
             io.teknek.deliverance.math.BiIntConsumer action = invocation.getArgument(5);
             action.accept(offset, length);
+            return null;
+        }).when(model).runChunks(Mockito.anyString(), Mockito.anyInt(), Mockito.anyInt(), Mockito.anyInt(),
+                Mockito.any(Optional.class), Mockito.any(io.teknek.deliverance.math.BiIntConsumer.class));
+        return model;
+    }
+
+    private static AbstractModel parallelModel(MetricRegistry metrics, Lighter lighter,
+            WrappedForkJoinPool pool) {
+        AbstractModel model = model(metrics, lighter, pool);
+        Mockito.doAnswer(invocation -> {
+            int offset = invocation.getArgument(1);
+            int length = invocation.getArgument(2);
+            int splitSize = invocation.getArgument(3);
+            io.teknek.deliverance.math.BiIntConsumer action = invocation.getArgument(5);
+            VectorMath.pchunk(offset, length, action, splitSize, pool);
             return null;
         }).when(model).runChunks(Mockito.anyString(), Mockito.anyInt(), Mockito.anyInt(), Mockito.anyInt(),
                 Mockito.any(Optional.class), Mockito.any(io.teknek.deliverance.math.BiIntConsumer.class));

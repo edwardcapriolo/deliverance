@@ -97,6 +97,31 @@ public class Lighter {
         return Map.copyOf(tensorOperations);
     }
 
+    public Map<TensorProviderKind, CompositeOpsProvider> compositeOperationProviders() {
+        return Map.copyOf(compositeOperations);
+    }
+
+    /** Returns the preferred CPU provider for a composite operation. */
+    public TensorOps preferredTensorOperations() {
+        TensorOps ops = tensorOperations.get(TensorProviderKind.SIMD);
+        if (ops != null) return ops;
+        ops = tensorOperations.get(TensorProviderKind.PANAMA);
+        if (ops != null) return ops;
+        ops = tensorOperations.get(TensorProviderKind.NAIVE);
+        if (ops != null) return ops;
+        throw new IllegalStateException("No CPU tensor operations registered");
+    }
+
+    /** Providers in the same priority order used by the composite fallback dispatch. */
+    public java.util.List<TensorOps> orderedTensorOperations() {
+        java.util.ArrayList<TensorOps> result = new java.util.ArrayList<>();
+        for (TensorProviderKind kind : TensorProviderKind.values()) {
+            TensorOps ops = tensorOperations.get(kind);
+            if (ops != null) result.add(ops);
+        }
+        return result;
+    }
+
     public ProviderSelection providersFor(TensorProviderKind... kinds) {
         LinkedHashMap<TensorProviderKind, TensorOps> selected = new LinkedHashMap<>();
         for (TensorProviderKind kind : kinds) {

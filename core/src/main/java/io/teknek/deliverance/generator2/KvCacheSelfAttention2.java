@@ -146,11 +146,12 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
                     TensorRef[] prefixValuePages = null;
                     try {
                         prefixValuePages = readView.valuePageRefs();
-                        packedBlockAttention.decodePagedAttention(attended, query,
-                                appendCurrentPage(prefixKeyPages, currentKeys),
-                                appendCurrentPage(prefixValuePages, currentValues), startPosition + 1,
-                                numberOfHeads, numberOfKeyValueHeads, config.headSize, attentionScale,
-                                config.attnLogitSoftCapping);
+                    compositeOps.decodePagedAttention(attended, query,
+                            appendCurrentPage(prefixKeyPages, currentKeys),
+                            appendCurrentPage(prefixValuePages, currentValues), startPosition + 1,
+                            numberOfHeads, numberOfKeyValueHeads, config.headSize, attentionScale,
+                            config.attnLogitSoftCapping, model.getPool().getUnderlying(),
+                            model.getPool().getCoreCount());
                     } finally {
                         closePrefixPages(prefixKeyPages);
                         closePrefixPages(prefixValuePages);

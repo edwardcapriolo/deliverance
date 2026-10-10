@@ -254,13 +254,18 @@ class KvCacheQkvProjectionCharacterizationTest {
                         "kvcacheselfattention.q_projection.single_pchunk_grouped").time()) {
                     ops.dotProductChunk(queryBatch, input, queryAttnWeights, 0, EMBEDDING_LENGTH, chunkStart, chunkSize);
                 }
-                try (Timer.Context ignoredK = InferenceProfiler.timer(metricRegistry,
-                        "kvcacheselfattention.k_projection.single_pchunk_grouped").time()) {
-                    ops.dotProductChunk(keyBatch, input, keyAttnWeights, 0, EMBEDDING_LENGTH, chunkStart, chunkSize);
-                }
-                try (Timer.Context ignoredV = InferenceProfiler.timer(metricRegistry,
-                        "kvcacheselfattention.v_projection.single_pchunk_grouped").time()) {
-                    ops.dotProductChunk(valueBatch, input, valueAttnWeights, 0, EMBEDDING_LENGTH, chunkStart, chunkSize);
+                int kvChunkSize = Math.min(chunkSize, KV_LENGTH - chunkStart);
+                if (kvChunkSize > 0) {
+                    try (Timer.Context ignoredK = InferenceProfiler.timer(metricRegistry,
+                            "kvcacheselfattention.k_projection.single_pchunk_grouped").time()) {
+                        ops.dotProductChunk(keyBatch, input, keyAttnWeights, 0, EMBEDDING_LENGTH, chunkStart,
+                                kvChunkSize);
+                    }
+                    try (Timer.Context ignoredV = InferenceProfiler.timer(metricRegistry,
+                            "kvcacheselfattention.v_projection.single_pchunk_grouped").time()) {
+                        ops.dotProductChunk(valueBatch, input, valueAttnWeights, 0, EMBEDDING_LENGTH, chunkStart,
+                                kvChunkSize);
+                    }
                 }
             }, 8, pool);
         }

@@ -16,6 +16,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ForkJoinPool;
+import java.util.stream.IntStream;
 
 public final class CompositeOps {
     private static final VectorSpecies<Float> F32_SPECIES = FloatVector.SPECIES_PREFERRED;
@@ -82,6 +84,109 @@ public final class CompositeOps {
         return lighter.supportsActivationMultiplyQuantize(operation);
     }
 
+    /** Generic one-token causal attention over paged KV tensors. */
+    public void decodePagedAttention(TensorRef output, TensorRef query, TensorRef[] keyPages,
+            TensorRef[] valuePages, int visibleRows, int numberOfHeads, int numberOfKeyValueHeads, int headSize,
+            float scale, Float softcap, ForkJoinPool pool, int headSplitSize) {
+        Objects.requireNonNull(pool, "pool");
+        Preconditions.checkArgument(keyPages.length == valuePages.length, "key/value page count mismatch");
+        Preconditions.checkArgument(query.shape().first() == 1 && output.shape().first() == 1,
+                "paged decode attention expects one query row");
+        Preconditions.checkArgument(numberOfKeyValueHeads > 0 && numberOfHeads % numberOfKeyValueHeads == 0,
+                "GQA heads must divide evenly");
+        DecodePagedAttention operation = new DecodePagedAttention(output, query, keyPages, valuePages, visibleRows,
+                numberOfHeads, numberOfKeyValueHeads, headSize, scale, softcap, pool, headSplitSize);
+        for (CompositeOpsProvider provider : lighter.compositeOperationProviders().values()) {
+            if (provider.supportsDecodePagedAttention(operation)) {
+                if (provider.decodePagedAttention(operation).isRight()) {
+                    return;
+                }
+            }
+        }
+        decodePagedAttentionFallback(operation);
+    }
+
+    private void decodePagedAttentionFallback(DecodePagedAttention operation) {
+        TensorRef output = operation.output();
+        TensorRef query = operation.query();
+        TensorRef[] keyPages = operation.keyPages();
+        TensorRef[] valuePages = operation.valuePages();
+        int visibleRows = operation.visibleRows();
+        int numberOfHeads = operation.numberOfHeads();
+        int numberOfKeyValueHeads = operation.numberOfKeyValueHeads();
+        int headSize = operation.headSize();
+        float scale = operation.scale();
+        Float softcap = operation.softcap();
+        ForkJoinPool pool = operation.pool();
+        int headSplitSize = operation.headSplitSize();
+        int headGroupSize = numberOfHeads / numberOfKeyValueHeads;
+        output.memorySegment().fill((byte) 0);
+        java.util.List<TensorOps> ops = lighter.orderedTensorOperations();
+        // Match the legacy VectorMath.pfor scheduling: one logical task per head,
+        // executed as a parallel stream inside the supplied model pool.
+        pool.submit(() -> IntStream.range(0, numberOfHeads).parallel().forEach(head ->
+                decodePagedAttentionHead(output, query, keyPages, valuePages, visibleRows,
+                        headGroupSize, headSize, scale, softcap, head, ops))).join();
+    }
+
+    private void decodePagedAttentionHead(TensorRef output, TensorRef query, TensorRef[] keyPages,
+            TensorRef[] valuePages, int visibleRows, int headGroupSize, int headSize, float scale,
+            Float softcap, int head, java.util.List<TensorOps> providers) {
+        int kvOffset = (head / headGroupSize) * headSize;
+        int queryOffset = head * headSize;
+        try (TensorRef scores = lighter.allocate(io.teknek.deliverance.DType.F32,
+                io.teknek.deliverance.tensor.TensorShape.of(1, visibleRows))) {
+            int globalRow = 0;
+            for (int pageIndex = 0; pageIndex < keyPages.length; pageIndex++) {
+                if (globalRow >= visibleRows) break;
+                TensorRef keyPage = keyPages[pageIndex];
+                int rows = pageRows(keyPage, pageIndex, keyPages.length, globalRow, visibleRows);
+                if (rows <= 0) continue;
+                batchDotProduct(providers, new BatchDotProduct().result(scores).a(query).b(keyPage)
+                        .aColumnOffset(queryOffset).bColumnOffset(kvOffset).columnLength(headSize)
+                        .resultRowOffset(globalRow).bRowOffset(0).rowChunkSize(rows));
+                globalRow += rows;
+            }
+            scaledSoftMaxBody(new ScaledSoftMax(scale).target(scores).offsetAndLength(0, visibleRows)
+                    .softcap(softcap), Map.of());
+            globalRow = 0;
+            for (int pageIndex = 0; pageIndex < valuePages.length; pageIndex++) {
+                if (globalRow >= visibleRows) break;
+                TensorRef valuePage = valuePages[pageIndex];
+                int rows = pageRows(valuePage, pageIndex, valuePages.length, globalRow, visibleRows);
+                if (rows <= 0) continue;
+                saxpy(providers, scores, valuePage, output, kvOffset, queryOffset, headSize,
+                        globalRow, 0, rows);
+                globalRow += rows;
+            }
+        }
+    }
+
+    private void batchDotProduct(java.util.List<TensorOps> providers, BatchDotProduct operation) {
+        for (TensorOps provider : providers) {
+            if (provider.batchDotProduct(operation).isRight()) return;
+        }
+        throw new IllegalStateException("No tensor provider supports paged attention QK");
+    }
+
+    private void saxpy(java.util.List<TensorOps> providers, TensorRef alpha, TensorRef x, TensorRef y,
+            int xOffset, int yOffset, int length, int alphaOffset, int xRowOffset, int batchSize) {
+        for (TensorOps provider : providers) {
+            if (provider.saxpy(alpha, x, y, xOffset, yOffset, length, alphaOffset, xRowOffset, batchSize).isRight()) {
+                return;
+            }
+        }
+        throw new IllegalStateException("No tensor provider supports paged attention value accumulation");
+    }
+
+    private int pageRows(TensorRef page, int pageIndex, int pageCount, int globalRow, int visibleRows) {
+        if (pageIndex == pageCount - 1) {
+            return Math.min(page.shape().first(), visibleRows - globalRow);
+        }
+        int prefixRows = visibleRows - 1;
+        return Math.min(page.shape().first(), prefixRows - globalRow);
+    }
+
     public void softMax(ScaledSoftMax operation) {
         scaledSoftMax(operation);
     }
@@ -92,29 +197,30 @@ public final class CompositeOps {
 
     public void scaledSoftMax(ScaledSoftMax operation, Map<String, String> tags) {
         validateScaledSoftMax(operation);
-        run("tensor2.composite.scaled_softmax", operation.getTarget(), operation.getLength(), tags, () -> {
-            TensorRef target = operation.getTarget();
-            int offset = operation.getOffset();
-            int length = operation.getLength();
-            int limit = offset + length;
-            float maxVal = transformForAttentionSoftmax(target.underlying().get(0, offset), operation.getScale(),
+        run("tensor2.composite.scaled_softmax", operation.getTarget(), operation.getLength(), tags,
+                () -> scaledSoftMaxBody(operation, tags));
+    }
+
+    private void scaledSoftMaxBody(ScaledSoftMax operation, Map<String, String> tags) {
+        TensorRef target = operation.getTarget();
+        int offset = operation.getOffset();
+        int length = operation.getLength();
+        int limit = offset + length;
+        float maxVal = transformForAttentionSoftmax(target.underlying().get(0, offset), operation.getScale(),
+                operation.getSoftcap());
+        for (int i = offset + 1; i < limit; i++) {
+            float value = transformForAttentionSoftmax(target.underlying().get(0, i), operation.getScale(),
                     operation.getSoftcap());
-            for (int i = offset + 1; i < limit; i++) {
-                float value = transformForAttentionSoftmax(target.underlying().get(0, i), operation.getScale(),
-                        operation.getSoftcap());
-                if (value > maxVal) {
-                    maxVal = value;
-                }
-            }
-            float sum = 0.0f;
-            for (int i = offset; i < limit; i++) {
-                float value = transformForAttentionSoftmax(target.underlying().get(0, i), operation.getScale(),
-                        operation.getSoftcap());
-                target.underlying().set((float) FastMath.exp(value - maxVal), 0, i);
-                sum += target.underlying().get(0, i);
-            }
-            multiplyInPlace(new MultiplyInPlace(1.0f / sum).target(target).offsetAndLength(offset, length), tags);
-        });
+            if (value > maxVal) maxVal = value;
+        }
+        float sum = 0.0f;
+        for (int i = offset; i < limit; i++) {
+            float value = transformForAttentionSoftmax(target.underlying().get(0, i), operation.getScale(),
+                    operation.getSoftcap());
+            target.underlying().set((float) FastMath.exp(value - maxVal), 0, i);
+            sum += target.underlying().get(0, i);
+        }
+        multiplyInPlace(new MultiplyInPlace(1.0f / sum).target(target).offsetAndLength(offset, length), tags);
     }
 
     /** Applies configured RoPE to the contiguous query/key heads in a TensorRef. */
