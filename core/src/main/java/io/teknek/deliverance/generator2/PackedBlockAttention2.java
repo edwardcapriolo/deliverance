@@ -131,6 +131,16 @@ public final class PackedBlockAttention2 {
 
     public void decodePagedAttention(TensorRef output, TensorRef query, TensorRef[] keyPages, TensorRef[] valuePages,
             int visibleRows, int numberOfHeads, int numberOfKeyValueHeads, int headSize, float scale, Float softcap) {
+        try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
+                "packedblockattention2.decode_paged_attention").time()) {
+            model.getCompositeOps().decodePagedAttention(output, query, keyPages, valuePages, visibleRows,
+                    numberOfHeads, numberOfKeyValueHeads, headSize, scale, softcap,
+                    model.getPool().getUnderlying(), model.getPool().getCoreCount());
+        }
+    }
+
+    private void decodePagedAttentionFallback(TensorRef output, TensorRef query, TensorRef[] keyPages, TensorRef[] valuePages,
+            int visibleRows, int numberOfHeads, int numberOfKeyValueHeads, int headSize, float scale, Float softcap) {
         Preconditions.checkArgument(keyPages.length == valuePages.length, "key/value page count mismatch");
         Preconditions.checkArgument(query.shape().first() == 1, "decode query must have one row");
         Preconditions.checkArgument(output.shape().first() == 1, "decode output must have one row");

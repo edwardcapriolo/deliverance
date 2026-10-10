@@ -11,4 +11,12 @@ public interface CompositeOpsProvider {
     default Either<OpSupport, Void> activationMultiplyQuantize(ActivationMultiplyQuantize operation) {
         return Either.Left(OpSupport.Unsupported);
     }
+
+    default boolean supportsDecodePagedAttention(DecodePagedAttention operation) {
+        return false;
+    }
+
+    default Either<OpSupport, Void> decodePagedAttention(DecodePagedAttention operation) {
+        return Either.Left(OpSupport.Unsupported);
+    }
 }
