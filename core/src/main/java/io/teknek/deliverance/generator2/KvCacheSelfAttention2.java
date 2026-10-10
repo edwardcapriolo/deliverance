@@ -15,6 +15,7 @@ import io.teknek.deliverance.tensor.kv.KvWriteCursor;
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.BatchDotProduct;
 import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.safetensors.LoraLayerDelta;
 import io.teknek.deliverance.generator.ForwardPhase;
 
 import java.util.List;
@@ -235,6 +236,12 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
                 project(value, input, valueAttentionWeights, config.embeddingLength, kvLength,
                         "kvcacheselfattention2.v_projection", model.primaryTensorOperations().parallelSplitSize(), phase);
             }
+            applyLora(queryWeightName, query, input, phase,
+                    "kvcacheselfattention2.q_lora");
+            applyLora(keyWeightName, key, input, phase,
+                    "kvcacheselfattention2.k_lora");
+            applyLora(valueWeightName, value, input, phase,
+                    "kvcacheselfattention2.v_lora");
             model.emitLayerDebug(layerIndex, "query_projection", query);
             model.emitLayerDebug(layerIndex, "key_projection", key);
             model.emitLayerDebug(layerIndex, "value_projection", value);
@@ -341,6 +348,8 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
                                      attentionLength, chunkStart, chunkSize, phase);
                         });
             }
+            applyLora(outputWeightName, output, projectionInput, phase,
+                    "kvcacheselfattention2.o_lora");
             if (model.getTensorParallelContext().enabled()) {
                 throw new UnsupportedOperationException("TensorRef attention output projection all-reduce is not ported");
             }
@@ -366,6 +375,14 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
                     .resultRowOffset(0).bRowOffset(chunkStart).rowChunkSize(chunkSize));
         } else {
             lighter.dotProductRows(output, input, weight, 0, inputLength, chunkStart, chunkSize, chunkStart);
+        }
+    }
+
+    private void applyLora(String weightName, TensorRef output, TensorRef input,
+            ForwardPhase phase, String metricName) {
+        if (weightName != null) {
+            model.activeLoraDeltaFor(weightName)
+                    .ifPresent(value -> LoraDeltaApplier2.apply(model, lighter, output, input, value, phase, metricName));
         }
     }
 

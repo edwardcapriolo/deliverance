@@ -1,0 +1,2 @@
+timestamp,engine,model,case_id,category,turn,prompt_chars,prompt_tokens,generated_tokens,total_ms,generation_ms,tokens_per_second,response_chars,finish_reason
+"2026-10-09T15:34:08.984284Z","deliverance","tjake/gemma-2-2b-it-JQ4","builtin-reasoning-1","reasoning",1,602,126,256,29191.8845,24583.227541,10.372925994957743,1005,"MAX_TOKENS"

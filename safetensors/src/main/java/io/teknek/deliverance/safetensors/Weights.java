@@ -9,8 +9,6 @@ import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.impl.*;
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.TensorRef;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -19,7 +17,6 @@ import java.nio.ShortBuffer;
 import java.util.*;
 
 public class Weights implements WeightLoader {
-    private static final Logger logger = LoggerFactory.getLogger(Weights.class);
     private final Map<String, String> metadata;
     private final Map<String, TensorInfo> tensorInfoMap;
     private final ByteBuffer bytes;
@@ -77,7 +74,8 @@ public class Weights implements WeightLoader {
                 .order(ByteOrder.LITTLE_ENDIAN)
                 .position(Ints.checkedCast(info.dataOffsets[0]))
                 .limit(Ints.checkedCast(info.dataOffsets[1]));
-        return loadTensorFromBuffer(name, info.dType, majorityDType, toTensorShape(info.shape), b, parent.orElse(this));
+        return loadTensorFromBuffer(name, info.dType, majorityDType, toTensorShape(info.shape), b,
+                parent.orElse(this));
     }
 
     TensorRef loadRef(String name, Lighter lighter, WeightLoader sidecarLoader) {
@@ -85,27 +83,19 @@ public class Weights implements WeightLoader {
         if (info == null) {
             throw new NoSuchElementException(name + " not found in weights");
         }
-        ByteBuffer b = bytes.duplicate()
-                .order(ByteOrder.LITTLE_ENDIAN)
-                .position(Ints.checkedCast(info.dataOffsets[0]))
-                .limit(Ints.checkedCast(info.dataOffsets[1]))
-                .slice()
-                .order(ByteOrder.LITTLE_ENDIAN);
+        int payloadOffset = Ints.checkedCast(info.dataOffsets[0]);
+        int payloadLength = Ints.checkedCast(info.dataOffsets[1] - info.dataOffsets[0]);
         TensorShape shape = toTensorShape(info.shape);
-        TensorRef ref = lighter.allocate(info.dType, shape);
-        try {
-            lighter.copyFrom(b, ref);
-            if (info.dType == DType.Q4 || info.dType == DType.I8) {
-                TensorRef sourceScale = sidecarLoader.loadRef(name + ".qb");
-                try (sourceScale) {
-                    lighter.copyScale(sourceScale, ref);
-                }
-            }
-            return ref;
-        } catch (RuntimeException e) {
-            ref.close();
-            throw e;
+        Map<String, TensorRef> sidecars = Map.of();
+        if (info.dType == DType.Q4 || info.dType == DType.I8) {
+            String sidecarName = info.dType == DType.Q4 ? "q4.scale" : "q8.scale";
+            sidecars = Map.of(sidecarName, sidecarLoader.loadRef(name + ".qb"));
         }
+        return TensorRef.mapped(this.bytes, payloadOffset, payloadLength, shape, info.dType, stride(shape), sidecars);
+    }
+
+    private static int stride(TensorShape shape) {
+        return shape.first() > 1 && shape.dims() == 2 ? shape.getOffset(1, 0) : 0;
     }
 
     TensorRef loadRef(String name, TensorShardSpec shardSpec, Lighter lighter, WeightLoader sidecarLoader) {

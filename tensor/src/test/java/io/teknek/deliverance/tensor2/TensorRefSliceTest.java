@@ -5,6 +5,10 @@ import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.dysfx.exception.UnreachableException;
 import org.junit.jupiter.api.Test;
 
+import java.lang.foreign.MemorySegment;
+import java.nio.ByteBuffer;
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -41,5 +45,25 @@ class TensorRefSliceTest {
 
         assertThrows(UnreachableException.class, row::shape);
         assertThrows(UnreachableException.class, () -> row.underlying().get(0, 0));
+    }
+
+    @Test
+    void mappedTensorReusesItsMemorySegmentView() {
+        try (TensorRef byteBufferRef = TensorRef.mapped(ByteBuffer.allocateDirect(16), 4, 8,
+                TensorShape.of(1, 2), DType.F32, 0, Map.of())) {
+            MemorySegment first = byteBufferRef.memorySegment();
+            assertSame(first, byteBufferRef.memorySegment(),
+                    "mapped weights are read in inner loops and must reuse their segment view");
+            assertEquals(8, first.byteSize());
+        }
+
+        MemorySegment storage = MemorySegment.ofBuffer(ByteBuffer.allocateDirect(16));
+        try (TensorRef segmentRef = TensorRef.mapped(storage, 4, 8,
+                TensorShape.of(1, 2), DType.F32, 0, Map.of())) {
+            MemorySegment first = segmentRef.memorySegment();
+            assertSame(first, segmentRef.memorySegment(),
+                    "mapped weights are read in inner loops and must reuse their segment view");
+            assertEquals(8, first.byteSize());
+        }
     }
 }
