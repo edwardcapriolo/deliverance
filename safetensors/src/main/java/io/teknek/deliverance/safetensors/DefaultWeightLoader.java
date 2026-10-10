@@ -111,7 +111,8 @@ public class DefaultWeightLoader implements WeightLoader {
         private LoadedWeights openWeights() {
             try {
                 loadWeights();
-                return new LoadedWeights(modelRoot, index, fileMap, allTensorInfoMap, weightMap, findDType(allTensorInfoMap));
+                return new LoadedWeights(modelRoot, index, fileMap, allTensorInfoMap, weightMap,
+                        findDType(allTensorInfoMap));
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }

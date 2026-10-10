@@ -90,6 +90,7 @@ GEMMA2_CONFIG=${GEMMA2_CONFIG:-""}
 run_model qwen06b edwardcapriolo Qwen3-0.6B-JQ4 "$QWEN06_CONFIG"
 run_model qwen4b edwardcapriolo Qwen3-4B-JQ4 "$QWEN4B_CONFIG"
 run_model gemma2b tjake gemma-2-2b-it-JQ4 "$GEMMA2_CONFIG"
+run_model llama32b tjake Llama-3.2-3B-Instruct-JQ4 ""
 run_model qwen06b-tp edwardcapriolo Qwen3-0.6B-JQ4 "$QWEN06_TP_CONFIG" "--tensor-parallel-size $QWEN06_TP_SIZE --tensor-parallel-max-ranks-per-worker $QWEN06_TP_MAX_RANKS_PER_WORKER"
 
 printf '\n[smoke] results=%s\n' "$BENCHMARK_RUN_DIR"

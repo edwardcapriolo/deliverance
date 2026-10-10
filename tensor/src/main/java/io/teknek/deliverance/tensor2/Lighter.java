@@ -79,6 +79,8 @@ public class Lighter {
                 java.util.Objects.requireNonNull(ops, "ops"));
         if (ops instanceof CompositeOpsProvider composite) {
             compositeOperations.put(kind, composite);
+        } else {
+            compositeOperations.remove(kind);
         }
     }
 
@@ -277,6 +279,13 @@ public class Lighter {
         return currentBytes != null && desiredBytes != null && desiredBytes < currentBytes;
     }
 
+    /**
+     * Converts {@code input} into a newly allocated tensor of {@code outputDType}.
+     *
+     * <p>This is a convenience method, not an in-place conversion. Hot paths should generally
+     * allocate their final destination and use {@link #reshape(TensorRef, TensorRef)} to avoid an
+     * intermediate tensor and a subsequent copy.</p>
+     */
     public TensorRef reshape(TensorRef input, DType outputDType) {
         Preconditions.checkArgument(input != null, "Input tensor must be set");
         Preconditions.checkArgument(outputDType != null, "Output dtype must be set");
@@ -290,6 +299,13 @@ public class Lighter {
         }
     }
 
+    /**
+     * Converts {@code input} directly into the caller-owned {@code output} tensor.
+     *
+     * <p>Prefer this overload when the destination is already known, especially in model
+     * execution loops. It avoids the intermediate allocation performed by
+     * {@link #reshape(TensorRef, DType)}.</p>
+     */
     public void reshape(TensorRef input, TensorRef output) {
         Preconditions.checkArgument(input != null, "Input tensor must be set");
         Preconditions.checkArgument(output != null, "Output tensor must be set");

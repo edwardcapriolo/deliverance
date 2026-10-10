@@ -9,8 +9,12 @@ import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import io.teknek.dysfx.exception.UnreachableException;
 
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class TensorRef implements AutoCloseable {
@@ -55,6 +59,38 @@ public class TensorRef implements AutoCloseable {
         return new TensorRef(ref.state.get(), null, tensor::close);
     }
 
+    /** Creates a read-only TensorRef directly over mapped safetensor storage. */
+    public static TensorRef mapped(MemorySegment payload, TensorShape shape, DType dType, int stride,
+            Map<String, TensorRef> sidecars) {
+        return mapped(payload, 0, payload.byteSize(), shape, dType, stride, sidecars);
+    }
+
+    public static TensorRef mapped(MemorySegment payload, long payloadOffset, long payloadLength,
+            TensorShape shape, DType dType, int stride, Map<String, TensorRef> sidecars) {
+        Objects.requireNonNull(payload, "payload");
+        Objects.requireNonNull(shape, "shape");
+        Objects.requireNonNull(dType, "dType");
+        return new TensorRef(new TensorRefState(LeaseState.USED, null,
+                new MappedTensor(payload, payloadOffset, payloadLength, shape, dType, sidecars), shape, dType, stride,
+                        "cpu", sidecars, null));
+    }
+
+    /** Creates a read-only TensorRef over an existing mapped safetensor buffer. */
+    public static TensorRef mapped(ByteBuffer payload, TensorShape shape, DType dType, int stride,
+            Map<String, TensorRef> sidecars) {
+        return mapped(payload, 0, payload.remaining(), shape, dType, stride, sidecars);
+    }
+
+    public static TensorRef mapped(ByteBuffer payload, int payloadOffset, int payloadLength,
+            TensorShape shape, DType dType, int stride, Map<String, TensorRef> sidecars) {
+        Objects.requireNonNull(payload, "payload");
+        Objects.requireNonNull(shape, "shape");
+        Objects.requireNonNull(dType, "dType");
+        return new TensorRef(new TensorRefState(LeaseState.USED, null,
+                new MappedTensor(payload, payloadOffset, payloadLength, shape, dType, sidecars), shape, dType, stride,
+                        "cpu", sidecars, null));
+    }
+
     private static TensorRef borrowed(AbstractTensor tensor, Map<String, TensorRef> sidecars) {
         return new TensorRef(new TensorRefState(LeaseState.USED, null, new Tensor() {
             @Override
@@ -87,6 +123,136 @@ public class TensorRef implements AutoCloseable {
                 return tensor.getMemorySegmentOffset(offset);
             }
         }, tensor.shape(), tensor.dType(), tensor.getStride(), "cpu", sidecars, null));
+    }
+
+    private static final class MappedTensor extends Tensor {
+        private final ByteBuffer payload;
+        private final int payloadOffset;
+        private final MemorySegment segment;
+        private final long segmentOffset;
+        private final MemorySegment memorySegment;
+        private final TensorShape shape;
+        private final DType dType;
+        private final TensorRef scaleSidecar;
+
+        private MappedTensor(MemorySegment payload, TensorShape shape, DType dType) {
+            this(payload, 0, payload.byteSize(), shape, dType, Map.of());
+        }
+
+        private MappedTensor(MemorySegment payload, long payloadOffset, long payloadLength,
+                TensorShape shape, DType dType, Map<String, TensorRef> sidecars) {
+            this.payload = null;
+            this.payloadOffset = 0;
+            this.segment = payload;
+            this.segmentOffset = payloadOffset;
+            this.memorySegment = payload.asSlice(payloadOffset, payloadLength);
+            this.shape = shape;
+            this.dType = dType;
+            this.scaleSidecar = sidecars.get(dType == DType.I8
+                    ? Q8Layout.SCALE_SIDECAR : Q4Layout.SCALE_SIDECAR);
+        }
+
+        private MappedTensor(ByteBuffer payload, TensorShape shape, DType dType) {
+            this(payload, 0, payload.remaining(), shape, dType, Map.of());
+        }
+
+        private MappedTensor(ByteBuffer payload, int payloadOffset, int payloadLength,
+                TensorShape shape, DType dType, Map<String, TensorRef> sidecars) {
+            this.payload = payload.order(ByteOrder.LITTLE_ENDIAN);
+            this.payloadOffset = payloadOffset;
+            this.segment = null;
+            this.segmentOffset = 0;
+            this.memorySegment = MemorySegment.ofBuffer(payload).asSlice(payloadOffset, payloadLength);
+            this.shape = shape;
+            this.dType = dType;
+            this.scaleSidecar = sidecars.get(dType == DType.I8
+                    ? Q8Layout.SCALE_SIDECAR : Q4Layout.SCALE_SIDECAR);
+        }
+
+        @Override
+        public float get(int... dims) {
+            return getAt(shape.getOffset(dims));
+        }
+
+        @Override
+        public float get(int row, int column) {
+            return getAt(shape.getOffset(row, column));
+        }
+
+        private float getAt(int offset) {
+            long byteOffset = switch (dType) {
+                case Q4 -> q4ByteOffset(offset);
+                case F32 -> offset * 4L;
+                default -> offset * (long) dType.size();
+            };
+            if (payload != null) {
+                return switch (dType) {
+                    case F32 -> payload.getFloat(Math.toIntExact(payloadOffset + byteOffset));
+                    case BF16 -> io.teknek.deliverance.math.FloatConversions.bFloat16ToFloat32(
+                            payload.getShort(Math.toIntExact(payloadOffset + byteOffset)));
+                    case F16 -> Float.float16ToFloat(
+                            payload.getShort(Math.toIntExact(payloadOffset + byteOffset)));
+                    case I8 -> i8Value(offset, payload.get(Math.toIntExact(payloadOffset + byteOffset)));
+                    case Q4 -> q4Value(offset, payload.get(Math.toIntExact(payloadOffset + byteOffset)));
+                    default -> throw new UnsupportedOperationException("Mapped scalar reads do not support " + dType);
+                };
+            }
+            return switch (dType) {
+                case F32 -> segment.get(ValueLayout.JAVA_FLOAT_UNALIGNED, segmentOffset + byteOffset);
+                case BF16 -> io.teknek.deliverance.math.FloatConversions.bFloat16ToFloat32(
+                        segment.get(ValueLayout.JAVA_SHORT_UNALIGNED, segmentOffset + byteOffset));
+                case F16 -> Float.float16ToFloat(
+                        segment.get(ValueLayout.JAVA_SHORT_UNALIGNED, segmentOffset + byteOffset));
+                case I8 -> i8Value(offset, segment.get(ValueLayout.JAVA_BYTE, segmentOffset + byteOffset));
+                case Q4 -> q4Value(offset, segment.get(ValueLayout.JAVA_BYTE, segmentOffset + byteOffset));
+                default -> throw new UnsupportedOperationException("Mapped scalar reads do not support " + dType);
+            };
+        }
+
+        private float q4Value(int offset, byte packed) {
+            if (scaleSidecar == null) {
+                throw new UnsupportedOperationException("Scalar Q4 reads require a Q4 scale sidecar");
+            }
+            int nibble = offset % Q4Layout.BLOCK_SIZE < Q4Layout.HALF_BLOCK
+                    ? packed & 0x0F : (packed >>> 4) & 0x0F;
+            int row = shape.dims() == 2 ? offset / shape.last() : 0;
+            int column = shape.dims() == 2 ? offset % shape.last() : offset;
+            return (nibble - 8) * scaleSidecar.get(row, column / Q4Layout.BLOCK_SIZE);
+        }
+
+        private float i8Value(int offset, byte value) {
+            if (scaleSidecar == null) {
+                throw new UnsupportedOperationException("Scalar I8 reads require an I8 scale sidecar");
+            }
+            int row = shape.dims() == 2 ? offset / shape.last() : 0;
+            int column = shape.dims() == 2 ? offset % shape.last() : offset;
+            return value * scaleSidecar.get(row, column / Q8Layout.BLOCK_SIZE);
+        }
+
+        private static int q4ByteOffset(int offset) {
+            return (offset / Q4Layout.BLOCK_SIZE) * Q4Layout.HALF_BLOCK
+                    + offset % Q4Layout.HALF_BLOCK;
+        }
+
+        @Override
+        public void set(float value, int row, int column) {
+            throw new UnsupportedOperationException("Mapped model weights are read-only");
+        }
+
+        @Override
+        public void set(float value, int... dims) {
+            throw new UnsupportedOperationException("Mapped model weights are read-only");
+        }
+
+        @Override
+        public MemorySegment getMemorySegment() {
+            return memorySegment;
+        }
+
+        @Override
+        public int getMemorySegmentOffset(int offset) {
+            return dType == DType.Q4 ? offset / 2 : offset * dType.size();
+        }
     }
 
     private TensorRefState requireOpen() {

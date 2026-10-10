@@ -252,6 +252,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     private final ConcurrentMap<String, TensorPlan.ImmutableTensor> modelLineageTensors = new ConcurrentHashMap<>();
     private final Queue<ModelLineageEntry> modelLineageEntries = new ConcurrentLinkedQueue<>();
     private final Queue<TensorRef> modelTensorRefs = new ConcurrentLinkedQueue<>();
+    private final Set<TensorRef> registeredModelTensorRefSet = ConcurrentHashMap.newKeySet();
     private final Map<KvBufferCache.KvBuffer, KvCacheSession> kvCache2SessionAdapters = Collections.synchronizedMap(new WeakHashMap<>());
     private Optional<TensorRuntimeMode> tensorRuntimeMode = Optional.empty();
     private TensorRuntime tensorRuntime;
@@ -373,6 +374,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         logger.debug("model init complete config={} inference_type={} layers={}", config.getClass().getSimpleName(),
                 inferenceType, this.transformerBlocks == null ? 0 : this.transformerBlocks.length);
     }
+
 
     private DType resolveWorkingQType(DType requestedWorkingQType) {
         if (requestedWorkingQType == null) {
@@ -983,6 +985,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         kvCache2SessionAdapters.clear();
         modelTensorRefs.forEach(TensorRef::close);
         modelTensorRefs.clear();
+        registeredModelTensorRefSet.clear();
         closeTensorOperations();
         try {
             weights.close();
@@ -2163,8 +2166,11 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     }
 
     protected TensorRef registerModelTensorRef(TensorRef ref) {
-        modelTensorRefs.add(Objects.requireNonNull(ref, "ref"));
-        return ref;
+        TensorRef registered = Objects.requireNonNull(ref, "ref");
+        if (registeredModelTensorRefSet.add(registered)) {
+            modelTensorRefs.add(registered);
+        }
+        return registered;
     }
 
     protected TensorRef loadAndMaybeQuantizedExcluding1DTensors(String name,

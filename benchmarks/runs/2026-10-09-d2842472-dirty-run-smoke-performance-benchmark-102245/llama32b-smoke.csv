@@ -1,0 +1,2 @@
+timestamp,engine,model,case_id,category,turn,prompt_chars,prompt_tokens,generated_tokens,total_ms,generation_ms,tokens_per_second,response_chars,finish_reason
+"2026-10-09T14:26:59.458231Z","deliverance","tjake/Llama-3.2-3B-Instruct-JQ4","builtin-reasoning-1","reasoning",1,775,154,256,23483.396417,19760.849459,12.904303558866559,1109,"MAX_TOKENS"

@@ -11,6 +11,7 @@ import io.teknek.deliverance.tensor2.DotProductBatchChunk;
 import io.teknek.deliverance.tensor2.ActivationMultiplyQuantize;
 import io.teknek.deliverance.tensor2.MultiplyAccumulate;
 import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.safetensors.LoraLayerDelta;
 
 import java.util.Collections;
 import java.util.List;
@@ -64,9 +65,6 @@ public class MLPBlock2 implements FeedForward2 {
         if (model.getTensorParallelContext().enabled() && gateWeights.shape().first() != hiddenLength) {
             throw new UnsupportedOperationException("TensorRef tensor-parallel MLP is not ported");
         }
-        if (hasActiveLoraDelta()) {
-            throw new UnsupportedOperationException("TensorRef MLP LoRA is not ported");
-        }
         TensorRef gate = model.makeDenseTensorRef(batchSize, hiddenLength);
         TensorRef up = model.makeDenseTensorRef(batchSize, hiddenLength);
         TensorRef output = model.makeDenseTensorRef(batchSize, embeddingLength);
@@ -99,6 +97,8 @@ public class MLPBlock2 implements FeedForward2 {
                     }
                 });
             }
+            applyLora(gateWeightName, gate, input, phase, "mlpblock2.gate_lora");
+            applyLora(upWeightName, up, input, phase, "mlpblock2.up_lora");
             ActivationMultiplyQuantize fused = new ActivationMultiplyQuantize(gate, up,
                     model.getConfig().activationFunction, model.getWorkingQType())
                     .offsetAndLength(0, hiddenLength);
@@ -121,8 +121,10 @@ public class MLPBlock2 implements FeedForward2 {
                 model.runChunks("mlpblock2.down_projection", 0, embeddingLength,
                         model.primaryTensorOperations().parallelSplitSize(), Optional.empty(), (chunkStart, chunkSize) ->
                                 projectChunk(output, downInputForChunks, downWeights, hiddenLength, chunkStart,
-                                        chunkSize, phase));
+                                 chunkSize, phase));
             }
+            applyLora(downWeightName, output, downInputForChunks, phase,
+                    "mlpblock2.down_lora");
             tensorReducer.ifPresent(func -> func.accept(Collections.singletonList(output)));
             return output;
         } catch (RuntimeException | Error e) {
@@ -166,5 +168,13 @@ public class MLPBlock2 implements FeedForward2 {
         return gateWeightName != null && model.activeLoraDeltaFor(gateWeightName).isPresent()
                 || upWeightName != null && model.activeLoraDeltaFor(upWeightName).isPresent()
                 || downWeightName != null && model.activeLoraDeltaFor(downWeightName).isPresent();
+    }
+
+    private void applyLora(String weightName, TensorRef output, TensorRef input,
+            ForwardPhase phase, String metricName) {
+        if (weightName != null) {
+            model.activeLoraDeltaFor(weightName)
+                    .ifPresent(value -> LoraDeltaApplier2.apply(model, lighter, output, input, value, phase, metricName));
+        }
     }
 }
