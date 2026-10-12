@@ -9,9 +9,12 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.Map;
+import java.util.Random;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Provider-specific coverage for every CompositeOps operation. */
 class CompositeOpsProviderFuzzTest {
@@ -184,6 +187,62 @@ class CompositeOpsProviderFuzzTest {
             assertValues(target, expected, 1.0e-5f);
         }
     }
+
+    @org.junit.jupiter.api.Test
+    void nativeQ8SaxpyBatchMatchesReferenceAcrossAlignedWindows() {
+        Assumptions.assumeTrue(NativeOps.isAvailable(), "simd is unavailable");
+        MetricRegistry metrics = new MetricRegistry();
+        Lighter lighter = new Lighter(metrics);
+        NativeOps nativeOps = new NativeOps();
+        lighter.putTensorOperations(TensorProviderKind.SIMD, nativeOps);
+        Random random = new Random(0x51A7C0DE);
+        for (int iteration = 0; iteration < 64; iteration++) {
+            int rows = 2 + random.nextInt(5);
+            int columns = 160 + random.nextInt(4) * 32;
+            int xOffset = random.nextInt(3) * 32;
+            int length = (1 + random.nextInt(3)) * 32;
+            int yOffset = random.nextInt(columns - length + 1);
+            int xRowOffset = random.nextInt(rows);
+            int batchSize = 1 + random.nextInt(rows - xRowOffset);
+            int alphaOffset = random.nextInt(1 + rows - batchSize);
+            try (TensorRef dense = lighter.allocate(DType.F32, TensorShape.of(rows, columns));
+                 TensorRef x = lighter.reshape(dense, DType.I8);
+                 TensorRef alpha = lighter.allocate(DType.F32, TensorShape.of(1, rows + 2));
+                 TensorRef y = lighter.allocate(DType.F32, TensorShape.of(1, columns))) {
+                fill(dense, random.nextInt());
+                fill(alpha, random.nextInt());
+                fill(y, random.nextInt());
+                TensorRef scale = Q8Layout.scale(x);
+                assertNotNull(scale, "production Q8 reshape must create scale sidecar");
+                float[] expected = new float[columns];
+                for (int column = 0; column < columns; column++) {
+                    expected[column] = y.get(0, column);
+                }
+                for (int row = 0; row < batchSize; row++) {
+                    float factor = alpha.get(0, alphaOffset + row);
+                    for (int column = 0; column < length; column++) {
+                        int sourceColumn = xOffset + column;
+                        float blockScale = scale.get(xRowOffset + row, sourceColumn / Q8Layout.BLOCK_SIZE);
+                        float original = dense.get(xRowOffset + row, sourceColumn);
+                        float dequantized = blockScale == 0.0f
+                                ? 0.0f
+                                : Math.round(original / blockScale) * blockScale;
+                        assertEquals(dequantized, x.get(xRowOffset + row, sourceColumn), 1.0e-5f,
+                                "quantized value iteration=" + iteration + " row=" + row
+                                        + " column=" + sourceColumn);
+                        expected[yOffset + column] += factor * dequantized;
+                    }
+                }
+                assertTrue(nativeOps.saxpy(alpha, x, y, xOffset, yOffset, length, alphaOffset, xRowOffset,
+                        batchSize).isRight(), "native Q8 saxpy must support the generated window");
+                for (int column = 0; column < columns; column++) {
+                    assertEquals(expected[column], y.get(0, column), 2.0e-4f,
+                            "iteration=" + iteration + " column=" + column);
+                }
+            }
+        }
+    }
+
 
     static Stream<Arguments> providers() {
         return Stream.of(

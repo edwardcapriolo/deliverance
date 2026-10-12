@@ -778,6 +778,10 @@ class PanamaOps implements TensorOps {
     @Override
     public Either<OpSupport, Void> saxpy(float alpha, TensorRef x, TensorRef y, int xOffset, int yOffset,
             int length) {
+        if (x.dType() == DType.BF16 && y.dType() == DType.F32 && y.shape().first() == 1) {
+            saxpyBF16F32(alpha, x, 0, y, 0, xOffset, yOffset, length);
+            return Either.Right(null);
+        }
         if (x.dType() != DType.F32 || y.dType() != DType.F32 || y.shape().first() != 1) {
             return Either.Left(OpSupport.Unsupported);
         }
@@ -788,6 +792,14 @@ class PanamaOps implements TensorOps {
     @Override
     public Either<OpSupport, Void> saxpy(TensorRef alpha, TensorRef x, TensorRef y, int xOffset, int yOffset,
             int length, int alphaOffset, int xRowOffset, int batchSize) {
+        if (alpha.dType() == DType.F32 && x.dType() == DType.BF16 && y.dType() == DType.F32
+                && y.shape().first() == 1) {
+            for (int row = 0; row < batchSize; row++) {
+                saxpyBF16F32(alpha.get(0, alphaOffset + row), x, xRowOffset + row, y, 0,
+                        xOffset, yOffset, length);
+            }
+            return Either.Right(null);
+        }
         if (alpha.dType() != DType.F32 || x.dType() != DType.F32 || y.dType() != DType.F32
                 || y.shape().first() != 1) {
             return Either.Left(OpSupport.Unsupported);
@@ -826,6 +838,44 @@ class PanamaOps implements TensorOps {
             FloatVector target = FloatVector.fromMemorySegment(F32_SPECIES, ySegment, yAddress,
                     ByteOrder.LITTLE_ENDIAN, mask);
             target.add(values.mul(factor)).intoMemorySegment(ySegment, yAddress, ByteOrder.LITTLE_ENDIAN, mask);
+        }
+    }
+
+    /** Applies vectorized BF16-to-F32 SAXPY, matching the legacy Panama provider semantics. */
+    private static void saxpyBF16F32(float alpha, TensorRef x, int xRow, TensorRef y, int yRow,
+            int xOffset, int yOffset, int length) {
+        VectorSpecies<Short> shortSpecies = ShortVector.SPECIES_PREFERRED;
+        VectorSpecies<Float> floatSpecies = FloatVector.SPECIES_PREFERRED;
+        FloatVector factor = FloatVector.broadcast(floatSpecies, alpha);
+        MemorySegment xSegment = x.memorySegment();
+        MemorySegment ySegment = y.memorySegment();
+        long xBase = x.memorySegmentOffset(x.shape().getOffset(xRow, xOffset));
+        long yBase = y.memorySegmentOffset(y.shape().getOffset(yRow, yOffset));
+        int upper = shortSpecies.loopBound(length);
+        int column = 0;
+        for (; column < upper; column += shortSpecies.length()) {
+            long xAddress = xBase + (long) column * Short.BYTES;
+            long yAddress = yBase + (long) column * Float.BYTES;
+            ShortVector encoded = ShortVector.fromMemorySegment(shortSpecies, xSegment, xAddress,
+                    ByteOrder.LITTLE_ENDIAN);
+            FloatVector values0 = encoded.convertShape(VectorOperators.S2I, IntVector.SPECIES_PREFERRED, 0)
+                    .lanewise(VectorOperators.LSHL, IntVector.broadcast(IntVector.SPECIES_PREFERRED, 16))
+                    .reinterpretAsFloats();
+            FloatVector values1 = encoded.convertShape(VectorOperators.S2I, IntVector.SPECIES_PREFERRED, 1)
+                    .lanewise(VectorOperators.LSHL, IntVector.broadcast(IntVector.SPECIES_PREFERRED, 16))
+                    .reinterpretAsFloats();
+            FloatVector target0 = FloatVector.fromMemorySegment(floatSpecies, ySegment, yAddress,
+                    ByteOrder.LITTLE_ENDIAN);
+            FloatVector target1 = FloatVector.fromMemorySegment(floatSpecies, ySegment,
+                    yAddress + (long) floatSpecies.length() * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+            target0.add(values0.mul(factor)).intoMemorySegment(ySegment, yAddress, ByteOrder.LITTLE_ENDIAN);
+            target1.add(values1.mul(factor)).intoMemorySegment(ySegment,
+                    yAddress + (long) floatSpecies.length() * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+        }
+        for (; column < length; column++) {
+            int xColumn = xOffset + column;
+            int yColumn = yOffset + column;
+            y.set(y.get(yRow, yColumn) + alpha * x.get(xRow, xColumn), yRow, yColumn);
         }
     }
 

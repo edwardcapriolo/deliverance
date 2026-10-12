@@ -212,7 +212,7 @@ public class KvCacheSelfAttention extends BaseCausalSelfAttention {
         try (Timer.Context ignoredQkv = InferenceProfiler.timer(metricRegistry,
                 "kvcacheselfattention.qkv_projection").time()) {
             TensorPlan alternatePlan = new TensorPlan(queryOps, model.getPool(), metricRegistry, model);
-            alternatePlan.alternateJit("kvcacheselfattention.qkv_projection.grouped_decode", "direct_pchunk",
+            alternatePlan.alternateDit("kvcacheselfattention.qkv_projection.grouped_decode", "direct_pchunk",
                             () -> projectGqaQkvGroupedDecodeDirect(input, queryBatch, keyBatch, valueBatch,
                                     queryOps, keyOps, valueOps))
                     .alternate("tensorplan_fuse", () -> projectGqaQkvGroupedDecodeTensorPlan(input, queryBatch,

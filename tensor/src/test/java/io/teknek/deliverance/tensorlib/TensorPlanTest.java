@@ -4,15 +4,22 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor.AbstractTensorUtils;
 import io.teknek.deliverance.tensor.TensorTestSupport;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
+import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
+import io.teknek.deliverance.tensor.operations.MachineSpec;
 import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
+import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensor.TensorShape;
+import io.dropwizard.metrics5.MetricRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.ForkJoinPool;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -275,6 +282,76 @@ class TensorPlanTest {
                     assertEquals(expected.get(row, col), actual.get(row, col), 1.0e-6f,
                             "row=" + row + " col=" + col);
                 }
+            }
+        }
+    }
+
+    @Test
+    void qwen3FourBDecodeMlpCharacterization() {
+        int embeddingLength = 2560;
+        int hiddenLength = 9728;
+        MetricRegistry metrics = new MetricRegistry();
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(new ForkJoinPool(16))) {
+            PanamaTensorOperations operations = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
+                    new ArrayQueueTensorAllocator(metrics), pool);
+            Lighter lighter = new Lighter(metrics);
+            TensorPlan legacy = new TensorPlan(operations, pool, metrics);
+            TensorPlan refs = new TensorPlan(operations, pool, metrics, null, null, lighter);
+            try (AbstractTensor input = TensorTestSupport.deterministicTensor(1, embeddingLength, 401);
+                 AbstractTensor gateDense = TensorTestSupport.deterministicTensor(hiddenLength, embeddingLength, 402);
+                 AbstractTensor upDense = TensorTestSupport.deterministicTensor(hiddenLength, embeddingLength, 403);
+                 AbstractTensor downDense = TensorTestSupport.deterministicTensor(embeddingLength, hiddenLength, 404);
+                 AbstractTensor gateWeight = AbstractTensorUtils.quantize(gateDense, DType.Q4, true);
+                 AbstractTensor upWeight = AbstractTensorUtils.quantize(upDense, DType.Q4, true);
+                 AbstractTensor downWeight = AbstractTensorUtils.quantize(downDense, DType.Q4, true);
+                 TensorRef inputRef = TensorRef.borrowed(input);
+                 TensorRef gateRef = TensorRef.borrowed(gateWeight);
+                 TensorRef upRef = TensorRef.borrowed(upWeight);
+             TensorRef downRef = TensorRef.borrowed(downWeight)) {
+                List<Lighter.ProviderEvent> providerEvents = new ArrayList<>();
+                lighter.setProviderObserver(providerEvents::add);
+                TensorPlan.Tensor legacyPlan = legacy.input("input", input)
+                        .mlp(legacy.immutable("gate", gateWeight), legacy.immutable("up", upWeight),
+                                legacy.immutable("down", downWeight), ActivationFunction.Type.SILU, DType.I8);
+                TensorPlan.Tensor refPlan = refs.input("input", inputRef)
+                        .mlp(refs.immutable("gate", gateRef), refs.immutable("up", upRef),
+                                refs.immutable("down", downRef), ActivationFunction.Type.SILU, DType.I8);
+                for (int i = 0; i < 2; i++) {
+                    try (AbstractTensor ignored = legacyPlan.materialize(); TensorRef ignoredRef = refPlan.materializeRef()) {
+                    }
+                }
+                int repetitions = 4;
+                long legacyStart = System.nanoTime();
+                for (int i = 0; i < repetitions; i++) {
+                    try (AbstractTensor ignored = legacyPlan.materialize()) {
+                    }
+                }
+                long legacyNanos = System.nanoTime() - legacyStart;
+                long refStart = System.nanoTime();
+                for (int i = 0; i < repetitions; i++) {
+                    try (TensorRef ignored = refPlan.materializeRef()) {
+                    }
+                }
+                long refNanos = System.nanoTime() - refStart;
+                try (AbstractTensor expected = legacyPlan.materialize(); TensorRef actual = refPlan.materializeRef()) {
+                    float maxRelativeError = 0.0f;
+                    for (int column = 0; column < embeddingLength; column++) {
+                        float expectedValue = expected.get(0, column);
+                        float actualValue = actual.get(0, column);
+                     assertTrue(Float.isFinite(expectedValue) && Float.isFinite(actualValue),
+                                 "non-finite output column=" + column);
+                        maxRelativeError = Math.max(maxRelativeError,
+                                 Math.abs(expectedValue - actualValue) / Math.max(1.0f, Math.abs(expectedValue)));
+                     }
+                     assertTrue(maxRelativeError <= 1.0e-3f,
+                             "legacy and TensorRef MLP outputs differ maxRelativeError=" + maxRelativeError);
+                     assertFalse(providerEvents.isEmpty(), "TensorRef MLP must dispatch through a provider");
+                     System.out.printf("[qwen3-4b-decode-mlp] max_relative_error=%f%n", maxRelativeError);
+                }
+                System.out.printf("[qwen3-4b-decode-mlp] embedding=%d hidden=%d legacy_ms=%.3f "
+                                + "tensorRef_ms=%.3f legacy_ms_per=%f tensorRef_ms_per=%f%n",
+                        embeddingLength, hiddenLength, legacyNanos / 1_000_000.0, refNanos / 1_000_000.0,
+                        legacyNanos / 1_000_000.0 / repetitions, refNanos / 1_000_000.0 / repetitions);
             }
         }
     }

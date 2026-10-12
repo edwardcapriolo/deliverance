@@ -1481,8 +1481,8 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         }
 
         AtomicReference<AbstractTensor> output = new AtomicReference<>();
-        TensorPlan.AlternateJitBuilder builder = new TensorPlan(configurableTensorProvider.get(), pool, metricRegistry, this)
-                .alternateJit("abstractmodel.prefill.max_prefill_batch_size", batchSizes.getFirst().name(),
+        TensorPlan.AlternateDitBuilder builder = new TensorPlan(configurableTensorProvider.get(), pool, metricRegistry, this)
+                .alternateDit("abstractmodel.prefill.max_prefill_batch_size", batchSizes.getFirst().name(),
                         () -> output.set(batchForwardWithMaxBatchSize(tokenIds, startPos, kvSession, tensorReducer,
                                 progress, batchSizes.getFirst().effectiveBatchSize())));
         for (int i = 1; i < batchSizes.size(); i++) {
