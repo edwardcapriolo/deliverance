@@ -21,10 +21,13 @@ import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
 import io.teknek.deliverance.tensor.operations.MachineSpec;
 import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
+import io.teknek.deliverance.tensor.AbstractTensorUtils;
 import io.teknek.deliverance.tensor2.CompositeOps;
 import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.NativeOps;
 import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensor2.TensorRefBackedTensor;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -36,6 +39,7 @@ import java.util.List;
 import java.util.concurrent.ForkJoinPool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.when;
 
 class PackedBlockAttention2ParityTest {
@@ -72,80 +76,144 @@ class PackedBlockAttention2ParityTest {
 
     @Test
     void qwen3FourBDecodeAttentionCharacterization() {
+        Assumptions.assumeTrue(NativeOps.isAvailable(), "native TensorRef operations unavailable");
         MetricRegistry metrics = new MetricRegistry();
         Lighter lighter = new Lighter(metrics);
         int heads = 32;
         int kvHeads = 8;
         int headSize = 128;
-        int visibleRows = 2048;
+        int prefixRows = 128;
+        int visibleRows = prefixRows + 1;
         int pageRows = 32;
         int attentionLength = heads * headSize;
         int kvLength = kvHeads * headSize;
-        int pageCount = (visibleRows + pageRows - 1) / pageRows;
+        int pageCount = prefixRows / pageRows;
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(new ForkJoinPool(16))) {
+            lighter.putTensorOperations(io.teknek.deliverance.tensor2.TensorProviderKind.SIMD, new NativeOps());
             AbstractModel model = parallelModel(metrics, lighter, pool);
             TensorOperations legacyOps = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
                     new ArrayQueueTensorAllocator(metrics), pool);
-            List<AbstractTensor> legacyKeys = new ArrayList<>();
-            List<AbstractTensor> legacyValues = new ArrayList<>();
-            List<TensorRef> refKeys = new ArrayList<>();
-            List<TensorRef> refValues = new ArrayList<>();
+            TensorOperations nativeLegacyOps = new io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations(
+                    legacyOps, 64);
+            List<AbstractTensor> f32Keys = new ArrayList<>();
+            List<AbstractTensor> f32Values = new ArrayList<>();
+            List<AbstractTensor> i8Keys = new ArrayList<>();
+            List<AbstractTensor> i8Values = new ArrayList<>();
+            List<TensorRef> f32RefKeys = new ArrayList<>();
+            List<TensorRef> f32RefValues = new ArrayList<>();
+            List<TensorRef> i8RefKeys = new ArrayList<>();
+            List<TensorRef> i8RefValues = new ArrayList<>();
             try (AbstractTensor query = tensor(1, attentionLength, 401);
-                 AbstractTensor legacyOutput = new FloatBufferTensor(TensorShape.of(1, attentionLength));
+                 AbstractTensor legacyF32Output = new FloatBufferTensor(TensorShape.of(1, attentionLength));
+                 AbstractTensor legacyI8Output = new FloatBufferTensor(TensorShape.of(1, attentionLength));
                  TensorRef queryRef = TensorRef.borrowed(query);
-                 TensorRef refOutput = lighter.allocate(DType.F32, TensorShape.of(1, attentionLength))) {
-                for (int page = 0; page < pageCount; page++) {
-                    AbstractTensor key = tensor(pageRows, kvLength, 500 + page);
-                    AbstractTensor value = tensor(pageRows, kvLength, 700 + page);
-                    legacyKeys.add(key);
-                    legacyValues.add(value);
-                    refKeys.add(TensorRef.borrowed(key));
-                    refValues.add(TensorRef.borrowed(value));
-                }
-                AbstractTensor[] legacyKeyPages = legacyKeys.toArray(AbstractTensor[]::new);
-                AbstractTensor[] legacyValuePages = legacyValues.toArray(AbstractTensor[]::new);
-                TensorRef[] refKeyPages = refKeys.toArray(TensorRef[]::new);
-                TensorRef[] refValuePages = refValues.toArray(TensorRef[]::new);
-                float scale = 1.0f / (float) Math.sqrt(headSize);
+                 TensorRef refF32Output = lighter.allocate(DType.F32, TensorShape.of(1, attentionLength));
+                 TensorRef refI8Output = lighter.allocate(DType.F32, TensorShape.of(1, attentionLength))) {
+                 for (int page = 0; page < pageCount; page++) {
+                     AbstractTensor f32Key = tensor(pageRows, kvLength, 500 + page);
+                     AbstractTensor f32Value = tensor(pageRows, kvLength, 700 + page);
+                     f32Keys.add(f32Key);
+                     f32Values.add(f32Value);
+                     i8Keys.add(AbstractTensorUtils.quantize(f32Key, DType.I8, true));
+                     i8Values.add(AbstractTensorUtils.quantize(f32Value, DType.I8, true));
+                     f32RefKeys.add(TensorRef.borrowed(f32Key));
+                     f32RefValues.add(TensorRef.borrowed(f32Value));
+                     i8RefKeys.add(TensorRef.borrowed(i8Keys.getLast()));
+                     i8RefValues.add(TensorRef.borrowed(i8Values.getLast()));
+                 }
+                 AbstractTensor currentKey = tensor(1, kvLength, 900);
+                 AbstractTensor currentValue = tensor(1, kvLength, 901);
+                 AbstractTensor currentI8Key = AbstractTensorUtils.quantize(currentKey, DType.I8, true);
+                 AbstractTensor currentI8Value = AbstractTensorUtils.quantize(currentValue, DType.I8, true);
+                 f32Keys.add(currentKey);
+                 f32Values.add(currentValue);
+                 f32RefKeys.add(TensorRef.borrowed(currentKey));
+                 f32RefValues.add(TensorRef.borrowed(currentValue));
+                 i8Keys.add(currentI8Key);
+                 i8Values.add(currentI8Value);
+                 i8RefKeys.add(TensorRef.borrowed(currentI8Key));
+                 i8RefValues.add(TensorRef.borrowed(currentI8Value));
+                 for (int page = 0; page < i8Keys.size(); page++) {
+                     assertEquals(DType.I8, i8Keys.get(page).dType(), "I8 key page=" + page);
+                     assertEquals(DType.I8, i8Values.get(page).dType(), "I8 value page=" + page);
+                     assertNotNull(i8RefKeys.get(page).sidecar("q8.scale"), "I8 key scale page=" + page);
+                     assertNotNull(i8RefValues.get(page).sidecar("q8.scale"), "I8 value scale page=" + page);
+                 }
+                 AbstractTensor[] legacyF32Keys = f32Keys.toArray(AbstractTensor[]::new);
+                 AbstractTensor[] legacyF32Values = f32Values.toArray(AbstractTensor[]::new);
+                 AbstractTensor[] legacyI8Keys = i8Keys.toArray(AbstractTensor[]::new);
+                 AbstractTensor[] legacyI8Values = i8Values.toArray(AbstractTensor[]::new);
+                 TensorRef[] refF32Keys = f32RefKeys.toArray(TensorRef[]::new);
+                 TensorRef[] refF32Values = f32RefValues.toArray(TensorRef[]::new);
+                 TensorRef[] refI8Keys = i8RefKeys.toArray(TensorRef[]::new);
+                 TensorRef[] refI8Values = i8RefValues.toArray(TensorRef[]::new);
+                 float scale = 1.0f / (float) Math.sqrt(headSize);
 
-                for (int i = 0; i < 5; i++) {
-                    legacyOutput.clear();
-                    legacyOps.decodePagedAttention(legacyOutput, query, legacyKeyPages, legacyValuePages,
-                            visibleRows, heads, kvHeads, headSize, scale, null);
-                    lighter.clear(refOutput);
-                    new PackedBlockAttention2(model, metrics).decodePagedAttention(refOutput, queryRef, refKeyPages,
-                            refValuePages, visibleRows, heads, kvHeads, headSize, scale, null);
-                }
-                assertClose(legacyOutput, new TensorRefBackedTensor(refOutput), 1.0e-3f);
+                 PackedBlockAttention2 tensorRefAttention = new PackedBlockAttention2(model, metrics);
+                 for (int i = 0; i < 5; i++) {
+                     legacyF32Output.clear();
+                     nativeLegacyOps.decodePagedAttention(legacyF32Output, query, legacyF32Keys, legacyF32Values,
+                             visibleRows, heads, kvHeads, headSize, scale, null);
+                     lighter.clear(refF32Output);
+                     tensorRefAttention.decodePagedAttention(refF32Output, queryRef, refF32Keys, refF32Values,
+                             visibleRows, heads, kvHeads, headSize, scale, null);
+                     legacyI8Output.clear();
+                     nativeLegacyOps.decodePagedAttention(legacyI8Output, query, legacyI8Keys, legacyI8Values,
+                             visibleRows, heads, kvHeads, headSize, scale, null);
+                     lighter.clear(refI8Output);
+                     tensorRefAttention.decodePagedAttention(refI8Output, queryRef, refI8Keys, refI8Values,
+                             visibleRows, heads, kvHeads, headSize, scale, null);
+                 }
+                 assertClose(legacyF32Output, new TensorRefBackedTensor(refF32Output), 1.0e-3f);
+                 assertClose(legacyI8Output, new TensorRefBackedTensor(refI8Output), 1.0e-3f);
 
-                int repetitions = 20;
-                long legacyStart = System.nanoTime();
-                for (int i = 0; i < repetitions; i++) {
-                    legacyOutput.clear();
-                    legacyOps.decodePagedAttention(legacyOutput, query, legacyKeyPages, legacyValuePages,
-                            visibleRows, heads, kvHeads, headSize, scale, null);
-                }
-                long legacyNanos = System.nanoTime() - legacyStart;
+                 int repetitions = 10;
+                 long legacyF32Start = System.nanoTime();
+                 for (int i = 0; i < repetitions; i++) {
+                     legacyF32Output.clear();
+                     nativeLegacyOps.decodePagedAttention(legacyF32Output, query, legacyF32Keys, legacyF32Values,
+                             visibleRows, heads, kvHeads, headSize, scale, null);
+                 }
+                 long legacyF32Nanos = System.nanoTime() - legacyF32Start;
 
-                PackedBlockAttention2 tensorRefAttention = new PackedBlockAttention2(model, metrics);
-                long refStart = System.nanoTime();
-                for (int i = 0; i < repetitions; i++) {
-                    lighter.clear(refOutput);
-                    tensorRefAttention.decodePagedAttention(refOutput, queryRef, refKeyPages, refValuePages,
-                            visibleRows, heads, kvHeads, headSize, scale, null);
-                }
-                long refNanos = System.nanoTime() - refStart;
-                System.out.printf("[qwen3-4b-decode-attention] visibleRows=%d heads=%d kvHeads=%d headSize=%d "
-                                + "legacy_ms=%.3f tensorRef_ms=%.3f legacy_tok_ms=%.3f tensorRef_tok_ms=%.3f%n",
-                        visibleRows, heads, kvHeads, headSize, legacyNanos / 1_000_000.0,
-                        refNanos / 1_000_000.0, legacyNanos / 1_000_000.0 / repetitions,
-                        refNanos / 1_000_000.0 / repetitions);
-            } finally {
-                refKeys.forEach(TensorRef::close);
-                refValues.forEach(TensorRef::close);
-                legacyKeys.forEach(AbstractTensor::close);
-                legacyValues.forEach(AbstractTensor::close);
-            }
+                 long refF32Start = System.nanoTime();
+                 for (int i = 0; i < repetitions; i++) {
+                     lighter.clear(refF32Output);
+                     tensorRefAttention.decodePagedAttention(refF32Output, queryRef, refF32Keys, refF32Values,
+                             visibleRows, heads, kvHeads, headSize, scale, null);
+                 }
+                 long refF32Nanos = System.nanoTime() - refF32Start;
+
+                 long legacyI8Start = System.nanoTime();
+                 for (int i = 0; i < repetitions; i++) {
+                     legacyI8Output.clear();
+                     nativeLegacyOps.decodePagedAttention(legacyI8Output, query, legacyI8Keys, legacyI8Values,
+                             visibleRows, heads, kvHeads, headSize, scale, null);
+                 }
+                 long legacyI8Nanos = System.nanoTime() - legacyI8Start;
+
+                 long refI8Start = System.nanoTime();
+                 for (int i = 0; i < repetitions; i++) {
+                     lighter.clear(refI8Output);
+                     tensorRefAttention.decodePagedAttention(refI8Output, queryRef, refI8Keys, refI8Values,
+                             visibleRows, heads, kvHeads, headSize, scale, null);
+                 }
+                 long refI8Nanos = System.nanoTime() - refI8Start;
+                 System.out.printf("[qwen3-4b-decode-attention] visibleRows=%d heads=%d kvHeads=%d headSize=%d "
+                                 + "legacy_f32_ms=%.3f tensorRef_f32_ms=%.3f legacy_i8_ms=%.3f tensorRef_i8_ms=%.3f%n",
+                         visibleRows, heads, kvHeads, headSize, legacyF32Nanos / 1_000_000.0,
+                         refF32Nanos / 1_000_000.0, legacyI8Nanos / 1_000_000.0,
+                         refI8Nanos / 1_000_000.0);
+             } finally {
+                 f32RefKeys.forEach(TensorRef::close);
+                 f32RefValues.forEach(TensorRef::close);
+                 i8RefKeys.forEach(TensorRef::close);
+                 i8RefValues.forEach(TensorRef::close);
+                 f32Keys.forEach(AbstractTensor::close);
+                 f32Values.forEach(AbstractTensor::close);
+                 i8Keys.forEach(AbstractTensor::close);
+                 i8Values.forEach(AbstractTensor::close);
+             }
         }
     }
 

@@ -3,6 +3,7 @@ package io.teknek.deliverance.tensor2;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
+import io.teknek.deliverance.tensor.impl.BFloat16BufferTensor;
 import io.teknek.deliverance.tensor.operations.SaxpyCases;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -83,6 +84,77 @@ class Tensor2LighterSaxpyTest {
         }
     }
 
+    @ParameterizedTest(name = "BF16 scalar {0}")
+    @MethodSource("scalarCases")
+    void bf16ScalarSaxpyMatchesLegacyOracle(SaxpyCases.ScalarCase c) {
+        Lighter actual = panamaOnly();
+        try (FloatBufferTensor legacyX = vector(1, c.xOffset() + c.length() + 3);
+             BFloat16BufferTensor bf16X = new BFloat16BufferTensor(legacyX);
+             FloatBufferTensor legacyExpected = vector(1, c.yOffset() + c.length() + 3);
+             TensorRef dense = actual.allocate(DType.F32, TensorShape.of(1, legacyX.shape().last()));
+             TensorRef expected = actual.allocate(DType.F32, TensorShape.of(1, legacyExpected.shape().last()))) {
+            fill(dense, legacyX);
+            fill(expected, legacyExpected);
+            assertEquals(legacyX.get(0, 0), dense.get(0, 0), 0.0f);
+            try (TensorRef x = actual.reshape(dense, DType.BF16)) {
+                assertEquals(DType.BF16, x.dType());
+                for (int column = 0; column < legacyX.shape().last(); column++) {
+                    assertEquals(bf16X.get(0, column), x.get(0, column), 1.0e-3f,
+                            "BF16 reshape column=" + column);
+                }
+                for (int column = 0; column < c.length(); column++) {
+                    int xColumn = c.xOffset() + column;
+                    int yColumn = c.yOffset() + column;
+                    legacyExpected.set(legacyExpected.get(0, yColumn)
+                                    + 1.75f * bf16X.get(0, xColumn), 0, yColumn);
+                }
+                actual.saxpy(1.75f, x, expected, c.xOffset(), c.yOffset(), c.length());
+            }
+            assertClose(expected, legacyExpected);
+        }
+    }
+
+    @ParameterizedTest(name = "BF16 batch {0}")
+    @MethodSource("batchCases")
+    void bf16BatchSaxpyMatchesLegacyOracle(SaxpyCases.BatchCase c) {
+        Lighter actual = panamaOnly();
+        try (FloatBufferTensor legacyAlpha = vector(1, c.alphaOffset() + c.batchSize() + 3);
+             FloatBufferTensor legacyX = vector(c.xRowOffset() + c.batchSize() + 2,
+                     c.xOffset() + c.length() + 3);
+             BFloat16BufferTensor bf16X = new BFloat16BufferTensor(legacyX);
+             FloatBufferTensor legacyExpected = vector(1, c.yOffset() + c.length() + 3);
+             TensorRef alpha = actual.allocate(DType.F32, TensorShape.of(1, legacyAlpha.shape().last()));
+             TensorRef dense = actual.allocate(DType.F32, TensorShape.of(legacyX.shape().first(), legacyX.shape().last()));
+             TensorRef expected = actual.allocate(DType.F32, TensorShape.of(1, legacyExpected.shape().last()))) {
+            fill(alpha, legacyAlpha);
+            fill(dense, legacyX);
+            fill(expected, legacyExpected);
+            assertEquals(legacyX.get(0, 0), dense.get(0, 0), 0.0f);
+            try (TensorRef x = actual.reshape(dense, DType.BF16)) {
+                assertEquals(DType.BF16, x.dType());
+                for (int row = 0; row < legacyX.shape().first(); row++) {
+                    for (int column = 0; column < legacyX.shape().last(); column++) {
+                        assertEquals(bf16X.get(row, column), x.get(row, column), 1.0e-3f,
+                                "BF16 reshape row=" + row + " column=" + column);
+                    }
+                }
+                for (int row = 0; row < c.batchSize(); row++) {
+                    float factor = legacyAlpha.get(0, c.alphaOffset() + row);
+                    for (int column = 0; column < c.length(); column++) {
+                        int xColumn = c.xOffset() + column;
+                        int yColumn = c.yOffset() + column;
+                        legacyExpected.set(legacyExpected.get(0, yColumn)
+                                        + factor * bf16X.get(c.xRowOffset() + row, xColumn),
+                                0, yColumn);
+                    }
+                }
+                actual.saxpy(alpha, x, expected, c.xOffset(), c.yOffset(), c.length(), c.alphaOffset(),
+                        c.xRowOffset(), c.batchSize());
+            }
+            assertClose(expected, legacyExpected);
+        }
+    }
+
     static Stream<Arguments> scalarCases() {
         return SaxpyCases.scalarCases();
     }
@@ -113,6 +185,11 @@ class Tensor2LighterSaxpyTest {
                                 TensorProviderKind.NAIVE, new NaiveOps()))));
     }
 
+    private static Lighter panamaOnly() {
+        return new Lighter(new io.dropwizard.metrics5.MetricRegistry(),
+                Map.of(TensorProviderKind.PANAMA, new PanamaOps()));
+    }
+
     private record Candidate(String name, boolean enabled, Supplier<Lighter> factory) {
         Lighter lighter() {
             org.junit.jupiter.api.Assumptions.assumeTrue(enabled, name + " unavailable");
@@ -138,7 +215,7 @@ class Tensor2LighterSaxpyTest {
     private static void fill(TensorRef target, FloatBufferTensor source) {
         for (int row = 0; row < source.shape().first(); row++) {
             for (int column = 0; column < source.shape().last(); column++) {
-                target.underlying().set(source.get(row, column), row, column);
+                target.set(source.get(row, column), row, column);
             }
         }
     }

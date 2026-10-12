@@ -3,13 +3,29 @@ package io.teknek.deliverance.tensor2;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.operations.tensor2native.Tensor2Native;
 import io.teknek.deliverance.tensor.operations.cnative.NativeSimd;
+import io.teknek.deliverance.tensor.operations.MachineSpec;
+import io.teknek.deliverance.tensor.operations.RuntimeSupport;
 import io.teknek.deliverance.tensor.operations.util.JarSupport;
 import io.teknek.dysfx.Either;
 
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 public class NativeOps implements TensorOps, CompositeOpsProvider {
     private static Throwable loadFailure;
     private static final boolean loaded = loadOnce();
+    private static final int SIMD_FLAGS = nativeSimdFlags();
+
+    private static int nativeSimdFlags() {
+        int flags = 0;
+        if (RuntimeSupport.isLinux()) {
+            flags |= NativeSimd.HAS_F16C();
+        }
+        if (MachineSpec.VECTOR_TYPE == MachineSpec.Type.AVX_512) {
+            flags |= NativeSimd.HAS_AVX2();
+        }
+        return flags;
+    }
 
     private static boolean loadOnce() {
         boolean libraryLoaded = JarSupport.maybeLoadLibrary("deliverance_tensor2");
@@ -142,6 +158,30 @@ public class NativeOps implements TensorOps, CompositeOpsProvider {
         }
         TensorRef[] results = operation.results();
         TensorRef[] weights = operation.weights();
+        if (results.length == 2 && operation.input().dType() == DType.I8
+                && weights[0].dType() == DType.Q4 && weights[1].dType() == DType.Q4) {
+            try (Arena arena = Arena.ofConfined()) {
+                MemorySegment weightScales = arena.allocate(ValueLayout.ADDRESS, 2);
+                MemorySegment weightBytes = arena.allocate(ValueLayout.ADDRESS, 2);
+                MemorySegment resultBytes = arena.allocate(ValueLayout.ADDRESS, 2);
+                weightScales.setAtIndex(ValueLayout.ADDRESS, 0, baseSegment(Q4Layout.scale(weights[0])));
+                weightScales.setAtIndex(ValueLayout.ADDRESS, 1, baseSegment(Q4Layout.scale(weights[1])));
+                weightBytes.setAtIndex(ValueLayout.ADDRESS, 0, baseSegment(weights[0]));
+                weightBytes.setAtIndex(ValueLayout.ADDRESS, 1, baseSegment(weights[1]));
+                resultBytes.setAtIndex(ValueLayout.ADDRESS, 0, baseSegment(results[0]));
+                resultBytes.setAtIndex(ValueLayout.ADDRESS, 1, baseSegment(results[1]));
+                NativeSimd.gemm_q8_q4_batch(SIMD_FLAGS, 2, baseSegment(Q8Layout.scale(operation.input())),
+                        baseSegment(operation.input()), operation.inputColumnStart(), weightScales, weightBytes,
+                        operation.weightColumnStart() / 2,
+                        resultBytes, operation.weightRowStart() - operation.outputColumnStart(),
+                        results[0].shape().first(), operation.weightRowStart(), operation.weightRowCount(),
+                        operation.columnLength(), operation.input().stride(), Q8Layout.scale(operation.input()).stride(),
+                        weights[0].stride() / 2, Q4Layout.scale(weights[0]).stride(), results[0].stride());
+                return Either.Right(null);
+            } catch (LinkageError | RuntimeException e) {
+                return Either.Left(OpSupport.Unsupported);
+            }
+        }
         TensorRef input = operation.input();
         int status = Tensor2Native.tensor2_dot_product_batch_chunk_i8_q4(
                 baseSegment(results[0]), baseSegment(results[1]), baseSegment(input),
@@ -212,12 +252,12 @@ public class NativeOps implements TensorOps, CompositeOpsProvider {
                         || columnLength % Q8Layout.BLOCK_SIZE != 0) {
                     return Either.Left(OpSupport.Unsupported);
                 }
-                int status = Tensor2Native.tensor2_dot_product_rows_i8_q4(
-                        baseSegment(output), baseSegment(input), baseSegment(inputScales), baseSegment(weights),
-                        baseSegment(weightScales), (int) output.shape().first(), inputColumnStart, weightColumnStart,
-                        columnLength, weightRowStart, weightRowCount, outputColumnStart, output.stride(), input.stride(),
-                        inputScales.stride(), weights.stride(), weightScales.stride());
-                return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
+                NativeSimd.gemm_q8_q4(SIMD_FLAGS, baseSegment(inputScales), baseSegment(input), inputColumnStart,
+                        baseSegment(weightScales), baseSegment(weights), weightColumnStart / 2,
+                        baseSegment(output), weightRowStart - outputColumnStart, (int) output.shape().first(),
+                        weightRowStart, weightRowCount, columnLength, input.stride(), inputScales.stride(),
+                        weights.stride() / 2, weightScales.stride(), output.stride());
+                return Either.Right(null);
             }
             if (input.dType() == DType.F32 && weights.dType() == DType.BF16 && output.dType() == DType.F32) {
                 return batchDotProduct(new BatchDotProduct()
@@ -308,6 +348,19 @@ public class NativeOps implements TensorOps, CompositeOpsProvider {
     @Override
     public Either<OpSupport, Void> saxpy(float alpha, TensorRef x, TensorRef y, int xOffset, int yOffset,
             int length) {
+        if (loaded && x.dType() == DType.I8 && y.dType() == DType.F32 && y.shape().first() == 1) {
+            TensorRef xScale = Q8Layout.scale(x);
+            if (xScale == null || xOffset % Q8Layout.BLOCK_SIZE != 0 || length % Q8Layout.BLOCK_SIZE != 0) {
+                return Either.Left(OpSupport.Unsupported);
+            }
+            try {
+                NativeSimd.saxpy_q8_f32(alpha, baseSegment(xScale), baseSegment(x), baseSegment(y), xOffset, yOffset,
+                        length, x.stride(), xScale.stride());
+                return Either.Right(null);
+            } catch (LinkageError | RuntimeException e) {
+                return Either.Left(OpSupport.Unsupported);
+            }
+        }
         if (!loaded || x.dType() != DType.F32 || y.dType() != DType.F32 || y.shape().first() != 1) {
             return Either.Left(OpSupport.Unsupported);
         }
@@ -328,6 +381,20 @@ public class NativeOps implements TensorOps, CompositeOpsProvider {
     @Override
     public Either<OpSupport, Void> saxpy(TensorRef alpha, TensorRef x, TensorRef y, int xOffset, int yOffset,
             int length, int alphaOffset, int xRowOffset, int batchSize) {
+        if (loaded && alpha.dType() == DType.F32 && x.dType() == DType.I8 && y.dType() == DType.F32
+                && y.shape().first() == 1) {
+            TensorRef xScale = Q8Layout.scale(x);
+            if (xScale == null || xOffset % Q8Layout.BLOCK_SIZE != 0 || length % Q8Layout.BLOCK_SIZE != 0) {
+                return Either.Left(OpSupport.Unsupported);
+            }
+            try {
+                NativeSimd.saxpy_q8_f32_batch(baseSegment(alpha), baseSegment(xScale), baseSegment(x), baseSegment(y),
+                        xOffset, yOffset, length, alphaOffset, xRowOffset, batchSize, x.stride(), xScale.stride());
+                return Either.Right(null);
+            } catch (LinkageError | RuntimeException e) {
+                return Either.Left(OpSupport.Unsupported);
+            }
+        }
         if (!loaded || alpha.dType() != DType.F32 || x.dType() != DType.F32 || y.dType() != DType.F32
                 || y.shape().first() != 1) {
             return Either.Left(OpSupport.Unsupported);

@@ -1,0 +1,70 @@
+1 compiler directives added
+WARNING: Using incubator modules: jdk.incubator.vector
+writing benchmark results to /Users/edward.capriolo/dev/ai-code/del2/benchmarks/runs/2026-10-11-cd3a3e30-dirty-run-qwen06b-single-benchmark-211033/qwen06b-single-benchmark.csv
+writing benchmark transcripts to /Users/edward.capriolo/dev/ai-code/del2/benchmarks/runs/2026-10-11-cd3a3e30-dirty-run-qwen06b-single-benchmark-211033/qwen06b-single-benchmark.jsonl
+[deliverance] loading model edwardcapriolo/Qwen3-0.6B-JQ4 tensor_parallel_size=1
+21:10:37.277 [main] INFO io.teknek.deliverance.model.AbstractModel - TensorRef native operations enabled
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.jctools.util.UnsafeAccess (file:/Users/edward.capriolo/.m2/repository/org/jctools/jctools-core/4.0.1/jctools-core-4.0.1.jar)
+WARNING: Please consider reporting this to the maintainers of class org.jctools.util.UnsafeAccess
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+21:10:37.917 [main] INFO io.teknek.deliverance.tensor.operations.NativeGPUTensorOperations - Native GPU Operations loaded with 9534832640 memory and 4 groups
+21:10:37.941 [main] INFO io.teknek.deliverance.model.AutoModelForCausaLm - Model builder final state
+  model=Qwen3-0.6B-JQ4
+  primaryProvider=Native SIMD Operations parallelSplitSize=64
+  registeredProviders=[GPU=Native GPU Operations(parallelSplitSize=1), SIMD=Native SIMD Operations(parallelSplitSize=64), PANAMA=Panama Vector Operations(parallelSplitSize=16), NAIVE=Naive Java Operations(parallelSplitSize=32)]
+  parallelSplitPolicy=availableProcessors=10 defaultMultipliers=disabled simdAlignment=16 panamaAlignment=4 fixedOverrides={SIMD=64} multiplierOverrides={}
+  modelType=Q4 workingMemoryType=F32 quantizedMemoryType=I8
+  tensorRuntimeMode=DISABLED groupedDecodeQkvSplitSize=8 gpuProvider=true gpuPrefill=false gpuDecode=false gpuDecodeAttention=false gpuDiffusionBlockProjection=false packedBlockAttention=false packedPrefill=true trackKvReadViews=false maxPrefillBatchSize=2048
+  prefixCacheMode=SNAPSHOT kvBlockStoragePolicy=DENSE kvTurboQuantBits=4 kvKeyDType=BF16 kvValueDType=BF16 sharedPrefixBlockCacheMaxBytes=536870912 sharedPrefixDiskCacheEnabled=false sharedPrefixDiskCacheMaxBytes=2147483648
+  generationOptions={}
+
+[deliverance] loaded model edwardcapriolo/Qwen3-0.6B-JQ4; cases=8; warmup_cases=0
+[deliverance] coordinator tensor_provider=Native SIMD Operations parallel_split_size=64 model_dtype=Q4 working_dtype=F32 working_qtype=I8 tp_rank=0 tp_size=1
+[deliverance] start model=edwardcapriolo/Qwen3-0.6B-JQ4 case=builtin-reasoning-1 category=reasoning turn=1 prompt_chars=592
+[deliverance] model=edwardcapriolo/Qwen3-0.6B-JQ4 case=builtin-reasoning-1 category=reasoning turn=1 prompt_tokens=128 generated=256 total_ms=37102.5 tok_s=7.33 finish=MAX_TOKENS
+[profile] case=builtin-reasoning-1 turn=1
+[profile] generation.request                            count=       1 total_ms= 37104.252 mean_us=37104252.458
+[profile] abstractmodel.forward_layers                  count=     256 total_ms= 35029.220 mean_us=136832.889
+[profile] transformerblock.forward                      count=    7168 total_ms= 34978.839 mean_us=  4879.860
+[profile] generation.decode                             count=     255 total_ms= 34758.503 mean_us=136307.854
+[profile] kvcacheselfattention2.forward                 count=    7168 total_ms= 30800.135 mean_us=  4296.894
+[profile] mlpblock2.forward                             count=    7168 total_ms=  2818.493 mean_us=   393.205
+[profile] kvcacheselfattention2.qkv_projection.grouped_decode count=   57120 total_ms=  2289.646 mean_us=    40.085
+[profile] generation.prefill                            count=       1 total_ms=  2257.130 mean_us=2257130.042
+[profile] generation.decode_sample                      count=     255 total_ms=  1795.312 mean_us=  7040.438
+[profile] mlpblock2.gate_up_projection                  count=    7168 total_ms=  1425.671 mean_us=   198.894
+[profile] kvcacheselfattention2.qkv_projection          count=    7168 total_ms=  1393.460 mean_us=   194.400
+[profile] mlpblock2.down_projection                     count=    7168 total_ms=  1138.780 mean_us=   158.870
+[profile] kvcacheselfattention2.output_projection       count=    7168 total_ms=  1131.727 mean_us=   157.886
+[profile] kvcache.v2.write.quantize.to_BF16             count=   21448 total_ms=   986.438 mean_us=    45.992
+[profile] kvcache.v2.write.key                          count=   10724 total_ms=   569.089 mean_us=    53.067
+[profile] kvcacheselfattention2.q_norm                  count=    7168 total_ms=   501.011 mean_us=    69.896
+[profile] kvcache.v2.write.value                        count=   10724 total_ms=   451.018 mean_us=    42.057
+[profile] packedblockattention2.score_value             count=      28 total_ms=   419.887 mean_us= 14995.970
+[profile] kvcacheselfattention2.q_projection            count=    1792 total_ms=   418.131 mean_us=   233.332
+[profile] kvcacheselfattention2.rope                    count=    7168 total_ms=   313.773 mean_us=    43.774
+[profile] kvcacheselfattention2.k_projection            count=    1792 total_ms=   284.667 mean_us=   158.854
+[profile] kvcacheselfattention2.k_norm                  count=    7168 total_ms=   272.813 mean_us=    38.060
+[profile] kvcacheselfattention2.v_projection            count=    1792 total_ms=   212.666 mean_us=   118.675
+[profile] embedinput.batch_inputs                       count=       1 total_ms=   135.749 mean_us=135749.417
+[profile] generation.first_sample                       count=       1 total_ms=    52.250 mean_us= 52250.166
+[profile] kvcache.v2.write.bookkeeping                  count=   10724 total_ms=     1.419 mean_us=     0.132
+[profile-dit] tensorplan.dit
+[profile-dit] tensorplan.dit.alternate.elapsed{candidate=direct_pchunk,plan=kvcacheselfattention2.qkv_projection.grouped_decode} count=    3512 total_ms=   433.308 mean_us=   123.379
+[profile-dit] tensorplan.dit.alternate.elapsed{candidate=tensorplan_fuse,plan=kvcacheselfattention2.qkv_projection.grouped_decode} count=    3628 total_ms=   501.080 mean_us=   138.115
+[profile-counter] causalselfattention.maybe_quantize.output_projection.copy_or_quantize count=7168
+[profile-counter] kvcache.v2.write.quantize.lighter count=21448
+[profile-counter] mlpblock2.down_input_I8 count=7168
+[profile-counter] mlpblock2.down_weight_Q4 count=7168
+[profile-counter] mlpblock2.gate_input_I8 count=7168
+[profile-counter] mlpblock2.gate_weight_Q4 count=7168
+[profile-counter] mlpblock2.up_weight_Q4 count=7168
+[profile-counter] tensorplan.dit.alternate.choice{candidate=direct_pchunk,plan=kvcacheselfattention2.qkv_projection.grouped_decode} count=3512
+[profile-counter] tensorplan.dit.alternate.choice{candidate=tensorplan_fuse,plan=kvcacheselfattention2.qkv_projection.grouped_decode} count=3628
+[profile-counter] tensorplan.dit.alternate.selected{candidate=direct_pchunk,plan=kvcacheselfattention2.qkv_projection.grouped_decode} count=21
+[profile-counter] tensorplan.dit.alternate.selected{candidate=tensorplan_fuse,plan=kvcacheselfattention2.qkv_projection.grouped_decode} count=21
+[profile-counter] transformerblock.maybe_quantize.pre_attention.copy_or_quantize count=7168
+[profile-counter] transformerblock.maybe_quantize.pre_ff.copy_or_quantize count=7168
+[allocator] rank=0/1 dirty_get=384 dirty_hit=0 dirty_hit_rate=0.0000 get=384 get_hit=382 get_hit_rate=0.9948 full=0
+[deliverance] start model=edwardcapriolo/Qwen3-0.6B-JQ4 case=builtin-reasoning-1 category=reasoning turn=2 prompt_chars=1744

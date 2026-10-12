@@ -15,6 +15,7 @@ import io.teknek.deliverance.tensor.kv.KvWriteCursor;
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.BatchDotProduct;
 import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.tensorlib.TensorPlan;
 import io.teknek.deliverance.safetensors.LoraLayerDelta;
 import io.teknek.deliverance.generator.ForwardPhase;
 
@@ -91,7 +92,7 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
                 ? CacheExecutionMode.DECODE_UPDATE_CACHE
                 : CacheExecutionMode.PREFILL_UPDATE_CACHE;
         int batchSize = input.shape().first();
-        Preconditions.checkArgument(mode != CacheExecutionMode.DECODE_UPDATE_CACHE || batchSize == 1,
+            Preconditions.checkArgument(mode != CacheExecutionMode.DECODE_UPDATE_CACHE || batchSize == 1,
                 "decode update expects one token at a time");
 
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
@@ -227,7 +228,9 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
         TensorRef value = model.makeDenseTensorRef(batchSize, kvLength);
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
                 "kvcacheselfattention2.qkv_projection").time()) {
-            if (config.isGQA) {
+            if (config.isGQA && phase == ForwardPhase.DECODE) {
+                projectGqaQkvGroupedDecode(input, query, key, value);
+            } else if (config.isGQA) {
                 projectGqaQkvPrefill(input, query, key, value, model.primaryTensorOperations().parallelSplitSize(), phase);
             } else {
                 project(query, input, queryAttentionWeights, config.embeddingLength, attentionLength,
@@ -272,28 +275,57 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
     }
 
     private void projectGqaQkvGroupedDecode(TensorRef input, TensorRef query, TensorRef key, TensorRef value) {
-        model.runChunks("kvcacheselfattention2.qkv_projection.grouped_decode", 0, attentionLength,
-                groupedDecodeQkvSplitSize(), Optional.empty(), (chunkStart, chunkSize) -> {
-            try (Timer.Context ignoredQ = InferenceProfiler.timer(metricRegistry,
-                    "kvcacheselfattention2.q_projection").time()) {
-                lighter.dotProductRows(query, input, queryAttentionWeights, 0, config.embeddingLength,
-                        chunkStart, chunkSize, chunkStart);
-            }
-            int kvChunkSize = Math.min(chunkSize, kvLength - chunkStart);
-            if (kvChunkSize <= 0) {
-                return;
-            }
-            try (Timer.Context ignoredK = InferenceProfiler.timer(metricRegistry,
-                    "kvcacheselfattention2.k_projection").time()) {
-                lighter.dotProductRows(key, input, keyAttentionWeights, 0, config.embeddingLength,
-                        chunkStart, kvChunkSize, chunkStart);
-            }
-            try (Timer.Context ignoredV = InferenceProfiler.timer(metricRegistry,
-                    "kvcacheselfattention2.v_projection").time()) {
-                lighter.dotProductRows(value, input, valueAttentionWeights, 0, config.embeddingLength,
-                        chunkStart, kvChunkSize, chunkStart);
-            }
-        });
+        io.teknek.deliverance.tensor2.GroupedQkvProjection projection = new io.teknek.deliverance.tensor2.GroupedQkvProjection(
+                input, query, key, value, queryAttentionWeights, keyAttentionWeights, valueAttentionWeights,
+                config.embeddingLength, 0, 0, kvLength);
+        TensorPlan plan = new TensorPlan(model.primaryTensorOperations(), model.getPool(), metricRegistry, model,
+                model.getTensorRuntime(), lighter);
+        TensorPlan.Tensor inputNode = plan.input("qkv.input", input);
+        TensorPlan.ImmutableTensor queryWeightsNode = plan.immutable("qkv.query.weight", queryAttentionWeights);
+        TensorPlan.ImmutableTensor keyWeightsNode = plan.immutable("qkv.key.weight", keyAttentionWeights);
+        TensorPlan.ImmutableTensor valueWeightsNode = plan.immutable("qkv.value.weight", valueAttentionWeights);
+        TensorPlan.Tensor queryNode = plan.input("qkv.query.output", query);
+        TensorPlan.Tensor keyNode = plan.input("qkv.key.output", key);
+        TensorPlan.Tensor valueNode = plan.input("qkv.value.output", value);
+        TensorPlan.Tensor fused = plan.fuse("kvcacheselfattention2.qkv_projection.grouped_decode",
+                        TensorShape.of(attentionLength))
+                .read("input", inputNode)
+                .read("queryWeight", queryWeightsNode)
+                .read("keyWeight", keyWeightsNode)
+                .read("valueWeight", valueWeightsNode)
+                .write("query", queryNode)
+                .read("key", keyNode)
+                .read("value", valueNode)
+                .splitCount(groupedDecodeQkvSplitSize())
+                .mapRef("grouped q/k/v dotProductRows by output rows", TensorPlan.TensorOp.CUSTOM,
+                        (context, offset, length) -> executeGroupedQkvProjection(
+                                new io.teknek.deliverance.tensor2.GroupedQkvProjection(
+                                        context.tensor("input"), context.tensor("query"), context.tensor("key"),
+                                        context.tensor("value"), context.tensor("queryWeight"),
+                                        context.tensor("keyWeight"), context.tensor("valueWeight"),
+                                        config.embeddingLength, Math.toIntExact(offset), Math.toIntExact(length), kvLength),
+                                Math.toIntExact(offset), Math.toIntExact(length)))
+                .tensor();
+        plan.alternateDit("kvcacheselfattention2.qkv_projection.grouped_decode", "direct_pchunk", () ->
+                plan.chunked("kvcacheselfattention2.qkv_projection.grouped_decode", 0, attentionLength)
+                        .splitCount(groupedDecodeQkvSplitSize())
+                        .run((offset, length) -> executeGroupedQkvProjection(projection,
+                                Math.toIntExact(offset), Math.toIntExact(length))))
+                .alternate("tensorplan_fuse", () -> fused.materializeRef())
+                .run();
+    }
+
+    /** Executes one grouped Q/K/V projection chunk and records its provider-backed work. */
+    private void executeGroupedQkvProjection(io.teknek.deliverance.tensor2.GroupedQkvProjection projection,
+            int chunkStart, int chunkSize) {
+        io.teknek.deliverance.tensor2.GroupedQkvProjection chunk = new io.teknek.deliverance.tensor2.GroupedQkvProjection(
+                projection.input(), projection.query(), projection.key(), projection.value(),
+                projection.queryWeights(), projection.keyWeights(), projection.valueWeights(),
+                projection.inputLength(), chunkStart, chunkSize, projection.kvLength());
+        try (Timer.Context ignoredQkv = InferenceProfiler.timer(metricRegistry,
+                "kvcacheselfattention2.qkv_projection.grouped_decode").time()) {
+            chunk.execute(lighter);
+        }
     }
 
     private void project(TensorRef output, TensorRef input, TensorRef weight, int inputLength,
@@ -301,17 +333,21 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
         model.runChunks(metricName, 0, outputLength, splitSize, Optional.empty(),
                 (chunkStart, chunkSize) -> {
             try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, metricName).time()) {
-                if (phase == ForwardPhase.PREFILL && input.shape().first() > 1) {
-                    lighter.batchDotProduct(new BatchDotProduct()
-                            .result(output).a(input).b(weight)
-                            .aColumnOffset(0).bColumnOffset(0).columnLength(inputLength)
-                            .resultRowOffset(0).bRowOffset(chunkStart).rowChunkSize(chunkSize));
-                } else {
-                    lighter.dotProductRows(output, input, weight, 0, inputLength, chunkStart, chunkSize,
-                            chunkStart);
-                }
+                projectChunk(output, input, weight, inputLength, chunkStart, chunkSize, phase);
             }
         });
+    }
+
+    private void projectChunk(TensorRef output, TensorRef input, TensorRef weight, int inputLength,
+            int chunkStart, int chunkSize, ForwardPhase phase) {
+        if (phase == ForwardPhase.PREFILL && input.shape().first() > 1) {
+            lighter.batchDotProduct(new BatchDotProduct()
+                    .result(output).a(input).b(weight)
+                    .aColumnOffset(0).bColumnOffset(0).columnLength(inputLength)
+                    .resultRowOffset(0).bRowOffset(chunkStart).rowChunkSize(chunkSize));
+        } else {
+            lighter.dotProductRows(output, input, weight, 0, inputLength, chunkStart, chunkSize, chunkStart);
+        }
     }
 
     private int groupedDecodeQkvSplitSize() {
@@ -364,18 +400,6 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
             if (closeProjectionInput) {
                 projectionInput.close();
             }
-        }
-    }
-
-    private void projectChunk(TensorRef output, TensorRef input, TensorRef weight, int inputLength,
-            int chunkStart, int chunkSize, ForwardPhase phase) {
-        if (phase == ForwardPhase.PREFILL && input.shape().first() > 1) {
-            lighter.batchDotProduct(new BatchDotProduct()
-                    .result(output).a(input).b(weight)
-                    .aColumnOffset(0).bColumnOffset(0).columnLength(inputLength)
-                    .resultRowOffset(0).bRowOffset(chunkStart).rowChunkSize(chunkSize));
-        } else {
-            lighter.dotProductRows(output, input, weight, 0, inputLength, chunkStart, chunkSize, chunkStart);
         }
     }
 

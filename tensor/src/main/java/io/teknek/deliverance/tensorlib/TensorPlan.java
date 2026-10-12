@@ -183,8 +183,8 @@ public final class TensorPlan {
         return new FusedBuilder(name, shape, FusedExecution.INT_STREAM_ROWS);
     }
 
-    public AlternateJitBuilder alternateJit(String planName, String candidateName, Runnable operation) {
-        return new AlternateJitBuilder(planName, candidateName, operation);
+    public AlternateDitBuilder alternateDit(String planName, String candidateName, Runnable operation) {
+        return new AlternateDitBuilder(planName, candidateName, operation);
     }
 
     public ChunkedBuilder chunked(String operation, long offset, long length) {
@@ -245,16 +245,16 @@ public final class TensorPlan {
         void run(long offset, long length);
     }
 
-    public final class AlternateJitBuilder {
+    public final class AlternateDitBuilder {
         private final String planName;
         private final Map<String, Runnable> candidates = new LinkedHashMap<>();
 
-        private AlternateJitBuilder(String planName, String candidateName, Runnable operation) {
+        private AlternateDitBuilder(String planName, String candidateName, Runnable operation) {
             this.planName = Objects.requireNonNull(planName, "planName");
             alternate(candidateName, operation);
         }
 
-        public AlternateJitBuilder alternate(String candidateName, Runnable operation) {
+        public AlternateDitBuilder alternate(String candidateName, Runnable operation) {
             candidates.put(Objects.requireNonNull(candidateName, "candidateName"),
                     Objects.requireNonNull(operation, "operation"));
             return this;
@@ -262,7 +262,7 @@ public final class TensorPlan {
 
         public void run() {
             if (candidates.isEmpty()) {
-                throw new IllegalStateException("alternateJit requires at least one candidate");
+                throw new IllegalStateException("alternateDit requires at least one candidate");
             }
             String candidate = adaptiveSplitTuner == null
                     ? candidates.keySet().iterator().next()

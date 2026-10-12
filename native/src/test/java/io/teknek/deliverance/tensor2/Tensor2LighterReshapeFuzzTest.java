@@ -3,6 +3,7 @@ package io.teknek.deliverance.tensor2;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
+import io.teknek.deliverance.tensor.impl.BFloat16BufferTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -102,6 +103,25 @@ class Tensor2LighterReshapeFuzzTest {
         }
     }
 
+    @ParameterizedTest(name = "bf16 {0}")
+    @MethodSource("bf16Cases")
+    void f32ToBf16MatchesLegacyBf16(Case c) {
+        Lighter lighter = panamaOnly();
+        try (FloatBufferTensor dense = dense(c);
+             TensorRef input = lighter.allocate(DType.F32, TensorShape.of(c.rows(), c.columns()));
+             BFloat16BufferTensor legacy = new BFloat16BufferTensor(dense)) {
+            copy(dense, input);
+            try (TensorRef actual = lighter.reshape(input, DType.BF16)) {
+                for (int row = 0; row < c.rows(); row++) {
+                    for (int column = 0; column < c.columns(); column++) {
+                        assertEquals(legacy.get(row, column), actual.get(row, column), 1.0e-6f,
+                                c + " row=" + row + " column=" + column);
+                    }
+                }
+            }
+        }
+    }
+
     @ParameterizedTest(name = "q4 {0}")
     @MethodSource("cases")
     void f32ToQ4MatchesLegacyQ4(Case c) {
@@ -150,6 +170,28 @@ class Tensor2LighterReshapeFuzzTest {
         for (int i = 0; i < 64; i++) {
             cases.add(new Case("random_" + i, rows[random.nextInt(rows.length)], columns[random.nextInt(columns.length)],
                     random.nextInt(), Pattern.RANDOM));
+        }
+        return cases.stream().map(Arguments::of);
+    }
+
+    static Stream<Arguments> bf16Cases() {
+        List<Case> cases = new ArrayList<>();
+        int id = 0;
+        int[] rows = {1, 2, 4, 7};
+        int[] columns = {1, 3, 7, 9, 15, 31, 33, 35, 40, 63, 65, 96, 128};
+        for (int row : rows) {
+            for (int column : columns) {
+                cases.add(new Case("bf16_pattern_" + id, row, column, id++, Pattern.DETERMINISTIC));
+                cases.add(new Case("bf16_zero_" + id, row, column, id++, Pattern.ZERO));
+                cases.add(new Case("bf16_negative_max_" + id, row, column, id++, Pattern.NEGATIVE_MAX));
+                cases.add(new Case("bf16_positive_max_" + id, row, column, id++, Pattern.POSITIVE_MAX));
+                cases.add(new Case("bf16_alternating_" + id, row, column, id++, Pattern.ALTERNATING));
+            }
+        }
+        Random random = new Random(0xBF165A5DL);
+        for (int i = 0; i < 64; i++) {
+            cases.add(new Case("bf16_random_" + i, rows[random.nextInt(rows.length)],
+                    1 + random.nextInt(128), random.nextInt(), Pattern.RANDOM));
         }
         return cases.stream().map(Arguments::of);
     }

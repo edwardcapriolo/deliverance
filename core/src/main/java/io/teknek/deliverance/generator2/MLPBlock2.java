@@ -164,12 +164,6 @@ public class MLPBlock2 implements FeedForward2 {
         });
     }
 
-    private boolean hasActiveLoraDelta() {
-        return gateWeightName != null && model.activeLoraDeltaFor(gateWeightName).isPresent()
-                || upWeightName != null && model.activeLoraDeltaFor(upWeightName).isPresent()
-                || downWeightName != null && model.activeLoraDeltaFor(downWeightName).isPresent();
-    }
-
     private void applyLora(String weightName, TensorRef output, TensorRef input,
             ForwardPhase phase, String metricName) {
         if (weightName != null) {

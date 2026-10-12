@@ -84,6 +84,23 @@ public final class CompositeOps {
         return lighter.supportsActivationMultiplyQuantize(operation);
     }
 
+    private void dotProductRows(TensorRef output, TensorRef input, TensorRef weights, int rowStart, int rowCount,
+            boolean batched) {
+        for (TensorOps provider : lighter.orderedTensorOperations()) {
+            io.teknek.dysfx.Either<OpSupport, Void> result;
+            if (batched) {
+                result = provider.batchDotProduct(new BatchDotProduct().result(output).a(input).b(weights)
+                        .aColumnOffset(0).bColumnOffset(0).columnLength(input.shape().last())
+                        .resultRowOffset(0).bRowOffset(rowStart).rowChunkSize(rowCount));
+            } else {
+                result = provider.dotProductRows(output, input, weights, 0, input.shape().last(), rowStart,
+                        rowCount, rowStart);
+            }
+            if (result.isRight()) return;
+        }
+        throw new IllegalStateException("No tensor provider supports fused MLP projection");
+    }
+
     /** Generic one-token causal attention over paged KV tensors. */
     public void decodePagedAttention(TensorRef output, TensorRef query, TensorRef[] keyPages,
             TensorRef[] valuePages, int visibleRows, int numberOfHeads, int numberOfKeyValueHeads, int headSize,
