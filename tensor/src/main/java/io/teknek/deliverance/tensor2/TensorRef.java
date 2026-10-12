@@ -348,12 +348,18 @@ public class TensorRef implements AutoCloseable {
         return requireOpen().dType();
     }
 
-    String device() {
+    /** Returns the logical device owning this tensor. */
+    public String device() {
         return requireOpen().device();
     }
 
     public int stride() {
         return requireOpen().stride();
+    }
+
+    /** Returns the opaque device handle, or {@code 0} for CPU-backed storage. */
+    public long deviceHandle() {
+        return underlying().deviceHandle();
     }
 
     public TensorRef sidecar(String name) {

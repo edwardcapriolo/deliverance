@@ -55,7 +55,12 @@ public interface TensorOps {
       }
 
 
-     Either<OpSupport, Void> scale(float factor, TensorRef target, int offset, int length);
+      Either<OpSupport, Void> scale(float factor, TensorRef target, int offset, int length);
+
+      /** Multiplies every element of a contiguous 2D tensor by one scalar. */
+      default Either<OpSupport, Void> multiplyAll(float factor, TensorRef target) {
+           return Either.Left(OpSupport.Unsupported);
+      }
 
      default Either<OpSupport, Void> saxpy(float alpha, TensorRef x, TensorRef y,
              int xOffset, int yOffset, int length) {

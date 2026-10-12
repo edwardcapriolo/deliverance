@@ -216,6 +216,49 @@ public class NativeGPU {
         }
     }
 
+    private static class allocate_gpu_buffer {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.of(
+            NativeGPU.C_LONG,
+            NativeGPU.C_INT,
+            NativeGPU.C_INT
+        );
+
+        public static final MemorySegment ADDR = NativeGPU.findOrThrow("allocate_gpu_buffer");
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /** Allocates a native WebGPU storage buffer, optionally clearing it on the GPU queue. */
+    public static long allocate_gpu_buffer(int size, boolean zero) {
+        var mh$ = allocate_gpu_buffer.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("allocate_gpu_buffer", size, zero);
+            }
+            return (long) mh$.invokeExact(size, zero ? 1 : 0);
+        } catch (Throwable ex$) {
+            throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
+    private static class free_gpu_buffer {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(NativeGPU.C_LONG);
+        public static final MemorySegment ADDR = NativeGPU.findOrThrow("free_gpu_buffer");
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /** Releases a native WebGPU storage buffer allocated by {@link #allocate_gpu_buffer(int, boolean)}. */
+    public static void free_gpu_buffer(long id) {
+        var mh$ = free_gpu_buffer.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("free_gpu_buffer", id);
+            }
+            mh$.invokeExact(id);
+        } catch (Throwable ex$) {
+            throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
     private static class register_scratch_buffers {
         public static final FunctionDescriptor DESC = FunctionDescriptor.of(
             NativeGPU.C_LONG,

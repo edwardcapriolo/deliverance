@@ -32,6 +32,7 @@ public class AutoTokenizer {
             JsonNode tokenizerDocument = objectMapper.readTree(new File(path, "tokenizer.json"));
             JsonNode tokenizerConfigDocument = readOptionalJson(objectMapper, new File(path, "tokenizer_config.json"));
             JsonNode specialTokensMapDocument = readOptionalJson(objectMapper, new File(path, "special_tokens_map.json"));
+            JsonNode modelConfigDocument = readOptionalJson(objectMapper, new File(path, "config.json"));
 
             Map<String, Integer> vocab = readVocab(path, tokenizerDocument, objectMapper);
             SortedMap<Integer, AddedToken> addedTokenMap = computeSortedTokenMap(tokenizerDocument.path("added_tokens"));
@@ -39,7 +40,8 @@ public class AutoTokenizer {
                 addedTokenMap = computeSortedTokenMap(tokenizerConfigDocument == null ? null : tokenizerConfigDocument.path("added_tokens_decoder"));
             }
 
-            TokenizerConfig tokenizerConfig = parseTokenizerConfig(path, tokenizerConfigDocument, specialTokensMapDocument);
+            TokenizerConfig tokenizerConfig = parseTokenizerConfig(path, tokenizerDocument, tokenizerConfigDocument,
+                    specialTokensMapDocument, modelConfigDocument);
             BytePairEncodingModel bytePairEncodingModel = parseBytePairEncodingModel(path, tokenizerDocument, vocab);
             String tokenizerClass = tokenizerConfig.tokenizerClass() != null
                     ? tokenizerConfig.tokenizerClass()
@@ -142,7 +144,10 @@ public class AutoTokenizer {
         return Map.of();
     }
 
-    private static TokenizerConfig parseTokenizerConfig(File path, JsonNode tokenizerConfigDocument, JsonNode specialTokensMapDocument) {
+    private static TokenizerConfig parseTokenizerConfig(File path, JsonNode tokenizerDocument,
+                                                        JsonNode tokenizerConfigDocument,
+                                                        JsonNode specialTokensMapDocument,
+                                                        JsonNode modelConfigDocument) {
         JsonNode mergedSpecialSource = specialTokensMapDocument == null ? tokenizerConfigDocument : specialTokensMapDocument;
         Map<String, String> specialTokens = new LinkedHashMap<>();
         for (String attribute : PreTrainedTokenizerBase.SPECIAL_TOKEN_ATTRIBUTES) {
@@ -172,6 +177,18 @@ public class AutoTokenizer {
             }
         }
 
+        JsonNode postProcessor = tokenizerDocument == null ? null : tokenizerDocument.get("post_processor");
+        boolean embeddingGemma2 = modelConfigDocument != null
+                && "embedding_gemma2".equals(modelConfigDocument.path("model_type").asText());
+        boolean addBosToken = embeddingGemma2
+                && (tokenizerConfigDocument != null && tokenizerConfigDocument.has("add_bos_token")
+                ? readBoolean(tokenizerConfigDocument, "add_bos_token", false)
+                : postProcessorContainsToken(postProcessor, specialTokens.get("bos_token")));
+        boolean addEosToken = embeddingGemma2
+                && (tokenizerConfigDocument != null && tokenizerConfigDocument.has("add_eos_token")
+                ? readBoolean(tokenizerConfigDocument, "add_eos_token", false)
+                : postProcessorContainsToken(postProcessor, specialTokens.get("eos_token")));
+
         return new TokenizerConfig(
                 chatTemplate,
                 readText(tokenizerConfigDocument, "tokenizer_class"),
@@ -181,7 +198,13 @@ public class AutoTokenizer {
                 parsePaddingSide(readText(tokenizerConfigDocument, "padding_side")),
                 parseTruncationSide(readText(tokenizerConfigDocument, "truncation_side")),
                 specialTokens,
-                additionalSpecialTokens);
+                additionalSpecialTokens,
+                addBosToken,
+                addEosToken);
+    }
+
+    private static boolean postProcessorContainsToken(JsonNode postProcessor, String token) {
+        return token != null && postProcessor != null && postProcessor.toString().contains("\"" + token + "\"");
     }
 
     private static BytePairEncodingModel parseBytePairEncodingModel(File path, JsonNode tokenizerDocument, Map<String, Integer> vocab) throws IOException {

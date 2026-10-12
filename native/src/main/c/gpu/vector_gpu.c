@@ -445,6 +445,39 @@ int64_t register_tensor(const char *data, int size) {
     return id;
 }
 
+int64_t allocate_gpu_buffer(int size, int zero) {
+    if (size <= 0) {
+        return -1;
+    }
+    WGPUBuffer buffer = create_working_buffer(device, "tensor2_dense", (size_t) size,
+            WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
+    if (buffer == NULL) {
+        return -1;
+    }
+    if (zero) {
+        WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device, &(const WGPUCommandEncoderDescriptor){
+                .label = "tensor2_dense_zero"
+        });
+        wgpuCommandEncoderClearBuffer(encoder, buffer, 0, (uint64_t) size);
+        WGPUCommandBuffer command = wgpuCommandEncoderFinish(encoder, &(const WGPUCommandBufferDescriptor){
+                .label = "tensor2_dense_zero_submit"
+        });
+        wgpuQueueSubmit(queue, 1, &command);
+        wgpuCommandBufferRelease(command);
+        wgpuCommandEncoderRelease(encoder);
+    }
+    return (int64_t) buffer;
+}
+
+void free_gpu_buffer(int64_t id) {
+    if (id == 0) {
+        return;
+    }
+    WGPUBuffer buffer = (WGPUBuffer) id;
+    wgpuBufferDestroy(buffer);
+    wgpuBufferRelease(buffer);
+}
+
 void unregister_tensor(int64_t id) {
     if (id < 0) {
         return;

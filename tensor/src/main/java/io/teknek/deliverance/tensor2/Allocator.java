@@ -14,6 +14,7 @@ class Allocator {
     //it must always allocate the tensor its not a "cache" that hands back raw tensors when its "full"
     private static final String CPU = "cpu";
     private final ConcurrentMap<TensorPoolKey, ConcurrentLinkedQueue<Tensor>> availableByShape = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, DeviceAllocator> deviceAllocators = new ConcurrentHashMap<>();
     private volatile boolean allowDirtyTensors = true;
 
     TensorRef allocate(DType dType, TensorShape shape) {
@@ -33,13 +34,25 @@ class Allocator {
     }
 
     private TensorRef allocate(DType dType, TensorShape shape, String device, boolean zero) {
-        Preconditions.checkArgument(CPU.equals(device), "Only cpu tensors are supported for now");
+        if (!CPU.equals(device)) {
+            DeviceAllocator deviceAllocator = deviceAllocators.get(device);
+            Preconditions.checkArgument(deviceAllocator != null, "No allocator registered for device %s", device);
+            long handle = deviceAllocator.allocate(dType, shape, zero);
+            Preconditions.checkArgument(handle != 0L, "Device allocator returned an invalid handle");
+            return new TensorRef(new TensorRefState(LeaseState.USED, this,
+                    new GpuTensor(handle, dType, shape, stride(shape)), shape, dType, stride(shape), device, Map.of(), null));
+        }
         if (dType == DType.I8 || dType == DType.Q4) {
             return allocateQuantized(dType, shape, device, zero);
         }
         Preconditions.checkArgument(dType == DType.F32 || dType == DType.F16 || dType == DType.BF16,
                 "Only F32, F16, BF16, I8, and Q4 tensors are supported for now");
         return allocateDense(dType, shape, device, Map.of(), zero);
+    }
+
+    void registerDeviceAllocator(DeviceAllocator allocator) {
+        DeviceAllocator value = java.util.Objects.requireNonNull(allocator, "allocator");
+        deviceAllocators.put(value.device(), value);
     }
 
     private TensorRef allocateDense(DType dType, TensorShape shape, String device, Map<String, TensorRef> sidecars,
@@ -97,6 +110,13 @@ class Allocator {
     }
 
     void close(TensorRefState state) {
+        if (state.underlying() instanceof GpuTensor gpuTensor) {
+            DeviceAllocator allocator = deviceAllocators.get(state.device());
+            if (allocator != null) {
+                allocator.release(gpuTensor.deviceHandle());
+            }
+            return;
+        }
         TensorPoolKey key = new TensorPoolKey(state.dType(), state.shape(), state.device());
         availableByShape.computeIfAbsent(key, ignored -> new ConcurrentLinkedQueue<>()).offer(state.underlying());
     }

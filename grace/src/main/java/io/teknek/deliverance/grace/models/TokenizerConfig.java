@@ -18,7 +18,9 @@ public record TokenizerConfig(
         PaddingSide paddingSide,
         TruncationSide truncationSide,
         Map<String, String> specialTokensMap,
-        List<String> additionalSpecialTokens) {
+        List<String> additionalSpecialTokens,
+        boolean addBosToken,
+        boolean addEosToken) {
 
     public TokenizerConfig {
         modelMaxLength = modelMaxLength == null ? TokenizerUtils.VERY_LARGE_INTEGER : modelMaxLength;
@@ -38,6 +40,8 @@ public record TokenizerConfig(
                 PaddingSide.RIGHT,
                 TruncationSide.RIGHT,
                 Map.of(),
-                List.of());
+                List.of(),
+                false,
+                false);
     }
 }

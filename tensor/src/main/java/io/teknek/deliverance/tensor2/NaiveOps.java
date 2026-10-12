@@ -250,6 +250,17 @@ class NaiveOps implements TensorOps {
     }
 
     @Override
+    public Either<OpSupport, Void> multiplyAll(float factor, TensorRef target) {
+        Preconditions.checkArgument(target.dims() == 2, "multiplyAll expects a 2D tensor");
+        for (int row = 0; row < target.shape().first(); row++) {
+            for (int column = 0; column < target.shape().last(); column++) {
+                target.underlying().set(target.underlying().get(row, column) * factor, row, column);
+            }
+        }
+        return Either.Right(null);
+    }
+
+    @Override
     public Either<OpSupport, Void> saxpy(float alpha, TensorRef x, TensorRef y, int xOffset, int yOffset,
             int length) {
         for (int column = 0; column < length; column++) {

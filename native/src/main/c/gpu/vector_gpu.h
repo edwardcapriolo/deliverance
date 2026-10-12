@@ -11,6 +11,10 @@ int64_t register_tensor(const char *data, int size);
 
 void unregister_tensor(int64_t id);
 
+int64_t allocate_gpu_buffer(int size, int zero);
+
+void free_gpu_buffer(int64_t id);
+
 int64_t register_scratch_buffers(int params_size, int input_size, int result_size);
 
 void unregister_scratch_buffers(int64_t id);

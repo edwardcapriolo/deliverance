@@ -1298,6 +1298,12 @@ class PanamaOps implements TensorOps {
         return Either.Left(OpSupport.Unsupported);
     }
 
+    @Override
+    public Either<OpSupport, Void> multiplyAll(float factor, TensorRef target) {
+        Preconditions.checkArgument(target.dims() == 2, "multiplyAll expects a 2D tensor");
+        return scale(factor, target, 0, target.shape().last());
+    }
+
     private void scaleF16(float factor, TensorRef target, int offset, int length) {
         FloatVector scale = FloatVector.broadcast(F32_BF16_SPECIES, factor);
         int end = offset + length;

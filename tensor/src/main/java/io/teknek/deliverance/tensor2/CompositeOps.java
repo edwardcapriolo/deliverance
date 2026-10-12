@@ -272,27 +272,29 @@ public final class CompositeOps {
         }
     }
 
-    /** Applies F32 RMSNorm using vectorized row reductions and scaling. */
+    /** Applies F32 RMSNorm using vectorized row reductions and optional scaling. */
     public void rmsNorm(TensorRef output, TensorRef input, TensorRef weights, float epsilon,
             float weightAdjustment) {
         Preconditions.checkArgument(output.dType() == io.teknek.deliverance.DType.F32
                         && input.dType() == io.teknek.deliverance.DType.F32
-                        && weights.dType() == io.teknek.deliverance.DType.F32,
+                        && (weights == null || weights.dType() == io.teknek.deliverance.DType.F32),
                 "F32 RMSNorm requires F32 tensors");
         Preconditions.checkArgument(output.shape().equals(input.shape()), "RMSNorm output shape must match input");
-        Preconditions.checkArgument(weights.dims() == 2 && weights.shape().first() == 1
-                        && weights.shape().last() >= input.shape().last(),
-                "RMSNorm weights must be [1, inputWidth]");
+        if (weights != null) {
+            Preconditions.checkArgument(weights.dims() == 2 && weights.shape().first() == 1
+                            && weights.shape().last() >= input.shape().last(),
+                    "RMSNorm weights must be [1, inputWidth]");
+        }
         int rows = input.shape().first();
         int columns = input.shape().last();
         MemorySegment inputMemory = input.memorySegment();
         MemorySegment outputMemory = output.memorySegment();
-        MemorySegment weightMemory = weights.memorySegment();
+        MemorySegment weightMemory = weights == null ? null : weights.memorySegment();
         int upper = F32_SPECIES.loopBound(columns);
         for (int row = 0; row < rows; row++) {
             long inputBase = input.memorySegmentOffset(input.shape().getOffset(row, 0));
             long outputBase = output.memorySegmentOffset(output.shape().getOffset(row, 0));
-            long weightBase = weights.memorySegmentOffset(weights.shape().getOffset(0, 0));
+            long weightBase = weights == null ? 0 : weights.memorySegmentOffset(weights.shape().getOffset(0, 0));
             FloatVector sum = FloatVector.zero(F32_SPECIES);
             for (int column = 0; column < upper; column += F32_SPECIES.length()) {
                 FloatVector values = FloatVector.fromMemorySegment(F32_SPECIES, inputMemory,
@@ -312,20 +314,28 @@ public final class CompositeOps {
                 long inputAddress = inputBase + (long) column * Float.BYTES;
                 FloatVector values = FloatVector.fromMemorySegment(F32_SPECIES, inputMemory, inputAddress,
                         ByteOrder.LITTLE_ENDIAN);
-                FloatVector scales = FloatVector.fromMemorySegment(F32_SPECIES, weightMemory,
-                        weightBase + (long) column * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
-                values.mul(inverse).mul(scales.add(adjustment)).intoMemorySegment(outputMemory,
-                        outputBase + (long) column * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+                FloatVector scaled = values.mul(inverse);
+                if (weights != null) {
+                    FloatVector scales = FloatVector.fromMemorySegment(F32_SPECIES, weightMemory,
+                            weightBase + (long) column * Float.BYTES, ByteOrder.LITTLE_ENDIAN);
+                    scaled = scaled.mul(scales.add(adjustment));
+                }
+                scaled.intoMemorySegment(outputMemory, outputBase + (long) column * Float.BYTES,
+                        ByteOrder.LITTLE_ENDIAN);
             }
             if (upper < columns) {
                 VectorMask<Float> mask = F32_SPECIES.indexInRange(upper, columns);
                 long inputAddress = inputBase + (long) upper * Float.BYTES;
                 FloatVector values = FloatVector.fromMemorySegment(F32_SPECIES, inputMemory, inputAddress,
                         ByteOrder.LITTLE_ENDIAN, mask);
-                FloatVector scales = FloatVector.fromMemorySegment(F32_SPECIES, weightMemory,
-                        weightBase + (long) upper * Float.BYTES, ByteOrder.LITTLE_ENDIAN, mask);
-                values.mul(inverse).mul(scales.add(adjustment)).intoMemorySegment(outputMemory,
-                        outputBase + (long) upper * Float.BYTES, ByteOrder.LITTLE_ENDIAN, mask);
+                FloatVector scaled = values.mul(inverse);
+                if (weights != null) {
+                    FloatVector scales = FloatVector.fromMemorySegment(F32_SPECIES, weightMemory,
+                            weightBase + (long) upper * Float.BYTES, ByteOrder.LITTLE_ENDIAN, mask);
+                    scaled = scaled.mul(scales.add(adjustment));
+                }
+                scaled.intoMemorySegment(outputMemory, outputBase + (long) upper * Float.BYTES,
+                        ByteOrder.LITTLE_ENDIAN, mask);
             }
         }
     }
