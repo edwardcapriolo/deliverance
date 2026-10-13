@@ -93,6 +93,11 @@ public class Lighter {
         this.providerObserver = java.util.Objects.requireNonNull(providerObserver, "providerObserver");
     }
 
+    /** Registers a device allocator used by subsequent device-specific allocations. */
+    public void registerDeviceAllocator(DeviceAllocator allocator) {
+        this.allocator.registerDeviceAllocator(allocator);
+    }
+
     public Map<TensorProviderKind, TensorOps> tensorOperations() {
         return Map.copyOf(tensorOperations);
     }
@@ -384,6 +389,56 @@ public class Lighter {
             copyQuantizedScale(Q4Layout.scale(source), Q4Layout.scale(destination), Q4Layout.BLOCK_SIZE,
                     sourceOffset, destinationOffset, length);
         }
+    }
+
+    /**
+     * Gathers vocabulary rows into a dense output and applies a scalar scale.
+     *
+     * <p>This is the TensorRef provider boundary for scaled token embeddings.
+     * The current implementation composes row copy and provider scale; a
+     * fused provider kernel can replace it without changing model code.</p>
+     *
+     * @param output writable output shaped {@code [inputIds.length, hidden]}
+     * @param embeddings vocabulary table shaped {@code [vocabulary, hidden]}
+     * @param inputIds token IDs to gather
+     * @param scale scale applied to each gathered row
+     */
+    public void gatherRowsScale(TensorRef output, TensorRef embeddings, int[] inputIds, float scale) {
+        Preconditions.checkArgument(output.dims() == 2 && embeddings.dims() == 2,
+                "gatherRowsScale expects 2D tensors");
+        Preconditions.checkArgument(output.shape().first() == inputIds.length,
+                "inputIds length must match output rows");
+        Preconditions.checkArgument(output.shape().last() == embeddings.shape().last(),
+                "embedding hidden size mismatch");
+        Preconditions.checkArgument(Float.isFinite(scale), "scale must be finite");
+        Preconditions.checkArgument(output.shape().last() == embeddings.shape().last(),
+                "embedding hidden size mismatch");
+        Preconditions.checkArgument(Float.isFinite(scale), "scale must be finite");
+        for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
+            Either<OpSupport, Void> result = entry.getValue().gatherRowsScale(output, embeddings, inputIds, scale);
+            if (result.isRight()) {
+                observe("gather_rows_scale", entry.getKey(), true, output.dType(), embeddings.dType(), null, Map.of());
+                return;
+            }
+            observe("gather_rows_scale", entry.getKey(), false, output.dType(), embeddings.dType(), null, Map.of());
+        }
+        throw new IllegalStateException("No tensor operations support gatherRowsScale");
+    }
+
+    /** Multiplies every element of a contiguous 2D TensorRef by one scalar. */
+    public void multiplyAll(float factor, TensorRef target) {
+        Preconditions.checkArgument(target != null, "Target tensor must be set");
+        Preconditions.checkArgument(target.dims() == 2, "multiplyAll expects a 2D tensor");
+        Preconditions.checkArgument(Float.isFinite(factor), "scale must be finite");
+        for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
+            Either<OpSupport, Void> result = entry.getValue().multiplyAll(factor, target);
+            if (result.isRight()) {
+                observe("multiply_all", entry.getKey(), true, target.dType(), target.dType(), null, Map.of());
+                return;
+            }
+            observe("multiply_all", entry.getKey(), false, target.dType(), target.dType(), null, Map.of());
+        }
+        throw new IllegalStateException("No tensor operations support multiplyAll");
     }
 
     private void copyQuantizedScale(TensorRef sourceScale, TensorRef destinationScale, int blockSize,

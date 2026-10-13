@@ -57,6 +57,45 @@ public class ModelFetcherTest {
     }
 
     @Test
+    void includesAllEmbeddingGemma2MetadataFilesAndExcludesWeightsWithoutDownload() {
+        ModelFetcher fetch = new ModelFetcher("google", "embeddinggemma-2");
+        List<String> modelFiles = List.of(
+                ".gitattributes",
+                "1_Pooling/config.json",
+                "2_Normalize/config.json",
+                "README.md",
+                "chat_template.jinja",
+                "config.json",
+                "config_sentence_transformers.json",
+                "model.safetensors",
+                "modules.json",
+                "preprocessor_config.json",
+                "processor_config.json",
+                "sentence_bert_config.json",
+                "tokenizer.json",
+                "tokenizer.model",
+                "tokenizer_config.json"
+        );
+
+        List<String> files = fetch.filesToDownload(modelFiles, false);
+
+        Assertions.assertTrue(files.containsAll(List.of(
+                "config.json",
+                "config_sentence_transformers.json",
+                "modules.json",
+                "preprocessor_config.json",
+                "processor_config.json",
+                "sentence_bert_config.json",
+                "1_Pooling/config.json",
+                "2_Normalize/config.json",
+                "tokenizer.json",
+                "tokenizer.model",
+                "tokenizer_config.json"
+        )));
+        Assertions.assertFalse(files.contains("model.safetensors"));
+    }
+
+    @Test
     void includesNemotronLabsDiffusionModelSupportFilesInDownloads() {
         ModelFetcher fetch = new ModelFetcher("nvidia", "Nemotron-Labs-Diffusion-3B-Base");
 

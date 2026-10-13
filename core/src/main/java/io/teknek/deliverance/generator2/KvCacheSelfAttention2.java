@@ -180,6 +180,7 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
         }
     }
 
+
     private void copyPrefixRows(KvReadView readView, TensorRef packedKeys, TensorRef packedValues, int rowCount) {
         for (int row = 0; row < rowCount; row++) {
             try (TensorRef keyRow = readView.keyRowRef(row); TensorRef valueRow = readView.valueRowRef(row)) {

@@ -8,6 +8,7 @@ import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.bert.BertModelType;
 import io.teknek.deliverance.model.diffusiongemma.DiffusionGemmaModelType;
+import io.teknek.deliverance.model.embeddinggemma2.EmbeddingGemma2ModelType;
 import io.teknek.deliverance.model.gemma2.Gemma2ModelType;
 import io.teknek.deliverance.model.gemma4.Gemma4ModelType;
 import io.teknek.deliverance.model.gemma3.Gemma3ModelType;
@@ -69,6 +70,7 @@ public class ModelSupport {
         registry.putIfAbsent("MIXTRAL", new MixtralModelType());
         registry.putIfAbsent("GRANITEMOEHYBRID", new GraniteMoeHybridModelType());
         registry.putIfAbsent("DIFFUSION_GEMMA", new DiffusionGemmaModelType());
+        registry.putIfAbsent("EMBEDDING_GEMMA2", new EmbeddingGemma2ModelType());
         registry.putIfAbsent("NEMOTRON_LABS_DIFFUSION", new NemotronLabsDiffusionModelType());
     }
 
@@ -207,9 +209,10 @@ public class ModelSupport {
         try {
             Config config = om.readValue(configFile, modelType.getConfigClass());
             PreTrainedTokenizer tokenizer = AutoTokenizer.fromPretrained(model.toPath());
-            WeightLoader wl = new DefaultWeightLoader(model);
+             WeightLoader wl = new DefaultWeightLoader(model);
+             wl.setUseMajorityDType(modelType.useMajorityDType());
 
-            Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
+             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
                     WeightLoader.class, PreTrainedTokenizer.class, DType.class, DType.class, Optional.class,
                     ConfigurableTensorProvider.class, MetricRegistry.class, TensorAllocator.class,
                     KvBufferCacheSettings.class, ToolCallParser.class, WrappedForkJoinPool.class,

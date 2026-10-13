@@ -56,6 +56,11 @@ public class MergingWeightLoader implements WeightLoader {
     }
 
     @Override
+    public void setUseMajorityDType(boolean useMajorityDType) {
+        delegate.setUseMajorityDType(useMajorityDType);
+    }
+
+    @Override
     public Optional<Path> modelRoot() {
         return delegate.modelRoot();
     }

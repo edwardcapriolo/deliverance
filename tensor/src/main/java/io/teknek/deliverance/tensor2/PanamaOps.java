@@ -293,6 +293,26 @@ class PanamaOps implements TensorOps {
         return Either.Left(OpSupport.Unsupported);
     }
 
+    @Override
+    public Either<OpSupport, Void> gatherRowsScale(TensorRef output, TensorRef embeddings,
+            int[] inputIds, float scale) {
+        if (output.dims() != 2 || embeddings.dims() != 2
+                || output.shape().first() != inputIds.length
+                || output.shape().last() != embeddings.shape().last()) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        for (int row = 0; row < inputIds.length; row++) {
+            int token = inputIds[row];
+            if (token < 0 || token >= embeddings.shape().first()) {
+                throw new IllegalArgumentException("Input id out of bounds");
+            }
+            for (int column = 0; column < embeddings.shape().last(); column++) {
+                output.set(embeddings.get(token, column) * scale, row, column);
+            }
+        }
+        return Either.Right(null);
+    }
+
     private void copySameDType(TensorRef input, TensorRef output) {
         long bytes = physicalBytes(input);
         output.underlying().getMemorySegment().asSlice(output.memorySegmentOffset(output.shape().getOffset(0, 0)), bytes)
@@ -1296,6 +1316,12 @@ class PanamaOps implements TensorOps {
             return Either.Right(null);
         }
         return Either.Left(OpSupport.Unsupported);
+    }
+
+    @Override
+    public Either<OpSupport, Void> multiplyAll(float factor, TensorRef target) {
+        Preconditions.checkArgument(target.dims() == 2, "multiplyAll expects a 2D tensor");
+        return scale(factor, target, 0, target.shape().last());
     }
 
     private void scaleF16(float factor, TensorRef target, int offset, int length) {

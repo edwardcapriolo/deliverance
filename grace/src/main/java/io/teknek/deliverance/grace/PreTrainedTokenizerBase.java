@@ -26,6 +26,8 @@ public abstract class PreTrainedTokenizerBase {
     private final TruncationSide truncationSide;
     private final boolean cleanUpTokenizationSpaces;
     private final boolean splitSpecialTokens;
+    private final boolean addBosToken;
+    private final boolean addEosToken;
     private final Object backend;
     private final List<Object> filesLoaded;
     private final int padTokenTypeId;
@@ -52,6 +54,8 @@ public abstract class PreTrainedTokenizerBase {
         this.truncationSide = truncationSide.orElse(resolvedConfig.truncationSide());
         this.cleanUpTokenizationSpaces = cleanUpTokenizationSpaces.orElse(resolvedConfig.cleanUpTokenizationSpaces());
         this.splitSpecialTokens = splitSpecialTokens.orElse(resolvedConfig.splitSpecialTokens());
+        this.addBosToken = resolvedConfig.addBosToken();
+        this.addEosToken = resolvedConfig.addEosToken();
         this.backend = backend.orElse(null);
         this.filesLoaded = List.copyOf(filesLoaded.orElseGet(List::of));
         this.padTokenTypeId = 0;
@@ -344,7 +348,23 @@ public abstract class PreTrainedTokenizerBase {
     }
 
     protected int[] buildInputsWithSpecialTokens(int[] inputIds) {
-        return inputIds;
+        int extra = (addBosToken ? 1 : 0) + (addEosToken ? 1 : 0);
+        if (extra == 0) {
+            return inputIds;
+        }
+        int[] result = new int[inputIds.length + extra];
+        int offset = 0;
+        if (addBosToken) {
+            result[offset++] = bosTokenId().orElseThrow(() ->
+                    new IllegalStateException("Tokenizer requests BOS insertion but has no BOS token ID"));
+        }
+        System.arraycopy(inputIds, 0, result, offset, inputIds.length);
+        offset += inputIds.length;
+        if (addEosToken) {
+            result[offset] = eosTokenId().orElseThrow(() ->
+                    new IllegalStateException("Tokenizer requests EOS insertion but has no EOS token ID"));
+        }
+        return result;
     }
 
     private int resolveTokenId(String token) {

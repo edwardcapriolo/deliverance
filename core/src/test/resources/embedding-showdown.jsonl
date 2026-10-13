@@ -1,0 +1,12 @@
+{"id":"short_sentence","text":"This is a short sentence about machine learning."}
+{"id":"retrieval_query","text":"How do I initialize a database connection safely?"}
+{"id":"retrieval_document","text":"The service opens a pooled database connection during startup and closes it during shutdown."}
+{"id":"punctuation","text":"Exactness matters: commas, quotes, parentheses (and dashes) should not be ignored."}
+{"id":"whitespace","text":"Leading and trailing whitespace should be handled consistently.\nSecond line follows."}
+{"id":"unicode","text":"Embedding search supports multilingual text: Caf\u00e9, na\u00efve, \u6771\u4eac, \u0645\u0631\u062d\u0628\u064b\u0627, and \ud83e\udd16."}
+{"id":"code","text":"public static void main(String[] args) { System.out.println(\"hello\"); }"}
+{"id":"structured","text":"title: Tensor providers\nsection: Panama\nstatus: production\npriority: high"}
+{"id":"numbers","text":"The vector has 768 dimensions, 24 layers, 4 attention heads, and a 512-token window."}
+{"id":"long_context","text":"A controlled benchmark should include a longer paragraph. This paragraph repeats ordinary retrieval language so that tokenization, attention, pooling, and normalization are exercised together without depending on repository files or network responses. The same bytes are used by both implementations."}
+{"id":"question","text":"Which document best explains how a provider converts BF16 embeddings into F32 activations?"}
+{"id":"answer","text":"A provider should gather rows, apply the embedding scale, and write directly into the requested output dtype."}

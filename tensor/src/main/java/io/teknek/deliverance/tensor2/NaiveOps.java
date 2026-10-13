@@ -131,6 +131,23 @@ class NaiveOps implements TensorOps {
         return Either.Left(OpSupport.Unsupported);
     }
 
+    @Override
+    public Either<OpSupport, Void> gatherRowsScale(TensorRef output, TensorRef embeddings,
+            int[] inputIds, float scale) {
+        Preconditions.checkArgument(output.dims() == 2 && embeddings.dims() == 2,
+                "gatherRowsScale requires 2D tensors");
+        Preconditions.checkArgument(output.shape().first() == inputIds.length
+                && output.shape().last() == embeddings.shape().last(), "gather shape mismatch");
+        for (int row = 0; row < inputIds.length; row++) {
+            int token = inputIds[row];
+            Preconditions.checkArgument(token >= 0 && token < embeddings.shape().first(), "input id out of bounds");
+            for (int column = 0; column < embeddings.shape().last(); column++) {
+                output.set(embeddings.get(token, column) * scale, row, column);
+            }
+        }
+        return Either.Right(null);
+    }
+
     private void reshapeI8(TensorRef input, TensorRef output) {
         TensorRef scale = Q8Layout.scale(output);
         Preconditions.checkArgument(scale != null, "I8 output must have scale sidecar");
@@ -243,6 +260,17 @@ class NaiveOps implements TensorOps {
         Preconditions.checkArgument(offset >= 0 && length >= 0 && offset + length <= target.shape().last());
         for (int row = 0; row < target.shape().first(); row++) {
             for (int column = offset; column < offset + length; column++) {
+                target.underlying().set(target.underlying().get(row, column) * factor, row, column);
+            }
+        }
+        return Either.Right(null);
+    }
+
+    @Override
+    public Either<OpSupport, Void> multiplyAll(float factor, TensorRef target) {
+        Preconditions.checkArgument(target.dims() == 2, "multiplyAll expects a 2D tensor");
+        for (int row = 0; row < target.shape().first(); row++) {
+            for (int column = 0; column < target.shape().last(); column++) {
                 target.underlying().set(target.underlying().get(row, column) * factor, row, column);
             }
         }

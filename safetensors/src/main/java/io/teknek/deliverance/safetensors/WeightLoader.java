@@ -54,6 +54,10 @@ public interface WeightLoader extends AutoCloseable {
 
     DType getModelDType();
 
+    /** Controls implicit majority-dtype inference used by legacy model loaders. */
+    default void setUseMajorityDType(boolean useMajorityDType) {
+    }
+
     /**
      * Supplies the model's tensor2 execution context before model initialization loads weights.
      * Legacy loaders that do not expose tensor2 weights may leave this as a no-op.
