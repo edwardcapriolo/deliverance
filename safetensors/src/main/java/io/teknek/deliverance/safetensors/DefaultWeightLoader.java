@@ -45,6 +45,7 @@ public class DefaultWeightLoader implements WeightLoader {
     private final Map<String, Weights> weightMap;
     private final Path modelRoot;
     private final DType majorityDType;
+    private volatile boolean useMajorityDType = true;
     private Lighter lighter;
 
 
@@ -505,8 +506,12 @@ public class DefaultWeightLoader implements WeightLoader {
 
     @Override
     public DType getModelDType() {
+        return useMajorityDType ? this.majorityDType : DType.F32;
+    }
 
-        return this.majorityDType;
+    @Override
+    public void setUseMajorityDType(boolean useMajorityDType) {
+        this.useMajorityDType = useMajorityDType;
     }
 
     @Override

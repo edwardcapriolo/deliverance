@@ -2,7 +2,6 @@ package io.teknek.deliverance.model.embeddinggemma2;
 
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.TensorRef;
-import io.teknek.deliverance.tensor.TensorShape;
 
 import java.util.Objects;
 
@@ -37,14 +36,6 @@ public final class EmbeddingGemma2ScaledWordEmbeddingOperation {
                 || output.shape().first() != inputIds.length || output.shape().last() != hidden) {
             throw new IllegalArgumentException("embedding output and table must have compatible 2D shapes");
         }
-        if (output.dType() == embeddingTable.dType()) {
-            lighter.gatherRowsScale(output, embeddingTable, inputIds, scale);
-            return;
-        }
-        try (TensorRef gathered = lighter.allocate(embeddingTable.dType(),
-                TensorShape.of(inputIds.length, hidden))) {
-            lighter.gatherRowsScale(gathered, embeddingTable, inputIds, scale);
-            lighter.reshape(gathered, output);
-        }
+        lighter.gatherRowsScale(output, embeddingTable, inputIds, scale);
     }
 }

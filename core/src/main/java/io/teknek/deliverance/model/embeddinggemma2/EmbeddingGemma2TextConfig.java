@@ -75,6 +75,12 @@ public final class EmbeddingGemma2TextConfig {
         return layer == null ? headDim : intValue(layer, "head_dim");
     }
 
+    /** Returns the head width for a concrete layer, including zero-padded real checkpoint keys. */
+    public int headDimFor(int layerIndex) {
+        Map<String, Object> layer = layerConfigFor(layerIndex);
+        return layer == null ? headDim : intValue(layer, "head_dim");
+    }
+
     /**
      * Returns the configured key/value head count for a layer type.
      *
@@ -85,6 +91,20 @@ public final class EmbeddingGemma2TextConfig {
     public int keyValueHeadsFor(String layerType) {
         Map<String, Object> layer = perLayerConfig.get(layerType);
         return layer == null ? numKeyValueHeads : intValue(layer, "num_key_value_heads");
+    }
+
+    /** Returns the key/value head count for a concrete layer. */
+    public int keyValueHeadsFor(int layerIndex) {
+        Map<String, Object> layer = layerConfigFor(layerIndex);
+        return layer == null ? numKeyValueHeads : intValue(layer, "num_key_value_heads");
+    }
+
+    private Map<String, Object> layerConfigFor(int layerIndex) {
+        Map<String, Object> layer = perLayerConfig.get(String.format("%02d", layerIndex));
+        if (layer == null) {
+            layer = perLayerConfig.get(Integer.toString(layerIndex));
+        }
+        return layer;
     }
 
     private static Map<String, Object> requireMap(Map<String, Object> source, String name) {

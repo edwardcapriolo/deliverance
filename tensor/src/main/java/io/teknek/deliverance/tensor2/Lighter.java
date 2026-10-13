@@ -411,17 +411,18 @@ public class Lighter {
         Preconditions.checkArgument(output.shape().last() == embeddings.shape().last(),
                 "embedding hidden size mismatch");
         Preconditions.checkArgument(Float.isFinite(scale), "scale must be finite");
-        int hidden = embeddings.shape().last();
-        for (int row = 0; row < inputIds.length; row++) {
-            int tokenId = inputIds[row];
-            Preconditions.checkArgument(tokenId >= 0 && tokenId < embeddings.shape().first(),
-                    "input id out of bounds");
-            try (TensorRef sourceRow = embeddings.slice(tokenId);
-                 TensorRef destinationRow = output.slice(row)) {
-                copy(sourceRow, 0, destinationRow, 0, hidden);
+        Preconditions.checkArgument(output.shape().last() == embeddings.shape().last(),
+                "embedding hidden size mismatch");
+        Preconditions.checkArgument(Float.isFinite(scale), "scale must be finite");
+        for (Map.Entry<TensorProviderKind, TensorOps> entry : tensorOperations.entrySet()) {
+            Either<OpSupport, Void> result = entry.getValue().gatherRowsScale(output, embeddings, inputIds, scale);
+            if (result.isRight()) {
+                observe("gather_rows_scale", entry.getKey(), true, output.dType(), embeddings.dType(), null, Map.of());
+                return;
             }
+            observe("gather_rows_scale", entry.getKey(), false, output.dType(), embeddings.dType(), null, Map.of());
         }
-        multiplyAll(scale, output);
+        throw new IllegalStateException("No tensor operations support gatherRowsScale");
     }
 
     /** Multiplies every element of a contiguous 2D TensorRef by one scalar. */

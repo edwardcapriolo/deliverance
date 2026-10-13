@@ -49,6 +49,21 @@ class EmbeddingGemma2ScaledWordEmbeddingOperationTest {
         }
     }
 
+    @Test
+    void gathersBf16RowsDirectlyIntoF32Output() {
+        EmbeddingGemma2ScaledWordEmbeddingOperation operation =
+                new EmbeddingGemma2ScaledWordEmbeddingOperation();
+        Lighter lighter = new Lighter();
+        try (TensorRef table = lighter.allocate(DType.BF16, TensorShape.of(2, 2));
+             TensorRef output = lighter.allocate(DType.F32, TensorShape.of(1, 2))) {
+            table.set(1.5f, 0, 0);
+            table.set(-2.0f, 0, 1);
+            operation.apply(output, table, new int[] {0}, 2.0f, lighter);
+            assertEquals(3.0f, output.get(0, 0), 0.02f);
+            assertEquals(-4.0f, output.get(0, 1), 0.02f);
+        }
+    }
+
     private static void fill(TensorRef tensor, float[][] values) {
         for (int row = 0; row < values.length; row++) {
             for (int column = 0; column < values[row].length; column++) {

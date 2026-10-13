@@ -21,6 +21,7 @@ public final class EmbeddingGemma2EncoderLayerOperation {
     private final int slidingWindow;
     private final double ropeTheta;
     private final float attentionScale;
+    private final boolean roundBf16;
     private final EmbeddingGemma2RmsNormOperation rmsNorm;
     private final EmbeddingGemma2AttentionProjectionOperation attentionProjection;
     private final EmbeddingGemma2AttentionScoreOperation attentionScores;
@@ -32,7 +33,7 @@ public final class EmbeddingGemma2EncoderLayerOperation {
     /** Creates a layer with the configured local/global attention contract. */
     public EmbeddingGemma2EncoderLayerOperation(int hiddenSize, int intermediateSize, int queryHeads,
             int keyValueHeads, int headWidth, int perLayerInputWidth, float epsilon, String layerType,
-            int slidingWindow, double ropeTheta) {
+            int slidingWindow, double ropeTheta, boolean roundBf16) {
         if (hiddenSize <= 0 || intermediateSize <= 0 || queryHeads <= 0 || keyValueHeads <= 0
                 || headWidth <= 0 || perLayerInputWidth <= 0 || queryHeads % keyValueHeads != 0
                 || !Float.isFinite(epsilon)
@@ -52,6 +53,7 @@ public final class EmbeddingGemma2EncoderLayerOperation {
             throw new IllegalArgumentException("RoPE theta must be positive and finite");
         }
         this.ropeTheta = ropeTheta;
+        this.roundBf16 = roundBf16;
         this.attentionScale = 1.0f;
         this.rmsNorm = new EmbeddingGemma2RmsNormOperation(epsilon);
         this.attentionProjection = new EmbeddingGemma2AttentionProjectionOperation(hiddenSize, queryHeads,
@@ -60,7 +62,7 @@ public final class EmbeddingGemma2EncoderLayerOperation {
                 attentionScale);
         this.attentionSoftmax = new EmbeddingGemma2AttentionSoftmaxOperation();
         this.attentionValues = new EmbeddingGemma2AttentionValueOperation(queryHeads, keyValueHeads, headWidth);
-        this.mlp = new EmbeddingGemma2MlpOperation(hiddenSize, intermediateSize);
+        this.mlp = new EmbeddingGemma2MlpOperation(hiddenSize, intermediateSize, roundBf16);
         this.ple = new EmbeddingGemma2PleBlockOperation(hiddenSize, perLayerInputWidth, epsilon);
     }
 
@@ -71,7 +73,7 @@ public final class EmbeddingGemma2EncoderLayerOperation {
             TensorRef postAttentionNormWeight, TensorRef preFeedForwardNormWeight,
             TensorRef gateWeight, TensorRef upWeight, TensorRef downWeight,
             TensorRef postFeedForwardNormWeight, TensorRef pleGateWeight, TensorRef pleProjectionWeight,
-            TensorRef pleNormWeight, int[] attentionMask, Lighter lighter) {
+            TensorRef pleNormWeight, float layerScalar, int[] attentionMask, Lighter lighter) {
         Objects.requireNonNull(output, "output");
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(perLayerInput, "perLayerInput");
@@ -90,10 +92,15 @@ public final class EmbeddingGemma2EncoderLayerOperation {
             rmsNorm.apply(normalized, input, inputNormWeight, lighter);
             attentionProjection.apply(query, key, value, normalized, queryWeight, keyWeight, valueWeight,
                     queryNormWeight, keyNormWeight, lighter);
+            roundBoundary(query, lighter);
+            roundBoundary(key, lighter);
+            roundBoundary(value, lighter);
             new EmbeddingGemma2RotaryEmbeddingOperation(headWidth, queryHeads, ropeTheta,
                     input.shape().first()).apply(query, 0, lighter);
             new EmbeddingGemma2RotaryEmbeddingOperation(headWidth, keyValueHeads, ropeTheta,
                     input.shape().first()).apply(key, 0, lighter);
+            roundBoundary(query, lighter);
+            roundBoundary(key, lighter);
             TensorRef[] queryHeadsRefs = rowsByHead(query, queryHeads, headWidth, lighter);
             TensorRef[] keyHeadsRefs = rowsByHead(key, keyValueHeads, headWidth, lighter);
             TensorRef[] scoreRefs = new TensorRef[queryHeads];
@@ -106,6 +113,7 @@ public final class EmbeddingGemma2EncoderLayerOperation {
                         attentionMask, lighter);
                 attentionSoftmax.apply(scoreRefs, lighter);
                 attentionValues.apply(scoreRefs, value, attentionOutput, lighter);
+                roundBoundary(attentionOutput, lighter);
             } finally {
                 closeAll(queryHeadsRefs);
                 closeAll(keyHeadsRefs);
@@ -113,14 +121,30 @@ public final class EmbeddingGemma2EncoderLayerOperation {
             }
             lighter.dotProductRows(projectedAttention, attentionOutput, outputWeight, 0,
                     queryHeads * headWidth, 0, hiddenSize, 0);
+            roundBoundary(projectedAttention, lighter);
             rmsNorm.apply(normalizedAttention, projectedAttention, postAttentionNormWeight, lighter);
+            roundBoundary(normalizedAttention, lighter);
             new CompositeOps(lighter).addResidual(normalizedAttention, input, 1.0f);
+            roundBoundary(normalizedAttention, lighter);
             rmsNorm.apply(feedForwardInput, normalizedAttention, preFeedForwardNormWeight, lighter);
+            roundBoundary(feedForwardInput, lighter);
             mlp.apply(feedForward, feedForwardInput, gateWeight, upWeight, downWeight, lighter);
             rmsNorm.apply(projectedFeedForward, feedForward, postFeedForwardNormWeight, lighter);
+            roundBoundary(projectedFeedForward, lighter);
             new CompositeOps(lighter).addResidual(projectedFeedForward, normalizedAttention, 1.0f);
+            roundBoundary(projectedFeedForward, lighter);
             ple.apply(output, projectedFeedForward, perLayerInput, pleGateWeight, pleProjectionWeight,
                     pleNormWeight, lighter);
+            if (layerScalar != 1.0f) {
+                lighter.multiplyAll(layerScalar, output);
+            }
+        }
+    }
+
+    private void roundBoundary(TensorRef target, Lighter lighter) {
+        if (!roundBf16) return;
+        try (TensorRef bf16 = lighter.reshape(target, DType.BF16)) {
+            lighter.reshape(bf16, target);
         }
     }
 

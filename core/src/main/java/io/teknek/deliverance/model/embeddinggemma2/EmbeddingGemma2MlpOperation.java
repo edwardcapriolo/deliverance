@@ -12,14 +12,21 @@ import java.util.Objects;
 public final class EmbeddingGemma2MlpOperation {
     private final int hiddenSize;
     private final int intermediateSize;
+    private final boolean roundBf16;
 
     /** Creates a gated MLP operation for the configured hidden widths. */
     public EmbeddingGemma2MlpOperation(int hiddenSize, int intermediateSize) {
+        this(hiddenSize, intermediateSize, false);
+    }
+
+    /** Creates a MLP with optional BF16 activation-boundary rounding matching the reference checkpoint. */
+    public EmbeddingGemma2MlpOperation(int hiddenSize, int intermediateSize, boolean roundBf16) {
         if (hiddenSize <= 0 || intermediateSize <= 0) {
             throw new IllegalArgumentException("MLP dimensions must be positive");
         }
         this.hiddenSize = hiddenSize;
         this.intermediateSize = intermediateSize;
+        this.roundBf16 = roundBf16;
     }
 
     /** Computes {@code down(gelu(gate(input)) * up(input))} for every input row. */
@@ -42,6 +49,8 @@ public final class EmbeddingGemma2MlpOperation {
              TensorRef up = lighter.allocate(DType.F32, TensorShape.of(input.shape().first(), intermediateSize))) {
             lighter.dotProductRows(gate, input, gateWeight, 0, hiddenSize, 0, intermediateSize, 0);
             lighter.dotProductRows(up, input, upWeight, 0, hiddenSize, 0, intermediateSize, 0);
+            roundBoundary(gate, lighter);
+            roundBoundary(up, lighter);
             for (int row = 0; row < gate.shape().first(); row++) {
                 for (int column = 0; column < intermediateSize; column++) {
                     float activated = ActivationFunction.eval(ActivationFunction.Type.GELU_PYTORCH_TANH,
@@ -49,7 +58,16 @@ public final class EmbeddingGemma2MlpOperation {
                     gate.set(activated * up.get(row, column), row, column);
                 }
             }
+            roundBoundary(gate, lighter);
             lighter.dotProductRows(output, gate, downWeight, 0, intermediateSize, 0, hiddenSize, 0);
+            roundBoundary(output, lighter);
+        }
+    }
+
+    private void roundBoundary(TensorRef target, Lighter lighter) {
+        if (!roundBf16) return;
+        try (TensorRef bf16 = lighter.reshape(target, DType.BF16)) {
+            lighter.reshape(bf16, target);
         }
     }
 }

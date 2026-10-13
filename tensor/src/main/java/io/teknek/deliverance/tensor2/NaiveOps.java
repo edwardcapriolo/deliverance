@@ -131,6 +131,23 @@ class NaiveOps implements TensorOps {
         return Either.Left(OpSupport.Unsupported);
     }
 
+    @Override
+    public Either<OpSupport, Void> gatherRowsScale(TensorRef output, TensorRef embeddings,
+            int[] inputIds, float scale) {
+        Preconditions.checkArgument(output.dims() == 2 && embeddings.dims() == 2,
+                "gatherRowsScale requires 2D tensors");
+        Preconditions.checkArgument(output.shape().first() == inputIds.length
+                && output.shape().last() == embeddings.shape().last(), "gather shape mismatch");
+        for (int row = 0; row < inputIds.length; row++) {
+            int token = inputIds[row];
+            Preconditions.checkArgument(token >= 0 && token < embeddings.shape().first(), "input id out of bounds");
+            for (int column = 0; column < embeddings.shape().last(); column++) {
+                output.set(embeddings.get(token, column) * scale, row, column);
+            }
+        }
+        return Either.Right(null);
+    }
+
     private void reshapeI8(TensorRef input, TensorRef output) {
         TensorRef scale = Q8Layout.scale(output);
         Preconditions.checkArgument(scale != null, "I8 output must have scale sidecar");

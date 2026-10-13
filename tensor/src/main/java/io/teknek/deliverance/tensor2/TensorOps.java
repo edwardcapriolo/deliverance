@@ -25,9 +25,15 @@ public interface TensorOps {
 
      Either<OpSupport, Void> multiplyAccumulate(TensorRef a, TensorRef b, int offset, int length);
 
-     default Either<OpSupport, Void> reshape(TensorRef input, TensorRef output) {
-          return Either.Left(OpSupport.Unsupported);
-     }
+      default Either<OpSupport, Void> reshape(TensorRef input, TensorRef output) {
+           return Either.Left(OpSupport.Unsupported);
+      }
+
+      /** Gathers vocabulary rows and applies a scalar while allowing dtype conversion at the provider boundary. */
+      default Either<OpSupport, Void> gatherRowsScale(TensorRef output, TensorRef embeddings,
+              int[] inputIds, float scale) {
+           return Either.Left(OpSupport.Unsupported);
+      }
 
      default Either<OpSupport, Void> batchDotProduct(BatchDotProduct operation) {
           return Either.Left(OpSupport.Unsupported);

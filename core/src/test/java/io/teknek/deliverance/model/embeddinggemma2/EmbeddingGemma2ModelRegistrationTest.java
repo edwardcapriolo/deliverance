@@ -51,7 +51,8 @@ class EmbeddingGemma2ModelRegistrationTest {
 
         assertEquals(EmbeddingGemma2Config.class,
                 ModelSupport.detectModel(config.toFile()).getConfigClass());
-        assertEquals(EmbeddingGemma2Model.class,
-                ModelSupport.detectModel(config.toFile()).getModelClass());
+        var modelType = ModelSupport.detectModel(config.toFile());
+        assertEquals(EmbeddingGemma2Model.class, modelType.getModelClass());
+        assertEquals(false, modelType.useMajorityDType());
     }
 }

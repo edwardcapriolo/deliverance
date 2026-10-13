@@ -85,6 +85,8 @@ class EmbeddingGemma2ConfigTest {
         assertEquals(4, config.textConfig.layerTypes.stream()
                 .filter("full_attention"::equals)
                 .count());
+        assertEquals(512, config.textConfig.headDimFor(5));
+        assertEquals(1, config.textConfig.keyValueHeadsFor(5));
         for (String metadataFile : List.of(
                 "1_Pooling/config.json",
                 "2_Normalize/config.json",

@@ -209,9 +209,10 @@ public class ModelSupport {
         try {
             Config config = om.readValue(configFile, modelType.getConfigClass());
             PreTrainedTokenizer tokenizer = AutoTokenizer.fromPretrained(model.toPath());
-            WeightLoader wl = new DefaultWeightLoader(model);
+             WeightLoader wl = new DefaultWeightLoader(model);
+             wl.setUseMajorityDType(modelType.useMajorityDType());
 
-            Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
+             Constructor<? extends AbstractModel> cons = modelType.getModelClass().getConstructor(AbstractModel.InferenceType.class, Config.class,
                     WeightLoader.class, PreTrainedTokenizer.class, DType.class, DType.class, Optional.class,
                     ConfigurableTensorProvider.class, MetricRegistry.class, TensorAllocator.class,
                     KvBufferCacheSettings.class, ToolCallParser.class, WrappedForkJoinPool.class,

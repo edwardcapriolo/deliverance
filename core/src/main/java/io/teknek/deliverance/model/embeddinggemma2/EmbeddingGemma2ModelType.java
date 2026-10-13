@@ -13,4 +13,9 @@ public final class EmbeddingGemma2ModelType implements ModelType {
     public Class<EmbeddingGemma2Config> getConfigClass() {
         return EmbeddingGemma2Config.class;
     }
+
+    @Override
+    public boolean useMajorityDType() {
+        return false;
+    }
 }

@@ -129,6 +129,11 @@ public final class EmbeddingGemma2Model extends AbstractModel {
             }
             if (options.normalizeEmbeddings()) {
                 normalize(result);
+                if (usesBf16Reference()) {
+                    for (int column = 0; column < result.length; column++) {
+                        result[column] = roundFloatToBf16(result[column]);
+                    }
+                }
             }
             return result;
         }
@@ -166,12 +171,15 @@ public final class EmbeddingGemma2Model extends AbstractModel {
         TensorRef hidden = makeF32(tokenIds.length, textConfig.hiddenSize);
         new EmbeddingGemma2ScaledWordEmbeddingOperation().apply(hidden, embeddingTable, tokenIds,
                 roundedEmbeddingScale(), lighter);
+        roundBoundary(hidden);
         TensorRef perLayer = makeF32(tokenIds.length,
                 textConfig.numHiddenLayers * textConfig.hiddenSizePerLayerInput);
         new EmbeddingGemma2PleProjectionOperation(textConfig.hiddenSize, textConfig.numHiddenLayers,
                 textConfig.hiddenSizePerLayerInput).apply(perLayer, hidden, pleProjection, lighter);
+        roundBoundary(perLayer);
         new EmbeddingGemma2PleGroupedRmsNormOperation(textConfig.numHiddenLayers,
                 textConfig.hiddenSizePerLayerInput, textConfig.rmsNormEps).apply(perLayer, pleNorm, lighter);
+        roundBoundary(perLayer);
         for (int layerIndex = 0; layerIndex < layers.length; layerIndex++) {
             LayerWeights layer = layers[layerIndex];
             try (TensorRef perLayerInput = layerInput(perLayer, layerIndex)) {
@@ -179,7 +187,7 @@ public final class EmbeddingGemma2Model extends AbstractModel {
                 layer.operation.apply(next, hidden, perLayerInput, layer.inputNorm, layer.query, layer.key,
                         layer.value, layer.output, layer.queryNorm, layer.keyNorm, layer.postAttentionNorm,
                         layer.preFeedForwardNorm, layer.gate, layer.up, layer.down, layer.postFeedForwardNorm,
-                        layer.pleGate, layer.pleProjection, layer.pleNorm, attentionMask, lighter);
+                        layer.pleGate, layer.pleProjection, layer.pleNorm, layer.layerScalar, attentionMask, lighter);
                 hidden.close();
                 hidden = next;
             }
@@ -211,8 +219,16 @@ public final class EmbeddingGemma2Model extends AbstractModel {
         TensorRef projected = makeF32(1, textConfig.embeddingDim);
         lighter.dotProductRows(projected, pooled, embeddingProjection, 0, textConfig.hiddenSize,
                 0, textConfig.embeddingDim, 0);
+        roundBoundary(projected);
         pooled.close();
         return projected;
+    }
+
+    private void roundBoundary(TensorRef target) {
+        if (!usesBf16Reference()) return;
+        try (TensorRef bf16 = lighter.reshape(target, DType.BF16)) {
+            lighter.reshape(bf16, target);
+        }
     }
 
     private LayerWeights[] loadLayers() {
@@ -221,14 +237,14 @@ public final class EmbeddingGemma2Model extends AbstractModel {
         for (int index = 0; index < result.length; index++) {
             String base = "layers." + index + ".";
             String layerType = textConfig.layerTypes.get(index);
-            int headWidth = textConfig.headDimFor(layerType);
-            int keyValueHeads = textConfig.keyValueHeadsFor(layerType);
+            int headWidth = textConfig.headDimFor(index);
+            int keyValueHeads = textConfig.keyValueHeadsFor(index);
             double ropeTheta = ropeTheta(layerType);
             result[index] = new LayerWeights(
                     new EmbeddingGemma2EncoderLayerOperation(textConfig.hiddenSize, textConfig.intermediateSize,
                             textConfig.numAttentionHeads, keyValueHeads, headWidth,
                             textConfig.hiddenSizePerLayerInput, textConfig.rmsNormEps, layerType,
-                            textConfig.slidingWindow, ropeTheta),
+                            textConfig.slidingWindow, ropeTheta, usesBf16Reference()),
                     loadNormRef(base + "input_layernorm.weight", qType),
                     loadRef(base + "self_attn.q_proj.weight", qType),
                     loadRef(base + "self_attn.k_proj.weight", qType),
@@ -244,7 +260,8 @@ public final class EmbeddingGemma2Model extends AbstractModel {
                     loadNormRef(base + "post_feedforward_layernorm.weight", qType),
                     loadRef(base + "ple_block.per_layer_input_gate.weight", qType),
                     loadRef(base + "ple_block.per_layer_projection.weight", qType),
-                    loadNormRef(base + "ple_block.post_per_layer_input_norm.weight", qType));
+                    loadNormRef(base + "ple_block.post_per_layer_input_norm.weight", qType),
+                    loadScalarOrDefault(base + "layer_scalar", 1.0f));
         }
         return result;
     }
@@ -293,6 +310,18 @@ public final class EmbeddingGemma2Model extends AbstractModel {
                 + weights.tensorInfoMap());
     }
 
+    private float loadScalarOrDefault(String name, float defaultValue) {
+        String[] candidates = {"language_model." + name, name};
+        for (String candidate : candidates) {
+            if (weights.isWeightPresent(candidate)) {
+                try (TensorRef scalar = weights.loadRef(candidate)) {
+                    return scalar.get(0, 0);
+                }
+            }
+        }
+        return defaultValue;
+    }
+
     private double ropeTheta(String layerType) {
         Map<String, Object> parameters = textConfig.ropeParameters.get(layerType);
         Object theta = parameters == null ? null : parameters.get("rope_theta");
@@ -308,7 +337,11 @@ public final class EmbeddingGemma2Model extends AbstractModel {
 
     private float roundedEmbeddingScale() {
         // The production checkpoint is BF16. F32 tiny checkpoints use the exact mathematical scale.
-        return modelDType == DType.BF16 ? 22.625f : (float) Math.sqrt(textConfig.hiddenSize);
+        return usesBf16Reference() ? 22.625f : (float) Math.sqrt(textConfig.hiddenSize);
+    }
+
+    private boolean usesBf16Reference() {
+        return embeddingTable != null && embeddingTable.dType() == DType.BF16;
     }
 
     private void normalize(float[] values) {
@@ -318,10 +351,16 @@ public final class EmbeddingGemma2Model extends AbstractModel {
         for (int i = 0; i < values.length; i++) values[i] *= inverse;
     }
 
+    private static float roundFloatToBf16(float value) {
+        int bits = Float.floatToIntBits(value);
+        int rounding = 0x7fff + ((bits >>> 16) & 1);
+        return Float.intBitsToFloat((bits + rounding) & 0xffff0000);
+    }
+
     private record LayerWeights(EmbeddingGemma2EncoderLayerOperation operation, TensorRef inputNorm,
             TensorRef query, TensorRef key, TensorRef value, TensorRef output, TensorRef queryNorm,
             TensorRef keyNorm, TensorRef postAttentionNorm, TensorRef preFeedForwardNorm, TensorRef gate,
             TensorRef up, TensorRef down, TensorRef postFeedForwardNorm, TensorRef pleGate,
-            TensorRef pleProjection, TensorRef pleNorm) {
+            TensorRef pleProjection, TensorRef pleNorm, float layerScalar) {
     }
 }
