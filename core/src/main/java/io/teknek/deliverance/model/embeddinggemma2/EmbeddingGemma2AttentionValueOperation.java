@@ -35,7 +35,19 @@ public final class EmbeddingGemma2AttentionValueOperation {
         }
         lighter.clear(output);
         for (int head = 0; head < queryHeads; head++) {
-            TensorRef score = scores[head];
+            applyHead(scores[head], values, output, head, lighter);
+        }
+    }
+
+    /** Aggregates one query head into its disjoint packed output range. */
+    public void applyHead(TensorRef score, TensorRef values, TensorRef output, int head, Lighter lighter) {
+        Objects.requireNonNull(score, "score");
+        Objects.requireNonNull(values, "values");
+        Objects.requireNonNull(output, "output");
+        Objects.requireNonNull(lighter, "lighter");
+        if (head < 0 || head >= queryHeads) {
+            throw new IllegalArgumentException("Attention head is out of bounds");
+        }
             if (score == null || score.dims() != 2 || score.shape().first() != output.shape().first()
                     || score.shape().last() != values.shape().first()) {
                 throw new IllegalArgumentException("Attention score shape does not match values");
@@ -43,14 +55,13 @@ public final class EmbeddingGemma2AttentionValueOperation {
             int valueHead = head / (queryHeads / keyValueHeads);
             int outputOffset = head * headWidth;
             int valueOffset = valueHead * headWidth;
-            for (int query = 0; query < output.shape().first(); query++) {
-                for (int dimension = 0; dimension < headWidth; dimension++) {
-                    float sum = 0.0f;
-                    for (int key = 0; key < values.shape().first(); key++) {
-                        sum += score.get(query, key) * values.get(key, valueOffset + dimension);
-                    }
-                    output.set(sum, query, outputOffset + dimension);
+        for (int query = 0; query < output.shape().first(); query++) {
+            for (int dimension = 0; dimension < headWidth; dimension++) {
+                float sum = 0.0f;
+                for (int key = 0; key < values.shape().first(); key++) {
+                    sum += score.get(query, key) * values.get(key, valueOffset + dimension);
                 }
+                output.set(sum, query, outputOffset + dimension);
             }
         }
     }

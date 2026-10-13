@@ -13,6 +13,7 @@ import io.teknek.deliverance.grace.Encoding;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelContext;
 import io.teknek.deliverance.safetensors.Config;
@@ -169,38 +170,52 @@ public final class EmbeddingGemma2Model extends AbstractModel {
 
     private TensorRef encode(int[] tokenIds, int[] attentionMask) {
         TensorRef hidden = makeF32(tokenIds.length, textConfig.hiddenSize);
-        new EmbeddingGemma2ScaledWordEmbeddingOperation().apply(hidden, embeddingTable, tokenIds,
-                roundedEmbeddingScale(), lighter);
+        try (var ignored = InferenceProfiler.timer(metricRegistry, "embeddinggemma2.embedding").time()) {
+            new EmbeddingGemma2ScaledWordEmbeddingOperation().apply(hidden, embeddingTable, tokenIds,
+                    roundedEmbeddingScale(), lighter);
+        }
         roundBoundary(hidden);
         TensorRef perLayer = makeF32(tokenIds.length,
                 textConfig.numHiddenLayers * textConfig.hiddenSizePerLayerInput);
-        new EmbeddingGemma2PleProjectionOperation(textConfig.hiddenSize, textConfig.numHiddenLayers,
-                textConfig.hiddenSizePerLayerInput).apply(perLayer, hidden, pleProjection, lighter);
-        roundBoundary(perLayer);
-        new EmbeddingGemma2PleGroupedRmsNormOperation(textConfig.numHiddenLayers,
-                textConfig.hiddenSizePerLayerInput, textConfig.rmsNormEps).apply(perLayer, pleNorm, lighter);
-        roundBoundary(perLayer);
+        try (var ignored = InferenceProfiler.timer(metricRegistry, "embeddinggemma2.ple_projection").time()) {
+            new EmbeddingGemma2PleProjectionOperation(textConfig.hiddenSize, textConfig.numHiddenLayers,
+                    textConfig.hiddenSizePerLayerInput).apply(perLayer, hidden, pleProjection, lighter);
+            roundBoundary(perLayer);
+            new EmbeddingGemma2PleGroupedRmsNormOperation(textConfig.numHiddenLayers,
+                    textConfig.hiddenSizePerLayerInput, textConfig.rmsNormEps).apply(perLayer, pleNorm, lighter);
+            roundBoundary(perLayer);
+        }
         for (int layerIndex = 0; layerIndex < layers.length; layerIndex++) {
             LayerWeights layer = layers[layerIndex];
             try (TensorRef perLayerInput = layerInput(perLayer, layerIndex)) {
                 TensorRef next = makeF32(tokenIds.length, textConfig.hiddenSize);
-                layer.operation.apply(next, hidden, perLayerInput, layer.inputNorm, layer.query, layer.key,
-                        layer.value, layer.output, layer.queryNorm, layer.keyNorm, layer.postAttentionNorm,
-                        layer.preFeedForwardNorm, layer.gate, layer.up, layer.down, layer.postFeedForwardNorm,
-                        layer.pleGate, layer.pleProjection, layer.pleNorm, layer.layerScalar, attentionMask, lighter);
+                try (var ignored = InferenceProfiler.timer(metricRegistry,
+                        "embeddinggemma2.layer." + layerIndex).time()) {
+                    layer.operation.apply(next, hidden, perLayerInput, layer.inputNorm, layer.query, layer.key,
+                            layer.value, layer.output, layer.queryNorm, layer.keyNorm, layer.postAttentionNorm,
+                            layer.preFeedForwardNorm, layer.gate, layer.up, layer.down, layer.postFeedForwardNorm,
+                            layer.pleGate, layer.pleProjection, layer.pleNorm, layer.layerScalar, attentionMask, lighter);
+                }
                 hidden.close();
                 hidden = next;
             }
         }
-        try (TensorRef normalized = makeF32(tokenIds.length, textConfig.hiddenSize)) {
-            new EmbeddingGemma2RmsNormOperation(textConfig.rmsNormEps).apply(normalized, hidden, finalNorm, lighter);
-            lighter.copyStorage(normalized, hidden);
+        try (var ignored = InferenceProfiler.timer(metricRegistry, "embeddinggemma2.final_norm").time();
+             TensorRef normalized = makeF32(tokenIds.length, textConfig.hiddenSize)) {
+             new EmbeddingGemma2RmsNormOperation(textConfig.rmsNormEps).apply(normalized, hidden, finalNorm, lighter);
+             lighter.copyStorage(normalized, hidden);
         }
         perLayer.close();
         return hidden;
     }
 
     private TensorRef poolAndProject(TensorRef hidden, int[] attentionMask) {
+        try (var ignored = InferenceProfiler.timer(metricRegistry, "embeddinggemma2.pool_project").time()) {
+            return poolAndProjectBody(hidden, attentionMask);
+        }
+    }
+
+    private TensorRef poolAndProjectBody(TensorRef hidden, int[] attentionMask) {
         TensorRef pooled = makeF32(1, textConfig.hiddenSize);
         int valid = 0;
         for (int row = 0; row < hidden.shape().first(); row++) {
@@ -244,7 +259,8 @@ public final class EmbeddingGemma2Model extends AbstractModel {
                     new EmbeddingGemma2EncoderLayerOperation(textConfig.hiddenSize, textConfig.intermediateSize,
                             textConfig.numAttentionHeads, keyValueHeads, headWidth,
                             textConfig.hiddenSizePerLayerInput, textConfig.rmsNormEps, layerType,
-                            textConfig.slidingWindow, ropeTheta, usesBf16Reference()),
+                            textConfig.slidingWindow, ropeTheta, usesBf16Reference(),
+                            textConfig.maxPositionEmbeddings, getPool().getUnderlying()),
                     loadNormRef(base + "input_layernorm.weight", qType),
                     loadRef(base + "self_attn.q_proj.weight", qType),
                     loadRef(base + "self_attn.k_proj.weight", qType),

@@ -40,29 +40,48 @@ public final class EmbeddingShowdownMain {
         long[] samples = new long[cases.size() * options.iterations];
         int sampleIndex = 0;
         long tokenCount = 0;
+        System.out.printf("java phase=model_load cases=%d warmup=%d iterations=%d pool_size=%d%n",
+                cases.size(), options.warmup, options.iterations, options.poolSize);
+        long modelLoadStart = System.nanoTime();
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(new ForkJoinPool(options.poolSize));
              AbstractModel model = ModelSupport.loadEmbeddingModel(options.modelDirectory.toFile(), DType.F32, DType.F32,
                      new ConfigurableTensorProvider(allocator, pool), metrics, allocator,
                      new KvBufferCacheSettings(true))) {
+            System.out.printf(Locale.ROOT, "java phase=model_loaded elapsed_s=%.3f%n",
+                    elapsedSeconds(modelLoadStart));
             results = new ArrayList<>(cases.size());
+            System.out.println("java phase=reference_vectors");
+            long referenceStart = System.nanoTime();
             for (Case value : cases) {
                 int[] tokenIds = model.getTokenizer().encode(value.text()).inputIds();
                 float[] embedding = model.embed(value.text(), PoolingType.AVG);
                 results.add(new Result(value.id(), tokenIds, embedding, sha256Floats(embedding)));
             }
+            System.out.printf(Locale.ROOT, "java phase=reference_vectors_complete elapsed_s=%.3f%n",
+                    elapsedSeconds(referenceStart));
             for (int warmup = 0; warmup < options.warmup; warmup++) {
+                System.out.printf("java phase=warmup iteration=%d/%d%n", warmup + 1, options.warmup);
+                long warmupStart = System.nanoTime();
                 for (Case value : cases) {
                     model.embed(value.text(), PoolingType.AVG);
                 }
+                System.out.printf(Locale.ROOT, "java phase=warmup_complete iteration=%d/%d elapsed_s=%.3f%n",
+                        warmup + 1, options.warmup, elapsedSeconds(warmupStart));
             }
+            System.out.println("java phase=timed_iterations");
             for (int iteration = 0; iteration < options.iterations; iteration++) {
+                System.out.printf("java phase=timed_iteration iteration=%d/%d%n", iteration + 1, options.iterations);
+                long iterationStart = System.nanoTime();
                 for (Case value : cases) {
                     long start = System.nanoTime();
                     model.embed(value.text(), PoolingType.AVG);
                     samples[sampleIndex++] = System.nanoTime() - start;
                     tokenCount += model.getTokenizer().encode(value.text()).length();
                 }
+                System.out.printf(Locale.ROOT, "java phase=timed_iteration_complete iteration=%d/%d elapsed_s=%.3f%n",
+                        iteration + 1, options.iterations, elapsedSeconds(iterationStart));
             }
+            System.out.println("java phase=timed_iterations_complete");
         }
 
         Map<String, Object> report = new LinkedHashMap<>();
@@ -75,6 +94,10 @@ public final class EmbeddingShowdownMain {
         report.put("stats", stats(samples, tokenCount));
         JsonUtils.om.writeValue(options.output.toFile(), report);
         printSummary("java", options, samples, tokenCount);
+    }
+
+    private static double elapsedSeconds(long startNanos) {
+        return (System.nanoTime() - startNanos) / 1_000_000_000.0;
     }
 
     private static List<Case> readCases(Path corpus) throws Exception {

@@ -4,6 +4,7 @@ import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
@@ -32,15 +33,29 @@ class EmbeddingGemma2EmbeddingTest {
              AbstractModel model = ModelSupport.loadEmbeddingModel(modelDirectory, DType.F32, DType.F32,
                      new ConfigurableTensorProvider(allocator, pool), metrics, allocator,
                      new KvBufferCacheSettings(true))) {
-            float[] embedding = model.embed(text, PoolingType.AVG);
+            boolean previousProfilerState = InferenceProfiler.isEnabled();
+            for (int k = 0; k < 5; k++) {
+                InferenceProfiler.setEnabled(true);
+                try {
+                    InferenceProfiler.reset();
+                    long embeddingStart = System.nanoTime();
+                    float[] embedding = model.embed(text, PoolingType.AVG);
+                    double embeddingMillis = (System.nanoTime() - embeddingStart) / 1_000_000.0;
 
-            assertEquals(768, embedding.length, "EmbeddingGemma 2 native output should have 768 dimensions");
-            for (float value : embedding) {
-                assertTrue(Float.isFinite(value), "Embedding values must be finite");
+                    assertEquals(768, embedding.length, "EmbeddingGemma 2 native output should have 768 dimensions");
+                    for (float value : embedding) {
+                        assertTrue(Float.isFinite(value), "Embedding values must be finite");
+                    }
+                    InferenceProfiler.printSummary("embeddinggemma2.one_shot", 100);
+                    System.out.printf(java.util.Locale.ROOT,
+                            "EmbeddingGemma 2 total embedding time: %.3f ms%n", embeddingMillis);
+                    System.out.println("EmbeddingGemma 2 embedding dimensions: " + embedding.length);
+                    System.out.println("EmbeddingGemma 2 first values: " + embedding[0] + ", " + embedding[1]
+                            + ", " + embedding[2] + ", " + embedding[3]);
+                } finally {
+                    InferenceProfiler.setEnabled(previousProfilerState);
+                }
             }
-            System.out.println("EmbeddingGemma 2 embedding dimensions: " + embedding.length);
-            System.out.println("EmbeddingGemma 2 first values: " + embedding[0] + ", " + embedding[1]
-                    + ", " + embedding[2] + ", " + embedding[3]);
         }
     }
 }

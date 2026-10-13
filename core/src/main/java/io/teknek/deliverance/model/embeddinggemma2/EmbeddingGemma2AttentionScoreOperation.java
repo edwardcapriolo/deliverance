@@ -38,9 +38,19 @@ public final class EmbeddingGemma2AttentionScoreOperation {
             throw new IllegalArgumentException("Attention head array counts do not match configuration");
         }
         for (int head = 0; head < queryHeads; head++) {
-            TensorRef query = queries[head];
-            TensorRef key = keys[head / (queryHeads / keyValueHeads)];
-            TensorRef score = scores[head];
+            applyHead(queries[head], keys[head / (queryHeads / keyValueHeads)], scores[head], layerType,
+                    slidingWindow, attentionMask, lighter);
+        }
+    }
+
+    /** Computes one query-head score matrix, allowing independent head scheduling. */
+    public void applyHead(TensorRef query, TensorRef key, TensorRef score, String layerType,
+            int slidingWindow, int[] attentionMask, Lighter lighter) {
+        Objects.requireNonNull(query, "query");
+        Objects.requireNonNull(key, "key");
+        Objects.requireNonNull(score, "score");
+        Objects.requireNonNull(layerType, "layerType");
+        Objects.requireNonNull(lighter, "lighter");
             if (query.dims() != 2 || key.dims() != 2 || score.dims() != 2
                     || query.shape().first() != score.shape().first()
                     || key.shape().first() != score.shape().last()
@@ -61,6 +71,5 @@ public final class EmbeddingGemma2AttentionScoreOperation {
                     }
                 }
             }
-        }
     }
 }

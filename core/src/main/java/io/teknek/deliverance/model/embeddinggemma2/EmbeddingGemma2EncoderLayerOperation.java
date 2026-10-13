@@ -7,6 +7,10 @@ import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.TensorRef;
 
 import java.util.Objects;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ForkJoinTask;
 
 /** Executes one complete bidirectional EmbeddingGemma 2 encoder layer. */
 public final class EmbeddingGemma2EncoderLayerOperation {
@@ -29,11 +33,14 @@ public final class EmbeddingGemma2EncoderLayerOperation {
     private final EmbeddingGemma2AttentionValueOperation attentionValues;
     private final EmbeddingGemma2MlpOperation mlp;
     private final EmbeddingGemma2PleBlockOperation ple;
+    private final EmbeddingGemma2RotaryEmbeddingOperation queryRotary;
+    private final EmbeddingGemma2RotaryEmbeddingOperation keyRotary;
+    private final ForkJoinPool pool;
 
     /** Creates a layer with the configured local/global attention contract. */
     public EmbeddingGemma2EncoderLayerOperation(int hiddenSize, int intermediateSize, int queryHeads,
             int keyValueHeads, int headWidth, int perLayerInputWidth, float epsilon, String layerType,
-            int slidingWindow, double ropeTheta, boolean roundBf16) {
+            int slidingWindow, double ropeTheta, boolean roundBf16, int maxPositions, ForkJoinPool pool) {
         if (hiddenSize <= 0 || intermediateSize <= 0 || queryHeads <= 0 || keyValueHeads <= 0
                 || headWidth <= 0 || perLayerInputWidth <= 0 || queryHeads % keyValueHeads != 0
                 || !Float.isFinite(epsilon)
@@ -64,6 +71,11 @@ public final class EmbeddingGemma2EncoderLayerOperation {
         this.attentionValues = new EmbeddingGemma2AttentionValueOperation(queryHeads, keyValueHeads, headWidth);
         this.mlp = new EmbeddingGemma2MlpOperation(hiddenSize, intermediateSize, roundBf16);
         this.ple = new EmbeddingGemma2PleBlockOperation(hiddenSize, perLayerInputWidth, epsilon);
+        this.pool = Objects.requireNonNull(pool, "pool");
+        this.queryRotary = new EmbeddingGemma2RotaryEmbeddingOperation(headWidth, queryHeads, ropeTheta,
+                maxPositions);
+        this.keyRotary = new EmbeddingGemma2RotaryEmbeddingOperation(headWidth, keyValueHeads, ropeTheta,
+                maxPositions);
     }
 
     /** Runs attention, MLP, and PLE residual updates over all token rows. */
@@ -95,10 +107,8 @@ public final class EmbeddingGemma2EncoderLayerOperation {
             roundBoundary(query, lighter);
             roundBoundary(key, lighter);
             roundBoundary(value, lighter);
-            new EmbeddingGemma2RotaryEmbeddingOperation(headWidth, queryHeads, ropeTheta,
-                    input.shape().first()).apply(query, 0, lighter);
-            new EmbeddingGemma2RotaryEmbeddingOperation(headWidth, keyValueHeads, ropeTheta,
-                    input.shape().first()).apply(key, 0, lighter);
+            queryRotary.apply(query, 0, lighter);
+            keyRotary.apply(key, 0, lighter);
             roundBoundary(query, lighter);
             roundBoundary(key, lighter);
             TensorRef[] queryHeadsRefs = rowsByHead(query, queryHeads, headWidth, lighter);
@@ -109,10 +119,21 @@ public final class EmbeddingGemma2EncoderLayerOperation {
                     scoreRefs[head] = lighter.allocate(DType.F32,
                             TensorShape.of(input.shape().first(), input.shape().first()));
                 }
-                attentionScores.apply(queryHeadsRefs, keyHeadsRefs, scoreRefs, layerType, slidingWindow,
-                        attentionMask, lighter);
-                attentionSoftmax.apply(scoreRefs, lighter);
-                attentionValues.apply(scoreRefs, value, attentionOutput, lighter);
+                lighter.clear(attentionOutput);
+                List<ForkJoinTask<?>> headTasks = new ArrayList<>(queryHeads);
+                for (int head = 0; head < queryHeads; head++) {
+                    int taskHead = head;
+                    headTasks.add(pool.submit(() -> {
+                        attentionScores.applyHead(queryHeadsRefs[taskHead],
+                                keyHeadsRefs[taskHead / (queryHeads / keyValueHeads)], scoreRefs[taskHead],
+                                layerType, slidingWindow, attentionMask, lighter);
+                        attentionSoftmax.apply(new TensorRef[] {scoreRefs[taskHead]}, lighter);
+                        attentionValues.applyHead(scoreRefs[taskHead], value, attentionOutput, taskHead, lighter);
+                    }));
+                }
+                for (ForkJoinTask<?> headTask : headTasks) {
+                    headTask.join();
+                }
                 roundBoundary(attentionOutput, lighter);
             } finally {
                 closeAll(queryHeadsRefs);
