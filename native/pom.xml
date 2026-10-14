@@ -82,9 +82,13 @@
               --add-opens java.base/java.nio=ALL-UNNAMED
               --add-modules jdk.incubator.vector
               -Djdk.attach.allowAttachSelf=true
-              --enable-native-access=ALL-UNNAMED
-               -Djava.library.path=${project.build.directory}/native-lib-only/${os.detected.classifier}
+               --enable-native-access=ALL-UNNAMED
+               -Ddeliverance.tensor2.timing.csv=true
+                -Djava.library.path=${project.build.directory}/native-lib-only/${os.detected.classifier}
             </argLine>
+            <systemPropertyVariables>
+              <deliverance.tensor2.timing.csv>true</deliverance.tensor2.timing.csv>
+            </systemPropertyVariables>
           </configuration>
         </plugin>
         <plugin>

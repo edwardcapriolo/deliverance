@@ -16,9 +16,21 @@ import jdk.incubator.vector.VectorSpecies;
 import java.nio.ByteOrder;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ForkJoinTask;
 import net.jafama.FastMath;
 
 class PanamaOps implements TensorOps {
+    private final ForkJoinPool providerPool;
+
+    PanamaOps() {
+        this(ForkJoinPool.commonPool());
+    }
+
+    PanamaOps(ForkJoinPool providerPool) {
+        this.providerPool = java.util.Objects.requireNonNull(providerPool, "providerPool");
+    }
+
     @Override
     public Either<OpSupport, Void> sum(TensorRef input, int row, int offset, int length, TensorRef output) {
         if (input.dType() != DType.F32) {
@@ -668,8 +680,16 @@ class PanamaOps implements TensorOps {
         TensorRef result = operation.result();
         TensorRef a = operation.a();
         TensorRef b = operation.b();
-        if (result.dType() != DType.F32) {
+        if (result.dType() != DType.F32
+                && !(result.dType() == DType.BF16 && a.dType() == DType.BF16 && b.dType() == DType.BF16)) {
             return Either.Left(OpSupport.Unsupported);
+        }
+        if (operation.kernel() == GemmKernel.ROW) {
+            if (!supportsRow(operation)) {
+                return Either.Left(OpSupport.Unsupported);
+            }
+            new RowDotProductGemmer(operation, providerPool).matmul();
+            return Either.Right(null);
         }
         return switch (a.dType()) {
             case F32 -> switch (b.dType()) {
@@ -728,6 +748,16 @@ class PanamaOps implements TensorOps {
             };
             default -> Either.Left(OpSupport.Unsupported);
         };
+    }
+
+    private static boolean supportsRow(BatchDotProduct operation) {
+        TensorRef result = operation.result();
+        TensorRef a = operation.a();
+        TensorRef b = operation.b();
+        return (a.dType() == DType.F32 && (b.dType() == DType.F32 || b.dType() == DType.BF16)
+                && result.dType() == DType.F32)
+                || (a.dType() == DType.BF16 && b.dType() == DType.BF16
+                && (result.dType() == DType.F32 || result.dType() == DType.BF16));
     }
 
     @Override
@@ -1008,6 +1038,81 @@ class PanamaOps implements TensorOps {
                 acc1 = av1.fma(bv1, acc1);
             }
             return acc0.add(acc1).reduceLanes(VectorOperators.ADD);
+        }
+    }
+
+    private static final class RowDotProductGemmer {
+        private final BatchDotProduct operation;
+        private final ForkJoinPool providerPool;
+
+        RowDotProductGemmer(BatchDotProduct operation, ForkJoinPool providerPool) {
+            this.operation = operation;
+            this.providerPool = providerPool;
+        }
+
+        void matmul() {
+            if (operation.threading() == Threading.PROVIDER && operation.result().shape().first() > 1) {
+                parallel();
+            } else {
+                for (int row = 0; row < operation.result().shape().first(); row++) {
+                    row(row);
+                }
+            }
+        }
+
+        private void parallel() {
+            int rows = (int) operation.result().shape().first();
+            ForkJoinTask<?>[] tasks = new ForkJoinTask<?>[rows];
+            for (int row = 0; row < rows; row++) {
+                int resultRow = row;
+                tasks[row] = providerPool.submit(() -> row(resultRow));
+            }
+            for (ForkJoinTask<?> task : tasks) {
+                task.join();
+            }
+        }
+
+        private void row(int resultRow) {
+            int aRow = operation.aRowOffset() + resultRow;
+            int end = operation.bRowOffset() + operation.rowChunkSize();
+            for (int bRow = operation.bRowOffset(); bRow < end; bRow++) {
+                operation.result().set(dot(aRow, bRow), resultRow,
+                        operation.resultRowOffset() + bRow);
+            }
+        }
+
+        private float dot(int aRow, int bRow) {
+            TensorRef a = operation.a();
+            TensorRef b = operation.b();
+            FloatVector sum = FloatVector.zero(F32_BF16_SPECIES);
+            int column = 0;
+            int upper = F32_BF16_SPECIES.loopBound(operation.columnLength());
+            if (a.dType() == DType.F32 && b.dType() == DType.F32) {
+                for (; column < upper; column += F32_BF16_SPECIES.length()) {
+                    FloatVector av = FloatVector.fromMemorySegment(F32_BF16_SPECIES, a.memorySegment(),
+                            memoryOffset(a, aRow, operation.aColumnOffset() + column), ByteOrder.LITTLE_ENDIAN);
+                    FloatVector bv = FloatVector.fromMemorySegment(F32_BF16_SPECIES, b.memorySegment(),
+                            memoryOffset(b, bRow, operation.bColumnOffset() + column), ByteOrder.LITTLE_ENDIAN);
+                    sum = av.fma(bv, sum);
+                }
+            } else if (a.dType() == DType.F32) {
+                for (; column < upper; column += F32_BF16_SPECIES.length()) {
+                    FloatVector av = FloatVector.fromMemorySegment(F32_BF16_SPECIES, a.memorySegment(),
+                            memoryOffset(a, aRow, operation.aColumnOffset() + column), ByteOrder.LITTLE_ENDIAN);
+                    sum = av.fma(bf16Vector(b, bRow, operation.bColumnOffset() + column), sum);
+                }
+            } else {
+                for (; column < upper; column += F32_BF16_SPECIES.length()) {
+                    sum = bf16Vector(a, aRow, operation.aColumnOffset() + column)
+                            .fma(bf16Vector(b, bRow, operation.bColumnOffset() + column), sum);
+                }
+            }
+            float value = sum.reduceLanes(VectorOperators.ADD);
+            for (; column < operation.columnLength(); column++) {
+                value += a.get(aRow, operation.aColumnOffset() + column)
+                        * b.get(bRow, operation.bColumnOffset() + column);
+            }
+            return value;
         }
     }
 

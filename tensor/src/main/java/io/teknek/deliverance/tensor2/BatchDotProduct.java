@@ -11,6 +11,8 @@ public class BatchDotProduct {
     private int resultRowOffset;
     private int bRowOffset;
     private int rowChunkSize;
+    private GemmKernel kernel = GemmKernel.BATCH;
+    private Threading threading = Threading.NONE;
 
     public BatchDotProduct result(TensorRef result) {
         this.result = result;
@@ -62,6 +64,16 @@ public class BatchDotProduct {
         return this;
     }
 
+    public BatchDotProduct kernel(GemmKernel kernel) {
+        this.kernel = java.util.Objects.requireNonNull(kernel, "kernel");
+        return this;
+    }
+
+    public BatchDotProduct threading(Threading threading) {
+        this.threading = java.util.Objects.requireNonNull(threading, "threading");
+        return this;
+    }
+
     TensorRef result() {
         return result;
     }
@@ -100,5 +112,29 @@ public class BatchDotProduct {
 
     int rowChunkSize() {
         return rowChunkSize;
+    }
+
+    GemmKernel kernel() {
+        return kernel;
+    }
+
+    Threading threading() {
+        return threading;
+    }
+
+    BatchDotProduct withExecution(GemmKernel kernel, Threading threading) {
+        return new BatchDotProduct()
+                .result(result)
+                .a(a)
+                .b(b)
+                .aRowOffset(aRowOffset)
+                .aColumnOffset(aColumnOffset)
+                .bColumnOffset(bColumnOffset)
+                .columnLength(columnLength)
+                .resultRowOffset(resultRowOffset)
+                .bRowOffset(bRowOffset)
+                .rowChunkSize(rowChunkSize)
+                .kernel(kernel)
+                .threading(threading);
     }
 }

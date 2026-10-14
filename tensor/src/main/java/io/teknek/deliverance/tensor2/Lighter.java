@@ -17,6 +17,7 @@ import java.util.Objects;
 import java.nio.ByteBuffer;
 import java.lang.foreign.MemorySegment;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ForkJoinPool;
 import java.util.function.Consumer;
 
 public class Lighter {
@@ -28,6 +29,7 @@ public class Lighter {
 
     private final Allocator allocator = new Allocator();
     private final MetricRegistry metricRegistry;
+    private final ForkJoinPool providerPool;
     //something like this must be initialized  so later we can pick the right one
     private final EnumMap<TensorProviderKind, TensorOps> tensorOperations = new EnumMap<>(TensorProviderKind.class);
     private final EnumMap<TensorProviderKind, CompositeOpsProvider> compositeOperations =
@@ -63,15 +65,29 @@ public class Lighter {
     }
 
     public Lighter(MetricRegistry metricRegistry){
-        this(metricRegistry, Map.of(
-                TensorProviderKind.PANAMA, new PanamaOps(),
+        this(metricRegistry, ForkJoinPool.commonPool());
+    }
+
+    public Lighter(MetricRegistry metricRegistry, ForkJoinPool providerPool){
+        this(metricRegistry, providerPool, Map.of(
+                TensorProviderKind.PANAMA, new PanamaOps(providerPool),
                 TensorProviderKind.NAIVE, new NaiveOps()
         ));
     }
 
     public Lighter(MetricRegistry metricRegistry, Map<TensorProviderKind, TensorOps> tensorOperations){
+        this(metricRegistry, ForkJoinPool.commonPool(), tensorOperations);
+    }
+
+    public Lighter(MetricRegistry metricRegistry, ForkJoinPool providerPool,
+            Map<TensorProviderKind, TensorOps> tensorOperations){
         this.metricRegistry = metricRegistry;
+        this.providerPool = java.util.Objects.requireNonNull(providerPool, "providerPool");
         this.tensorOperations.putAll(tensorOperations);
+    }
+
+    public ForkJoinPool providerPool() {
+        return providerPool;
     }
 
     public void putTensorOperations(TensorProviderKind kind, TensorOps ops) {
@@ -621,7 +637,10 @@ public class Lighter {
         Preconditions.checkArgument(b != null, "B tensor must be set");
         Preconditions.checkArgument(result.device().equals(a.device()) && result.device().equals(b.device()),
                 "Tensors must be on the same device");
-        Preconditions.checkArgument(result.dType() == DType.F32, "Batch dot output must be F32");
+        Preconditions.checkArgument(result.dType() == DType.F32
+                        || (result.dType() == DType.BF16 && a.dType() == DType.BF16
+                        && b.dType() == DType.BF16),
+                "Batch dot output must be F32, or BF16 for BF16 inputs and weights");
         Preconditions.checkArgument(result.dims() == 2 && a.dims() == 2 && b.dims() == 2,
                 "Batch dot requires 2D tensors");
         Preconditions.checkArgument(operation.aRowOffset() >= 0
@@ -646,9 +665,19 @@ public class Lighter {
             Timer timer = metricRegistry.timer(new MetricName("tensor2.batch_dot_product.time", metricTags));
             long startNanos = System.nanoTime();
             Either<OpSupport, Void> outcome = entry.getValue().batchDotProduct(operation);
+            if (outcome.isLeft() && operation.threading() == Threading.PROVIDER) {
+                outcome = entry.getValue().batchDotProduct(
+                        operation.withExecution(operation.kernel(), Threading.NONE));
+            }
+            if (outcome.isLeft() && operation.kernel() == GemmKernel.ROW) {
+                outcome = entry.getValue().batchDotProduct(
+                        operation.withExecution(GemmKernel.BATCH, Threading.NONE));
+            }
             if (outcome.isRight()) {
                 metricRegistry.meter(new MetricName("tensor2.batch_dot_product", metricTags)).mark();
-                timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+                long elapsedNanos = System.nanoTime() - startNanos;
+                timer.update(elapsedNanos, TimeUnit.NANOSECONDS);
+                Tensor2TimingCsv.record(operation, entry.getKey(), elapsedNanos);
                 observe("batch_dot_product", entry.getKey(), true, result.dType(), a.dType(), b.dType(), tags);
                 return;
             }

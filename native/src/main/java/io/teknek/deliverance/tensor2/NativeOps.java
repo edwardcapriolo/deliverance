@@ -11,10 +11,13 @@ import io.teknek.dysfx.Either;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-public class NativeOps implements TensorOps, CompositeOpsProvider {
+public class NativeOps implements TensorOps, CompositeOpsProvider, AutoCloseable {
     private static Throwable loadFailure;
     private static final boolean loaded = loadOnce();
     private static final int SIMD_FLAGS = nativeSimdFlags();
+    private static final Object POOL_LOCK = new Object();
+    private static int poolUsers;
+    private boolean closed;
 
     private static int nativeSimdFlags() {
         int flags = 0;
@@ -51,6 +54,15 @@ public class NativeOps implements TensorOps, CompositeOpsProvider {
         if (!loaded) {
             throw new IllegalStateException("tensor2 native operations are not available", loadFailure);
         }
+        synchronized (POOL_LOCK) {
+            if (poolUsers++ == 0) {
+                int workers = Integer.getInteger("deliverance.native.bf16.pool.size",
+                        Math.max(1, Runtime.getRuntime().availableProcessors()));
+                if (Tensor2Native.tensor2_bf16_pool_init(workers) != Tensor2Native.TENSOR2_OK()) {
+                    poolUsers--;
+                }
+            }
+        }
     }
 
     @Override
@@ -82,6 +94,26 @@ public class NativeOps implements TensorOps, CompositeOpsProvider {
         TensorRef result = operation.result();
         TensorRef a = operation.a();
         TensorRef b = operation.b();
+        if (operation.kernel() == GemmKernel.ROW) {
+            if (result.dType() != DType.F32 && result.dType() != DType.BF16
+                    || a.dType() != DType.BF16 || b.dType() != DType.BF16) {
+                return Either.Left(OpSupport.Unsupported);
+            }
+            MemorySegment inputBase = baseSegment(a).asSlice((long) operation.aRowOffset() * a.stride() * 2L);
+            int resultBf16 = result.dType() == DType.BF16 ? 1 : 0;
+            int status = operation.threading() == Threading.PROVIDER
+                    ? Tensor2Native.tensor2_dot_product_rows_bf16_bf16_pool(
+                    baseSegment(result), inputBase, baseSegment(b), resultBf16,
+                    (int) result.shape().first(), operation.aColumnOffset(), operation.bColumnOffset(),
+                    operation.columnLength(), operation.bRowOffset(), operation.rowChunkSize(),
+                    operation.resultRowOffset(), result.stride(), a.stride(), b.stride())
+                    : Tensor2Native.tensor2_dot_product_rows_bf16_bf16(
+                    baseSegment(result), inputBase, baseSegment(b), resultBf16,
+                    (int) result.shape().first(), operation.aColumnOffset(), operation.bColumnOffset(),
+                    operation.columnLength(), operation.bRowOffset(), operation.rowChunkSize(),
+                    operation.resultRowOffset(), result.stride(), a.stride(), b.stride());
+            return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
+        }
         if (result.dType() == DType.F32 && a.dType() == DType.F32 && b.dType() == DType.Q4) {
             TensorRef scale = Q4Layout.scale(b);
             if (scale == null) {
@@ -208,6 +240,31 @@ public class NativeOps implements TensorOps, CompositeOpsProvider {
                 && operation.inputColumnStart() % Q8Layout.BLOCK_SIZE == 0
                 && operation.weightColumnStart() % Q4Layout.BLOCK_SIZE == 0
                 && operation.columnLength() % Q8Layout.BLOCK_SIZE == 0;
+    }
+
+    @Override
+    public void close() {
+        synchronized (POOL_LOCK) {
+            if (!closed) {
+                closed = true;
+                if (poolUsers > 0 && --poolUsers == 0) {
+                    Tensor2Native.tensor2_bf16_pool_shutdown();
+                }
+            }
+        }
+    }
+
+    static {
+        if (loaded) {
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                synchronized (POOL_LOCK) {
+                    if (poolUsers > 0) {
+                        poolUsers = 0;
+                        Tensor2Native.tensor2_bf16_pool_shutdown();
+                    }
+                }
+            }, "deliverance-native-bf16-pool-shutdown"));
+        }
     }
 
     @Override
