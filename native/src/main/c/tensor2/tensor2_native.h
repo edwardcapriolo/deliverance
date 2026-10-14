@@ -22,6 +22,40 @@ tensor2_status tensor2_dot_product_rows_f32_f32(
         int input_stride,
         int weight_stride);
 
+tensor2_status tensor2_dot_product_rows_bf16_bf16(
+        void *result,
+        const uint16_t *input,
+        const uint16_t *weights,
+        int result_bf16,
+        int result_rows,
+        int input_start,
+        int weight_start,
+        int input_length,
+        int weight_row_start,
+        int weight_row_count,
+        int result_column_start,
+        int result_stride,
+        int input_stride,
+        int weight_stride);
+
+tensor2_status tensor2_bf16_pool_init(int worker_count);
+void tensor2_bf16_pool_shutdown(void);
+tensor2_status tensor2_dot_product_rows_bf16_bf16_pool(
+        void *result,
+        const uint16_t *input,
+        const uint16_t *weights,
+        int result_bf16,
+        int result_rows,
+        int input_start,
+        int weight_start,
+        int input_length,
+        int weight_row_start,
+        int weight_row_count,
+        int result_column_start,
+        int result_stride,
+        int input_stride,
+        int weight_stride);
+
 tensor2_status tensor2_dot_product_rows_f32_q8(
         float *result,
         const float *input,

@@ -3,10 +3,15 @@
 
 #include <string.h>
 #include <math.h>
+#if defined(__linux__) || defined(__APPLE__)
+#include <pthread.h>
+#include <stdlib.h>
+#endif
 
 #define TENSOR2_Q8_BLOCK_SIZE 32
 
 static inline float tensor2_bf16_to_f32(uint16_t value);
+static inline uint16_t tensor2_f32_to_bf16(float value);
 
 tensor2_status tensor2_exp_f32(const float *input, float *output, int rows, int offset, int length,
         int input_stride, int output_stride) {
@@ -274,6 +279,224 @@ static inline uint16_t tensor2_f32_to_bf16(float value) {
     bits += 0x7fffu + lsb;
     return (uint16_t) (bits >> 16);
 }
+
+static inline float tensor2_dot_bf16_bf16(const uint16_t *a, const uint16_t *b, int length) {
+    int column = 0;
+#if defined(TENSOR2_ARM_NEON)
+    float32x4_t acc0 = vdupq_n_f32(0.0f);
+    float32x4_t acc1 = vdupq_n_f32(0.0f);
+    for (; column + 8 <= length; column += 8) {
+        uint16x8_t ar = vld1q_u16(a + column);
+        uint16x8_t br = vld1q_u16(b + column);
+        uint32x4_t ai0 = vshlq_n_u32(vmovl_u16(vget_low_u16(ar)), 16);
+        uint32x4_t ai1 = vshlq_n_u32(vmovl_u16(vget_high_u16(ar)), 16);
+        uint32x4_t bi0 = vshlq_n_u32(vmovl_u16(vget_low_u16(br)), 16);
+        uint32x4_t bi1 = vshlq_n_u32(vmovl_u16(vget_high_u16(br)), 16);
+        acc0 = vfmaq_f32(acc0, vreinterpretq_f32_u32(ai0), vreinterpretq_f32_u32(bi0));
+        acc1 = vfmaq_f32(acc1, vreinterpretq_f32_u32(ai1), vreinterpretq_f32_u32(bi1));
+    }
+    float sum = vaddvq_f32(vaddq_f32(acc0, acc1));
+#elif defined(__AVX2__)
+    __m256 acc = _mm256_setzero_ps();
+    for (; column + 8 <= length; column += 8) {
+        __m128i ar = _mm_loadu_si128((const __m128i *) (a + column));
+        __m128i br = _mm_loadu_si128((const __m128i *) (b + column));
+        __m256 av = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(ar), 16));
+        __m256 bv = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_cvtepu16_epi32(br), 16));
+        acc = _mm256_add_ps(acc, _mm256_mul_ps(av, bv));
+    }
+    float lanes[8] __attribute__((aligned(32)));
+    _mm256_store_ps(lanes, acc);
+    float sum = lanes[0] + lanes[1] + lanes[2] + lanes[3]
+            + lanes[4] + lanes[5] + lanes[6] + lanes[7];
+#else
+    float sum = 0.0f;
+#endif
+    for (; column < length; column++) {
+        sum += tensor2_bf16_to_f32(a[column]) * tensor2_bf16_to_f32(b[column]);
+    }
+    return sum;
+}
+
+tensor2_status tensor2_dot_product_rows_bf16_bf16(
+        void *result, const uint16_t *input, const uint16_t *weights, int result_bf16,
+        int result_rows, int input_start, int weight_start, int input_length, int weight_row_start,
+        int weight_row_count, int result_column_start, int result_stride,
+        int input_stride, int weight_stride) {
+    if (result == NULL || input == NULL || weights == NULL || result_rows < 0
+            || input_start < 0 || weight_start < 0 || input_length <= 0 || weight_row_start < 0
+            || weight_row_count < 0 || result_column_start < 0 || result_stride < 0
+            || input_stride < 0 || weight_stride < 0) {
+        return TENSOR2_UNSUPPORTED;
+    }
+    for (int result_row = 0; result_row < result_rows; result_row++) {
+        const uint16_t *a = input + result_row * input_stride + input_start;
+        for (int weight_row = weight_row_start;
+                weight_row < weight_row_start + weight_row_count; weight_row++) {
+            const uint16_t *b = weights + weight_row * weight_stride + weight_start;
+            float value = tensor2_dot_bf16_bf16(a, b, input_length);
+            int output = result_row * result_stride + result_column_start + weight_row;
+            if (result_bf16) {
+                ((uint16_t *) result)[output] = tensor2_f32_to_bf16(value);
+            } else {
+                ((float *) result)[output] = value;
+            }
+        }
+    }
+    return TENSOR2_OK;
+}
+
+#if defined(__linux__) || defined(__APPLE__)
+typedef struct tensor2_bf16_pool_job {
+    void *result;
+    const uint16_t *input;
+    const uint16_t *weights;
+    int result_bf16;
+    int input_start;
+    int weight_start;
+    int input_length;
+    int weight_row;
+    int result_column_start;
+    int result_stride;
+    int input_stride;
+    int weight_stride;
+} tensor2_bf16_pool_job;
+
+typedef struct tensor2_bf16_pool {
+    pthread_mutex_t mutex;
+    pthread_cond_t work_available;
+    pthread_cond_t work_complete;
+    pthread_t *workers;
+    tensor2_bf16_pool_job *jobs;
+    int worker_count;
+    int job_count;
+    int next_job;
+    int remaining;
+    int active;
+    int stopping;
+} tensor2_bf16_pool;
+
+static tensor2_bf16_pool tensor2_pool;
+static int tensor2_pool_initialized;
+
+static void *tensor2_bf16_pool_worker(void *opaque) {
+    tensor2_bf16_pool *pool = (tensor2_bf16_pool *) opaque;
+    for (;;) {
+        pthread_mutex_lock(&pool->mutex);
+        while (!pool->stopping && pool->next_job >= pool->job_count) {
+            pthread_cond_wait(&pool->work_available, &pool->mutex);
+        }
+        if (pool->stopping && pool->next_job >= pool->job_count) {
+            pthread_mutex_unlock(&pool->mutex);
+            return NULL;
+        }
+        tensor2_bf16_pool_job job = pool->jobs[pool->next_job++];
+        pthread_mutex_unlock(&pool->mutex);
+
+        tensor2_dot_product_rows_bf16_bf16(job.result, job.input, job.weights,
+                job.result_bf16, 1, job.input_start, job.weight_start, job.input_length,
+                job.weight_row, 1, job.result_column_start, job.result_stride,
+                job.input_stride, job.weight_stride);
+
+        pthread_mutex_lock(&pool->mutex);
+        if (--pool->remaining == 0) {
+            pool->active = 0;
+            pthread_cond_signal(&pool->work_complete);
+        }
+        pthread_mutex_unlock(&pool->mutex);
+    }
+}
+
+tensor2_status tensor2_bf16_pool_init(int worker_count) {
+    if (worker_count <= 0) return TENSOR2_UNSUPPORTED;
+    if (tensor2_pool_initialized) return TENSOR2_OK;
+    memset(&tensor2_pool, 0, sizeof(tensor2_pool));
+    if (pthread_mutex_init(&tensor2_pool.mutex, NULL) != 0
+            || pthread_cond_init(&tensor2_pool.work_available, NULL) != 0
+            || pthread_cond_init(&tensor2_pool.work_complete, NULL) != 0) {
+        return TENSOR2_UNSUPPORTED;
+    }
+    tensor2_pool.workers = calloc((size_t) worker_count, sizeof(pthread_t));
+    if (tensor2_pool.workers == NULL) return TENSOR2_UNSUPPORTED;
+    tensor2_pool.worker_count = worker_count;
+    for (int i = 0; i < worker_count; i++) {
+        if (pthread_create(&tensor2_pool.workers[i], NULL, tensor2_bf16_pool_worker, &tensor2_pool) != 0) {
+            tensor2_pool.stopping = 1;
+            pthread_cond_broadcast(&tensor2_pool.work_available);
+            for (int j = 0; j < i; j++) pthread_join(tensor2_pool.workers[j], NULL);
+            free(tensor2_pool.workers);
+            tensor2_pool.workers = NULL;
+            return TENSOR2_UNSUPPORTED;
+        }
+    }
+    tensor2_pool_initialized = 1;
+    return TENSOR2_OK;
+}
+
+void tensor2_bf16_pool_shutdown(void) {
+    if (!tensor2_pool_initialized) return;
+    pthread_mutex_lock(&tensor2_pool.mutex);
+    while (tensor2_pool.active) pthread_cond_wait(&tensor2_pool.work_complete, &tensor2_pool.mutex);
+    tensor2_pool.stopping = 1;
+    pthread_cond_broadcast(&tensor2_pool.work_available);
+    pthread_mutex_unlock(&tensor2_pool.mutex);
+    for (int i = 0; i < tensor2_pool.worker_count; i++) pthread_join(tensor2_pool.workers[i], NULL);
+    free(tensor2_pool.workers);
+    free(tensor2_pool.jobs);
+    pthread_cond_destroy(&tensor2_pool.work_complete);
+    pthread_cond_destroy(&tensor2_pool.work_available);
+    pthread_mutex_destroy(&tensor2_pool.mutex);
+    memset(&tensor2_pool, 0, sizeof(tensor2_pool));
+    tensor2_pool_initialized = 0;
+}
+
+tensor2_status tensor2_dot_product_rows_bf16_bf16_pool(
+        void *result, const uint16_t *input, const uint16_t *weights, int result_bf16,
+        int result_rows, int input_start, int weight_start, int input_length,
+        int weight_row_start, int weight_row_count, int result_column_start,
+        int result_stride, int input_stride, int weight_stride) {
+    if (!tensor2_pool_initialized || result_rows < 0 || weight_row_count < 0) return TENSOR2_UNSUPPORTED;
+    if (result_rows == 0 || weight_row_count == 0) return TENSOR2_OK;
+    int count = result_rows * weight_row_count;
+    tensor2_bf16_pool_job *jobs = calloc((size_t) count, sizeof(*jobs));
+    if (jobs == NULL) return TENSOR2_UNSUPPORTED;
+    pthread_mutex_lock(&tensor2_pool.mutex);
+    while (tensor2_pool.active) pthread_cond_wait(&tensor2_pool.work_complete, &tensor2_pool.mutex);
+    free(tensor2_pool.jobs);
+    tensor2_pool.jobs = jobs;
+    tensor2_pool.job_count = 0;
+    tensor2_pool.next_job = 0;
+    int result_bytes = result_bf16 ? 2 : 4;
+    for (int row = 0; row < result_rows; row++) {
+        for (int weight = 0; weight < weight_row_count; weight++) {
+            tensor2_pool.jobs[tensor2_pool.job_count++] = (tensor2_bf16_pool_job) {
+                    (char *) result + row * result_stride * result_bytes,
+                    input + row * input_stride, weights, result_bf16, input_start, weight_start,
+                    input_length, weight_row_start + weight, result_column_start,
+                    result_stride, input_stride, weight_stride};
+        }
+    }
+    tensor2_pool.remaining = tensor2_pool.job_count;
+    tensor2_pool.active = 1;
+    pthread_cond_broadcast(&tensor2_pool.work_available);
+    while (tensor2_pool.active) pthread_cond_wait(&tensor2_pool.work_complete, &tensor2_pool.mutex);
+    pthread_mutex_unlock(&tensor2_pool.mutex);
+    return TENSOR2_OK;
+}
+#else
+tensor2_status tensor2_bf16_pool_init(int worker_count) { (void) worker_count; return TENSOR2_UNSUPPORTED; }
+void tensor2_bf16_pool_shutdown(void) {}
+tensor2_status tensor2_dot_product_rows_bf16_bf16_pool(void *result, const uint16_t *input,
+        const uint16_t *weights, int result_bf16, int result_rows, int input_start, int weight_start,
+        int input_length, int weight_row_start, int weight_row_count, int result_column_start,
+        int result_stride, int input_stride, int weight_stride) {
+    (void) result; (void) input; (void) weights; (void) result_bf16; (void) result_rows;
+    (void) input_start; (void) weight_start; (void) input_length; (void) weight_row_start;
+    (void) weight_row_count; (void) result_column_start; (void) result_stride;
+    (void) input_stride; (void) weight_stride;
+    return TENSOR2_UNSUPPORTED;
+}
+#endif
 
 static inline float tensor2_dot_f32_f32(
         const float *a,

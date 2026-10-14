@@ -123,6 +123,67 @@ class Tensor2LighterBatchDotProductFuzzTest {
                 Map.of(Lighter.TENSOR_OP_KEY, TensorProviderKind.NAIVE.name()))).getCount(), dtypeCase + " " + c);
     }
 
+    @ParameterizedTest(name = "bf16 output {0}")
+    @MethodSource("bf16OutputCases")
+    void panamaBf16Bf16Bf16MatchesNaive(BatchDotProductFuzzCases.Case c) {
+        Lighter expected = naiveOnly();
+        Lighter actual = new Lighter(nullMetricRegistry(), Map.of(TensorProviderKind.PANAMA, new PanamaOps()));
+        TensorRef expectedA = operand(expected, DType.BF16, c.aRows(), c.aColumns(), c.seed());
+        TensorRef expectedB = operand(expected, DType.BF16, c.bRows(), c.bColumns(), c.seed() + 23);
+        TensorRef expectedResult = expected.allocate(DType.BF16, TensorShape.of(c.resultRows(), c.resultColumns()));
+        TensorRef actualA = operand(actual, DType.BF16, c.aRows(), c.aColumns(), c.seed());
+        TensorRef actualB = operand(actual, DType.BF16, c.bRows(), c.bColumns(), c.seed() + 23);
+        TensorRef actualResult = actual.allocate(DType.BF16, TensorShape.of(c.resultRows(), c.resultColumns()));
+
+        expected.batchDotProduct(operation(c, expectedResult, expectedA, expectedB));
+        actual.batchDotProduct(operation(c, actualResult, actualA, actualB));
+
+        for (int row = 0; row < c.resultRows(); row++) {
+            for (int column = 0; column < c.resultColumns(); column++) {
+                assertEquals(expectedResult.get(row, column), actualResult.get(row, column), 0.08f,
+                        c + " row=" + row + " column=" + column);
+            }
+        }
+    }
+
+    @ParameterizedTest(name = "row bf16 output {0} {1}")
+    @MethodSource("rowBf16Candidates")
+    void rowBf16Bf16Bf16MatchesNaive(BatchDotProductFuzzCases.Case c, Candidate candidate) {
+        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+        Lighter expected = naiveOnly();
+        Lighter actual = candidate.lighter();
+        TensorRef expectedA = operand(expected, DType.BF16, c.aRows(), c.aColumns(), c.seed());
+        TensorRef expectedB = operand(expected, DType.BF16, c.bRows(), c.bColumns(), c.seed() + 23);
+        TensorRef expectedResult = expected.allocate(DType.BF16, TensorShape.of(c.resultRows(), c.resultColumns()));
+        TensorRef actualA = operand(actual, DType.BF16, c.aRows(), c.aColumns(), c.seed());
+        TensorRef actualB = operand(actual, DType.BF16, c.bRows(), c.bColumns(), c.seed() + 23);
+        TensorRef actualResult = actual.allocate(DType.BF16, TensorShape.of(c.resultRows(), c.resultColumns()));
+
+        expected.batchDotProduct(operation(c, expectedResult, expectedA, expectedB));
+        actual.batchDotProduct(operation(c, actualResult, actualA, actualB)
+                .kernel(GemmKernel.ROW).threading(Threading.PROVIDER));
+
+        for (int row = 0; row < c.resultRows(); row++) {
+            for (int column = 0; column < c.resultColumns(); column++) {
+                assertEquals(expectedResult.get(row, column), actualResult.get(row, column), 0.08f,
+                        c + " " + candidate.name() + " row=" + row + " column=" + column);
+            }
+        }
+    }
+
+    static Stream<Arguments> rowBf16Candidates() {
+        Candidate panama = new Candidate("PANAMA", true, () -> new Lighter(nullMetricRegistry(),
+                Map.of(TensorProviderKind.PANAMA, new PanamaOps())));
+        Candidate simd = new Candidate("SIMD", NativeOps.isAvailable(), () -> new Lighter(nullMetricRegistry(),
+                Map.of(TensorProviderKind.SIMD, new NativeOps(), TensorProviderKind.PANAMA, new PanamaOps())));
+        return BatchDotProductFuzzCases.cases()
+                .flatMap(args -> Stream.of(panama, simd).map(candidate -> Arguments.of(args.get()[0], candidate)));
+    }
+
+    static Stream<Arguments> bf16OutputCases() {
+        return BatchDotProductFuzzCases.cases();
+    }
+
     static Stream<Arguments> casesAndCandidates() {
         Candidate panama = new Candidate("PANAMA", true, () -> new Lighter(nullMetricRegistry(), Map.of(
                 TensorProviderKind.PANAMA, new PanamaOps(),

@@ -36,6 +36,10 @@ cd "$HEADER_DIR"
   -l deliverance_tensor2 \
   --header-class-name Tensor2Native \
   --include-function tensor2_dot_product_rows_f32_f32 \
+  --include-function tensor2_dot_product_rows_bf16_bf16 \
+  --include-function tensor2_bf16_pool_init \
+  --include-function tensor2_bf16_pool_shutdown \
+  --include-function tensor2_dot_product_rows_bf16_bf16_pool \
   --include-function tensor2_dot_product_rows_f32_q8 \
   --include-function tensor2_dot_product_rows_f32_q4 \
   --include-function tensor2_dot_product_rows_bf16_q4 \

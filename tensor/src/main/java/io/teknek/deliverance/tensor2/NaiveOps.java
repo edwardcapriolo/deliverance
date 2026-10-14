@@ -208,7 +208,8 @@ class NaiveOps implements TensorOps {
         TensorRef result = operation.result();
         TensorRef a = operation.a();
         TensorRef b = operation.b();
-        if (result.dType() != DType.F32) {
+        if (result.dType() != DType.F32
+                && !(result.dType() == DType.BF16 && a.dType() == DType.BF16 && b.dType() == DType.BF16)) {
             return Either.Left(OpSupport.Unsupported);
         }
         Preconditions.checkArgument(result.dims() == 2 && a.dims() == 2 && b.dims() == 2);
