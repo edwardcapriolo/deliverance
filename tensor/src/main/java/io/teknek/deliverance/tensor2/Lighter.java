@@ -100,6 +100,11 @@ public class Lighter {
         }
     }
 
+    public void removeTensorOperations(TensorProviderKind kind) {
+        tensorOperations.remove(java.util.Objects.requireNonNull(kind, "kind"));
+        compositeOperations.remove(kind);
+    }
+
     /** Controls whether allocateDirty may return pooled storage without zeroing it. */
     public void allowDirtyTensors(boolean allowDirtyTensors) {
         allocator.allowDirtyTensors(allowDirtyTensors);
@@ -736,7 +741,7 @@ public class Lighter {
             long startNanos = System.nanoTime();
             Either<OpSupport, Void> outcome = entry.getValue().dotProductRows(output, input, weights,
                     inputColumnStart, weightColumnStart, columnLength, weightRowStart, weightRowCount,
-                    outputColumnStart);
+                    outputColumnStart, GemmKernel.ROW, Threading.PROVIDER);
             if (outcome.isRight()) {
                 metricRegistry.meter(new MetricName("tensor2.dot_product_rows", metricTags)).mark();
                 timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);

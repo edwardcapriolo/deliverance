@@ -12,6 +12,7 @@ import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor2.TensorProviderKind;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -35,8 +36,9 @@ class EmbeddingGemma2EmbeddingTest {
 
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
              AbstractModel model = ModelSupport.loadEmbeddingModel(modelDirectory, DType.F32, DType.F32,
-                     new ConfigurableTensorProvider(allocator, pool), metrics, allocator,
-                     new KvBufferCacheSettings(true))) {
+                      new ConfigurableTensorProvider(allocator, pool), metrics, allocator,
+                      new KvBufferCacheSettings(true))) {
+            model.getLighter().removeTensorOperations(TensorProviderKind.NAIVE);
             boolean previousProfilerState = InferenceProfiler.isEnabled();
             for (int k = 0; k < 5; k++) {
                 InferenceProfiler.setEnabled(true);
