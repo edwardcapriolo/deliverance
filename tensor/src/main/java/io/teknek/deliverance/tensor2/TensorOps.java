@@ -45,11 +45,36 @@ public interface TensorOps {
                   weightRowCount, outputColumnStart);
      }
 
-     default Either<OpSupport, Void> dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
-             int inputColumnStart, int weightColumnStart, int columnLength, int weightRowStart,
-             int weightRowCount, int outputColumnStart) {
-           return Either.Left(OpSupport.Unsupported);
-      }
+      default Either<OpSupport, Void> dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
+              int inputColumnStart, int weightColumnStart, int columnLength, int weightRowStart,
+              int weightRowCount, int outputColumnStart) {
+            return Either.Left(OpSupport.Unsupported);
+       }
+
+       default Either<OpSupport, Void> dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
+               int inputColumnStart, int weightColumnStart, int columnLength, int weightRowStart,
+               int weightRowCount, int outputColumnStart, GemmKernel kernel, Threading threading) {
+            if (kernel == GemmKernel.BATCH) {
+                return dotProductRows(output, input, weights, inputColumnStart, weightColumnStart, columnLength,
+                        weightRowStart, weightRowCount, outputColumnStart);
+            }
+            Either<OpSupport, Void> outcome = batchDotProduct(new BatchDotProduct()
+                    .result(output)
+                    .a(input)
+                    .b(weights)
+                    .aColumnOffset(inputColumnStart)
+                    .bColumnOffset(weightColumnStart)
+                    .columnLength(columnLength)
+                    .resultRowOffset(outputColumnStart - weightRowStart)
+                    .bRowOffset(weightRowStart)
+                    .rowChunkSize(weightRowCount)
+                    .kernel(kernel)
+                    .threading(threading));
+            return outcome.isRight()
+                    ? outcome
+                    : dotProductRows(output, input, weights, inputColumnStart, weightColumnStart, columnLength,
+                    weightRowStart, weightRowCount, outputColumnStart);
+       }
 
       /** Provider-level paired projection; providers without a fused path remain unsupported. */
       default Either<OpSupport, Void> dotProductBatchChunk(DotProductBatchChunk operation) {
