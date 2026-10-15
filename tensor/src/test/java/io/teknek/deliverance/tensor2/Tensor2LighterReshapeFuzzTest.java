@@ -79,9 +79,10 @@ class Tensor2LighterReshapeFuzzTest {
             try (TensorRef oracleInput = inputDType == DType.F32 ? copy(oracle, oracleDense)
                     : oracle.reshape(oracleDense, inputDType);
                  TensorRef expected = oracle.reshape(oracleInput, outputDType);
-                 TensorRef actualInput = inputDType == DType.F32 ? copy(actualLighter, actualDense)
-                         : actualLighter.reshape(actualDense, inputDType);
-                 TensorRef actual = actualLighter.reshape(actualInput, outputDType)) {
+                  TensorRef actualInput = inputDType == DType.F32 ? copy(actualLighter, actualDense)
+                          : actualLighter.reshape(actualDense, inputDType);
+                  TensorRef actual = actualLighter.allocate(outputDType, actualInput.shape())) {
+                actualLighter.reshape(actualInput, actual, Threading.PROVIDER);
 
                 assertNotSame(actualInput, actual);
                 assertEquals(outputDType, actual.dType());
@@ -119,8 +120,9 @@ class Tensor2LighterReshapeFuzzTest {
                     actualSource.underlying().set(value, row, column);
                 }
             }
-            try (TensorRef expected = naive.reshape(source, DType.F16);
-                 TensorRef actual = panama.reshape(actualSource, DType.F16)) {
+             try (TensorRef expected = naive.reshape(source, DType.F16);
+                  TensorRef actual = panama.allocate(DType.F16, shape)) {
+                panama.reshape(actualSource, actual, Threading.PROVIDER);
                 for (int row = 0; row < shape.first(); row++) {
                     for (int column = 0; column < shape.last(); column++) {
                         float expectedValue = expected.underlying().get(row, column);

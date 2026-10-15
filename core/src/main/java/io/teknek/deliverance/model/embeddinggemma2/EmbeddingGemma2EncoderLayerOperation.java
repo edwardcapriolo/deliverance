@@ -164,8 +164,9 @@ public final class EmbeddingGemma2EncoderLayerOperation {
 
     private void roundBoundary(TensorRef target, Lighter lighter) {
         if (!roundBf16) return;
-        try (TensorRef bf16 = lighter.reshape(target, DType.BF16)) {
-            lighter.reshape(bf16, target);
+        try (TensorRef bf16 = lighter.reshape(target, DType.BF16,
+                io.teknek.deliverance.tensor2.Threading.PROVIDER)) {
+            lighter.reshape(bf16, target, io.teknek.deliverance.tensor2.Threading.PROVIDER);
         }
     }
 

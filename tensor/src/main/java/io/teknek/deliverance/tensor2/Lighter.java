@@ -338,11 +338,15 @@ public class Lighter {
      * intermediate tensor and a subsequent copy.</p>
      */
     public TensorRef reshape(TensorRef input, DType outputDType) {
+        return reshape(input, outputDType, Threading.NONE);
+    }
+
+    public TensorRef reshape(TensorRef input, DType outputDType, Threading threading) {
         Preconditions.checkArgument(input != null, "Input tensor must be set");
         Preconditions.checkArgument(outputDType != null, "Output dtype must be set");
         TensorRef output = allocate(outputDType, input.shape(), input.device());
         try {
-            reshape(input, output);
+            reshape(input, output, threading);
             return output;
         } catch (RuntimeException e) {
             output.close();
@@ -358,6 +362,10 @@ public class Lighter {
      * {@link #reshape(TensorRef, DType)}.</p>
      */
     public void reshape(TensorRef input, TensorRef output) {
+        reshape(input, output, Threading.NONE);
+    }
+
+    public void reshape(TensorRef input, TensorRef output, Threading threading) {
         Preconditions.checkArgument(input != null, "Input tensor must be set");
         Preconditions.checkArgument(output != null, "Output tensor must be set");
         Preconditions.checkArgument(input.shape().equals(output.shape()), "Input and output shapes must match");
@@ -370,7 +378,7 @@ public class Lighter {
 
             Timer timer = metricRegistry.timer(new MetricName("tensor2.reshape.time", metricTags));
             long startNanos = System.nanoTime();
-            Either<OpSupport, Void> result = entry.getValue().reshape(input, output);
+            Either<OpSupport, Void> result = entry.getValue().reshape(input, output, threading);
             if (result.isRight()) {
                 metricRegistry.meter(new MetricName("tensor2.reshape", metricTags)).mark();
                 timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);

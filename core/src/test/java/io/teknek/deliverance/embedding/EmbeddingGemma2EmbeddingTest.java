@@ -58,9 +58,9 @@ class EmbeddingGemma2EmbeddingTest {
                     System.out.println("EmbeddingGemma 2 embedding dimensions: " + embedding.length);
                     System.out.println("EmbeddingGemma 2 first values: " + embedding[0] + ", " + embedding[1]
                             + ", " + embedding[2] + ", " + embedding[3]);
-
+                    if (k == 4) {
                         printRegisteredTimerMetrics(metrics);
-
+                    }
                 } finally {
                     InferenceProfiler.setEnabled(previousProfilerState);
                 }

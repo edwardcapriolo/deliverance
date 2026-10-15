@@ -256,6 +256,11 @@ class PanamaOps implements TensorOps {
 
     @Override
     public Either<OpSupport, Void> reshape(TensorRef input, TensorRef output) {
+        return reshape(input, output, Threading.NONE);
+    }
+
+    @Override
+    public Either<OpSupport, Void> reshape(TensorRef input, TensorRef output, Threading threading) {
         Preconditions.checkArgument(input.dims() == 2 && output.dims() == 2, "Reshape requires 2D tensors");
         Preconditions.checkArgument(input.shape().equals(output.shape()), "Input and output shapes must match");
         if (input.dType() == output.dType()) {
@@ -263,11 +268,19 @@ class PanamaOps implements TensorOps {
             return Either.Right(null);
         }
         if (input.dType() == DType.F32 && output.dType() == DType.BF16) {
-            reshapeF32ToBF16(input, output);
+            if (threading == Threading.PROVIDER) {
+                parallelRows(input, row -> reshapeF32ToBF16Row(input, output, row));
+            } else {
+                reshapeF32ToBF16(input, output);
+            }
             return Either.Right(null);
         }
         if (input.dType() == DType.BF16 && output.dType() == DType.F32) {
-            reshapeBF16ToF32(input, output);
+            if (threading == Threading.PROVIDER) {
+                parallelRows(input, row -> reshapeBF16ToF32Row(input, output, row));
+            } else {
+                reshapeBF16ToF32(input, output);
+            }
             return Either.Right(null);
         }
         if (input.dType() == DType.F16 && output.dType() == DType.F32) {
@@ -303,6 +316,16 @@ class PanamaOps implements TensorOps {
             return Either.Right(null);
         }
         return Either.Left(OpSupport.Unsupported);
+    }
+
+    private void parallelRows(TensorRef input, java.util.function.IntConsumer action) {
+        int rows = (int) input.shape().first();
+        ForkJoinTask<?>[] tasks = new ForkJoinTask<?>[rows];
+        for (int row = 0; row < rows; row++) {
+            int currentRow = row;
+            tasks[row] = providerPool.submit(() -> action.accept(currentRow));
+        }
+        for (ForkJoinTask<?> task : tasks) task.join();
     }
 
     @Override
@@ -357,9 +380,16 @@ class PanamaOps implements TensorOps {
         Tensor inputTensor = input.underlying();
         Tensor outputTensor = output.underlying();
         for (int row = 0; row < input.shape().first(); row++) {
-            int column = 0;
-            int upperBound = F32_BF16_SPECIES.loopBound(input.shape().last());
-            for (; column < upperBound; column += F32_BF16_SPECIES.length()) {
+            reshapeF32ToBF16Row(input, output, row);
+        }
+    }
+
+    private void reshapeF32ToBF16Row(TensorRef input, TensorRef output, int row) {
+        Tensor inputTensor = input.underlying();
+        Tensor outputTensor = output.underlying();
+        int column = 0;
+        int upperBound = F32_BF16_SPECIES.loopBound(input.shape().last());
+        for (; column < upperBound; column += F32_BF16_SPECIES.length()) {
                 FloatVector values = FloatVector.fromMemorySegment(F32_BF16_SPECIES, inputTensor.getMemorySegment(),
                         memoryOffset(input, row, column), ByteOrder.LITTLE_ENDIAN);
                 IntVector bits = values.reinterpretAsInts();
@@ -371,9 +401,8 @@ class PanamaOps implements TensorOps {
                 ((ShortVector) bf16).intoMemorySegment(outputTensor.getMemorySegment(), memoryOffset(output, row, column),
                         ByteOrder.LITTLE_ENDIAN);
             }
-            for (; column < input.shape().last(); column++) {
+        for (; column < input.shape().last(); column++) {
                 outputTensor.set(inputTensor.get(row, column), row, column);
-            }
         }
     }
 
@@ -381,9 +410,16 @@ class PanamaOps implements TensorOps {
         Tensor inputTensor = input.underlying();
         Tensor outputTensor = output.underlying();
         for (int row = 0; row < input.shape().first(); row++) {
-            int column = 0;
-            int upperBound = F32_BF16_SPECIES.loopBound(input.shape().last());
-            for (; column < upperBound; column += F32_BF16_SPECIES.length()) {
+            reshapeBF16ToF32Row(input, output, row);
+        }
+    }
+
+    private void reshapeBF16ToF32Row(TensorRef input, TensorRef output, int row) {
+        Tensor inputTensor = input.underlying();
+        Tensor outputTensor = output.underlying();
+        int column = 0;
+        int upperBound = F32_BF16_SPECIES.loopBound(input.shape().last());
+        for (; column < upperBound; column += F32_BF16_SPECIES.length()) {
                 var values = ShortVector.fromMemorySegment(BF16_SPECIES, inputTensor.getMemorySegment(),
                                 memoryOffset(input, row, column), ByteOrder.LITTLE_ENDIAN)
                         .convertShape(VectorOperators.S2I, IntVector.SPECIES_256, 0)
@@ -392,9 +428,8 @@ class PanamaOps implements TensorOps {
                 values.intoMemorySegment(outputTensor.getMemorySegment(), memoryOffset(output, row, column),
                         ByteOrder.LITTLE_ENDIAN);
             }
-            for (; column < input.shape().last(); column++) {
+        for (; column < input.shape().last(); column++) {
                 outputTensor.set(inputTensor.get(row, column), row, column);
-            }
         }
     }
 
