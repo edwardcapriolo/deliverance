@@ -241,8 +241,9 @@ public final class EmbeddingGemma2Model extends AbstractModel {
 
     private void roundBoundary(TensorRef target) {
         if (!usesBf16Reference()) return;
-        try (TensorRef bf16 = lighter.reshape(target, DType.BF16)) {
-            lighter.reshape(bf16, target);
+        try (TensorRef bf16 = lighter.reshape(target, DType.BF16,
+                io.teknek.deliverance.tensor2.Threading.PROVIDER)) {
+            lighter.reshape(bf16, target, io.teknek.deliverance.tensor2.Threading.PROVIDER);
         }
     }
 
@@ -310,7 +311,8 @@ public final class EmbeddingGemma2Model extends AbstractModel {
         if (source.dType() == DType.F32) {
             return registerModelTensorRef(source);
         }
-        TensorRef converted = lighter.reshape(source, DType.F32);
+        TensorRef converted = lighter.reshape(source, DType.F32,
+                io.teknek.deliverance.tensor2.Threading.PROVIDER);
         source.close();
         return registerModelTensorRef(converted);
     }
