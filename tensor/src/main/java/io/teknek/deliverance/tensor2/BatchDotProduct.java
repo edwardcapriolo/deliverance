@@ -121,7 +121,6 @@ public class BatchDotProduct {
     Threading threading() {
         return threading;
     }
-
     BatchDotProduct withExecution(GemmKernel kernel, Threading threading) {
         return new BatchDotProduct()
                 .result(result)
