@@ -5,6 +5,8 @@ import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.tensor2.GemmDit;
+import io.teknek.deliverance.tensorlib.TensorPlanAdaptiveSplitTuner;
 
 import java.util.Objects;
 
@@ -32,6 +34,11 @@ public final class EmbeddingGemma2MlpOperation {
     /** Computes {@code down(gelu(gate(input)) * up(input))} for every input row. */
     public void apply(TensorRef output, TensorRef input, TensorRef gateWeight, TensorRef upWeight,
                       TensorRef downWeight, Lighter lighter) {
+        apply(output, input, gateWeight, upWeight, downWeight, lighter, null);
+    }
+
+    public void apply(TensorRef output, TensorRef input, TensorRef gateWeight, TensorRef upWeight,
+                      TensorRef downWeight, Lighter lighter, TensorPlanAdaptiveSplitTuner tuner) {
         Objects.requireNonNull(output, "output");
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(gateWeight, "gateWeight");
@@ -47,8 +54,10 @@ public final class EmbeddingGemma2MlpOperation {
         }
         try (TensorRef gate = lighter.allocate(DType.F32, TensorShape.of(input.shape().first(), intermediateSize));
              TensorRef up = lighter.allocate(DType.F32, TensorShape.of(input.shape().first(), intermediateSize))) {
-            lighter.dotProductRows(gate, input, gateWeight, 0, hiddenSize, 0, intermediateSize, 0);
-            lighter.dotProductRows(up, input, upWeight, 0, hiddenSize, 0, intermediateSize, 0);
+            GemmDit.dotProductRows(lighter, tuner, "embeddinggemma2.mlp.gate", gate, input, gateWeight,
+                    0, 0, hiddenSize, 0, intermediateSize, 0);
+            GemmDit.dotProductRows(lighter, tuner, "embeddinggemma2.mlp.up", up, input, upWeight,
+                    0, 0, hiddenSize, 0, intermediateSize, 0);
             roundBoundary(gate, lighter);
             roundBoundary(up, lighter);
             for (int row = 0; row < gate.shape().first(); row++) {
@@ -59,7 +68,8 @@ public final class EmbeddingGemma2MlpOperation {
                 }
             }
             roundBoundary(gate, lighter);
-            lighter.dotProductRows(output, gate, downWeight, 0, intermediateSize, 0, hiddenSize, 0);
+            GemmDit.dotProductRows(lighter, tuner, "embeddinggemma2.mlp.down", output, gate, downWeight,
+                    0, 0, intermediateSize, 0, hiddenSize, 0);
             roundBoundary(output, lighter);
         }
     }

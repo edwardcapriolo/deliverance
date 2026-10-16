@@ -2,6 +2,8 @@ package io.teknek.deliverance.model.embeddinggemma2;
 
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.tensor2.GemmDit;
+import io.teknek.deliverance.tensorlib.TensorPlanAdaptiveSplitTuner;
 
 import java.util.Objects;
 
@@ -44,6 +46,11 @@ public final class EmbeddingGemma2PleProjectionOperation {
      * @param lighter TensorRef operation/provider owner
      */
     public void apply(TensorRef output, TensorRef input, TensorRef projection, Lighter lighter) {
+        apply(output, input, projection, lighter, null);
+    }
+
+    public void apply(TensorRef output, TensorRef input, TensorRef projection, Lighter lighter,
+            TensorPlanAdaptiveSplitTuner tuner) {
         Objects.requireNonNull(output, "output");
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(projection, "projection");
@@ -56,7 +63,8 @@ public final class EmbeddingGemma2PleProjectionOperation {
                 || output.shape().last() != outputWidth) {
             throw new IllegalArgumentException("Invalid EmbeddingGemma 2 PLE projection shapes");
         }
-        lighter.dotProductRows(output, input, projection, 0, inputWidth, 0, outputWidth, 0);
+        GemmDit.dotProductRows(lighter, tuner, "embeddinggemma2.ple_projection", output, input, projection,
+                0, 0, inputWidth, 0, outputWidth, 0);
         for (int row = 0; row < output.shape().first(); row++) {
             try (TensorRef outputRow = output.slice(row)) {
                 lighter.preferredTensorOperations().scale(scale, outputRow, 0, outputWidth);

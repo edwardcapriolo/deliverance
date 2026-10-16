@@ -29,6 +29,7 @@ import java.util.concurrent.ForkJoinPool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+@Tensor2PerformanceCase
 class Tensor2LighterDotProductRowsFuzzTest {
     @org.junit.jupiter.api.Test
     void qwen06GateUpProjectionCharacterization() {
@@ -109,8 +110,7 @@ class Tensor2LighterDotProductRowsFuzzTest {
 
     @ParameterizedTest(name = "{0} {1}")
     @MethodSource("f32Cases")
-    void f32DotProductRowsMatchesNaive(Case c, Candidate candidate) {
-        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+    void f32DotProductRowsMatchesNaive(Case c, Candidate candidate, GemmKernel kernel) {
         Lighter expected = naiveOnly();
         Lighter actual = candidate.lighter();
         try (TensorRef expectedInput = expected.allocate(DType.F32, TensorShape.of(c.rows(), c.inputColumns()));
@@ -126,16 +126,16 @@ class Tensor2LighterDotProductRowsFuzzTest {
 
             expected.dotProductRows(expectedOutput, expectedInput, expectedWeights, c.inputStart, c.inputLength,
                     c.weightRowStart, c.weightRowCount, c.outputColumnStart);
-            actual.dotProductRows(actualOutput, actualInput, actualWeights, c.inputStart, c.inputLength,
-                    c.weightRowStart, c.weightRowCount, c.outputColumnStart);
+            actual.dotProductRows(actualOutput, actualInput, actualWeights, c.inputStart, c.inputStart,
+                    c.inputLength, c.weightRowStart, c.weightRowCount, c.outputColumnStart, kernel,
+                    Threading.PROVIDER);
             assertEqual(c, expectedOutput, actualOutput, 0.01f);
         }
     }
 
     @ParameterizedTest(name = "f32 GQA offsets {0}")
-    @MethodSource("candidates")
-    void f32DotProductRowsSupportsDifferentOperandOffsets(Candidate candidate) {
-        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+    @MethodSource("kernelCandidates")
+    void f32DotProductRowsSupportsDifferentOperandOffsets(Candidate candidate, GemmKernel kernel) {
         Lighter expected = naiveOnly();
         Lighter actual = candidate.lighter();
         try (TensorRef expectedInput = expected.allocate(DType.F32, TensorShape.of(3, 48));
@@ -151,7 +151,7 @@ class Tensor2LighterDotProductRowsFuzzTest {
             expected.dotProductRows(expectedOutput, expectedInput, expectedWeights,
                     16, 0, 16, 0, 5, 0);
             actual.dotProductRows(actualOutput, actualInput, actualWeights,
-                    16, 0, 16, 0, 5, 0);
+                    16, 0, 16, 0, 5, 0, kernel, Threading.PROVIDER);
             for (int row = 0; row < 3; row++) {
                 for (int column = 0; column < 5; column++) {
                     assertEquals(expectedOutput.get(row, column), actualOutput.get(row, column), 0.01f,
@@ -163,8 +163,8 @@ class Tensor2LighterDotProductRowsFuzzTest {
 
     @ParameterizedTest(name = "strict f32 GQA offsets {0}")
     @MethodSource("strictProductionCandidates")
-    void f32DotProductRowsSupportsDifferentOperandOffsetsWithoutFallback(ProviderCandidate candidate) {
-        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+    void f32DotProductRowsSupportsDifferentOperandOffsetsWithoutFallback(ProviderCandidate candidate,
+            GemmKernel kernel) {
         Lighter expected = naiveOnly();
         MetricRegistry metrics = new MetricRegistry();
         Lighter actual = new Lighter(metrics, Map.of(candidate.kind(), candidate.operations().get()));
@@ -181,7 +181,7 @@ class Tensor2LighterDotProductRowsFuzzTest {
             expected.dotProductRows(expectedOutput, expectedInput, expectedWeights,
                     16, 0, 16, 0, 5, 0);
             actual.dotProductRows(actualOutput, actualInput, actualWeights,
-                    16, 0, 16, 0, 5, 0);
+                    16, 0, 16, 0, 5, 0, kernel, Threading.PROVIDER);
             for (int row = 0; row < 3; row++) {
                 for (int column = 0; column < 5; column++) {
                     assertEquals(expectedOutput.get(row, column), actualOutput.get(row, column), 0.01f,
@@ -197,8 +197,7 @@ class Tensor2LighterDotProductRowsFuzzTest {
 
     @ParameterizedTest(name = "strict f32-q4 slice {0}")
     @MethodSource("strictProductionCandidates")
-    void f32Q4DotProductRowsUsesLogicalSliceBaseWithoutFallback(ProviderCandidate candidate) {
-        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+    void f32Q4DotProductRowsUsesLogicalSliceBaseWithoutFallback(ProviderCandidate candidate, GemmKernel kernel) {
         Lighter expected = naiveOnly();
         MetricRegistry metrics = new MetricRegistry();
         Lighter actual = new Lighter(metrics, Map.of(candidate.kind(), candidate.operations().get()));
@@ -219,7 +218,8 @@ class Tensor2LighterDotProductRowsFuzzTest {
                  TensorRef actualWeights = actualWeightParent.slice(1);
                  TensorRef actualOutput = actualOutputParent.slice(1)) {
                 expected.dotProductRows(expectedOutput, expectedInput, expectedWeights, 0, 64, 0, 1, 2);
-                actual.dotProductRows(actualOutput, actualInput, actualWeights, 0, 64, 0, 1, 2);
+                actual.dotProductRows(actualOutput, actualInput, actualWeights, 0, 0, 64, 0, 1, 2,
+                        kernel, Threading.PROVIDER);
                 assertEquals(expectedOutputParent.get(1, 2), actualOutputParent.get(1, 2), 0.001f,
                         candidate.name());
                 assertEquals(0.0f, actualOutputParent.get(0, 2), 0.0f, "slice output must not write row zero");
@@ -233,8 +233,7 @@ class Tensor2LighterDotProductRowsFuzzTest {
 
     @ParameterizedTest(name = "strict reshape slice {0}")
     @MethodSource("strictPanamaCandidates")
-    void sameDTypeReshapeUsesLogicalSliceBaseWithoutFallback(ProviderCandidate candidate) {
-        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+    void sameDTypeReshapeUsesLogicalSliceBaseWithoutFallback(ProviderCandidate candidate, GemmKernel kernel) {
         Lighter actual = new Lighter(new MetricRegistry(), Map.of(candidate.kind(), candidate.operations().get()));
         try (TensorRef parent = actual.allocate(DType.F32, TensorShape.of(3, 64));
              TensorRef slice = parent.slice(2)) {
@@ -250,8 +249,7 @@ class Tensor2LighterDotProductRowsFuzzTest {
 
     @ParameterizedTest(name = "q8 {0} {1}")
     @MethodSource("q8Cases")
-    void q8DotProductRowsMatchesNaive(Case c, Candidate candidate) {
-        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+    void q8DotProductRowsMatchesNaive(Case c, Candidate candidate, GemmKernel kernel) {
         Lighter expected = naiveOnly();
         Lighter actual = candidate.lighter();
         try (TensorRef expectedInput = expected.allocate(DType.F32, TensorShape.of(c.rows(), c.inputColumns()));
@@ -267,16 +265,16 @@ class Tensor2LighterDotProductRowsFuzzTest {
 
             expected.dotProductRows(expectedOutput, expectedInput, expectedWeights, c.inputStart, c.inputLength,
                     c.weightRowStart, c.weightRowCount, c.outputColumnStart);
-            actual.dotProductRows(actualOutput, actualInput, actualWeights, c.inputStart, c.inputLength,
-                    c.weightRowStart, c.weightRowCount, c.outputColumnStart);
+            actual.dotProductRows(actualOutput, actualInput, actualWeights, c.inputStart, c.inputStart,
+                    c.inputLength, c.weightRowStart, c.weightRowCount, c.outputColumnStart, kernel,
+                    Threading.PROVIDER);
             assertEqual(c, expectedOutput, actualOutput, 0.03f);
         }
     }
 
     @ParameterizedTest(name = "q4 {0} {1}")
     @MethodSource("q4Cases")
-    void q4DotProductRowsMatchesNaive(Case c, Candidate candidate) {
-        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+    void q4DotProductRowsMatchesNaive(Case c, Candidate candidate, GemmKernel kernel) {
         Lighter expected = naiveOnly();
         Lighter actual = candidate.lighter();
         try (TensorRef expectedInput = expected.allocate(DType.F32, TensorShape.of(c.rows(), c.inputColumns()));
@@ -292,16 +290,16 @@ class Tensor2LighterDotProductRowsFuzzTest {
 
             expected.dotProductRows(expectedOutput, expectedInput, expectedWeights, c.inputStart(), c.inputLength(),
                     c.weightRowStart(), c.weightRowCount(), c.outputColumnStart());
-            actual.dotProductRows(actualOutput, actualInput, actualWeights, c.inputStart(), c.inputLength(),
-                    c.weightRowStart(), c.weightRowCount(), c.outputColumnStart());
+            actual.dotProductRows(actualOutput, actualInput, actualWeights, c.inputStart(), c.inputStart(),
+                    c.inputLength(), c.weightRowStart(), c.weightRowCount(),
+                    c.outputColumnStart(), kernel, Threading.PROVIDER);
              assertEqual(c, expectedOutput, actualOutput, 0.001f);
         }
     }
 
     @ParameterizedTest(name = "tensor2 q4 projection {0}")
-    @MethodSource("candidates")
-    void tensor2Q4ProjectionShapeMatchesNaive(Candidate candidate) {
-        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+    @MethodSource("kernelCandidates")
+    void tensor2Q4ProjectionShapeMatchesNaive(Candidate candidate, GemmKernel kernel) {
         Lighter expected = naiveOnly();
         Lighter actual = candidate.lighter();
         try (TensorRef input = actual.allocate(DType.F32, TensorShape.of(4, 2048));
@@ -312,7 +310,8 @@ class Tensor2LighterDotProductRowsFuzzTest {
             fill(input, 417);
             fill(denseWeights, 431);
             expected.dotProductRows(expectedOutput, input, weights, 0, 2048, 0, 256, 0);
-            actual.dotProductRows(actualOutput, input, weights, 0, 2048, 0, 256, 0);
+            actual.dotProductRows(actualOutput, input, weights, 0, 0, 2048, 0, 256, 0, kernel,
+                    Threading.PROVIDER);
             for (int row = 0; row < 4; row++) {
                 for (int column = 0; column < 256; column++) {
                     assertEquals(expectedOutput.get(row, column), actualOutput.get(row, column), 0.001f,
@@ -324,8 +323,7 @@ class Tensor2LighterDotProductRowsFuzzTest {
 
     @ParameterizedTest(name = "bf16-q4 {0} {1}")
     @MethodSource("bf16Q4Cases")
-    void bf16Q4DotProductRowsMatchesNaive(Case c, Candidate candidate) {
-        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+    void bf16Q4DotProductRowsMatchesNaive(Case c, Candidate candidate, GemmKernel kernel) {
         Lighter expected = naiveOnly();
         Lighter actual = candidate.lighter();
         try (TensorRef expectedInput = expected.allocate(DType.BF16, TensorShape.of(c.rows(), c.inputColumns()));
@@ -341,15 +339,15 @@ class Tensor2LighterDotProductRowsFuzzTest {
             expected.dotProductRows(expectedOutput, expectedInput, expectedWeights, c.inputStart(), c.inputLength(),
                     c.weightRowStart(), c.weightRowCount(), c.outputColumnStart());
             actual.dotProductRows(actualOutput, actualInput, actualWeights, c.inputStart(), c.inputLength(),
-                    c.weightRowStart(), c.weightRowCount(), c.outputColumnStart());
+                    c.inputStart(), c.weightRowStart(), c.weightRowCount(), c.outputColumnStart(), kernel,
+                    Threading.PROVIDER);
             assertEqual(c, expectedOutput, actualOutput, 0.08f);
         }
     }
 
     @ParameterizedTest(name = "i8-q4 {0} {1}")
     @MethodSource("i8Q4Cases")
-    void i8Q4DotProductRowsUsesProductionProvider(I8Q4Case c, ProviderCandidate candidate) {
-        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+    void i8Q4DotProductRowsUsesProductionProvider(I8Q4Case c, ProviderCandidate candidate, GemmKernel kernel) {
         Lighter expected = naiveOnly();
         MetricRegistry metrics = new MetricRegistry();
         Lighter actual = new Lighter(metrics, Map.of(candidate.kind(), candidate.operations().get()));
@@ -362,7 +360,8 @@ class Tensor2LighterDotProductRowsFuzzTest {
             expected.dotProductRows(expectedOutput, input, weights, c.inputColumnStart(), c.weightColumnStart(),
                     c.columnLength(), c.weightRowStart(), c.weightRowCount(), c.outputColumnStart());
             actual.dotProductRows(actualOutput, input, weights, c.inputColumnStart(), c.weightColumnStart(),
-                    c.columnLength(), c.weightRowStart(), c.weightRowCount(), c.outputColumnStart());
+                    c.columnLength(), c.weightRowStart(), c.weightRowCount(), c.outputColumnStart(), kernel,
+                    Threading.PROVIDER);
 
             assertEqual(c, expectedOutput, actualOutput, 0.03f);
             assertEquals(1, metrics.meter(new MetricName("tensor2.dot_product_rows",
@@ -374,8 +373,7 @@ class Tensor2LighterDotProductRowsFuzzTest {
 
     @ParameterizedTest(name = "Qwen3-0.6B query projection {0}")
     @MethodSource("strictProductionCandidates")
-    void qwen06QueryProjectionShapeMatchesNaive(ProviderCandidate candidate) {
-        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+    void qwen06QueryProjectionShapeMatchesNaive(ProviderCandidate candidate, GemmKernel kernel) {
         Lighter expected = naiveOnly();
         MetricRegistry metrics = new MetricRegistry();
         Lighter actual = new Lighter(metrics, Map.of(candidate.kind(), candidate.operations().get()));
@@ -393,8 +391,8 @@ class Tensor2LighterDotProductRowsFuzzTest {
             for (int chunkStart = 0; chunkStart < attentionLength; chunkStart += chunkSize) {
                 expected.dotProductRows(expectedOutput, input, weights, 0, embeddingLength, chunkStart, chunkSize,
                         chunkStart);
-                actual.dotProductRows(actualOutput, input, weights, 0, embeddingLength, chunkStart, chunkSize,
-                        chunkStart);
+                actual.dotProductRows(actualOutput, input, weights, 0, 0, embeddingLength, chunkStart, chunkSize,
+                        chunkStart, kernel, Threading.PROVIDER);
             }
             for (int column = 0; column < attentionLength; column++) {
                 assertEquals(expectedOutput.get(0, column), actualOutput.get(0, column), 0.03f,
@@ -410,17 +408,16 @@ class Tensor2LighterDotProductRowsFuzzTest {
 
     @ParameterizedTest(name = "Qwen3-0.6B MLP projection shapes {0}")
     @MethodSource("strictProductionCandidates")
-    void qwen06MlpProjectionShapesMatchNaive(ProviderCandidate candidate) {
-        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+    void qwen06MlpProjectionShapesMatchNaive(ProviderCandidate candidate, GemmKernel kernel) {
         Lighter expected = naiveOnly();
         Lighter actual = new Lighter(new MetricRegistry(), Map.of(candidate.kind(), candidate.operations().get()));
         Lighter quantizer = new Lighter(new MetricRegistry(), Map.of(TensorProviderKind.PANAMA, new PanamaOps()));
-        assertProjectionShape(expected, actual, quantizer, 1, 1024, 3072, 53, candidate.name() + " gate/up");
-        assertProjectionShape(expected, actual, quantizer, 1, 3072, 1024, 71, candidate.name() + " down");
+        assertProjectionShape(expected, actual, quantizer, 1, 1024, 3072, 53, candidate.name() + " gate/up", kernel);
+        assertProjectionShape(expected, actual, quantizer, 1, 3072, 1024, 71, candidate.name() + " down", kernel);
     }
 
     private static void assertProjectionShape(Lighter expected, Lighter actual, Lighter quantizer, int rows, int inputColumns,
-            int outputColumns, int seed, String label) {
+            int outputColumns, int seed, String label, GemmKernel kernel) {
         try (TensorRef denseInput = actual.allocate(DType.F32, TensorShape.of(rows, inputColumns));
              TensorRef input = quantizer.reshape(denseInput, DType.I8);
              Q4ByteBufferTensor denseWeights = q4Weights(outputColumns, inputColumns, seed + 11);
@@ -430,7 +427,8 @@ class Tensor2LighterDotProductRowsFuzzTest {
             fill(denseInput, seed);
             expected.dotProductRows(expectedOutput, input, weights, 0, inputColumns, 0,
                     outputColumns, 0);
-            actual.dotProductRows(actualOutput, input, weights, 0, inputColumns, 0, outputColumns, 0);
+            actual.dotProductRows(actualOutput, input, weights, 0, 0, inputColumns, 0, outputColumns, 0, kernel,
+                    Threading.PROVIDER);
             for (int column = 0; column < outputColumns; column++) {
                 assertEquals(expectedOutput.get(0, column), actualOutput.get(0, column), 0.01f,
                         label + " column=" + column);
@@ -440,8 +438,7 @@ class Tensor2LighterDotProductRowsFuzzTest {
 
     @ParameterizedTest(name = "strict i8-q4 batch-shape equivalence {0}")
     @MethodSource("strictProductionCandidates")
-    void i8Q4DotProductRowsMatchesAcrossBatchShapes(ProviderCandidate candidate) {
-        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+    void i8Q4DotProductRowsMatchesAcrossBatchShapes(ProviderCandidate candidate, GemmKernel kernel) {
         Lighter expected = naiveOnly();
         MetricRegistry metrics = new MetricRegistry();
         Lighter actual = new Lighter(metrics, Map.of(candidate.kind(), candidate.operations().get()));
@@ -466,9 +463,10 @@ class Tensor2LighterDotProductRowsFuzzTest {
                 expected.dotProductRows(expectedBatch, batchInput, weights, 0, columns, chunkStart, 8, chunkStart);
                 expected.dotProductRows(expectedSingle, singleInput, weights, 0, columns, chunkStart, 8,
                         chunkStart);
-                actual.dotProductRows(actualBatch, batchInput, weights, 0, columns, chunkStart, 8, chunkStart);
-                actual.dotProductRows(actualSingle, singleInput, weights, 0, columns, chunkStart, 8,
-                        chunkStart);
+                actual.dotProductRows(actualBatch, batchInput, weights, 0, 0, columns, chunkStart, 8, chunkStart,
+                        kernel, Threading.PROVIDER);
+                actual.dotProductRows(actualSingle, singleInput, weights, 0, 0, columns, chunkStart, 8, chunkStart,
+                        kernel, Threading.PROVIDER);
             }
 
             for (int column = 0; column < columns; column++) {
@@ -488,7 +486,7 @@ class Tensor2LighterDotProductRowsFuzzTest {
 
     @ParameterizedTest(name = "legacy i8-q4 projection {0}")
     @MethodSource("legacyI8Q4ProjectionCases")
-    void i8Q4ProjectionMatchesLegacyTensorOperations(I8Q4Case c) {
+    void i8Q4ProjectionMatchesLegacyTensorOperations(I8Q4Case c, GemmKernel kernel) {
         Lighter tensorRefOps = new Lighter(new MetricRegistry(), Map.of(TensorProviderKind.PANAMA, new PanamaOps()));
         try (FloatBufferTensor denseInput = denseInput(c.rows(), c.inputColumns(), c.seed());
              FloatBufferTensor denseWeights = denseWeights(c.weightRows(), c.weightColumns(), c.seed() + 17);
@@ -505,7 +503,8 @@ class Tensor2LighterDotProductRowsFuzzTest {
                 new NaiveTensorOperations().dotProductChunk(legacyOutput, legacyInput, legacyWeights,
                         c.inputColumnStart(), c.columnLength(), c.weightRowStart(), c.weightRowCount());
                 tensorRefOps.dotProductRows(tensorRefOutput, input, weights, c.inputColumnStart(), c.weightColumnStart(),
-                        c.columnLength(), c.weightRowStart(), c.weightRowCount(), c.outputColumnStart());
+                        c.columnLength(), c.weightRowStart(), c.weightRowCount(), c.outputColumnStart(), kernel,
+                        Threading.PROVIDER);
                 for (int row = 0; row < c.rows(); row++) {
                     for (int column = 0; column < c.outputColumns(); column++) {
                         assertEquals(legacyOutput.get(row, column), tensorRefOutput.get(row, column), 0.03f,
@@ -537,8 +536,9 @@ class Tensor2LighterDotProductRowsFuzzTest {
                     inputStart + inputLength, weightRowStart, weightRowCount, random.nextInt(8), inputLength,
                     random.nextInt()));
         }
-        return candidates().flatMap(candidate -> cases.stream()
-                .map(c -> Arguments.of(c, candidate)));
+        return candidates().filter(Candidate::enabled).flatMap(candidate -> cases.stream().flatMap(c -> kernelsFor(c, DType.F32, DType.F32,
+                DType.F32)
+                .stream().map(kernel -> Arguments.of(c, candidate, kernel))));
     }
 
     static Stream<Arguments> q8Cases() {
@@ -549,8 +549,9 @@ class Tensor2LighterDotProductRowsFuzzTest {
             cases.add(new Case("q8_" + id, 1 + id % 5, 32, 32 + inputLength, 32 + inputLength,
                     id % 5, 1 + id % 31, id % 7, inputLength, id++));
         }
-        return candidates().flatMap(candidate -> cases.stream()
-                .map(c -> Arguments.of(c, candidate)));
+        return candidates().filter(Candidate::enabled).flatMap(candidate -> cases.stream().flatMap(c -> kernelsFor(c, DType.F32, DType.I8,
+                DType.F32)
+                .stream().map(kernel -> Arguments.of(c, candidate, kernel))));
     }
 
     static Stream<Arguments> q4Cases() {
@@ -561,8 +562,9 @@ class Tensor2LighterDotProductRowsFuzzTest {
             cases.add(new Case("q4_" + id, 1 + id % 5, 32, 32 + inputLength, 32 + inputLength,
                     id % 5, 1 + id % 31, id % 7, inputLength, id++));
         }
-        return candidates().flatMap(candidate -> cases.stream()
-                .map(c -> Arguments.of(c, candidate)));
+        return candidates().filter(Candidate::enabled).flatMap(candidate -> cases.stream().flatMap(c -> kernelsFor(c, DType.F32, DType.Q4,
+                DType.F32)
+                .stream().map(kernel -> Arguments.of(c, candidate, kernel))));
     }
 
     static Stream<Arguments> bf16Q4Cases() {
@@ -576,8 +578,9 @@ class Tensor2LighterDotProductRowsFuzzTest {
                         offset + inputLength, id % 5, 1 + id % 17, id % 5, inputLength, id++));
             }
         }
-        return candidates().flatMap(candidate -> cases.stream()
-                .map(c -> Arguments.of(c, candidate)));
+        return candidates().filter(Candidate::enabled).flatMap(candidate -> cases.stream().flatMap(c -> kernelsFor(c, DType.BF16, DType.Q4,
+                DType.F32)
+                .stream().map(kernel -> Arguments.of(c, candidate, kernel))));
     }
 
     static Stream<Arguments> i8Q4Cases() {
@@ -592,7 +595,9 @@ class Tensor2LighterDotProductRowsFuzzTest {
             cases.add(new I8Q4Case("i8_q4_" + id, 1 + id % 5, inputStart, weightStart, length,
                     inputStart + length, weightStart + length, id % 5, weightRowCount, id % 7, id++));
         }
-        return i8Q4Candidates().flatMap(candidate -> cases.stream().map(c -> Arguments.of(c, candidate)));
+        return i8Q4Candidates().filter(ProviderCandidate::enabled).flatMap(candidate -> cases.stream().flatMap(c -> kernelsFor(c, DType.I8, DType.Q4,
+                DType.F32)
+                .stream().map(kernel -> Arguments.of(c, candidate, kernel))));
     }
 
     static Stream<Arguments> legacyI8Q4ProjectionCases() {
@@ -610,7 +615,8 @@ class Tensor2LighterDotProductRowsFuzzTest {
                         inputStart + length, weightStart + length, 0, weightRowCount, 0, id++));
             }
         }
-        return cases.stream().map(Arguments::of);
+        return cases.stream().flatMap(c -> kernelsFor(c, DType.I8, DType.Q4, DType.F32)
+                .stream().map(kernel -> Arguments.of(c, kernel)));
     }
 
     private static Stream<Candidate> candidates() {
@@ -618,8 +624,13 @@ class Tensor2LighterDotProductRowsFuzzTest {
                 new Candidate("PANAMA", true, () -> new Lighter(new io.dropwizard.metrics5.MetricRegistry(),
                         Map.of(TensorProviderKind.PANAMA, new PanamaOps(), TensorProviderKind.NAIVE, new NaiveOps()))),
                 new Candidate("SIMD", NativeOps.isAvailable(), () -> new Lighter(new io.dropwizard.metrics5.MetricRegistry(),
-                        Map.of(TensorProviderKind.SIMD, new NativeOps(), TensorProviderKind.PANAMA, new PanamaOps(),
-                                TensorProviderKind.NAIVE, new NaiveOps()))));
+                                 Map.of(TensorProviderKind.SIMD, new NativeOps(), TensorProviderKind.PANAMA, new PanamaOps(),
+                                 TensorProviderKind.NAIVE, new NaiveOps()))));
+    }
+
+    private static Stream<Arguments> kernelCandidates() {
+        return candidates().filter(Candidate::enabled).flatMap(candidate -> Stream.of(GemmKernel.BATCH, GemmKernel.ROW, GemmKernel.CHUNK)
+                .map(kernel -> Arguments.of(candidate, kernel)));
     }
 
     private static Stream<ProviderCandidate> i8Q4Candidates() {
@@ -628,14 +639,39 @@ class Tensor2LighterDotProductRowsFuzzTest {
                 new ProviderCandidate("SIMD", NativeOps.isAvailable(), TensorProviderKind.SIMD, NativeOps::new));
     }
 
-    private static Stream<ProviderCandidate> strictProductionCandidates() {
+    private static Stream<Arguments> strictProductionCandidates() {
         return Stream.of(
                 new ProviderCandidate("PANAMA", true, TensorProviderKind.PANAMA, PanamaOps::new),
-                new ProviderCandidate("SIMD", NativeOps.isAvailable(), TensorProviderKind.SIMD, NativeOps::new));
+                new ProviderCandidate("SIMD", NativeOps.isAvailable(), TensorProviderKind.SIMD, NativeOps::new))
+                .filter(ProviderCandidate::enabled).flatMap(candidate -> Stream.of(GemmKernel.BATCH, GemmKernel.ROW, GemmKernel.CHUNK)
+                        .map(kernel -> Arguments.of(candidate, kernel)));
     }
 
-    private static Stream<ProviderCandidate> strictPanamaCandidates() {
-        return Stream.of(new ProviderCandidate("PANAMA", true, TensorProviderKind.PANAMA, PanamaOps::new));
+    private static Stream<Arguments> strictPanamaCandidates() {
+        return Stream.of(GemmKernel.BATCH, GemmKernel.ROW, GemmKernel.CHUNK).map(kernel -> Arguments.of(
+                new ProviderCandidate("PANAMA", true, TensorProviderKind.PANAMA, PanamaOps::new), kernel));
+    }
+
+    private static List<GemmKernel> kernelsFor(Case c, DType input, DType weights, DType output) {
+        return kernelsFor(input, weights, output, c.inputStart(), c.inputStart(), c.inputLength());
+    }
+
+    private static List<GemmKernel> kernelsFor(I8Q4Case c, DType input, DType weights, DType output) {
+        return kernelsFor(input, weights, output, c.inputColumnStart(), c.weightColumnStart(), c.columnLength());
+    }
+
+    private static List<GemmKernel> kernelsFor(DType input, DType weights, DType output, int inputOffset,
+            int weightOffset, int length) {
+        List<GemmKernel> kernels = new ArrayList<>(List.of(GemmKernel.BATCH, GemmKernel.ROW));
+        boolean dense = (input == DType.F32 && (weights == DType.F32 || weights == DType.BF16
+                || weights == DType.I8)) || (input == DType.BF16
+                && (weights == DType.BF16 || weights == DType.Q4));
+        boolean aligned = weights != DType.I8 && weights != DType.Q4
+                || inputOffset % 32 == 0 && weightOffset % 32 == 0 && length % 32 == 0;
+        if (output == DType.F32 && dense && aligned) {
+            kernels.add(GemmKernel.CHUNK);
+        }
+        return kernels;
     }
 
     private static Lighter naiveOnly() {

@@ -49,10 +49,17 @@ public interface TensorOps {
                   weightRowCount, outputColumnStart);
      }
 
-      default Either<OpSupport, Void> dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
-              int inputColumnStart, int weightColumnStart, int columnLength, int weightRowStart,
-              int weightRowCount, int outputColumnStart) {
+       default Either<OpSupport, Void> dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
+               int inputColumnStart, int weightColumnStart, int columnLength, int weightRowStart,
+               int weightRowCount, int outputColumnStart) {
             return Either.Left(OpSupport.Unsupported);
+       }
+
+       default Either<OpSupport, Void> dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
+               int inputColumnStart, int weightColumnStart, int columnLength, int weightRowStart,
+               int weightRowCount, int outputColumnStart, Threading threading) {
+            return dotProductRows(output, input, weights, inputColumnStart, weightColumnStart, columnLength,
+                    weightRowStart, weightRowCount, outputColumnStart);
        }
 
        default Either<OpSupport, Void> dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
@@ -77,7 +84,7 @@ public interface TensorOps {
             return outcome.isRight()
                     ? outcome
                     : dotProductRows(output, input, weights, inputColumnStart, weightColumnStart, columnLength,
-                    weightRowStart, weightRowCount, outputColumnStart);
+                    weightRowStart, weightRowCount, outputColumnStart, threading);
        }
 
       /** Provider-level paired projection; providers without a fused path remain unsupported. */

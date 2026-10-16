@@ -3,6 +3,8 @@ package io.teknek.deliverance.model.embeddinggemma2;
 import io.teknek.deliverance.tensor2.CompositeOps;
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.tensor2.GemmDit;
+import io.teknek.deliverance.tensorlib.TensorPlanAdaptiveSplitTuner;
 
 import java.util.Objects;
 
@@ -34,8 +36,16 @@ public final class EmbeddingGemma2AttentionProjectionOperation {
      * mode.
      */
     public void apply(TensorRef query, TensorRef key, TensorRef value, TensorRef input,
-                      TensorRef queryProjection, TensorRef keyProjection, TensorRef valueProjection,
-                      TensorRef queryNorm, TensorRef keyNorm, Lighter lighter) {
+                       TensorRef queryProjection, TensorRef keyProjection, TensorRef valueProjection,
+                       TensorRef queryNorm, TensorRef keyNorm, Lighter lighter) {
+        apply(query, key, value, input, queryProjection, keyProjection, valueProjection, queryNorm, keyNorm,
+                lighter, null);
+    }
+
+    public void apply(TensorRef query, TensorRef key, TensorRef value, TensorRef input,
+                       TensorRef queryProjection, TensorRef keyProjection, TensorRef valueProjection,
+                       TensorRef queryNorm, TensorRef keyNorm, Lighter lighter,
+                       TensorPlanAdaptiveSplitTuner tuner) {
         Objects.requireNonNull(query, "query");
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(value, "value");
@@ -54,9 +64,12 @@ public final class EmbeddingGemma2AttentionProjectionOperation {
                 || value.shape().first() != input.shape().first()) {
             throw new IllegalArgumentException("Invalid EmbeddingGemma 2 attention tensor shapes");
         }
-        lighter.dotProductRows(query, input, queryProjection, 0, inputWidth, 0, queryWidth, 0);
-        lighter.dotProductRows(key, input, keyProjection, 0, inputWidth, 0, keyValueWidth, 0);
-        lighter.dotProductRows(value, input, valueProjection, 0, inputWidth, 0, keyValueWidth, 0);
+        GemmDit.dotProductRows(lighter, tuner, "embeddinggemma2.attention.query", query, input, queryProjection,
+                0, 0, inputWidth, 0, queryWidth, 0);
+        GemmDit.dotProductRows(lighter, tuner, "embeddinggemma2.attention.key", key, input, keyProjection,
+                0, 0, inputWidth, 0, keyValueWidth, 0);
+        GemmDit.dotProductRows(lighter, tuner, "embeddinggemma2.attention.value", value, input, valueProjection,
+                0, 0, inputWidth, 0, keyValueWidth, 0);
         new CompositeOps(lighter).groupedRmsNormInPlace(query, queryHeads, headWidth, epsilon, queryNorm);
         new CompositeOps(lighter).groupedRmsNormInPlace(key, keyValueHeads, headWidth, epsilon, keyNorm);
         new CompositeOps(lighter).groupedRmsNormInPlace(value, keyValueHeads, headWidth, epsilon, null);

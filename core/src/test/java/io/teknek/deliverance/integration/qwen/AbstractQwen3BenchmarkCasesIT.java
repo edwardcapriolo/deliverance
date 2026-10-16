@@ -17,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -63,14 +64,27 @@ abstract class AbstractQwen3BenchmarkCasesIT {
             messages.add(new ChatMessage("user", turns.get(turn)));
             PromptContext prompt = promptContext(model.promptSupport(), messages);
             InferenceProfiler.reset();
-            System.out.printf("[deliverance-response] model=%s case=%s turn=%d%n", modelName, caseId, turn + 1);
-            int maxTokens = Integer.getInteger("qwen.benchmark.maxTokens", 128);
-            Response response = model.generateWithBackendRef(UUID.randomUUID(), prompt,
-                    new GeneratorParameters().withTemperature(0.0f).withMaxTokens(maxTokens).withSeed(42),
-                    (next, nextRaw, nextCleaned, timing) -> {
-                        System.out.print(nextCleaned);
-                        System.out.flush();
-                    }, new LocalGenerationBackend(model));
+            int turnNumber = turn + 1;
+            System.out.printf("[deliverance-response] model=%s case=%s turn=%d%n", modelName, caseId, turnNumber);
+            int maxTokens = Integer.getInteger("qwen.benchmark.maxTokens", 15);
+            Response response;
+            try (AutoCloseable ignored = AbstractModel.withPrefillProgressListener(event ->
+                    System.out.printf(Locale.ROOT,
+                            "[prefill-progress] model=%s case=%s turn=%d tokens=%d/%d chunk=%d-%d layers=%d/%d "
+                                    + "elapsed=%.1fs eta=%.1fs rate=%.1f tok/s%n",
+                            modelName, caseId, turnNumber, event.estimatedProcessedTokens(), event.totalTokens(),
+                            event.chunkStartPosition(), event.chunkEndPosition(), event.processedLayers(),
+                            event.totalLayers(), event.elapsedSeconds(), event.remainingSeconds(),
+                            event.tokensPerSecond()))) {
+                response = model.generateWithBackendRef(UUID.randomUUID(), prompt,
+                        new GeneratorParameters().withTemperature(0.0f).withMaxTokens(maxTokens).withSeed(42),
+                        (next, nextRaw, nextCleaned, timing) -> {
+                            System.out.print(nextCleaned);
+                            System.out.flush();
+                        }, new LocalGenerationBackend(model));
+            } catch (Exception e) {
+                throw new IllegalStateException("Unable to close prefill progress listener", e);
+            }
             System.out.println();
             System.out.println("[deliverance-response-end]");
             messages.add(new ChatMessage("assistant", response.responseText));
@@ -79,7 +93,7 @@ abstract class AbstractQwen3BenchmarkCasesIT {
             double tokensPerSecond = generationMs == 0.0 ? 0.0 : decodeTokens / (generationMs / 1000.0);
             System.out.printf(java.util.Locale.ROOT,
                     "[qwen-benchmark-it] model=%s case=%s turn=%d prompt_tokens=%d generated=%d total_ms=%.1f tok_s=%.2f finish=%s%n",
-                    modelName, caseId, turn + 1, response.promptTokens,
+                    modelName, caseId, turnNumber, response.promptTokens,
                     response.generatedTokens.size(), response.totalTimeMs, tokensPerSecond, response.finishReason);
             InferenceProfiler.printSummary("case=" + caseId + " turn=" + (turn + 1), 30);
             model.getMetricRegistry().getCounters().entrySet().stream()

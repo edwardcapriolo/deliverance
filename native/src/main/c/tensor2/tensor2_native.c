@@ -347,19 +347,34 @@ tensor2_status tensor2_dot_product_rows_bf16_bf16(
 }
 
 #if defined(__linux__) || defined(__APPLE__)
+typedef enum tensor2_pool_job_kind {
+    TENSOR2_POOL_BF16 = 0,
+    TENSOR2_POOL_F32_Q4 = 1,
+    TENSOR2_POOL_I8_Q4 = 2
+} tensor2_pool_job_kind;
+
 typedef struct tensor2_bf16_pool_job {
+    tensor2_pool_job_kind kind;
     void *result;
-    const uint16_t *input;
-    const uint16_t *weights;
+    const void *input;
+    const float *input_scales;
+    const void *weights;
+    const float *weight_scales;
     int result_bf16;
+    int result_rows;
     int input_start;
+    int input_column_start;
+    int weight_column_start;
     int weight_start;
     int input_length;
     int weight_row;
+    int weight_row_count;
     int result_column_start;
     int result_stride;
     int input_stride;
+    int input_scale_stride;
     int weight_stride;
+    int weight_scale_stride;
 } tensor2_bf16_pool_job;
 
 typedef struct tensor2_bf16_pool {
@@ -393,10 +408,23 @@ static void *tensor2_bf16_pool_worker(void *opaque) {
         tensor2_bf16_pool_job job = pool->jobs[pool->next_job++];
         pthread_mutex_unlock(&pool->mutex);
 
-        tensor2_dot_product_rows_bf16_bf16(job.result, job.input, job.weights,
-                job.result_bf16, 1, job.input_start, job.weight_start, job.input_length,
-                job.weight_row, 1, job.result_column_start, job.result_stride,
-                job.input_stride, job.weight_stride);
+        if (job.kind == TENSOR2_POOL_BF16) {
+            tensor2_dot_product_rows_bf16_bf16(job.result, job.input, job.weights,
+                    job.result_bf16, 1, job.input_start, job.weight_start, job.input_length,
+                    job.weight_row, 1, job.result_column_start, job.result_stride,
+                    job.input_stride, job.weight_stride);
+        } else if (job.kind == TENSOR2_POOL_F32_Q4) {
+            tensor2_gemm_f32_q4(job.result, job.input, job.weights, job.weight_scales,
+                    job.result_rows, job.input_start, job.input_column_start, job.weight_column_start,
+                    job.input_length, job.result_column_start, job.weight_row, job.weight_row_count,
+                    job.result_stride, job.input_stride, job.weight_stride, job.weight_scale_stride);
+        } else {
+            tensor2_gemm_i8_q4(job.result, job.input, job.input_scales, job.weights, job.weight_scales,
+                    job.result_rows, job.input_start, job.input_column_start, job.weight_column_start,
+                    job.input_length, job.result_column_start, job.weight_row, job.weight_row_count,
+                    job.result_stride, job.input_stride, job.input_scale_stride, job.weight_stride,
+                    job.weight_scale_stride);
+        }
 
         pthread_mutex_lock(&pool->mutex);
         if (--pool->remaining == 0) {
@@ -470,10 +498,19 @@ tensor2_status tensor2_dot_product_rows_bf16_bf16_pool(
     for (int row = 0; row < result_rows; row++) {
         for (int weight = 0; weight < weight_row_count; weight++) {
             tensor2_pool.jobs[tensor2_pool.job_count++] = (tensor2_bf16_pool_job) {
-                    (char *) result + row * result_stride * result_bytes,
-                    input + row * input_stride, weights, result_bf16, input_start, weight_start,
-                    input_length, weight_row_start + weight, result_column_start,
-                    result_stride, input_stride, weight_stride};
+                    .kind = TENSOR2_POOL_BF16,
+                    .result = (char *) result + row * result_stride * result_bytes,
+                    .input = input + row * input_stride,
+                    .weights = weights,
+                    .result_bf16 = result_bf16,
+                    .input_start = input_start,
+                    .weight_start = weight_start,
+                    .input_length = input_length,
+                    .weight_row = weight_row_start + weight,
+                    .result_column_start = result_column_start,
+                    .result_stride = result_stride,
+                    .input_stride = input_stride,
+                    .weight_stride = weight_stride};
         }
     }
     tensor2_pool.remaining = tensor2_pool.job_count;
@@ -482,6 +519,108 @@ tensor2_status tensor2_dot_product_rows_bf16_bf16_pool(
     while (tensor2_pool.active) pthread_cond_wait(&tensor2_pool.work_complete, &tensor2_pool.mutex);
     pthread_mutex_unlock(&tensor2_pool.mutex);
     return TENSOR2_OK;
+}
+
+static tensor2_status tensor2_gemm_q4_chunks(tensor2_pool_job_kind kind, void *result, const void *input,
+        const float *input_scales, const void *weights, const float *weight_scales, int result_rows,
+        int a_row_offset, int a_column_offset, int b_column_offset, int column_length, int result_row_offset,
+        int b_row_offset, int row_chunk_size, int result_stride, int a_stride, int a_scale_stride, int b_stride,
+        int b_scale_stride, int chunk_size, int threaded) {
+    if (result == NULL || input == NULL || weights == NULL || weight_scales == NULL
+            || (kind == TENSOR2_POOL_I8_Q4 && input_scales == NULL)
+            || result_rows < 0 || a_row_offset < 0 || a_column_offset < 0 || b_column_offset < 0
+            || column_length <= 0 || result_row_offset < 0 || b_row_offset < 0 || row_chunk_size < 0
+            || result_stride < 0 || a_stride < 0 || a_scale_stride < 0 || b_stride < 0
+            || b_scale_stride < 0 || chunk_size <= 0) {
+        return TENSOR2_UNSUPPORTED;
+    }
+    if (result_rows == 0 || row_chunk_size == 0) return TENSOR2_OK;
+    int chunk_count = (row_chunk_size + chunk_size - 1) / chunk_size;
+    if (!threaded) {
+        for (int chunk = 0; chunk < chunk_count; chunk++) {
+            int start = chunk * chunk_size;
+            int count = row_chunk_size - start;
+            if (count > chunk_size) count = chunk_size;
+            tensor2_status status;
+            if (kind == TENSOR2_POOL_F32_Q4) {
+                status = tensor2_gemm_f32_q4(result, input, weights, weight_scales, result_rows,
+                        a_row_offset, a_column_offset, b_column_offset, column_length, result_row_offset,
+                        b_row_offset + start, count, result_stride, a_stride, b_stride, b_scale_stride);
+            } else {
+                status = tensor2_gemm_i8_q4(result, input, input_scales, weights, weight_scales, result_rows,
+                        a_row_offset, a_column_offset, b_column_offset, column_length, result_row_offset,
+                        b_row_offset + start, count, result_stride, a_stride, a_scale_stride, b_stride,
+                        b_scale_stride);
+            }
+            if (status != TENSOR2_OK) return status;
+        }
+        return TENSOR2_OK;
+    }
+    if (!tensor2_pool_initialized) return TENSOR2_UNSUPPORTED;
+    tensor2_bf16_pool_job *jobs = calloc((size_t) chunk_count, sizeof(*jobs));
+    if (jobs == NULL) return TENSOR2_UNSUPPORTED;
+    pthread_mutex_lock(&tensor2_pool.mutex);
+    while (tensor2_pool.active) pthread_cond_wait(&tensor2_pool.work_complete, &tensor2_pool.mutex);
+    free(tensor2_pool.jobs);
+    tensor2_pool.jobs = jobs;
+    tensor2_pool.job_count = chunk_count;
+    tensor2_pool.next_job = 0;
+    for (int chunk = 0; chunk < chunk_count; chunk++) {
+        int start = chunk * chunk_size;
+        int count = row_chunk_size - start;
+        if (count > chunk_size) count = chunk_size;
+        tensor2_pool.jobs[chunk] = (tensor2_bf16_pool_job) {
+                .kind = kind,
+                .result = result,
+                .input = input,
+                .input_scales = input_scales,
+                .weights = weights,
+                .weight_scales = weight_scales,
+                .result_rows = result_rows,
+                .input_start = a_row_offset,
+                .input_column_start = a_column_offset,
+                .weight_column_start = b_column_offset,
+                .input_length = column_length,
+                .weight_row = b_row_offset + start,
+                .weight_row_count = count,
+                .result_column_start = result_row_offset,
+                .result_stride = result_stride,
+                .input_stride = a_stride,
+                .input_scale_stride = a_scale_stride,
+                .weight_stride = b_stride,
+                .weight_scale_stride = b_scale_stride};
+    }
+    tensor2_pool.remaining = chunk_count;
+    tensor2_pool.active = 1;
+    pthread_cond_broadcast(&tensor2_pool.work_available);
+    while (tensor2_pool.active) pthread_cond_wait(&tensor2_pool.work_complete, &tensor2_pool.mutex);
+    pthread_mutex_unlock(&tensor2_pool.mutex);
+    return TENSOR2_OK;
+}
+
+tensor2_status tensor2_gemm_f32_q4_chunks(float *result, const float *a, const uint8_t *b,
+        const float *b_scales, int result_rows, int a_row_offset, int a_column_offset, int b_column_offset,
+        int column_length, int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride,
+        int a_stride, int b_stride, int b_scale_stride, int chunk_size, int threaded) {
+    if (a_column_offset % 32 != 0 || b_column_offset % 32 != 0 || column_length % 32 != 0) {
+        return TENSOR2_UNSUPPORTED;
+    }
+    return tensor2_gemm_q4_chunks(TENSOR2_POOL_F32_Q4, result, a, NULL, b, b_scales, result_rows,
+            a_row_offset, a_column_offset, b_column_offset, column_length, result_row_offset, b_row_offset,
+            row_chunk_size, result_stride, a_stride, 0, b_stride, b_scale_stride, chunk_size, threaded);
+}
+
+tensor2_status tensor2_gemm_i8_q4_chunks(float *result, const int8_t *a, const float *a_scales,
+        const uint8_t *b, const float *b_scales, int result_rows, int a_row_offset, int a_column_offset,
+        int b_column_offset, int column_length, int result_row_offset, int b_row_offset, int row_chunk_size,
+        int result_stride, int a_stride, int a_scale_stride, int b_stride, int b_scale_stride, int chunk_size,
+        int threaded) {
+    if (a_column_offset % 32 != 0 || b_column_offset % 32 != 0 || column_length % 32 != 0) {
+        return TENSOR2_UNSUPPORTED;
+    }
+    return tensor2_gemm_q4_chunks(TENSOR2_POOL_I8_Q4, result, a, a_scales, b, b_scales, result_rows,
+            a_row_offset, a_column_offset, b_column_offset, column_length, result_row_offset, b_row_offset,
+            row_chunk_size, result_stride, a_stride, a_scale_stride, b_stride, b_scale_stride, chunk_size, threaded);
 }
 #else
 tensor2_status tensor2_bf16_pool_init(int worker_count) { (void) worker_count; return TENSOR2_UNSUPPORTED; }
@@ -494,6 +633,19 @@ tensor2_status tensor2_dot_product_rows_bf16_bf16_pool(void *result, const uint1
     (void) input_start; (void) weight_start; (void) input_length; (void) weight_row_start;
     (void) weight_row_count; (void) result_column_start; (void) result_stride;
     (void) input_stride; (void) weight_stride;
+    return TENSOR2_UNSUPPORTED;
+}
+tensor2_status tensor2_gemm_f32_q4_chunks(float *result, const float *a, const uint8_t *b,
+        const float *b_scales, int result_rows, int a_row_offset, int a_column_offset, int b_column_offset,
+        int column_length, int result_row_offset, int b_row_offset, int row_chunk_size, int result_stride,
+        int a_stride, int b_stride, int b_scale_stride, int chunk_size, int threaded) {
+    return TENSOR2_UNSUPPORTED;
+}
+tensor2_status tensor2_gemm_i8_q4_chunks(float *result, const int8_t *a, const float *a_scales,
+        const uint8_t *b, const float *b_scales, int result_rows, int a_row_offset, int a_column_offset,
+        int b_column_offset, int column_length, int result_row_offset, int b_row_offset, int row_chunk_size,
+        int result_stride, int a_stride, int a_scale_stride, int b_stride, int b_scale_stride, int chunk_size,
+        int threaded) {
     return TENSOR2_UNSUPPORTED;
 }
 #endif

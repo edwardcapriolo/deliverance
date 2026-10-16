@@ -1418,4 +1418,57 @@ public class Tensor2Native extends Tensor2Native$shared {
            throw new AssertionError("should not reach here", ex$);
         }
     }
+
+    private static class tensor2_gemm_f32_q4_chunks {
+        static final FunctionDescriptor DESC = FunctionDescriptor.of(
+                Tensor2Native.C_INT,
+                Tensor2Native.C_POINTER, Tensor2Native.C_POINTER, Tensor2Native.C_POINTER, Tensor2Native.C_POINTER,
+                Tensor2Native.C_INT, Tensor2Native.C_INT, Tensor2Native.C_INT, Tensor2Native.C_INT,
+                Tensor2Native.C_INT, Tensor2Native.C_INT, Tensor2Native.C_INT, Tensor2Native.C_INT,
+                Tensor2Native.C_INT, Tensor2Native.C_INT, Tensor2Native.C_INT, Tensor2Native.C_INT,
+                Tensor2Native.C_INT, Tensor2Native.C_INT);
+        static final MemorySegment ADDR = SYMBOL_LOOKUP.findOrThrow("tensor2_gemm_f32_q4_chunks");
+        static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    public static int tensor2_gemm_f32_q4_chunks(MemorySegment result, MemorySegment a, MemorySegment b,
+            MemorySegment bScales, int resultRows, int aRowOffset, int aColumnOffset, int bColumnOffset,
+            int columnLength, int resultRowOffset, int bRowOffset, int rowChunkSize, int resultStride,
+            int aStride, int bStride, int bScaleStride, int chunkSize, int threaded) {
+        try {
+            return (int) tensor2_gemm_f32_q4_chunks.HANDLE.invokeExact(result, a, b, bScales, resultRows,
+                    aRowOffset, aColumnOffset, bColumnOffset, columnLength, resultRowOffset, bRowOffset,
+                    rowChunkSize, resultStride, aStride, bStride, bScaleStride, chunkSize, threaded);
+        } catch (Throwable ex) {
+            throw new AssertionError("should not reach here", ex);
+        }
+    }
+
+    private static class tensor2_gemm_i8_q4_chunks {
+        static final FunctionDescriptor DESC = FunctionDescriptor.of(
+                Tensor2Native.C_INT,
+                Tensor2Native.C_POINTER, Tensor2Native.C_POINTER, Tensor2Native.C_POINTER,
+                Tensor2Native.C_POINTER, Tensor2Native.C_POINTER,
+                Tensor2Native.C_INT, Tensor2Native.C_INT, Tensor2Native.C_INT, Tensor2Native.C_INT,
+                Tensor2Native.C_INT, Tensor2Native.C_INT, Tensor2Native.C_INT, Tensor2Native.C_INT,
+                Tensor2Native.C_INT, Tensor2Native.C_INT, Tensor2Native.C_INT, Tensor2Native.C_INT,
+                Tensor2Native.C_INT, Tensor2Native.C_INT, Tensor2Native.C_INT);
+        static final MemorySegment ADDR = SYMBOL_LOOKUP.findOrThrow("tensor2_gemm_i8_q4_chunks");
+        static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    public static int tensor2_gemm_i8_q4_chunks(MemorySegment result, MemorySegment a, MemorySegment aScales,
+            MemorySegment b, MemorySegment bScales, int resultRows, int aRowOffset, int aColumnOffset,
+            int bColumnOffset, int columnLength, int resultRowOffset, int bRowOffset, int rowChunkSize,
+            int resultStride, int aStride, int aScaleStride, int bStride, int bScaleStride, int chunkSize,
+            int threaded) {
+        try {
+            return (int) tensor2_gemm_i8_q4_chunks.HANDLE.invokeExact(result, a, aScales, b, bScales,
+                    resultRows, aRowOffset, aColumnOffset, bColumnOffset, columnLength, resultRowOffset,
+                    bRowOffset, rowChunkSize, resultStride, aStride, aScaleStride, bStride, bScaleStride,
+                    chunkSize, threaded);
+        } catch (Throwable ex) {
+            throw new AssertionError("should not reach here", ex);
+        }
+    }
 }

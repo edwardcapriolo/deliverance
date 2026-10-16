@@ -17,8 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class Tensor2LighterDotProductF32Bf16FuzzTest {
     @ParameterizedTest(name = "{0}")
     @MethodSource("casesAndCandidates")
-    void f32InputBf16WeightsMatchNaive(Case c, Candidate candidate) {
-        org.junit.jupiter.api.Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " unavailable");
+    void f32InputBf16WeightsMatchNaive(Case c, Candidate candidate, GemmKernel kernel) {
         Lighter expected = new Lighter(new MetricRegistry(), Map.of(TensorProviderKind.NAIVE, new NaiveOps()));
         Lighter actual = candidate.lighter();
         try (TensorRef expectedInput = expected.allocate(DType.F32, TensorShape.of(c.inputRows(), c.columns()));
@@ -34,7 +33,7 @@ class Tensor2LighterDotProductF32Bf16FuzzTest {
             expected.dotProductRows(expectedOutput, expectedInput, expectedWeights, c.inputOffset(), c.weightOffset(),
                     c.length(), 0, c.weightRows(), 0);
             actual.dotProductRows(actualOutput, actualInput, actualWeights, c.inputOffset(), c.weightOffset(),
-                    c.length(), 0, c.weightRows(), 0);
+                    c.length(), 0, c.weightRows(), 0, kernel, Threading.PROVIDER);
             for (int row = 0; row < c.inputRows(); row++) {
                 for (int column = 0; column < c.weightRows(); column++) {
                     assertEquals(expectedOutput.get(row, column), actualOutput.get(row, column), 0.05f,
@@ -55,7 +54,14 @@ class Tensor2LighterDotProductF32Bf16FuzzTest {
             nativeOps = new Candidate("SIMD", false, null);
         }
         Candidate[] candidates = {panama, nativeOps};
-        return cases().flatMap(c -> Stream.of(candidates).map(candidate -> Arguments.of(c, candidate)));
+        return cases().flatMap(c -> Stream.of(candidates).filter(Candidate::enabled).flatMap(candidate -> kernelsFor(c).stream()
+                .map(kernel -> Arguments.of(c, candidate, kernel))));
+    }
+
+    private static List<GemmKernel> kernelsFor(Case c) {
+        List<GemmKernel> kernels = new ArrayList<>(List.of(GemmKernel.BATCH, GemmKernel.ROW));
+        kernels.add(GemmKernel.CHUNK);
+        return kernels;
     }
 
     static Stream<Case> cases() {
