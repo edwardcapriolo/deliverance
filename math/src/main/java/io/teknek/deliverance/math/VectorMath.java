@@ -78,7 +78,6 @@ public class VectorMath {
                             .forEach(i -> {
                                         try (Timer.Context c = timer.time()) {
                                             action.accept(offset + (i * fchunkSize), fremainder > 0 && i == fsplits - 1 ? fchunkSize + fremainder : fchunkSize);
-                                            c.stop();
                                         }
                                     }
                             )
