@@ -6,6 +6,7 @@ import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -39,5 +40,30 @@ class WrappedForkJoinPoolTest {
         pool.close();
 
         assertTrue(underlying.isShutdown());
+    }
+
+    @Test
+    void propagatesFailuresFromBlockingOperations() {
+        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(new ForkJoinPool(1))) {
+            IllegalArgumentException runnableFailure = new IllegalArgumentException("runnable failed");
+            IllegalStateException supplierFailure = new IllegalStateException("supplier failed");
+
+            IllegalArgumentException thrownRunnable = assertThrows(IllegalArgumentException.class,
+                    () -> pool.executeBlocking(() -> { throw runnableFailure; }));
+            IllegalStateException thrownSupplier = assertThrows(IllegalStateException.class,
+                    () -> pool.submitBlocking(() -> { throw supplierFailure; }));
+
+            assertEquals(runnableFailure, thrownRunnable.getCause());
+            assertEquals(supplierFailure, thrownSupplier.getCause());
+        }
+    }
+
+    @Test
+    void autoSizesToAtLeastOneWorker() {
+        ForkJoinPool pool = WrappedForkJoinPool.autoSizeByCores();
+
+        try (pool) {
+            assertTrue(pool.getParallelism() >= 1);
+        }
     }
 }

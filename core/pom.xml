@@ -220,7 +220,7 @@
                         --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http
                         -Djdk.attach.allowAttachSelf=true
                         --enable-native-access=ALL-UNNAMED
-                        -Djava.library.path=${build.directory}/../../native/target/native-lib-only/${os.detected.classifier}
+                        -Djava.library.path=${project.build.directory}/../../native/target/native-lib-only/${os.detected.classifier}
                     </argLine>
                 </configuration>
             </plugin>
@@ -235,7 +235,7 @@
                         --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http
                         -Djdk.attach.allowAttachSelf=true
                         --enable-native-access=ALL-UNNAMED
-                        -Djava.library.path=${build.directory}/../../native/target/native-lib-only/${os.detected.classifier}
+                        -Djava.library.path=${project.build.directory}/../../native/target/native-lib-only/${os.detected.classifier}
                     </argLine>
                 </configuration>
             </plugin>

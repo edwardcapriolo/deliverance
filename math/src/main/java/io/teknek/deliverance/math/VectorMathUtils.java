@@ -9,9 +9,9 @@ public class VectorMathUtils {
         int m = ys.length;
         float[] result = new float[n * m];
         int idx = 0;
-        for (int i = 0; i < n; i++) {
-            for (int j = 0; j < m; j++) {
-                result[idx++] = xs[i] * ys[j];
+        for (float x : xs) {
+            for (float y : ys) {
+                result[idx++] = x * y;
             }
         }
         return result;
@@ -77,8 +77,8 @@ public class VectorMathUtils {
 
     public static void l1normalize(float[] x) {
         float sum = 0.0f;
-        for (int i = 0; i < x.length; i++) {
-            sum += FastMath.abs(x[i]);
+        for (float v : x) {
+            sum += FastMath.abs(v);
         }
         for (int i = 0; i < x.length; i++) {
             x[i] /= sum;

@@ -2,11 +2,14 @@ package io.teknek.deliverance.math;
 
 import org.junit.jupiter.api.Test;
 
+import io.dropwizard.metrics5.MetricRegistry;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 
 /**
@@ -67,6 +70,17 @@ public class VectorMathTest {
     }
 
     @Test
+    void pforDoesNothingForAnEmptyRange() {
+        try (WrappedForkJoinPool underlying = getPool()) {
+            AtomicInteger calls = new AtomicInteger();
+
+            VectorMath.pfor(5, 5, ignored -> calls.incrementAndGet(), underlying);
+
+            assertEquals(0, calls.get());
+        }
+    }
+
+    @Test
     void pchunkPreservesOffsetAndAssignsRemainderToTheLastChunk() {
         try (WrappedForkJoinPool underlying = getPool()) {
             Set<String> chunks = ConcurrentHashMap.newKeySet();
@@ -86,6 +100,33 @@ public class VectorMathTest {
 
             verify(action).accept(7, 1);
             verifyNoMoreInteractions(action);
+        }
+    }
+
+    @Test
+    void pchunkMetricsPreservesChunksAndRecordsTiming() {
+        try (WrappedForkJoinPool underlying = getPool()) {
+            MetricRegistry metrics = new MetricRegistry();
+            var timer = metrics.timer("chunks");
+            Set<String> chunks = ConcurrentHashMap.newKeySet();
+
+            VectorMath.pchunkMetrics(4, 7, (offset, length) -> chunks.add(offset + ":" + length),
+                    3, timer, underlying);
+
+            assertEquals(Set.of("4:2", "6:2", "8:3"), chunks);
+            assertEquals(3, timer.getCount());
+        }
+    }
+
+    @Test
+    void pforPropagatesAnActionFailure() {
+        try (WrappedForkJoinPool underlying = getPool()) {
+            IllegalStateException failure = new IllegalStateException("action failed");
+
+            IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                    () -> VectorMath.pfor(0, 1, ignored -> { throw failure; }, underlying));
+
+            assertEquals(failure, thrown.getCause());
         }
     }
 }
