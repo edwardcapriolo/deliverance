@@ -179,7 +179,7 @@ public final class EmbeddingGemma2Model extends AbstractModel {
                 textConfig.numHiddenLayers * textConfig.hiddenSizePerLayerInput);
         try (var ignored = InferenceProfiler.timer(metricRegistry, "embeddinggemma2.ple_projection").time()) {
             new EmbeddingGemma2PleProjectionOperation(textConfig.hiddenSize, textConfig.numHiddenLayers,
-                    textConfig.hiddenSizePerLayerInput).apply(perLayer, hidden, pleProjection, lighter);
+                    textConfig.hiddenSizePerLayerInput).apply(perLayer, hidden, pleProjection, lighter, this);
             roundBoundary(perLayer);
             new EmbeddingGemma2PleGroupedRmsNormOperation(textConfig.numHiddenLayers,
                     textConfig.hiddenSizePerLayerInput, textConfig.rmsNormEps).apply(perLayer, pleNorm, lighter);
@@ -194,7 +194,8 @@ public final class EmbeddingGemma2Model extends AbstractModel {
                     layer.operation.apply(next, hidden, perLayerInput, layer.inputNorm, layer.query, layer.key,
                             layer.value, layer.output, layer.queryNorm, layer.keyNorm, layer.postAttentionNorm,
                             layer.preFeedForwardNorm, layer.gate, layer.up, layer.down, layer.postFeedForwardNorm,
-                            layer.pleGate, layer.pleProjection, layer.pleNorm, layer.layerScalar, attentionMask, lighter);
+                            layer.pleGate, layer.pleProjection, layer.pleNorm, layer.layerScalar, attentionMask, lighter,
+                            this);
                 }
                 hidden.close();
                 hidden = next;
@@ -232,8 +233,9 @@ public final class EmbeddingGemma2Model extends AbstractModel {
         }
         lighter.multiplyAll(1.0f / valid, pooled);
         TensorRef projected = makeF32(1, textConfig.embeddingDim);
-        lighter.dotProductRows(projected, pooled, embeddingProjection, 0, textConfig.hiddenSize,
-                0, textConfig.embeddingDim, 0);
+        io.teknek.deliverance.tensor2.GemmDit.dotProductRows(lighter, this, "embeddinggemma2.output_projection",
+                projected, pooled, embeddingProjection, 0, 0, textConfig.hiddenSize, 0,
+                textConfig.embeddingDim, 0);
         roundBoundary(projected);
         pooled.close();
         return projected;

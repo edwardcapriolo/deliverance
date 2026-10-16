@@ -257,6 +257,48 @@ tensor2_status tensor2_gemm_i8_q4(
         int b_stride,
         int b_scale_stride);
 
+tensor2_status tensor2_gemm_f32_q4_chunks(
+        float *result,
+        const float *a,
+        const uint8_t *b,
+        const float *b_scales,
+        int result_rows,
+        int a_row_offset,
+        int a_column_offset,
+        int b_column_offset,
+        int column_length,
+        int result_row_offset,
+        int b_row_offset,
+        int row_chunk_size,
+        int result_stride,
+        int a_stride,
+        int b_stride,
+        int b_scale_stride,
+        int chunk_size,
+        int threaded);
+
+tensor2_status tensor2_gemm_i8_q4_chunks(
+        float *result,
+        const int8_t *a,
+        const float *a_scales,
+        const uint8_t *b,
+        const float *b_scales,
+        int result_rows,
+        int a_row_offset,
+        int a_column_offset,
+        int b_column_offset,
+        int column_length,
+        int result_row_offset,
+        int b_row_offset,
+        int row_chunk_size,
+        int result_stride,
+        int a_stride,
+        int a_scale_stride,
+        int b_stride,
+        int b_scale_stride,
+        int chunk_size,
+        int threaded);
+
 tensor2_status tensor2_batch_dot_f32_q8(
         float *result,
         const float *a,

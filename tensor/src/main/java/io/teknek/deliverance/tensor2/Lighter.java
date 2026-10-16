@@ -716,6 +716,21 @@ public class Lighter {
     public void dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
             int inputColumnStart, int weightColumnStart, int columnLength, int weightRowStart,
             int weightRowCount, int outputColumnStart, Map<String, String> tags) {
+        dotProductRows(output, input, weights, inputColumnStart, weightColumnStart, columnLength, weightRowStart,
+                weightRowCount, outputColumnStart, GemmKernel.ROW, Threading.PROVIDER, tags);
+    }
+
+    public void dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
+            int inputColumnStart, int weightColumnStart, int columnLength, int weightRowStart,
+            int weightRowCount, int outputColumnStart, GemmKernel kernel, Threading threading) {
+        dotProductRows(output, input, weights, inputColumnStart, weightColumnStart, columnLength, weightRowStart,
+                weightRowCount, outputColumnStart, kernel, threading, Map.of());
+    }
+
+    private void dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
+            int inputColumnStart, int weightColumnStart, int columnLength, int weightRowStart,
+            int weightRowCount, int outputColumnStart, GemmKernel kernel, Threading threading,
+            Map<String, String> tags) {
         Preconditions.checkArgument(output != null, "Output tensor must be set");
         Preconditions.checkArgument(input != null, "Input tensor must be set");
         Preconditions.checkArgument(weights != null, "Weights tensor must be set");
@@ -741,10 +756,14 @@ public class Lighter {
             long startNanos = System.nanoTime();
             Either<OpSupport, Void> outcome = entry.getValue().dotProductRows(output, input, weights,
                     inputColumnStart, weightColumnStart, columnLength, weightRowStart, weightRowCount,
-                    outputColumnStart, GemmKernel.ROW, Threading.PROVIDER);
+                    outputColumnStart, kernel, threading);
             if (outcome.isRight()) {
                 metricRegistry.meter(new MetricName("tensor2.dot_product_rows", metricTags)).mark();
-                timer.update(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+                long elapsedNanos = System.nanoTime() - startNanos;
+                timer.update(elapsedNanos, TimeUnit.NANOSECONDS);
+                Tensor2TimingCsv.recordRows(output, input, weights, inputColumnStart, weightColumnStart,
+                         columnLength, weightRowStart, weightRowCount, outputColumnStart, entry.getKey(),
+                         threading, kernel, elapsedNanos);
                 observe("dot_product_rows", entry.getKey(), true, output.dType(), input.dType(), weights.dType(), tags);
                 return;
             }

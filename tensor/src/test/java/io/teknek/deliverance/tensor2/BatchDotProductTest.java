@@ -15,6 +15,42 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BatchDotProductTest {
+    @org.junit.jupiter.api.Test
+    void chunkQ4HonorsRowWindowAndUnalignedColumns() {
+        Allocator allocator = new Allocator();
+        try (TensorRef a = allocator.allocate(DType.F32, TensorShape.of(4, 64));
+             TensorRef b = allocator.allocate(DType.Q4, TensorShape.of(4, 64));
+             TensorRef expected = allocator.allocate(DType.F32, TensorShape.of(2, 5));
+             TensorRef actual = allocator.allocate(DType.F32, TensorShape.of(2, 5))) {
+            fill(a, 1.0f);
+            fillQ4(b);
+            BatchDotProduct base = operation(expected, a, b, 1, 1, 3, 33, 2, 1, 2);
+            assertTrue(new NaiveOps().batchDotProduct(base).isRight());
+            BatchDotProduct chunk = operation(actual, a, b, 1, 1, 3, 33, 2, 1, 2)
+                    .kernel(GemmKernel.CHUNK);
+            assertTrue(new PanamaOps().batchDotProduct(chunk).isRight());
+            assertTensorEquals(expected, actual, "unaligned Q4 chunk");
+        }
+    }
+
+    @org.junit.jupiter.api.Test
+    void chunkBf16Q4MatchesNaiveWithInputRowOffset() {
+        Allocator allocator = new Allocator();
+        try (TensorRef a = allocator.allocate(DType.BF16, TensorShape.of(4, 64));
+             TensorRef b = allocator.allocate(DType.Q4, TensorShape.of(4, 64));
+             TensorRef expected = allocator.allocate(DType.F32, TensorShape.of(2, 3));
+             TensorRef actual = allocator.allocate(DType.F32, TensorShape.of(2, 3))) {
+            fill(a, 1.0f);
+            fillQ4(b);
+            BatchDotProduct base = operation(expected, a, b, 1, 0, 0, 64, 1, 0, 2);
+            assertTrue(new NaiveOps().batchDotProduct(base).isRight());
+            BatchDotProduct chunk = operation(actual, a, b, 1, 0, 0, 64, 1, 0, 2)
+                    .kernel(GemmKernel.CHUNK);
+            assertTrue(new PanamaOps().batchDotProduct(chunk).isRight());
+            assertTensorEquals(expected, actual, "BF16 Q4 chunk");
+        }
+    }
+
     @ParameterizedTest(name = "{0}")
     @MethodSource("cases")
     void panamaMatchesNaiveWithInputRowOffsets(String name, int aRows, int bRows, int columns, int resultRows,
@@ -81,6 +117,18 @@ class BatchDotProductTest {
             for (int column = 0; column < tensor.shape().last(); column++) {
                 tensor.underlying().set(((row * 31 + column * 17 + (int) seed) % 127 - 63) / 16.0f,
                         row, column);
+            }
+        }
+    }
+
+    private static void fillQ4(TensorRef tensor) {
+        Q4Tensor q4 = (Q4Tensor) tensor.underlying();
+        for (int row = 0; row < tensor.shape().first(); row++) {
+            for (int block = 0; block < tensor.shape().last() / Q4Layout.BLOCK_SIZE; block++) {
+                Q4Layout.scale(tensor).underlying().set(1.0f, row, block);
+                for (int packed = 0; packed < Q4Layout.HALF_BLOCK; packed++) {
+                    q4.setPackedByte((byte) (0x89 + packed), row, block, packed);
+                }
             }
         }
     }

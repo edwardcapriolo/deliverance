@@ -11,6 +11,8 @@ import io.teknek.dysfx.Either;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ForkJoinTask;
 public class NativeOps implements TensorOps, CompositeOpsProvider, AutoCloseable {
     private static Throwable loadFailure;
     private static final boolean loaded = loadOnce();
@@ -96,8 +98,23 @@ public class NativeOps implements TensorOps, CompositeOpsProvider, AutoCloseable
         TensorRef b = operation.b();
         if (operation.kernel() == GemmKernel.ROW) {
             if (result.dType() != DType.F32 && result.dType() != DType.BF16
-                    || a.dType() != DType.BF16 || b.dType() != DType.BF16) {
+                    || a.dType() != DType.BF16
+                    || (b.dType() != DType.BF16 && b.dType() != DType.Q4)) {
                 return Either.Left(OpSupport.Unsupported);
+            }
+            if (b.dType() == DType.Q4) {
+                TensorRef weightScale = Q4Layout.scale(b);
+                if (weightScale == null || !q4Aligned(operation)) {
+                    return Either.Left(OpSupport.Unsupported);
+                }
+                MemorySegment inputBase = baseSegment(a).asSlice((long) operation.aRowOffset() * a.stride() * 2L);
+                int status = Tensor2Native.tensor2_dot_product_rows_bf16_q4(
+                        baseSegment(result), inputBase, baseSegment(b), baseSegment(weightScale),
+                        result.dType() == DType.BF16 ? 1 : 0, (int) result.shape().first(),
+                        operation.aColumnOffset(), operation.bColumnOffset(), operation.columnLength(),
+                        operation.bRowOffset(), operation.rowChunkSize(), operation.resultRowOffset(),
+                        result.stride(), a.stride(), b.stride(), weightScale.stride());
+                return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
             }
             MemorySegment inputBase = baseSegment(a).asSlice((long) operation.aRowOffset() * a.stride() * 2L);
             int resultBf16 = result.dType() == DType.BF16 ? 1 : 0;
@@ -112,6 +129,40 @@ public class NativeOps implements TensorOps, CompositeOpsProvider, AutoCloseable
                     (int) result.shape().first(), operation.aColumnOffset(), operation.bColumnOffset(),
                     operation.columnLength(), operation.bRowOffset(), operation.rowChunkSize(),
                     operation.resultRowOffset(), result.stride(), a.stride(), b.stride());
+            return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
+        }
+        if (operation.kernel() == GemmKernel.CHUNK && ((a.dType() == DType.F32
+                && (b.dType() == DType.F32 || b.dType() == DType.BF16 || b.dType() == DType.I8))
+                || (a.dType() == DType.BF16 && (b.dType() == DType.BF16 || b.dType() == DType.Q4)))) {
+            return chunked(operation);
+        }
+        if (operation.kernel() == GemmKernel.CHUNK && result.dType() == DType.F32
+                && a.dType() == DType.F32 && b.dType() == DType.Q4 && q4Aligned(operation)) {
+            TensorRef weightScale = Q4Layout.scale(b);
+            if (weightScale == null || !q4Aligned(operation)) {
+                return Either.Left(OpSupport.Unsupported);
+            }
+            int status = Tensor2Native.tensor2_gemm_f32_q4_chunks(baseSegment(result), baseSegment(a),
+                    baseSegment(b), baseSegment(weightScale), (int) result.shape().first(), operation.aRowOffset(),
+                    operation.aColumnOffset(), operation.bColumnOffset(), operation.columnLength(),
+                    operation.resultRowOffset(), operation.bRowOffset(), operation.rowChunkSize(), result.stride(),
+                    a.stride(), b.stride(), weightScale.stride(), 64,
+                    operation.threading() == Threading.PROVIDER ? 1 : 0);
+            return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
+        }
+        if (operation.kernel() == GemmKernel.CHUNK && result.dType() == DType.F32
+                && a.dType() == DType.I8 && b.dType() == DType.Q4 && q4Aligned(operation)) {
+            TensorRef inputScale = Q8Layout.scale(a);
+            TensorRef weightScale = Q4Layout.scale(b);
+            if (inputScale == null || weightScale == null || !q4Aligned(operation)) {
+                return Either.Left(OpSupport.Unsupported);
+            }
+            int status = Tensor2Native.tensor2_gemm_i8_q4_chunks(baseSegment(result), baseSegment(a),
+                    baseSegment(inputScale), baseSegment(b), baseSegment(weightScale), (int) result.shape().first(),
+                    operation.aRowOffset(), operation.aColumnOffset(), operation.bColumnOffset(),
+                    operation.columnLength(), operation.resultRowOffset(), operation.bRowOffset(),
+                    operation.rowChunkSize(), result.stride(), a.stride(), inputScale.stride(), b.stride(),
+                    weightScale.stride(), 64, operation.threading() == Threading.PROVIDER ? 1 : 0);
             return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
         }
         if (result.dType() == DType.F32 && a.dType() == DType.F32 && b.dType() == DType.Q4) {
@@ -174,6 +225,49 @@ public class NativeOps implements TensorOps, CompositeOpsProvider, AutoCloseable
                 a.stride(),
                 b.stride());
         return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
+    }
+
+    private Either<OpSupport, Void> chunked(BatchDotProduct operation) {
+        if (operation.result().dType() != DType.F32 && !(operation.result().dType() == DType.BF16
+                && operation.a().dType() == DType.BF16 && operation.b().dType() == DType.BF16)) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        if (operation.b().dType() == DType.I8 && !q8Aligned(operation)) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        if (operation.b().dType() == DType.Q4 && !q4Aligned(operation)) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        int chunkSize = 64;
+        int chunks = (operation.rowChunkSize() + chunkSize - 1) / chunkSize;
+        Runnable[] work = new Runnable[chunks];
+        for (int chunk = 0; chunk < chunks; chunk++) {
+            int start = chunk * chunkSize;
+            int count = Math.min(chunkSize, operation.rowChunkSize() - start);
+            GemmKernel kernel = operation.a().dType() == DType.BF16
+                    ? GemmKernel.ROW : GemmKernel.BATCH;
+            BatchDotProduct chunkOperation = new BatchDotProduct()
+                    .result(operation.result()).a(operation.a()).b(operation.b())
+                    .aRowOffset(operation.aRowOffset())
+                    .aColumnOffset(operation.aColumnOffset())
+                    .bColumnOffset(operation.bColumnOffset())
+                    .columnLength(operation.columnLength())
+                    .resultRowOffset(operation.resultRowOffset())
+                    .bRowOffset(operation.bRowOffset() + start)
+                    .rowChunkSize(count).kernel(kernel);
+            work[chunk] = () -> {
+                Either<OpSupport, Void> outcome = batchDotProduct(chunkOperation);
+                if (outcome.isLeft()) throw new IllegalStateException("Unsupported CHUNK GEMM");
+            };
+        }
+        if (operation.threading() == Threading.PROVIDER && chunks > 1) {
+            ForkJoinTask<?>[] tasks = new ForkJoinTask<?>[chunks];
+            for (int i = 0; i < chunks; i++) tasks[i] = ForkJoinPool.commonPool().submit(work[i]);
+            for (ForkJoinTask<?> task : tasks) task.join();
+        } else {
+            for (Runnable task : work) task.run();
+        }
+        return Either.Right(null);
     }
 
     @Override
@@ -521,6 +615,12 @@ public class NativeOps implements TensorOps, CompositeOpsProvider, AutoCloseable
         return operation.aColumnOffset() % Q8Layout.BLOCK_SIZE == 0
                 && operation.bColumnOffset() % Q8Layout.BLOCK_SIZE == 0
                 && operation.columnLength() % Q8Layout.BLOCK_SIZE == 0;
+    }
+
+    private static boolean q4Aligned(BatchDotProduct operation) {
+        return operation.aColumnOffset() % Q4Layout.BLOCK_SIZE == 0
+                && operation.bColumnOffset() % Q4Layout.BLOCK_SIZE == 0
+                && operation.columnLength() % Q4Layout.BLOCK_SIZE == 0;
     }
 
     private static long memoryOffset(TensorRef tensor, int row, int column) {

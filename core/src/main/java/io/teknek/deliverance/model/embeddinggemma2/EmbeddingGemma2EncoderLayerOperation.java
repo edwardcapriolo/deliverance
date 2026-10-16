@@ -5,6 +5,8 @@ import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor2.CompositeOps;
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.tensor2.GemmDit;
+import io.teknek.deliverance.tensorlib.TensorPlanAdaptiveSplitTuner;
 
 import java.util.Objects;
 import java.util.ArrayList;
@@ -86,6 +88,20 @@ public final class EmbeddingGemma2EncoderLayerOperation {
             TensorRef gateWeight, TensorRef upWeight, TensorRef downWeight,
             TensorRef postFeedForwardNormWeight, TensorRef pleGateWeight, TensorRef pleProjectionWeight,
             TensorRef pleNormWeight, float layerScalar, int[] attentionMask, Lighter lighter) {
+        apply(output, input, perLayerInput, inputNormWeight, queryWeight, keyWeight, valueWeight, outputWeight,
+                queryNormWeight, keyNormWeight, postAttentionNormWeight, preFeedForwardNormWeight, gateWeight,
+                upWeight, downWeight, postFeedForwardNormWeight, pleGateWeight, pleProjectionWeight, pleNormWeight,
+                layerScalar, attentionMask, lighter, null);
+    }
+
+    public void apply(TensorRef output, TensorRef input, TensorRef perLayerInput,
+            TensorRef inputNormWeight, TensorRef queryWeight, TensorRef keyWeight, TensorRef valueWeight,
+            TensorRef outputWeight, TensorRef queryNormWeight, TensorRef keyNormWeight,
+            TensorRef postAttentionNormWeight, TensorRef preFeedForwardNormWeight,
+            TensorRef gateWeight, TensorRef upWeight, TensorRef downWeight,
+            TensorRef postFeedForwardNormWeight, TensorRef pleGateWeight, TensorRef pleProjectionWeight,
+            TensorRef pleNormWeight, float layerScalar, int[] attentionMask, Lighter lighter,
+            TensorPlanAdaptiveSplitTuner tuner) {
         Objects.requireNonNull(output, "output");
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(perLayerInput, "perLayerInput");
@@ -103,7 +119,7 @@ public final class EmbeddingGemma2EncoderLayerOperation {
              TensorRef projectedFeedForward = allocateRows(lighter, input)) {
             rmsNorm.apply(normalized, input, inputNormWeight, lighter);
             attentionProjection.apply(query, key, value, normalized, queryWeight, keyWeight, valueWeight,
-                    queryNormWeight, keyNormWeight, lighter);
+                    queryNormWeight, keyNormWeight, lighter, tuner);
             roundBoundary(query, lighter);
             roundBoundary(key, lighter);
             roundBoundary(value, lighter);
@@ -140,8 +156,8 @@ public final class EmbeddingGemma2EncoderLayerOperation {
                 closeAll(keyHeadsRefs);
                 closeAll(scoreRefs);
             }
-            lighter.dotProductRows(projectedAttention, attentionOutput, outputWeight, 0,
-                    queryHeads * headWidth, 0, hiddenSize, 0);
+            GemmDit.dotProductRows(lighter, tuner, "embeddinggemma2.attention.output", projectedAttention,
+                    attentionOutput, outputWeight, 0, 0, queryHeads * headWidth, 0, hiddenSize, 0);
             roundBoundary(projectedAttention, lighter);
             rmsNorm.apply(normalizedAttention, projectedAttention, postAttentionNormWeight, lighter);
             roundBoundary(normalizedAttention, lighter);
@@ -149,7 +165,7 @@ public final class EmbeddingGemma2EncoderLayerOperation {
             roundBoundary(normalizedAttention, lighter);
             rmsNorm.apply(feedForwardInput, normalizedAttention, preFeedForwardNormWeight, lighter);
             roundBoundary(feedForwardInput, lighter);
-            mlp.apply(feedForward, feedForwardInput, gateWeight, upWeight, downWeight, lighter);
+            mlp.apply(feedForward, feedForwardInput, gateWeight, upWeight, downWeight, lighter, tuner);
             rmsNorm.apply(projectedFeedForward, feedForward, postFeedForwardNormWeight, lighter);
             roundBoundary(projectedFeedForward, lighter);
             new CompositeOps(lighter).addResidual(projectedFeedForward, normalizedAttention, 1.0f);

@@ -5,7 +5,6 @@ import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import io.teknek.deliverance.tensor.TensorShape;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -17,11 +16,11 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+@Tensor2PerformanceCase
 class Tensor2LighterBatchDotProductFuzzTest {
     @ParameterizedTest(name = "{0} {1}")
     @MethodSource("casesAndCandidates")
-    void batchDotProductMatchesNaiveLighter(BatchDotProductFuzzCases.Case c, Candidate candidate) {
-        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is not implemented yet");
+    void batchDotProductMatchesNaiveLighter(BatchDotProductFuzzCases.Case c, Candidate candidate, GemmKernel kernel) {
         Lighter expected = naiveOnly();
         Lighter actual = candidate.lighter();
         TensorRef expectedA = expected.allocate(DType.F32, TensorShape.of(c.aRows(), c.aColumns()));
@@ -36,8 +35,8 @@ class Tensor2LighterBatchDotProductFuzzTest {
         fill(actualA, c.seed());
         fill(actualB, c.seed() + 23);
 
-        expected.batchDotProduct(operation(c, expectedResult, expectedA, expectedB));
-        actual.batchDotProduct(operation(c, actualResult, actualA, actualB));
+        expected.batchDotProduct(operation(c, expectedResult, expectedA, expectedB, GemmKernel.BATCH));
+        actual.batchDotProduct(operation(c, actualResult, actualA, actualB, kernel));
 
         for (int row = 0; row < c.resultRows(); row++) {
             for (int column = 0; column < c.resultColumns(); column++) {
@@ -49,8 +48,8 @@ class Tensor2LighterBatchDotProductFuzzTest {
 
     @ParameterizedTest(name = "shared i8-q4 {0} {1}")
     @MethodSource("sharedI8Q4CasesAndCandidates")
-    void sharedI8Q4CasesMatchAcrossTensor2Providers(BatchDotProductFuzzCases.Case c, Candidate candidate) {
-        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+    void sharedI8Q4CasesMatchAcrossTensor2Providers(BatchDotProductFuzzCases.Case c, Candidate candidate,
+            GemmKernel kernel) {
         Lighter expected = naiveOnly();
         Lighter actual = candidate.lighter();
         try (TensorRef expectedA = sharedOperand(expected, DType.I8, c.aRows(), c.aColumns(), c.seed(), false);
@@ -59,8 +58,8 @@ class Tensor2LighterBatchDotProductFuzzTest {
              TensorRef actualA = sharedOperand(actual, DType.I8, c.aRows(), c.aColumns(), c.seed(), false);
              TensorRef actualB = sharedOperand(actual, DType.Q4, c.bRows(), c.bColumns(), c.seed() + 17, true);
              TensorRef actualResult = actual.allocate(DType.F32, TensorShape.of(c.resultRows(), c.resultColumns()))) {
-            expected.batchDotProduct(operation(c, expectedResult, expectedA, expectedB));
-            actual.batchDotProduct(operation(c, actualResult, actualA, actualB));
+            expected.batchDotProduct(operation(c, expectedResult, expectedA, expectedB, GemmKernel.BATCH));
+            actual.batchDotProduct(operation(c, actualResult, actualA, actualB, kernel));
             for (int row = 0; row < c.resultRows(); row++) {
                 for (int column = 0; column < c.resultColumns(); column++) {
                     assertEquals(expectedResult.get(row, column), actualResult.get(row, column), 0.30f,
@@ -72,8 +71,8 @@ class Tensor2LighterBatchDotProductFuzzTest {
 
     @ParameterizedTest(name = "q8 {0} {1}")
     @MethodSource("q8CasesAndCandidates")
-    void batchDotProductF32Q8MatchesNaiveLighter(BatchDotProductFuzzCases.Case c, Candidate candidate) {
-        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is not implemented yet");
+    void batchDotProductF32Q8MatchesNaiveLighter(BatchDotProductFuzzCases.Case c, Candidate candidate,
+            GemmKernel kernel) {
         Lighter expected = naiveOnly();
         Lighter actual = candidate.lighter();
         TensorRef expectedA = expected.allocate(DType.F32, TensorShape.of(c.aRows(), c.aColumns()));
@@ -88,8 +87,8 @@ class Tensor2LighterBatchDotProductFuzzTest {
         fill(expectedA, c.seed());
         fill(actualA, c.seed());
 
-        expected.batchDotProduct(operation(c, expectedResult, expectedA, expectedB));
-        actual.batchDotProduct(operation(c, actualResult, actualA, actualB));
+        expected.batchDotProduct(operation(c, expectedResult, expectedA, expectedB, GemmKernel.BATCH));
+        actual.batchDotProduct(operation(c, actualResult, actualA, actualB, kernel));
 
         for (int row = 0; row < c.resultRows(); row++) {
             for (int column = 0; column < c.resultColumns(); column++) {
@@ -102,7 +101,7 @@ class Tensor2LighterBatchDotProductFuzzTest {
     @ParameterizedTest(name = "panama strict {0} {1}")
     @MethodSource("panamaStrictDTypeCases")
     void panamaBatchDotProductSupportsProductionDTypesWithoutFallback(DTypeCase dtypeCase,
-            BatchDotProductFuzzCases.Case c) {
+            BatchDotProductFuzzCases.Case c, GemmKernel kernel) {
         Lighter expected = naiveOnly();
         io.dropwizard.metrics5.MetricRegistry metrics = new io.dropwizard.metrics5.MetricRegistry();
         Lighter actual = new Lighter(metrics, Map.of(TensorProviderKind.PANAMA, new PanamaOps()));
@@ -113,8 +112,8 @@ class Tensor2LighterBatchDotProductFuzzTest {
         TensorRef actualB = operand(actual, dtypeCase.bType(), c.bRows(), c.bColumns(), c.seed() + 23);
         TensorRef actualResult = actual.allocate(DType.F32, TensorShape.of(c.resultRows(), c.resultColumns()));
 
-        expected.batchDotProduct(operation(c, expectedResult, expectedA, expectedB));
-        actual.batchDotProduct(operation(c, actualResult, actualA, actualB));
+        expected.batchDotProduct(operation(c, expectedResult, expectedA, expectedB, GemmKernel.BATCH));
+        actual.batchDotProduct(operation(c, actualResult, actualA, actualB, kernel));
 
         assertClose(dtypeCase, c, expectedResult, actualResult);
         assertEquals(1, metrics.meter(new io.dropwizard.metrics5.MetricName("tensor2.batch_dot_product",
@@ -125,7 +124,7 @@ class Tensor2LighterBatchDotProductFuzzTest {
 
     @ParameterizedTest(name = "bf16 output {0}")
     @MethodSource("bf16OutputCases")
-    void panamaBf16Bf16Bf16MatchesNaive(BatchDotProductFuzzCases.Case c) {
+    void panamaBf16Bf16Bf16MatchesNaive(BatchDotProductFuzzCases.Case c, GemmKernel kernel) {
         Lighter expected = naiveOnly();
         Lighter actual = new Lighter(nullMetricRegistry(), Map.of(TensorProviderKind.PANAMA, new PanamaOps()));
         TensorRef expectedA = operand(expected, DType.BF16, c.aRows(), c.aColumns(), c.seed());
@@ -135,8 +134,8 @@ class Tensor2LighterBatchDotProductFuzzTest {
         TensorRef actualB = operand(actual, DType.BF16, c.bRows(), c.bColumns(), c.seed() + 23);
         TensorRef actualResult = actual.allocate(DType.BF16, TensorShape.of(c.resultRows(), c.resultColumns()));
 
-        expected.batchDotProduct(operation(c, expectedResult, expectedA, expectedB));
-        actual.batchDotProduct(operation(c, actualResult, actualA, actualB));
+        expected.batchDotProduct(operation(c, expectedResult, expectedA, expectedB, GemmKernel.BATCH));
+        actual.batchDotProduct(operation(c, actualResult, actualA, actualB, kernel));
 
         for (int row = 0; row < c.resultRows(); row++) {
             for (int column = 0; column < c.resultColumns(); column++) {
@@ -148,8 +147,7 @@ class Tensor2LighterBatchDotProductFuzzTest {
 
     @ParameterizedTest(name = "row bf16 output {0} {1}")
     @MethodSource("rowBf16Candidates")
-    void rowBf16Bf16Bf16MatchesNaive(BatchDotProductFuzzCases.Case c, Candidate candidate) {
-        Assumptions.assumeTrue(candidate.enabled(), candidate.name() + " is unavailable");
+    void rowBf16Bf16Bf16MatchesNaive(BatchDotProductFuzzCases.Case c, Candidate candidate, GemmKernel kernel) {
         Lighter expected = naiveOnly();
         Lighter actual = candidate.lighter();
         TensorRef expectedA = operand(expected, DType.BF16, c.aRows(), c.aColumns(), c.seed());
@@ -159,9 +157,9 @@ class Tensor2LighterBatchDotProductFuzzTest {
         TensorRef actualB = operand(actual, DType.BF16, c.bRows(), c.bColumns(), c.seed() + 23);
         TensorRef actualResult = actual.allocate(DType.BF16, TensorShape.of(c.resultRows(), c.resultColumns()));
 
-        expected.batchDotProduct(operation(c, expectedResult, expectedA, expectedB));
-        actual.batchDotProduct(operation(c, actualResult, actualA, actualB)
-                .kernel(GemmKernel.ROW).threading(Threading.PROVIDER));
+        expected.batchDotProduct(operation(c, expectedResult, expectedA, expectedB, GemmKernel.BATCH));
+        actual.batchDotProduct(operation(c, actualResult, actualA, actualB, kernel)
+                .kernel(kernel).threading(Threading.PROVIDER));
 
         for (int row = 0; row < c.resultRows(); row++) {
             for (int column = 0; column < c.resultColumns(); column++) {
@@ -177,11 +175,14 @@ class Tensor2LighterBatchDotProductFuzzTest {
         Candidate simd = new Candidate("SIMD", NativeOps.isAvailable(), () -> new Lighter(nullMetricRegistry(),
                 Map.of(TensorProviderKind.SIMD, new NativeOps(), TensorProviderKind.PANAMA, new PanamaOps())));
         return BatchDotProductFuzzCases.cases()
-                .flatMap(args -> Stream.of(panama, simd).map(candidate -> Arguments.of(args.get()[0], candidate)));
+                .flatMap(args -> Stream.of(panama, simd).filter(Candidate::enabled).flatMap(candidate -> kernelsFor((BatchDotProductFuzzCases.Case) args.get()[0], DType.F32,
+                        DType.F32, DType.F32).stream()
+                        .map(kernel -> Arguments.of(args.get()[0], candidate, kernel))));
     }
 
     static Stream<Arguments> bf16OutputCases() {
-        return BatchDotProductFuzzCases.cases();
+        return BatchDotProductFuzzCases.cases().flatMap(args -> kernelsFor((BatchDotProductFuzzCases.Case) args.get()[0], DType.BF16, DType.BF16,
+                DType.BF16).stream().map(kernel -> Arguments.of(args.get()[0], kernel)));
     }
 
     static Stream<Arguments> casesAndCandidates() {
@@ -193,7 +194,9 @@ class Tensor2LighterBatchDotProductFuzzTest {
                 TensorProviderKind.PANAMA, new PanamaOps(),
                 TensorProviderKind.NAIVE, new NaiveOps())));
         return BatchDotProductFuzzCases.cases()
-                .flatMap(args -> Stream.of(panama, simd).map(candidate -> Arguments.of(args.get()[0], candidate)));
+                .flatMap(args -> Stream.of(panama, simd).filter(Candidate::enabled).flatMap(candidate -> kernelsFor((BatchDotProductFuzzCases.Case) args.get()[0], DType.F32,
+                        DType.F32, DType.F32).stream()
+                        .map(kernel -> Arguments.of(args.get()[0], candidate, kernel))));
     }
 
     static Stream<Arguments> q8CasesAndCandidates() {
@@ -205,7 +208,9 @@ class Tensor2LighterBatchDotProductFuzzTest {
                 TensorProviderKind.PANAMA, new PanamaOps(),
                 TensorProviderKind.NAIVE, new NaiveOps())));
         return BatchDotProductFuzzCases.q8Cases()
-                .flatMap(args -> Stream.of(panama, simd).map(candidate -> Arguments.of(args.get()[0], candidate)));
+                .flatMap(args -> Stream.of(panama, simd).filter(Candidate::enabled).flatMap(candidate -> kernelsFor((BatchDotProductFuzzCases.Case) args.get()[0], DType.F32,
+                        DType.I8, DType.F32).stream()
+                        .map(kernel -> Arguments.of(args.get()[0], candidate, kernel))));
     }
 
     static Stream<Arguments> sharedI8Q4CasesAndCandidates() {
@@ -215,7 +220,9 @@ class Tensor2LighterBatchDotProductFuzzTest {
                 TensorProviderKind.SIMD, new NativeOps(), TensorProviderKind.PANAMA, new PanamaOps(),
                 TensorProviderKind.NAIVE, new NaiveOps())));
         return BatchDotProductFuzzCases.sharedI8Q4Cases()
-                .flatMap(args -> Stream.of(panama, simd).map(candidate -> Arguments.of(args.get()[0], candidate)));
+                .flatMap(args -> Stream.of(panama, simd).filter(Candidate::enabled).flatMap(candidate -> kernelsFor((BatchDotProductFuzzCases.Case) args.get()[0], DType.I8,
+                        DType.Q4, DType.F32).stream()
+                        .map(kernel -> Arguments.of(args.get()[0], candidate, kernel))));
     }
 
     static Stream<Arguments> panamaStrictDTypeCases() {
@@ -228,13 +235,32 @@ class Tensor2LighterBatchDotProductFuzzTest {
                 new DTypeCase(DType.BF16, DType.Q4, 0.10f));
         return Stream.concat(
                 BatchDotProductFuzzCases.cases().flatMap(args -> denseCases.stream()
-                        .map(dtypeCase -> Arguments.of(dtypeCase, args.get()[0]))),
+                        .flatMap(dtypeCase -> kernelsFor((BatchDotProductFuzzCases.Case) args.get()[0], dtypeCase.aType(), dtypeCase.bType(), DType.F32).stream()
+                                .map(kernel -> Arguments.of(dtypeCase, args.get()[0], kernel)))),
                 BatchDotProductFuzzCases.q8Cases().flatMap(args -> q4Cases.stream()
-                        .map(dtypeCase -> Arguments.of(dtypeCase, args.get()[0]))));
+                        .flatMap(dtypeCase -> kernelsFor((BatchDotProductFuzzCases.Case) args.get()[0], dtypeCase.aType(), dtypeCase.bType(), DType.F32).stream()
+                                .map(kernel -> Arguments.of(dtypeCase, args.get()[0], kernel)))));
+    }
+
+    private static List<GemmKernel> kernelsFor(BatchDotProductFuzzCases.Case c, DType a, DType b, DType result) {
+        List<GemmKernel> kernels = new java.util.ArrayList<>(List.of(GemmKernel.BATCH, GemmKernel.ROW));
+        boolean dense = (a == DType.F32 && (b == DType.F32 || b == DType.BF16 || b == DType.I8))
+                || (a == DType.BF16 && (b == DType.BF16 || b == DType.Q4));
+        boolean aligned = b != DType.I8 && b != DType.Q4
+                || aligned(c.aColumnOffset(), c.bColumnOffset(), c.columnLength());
+        if ((result == DType.F32 || (result == DType.BF16 && a == DType.BF16 && b == DType.BF16))
+                && dense && aligned) {
+            kernels.add(GemmKernel.CHUNK);
+        }
+        return kernels;
+    }
+
+    private static boolean aligned(int inputOffset, int weightOffset, int length) {
+        return inputOffset % 32 == 0 && weightOffset % 32 == 0 && length % 32 == 0;
     }
 
     private static BatchDotProduct operation(BatchDotProductFuzzCases.Case c, TensorRef result, TensorRef a,
-            TensorRef b) {
+            TensorRef b, GemmKernel kernel) {
         return new BatchDotProduct()
                 .result(result)
                 .a(a)
@@ -245,7 +271,8 @@ class Tensor2LighterBatchDotProductFuzzTest {
                 .columnLength(c.columnLength())
                 .resultRowOffset(c.resultRowOffset())
                 .bRowOffset(c.bRowOffset())
-                .rowChunkSize(c.rowChunkSize());
+                .rowChunkSize(c.rowChunkSize())
+                .kernel(kernel);
     }
 
     private static Lighter naiveOnly() {

@@ -726,6 +726,22 @@ class PanamaOps implements TensorOps {
             new RowDotProductGemmer(operation, providerPool).matmul();
             return Either.Right(null);
         }
+        if (operation.kernel() == GemmKernel.CHUNK) {
+            if ((a.dType() == DType.F32 || a.dType() == DType.I8) && b.dType() == DType.Q4) {
+                return q4Aligned(operation) ? chunkedQ4(operation) : chunkedQ4Unaligned(operation);
+            }
+            if (a.dType() == DType.BF16 && b.dType() == DType.Q4) {
+                return q4Aligned(operation) ? chunked(operation) : chunkedQ4Unaligned(operation);
+            }
+            return chunked(operation);
+        }
+        return runBatchKernel(operation);
+    }
+
+    private Either<OpSupport, Void> runBatchKernel(BatchDotProduct operation) {
+        TensorRef result = operation.result();
+        TensorRef a = operation.a();
+        TensorRef b = operation.b();
         return switch (a.dType()) {
             case F32 -> switch (b.dType()) {
                 case F32 -> {
@@ -785,6 +801,59 @@ class PanamaOps implements TensorOps {
         };
     }
 
+    private Either<OpSupport, Void> chunked(BatchDotProduct operation) {
+        TensorRef result = operation.result();
+        TensorRef a = operation.a();
+        TensorRef b = operation.b();
+        boolean supported = result.dType() == DType.F32
+                && ((a.dType() == DType.F32 && (b.dType() == DType.F32 || b.dType() == DType.BF16
+                || b.dType() == DType.I8)) || (a.dType() == DType.BF16
+                && (b.dType() == DType.BF16 || b.dType() == DType.Q4)));
+        if (a.dType() == DType.BF16 && b.dType() == DType.BF16
+                && (result.dType() == DType.F32 || result.dType() == DType.BF16)) {
+            supported = true;
+        }
+        if (!supported || (b.dType() == DType.I8 && !q8Aligned(operation))) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        if (b.dType() == DType.I8 && Q8Layout.scale(b) == null) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        if (b.dType() == DType.Q4 && (Q4Layout.scale(b) == null || !q4Aligned(operation))) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        int chunkSize = 64;
+        int chunks = (operation.rowChunkSize() + chunkSize - 1) / chunkSize;
+        Runnable[] work = new Runnable[chunks];
+        for (int chunk = 0; chunk < chunks; chunk++) {
+            int start = chunk * chunkSize;
+            int count = Math.min(chunkSize, operation.rowChunkSize() - start);
+            BatchDotProduct chunkOperation = new BatchDotProduct()
+                    .result(result).a(a).b(b)
+                    .aRowOffset(operation.aRowOffset())
+                    .aColumnOffset(operation.aColumnOffset())
+                    .bColumnOffset(operation.bColumnOffset())
+                    .columnLength(operation.columnLength())
+                    .resultRowOffset(operation.resultRowOffset())
+                    .bRowOffset(operation.bRowOffset() + start)
+                    .rowChunkSize(count);
+            work[chunk] = () -> {
+                Either<OpSupport, Void> outcome = runBatchKernel(chunkOperation);
+                if (outcome.isLeft()) {
+                    throw new IllegalStateException("Unsupported CHUNK GEMM");
+                }
+            };
+        }
+        if (operation.threading() == Threading.PROVIDER && chunks > 1) {
+            ForkJoinTask<?>[] tasks = new ForkJoinTask<?>[chunks];
+            for (int i = 0; i < chunks; i++) tasks[i] = providerPool.submit(work[i]);
+            for (ForkJoinTask<?> task : tasks) task.join();
+        } else {
+            for (Runnable task : work) task.run();
+        }
+        return Either.Right(null);
+    }
+
     private static boolean supportsRow(BatchDotProduct operation) {
         TensorRef result = operation.result();
         TensorRef a = operation.a();
@@ -793,6 +862,82 @@ class PanamaOps implements TensorOps {
                 && result.dType() == DType.F32)
                 || (a.dType() == DType.BF16 && b.dType() == DType.BF16
                 && (result.dType() == DType.F32 || result.dType() == DType.BF16));
+    }
+
+    private Either<OpSupport, Void> chunkedQ4(BatchDotProduct operation) {
+        TensorRef result = operation.result();
+        TensorRef input = operation.a();
+        TensorRef weights = operation.b();
+        if (result.dType() != DType.F32 || input.dType() != DType.F32 && input.dType() != DType.I8
+                || weights.dType() != DType.Q4) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        TensorRef inputScale = input.dType() == DType.I8 ? Q8Layout.scale(input) : null;
+        TensorRef weightScale = Q4Layout.scale(weights);
+        if (weightScale == null || input.dType() == DType.I8 && inputScale == null) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        int chunkSize = 64;
+        int chunks = (operation.rowChunkSize() + chunkSize - 1) / chunkSize;
+        Runnable[] work = new Runnable[chunks];
+        for (int chunk = 0; chunk < chunks; chunk++) {
+            int start = chunk * chunkSize;
+            int count = Math.min(chunkSize, operation.rowChunkSize() - start);
+            work[chunk] = () -> runQ4Chunk(operation, input, weights, inputScale, weightScale, start, count);
+        }
+        if (operation.threading() == Threading.PROVIDER && chunks > 1) {
+            ForkJoinTask<?>[] tasks = new ForkJoinTask<?>[chunks];
+            for (int i = 0; i < chunks; i++) tasks[i] = providerPool.submit(work[i]);
+            for (ForkJoinTask<?> task : tasks) task.join();
+        } else {
+            for (Runnable task : work) task.run();
+        }
+        return Either.Right(null);
+    }
+
+    private void runQ4Chunk(BatchDotProduct operation, TensorRef input, TensorRef weights,
+            TensorRef inputScale, TensorRef weightScale, int start, int count) {
+        int weightStart = operation.bRowOffset() + start;
+        int outputStart = operation.resultRowOffset();
+        if (input.dType() == DType.F32) {
+            new F32Q4DotProductRowsGemmer(operation.result(), input, weights, weightScale,
+                    operation.aColumnOffset(), operation.bColumnOffset(), operation.columnLength(),
+                    weightStart, count, outputStart, (int) operation.result().shape().first(),
+                    operation.aRowOffset()).matmul();
+        } else {
+            new I8Q4DotProductRowsGemmer(operation.result(), input, inputScale, weights, weightScale,
+                    operation.aColumnOffset(), operation.bColumnOffset(), operation.columnLength(),
+                    weightStart, count, outputStart, (int) operation.result().shape().first(),
+                    operation.aRowOffset()).matmul();
+        }
+    }
+
+    /** Scalar fallback for Q4 windows that do not start and end on Q4 blocks. */
+    private Either<OpSupport, Void> chunkedQ4Unaligned(BatchDotProduct operation) {
+        TensorRef result = operation.result();
+        TensorRef input = operation.a();
+        TensorRef weights = operation.b();
+        if (result.dType() != DType.F32
+                || (input.dType() != DType.F32 && input.dType() != DType.BF16)
+                && input.dType() != DType.I8
+                || weights.dType() != DType.Q4
+                || Q4Layout.scale(weights) == null
+                || input.dType() == DType.I8 && Q8Layout.scale(input) == null) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        int bEnd = operation.bRowOffset() + operation.rowChunkSize();
+        for (int resultRow = 0; resultRow < result.shape().first(); resultRow++) {
+            int aRow = operation.aRowOffset() + resultRow;
+            for (int bRow = operation.bRowOffset(); bRow < bEnd; bRow++) {
+                float sum = 0.0f;
+                for (int column = 0; column < operation.columnLength(); column++) {
+                    sum += input.get(aRow, operation.aColumnOffset() + column)
+                            * weights.get(bRow, operation.bColumnOffset() + column);
+                }
+                result.set(sum, resultRow, operation.resultRowOffset() + bRow);
+            }
+        }
+        return Either.Right(null);
     }
 
     @Override
@@ -817,7 +962,7 @@ class PanamaOps implements TensorOps {
             }
             new I8Q4DotProductRowsGemmer(output, input, inputScale, weights, weightScale,
                     inputColumnStart, weightColumnStart, columnLength, weightRowStart, weightRowCount,
-                    outputColumnStart).matmul();
+                    outputColumnStart, (int) output.shape().first(), 0).matmul();
             return Either.Right(null);
         }
         if (output.dType() == DType.F32 && input.dType() == DType.F32 && weights.dType() == DType.Q4) {
@@ -829,7 +974,7 @@ class PanamaOps implements TensorOps {
             }
             new F32Q4DotProductRowsGemmer(output, input, weights, weightScale,
                     inputColumnStart, weightColumnStart, columnLength, weightRowStart, weightRowCount,
-                    outputColumnStart).matmul();
+                    outputColumnStart, (int) output.shape().first(), 0).matmul();
             return Either.Right(null);
         }
         if (output.dType() == DType.F32 && input.dType() == DType.F32 && weights.dType() == DType.BF16) {
@@ -858,6 +1003,40 @@ class PanamaOps implements TensorOps {
                 .resultRowOffset(outputColumnStart - weightRowStart)
                 .bRowOffset(weightRowStart)
                 .rowChunkSize(weightRowCount));
+    }
+
+    @Override
+    public Either<OpSupport, Void> dotProductRows(TensorRef output, TensorRef input, TensorRef weights,
+            int inputColumnStart, int weightColumnStart, int columnLength, int weightRowStart,
+            int weightRowCount, int outputColumnStart, Threading threading) {
+        if (threading == Threading.PROVIDER && output.dType() == DType.F32
+                && input.dType() == DType.F32 && weights.dType() == DType.Q4) {
+            TensorRef scale = Q4Layout.scale(weights);
+            if (scale != null && inputColumnStart % Q4Layout.BLOCK_SIZE == 0
+                    && weightColumnStart % Q4Layout.BLOCK_SIZE == 0
+                    && columnLength % Q4Layout.BLOCK_SIZE == 0) {
+                new F32Q4DotProductRowsGemmer(output, input, weights, scale, inputColumnStart,
+                        weightColumnStart, columnLength, weightRowStart, weightRowCount, outputColumnStart,
+                        (int) output.shape().first(), 0)
+                        .matmul(providerPool);
+                return Either.Right(null);
+            }
+        }
+        if (threading == Threading.PROVIDER && output.dType() == DType.F32
+                && input.dType() == DType.I8 && weights.dType() == DType.Q4) {
+            TensorRef inputScale = Q8Layout.scale(input);
+            TensorRef weightScale = Q4Layout.scale(weights);
+            if (inputScale != null && weightScale != null && inputColumnStart % Q8Layout.BLOCK_SIZE == 0
+                    && weightColumnStart % Q4Layout.BLOCK_SIZE == 0
+                    && columnLength % Q8Layout.BLOCK_SIZE == 0) {
+                new I8Q4DotProductRowsGemmer(output, input, inputScale, weights, weightScale,
+                        inputColumnStart, weightColumnStart, columnLength, weightRowStart, weightRowCount,
+                        outputColumnStart, (int) output.shape().first(), 0).matmul(providerPool);
+                return Either.Right(null);
+            }
+        }
+        return dotProductRows(output, input, weights, inputColumnStart, weightColumnStart, columnLength,
+                weightRowStart, weightRowCount, outputColumnStart);
     }
 
     @Override
@@ -1341,6 +1520,7 @@ class PanamaOps implements TensorOps {
         return ShortVector.fromMemorySegment(BF16_SPECIES, tensor.memorySegment(), memoryOffset(tensor, row, column),
                         ByteOrder.LITTLE_ENDIAN)
                 .convertShape(VectorOperators.S2I, IntVector.SPECIES_256, 0)
+                .lanewise(VectorOperators.AND, IntVector.broadcast(IntVector.SPECIES_256, 0xffff))
                 .lanewise(VectorOperators.LSHL, BF16_BYTE_SHIFT_256)
                 .reinterpretAsFloats();
     }
@@ -1349,19 +1529,39 @@ class PanamaOps implements TensorOps {
         return ShortVector.fromMemorySegment(ShortVector.SPECIES_256, tensor.memorySegment(),
                         memoryOffset(tensor, row, column), ByteOrder.LITTLE_ENDIAN)
                 .convertShape(VectorOperators.S2I, IntVector.SPECIES_512, 0)
+                .lanewise(VectorOperators.AND, IntVector.broadcast(IntVector.SPECIES_512, 0xffff))
                 .lanewise(VectorOperators.LSHL, 16)
                 .reinterpretAsFloats();
     }
 
-    private record I8Q4DotProductRowsGemmer(TensorRef output, TensorRef input, TensorRef inputScale,
+        private record I8Q4DotProductRowsGemmer(TensorRef output, TensorRef input, TensorRef inputScale,
             TensorRef weights, TensorRef weightScale, int inputColumnStart, int weightColumnStart,
-            int columnLength, int weightRowStart, int weightRowCount, int outputColumnStart) {
+            int columnLength, int weightRowStart, int weightRowCount, int outputColumnStart,
+            int resultRowCount, int inputRowStart) {
         private void matmul() {
-            for (int inputRow = 0; inputRow < input.shape().first(); inputRow++) {
-                for (int row = 0; row < weightRowCount; row++) {
-                    int weightRow = weightRowStart + row;
-                    output.set(dot(inputRow, weightRow), inputRow, outputColumnStart + row);
-                }
+            for (int inputRow = 0; inputRow < resultRowCount; inputRow++) {
+                row(inputRow);
+            }
+        }
+
+        private void matmul(ForkJoinPool pool) {
+            if (resultRowCount <= 1) {
+                matmul();
+                return;
+            }
+            int rows = resultRowCount;
+            ForkJoinTask<?>[] tasks = new ForkJoinTask<?>[rows];
+            for (int inputRow = 0; inputRow < rows; inputRow++) {
+                int row = inputRow;
+                tasks[inputRow] = pool.submit(() -> row(row));
+            }
+            for (ForkJoinTask<?> task : tasks) task.join();
+        }
+
+        private void row(int inputRow) {
+            for (int row = 0; row < weightRowCount; row++) {
+                int weightRow = weightRowStart + row;
+                output.set(dot(inputRow + inputRowStart, weightRow), inputRow, outputColumnStart + row);
             }
         }
 
@@ -1402,13 +1602,32 @@ class PanamaOps implements TensorOps {
 
     private record F32Q4DotProductRowsGemmer(TensorRef output, TensorRef input, TensorRef weights,
             TensorRef weightScale, int inputColumnStart, int weightColumnStart, int columnLength,
-            int weightRowStart, int weightRowCount, int outputColumnStart) {
+            int weightRowStart, int weightRowCount, int outputColumnStart,
+            int resultRowCount, int inputRowStart) {
         private void matmul() {
-            for (int inputRow = 0; inputRow < input.shape().first(); inputRow++) {
-                for (int row = 0; row < weightRowCount; row++) {
-                    int weightRow = weightRowStart + row;
-                    output.set(dot(inputRow, weightRow), inputRow, outputColumnStart + row);
-                }
+            for (int inputRow = 0; inputRow < resultRowCount; inputRow++) {
+                row(inputRow);
+            }
+        }
+
+        private void matmul(ForkJoinPool pool) {
+            if (resultRowCount <= 1) {
+                matmul();
+                return;
+            }
+            int rows = resultRowCount;
+            ForkJoinTask<?>[] tasks = new ForkJoinTask<?>[rows];
+            for (int inputRow = 0; inputRow < rows; inputRow++) {
+                int row = inputRow;
+                tasks[inputRow] = pool.submit(() -> row(row));
+            }
+            for (ForkJoinTask<?> task : tasks) task.join();
+        }
+
+        private void row(int inputRow) {
+            for (int row = 0; row < weightRowCount; row++) {
+                int weightRow = weightRowStart + row;
+                output.set(dot(inputRow + inputRowStart, weightRow), inputRow, outputColumnStart + row);
             }
         }
 
