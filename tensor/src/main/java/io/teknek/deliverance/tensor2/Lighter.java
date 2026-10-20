@@ -940,7 +940,27 @@ public class Lighter {
     }
 
     public TensorRef to(TensorRef a, String device){
-        //ask the allocator to do this
-        return null;
+        Preconditions.checkArgument(a != null, "Source tensor must be set");
+        Preconditions.checkArgument(device != null && !device.isBlank(), "Device must be set");
+        if (a.device().equals(device)) {
+            return a;
+        }
+        TensorRef output = allocate(a.dType(), a.shape(), device);
+        try {
+            long bytes = a.dType() == DType.Q4
+                    ? a.shape().size() / 2L
+                    : a.shape().size() * (long) a.dType().size();
+            if ("cpu".equals(a.device())) {
+                allocator.upload(output, a.memorySegment().asSlice(a.memorySegmentOffset(0), bytes), bytes);
+            } else if ("cpu".equals(device)) {
+                allocator.download(a, output.memorySegment().asSlice(output.memorySegmentOffset(0), bytes), bytes);
+            } else {
+                throw new UnsupportedOperationException("Only CPU/GPU transfers are supported currently");
+            }
+            return output;
+        } catch (RuntimeException e) {
+            output.close();
+            throw e;
+        }
     }
 }

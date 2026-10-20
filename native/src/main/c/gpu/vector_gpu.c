@@ -42,6 +42,14 @@ typedef struct {
 } Params;
 
 typedef struct {
+    WGPUShaderModule shader;
+    WGPUPipelineLayout pipeline_layout;
+    WGPUComputePipeline pipeline;
+    WGPUBindGroupLayout layout;
+    WGPUBuffer params;
+} ScaleRuntime;
+
+typedef struct {
     uint32_t rows;
     uint32_t head_size;
     uint32_t number_of_heads;
@@ -365,6 +373,132 @@ WGPUComputePipeline init_pipeline(WGPUShaderModule shader_module) {
     return pipeline;
 }
 
+WGPUShaderModule create_shader_module(WGPUDevice device, const char* shader_code, size_t shader_size);
+WGPUBuffer create_working_buffer(WGPUDevice device, char const *label, size_t size, WGPUBufferUsage usage);
+
+int64_t register_scale_shader(const char *data, int size) {
+    WGPUShaderModule shader = create_shader_module(device, data, (size_t) size);
+    if (shader == NULL || has_errored) {
+        return -1;
+    }
+
+    WGPUBindGroupLayoutEntry entries[2] = {
+        { .binding = 0, .visibility = WGPUShaderStage_Compute,
+          .buffer = { .type = WGPUBufferBindingType_Storage } },
+        { .binding = 1, .visibility = WGPUShaderStage_Compute,
+          .buffer = { .type = WGPUBufferBindingType_Uniform } }
+    };
+    WGPUBindGroupLayout layout = wgpuDeviceCreateBindGroupLayout(device, &(WGPUBindGroupLayoutDescriptor){
+        .entryCount = 2,
+        .entries = entries
+    });
+    WGPUPipelineLayout pipelineLayout = wgpuDeviceCreatePipelineLayout(device, &(WGPUPipelineLayoutDescriptor){
+        .bindGroupLayoutCount = 1,
+        .bindGroupLayouts = &layout
+    });
+    WGPUComputePipeline pipeline = wgpuDeviceCreateComputePipeline(device, &(WGPUComputePipelineDescriptor){
+        .layout = pipelineLayout,
+        .compute = {
+            .module = shader,
+            .entryPoint = { .data = "main", .length = 4 }
+        }
+    });
+    WGPUBuffer params = create_working_buffer(device, "scale_params", 16,
+            WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+    if (pipeline == NULL || params == NULL) {
+        if (params != NULL) {
+            wgpuBufferDestroy(params);
+            wgpuBufferRelease(params);
+        }
+        if (pipeline != NULL) {
+            wgpuComputePipelineRelease(pipeline);
+        }
+        if (pipelineLayout != NULL) {
+            wgpuPipelineLayoutRelease(pipelineLayout);
+        }
+        if (layout != NULL) {
+            wgpuBindGroupLayoutRelease(layout);
+        }
+        if (shader != NULL) {
+            wgpuShaderModuleRelease(shader);
+        }
+        return -1;
+    }
+    ScaleRuntime *runtime = calloc(1, sizeof(ScaleRuntime));
+    if (runtime == NULL) {
+        wgpuBufferDestroy(params);
+        wgpuBufferRelease(params);
+        wgpuComputePipelineRelease(pipeline);
+        wgpuPipelineLayoutRelease(pipelineLayout);
+        wgpuBindGroupLayoutRelease(layout);
+        wgpuShaderModuleRelease(shader);
+        return -1;
+    }
+    runtime->shader = shader;
+    runtime->pipeline_layout = pipelineLayout;
+    runtime->pipeline = pipeline;
+    runtime->layout = layout;
+    runtime->params = params;
+    return (int64_t) runtime;
+}
+
+void free_scale_shader(int64_t id) {
+    ScaleRuntime *runtime = (ScaleRuntime *) id;
+    if (runtime == NULL) {
+        return;
+    }
+    wgpuBufferDestroy(runtime->params);
+    wgpuBufferRelease(runtime->params);
+    wgpuComputePipelineRelease(runtime->pipeline);
+    wgpuPipelineLayoutRelease(runtime->pipeline_layout);
+    wgpuBindGroupLayoutRelease(runtime->layout);
+    wgpuShaderModuleRelease(runtime->shader);
+    free(runtime);
+}
+
+void gpu_scale_f32(int64_t id, int64_t tensor, float factor, int offset, int length, int rows, int columns) {
+    ScaleRuntime *runtime = (ScaleRuntime *) id;
+    if (runtime == NULL || tensor == 0 || offset < 0 || length <= 0 || rows <= 0 || columns <= 0
+            || offset > columns || length > columns - offset) {
+        return;
+    }
+    struct {
+        float factor;
+        uint32_t offset;
+        uint32_t length;
+        uint32_t columns;
+    } params = { factor, (uint32_t) offset, (uint32_t) length, (uint32_t) columns };
+    wgpuQueueWriteBuffer(queue, runtime->params, 0, &params, sizeof(params));
+    WGPUBindGroupEntry bindings[2] = {
+        { .binding = 0, .buffer = (WGPUBuffer) tensor, .offset = 0, .size = WGPU_WHOLE_SIZE },
+        { .binding = 1, .buffer = runtime->params, .offset = 0, .size = 16 }
+    };
+    WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup(device, &(WGPUBindGroupDescriptor){
+        .layout = runtime->layout,
+        .entryCount = 2,
+        .entries = bindings
+    });
+    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device, &(const WGPUCommandEncoderDescriptor){
+        .label = "scale_f32"
+    });
+    WGPUComputePassEncoder pass = wgpuCommandEncoderBeginComputePass(encoder, &(const WGPUComputePassDescriptor){
+        .label = "scale_f32_pass"
+    });
+    wgpuComputePassEncoderSetPipeline(pass, runtime->pipeline);
+    wgpuComputePassEncoderSetBindGroup(pass, 0, bindGroup, 0, NULL);
+    uint64_t elements = (uint64_t) rows * (uint64_t) length;
+    wgpuComputePassEncoderDispatchWorkgroups(pass, (uint32_t) ((elements + 255) / 256), 1, 1);
+    wgpuComputePassEncoderEnd(pass);
+    wgpuComputePassEncoderRelease(pass);
+    WGPUCommandBuffer command = wgpuCommandEncoderFinish(encoder, &(const WGPUCommandBufferDescriptor){
+        .label = "scale_f32_command"
+    });
+    wgpuQueueSubmit(queue, 1, &command);
+    wgpuCommandBufferRelease(command);
+    wgpuCommandEncoderRelease(encoder);
+    wgpuBindGroupRelease(bindGroup);
+}
+
 void on_error_scope(WGPUPopErrorScopeStatus status,  WGPUErrorType type,  struct WGPUStringView message,  void *userdata1, void *userdata2) {
     bool *oom_flag = (bool*)userdata1;
     if (type == WGPUErrorType_OutOfMemory) {
@@ -450,7 +584,7 @@ int64_t allocate_gpu_buffer(int size, int zero) {
         return -1;
     }
     WGPUBuffer buffer = create_working_buffer(device, "tensor2_dense", (size_t) size,
-            WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
+            WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc | WGPUBufferUsage_CopyDst);
     if (buffer == NULL) {
         return -1;
     }
@@ -476,6 +610,98 @@ void free_gpu_buffer(int64_t id) {
     WGPUBuffer buffer = (WGPUBuffer) id;
     wgpuBufferDestroy(buffer);
     wgpuBufferRelease(buffer);
+}
+
+void upload_gpu_buffer(int64_t id, const void *data, int size) {
+    if (id == 0 || data == NULL || size <= 0) {
+        return;
+    }
+    wgpuQueueWriteBuffer(queue, (WGPUBuffer) id, 0, data, (size_t) size);
+}
+
+typedef struct {
+    WGPUBuffer staging;
+    void *destination;
+    size_t size;
+    bool complete;
+    bool success;
+} DownloadContext;
+
+static void download_map_callback(WGPUMapAsyncStatus status, WGPUStringView message,
+        void *userdata1, void *userdata2) {
+    UNUSED(message)
+    UNUSED(userdata2)
+    DownloadContext *context = (DownloadContext *) userdata1;
+    context->success = status == WGPUMapAsyncStatus_Success;
+    if (context->success) {
+        void const *mapped = wgpuBufferGetConstMappedRange(context->staging, 0, context->size);
+        if (mapped == NULL) {
+            context->success = false;
+        } else {
+            memcpy(context->destination, mapped, context->size);
+        }
+        wgpuBufferUnmap(context->staging);
+    }
+    context->complete = true;
+}
+
+static void download_work_done_callback(WGPUQueueWorkDoneStatus status,
+        void *userdata1, void *userdata2) {
+    UNUSED(userdata2)
+    DownloadContext *context = (DownloadContext *) userdata1;
+    if (status != WGPUQueueWorkDoneStatus_Success) {
+        context->complete = true;
+        context->success = false;
+        return;
+    }
+    WGPUBufferMapCallbackInfo callback = {
+        .mode = WGPUCallbackMode_AllowSpontaneous,
+        .callback = download_map_callback,
+        .userdata1 = context
+    };
+    wgpuBufferMapAsync(context->staging, WGPUMapMode_Read, 0, context->size, callback);
+}
+
+int download_gpu_buffer(int64_t id, void *destination, int size) {
+    if (id == 0 || destination == NULL || size <= 0) {
+        return -1;
+    }
+    WGPUBuffer staging = create_working_buffer(device, "tensor2_readback", (size_t) size,
+            WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst);
+    if (staging == NULL) {
+        return -1;
+    }
+    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device, &(const WGPUCommandEncoderDescriptor){
+            .label = "tensor2_readback_encoder"
+    });
+    wgpuCommandEncoderCopyBufferToBuffer(encoder, (WGPUBuffer) id, 0, staging, 0, (size_t) size);
+    WGPUCommandBuffer command = wgpuCommandEncoderFinish(encoder, &(const WGPUCommandBufferDescriptor){
+            .label = "tensor2_readback_command"
+    });
+    wgpuQueueSubmit(queue, 1, &command);
+
+    DownloadContext context = {
+        .staging = staging,
+        .destination = destination,
+        .size = (size_t) size,
+        .complete = false,
+        .success = false
+    };
+    WGPUQueueWorkDoneCallbackInfo callback = {
+        .mode = WGPUCallbackMode_AllowSpontaneous,
+        .callback = download_work_done_callback,
+        .userdata1 = &context
+    };
+    wgpuQueueOnSubmittedWorkDone(queue, callback);
+    while (!context.complete) {
+        wgpuInstanceProcessEvents(instance);
+    }
+
+    wgpuCommandBufferRelease(command);
+    wgpuCommandEncoderRelease(encoder);
+    wgpuBufferDestroy(staging);
+    wgpuBufferRelease(staging);
+    return context.success ? 0 : -1;
 }
 
 void unregister_tensor(int64_t id) {
@@ -598,14 +824,14 @@ void unregister_scratch_buffers(int64_t id) {
     }
 }
 
-WGPUShaderModule create_shader_module(WGPUDevice device, const char* shader_code) {
+WGPUShaderModule create_shader_module(WGPUDevice device, const char* shader_code, size_t shader_size) {
 
     // Explicitly initialize the chained WGSL descriptor.
     WGPUShaderModuleWGSLDescriptor wgslDesc;
     wgslDesc.chain.sType = WGPUSType_ShaderSourceWGSL; // Expected to be non-zero (e.g. 2)
     wgslDesc.chain.next  = NULL;
     wgslDesc.code.data   = shader_code;
-    wgslDesc.code.length = strlen(shader_code);
+    wgslDesc.code.length = shader_size;
 
     WGPUShaderModuleDescriptor shaderDesc = {
         .label       = "shader",
@@ -639,7 +865,7 @@ int64_t register_shader(const char *data, int size) {
 
     assert(shader_lookup_idx < 1024);
 
-    WGPUShaderModule shader = create_shader_module(device, data);
+    WGPUShaderModule shader = create_shader_module(device, data, (size_t) size);
 
     if (has_errored) {
         return -1;

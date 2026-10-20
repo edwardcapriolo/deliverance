@@ -2,10 +2,41 @@ package io.teknek.deliverance.tensor.operations.gpunative;
 
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.lang.foreign.MemorySegment;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.LongBuffer;
+
+import io.teknek.deliverance.tensor.operations.util.JarSupport;
 
 /** Owns native WebGPU storage buffers without exposing native types to tensor2. */
 public final class GpuBufferAllocator implements AutoCloseable, io.teknek.deliverance.tensor2.DeviceAllocator {
+    private static boolean initialized;
     private final AtomicBoolean closed = new AtomicBoolean();
+
+    public GpuBufferAllocator() {
+        initializeGpu();
+    }
+
+    private static synchronized void initializeGpu() {
+        if (initialized) {
+            return;
+        }
+        if (!JarSupport.maybeLoadLibrary("webgpu_dawn")) {
+            System.loadLibrary("webgpu_dawn");
+        }
+        if (!JarSupport.maybeLoadLibrary("deliverancegpu")) {
+            System.loadLibrary("deliverancegpu");
+        }
+        LongBuffer results = ByteBuffer.allocateDirect(Long.BYTES * 3)
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .asLongBuffer();
+        NativeGPU.init_gpu(MemorySegment.ofBuffer(results));
+        if (results.get(0) < 0) {
+            throw new IllegalStateException("WebGPU device initialization failed");
+        }
+        initialized = true;
+    }
 
     /** Returns the device name used by this allocator. */
     @Override
@@ -37,6 +68,30 @@ public final class GpuBufferAllocator implements AutoCloseable, io.teknek.delive
             throw new IllegalArgumentException("GPU tensor is too large: " + bytes);
         }
         return allocateBuffer((int) bytes, zero).handle();
+    }
+
+    @Override
+    public void upload(long handle, MemorySegment source, long bytes) {
+        if (closed.get()) {
+            throw new IllegalStateException("GPU buffer allocator is closed");
+        }
+        if (bytes > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("GPU upload is too large: " + bytes);
+        }
+        NativeGPU.upload_gpu_buffer(handle, source, (int) bytes);
+    }
+
+    @Override
+    public void download(long handle, MemorySegment destination, long bytes) {
+        if (closed.get()) {
+            throw new IllegalStateException("GPU buffer allocator is closed");
+        }
+        if (bytes > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("GPU download is too large: " + bytes);
+        }
+        if (NativeGPU.download_gpu_buffer(handle, destination, (int) bytes) != 0) {
+            throw new IllegalStateException("GPU buffer download failed");
+        }
     }
 
     /** Releases GPU storage for a device-backed TensorRef. */
