@@ -7,12 +7,15 @@ import io.teknek.dysfx.Either;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import jdk.incubator.vector.FloatVector;
 
 import java.util.Map;
+import java.util.Random;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class BatchDotProductTest {
     @org.junit.jupiter.api.Test
@@ -48,6 +51,49 @@ class BatchDotProductTest {
                     .kernel(GemmKernel.CHUNK);
             assertTrue(new PanamaOps().batchDotProduct(chunk).isRight());
             assertTensorEquals(expected, actual, "BF16 Q4 chunk");
+        }
+    }
+
+    @org.junit.jupiter.api.Test
+    void arm128F32Q4BatchProjectionFuzzMatchesNaive() {
+        assumeTrue(FloatVector.SPECIES_PREFERRED.vectorBitSize() <= 128,
+                "ARM 128-bit TensorRef path only");
+        Random random = new Random(0xF32A4L);
+        for (int test = 0; test < 100; test++) {
+            int columnLength = 32 * (1 + random.nextInt(8));
+            int inputColumnStart = 32 * random.nextInt(3);
+            int weightColumnStart = 32 * random.nextInt(3);
+            int inputColumns = inputColumnStart + columnLength + 32;
+            int weightColumns = weightColumnStart + columnLength + 32;
+            int weightRows = 1 + random.nextInt(96);
+            int weightRowStart = random.nextInt(weightRows);
+            int weightRowCount = 1 + random.nextInt(weightRows - weightRowStart);
+            int outputColumnStart = random.nextInt(4);
+            int outputColumns = outputColumnStart + weightRowStart + weightRowCount;
+
+            Allocator allocator = new Allocator();
+            try (TensorRef input = allocator.allocate(DType.F32, TensorShape.of(1, inputColumns));
+                 TensorRef weights = allocator.allocate(DType.Q4, TensorShape.of(weightRows, weightColumns));
+                 TensorRef expected = allocator.allocate(DType.F32, TensorShape.of(1, outputColumns));
+                 TensorRef actual = allocator.allocate(DType.F32, TensorShape.of(1, outputColumns))) {
+                fill(input, test + 1.0f);
+                fillQ4(weights);
+                BatchDotProduct base = new BatchDotProduct()
+                        .result(expected)
+                        .a(input)
+                        .b(weights)
+                        .aColumnOffset(inputColumnStart)
+                        .bColumnOffset(weightColumnStart)
+                        .columnLength(columnLength)
+                        .resultRowOffset(outputColumnStart)
+                        .bRowOffset(weightRowStart)
+                        .rowChunkSize(weightRowCount);
+                assertTrue(new NaiveOps().batchDotProduct(base).isRight(), "naive case=" + test);
+                BatchDotProduct arm = base.withExecution(GemmKernel.BATCH, Threading.NONE)
+                        .result(actual);
+                assertTrue(new PanamaOps().batchDotProduct(arm).isRight(), "panama case=" + test);
+                assertTensorEquals(expected, actual, "ARM F32Q4 case=" + test);
+            }
         }
     }
 
