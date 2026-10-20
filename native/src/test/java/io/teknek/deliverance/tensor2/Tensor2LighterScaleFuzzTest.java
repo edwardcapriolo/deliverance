@@ -3,8 +3,12 @@ package io.teknek.deliverance.tensor2;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor.operations.gpunative.GpuBufferAllocator;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -14,8 +18,37 @@ import java.util.Random;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class Tensor2LighterScaleFuzzTest {
+    private static GpuBufferAllocator gpuAllocator;
+    private static GpuOps gpuOps;
+    private static Throwable gpuFailure;
+
+    @BeforeAll
+    static void initializeGpuFixture() {
+        try {
+            gpuAllocator = new GpuBufferAllocator();
+            gpuOps = new GpuOps();
+        } catch (Throwable failure) {
+            gpuFailure = failure;
+            if (gpuAllocator != null) {
+                gpuAllocator.close();
+                gpuAllocator = null;
+            }
+        }
+    }
+
+    @AfterAll
+    static void closeGpuFixture() {
+        if (gpuOps != null) {
+            gpuOps.close();
+        }
+        if (gpuAllocator != null) {
+            gpuAllocator.close();
+        }
+    }
+
     private record Case(String name, DType dType, int rows, int columns, int offset, int length, float factor,
             long seed) {
         @Override
@@ -73,6 +106,37 @@ class Tensor2LighterScaleFuzzTest {
         }
     }
 
+    @ParameterizedTest(name = "gpu {0}")
+    @MethodSource("gpuCases")
+    void gpuScaleMatchesReference(Case c) {
+        Assumptions.assumeTrue(gpuFailure == null, "GPU unavailable: " + gpuFailure);
+        MetricRegistry metrics = new MetricRegistry();
+        Lighter lighter = new Lighter(metrics);
+        lighter.registerDeviceAllocator(gpuAllocator);
+        lighter.putTensorOperations(TensorProviderKind.GPU, gpuOps);
+        try (TensorRef source = lighter.allocate(c.dType(), TensorShape.of(c.rows(), c.columns()))) {
+            float[][] expected = fill(source, c.seed());
+            for (int row = 0; row < c.rows(); row++) {
+                for (int column = c.offset(); column < c.offset() + c.length(); column++) {
+                    expected[row][column] *= c.factor();
+                }
+            }
+            try (TensorRef target = lighter.to(source, "gpu")) {
+                assertTrue(lighter.scale(new Scale(c.factor()).target(target)
+                                .offsetAndLength(c.offset(), c.length()), Map.of("case", c.name()),
+                        TensorProviderKind.GPU));
+                try (TensorRef scaled = lighter.to(target, "cpu")) {
+                    for (int row = 0; row < c.rows(); row++) {
+                        for (int column = 0; column < c.columns(); column++) {
+                            assertEquals(expected[row][column], scaled.get(row, column), 1.0e-5f,
+                                    c + " row=" + row + " column=" + column);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     static Stream<Case> cases() {
         List<Case> cases = new ArrayList<>();
         int index = 0;
@@ -101,6 +165,10 @@ class Tensor2LighterScaleFuzzTest {
                     random.nextLong()));
         }
         return cases.stream();
+    }
+
+    static Stream<Case> gpuCases() {
+        return cases().filter(c -> c.dType() == DType.F32);
     }
 
     private static float[][] fill(TensorRef target, long seed) {

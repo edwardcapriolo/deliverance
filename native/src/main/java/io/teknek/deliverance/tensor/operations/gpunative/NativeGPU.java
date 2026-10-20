@@ -259,6 +259,101 @@ public class NativeGPU {
         }
     }
 
+    private static class upload_gpu_buffer {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
+            NativeGPU.C_LONG,
+            NativeGPU.C_POINTER,
+            NativeGPU.C_INT
+        );
+
+        public static final MemorySegment ADDR = NativeGPU.findOrThrow("upload_gpu_buffer");
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /** Uploads host bytes into a device buffer. */
+    public static void upload_gpu_buffer(long id, MemorySegment data, int size) {
+        var mh$ = upload_gpu_buffer.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("upload_gpu_buffer", id, data, size);
+            }
+            mh$.invokeExact(id, data, size);
+        } catch (Throwable ex$) {
+            throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
+    private static class download_gpu_buffer {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.of(
+            NativeGPU.C_INT,
+            NativeGPU.C_LONG,
+            NativeGPU.C_POINTER,
+            NativeGPU.C_INT
+        );
+
+        public static final MemorySegment ADDR = NativeGPU.findOrThrow("download_gpu_buffer");
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    /** Copies device bytes into host storage and waits for completion. */
+    public static int download_gpu_buffer(long id, MemorySegment destination, int size) {
+        var mh$ = download_gpu_buffer.HANDLE;
+        try {
+            if (TRACE_DOWNCALLS) {
+                traceDowncall("download_gpu_buffer", id, destination, size);
+            }
+            return (int) mh$.invokeExact(id, destination, size);
+        } catch (Throwable ex$) {
+            throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
+    private static class register_scale_shader {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.of(
+            NativeGPU.C_LONG, NativeGPU.C_POINTER, NativeGPU.C_INT);
+        public static final MemorySegment ADDR = NativeGPU.findOrThrow("register_scale_shader");
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    public static long register_scale_shader(MemorySegment data, int size) {
+        try {
+            return (long) register_scale_shader.HANDLE.invokeExact(data, size);
+        } catch (Throwable ex$) {
+            throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
+    private static class free_scale_shader {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(NativeGPU.C_LONG);
+        public static final MemorySegment ADDR = NativeGPU.findOrThrow("free_scale_shader");
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    public static void free_scale_shader(long id) {
+        try {
+            free_scale_shader.HANDLE.invokeExact(id);
+        } catch (Throwable ex$) {
+            throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
+    private static class gpu_scale_f32 {
+        public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
+            NativeGPU.C_LONG, NativeGPU.C_LONG, NativeGPU.C_FLOAT, NativeGPU.C_INT, NativeGPU.C_INT,
+            NativeGPU.C_INT, NativeGPU.C_INT);
+        public static final MemorySegment ADDR = NativeGPU.findOrThrow("gpu_scale_f32");
+        public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
+    }
+
+    public static void gpu_scale_f32(long id, long tensor, float factor, int offset, int length,
+            int rows, int columns) {
+        try {
+            gpu_scale_f32.HANDLE.invokeExact(id, tensor, factor, offset, length, rows, columns);
+        } catch (Throwable ex$) {
+            throw new AssertionError("should not reach here", ex$);
+        }
+    }
+
     private static class register_scratch_buffers {
         public static final FunctionDescriptor DESC = FunctionDescriptor.of(
             NativeGPU.C_LONG,

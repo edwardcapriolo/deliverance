@@ -4,6 +4,8 @@ import com.google.common.base.Preconditions;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.TensorShape;
 
+import java.lang.foreign.MemorySegment;
+
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -53,6 +55,20 @@ class Allocator {
     void registerDeviceAllocator(DeviceAllocator allocator) {
         DeviceAllocator value = java.util.Objects.requireNonNull(allocator, "allocator");
         deviceAllocators.put(value.device(), value);
+    }
+
+    void upload(TensorRef target, MemorySegment source, long bytes) {
+        DeviceAllocator deviceAllocator = deviceAllocators.get(target.device());
+        Preconditions.checkArgument(deviceAllocator != null, "No allocator registered for device %s",
+                target.device());
+        deviceAllocator.upload(target.deviceHandle(), source, bytes);
+    }
+
+    void download(TensorRef source, MemorySegment destination, long bytes) {
+        DeviceAllocator deviceAllocator = deviceAllocators.get(source.device());
+        Preconditions.checkArgument(deviceAllocator != null, "No allocator registered for device %s",
+                source.device());
+        deviceAllocator.download(source.deviceHandle(), destination, bytes);
     }
 
     private TensorRef allocateDense(DType dType, TensorShape shape, String device, Map<String, TensorRef> sidecars,

@@ -15,6 +15,14 @@ int64_t allocate_gpu_buffer(int size, int zero);
 
 void free_gpu_buffer(int64_t id);
 
+void upload_gpu_buffer(int64_t id, const void *data, int size);
+
+int download_gpu_buffer(int64_t id, void *destination, int size);
+
+int64_t register_scale_shader(const char *data, int size);
+void free_scale_shader(int64_t id);
+void gpu_scale_f32(int64_t id, int64_t tensor, float factor, int offset, int length, int rows, int columns);
+
 int64_t register_scratch_buffers(int params_size, int input_size, int result_size);
 
 void unregister_scratch_buffers(int64_t id);
