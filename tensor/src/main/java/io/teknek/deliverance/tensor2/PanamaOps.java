@@ -1337,7 +1337,7 @@ class PanamaOps implements TensorOps {
             this.operation = operation;
         }
 
-        final void matmul() {
+        void matmul() {
             TensorRef result = operation.result();
             int bEnd = operation.bRowOffset() + operation.rowChunkSize();
             for (int resultRow = 0; resultRow < result.shape().first(); resultRow++) {
@@ -1408,6 +1408,59 @@ class PanamaOps implements TensorOps {
         F32Q4BatchDotProductGemmer(BatchDotProduct operation, TensorRef weightScale) {
             super(operation);
             this.weightScale = weightScale;
+        }
+
+        @Override
+        void matmul() {
+            if (FloatVector.SPECIES_PREFERRED.vectorBitSize() <= 128) {
+                matmulArm128();
+                return;
+            }
+            super.matmul();
+        }
+
+        private void matmulArm128() {
+            TensorRef result = operation.result();
+            int end = operation.bRowOffset() + operation.rowChunkSize();
+            for (int resultRow = 0; resultRow < result.shape().first(); resultRow++) {
+                int inputRow = operation.aRowOffset() + resultRow;
+                for (int weightRow = operation.bRowOffset(); weightRow < end; weightRow++) {
+                    result.set(dotArm128(inputRow, weightRow), resultRow,
+                            operation.resultRowOffset() + weightRow);
+                }
+            }
+        }
+
+        private float dotArm128(int inputRow, int weightRow) {
+            TensorRef a = operation.a();
+            TensorRef b = operation.b();
+            FloatVector sum = FloatVector.zero(FloatVector.SPECIES_128);
+            int inputColumn = operation.aColumnOffset();
+            int weightColumn = operation.bColumnOffset();
+            int end = operation.aColumnOffset() + operation.columnLength();
+            for (; inputColumn < end;
+                    inputColumn += Q4Layout.BLOCK_SIZE, weightColumn += Q4Layout.BLOCK_SIZE) {
+                float scale = weightScale.get(weightRow, Q4Layout.blockIndex(weightColumn));
+                ByteVector packedWeights = ByteVector.fromMemorySegment(ByteVector.SPECIES_128,
+                        b.memorySegment(), memoryOffset(b, weightRow, weightColumn), ByteOrder.LITTLE_ENDIAN);
+                ByteVector low = packedWeights.lanewise(VectorOperators.AND, Q4_MASK).sub(Q4_ZERO);
+                ByteVector high = packedWeights.lanewise(VectorOperators.LSHR, Q4_SHIFT).sub(Q4_ZERO);
+                FloatVector blockSum = FloatVector.zero(FloatVector.SPECIES_128);
+                for (int part = 0; part < 4; part++) {
+                    FloatVector inputPart = FloatVector.fromMemorySegment(FloatVector.SPECIES_128,
+                            a.memorySegment(), memoryOffset(a, inputRow, inputColumn + part * 4),
+                            ByteOrder.LITTLE_ENDIAN);
+                    blockSum = inputPart.fma(low.castShape(FloatVector.SPECIES_128, part), blockSum);
+                }
+                for (int part = 0; part < 4; part++) {
+                    FloatVector inputPart = FloatVector.fromMemorySegment(FloatVector.SPECIES_128,
+                            a.memorySegment(), memoryOffset(a, inputRow,
+                                    inputColumn + Q4Layout.HALF_BLOCK + part * 4), ByteOrder.LITTLE_ENDIAN);
+                    blockSum = inputPart.fma(high.castShape(FloatVector.SPECIES_128, part), blockSum);
+                }
+                sum = blockSum.fma(FloatVector.broadcast(FloatVector.SPECIES_128, scale), sum);
+            }
+            return sum.reduceLanes(VectorOperators.ADD);
         }
 
         @Override

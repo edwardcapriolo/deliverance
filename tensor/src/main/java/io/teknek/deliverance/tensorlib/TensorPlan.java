@@ -11,11 +11,14 @@ import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.tensor2.CompositeOps;
+import io.teknek.deliverance.tensor2.BatchDotProduct;
+import io.teknek.deliverance.tensor2.GemmKernel;
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.MultiplyInPlace;
 import io.teknek.deliverance.tensor2.Scale;
 import io.teknek.deliverance.tensor2.TensorProviderKind;
 import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.tensor2.Threading;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -1019,10 +1022,8 @@ public final class TensorPlan {
             TensorRef output = lighter.allocate(DType.F32, TensorShape.of(batchSize, outputLength));
             TensorRef downInput = null;
             try {
-                lighter.dotProductRows(gate, inputEval.tensor(), gateWeightEval.tensor(), 0, embeddingLength,
-                        0, hiddenLength, 0);
-                lighter.dotProductRows(up, inputEval.tensor(), upWeightEval.tensor(), 0, embeddingLength,
-                        0, hiddenLength, 0);
+                projectBatch(gate, inputEval.tensor(), gateWeightEval.tensor(), embeddingLength, hiddenLength);
+                projectBatch(up, inputEval.tensor(), upWeightEval.tensor(), embeddingLength, hiddenLength);
                 for (int row = 0; row < batchSize; row++) {
                     for (int column = 0; column < hiddenLength; column++) {
                         gate.set(ActivationFunction.eval(activation, gate.get(row, column)), row, column);
@@ -1031,8 +1032,7 @@ public final class TensorPlan {
                 lighter.multiplyAccumulate(new io.teknek.deliverance.tensor2.MultiplyAccumulate(up)
                         .into(gate).offsetAndLength(0, hiddenLength));
                 downInput = gate.dType() == quantizedType ? gate : lighter.reshape(gate, quantizedType);
-                lighter.dotProductRows(output, downInput, downWeightEval.tensor(), 0, hiddenLength,
-                        0, outputLength, 0);
+                projectBatch(output, downInput, downWeightEval.tensor(), hiddenLength, outputLength);
                 closeRefIfOwned(inputEval);
                 closeRefIfOwned(gateWeightEval);
                 closeRefIfOwned(upWeightEval);
@@ -1056,6 +1056,22 @@ public final class TensorPlan {
                 closeRefIfOwned(downWeightEval);
                 throw e;
             }
+        }
+
+        private void projectBatch(TensorRef output, TensorRef input, TensorRef weights,
+                int columnLength, int rowCount) {
+            lighter.batchDotProduct(new BatchDotProduct()
+                    .result(output)
+                    .a(input)
+                    .b(weights)
+                    .aColumnOffset(0)
+                    .bColumnOffset(0)
+                    .columnLength(columnLength)
+                    .resultRowOffset(0)
+                    .bRowOffset(0)
+                    .rowChunkSize(rowCount)
+                    .kernel(GemmKernel.BATCH)
+                    .threading(Threading.PROVIDER));
         }
 
         @Override
