@@ -54,5 +54,5 @@ java \
   -Dserver.undertow.accesslog.dir=${DELIVERANCE_ACCESS_LOG_DIR:-./logs} \
   -Dserver.undertow.accesslog.prefix=access_log \
   -Dserver.undertow.accesslog.suffix=.log \
-  -Dspring.config.location=file:./antares-1b.properties \
+  -Dspring.config.location=file:./antares-1b.yaml \
   -jar target/web-*-SNAPSHOT.jar

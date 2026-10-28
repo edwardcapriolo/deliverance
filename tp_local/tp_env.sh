@@ -33,7 +33,7 @@ TP_RUN_DIR="$TP_LOCAL_DIR/run"
 TP_LOG_DIR="$TP_LOCAL_DIR/logs"
 TP_TMP_DIR="$TP_RUN_DIR/tmp"
 TP_MAIN_CLASS="io.teknek.deliverance.benchmark.TpLocalCluster"
-TP_COORDINATOR_CONFIG="$TP_LOCAL_DIR/coordinator.properties"
+TP_COORDINATOR_CONFIG="$TP_LOCAL_DIR/coordinator.yaml"
 OS_NAME=$(uname -s)
 OS_ARCH=$(uname -m)
 case "$OS_NAME:$OS_ARCH" in

@@ -28,6 +28,15 @@ public class EmbeddingControllerTest {
 
     @Test
     public void whenUsingSpringBootTestArgs_thenCommandLineArgSet(@Autowired Environment env) throws Exception {
+        String serveRequest = """
+                {"owner":"sentence-transformers","name":"all-MiniLM-L6-v2","type":"EMBEDDING"}
+                """;
+        mockMvc.perform(MockMvcRequestBuilders.post("/api/serve")
+                        .with(httpBasic("1","2"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(serveRequest))
+                .andExpect(status().isOk());
+
         CreateEmbeddingRequest request = new CreateEmbeddingRequest();
         request.setModel(new CreateEmbeddingRequestModel("all-MiniLM-L6-v2"));
         request.setInput(new CreateEmbeddingRequestInput("This is it"));

@@ -1,0 +1,40 @@
+model:
+  owner: edwardcapriolo
+  name: Qwen3-4B-JQ4
+  type: GENERATION
+  config:
+    outputHeadQuantization: Q4
+deliverance:
+  tensor:
+    operations:
+      simd:
+        parallel-split-size: 32
+  pool-size: 16
+  grouped-decode-qkv-split-size: 8
+  gpu:
+    provider: true
+    prefill: true
+    decode: false
+    decode-attention: false
+  kv:
+    prefix:
+      mode: SHARED_BLOCKS
+      max-tokens: 8192
+      block-size: 32
+    context-rows-per-page-target: 32
+    shared-prefix:
+      block-cache:
+        max-bytes: 1073741824
+      disk-cache:
+        enabled: true
+        path: /tmp/kvcache
+        max-bytes: 2147483648
+        reserved-free-bytes: 1073741824
+        min-usable-bytes: 1073741824
+        admit-min-tokens: 128
+        writer-queue-size: 128
+    block-storage-policy: DENSE
+    turboquant:
+      bits: 4
+    key-dtype: I8
+    value-dtype: I8

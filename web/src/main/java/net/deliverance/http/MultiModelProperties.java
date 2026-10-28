@@ -55,6 +55,9 @@ import java.util.function.BooleanSupplier;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+
+
+/*
 @Component
 @ConfigurationProperties(prefix = "deliverance-model")
 public class MultiModelProperties {
@@ -211,7 +214,7 @@ class MultiModelConfiguration {
     }
 
     private CausalLanguageModel causalLanguageModelFromConfig(MultiModelConfig config){
-        ModelFetcher fetch = new ModelFetcher(config.getModelOwner(),config.getModelName());
+        ModelFetcher fetch = new ModelFetcher(config.getModelOwner(), config.getModelName());
         AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(fetch)
                 .withMetricRegistry(metricRegistry)
                 .withTensorAllocator(arrayQueueTensorAllocator)
@@ -224,8 +227,10 @@ class MultiModelConfiguration {
         if (maxPrefillBatchSize > 0) {
             builder.withMaxPrefillBatchSize(maxPrefillBatchSize);
         }
+
         builder.withGpuPrefill(gpuPrefill)
                 .withGpuDecode(gpuDecode)
+
                 .withGpuDecodeAttention(gpuDecodeAttention)
                 .withGpuProvider(gpuProvider);
         if (simdParallelSplitSize > 0) {
@@ -347,7 +352,7 @@ class MultiModelConfiguration {
         return settings;
     }
 }
-
+*/
 class TensorParallelSpringCausalLanguageModel implements CausalLanguageModel {
     private static final Logger LOGGER = LoggerFactory.getLogger(TensorParallelSpringCausalLanguageModel.class);
     private static final long RECONCILE_INTERVAL_MILLIS = 500;

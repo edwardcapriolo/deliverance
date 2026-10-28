@@ -29,12 +29,19 @@ public class ModelControllerTest {
 
     @Test
     public void listModels(@Autowired Environment env) throws Exception {
-        String expected = """
-                {"object":"list","data":[{"id":"TinyLlama-1.1B-Chat-v1.0-Jlama-Q4","created":0,"object":"model","owned_by":"tjake"},{"id":"all-MiniLM-L6-v2","created":0,"object":"model","owned_by":"sentence-transformers"}]}""";
+        String serveRequest = """
+                {"owner":"sentence-transformers","name":"all-MiniLM-L6-v2","type":"EMBEDDING"}
+                """;
+        mockMvc.perform(MockMvcRequestBuilders.post("/api/serve")
+                        .with(httpBasic("1","2"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(serveRequest))
+                .andExpect(status().isOk());
+
         mockMvc.perform(MockMvcRequestBuilders.get("/models")
                         .with(httpBasic("1","2"))
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
-                .andExpect(content().string(expected));
+                .andExpect(content().string("{\"object\":\"list\",\"data\":[{\"id\":\"all-MiniLM-L6-v2\",\"created\":0,\"object\":\"model\",\"owned_by\":\"sentence-transformers\"}]}") );
     }
 }

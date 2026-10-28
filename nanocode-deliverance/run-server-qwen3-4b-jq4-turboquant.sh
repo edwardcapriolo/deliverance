@@ -73,5 +73,5 @@ java \
   -Dserver.undertow.accesslog.dir=${DELIVERANCE_ACCESS_LOG_DIR:-./logs} \
   -Dserver.undertow.accesslog.prefix=access_log \
   -Dserver.undertow.accesslog.suffix=.log \
-  -Dspring.config.location=file:./qwen3-4b-jq4-turboquant.properties \
+  -Dspring.config.location=file:./qwen3-4b-jq4-turboquant.yaml \
   -jar "$WEB_JAR"

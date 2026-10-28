@@ -89,6 +89,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ListModelsResponse"
+  /api/serve:
+    post:
+      operationId: serveModel
+      tags:
+        - Models
+      summary: Load a cached model into the running server
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServeRequest"
+      responses:
+        "200":
+          description: Model loaded into the running server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServeResponse"
+        "400":
+          description: Invalid request
+        "429":
+          description: Another model is currently being loaded
+        "501":
+          description: The requested inference type is not supported
+  /api/fetch:
+    post:
+      operationId: fetchModel
+      tags:
+        - Models
+      summary: Download a model into the local Deliverance cache
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FetchRequest"
+      responses:
+        "200":
+          description: Model is available in the local cache
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FetchResponse"
+        "400":
+          description: Invalid request
+        "502":
+          description: Model download failed
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -96,6 +144,69 @@ components:
       scheme: "bearer"
 
   schemas:
+    ServeRequest:
+      type: object
+      required:
+        - owner
+        - name
+        - type
+      properties:
+        owner:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum:
+            - EMBEDDING
+            - GENERATION
+        config:
+          type: object
+          additionalProperties: true
+    ServeResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - READY
+            - FAILED
+        owner:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        error:
+          type: string
+    FetchRequest:
+      type: object
+      required:
+        - owner
+        - name
+      properties:
+        owner:
+          type: string
+        name:
+          type: string
+    FetchResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - READY
+            - FAILED
+        owner:
+          type: string
+        name:
+          type: string
+        error:
+          type: string
     Embedding:
       type: object
       description: |

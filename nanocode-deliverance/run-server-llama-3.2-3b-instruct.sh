@@ -36,5 +36,5 @@ java \
   -Dserver.undertow.accesslog.dir=${DELIVERANCE_ACCESS_LOG_DIR:-./logs} \
   -Dserver.undertow.accesslog.prefix=access_log \
   -Dserver.undertow.accesslog.suffix=.log \
-  -Dspring.config.location=file:./llama-3.2-3b-instruct.properties \
+  -Dspring.config.location=file:./llama-3.2-3b-instruct.yaml \
   -jar target/web-*-SNAPSHOT.jar
