@@ -9,6 +9,7 @@ import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.model.*;
 import io.teknek.deliverance.model.Error;
 import io.teknek.deliverance.model.ReasoningFieldNames;
+import io.teknek.deliverance.model.ServeRequest;
 import io.teknek.deliverance.safetensors.prompt.Tool;
 import io.teknek.dysfx.Either;
 import org.junit.jupiter.api.Test;
@@ -44,6 +45,18 @@ public class ChatCompletionControllerTest {
 
     @Test
     public void whenUsingSpringBootTestArgs_thenCommandLineArgSet(@Autowired Environment env) throws Exception {
+        ServeRequest serveRequest = new ServeRequest()
+                .owner("tjake")
+                .name("TinyLlama-1.1B-Chat-v1.0-Jlama-Q4")
+                .type(ServeRequest.TypeEnum.GENERATION)
+                .config(Map.of("download", false));
+        JSON j = new JSON();
+        mockMvc.perform(MockMvcRequestBuilders.post("/api/serve")
+                        .with(httpBasic("1","2"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(j.getMapper().writeValueAsString(serveRequest)))
+                .andExpect(status().isOk());
+
         CreateChatCompletionRequest request = new CreateChatCompletionRequest()
                 .model("TinyLlama-1.1B-Chat-v1.0-Jlama-Q4")
                 .stop(null);
@@ -51,7 +64,6 @@ public class ChatCompletionControllerTest {
                 new ChatCompletionRequestUserMessage().content(
                         new ChatCompletionRequestUserMessageContent("Generate the first letter of the alphabet is"))));
 
-        JSON j = new JSON();
         String s = j.getMapper().writeValueAsString(request);
             mockMvc.perform(MockMvcRequestBuilders.post("/chat/completions")
                             .with(httpBasic("1","2"))
@@ -76,13 +88,21 @@ public class ChatCompletionControllerTest {
                 new ChatCompletionRequestUserMessage().content(
                         new ChatCompletionRequestUserMessageContent("Generate the first letter of the alphabet is"))));
 
-        request.addToolsItem(new ChatCompletionTool().function( new FunctionObject().name("some tool")));
+        request.addToolsItem(new ChatCompletionTool().function(new FunctionObject()
+                .name("some tool")
+                .description("test tool")
+                .parameters(Map.of("type", "object", "properties", Map.of()))));
         CausalLanguageModel m = Mockito.mock(CausalLanguageModel.class);
-        JSON j = new JSON();
+        io.teknek.deliverance.safetensors.prompt.PromptSupport promptSupport = Mockito.mock(io.teknek.deliverance.safetensors.prompt.PromptSupport.class);
+        io.teknek.deliverance.safetensors.prompt.PromptSupport.Builder builder = Mockito.mock(io.teknek.deliverance.safetensors.prompt.PromptSupport.Builder.class);
+        Mockito.when(m.promptSupport()).thenReturn(Optional.of(promptSupport));
+        Mockito.when(promptSupport.builder()).thenReturn(builder);
 
         Either<Error, PreparedRequest> response = ChatCompletionService.mapRequest(new HashMap<>(), m , request);
-        //Right<Error,PreparedRequest> right = (Right<Error,PreparedRequest>) response;
-        //PreparedRequest req = (PreparedRequest) response.productElement(0);
+        Object mapped = response.productElement(0);
+        assertTrue(mapped instanceof PreparedRequest, () -> "tool request mapping failed: " + mapped);
+        Mockito.verify(builder).addToolItem(Mockito.argThat(tool ->
+                "some tool".equals(tool.getFunction().getName())));
 
     }
 

@@ -36,5 +36,5 @@ java \
   -Dserver.undertow.accesslog.dir=${DELIVERANCE_ACCESS_LOG_DIR:-./logs} \
   -Dserver.undertow.accesslog.prefix=access_log \
   -Dserver.undertow.accesslog.suffix=.log \
-  -Dspring.config.location=file:./tinyllama-chat.properties \
+  -Dspring.config.location=file:./tinyllama-chat.yaml \
   -jar target/web-*-SNAPSHOT.jar

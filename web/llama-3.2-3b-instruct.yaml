@@ -1,0 +1,4 @@
+model:
+  owner: tjake
+  name: Llama-3.2-3B-Instruct-JQ4
+  type: GENERATION

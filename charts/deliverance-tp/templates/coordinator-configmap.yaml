@@ -6,27 +6,34 @@ metadata:
     app.kubernetes.io/name: {{ include "deliverance-tp.name" . }}
     app.kubernetes.io/component: coordinator
 data:
-  application.properties: |
-    server.port={{ .Values.coordinator.service.port }}
-    deliverance.tensor.operations.type={{ .Values.tensorOperations.type }}
-    deliverance-model.configs[0].model-owner={{ .Values.model.owner }}
-    deliverance-model.configs[0].model-name={{ .Values.model.name }}
-    deliverance-model.configs[0].inference-type=GENERATION
-    deliverance-model.configs[0].output-head-quantization={{ .Values.model.outputHeadQuantization }}
-    deliverance-model.configs[0].tensor-parallel.enabled=true
-    deliverance-model.configs[0].tensor-parallel.cluster={{ .Values.tensorParallel.cluster }}
-    deliverance-model.configs[0].tensor-parallel.node-id=${POD_IP}
-    deliverance-model.configs[0].tensor-parallel.uri=udp://${POD_IP}:{{ .Values.tensorParallel.gossipPort }}
-    deliverance-model.configs[0].tensor-parallel.deployment={{ .Values.tensorParallel.deployment }}
-    deliverance-model.configs[0].tensor-parallel.collective-transport={{ .Values.tensorParallel.collectiveTransport }}
-    deliverance-model.configs[0].tensor-parallel.assignment-mode={{ .Values.tensorParallel.assignmentMode }}
-    deliverance-model.configs[0].tensor-parallel.size={{ .Values.tensorParallel.size }}
-    deliverance-model.configs[0].tensor-parallel.max-ranks-per-worker={{ .Values.tensorParallel.maxRanksPerWorker }}
-    deliverance-model.configs[0].tensor-parallel.ready-timeout-seconds={{ .Values.tensorParallel.readyTimeoutSeconds }}
-    deliverance-model.configs[0].tensor-parallel.rank-endpoint-timeout-seconds={{ .Values.tensorParallel.rankEndpointTimeoutSeconds }}
-    deliverance-model.configs[0].tensor-parallel.rank-connect-timeout-seconds={{ .Values.tensorParallel.rankConnectTimeoutSeconds }}
-    deliverance-model.configs[0].tensor-parallel.rank-request-timeout-seconds={{ .Values.tensorParallel.rankRequestTimeoutSeconds }}
-    deliverance-model.configs[0].tensor-parallel.rank-operation-timeout-seconds={{ .Values.tensorParallel.rankOperationTimeoutSeconds }}
-    deliverance-model.configs[0].tensor-parallel.rank-close-timeout-seconds={{ .Values.tensorParallel.rankCloseTimeoutSeconds }}
-    deliverance.kv.prefix.max-entries=0
-    deliverance.kv.prefix.max-tokens=0
+  application.yaml: |
+    server:
+      port: {{ .Values.coordinator.service.port }}
+    model:
+      owner: {{ .Values.model.owner }}
+      name: {{ .Values.model.name }}
+      type: GENERATION
+      config:
+        outputHeadQuantization: {{ .Values.model.outputHeadQuantization }}
+    tensorParallel:
+      enabled: true
+      cluster: {{ .Values.tensorParallel.cluster }}
+      node-id: ${POD_IP}
+      uri: udp://${POD_IP}:{{ .Values.tensorParallel.gossipPort }}
+      deployment: {{ .Values.tensorParallel.deployment }}
+      collective-transport: {{ .Values.tensorParallel.collectiveTransport }}
+      assignment-mode: {{ .Values.tensorParallel.assignmentMode }}
+      size: {{ .Values.tensorParallel.size }}
+      max-ranks-per-worker: {{ .Values.tensorParallel.maxRanksPerWorker }}
+      ready-timeout-seconds: {{ .Values.tensorParallel.readyTimeoutSeconds }}
+      rank-endpoint-timeout-seconds: {{ .Values.tensorParallel.rankEndpointTimeoutSeconds }}
+      rank-connect-timeout-seconds: {{ .Values.tensorParallel.rankConnectTimeoutSeconds }}
+      rank-request-timeout-seconds: {{ .Values.tensorParallel.rankRequestTimeoutSeconds }}
+      rank-operation-timeout-seconds: {{ .Values.tensorParallel.rankOperationTimeoutSeconds }}
+      rank-close-timeout-seconds: {{ .Values.tensorParallel.rankCloseTimeoutSeconds }}
+      output-head-quantization: {{ .Values.tensorParallel.outputHeadQuantization }}
+    deliverance:
+      kv:
+        prefix:
+          max-entries: 0
+          max-tokens: 0

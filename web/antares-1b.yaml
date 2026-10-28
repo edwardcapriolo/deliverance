@@ -1,0 +1,23 @@
+model:
+  owner: edwardcapriolo
+  name: antares-1b-JQ4
+  type: GENERATION
+  config:
+    outputHeadQuantization: Q4
+deliverance:
+  gpu:
+    provider: true
+  max-prefill-batch-size: 2048
+  kv:
+    prefix:
+      max-tokens: 8192
+      mode: SHARED_BLOCKS
+      checkpoint-policy: START_AND_END
+      max-checkpoints: 12
+      compression: MSE_TURBOQUANT
+      turboquant:
+        bits: 4
+    shared-prefix:
+      block-cache:
+        max-bytes: 2147483648
+    context-rows-per-page-target: 32

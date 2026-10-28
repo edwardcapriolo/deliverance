@@ -1,0 +1,16 @@
+model:
+  owner: edwardcapriolo
+  name: Qwen3-4B-JQ4
+  type: GENERATION
+  config:
+    outputHeadQuantization: Q4
+deliverance:
+  kv:
+    prefix:
+      max-tokens: 8192
+      checkpoint-policy: START_AND_END
+      max-checkpoints: 12
+      compression: MSE_TURBOQUANT
+      turboquant:
+        bits: 4
+    context-rows-per-page-target: 32

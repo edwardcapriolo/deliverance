@@ -1,0 +1,15 @@
+model:
+  owner: edwardcapriolo
+  name: Qwen3-0.6B-JQ4
+  type: GENERATION
+  config:
+    outputHeadQuantization: Q4
+deliverance:
+  kv:
+    prefix:
+      max-entries: 0
+      max-tokens: 0
+      checkpoint-policy: START_AND_END
+      max-checkpoints: 12
+      compression: NONE
+    context-rows-per-page-target: 32

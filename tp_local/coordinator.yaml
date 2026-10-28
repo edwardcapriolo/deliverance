@@ -1,0 +1,34 @@
+server:
+  port: ${TP_WEB_PORT:8080}
+
+model:
+  owner: ${TP_OWNER:tjake}
+  name: ${TP_MODEL:gemma-2-2b-it-JQ4}
+  type: GENERATION
+
+tensorParallel:
+  enabled: true
+  cluster: ${TP_CLUSTER:deliverance-tp-local}
+  node-id: coordinator
+  uri: udp://${TP_HOST:127.0.0.1}:${TP_COORDINATOR_PORT:42606}
+  seeds:
+    - coordinator=udp://${TP_HOST:127.0.0.1}:${TP_COORDINATOR_PORT:42606}
+    - node-0=udp://${TP_HOST:127.0.0.1}:${TP_NODE0_PORT:42604}
+    - node-1=udp://${TP_HOST:127.0.0.1}:${TP_NODE1_PORT:42605}
+  deployment: ${TP_DEPLOYMENT:benchmark}
+  collective-transport: ${TP_COLLECTIVE_TRANSPORT:netty}
+  size: ${TP_SIZE:4}
+  max-ranks-per-worker: ${TP_MAX_RANKS_PER_WORKER:2}
+  ready-timeout-seconds: ${TP_READY_TIMEOUT_SECONDS:120}
+  rank-endpoint-timeout-seconds: ${TP_RANK_ENDPOINT_TIMEOUT_SECONDS:300}
+  rank-connect-timeout-seconds: ${TP_RANK_CONNECT_TIMEOUT_SECONDS:5}
+  rank-request-timeout-seconds: ${TP_RANK_REQUEST_TIMEOUT_SECONDS:30}
+  rank-operation-timeout-seconds: ${TP_RANK_OPERATION_TIMEOUT_SECONDS:60}
+  rank-close-timeout-seconds: ${TP_RANK_CLOSE_TIMEOUT_SECONDS:10}
+  output-head-quantization: ${TP_OUTPUT_HEAD_QUANTIZATION:Q4}
+
+deliverance:
+  kv:
+    prefix:
+      max-entries: 0
+      max-tokens: 0

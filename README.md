@@ -167,7 +167,7 @@ to the data directory. To stage the data initially replace ~/.deliverance:/home/
 ```sh
 docker run -p 8085:8080 \
 -it -v ~/.deliverance:/home/deliverance/.deliverance:ro \
--e DELIVERANCE_OPTS=" -Dspring.config.location=file:/deliverance/simple.properties " ecapriolo/deliverance:0.0.5
+-e DELIVERANCE_OPTS=" -Dspring.config.location=file:/deliverance/simple.yaml " ecapriolo/deliverance:0.0.5
 ```
 
 After it starts up you can use the embedding-test.sh to issue a simple request:

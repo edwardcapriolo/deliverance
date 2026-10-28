@@ -27,7 +27,7 @@ RUN apk add --no-cache bash libstdc++ \
 COPY --from=deliverance-build /build/deliverance/web/target/web-*.jar /deliverance/web.jar
 COPY entry_point.sh /deliverance/entry_point.sh
 COPY inlinerules.json /deliverance/inlinerules.json
-COPY simple.properties /deliverance/
+COPY simple.yaml /deliverance/
 
 RUN chmod 755 /deliverance/entry_point.sh
 WORKDIR /deliverance
