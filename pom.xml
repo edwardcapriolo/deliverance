@@ -67,6 +67,7 @@
         <module>web</module>
         <module>grace</module>
         <module>client</module>
+        <module>inferj-cli</module>
         <module>client-spring</module>
         <module>spring-ai-deliverance</module>
         <module>spring-ai-deliverance-embedded</module>
