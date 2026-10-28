@@ -8,6 +8,7 @@ import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -50,6 +51,33 @@ public class ClassificationTest {
                     .orElseThrow()
                     .getKey();
             assertEquals("en", predicted);
+        }
+    }
+
+    @Test
+    public void classifyXlmRobertaLanguages() {
+        Map<String, String> samples = new LinkedHashMap<>();
+        samples.put("This is English.", "en");
+        samples.put("Bonjour tout le monde.", "fr");
+        samples.put("Das ist Deutsch.", "de");
+        samples.put("Hola, ¿cómo estás?", "es");
+        samples.put("これは日本語です。", "ja");
+        samples.put("Привет, как дела?", "ru");
+
+        try (AbstractModel model = AutoModelForSequenceClassification
+                .newBuilder(new ModelFetcher("papluca", "xlm-roberta-base-language-detection"))
+                .build()) {
+            for (Map.Entry<String, String> sample : samples.entrySet()) {
+                Map<String, Float> result = model.classify(sample.getKey(), PoolingType.MODEL);
+                assertEquals(20, result.size(), sample.getKey());
+                assertEquals(1.0f, result.values().stream().mapToDouble(Float::doubleValue).sum(), 0.001,
+                        sample.getKey());
+                String predicted = result.entrySet().stream()
+                        .max(Map.Entry.comparingByValue())
+                        .orElseThrow()
+                        .getKey();
+                assertEquals(sample.getValue(), predicted, sample.getKey());
+            }
         }
     }
 }

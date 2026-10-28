@@ -254,7 +254,8 @@ The Java design should follow the modular architecture, not the generated-file l
 3. Compare Java logits/probabilities with Hugging Face for those same sentences.
 4. Run the Sentence Transformers feature-extraction and sequence-classification contract
    tests that apply to the implementation.
-5. Run core tests with the Panama provider and native SIMD provider where available.
+5. Run XLM-R core tests with the tensor2 Panama provider and native SIMD provider where
+   available.
 6. Benchmark classification latency only after parity passes.
 
 ## HF Architecture Reference
@@ -477,20 +478,16 @@ reference implementation and this repository's tensor architecture:
 - Avoid test-only shortcuts that cannot scale to the full XLM-R base checkpoint.
 - Measure classification latency and memory behavior after numerical parity is established.
 
-## Execution Paths
+## Execution Path Scope
 
-The port must preserve both existing execution paths during this effort:
+XLM-R targets tensor2 / `TensorRef` execution only.
 
-- Tensor2 / `TensorRef` execution is the primary production path for BERT-family forward
-  inference.
-- Tensor1 / `AbstractTensor` execution remains supported for existing model utilities,
-  direct embedding tests, legacy block tests, and other model families sharing the base
-  lifecycle.
-
-The shared BERT-family abstraction must therefore keep both weight-loading paths and both
-embedding/forward paths behaviorally aligned. RoBERTa and XLM-R model-family hooks must be
-applied to both paths; the tensor2 path must not be correct only because the tensor1 path is
-left untouched.
+- The existing BERT regression tests remain required while this refactor is in progress.
+- No new tensor1 / `AbstractTensor` parity work is required for RoBERTa or XLM-R.
+- Tensor1 removal is planned for the following PR and is not a feature-completion gate for
+  this port.
+- XLM-R loading, embeddings, encoder execution, and classification use tensor2 operations
+  and their available Panama/native provider paths.
 
 ## Test Porting Rules
 
@@ -524,7 +521,7 @@ The model is not considered supported until all gates pass:
    documented tolerance.
 4. Classification logits and probabilities match the upstream reference.
 5. Label names and scores are returned through the public Java API correctly.
-6. Ported tests pass on the standard Java tensor path.
+6. Ported tests pass on the tensor2 Java path.
 7. Provider parity tests pass for Panama and native SIMD where available.
 8. The full relevant `core` test set passes.
 9. A benchmark records classification throughput and latency on the development machine.
@@ -548,6 +545,6 @@ behavior.
 
 - A plausible classifier with unverified output parity
 - A tokenizer implemented only for the example sentences
-- A scalar reference implementation presented as production support
+- A scalar or tensor1 reference implementation presented as production support
 - Reusing BERT behavior where XLM-R semantics differ
 - Declaring support based only on successful model loading
