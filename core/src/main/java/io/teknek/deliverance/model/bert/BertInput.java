@@ -10,6 +10,19 @@ import java.util.Arrays;
  * to every batch row.</p>
  */
 public final class BertInput {
+    /**
+     * Creates flattened, row-major position IDs for an encoder input.
+     *
+     * <p>The returned array must contain exactly {@code batchSize * sequenceLength}
+     * entries. Each batch row occupies one contiguous sequence-length slice. The input
+     * IDs and attention mask are supplied because model families such as RoBERTa assign
+     * padding positions differently from ordinary BERT.</p>
+     */
+    @FunctionalInterface
+    public interface PositionIdGenerator {
+        int[] generate(int[] inputIds, int[] attentionMask, int batchSize, int sequenceLength);
+    }
+
     private final int[] inputIds;
     private final int[] attentionMask;
     private final int[] tokenTypeIds;
@@ -19,6 +32,12 @@ public final class BertInput {
 
     public BertInput(int[] inputIds, int[] attentionMask, int[] tokenTypeIds, int[] positionIds,
             int batchSize, int sequenceLength) {
+        this(inputIds, attentionMask, tokenTypeIds, positionIds, batchSize, sequenceLength,
+                (ids, mask, size, length) -> defaultPositionIds(size, length, 0));
+    }
+
+    public BertInput(int[] inputIds, int[] attentionMask, int[] tokenTypeIds, int[] positionIds,
+            int batchSize, int sequenceLength, PositionIdGenerator positionIdGenerator) {
         if (batchSize <= 0) {
             throw new IllegalArgumentException("batchSize must be positive");
         }
@@ -30,7 +49,8 @@ public final class BertInput {
         this.attentionMask = copyOrDefault(attentionMask, flattenedLength, 1, "attention_mask");
         this.tokenTypeIds = copyOrDefault(tokenTypeIds, flattenedLength, 0, "token_type_ids");
         this.positionIds = positionIds == null
-                ? defaultPositionIds(batchSize, sequenceLength, 0)
+                ? copyRequired(positionIdGenerator.generate(this.inputIds, this.attentionMask,
+                batchSize, sequenceLength), flattenedLength, "position_ids")
                 : copyRequired(positionIds, flattenedLength, "position_ids");
         this.batchSize = batchSize;
         this.sequenceLength = sequenceLength;

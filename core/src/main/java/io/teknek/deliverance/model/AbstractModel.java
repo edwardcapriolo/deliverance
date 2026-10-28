@@ -1275,7 +1275,29 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         if (this.classifyOutput == null){
             throw new UnsupportedOperationException("classifyOutput was not setup");
         }
+        return classifyInput(input, poolingType);
+    }
+
+    /**
+     * Runs the model-specific classification path for one input.
+     *
+     * <p>The default path preserves the existing BERT-style behavior by embedding the
+     * input first and applying a single projection. Encoder families whose classifier
+     * consumes unpooled sequence output can override this method.</p>
+     */
+    protected SortedMap<String, Float> classifyInput(String input, PoolingType poolingType) {
         float[] embedding = embed(input, poolingType);
+        return classifyEmbedding(embedding);
+    }
+
+    /**
+     * Applies the model's classification head to one encoded representation.
+     *
+     * <p>The default implementation preserves the original single linear projection
+     * behavior. Model families with a multi-stage head can override this seam without
+     * changing the public {@link #classify(String, PoolingType)} API.</p>
+     */
+    protected SortedMap<String, Float> classifyEmbedding(float[] embedding) {
         FloatBufferTensor b = new FloatBufferTensor(FloatBuffer.wrap(embedding), TensorShape.of(embedding.length), false);
         int classes = classifyOutput.getClassificationWeights().shape().first();
         //AbstractTensor scores = makeDenseTensor(classes);

@@ -35,6 +35,7 @@ public class AutoTokenizer {
             JsonNode modelConfigDocument = readOptionalJson(objectMapper, new File(path, "config.json"));
 
             Map<String, Integer> vocab = readVocab(path, tokenizerDocument, objectMapper);
+            UnigramModel unigramModel = parseUnigramModel(tokenizerDocument, vocab);
             SortedMap<Integer, AddedToken> addedTokenMap = computeSortedTokenMap(tokenizerDocument.path("added_tokens"));
             if (addedTokenMap.isEmpty()) {
                 addedTokenMap = computeSortedTokenMap(tokenizerConfigDocument == null ? null : tokenizerConfigDocument.path("added_tokens_decoder"));
@@ -71,6 +72,11 @@ public class AutoTokenizer {
                 return new BertTokenizer(new LinkedHashMap<>(), Optional.empty(), Optional.empty(), Optional.empty(),
                         Optional.empty(), Optional.empty(), Optional.empty(), inputs,
                         vocab, addedTokenMap, tokenizerConfig, bytePairEncodingModel);
+            }
+            if ("XLMRobertaTokenizer".equals(tokenizerClass)) {
+                return new XlmRobertaTokenizer(new LinkedHashMap<>(), Optional.empty(), Optional.empty(), Optional.empty(),
+                        Optional.empty(), Optional.empty(), Optional.empty(), inputs,
+                        vocab, addedTokenMap, tokenizerConfig, unigramModel);
             }
 
             throw new io.teknek.dysfx.exception.UnreachableException("Could not find implementation " + tokenizerClass);
@@ -141,7 +147,31 @@ public class AutoTokenizer {
             return objectMapper.convertValue(modelVocab, new TypeReference<Map<String, Integer>>() {
             });
         }
+        if (modelVocab.isArray()) {
+            Map<String, Integer> unigramVocab = new LinkedHashMap<>();
+            for (int index = 0; index < modelVocab.size(); index++) {
+                JsonNode entry = modelVocab.get(index);
+                if (entry.isArray() && entry.size() > 0) {
+                    unigramVocab.put(entry.get(0).asText(), index);
+                }
+            }
+            return unigramVocab;
+        }
         return Map.of();
+    }
+
+    private static UnigramModel parseUnigramModel(JsonNode tokenizerDocument, Map<String, Integer> vocab) {
+        JsonNode model = tokenizerDocument.path("model");
+        if (!"Unigram".equals(model.path("type").asText()) || !model.path("vocab").isArray()) {
+            return null;
+        }
+        Map<String, Float> scores = new LinkedHashMap<>();
+        for (JsonNode entry : model.path("vocab")) {
+            if (entry.isArray() && entry.size() > 1) {
+                scores.put(entry.get(0).asText(), entry.get(1).floatValue());
+            }
+        }
+        return new UnigramModel(vocab, scores, model.path("unk_id").asInt(3));
     }
 
     private static TokenizerConfig parseTokenizerConfig(File path, JsonNode tokenizerDocument,

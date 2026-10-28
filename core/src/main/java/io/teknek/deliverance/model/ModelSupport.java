@@ -7,6 +7,7 @@ import io.teknek.deliverance.grace.AutoTokenizer;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.bert.BertModelType;
+import io.teknek.deliverance.model.bert.XlmRobertaModelType;
 import io.teknek.deliverance.model.diffusiongemma.DiffusionGemmaModelType;
 import io.teknek.deliverance.model.embeddinggemma2.EmbeddingGemma2ModelType;
 import io.teknek.deliverance.model.gemma2.Gemma2ModelType;
@@ -58,6 +59,7 @@ public class ModelSupport {
 
     static {
         registry.putIfAbsent("BERT", new BertModelType());
+        registry.putIfAbsent("XLM-ROBERTA", new XlmRobertaModelType());
         registry.putIfAbsent("LLAMA", new LlamaModelType());
         registry.putIfAbsent("QWEN2", new Qwen2ModelType());
         registry.putIfAbsent("QWEN3", new Qwen3ModelType());
