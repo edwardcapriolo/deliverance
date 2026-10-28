@@ -2,6 +2,7 @@ package io.teknek.sketches;
 
 import com.google.common.collect.BiMap;
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.CausalLanguageModel;
 import io.teknek.sketches.types.ContextFreeGrammar;
 import io.teknek.sketches.types.JsonSchema;
 import io.teknek.sketches.types.Regex;
@@ -63,6 +64,10 @@ class SteerableGenerator {
     }
 }
 public class Sketches {
+
+    public static SketchesGenerator generator(CausalLanguageModel model) {
+        return new SketchesGenerator(model);
+    }
 
 
 
