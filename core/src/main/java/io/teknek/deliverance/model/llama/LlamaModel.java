@@ -210,7 +210,7 @@ public class LlamaModel extends AbstractModel {
     /** Enables the TensorRef path only for the concrete Llama family, not its subclasses. */
     @Override
     protected boolean usesTensorRefExecution() {
-        return getClass() == LlamaModel.class;
+        return getClass() == LlamaModel.class || getClass() == io.teknek.deliverance.model.mistral.MistralModel.class;
     }
 
     @Override
@@ -220,7 +220,7 @@ public class LlamaModel extends AbstractModel {
 
     @Override
     protected TransformerBlock2[] loadTransformerBlockWeights2() {
-        if (getClass() != LlamaModel.class) {
+        if (getClass() != LlamaModel.class && getClass() != io.teknek.deliverance.model.mistral.MistralModel.class) {
             throw new UnsupportedOperationException("TensorRef Llama blocks are concrete-Llama only");
         }
         if (tensorParallelContext.enabled()) {

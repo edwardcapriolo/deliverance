@@ -34,16 +34,26 @@ abstract class AbstractQwen3BenchmarkCasesIT {
         return Optional.empty();
     }
 
+    protected boolean downloadModel() {
+        return false;
+    }
+
+    protected Optional<String> expectedResponse(String caseId, int turn) {
+        return Optional.empty();
+    }
+
     @Test
     void firstTwoBenchmarkCases() {
         boolean previousProfiling = InferenceProfiler.isEnabled();
         InferenceProfiler.setEnabled(true);
-        ModelFetcher fetch = new ModelFetcher(owner(), modelName()).withDownload(false);
-        Assumptions.assumeTrue(fetch.pathForModel().toFile().isDirectory(),
-                modelName() + " cache is not present: " + fetch.pathForModel());
+        ModelFetcher fetch = new ModelFetcher(owner(), modelName()).withDownload(downloadModel());
+        if (!downloadModel()) {
+            Assumptions.assumeTrue(fetch.pathForModel().toFile().isDirectory(),
+                    modelName() + " cache is not present: " + fetch.pathForModel());
+        }
 
         AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(fetch)
-                .withDownload(false);
+                .withDownload(downloadModel());
         configPath().ifPresent(path -> builder.withConfig(AutoModelConfig.fromJson(resolveRepoPath(path))));
 
         try (AbstractModel model = builder.buildLocalTransformerModel()) {
@@ -58,7 +68,7 @@ abstract class AbstractQwen3BenchmarkCasesIT {
         }
     }
 
-    private static void runCase(AbstractModel model, String modelName, String caseId, List<String> turns) {
+    private void runCase(AbstractModel model, String modelName, String caseId, List<String> turns) {
         List<ChatMessage> messages = new ArrayList<>();
         for (int turn = 0; turn < turns.size(); turn++) {
             messages.add(new ChatMessage("user", turns.get(turn)));
@@ -87,6 +97,9 @@ abstract class AbstractQwen3BenchmarkCasesIT {
             }
             System.out.println();
             System.out.println("[deliverance-response-end]");
+            expectedResponse(caseId, turnNumber).ifPresent(expected ->
+                    assertEquals(expected, response.responseText,
+                            "Unexpected deterministic response for " + caseId + " turn " + turnNumber));
             messages.add(new ChatMessage("assistant", response.responseText));
             double generationMs = Math.max(0.0, response.totalTimeMs - response.timeToFirstTokenMs);
             long decodeTokens = Math.max(0, response.generatedTokens.size() - 1L);
