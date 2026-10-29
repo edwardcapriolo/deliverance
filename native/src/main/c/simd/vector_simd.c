@@ -483,7 +483,8 @@ void activation_multiply_quantize_silu_q8(const float *gate, const float *up, ch
             float inv_scale = max_abs != 0.0f ? 127.0f / max_abs : 0.0f;
             scale_row[col / Q8_BLOCK_SIZE] = scale;
             for (int i = 0; i < Q8_BLOCK_SIZE; i++) {
-                out_row[col + i] = (char) (block[i] * inv_scale + 0.5f);
+                // Match Java Math.round: floor(value + 0.5), including negative values.
+                out_row[col + i] = (char) floorf(block[i] * inv_scale + 0.5f);
             }
         }
     }

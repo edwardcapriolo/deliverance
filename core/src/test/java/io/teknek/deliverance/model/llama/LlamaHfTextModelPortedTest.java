@@ -168,6 +168,30 @@ public class LlamaHfTextModelPortedTest implements HfConfigTesterMixinPort, HfMo
     }
 
     @Test
+    public void tinyLlamaParityByDTypeStage() {
+        Path modelDir = writeTinyCheckpoint(tempDir.resolve("llama-tiny-dtype-stages"), tinyConfig(), 204);
+
+        // Stage 1: all F32 isolates model operation ordering and math from quantization.
+        assertDTypeStageParity(modelDir, Optional.empty(), DType.F32, "all-F32");
+
+        // Stage 2: Q4 weights with F32 activations isolates weight packing and Q4 kernels.
+        assertDTypeStageParity(modelDir, Optional.of(DType.Q4), DType.F32, "Q4-weights-F32-activations");
+
+        // Stage 3: Q4 weights with I8 working values includes activation quantization.
+        assertDTypeStageParity(modelDir, Optional.of(DType.Q4), DType.I8, "Q4-weights-I8-activations");
+    }
+
+    private void assertDTypeStageParity(Path modelDir, Optional<DType> modelQType, DType workingQType,
+            String label) {
+        try (LlamaModel tensorRef = loadLlamaModel(modelDir, true, modelQType, workingQType);
+             LlamaModel legacy = loadLlamaModel(modelDir, false, modelQType, workingQType);
+             AbstractTensor refOutput = tensorRef.batchForward(hfSampleTokenIds(), 0);
+             AbstractTensor legacyOutput = legacy.batchForward(hfSampleTokenIds(), 0)) {
+            assertPrefillTensorsClose(legacyOutput, refOutput, 1.0e-3f, label);
+        }
+    }
+
+    @Test
     public void tinyLegacyAndTensorRefStageTraceMatches() {
         Path modelDir = writeTinyCheckpoint(tempDir.resolve("llama-tiny-stage-parity"), tinyConfig(), 201);
         Map<String, float[]> tensorRefTrace = new LinkedHashMap<>();
@@ -518,6 +542,17 @@ public class LlamaHfTextModelPortedTest implements HfConfigTesterMixinPort, HfMo
         return loadLlamaModel(modelDir, tensorRefExecution, Optional.empty());
     }
 
+    private static LlamaModel loadLlamaModel(Path modelDir, boolean tensorRefExecution,
+            Optional<DType> modelQType, DType workingQType) {
+        MetricRegistry metrics = new MetricRegistry();
+        TensorAllocator allocator = new ArrayQueueTensorAllocator(metrics);
+        WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+        return loadLlamaModel(modelDir, tensorRefExecution, Optional.empty(),
+                modelQType, workingQType, new StaticTensorParallelContext(0, 1),
+                new SingleRankTensorParallelCollectives(),
+                new ConfigurableTensorProvider(new NaiveTensorOperations()), metrics, allocator, pool);
+    }
+
     static LlamaModel loadLlamaModel(Path modelDir, boolean tensorRefExecution,
             Optional<DType> outputHeadQuantization) {
         MetricRegistry metrics = new MetricRegistry();
@@ -533,7 +568,20 @@ public class LlamaHfTextModelPortedTest implements HfConfigTesterMixinPort, HfMo
             TensorParallelCollectives tensorParallelCollectives, ConfigurableTensorProvider provider,
             MetricRegistry metrics, TensorAllocator allocator, WrappedForkJoinPool pool) {
         LlamaModel model = createLlamaModel(modelDir, tensorRefExecution, outputHeadQuantization,
+                Optional.of(DType.Q4), DType.I8,
                 tensorParallelContext, tensorParallelCollectives, provider, metrics, allocator, pool);
+        model.init();
+        return model;
+    }
+
+    private static LlamaModel loadLlamaModel(Path modelDir, boolean tensorRefExecution,
+            Optional<DType> outputHeadQuantization, Optional<DType> modelQType, DType workingQType,
+            TensorParallelContext tensorParallelContext, TensorParallelCollectives tensorParallelCollectives,
+            ConfigurableTensorProvider provider, MetricRegistry metrics, TensorAllocator allocator,
+            WrappedForkJoinPool pool) {
+        LlamaModel model = createLlamaModel(modelDir, tensorRefExecution, outputHeadQuantization,
+                modelQType, workingQType, tensorParallelContext, tensorParallelCollectives, provider, metrics,
+                allocator, pool);
         model.init();
         return model;
     }
@@ -542,19 +590,28 @@ public class LlamaHfTextModelPortedTest implements HfConfigTesterMixinPort, HfMo
             Optional<DType> outputHeadQuantization, TensorParallelContext tensorParallelContext,
             TensorParallelCollectives tensorParallelCollectives, ConfigurableTensorProvider provider,
             MetricRegistry metrics, TensorAllocator allocator, WrappedForkJoinPool pool) {
+        return createLlamaModel(modelDir, tensorRefExecution, outputHeadQuantization, Optional.of(DType.Q4), DType.I8,
+                tensorParallelContext, tensorParallelCollectives, provider, metrics, allocator, pool);
+    }
+
+    private static LlamaModel createLlamaModel(Path modelDir, boolean tensorRefExecution,
+            Optional<DType> outputHeadQuantization, Optional<DType> modelQType, DType workingQType,
+            TensorParallelContext tensorParallelContext, TensorParallelCollectives tensorParallelCollectives,
+            ConfigurableTensorProvider provider, MetricRegistry metrics, TensorAllocator allocator,
+            WrappedForkJoinPool pool) {
         LlamaModel model;
         if (tensorRefExecution) {
             // LlamaModel's TensorRef loader deliberately requires the concrete class.
             model = new LlamaModel(AbstractModel.InferenceType.FULL_GENERATION,
                     configFromFile(modelDir), new DefaultWeightLoader(modelDir.toFile()),
-                    Mockito.mock(PreTrainedTokenizer.class), DType.F32, DType.I8, Optional.of(DType.Q4),
+                    Mockito.mock(PreTrainedTokenizer.class), DType.F32, workingQType, modelQType,
                     provider, metrics, allocator,
                     new KvBufferCacheSettings(true), new DefaultToolCallParser(), pool,
                     tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
         } else {
             model = new LlamaModel(AbstractModel.InferenceType.FULL_GENERATION,
                     configFromFile(modelDir), new DefaultWeightLoader(modelDir.toFile()),
-                    Mockito.mock(PreTrainedTokenizer.class), DType.F32, DType.I8, Optional.of(DType.Q4),
+                    Mockito.mock(PreTrainedTokenizer.class), DType.F32, workingQType, modelQType,
                     provider, metrics, allocator,
                     new KvBufferCacheSettings(true), new DefaultToolCallParser(), pool,
                     tensorParallelContext, tensorParallelCollectives, outputHeadQuantization) {

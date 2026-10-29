@@ -4,6 +4,8 @@ import com.google.common.base.Preconditions;
 import io.dropwizard.metrics5.MetricName;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.dropwizard.metrics5.Timer;
+import io.teknek.deliverance.DType;
+import io.teknek.deliverance.math.ActivationFunction;
 import net.jafama.FastMath;
 import jdk.incubator.vector.FloatVector;
 import jdk.incubator.vector.VectorOperators;
@@ -68,10 +70,24 @@ public final class CompositeOps {
             owned = true;
         }
         try {
-            if (lighter.activationMultiplyQuantize(operation).isLeft()) {
-                throw new UnsupportedOperationException("No composite provider supports activationMultiplyQuantize");
+            if (lighter.activationMultiplyQuantize(operation).isRight()) {
+                return output;
             }
-            return output;
+            TensorRef hidden = lighter.allocate(DType.F32, operation.gate().shape());
+            try {
+                for (int row = 0; row < operation.gate().shape().first(); row++) {
+                    for (int column = operation.offset(); column < operation.offset() + operation.length(); column++) {
+                        hidden.set(ActivationFunction.eval(operation.activation(), operation.gate().get(row, column))
+                                * operation.up().get(row, column), row, column);
+                    }
+                }
+                TensorRef quantized = lighter.reshape(hidden, operation.qtype());
+                lighter.copyStorage(quantized, output);
+                quantized.close();
+                return output;
+            } finally {
+                hidden.close();
+            }
         } catch (RuntimeException | Error e) {
             if (owned) {
                 output.close();

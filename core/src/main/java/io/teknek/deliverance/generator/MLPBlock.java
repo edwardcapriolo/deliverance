@@ -325,7 +325,7 @@ public class MLPBlock implements FeedForward {
                 // bufq is whatever the base down_proj matmul itself consumes; LoraDeltaApplier dequantizes it to
                 // match loraA's dtype internally -- see step 4 plan Section 11 item 9 (revised).
                 model.activeLoraDeltaFor(downWeightName).ifPresent(delta -> LoraDeltaApplier.apply(model, result, bufq, delta));
-                return result;
+                 return result;
             }
         }
         }

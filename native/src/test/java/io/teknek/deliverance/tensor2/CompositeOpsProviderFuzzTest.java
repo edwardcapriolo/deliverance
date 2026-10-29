@@ -2,6 +2,7 @@ package io.teknek.deliverance.tensor2;
 
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
+import io.teknek.deliverance.math.ActivationFunction;
 import io.teknek.deliverance.tensor.TensorShape;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -243,6 +244,52 @@ class CompositeOpsProviderFuzzTest {
         }
     }
 
+    @ParameterizedTest(name = "activation multiply quantize {0}")
+    @MethodSource("providers")
+    void compositeActivationMultiplyQuantizeMatchesReferenceAcrossQwenLlamaShapes(Provider provider) {
+        assume(provider);
+        Lighter lighter = strict(provider);
+        CompositeOps composite = new CompositeOps(lighter);
+        Random random = new Random(0x4C414D4C); // LAML
+        int[] widths = {64, 3072, 9728};
+        for (int iteration = 0; iteration < 48; iteration++) {
+            int rows = 1 + random.nextInt(5);
+            int width = widths[random.nextInt(widths.length)];
+            int offset = random.nextInt(width / 32) * 32;
+            int length = (1 + random.nextInt((width - offset) / 32)) * 32;
+            try (TensorRef gate = lighter.allocate(DType.F32, TensorShape.of(rows, width));
+                 TensorRef up = lighter.allocate(DType.F32, TensorShape.of(rows, width))) {
+                fill(gate, random.nextInt());
+                fill(up, random.nextInt());
+                try (TensorRef output = composite.activationMultiplyQuantize(new ActivationMultiplyQuantize(
+                        gate, up, ActivationFunction.Type.SILU, DType.I8).offsetAndLength(offset, length))) {
+                for (int row = 0; row < rows; row++) {
+                    for (int column = offset; column < offset + length; column += Q8Layout.BLOCK_SIZE) {
+                        float maxAbs = 0.0f;
+                        for (int i = 0; i < Q8Layout.BLOCK_SIZE; i++) {
+                            float hidden = ActivationFunction.eval(ActivationFunction.Type.SILU,
+                                    gate.get(row, column + i)) * up.get(row, column + i);
+                            maxAbs = Math.max(maxAbs, Math.abs(hidden));
+                        }
+                        float expectedScale = maxAbs / 127.0f;
+                        float actualScale = Q8Layout.scale(output).get(row, column / Q8Layout.BLOCK_SIZE);
+                        assertEquals(expectedScale, actualScale, 1.0e-6f,
+                                "iteration=" + iteration + " row=" + row + " block=" + column);
+                        for (int i = 0; i < Q8Layout.BLOCK_SIZE; i++) {
+                            float hidden = ActivationFunction.eval(ActivationFunction.Type.SILU,
+                                    gate.get(row, column + i)) * up.get(row, column + i);
+                            float expected = expectedScale == 0.0f ? 0.0f
+                                    : (float) Math.floor(hidden / expectedScale + 0.5f) * expectedScale;
+                            assertEquals(expected, output.get(row, column + i), 1.0e-4f,
+                                    "iteration=" + iteration + " row=" + row + " column=" + (column + i));
+                        }
+                    }
+                }
+                }
+            }
+        }
+    }
+
 
     static Stream<Arguments> providers() {
         return Stream.of(
@@ -253,7 +300,12 @@ class CompositeOpsProviderFuzzTest {
     }
 
     private static Lighter strict(Provider provider) {
-        return new Lighter(new MetricRegistry(), Map.of(provider.kind(), provider.ops()));
+        Map<TensorProviderKind, TensorOps> providers = new java.util.EnumMap<>(TensorProviderKind.class);
+        providers.put(provider.kind(), provider.ops());
+        if (provider.kind() != TensorProviderKind.PANAMA) {
+            providers.put(TensorProviderKind.PANAMA, new PanamaOps());
+        }
+        return new Lighter(new MetricRegistry(), providers);
     }
 
     private static void assume(Provider provider) {
