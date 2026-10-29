@@ -1,16 +1,10 @@
 package io.teknek.deliverance.embedding;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.dropwizard.metrics5.MetricRegistry;
-import io.teknek.deliverance.DType;
 import io.teknek.deliverance.JsonUtils;
-import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.model.ModelSupport;
+import io.teknek.deliverance.model.AutoModelForEmbeddings;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
-import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
-import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -29,12 +23,7 @@ class EmbeddingGemma2ReferenceParityTest {
     void matchesPythonReferenceForKnownDocument() throws Exception {
         ModelFetcher fetcher = new ModelFetcher("google", "embeddinggemma-2");
         File modelDirectory = fetcher.maybeDownload();
-        MetricRegistry metrics = new MetricRegistry();
-        ArrayQueueTensorAllocator allocator = new ArrayQueueTensorAllocator(metrics);
-        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
-             AbstractModel model = ModelSupport.loadEmbeddingModel(modelDirectory, DType.F32, DType.F32,
-                     new ConfigurableTensorProvider(allocator, pool), metrics, allocator,
-                     new KvBufferCacheSettings(true))) {
+        try (AbstractModel model = AutoModelForEmbeddings.newBuilder(fetcher).buildLocalEmbeddingModel()) {
             int[] tokenIds = model.getTokenizer().encode(TEXT).inputIds();
             JsonNode reference = referenceFixture();
             assertEquals(reference.get("text").asText(), TEXT);

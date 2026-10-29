@@ -1,14 +1,9 @@
 package io.teknek.deliverance.model;
 
-import io.dropwizard.metrics5.MetricRegistry;
-import io.teknek.deliverance.DType;
+import io.teknek.deliverance.model.AutoModelForEmbeddings;
 import io.teknek.deliverance.embedding.PoolingType;
 import io.teknek.deliverance.math.VectorMathUtils;
-import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
-import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
-import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
@@ -26,12 +21,7 @@ public class TestModels {
         ModelFetcher fetch = new ModelFetcher(modelOwner, modelName);
         File localModelPath = fetch.maybeDownload();
 
-        MetricRegistry mr = new MetricRegistry();
-        ArrayQueueTensorAllocator arrayQueueTensorAllocator = new ArrayQueueTensorAllocator(mr);
-        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
-            ConfigurableTensorProvider provider = new ConfigurableTensorProvider(arrayQueueTensorAllocator, pool);
-            AbstractModel model = ModelSupport.loadEmbeddingModel(localModelPath, DType.F32, DType.F32, provider,
-                    mr, arrayQueueTensorAllocator, new KvBufferCacheSettings(true));
+        try (AbstractModel model = AutoModelForEmbeddings.newBuilder(fetch).buildLocalEmbeddingModel()) {
             Assertions.assertEquals(384, model.getConfig().embeddingLength, "LEAF model should have 384 embedding dimensions");
 
             String query1 = "What is artificial intelligence?";
@@ -110,6 +100,5 @@ public class TestModels {
             //logger.info("Performance: {} embeddings in {}ms, avg {}ms per embedding", iterations, elapsed, String.format("%.2f", avgTime));
 
             model.close();
-        }
     }
 }

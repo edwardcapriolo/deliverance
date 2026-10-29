@@ -1,14 +1,9 @@
 package io.teknek.deliverance.embedding;
 
-import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
-import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.model.ModelSupport;
+import io.teknek.deliverance.model.AutoModelForEmbeddings;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
-import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -24,12 +19,10 @@ public class EmbeddingTest {
     @Test
     void embeddingAvg(){
         ModelFetcher fetch = new ModelFetcher("edwardcapriolo", "all-MiniLM-L6-v2-JQ4");
-        File f = fetch.maybeDownload();
-        MetricRegistry mr = new MetricRegistry();
-        ArrayQueueTensorAllocator arrayQueueTensorAllocator = new ArrayQueueTensorAllocator(mr);
-        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
-             AbstractModel model = ModelSupport.loadEmbeddingModel(f, DType.F32, DType.F32, new ConfigurableTensorProvider(arrayQueueTensorAllocator, pool),
-                new MetricRegistry(), arrayQueueTensorAllocator, new KvBufferCacheSettings(true))) {
+         AutoModelForEmbeddings.Builder builder = AutoModelForEmbeddings.newBuilder(fetch);
+         builder.withWorkingMemoryType(DType.F32);
+         builder.withWorkingQuantType(DType.F32);
+         try (AbstractModel model = builder.buildLocalEmbeddingModel()) {
             int [] ids = model.getTokenizer().encode(text).inputIds();
             assertEquals("[101, 2023, 2003, 1037, 3231, 6254, 2055, 3698, 4083, 102]", Arrays.toString(ids));
             float[] embedding = model.embed(text, PoolingType.AVG);
@@ -40,39 +33,13 @@ public class EmbeddingTest {
     @Test
     void embeddingModel(){
         ModelFetcher fetch = new ModelFetcher("edwardcapriolo", "all-MiniLM-L6-v2-JQ4");
-        File f = fetch.maybeDownload();
-        MetricRegistry mr = new MetricRegistry();
-        ArrayQueueTensorAllocator arrayQueueTensorAllocator = new ArrayQueueTensorAllocator(mr);
-
-        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
-                     AbstractModel model = ModelSupport.loadEmbeddingModel(f, DType.F32, DType.F32, new ConfigurableTensorProvider(arrayQueueTensorAllocator, pool),
-                new MetricRegistry(), arrayQueueTensorAllocator, new KvBufferCacheSettings(true))) {
+         AutoModelForEmbeddings.Builder builder = AutoModelForEmbeddings.newBuilder(fetch);
+         builder.withWorkingMemoryType(DType.F32);
+         builder.withWorkingQuantType(DType.F32);
+         try (AbstractModel model = builder.buildLocalEmbeddingModel()) {
                 int[] ids = model.getTokenizer().encode(text).inputIds();
                 assertEquals("[101, 2023, 2003, 1037, 3231, 6254, 2055, 3698, 4083, 102]", Arrays.toString(ids));
                 model.embed(text, PoolingType.MODEL);
         }
     }
-/*
-    public static void main (String [] args){
-        String text = "This is a test document about machine learning";
-        ModelFetcher fetch = new ModelFetcher("edwardcapriolo", "all-MiniLM-L6-v2-JQ4");
-        File f = fetch.maybeDownload();
-        MetricRegistry mr = new MetricRegistry();
-        TensorCache tensorCache = new TensorCache(mr);
-        try (//WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
-             WrappedForkJoinPool pool = new WrappedForkJoinPool(new ForkJoinPool(16, ForkJoinPool.defaultForkJoinWorkerThreadFactory, null, true));
-             AbstractModel model = ModelSupport.loadEmbeddingModel(f, DType.F32, DType.F32, new ConfigurableTensorProvider(tensorCache, pool),
-                     new MetricRegistry(), tensorCache, new KvBufferCacheSettings(true))) {
-            long start = System.currentTimeMillis();
-            for (int i=0;i<1000; i++) {
-                int[] ids = model.getTokenizer().encode(text).inputIds();
-                assertEquals("[101, 2023, 2003, 1037, 3231, 6254, 2055, 3698, 4083, 102]", Arrays.toString(ids));
-                float[] embedding = model.embed(text, PoolingType.MODEL);
-                assertEquals(0.043238960206508636, embedding[0], 0.0000001);
-                assertEquals(-0.051459357142448425, embedding[1], 0.0000001);
-            }
-            long end = System.currentTimeMillis();
-            System.out.println((end-start) / 1000);
-        }
-    }*/
 }

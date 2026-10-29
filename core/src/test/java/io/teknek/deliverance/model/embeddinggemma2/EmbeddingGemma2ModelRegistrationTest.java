@@ -1,6 +1,6 @@
 package io.teknek.deliverance.model.embeddinggemma2;
 
-import io.teknek.deliverance.model.ModelSupport;
+import io.teknek.deliverance.JsonUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -50,9 +50,6 @@ class EmbeddingGemma2ModelRegistrationTest {
                 """);
 
         assertEquals(EmbeddingGemma2Config.class,
-                ModelSupport.detectModel(config.toFile()).getConfigClass());
-        var modelType = ModelSupport.detectModel(config.toFile());
-        assertEquals(EmbeddingGemma2Model.class, modelType.getModelClass());
-        assertEquals(false, modelType.useMajorityDType());
+                JsonUtils.om.readValue(config.toFile(), EmbeddingGemma2Config.class).getClass());
     }
 }

@@ -1,17 +1,11 @@
 package io.teknek.deliverance.embedding;
 
-import io.dropwizard.metrics5.MetricRegistry;
 import io.dropwizard.metrics5.MetricName;
 import io.dropwizard.metrics5.Timer;
-import io.teknek.deliverance.DType;
-import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.AutoModelForEmbeddings;
 import io.teknek.deliverance.model.InferenceProfiler;
-import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
-import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
-import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor2.TensorProviderKind;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -31,13 +25,8 @@ class EmbeddingGemma2EmbeddingTest {
         String text = "This is a test document about machine learning";
         ModelFetcher fetcher = new ModelFetcher("google", "embeddinggemma-2");
         File modelDirectory = fetcher.maybeDownload();
-        MetricRegistry metrics = new MetricRegistry();
-        ArrayQueueTensorAllocator allocator = new ArrayQueueTensorAllocator(metrics);
-
-        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
-             AbstractModel model = ModelSupport.loadEmbeddingModel(modelDirectory, DType.F32, DType.F32,
-                      new ConfigurableTensorProvider(allocator, pool), metrics, allocator,
-                      new KvBufferCacheSettings(true))) {
+        AbstractModel model = AutoModelForEmbeddings.newBuilder(fetcher).buildLocalEmbeddingModel();
+        try (model) {
             model.getLighter().removeTensorOperations(TensorProviderKind.NAIVE);
             boolean previousProfilerState = InferenceProfiler.isEnabled();
             for (int k = 0; k < 5; k++) {

@@ -6,7 +6,7 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.model.ModelSupport;
+import io.teknek.deliverance.model.AutoModelForEmbeddings;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
@@ -30,9 +30,8 @@ public final class EmbeddingGemma2ReferenceMain {
         MetricRegistry metrics = new MetricRegistry();
         ArrayQueueTensorAllocator allocator = new ArrayQueueTensorAllocator(metrics);
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(new ForkJoinPool(options.poolSize));
-             AbstractModel model = ModelSupport.loadEmbeddingModel(options.modelDirectory.toFile(), DType.F32, DType.F32,
-                     new ConfigurableTensorProvider(allocator, pool), metrics, allocator,
-                     new KvBufferCacheSettings(true))) {
+             AbstractModel model = AutoModelForEmbeddings.newBuilder(options.modelDirectory)
+                     .buildLocalEmbeddingModel()) {
             int[] tokenIds = model.getTokenizer().encode(options.text).inputIds();
             float[] embedding = model.embed(options.text, PoolingType.AVG);
             double norm = 0.0;

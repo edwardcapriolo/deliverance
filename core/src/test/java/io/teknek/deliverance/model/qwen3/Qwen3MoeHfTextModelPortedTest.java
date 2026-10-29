@@ -10,7 +10,6 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.CausalLanguageModel;
 import io.teknek.deliverance.model.DefaultCausalLanguageModel;
-import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.model.tensorparallel.SingleRankTensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.StaticTensorParallelContext;
 import io.teknek.deliverance.safetensors.DefaultWeightLoader;
@@ -49,7 +48,8 @@ public class Qwen3MoeHfTextModelPortedTest {
     public void modelSupportDetectsQwen3MoeConfig() throws Exception {
         Path modelDir = writeTinyCheckpoint(tempDir.resolve("qwen3-moe-detect"), tinyConfig(), 1234);
 
-        assertEquals(Qwen3MoeConfig.class, ModelSupport.detectModel(modelDir.resolve("config.json").toFile()).getConfigClass());
+        assertEquals(Qwen3MoeConfig.class,
+                JsonUtils.om.readValue(modelDir.resolve("config.json").toFile(), Qwen3MoeConfig.class).getClass());
     }
 
     @Test

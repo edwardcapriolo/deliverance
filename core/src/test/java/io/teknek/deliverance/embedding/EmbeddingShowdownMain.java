@@ -6,7 +6,7 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.model.ModelSupport;
+import io.teknek.deliverance.model.AutoModelForEmbeddings;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
@@ -44,9 +44,8 @@ public final class EmbeddingShowdownMain {
                 cases.size(), options.warmup, options.iterations, options.poolSize);
         long modelLoadStart = System.nanoTime();
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(new ForkJoinPool(options.poolSize));
-             AbstractModel model = ModelSupport.loadEmbeddingModel(options.modelDirectory.toFile(), DType.F32, DType.F32,
-                     new ConfigurableTensorProvider(allocator, pool), metrics, allocator,
-                     new KvBufferCacheSettings(true))) {
+             AbstractModel model = AutoModelForEmbeddings.newBuilder(options.modelDirectory)
+                     .buildLocalEmbeddingModel()) {
             System.out.printf(Locale.ROOT, "java phase=model_loaded elapsed_s=%.3f%n",
                     elapsedSeconds(modelLoadStart));
             results = new ArrayList<>(cases.size());

@@ -19,7 +19,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class ModelSupportTest {
+public class AutoModelBuilderTest {
 
     String modelName = "Qwen3-0.6B-JQ4";
     String modelOwner = "edwardcapriolo";

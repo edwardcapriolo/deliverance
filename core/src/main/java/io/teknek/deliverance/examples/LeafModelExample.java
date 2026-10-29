@@ -16,16 +16,11 @@
 package io.teknek.deliverance.examples;
 
 import io.dropwizard.metrics5.MetricRegistry;
-import io.teknek.deliverance.DType;
 import io.teknek.deliverance.embedding.PoolingType;
 import io.teknek.deliverance.math.VectorMathUtils;
-import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.model.ModelSupport;
+import io.teknek.deliverance.model.AutoModelForEmbeddings;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
-import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -113,11 +108,7 @@ public class LeafModelExample {
 
             // Load embedding model (use F32 as the default dtype for LEAF)
             System.out.println("Loading model...");
-            MetricRegistry mr = new MetricRegistry();
-            ArrayQueueTensorAllocator arrayQueueTensorAllocator = new ArrayQueueTensorAllocator(mr);
-            ConfigurableTensorProvider provider = new ConfigurableTensorProvider(arrayQueueTensorAllocator, new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores()));
-            AbstractModel model = ModelSupport.loadEmbeddingModel(localModelPath, DType.F32, DType.F32, provider,
-                    mr, arrayQueueTensorAllocator, new KvBufferCacheSettings(true));
+            AbstractModel model = AutoModelForEmbeddings.newBuilder(fetch).buildLocalEmbeddingModel();
             System.out.println("Model loaded successfully!");
             int embeddingLength = model.getConfig().embeddingLength;
             System.out.println("Embedding dimensions reported by model: " + embeddingLength);

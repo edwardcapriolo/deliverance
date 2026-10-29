@@ -5,6 +5,9 @@ import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
+import io.teknek.deliverance.safetensors.fetch.LocalModelFetcher;
+
+import java.nio.file.Path;
 
 public final class AutoModelForEmbeddings {
     private AutoModelForEmbeddings() {
@@ -12,6 +15,10 @@ public final class AutoModelForEmbeddings {
 
     public static Builder newBuilder(ModelFetcher fetcher) {
         return new Builder(fetcher);
+    }
+
+    public static Builder newBuilder(Path modelDirectory) {
+        return new Builder(new LocalModelFetcher(modelDirectory));
     }
 
     public static class Builder extends AutoModelForCausaLm.Builder {

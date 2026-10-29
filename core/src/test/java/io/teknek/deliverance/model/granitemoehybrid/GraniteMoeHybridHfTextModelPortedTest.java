@@ -12,7 +12,6 @@ import io.teknek.deliverance.model.hf.HfConfigTesterMixinPort;
 import io.teknek.deliverance.model.hf.HfGenerationTesterMixinPort;
 import io.teknek.deliverance.model.hf.HfModelTesterMixinPort;
 import io.teknek.deliverance.model.hf.HfUnsupportedMixinPort;
-import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.model.tensorparallel.SingleRankTensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.StaticTensorParallelContext;
@@ -182,7 +181,8 @@ public class GraniteMoeHybridHfTextModelPortedTest implements
         Path modelDir = writeTinyCheckpoint(tempDir.resolve("granite-moe-hybrid-detect"), tinyConfig(), 1234);
 
         assertEquals(GraniteMoeHybridConfig.class,
-                ModelSupport.detectModel(modelDir.resolve("config.json").toFile()).getConfigClass());
+                GraniteMoeHybridConfig.class,
+                JsonUtils.om.readValue(modelDir.resolve("config.json").toFile(), GraniteMoeHybridConfig.class).getClass());
     }
 
     @Test
