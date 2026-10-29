@@ -104,7 +104,7 @@ class Qwen3TensorRefAttentionParityTest {
         int[] replayTokens = Arrays.copyOf(prompt, prompt.length + 1);
         replayTokens[prompt.length] = continuation;
 
-        try (Qwen3Model model = Qwen3HfTextModelPortedTest.loadTinyQwen3Model(modelDir, false);
+        try (Qwen3Model model = Qwen3HfTextModelPortedTest.loadTinyQwen3Model(modelDir);
              KvCacheSession cachedSession = model.newKvCacheSession();
              KvCacheSession coldSession = model.newKvCacheSession()) {
             try (AbstractTensor promptOutput = model.batchForward(prompt, 0, cachedSession);
@@ -133,7 +133,7 @@ class Qwen3TensorRefAttentionParityTest {
         TraceRecorder cachedTrace = new TraceRecorder("legacy-cached");
         TraceRecorder coldTrace = new TraceRecorder("legacy-cold");
 
-        try (Qwen3Model model = Qwen3HfTextModelPortedTest.loadTinyQwen3Model(modelDir, false);
+        try (Qwen3Model model = Qwen3HfTextModelPortedTest.loadTinyQwen3Model(modelDir);
              KvCacheSession cachedSession = model.newKvCacheSession();
              KvCacheSession coldSession = model.newKvCacheSession()) {
             model.setLayerDebugHook(cachedTrace::record);
@@ -168,7 +168,7 @@ class Qwen3TensorRefAttentionParityTest {
         TraceRecorder legacyCold = new TraceRecorder("legacy-cold");
 
         try (Qwen3Model tensorRef = Qwen3HfTextModelPortedTest.loadTinyQwen3Model(modelDir);
-             Qwen3Model legacy = Qwen3HfTextModelPortedTest.loadTinyQwen3Model(modelDir, false);
+             Qwen3Model legacy = Qwen3HfTextModelPortedTest.loadTinyQwen3Model(modelDir);
              KvCacheSession tensorRefCachedSession = tensorRef.newKvCacheSession();
              KvCacheSession tensorRefColdSession = tensorRef.newKvCacheSession();
              KvCacheSession legacyCachedSession = legacy.newKvCacheSession();

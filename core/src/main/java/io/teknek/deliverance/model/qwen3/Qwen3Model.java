@@ -2,11 +2,7 @@ package io.teknek.deliverance.model.qwen3;
 
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
-import io.teknek.deliverance.generator.MLPBlock;
-import io.teknek.deliverance.generator.Qwen3KvCacheSelfAttention;
 import io.teknek.deliverance.generator.Response;
-import io.teknek.deliverance.generator.RmsNorm;
-import io.teknek.deliverance.generator.TransformerBlock;
 import io.teknek.deliverance.generator2.MLPBlock2;
 import io.teknek.deliverance.generator2.Qwen3KvCacheSelfAttention2;
 import io.teknek.deliverance.generator2.RmsNorm2;
@@ -23,8 +19,6 @@ import io.teknek.deliverance.model.tensorparallel.TensorParallelWeightLoader;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorAllocator;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensor2.TensorRefBackedTensor;
 import io.teknek.deliverance.tensor2.Lighter;
@@ -34,29 +28,6 @@ import java.util.Optional;
 import java.util.stream.IntStream;
 
 public class Qwen3Model extends LlamaModel {
-
-    public Qwen3Model(
-            InferenceType inferenceType,
-            Config config,
-            WeightLoader weights,
-            PreTrainedTokenizer tokenizer,
-            DType workingDType,
-            DType workingQType,
-            Optional<DType> modelQType,
-            ConfigurableTensorProvider configurableTensorProvider,
-            MetricRegistry metricRegistry,
-            TensorAllocator arrayQueueTensorAllocator,
-            KvBufferCacheSettings kvBufferCacheSettings,
-            ToolCallParser toolCallParser,
-            WrappedForkJoinPool pool,
-            TensorParallelContext tensorParallelContext,
-            TensorParallelCollectives tensorParallelCollectives,
-            Optional<DType> outputHeadQuantization
-    ) {
-        super(inferenceType, config, weights, tokenizer, workingDType, workingQType, modelQType,
-                configurableTensorProvider, metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings,
-                toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
-    }
 
     public Qwen3Model(InferenceType inferenceType, Config config, WeightLoader weights, PreTrainedTokenizer tokenizer,
             DType workingDType, DType workingQType, Optional<DType> modelQType,
@@ -77,112 +48,6 @@ public class Qwen3Model extends LlamaModel {
     @Override
     protected boolean usesTensorRefExecution() {
         return true;
-    }
-
-    @Override
-    protected TransformerBlock[] loadTransformerBlockWeights() {
-        DType qType = modelQType.orElse(this.modelDType);
-        TensorParallelShardPlan tensorParallelPlan = TensorParallelPlanner.plan(config, tensorParallelContext);
-        TensorParallelWeightLoader tensorParallelWeights = new TensorParallelWeightLoader(weights,
-                tensorParallelContext, tensorParallelPlan, new DefaultTransformerWeightPolicyResolver());
-        TransformerBlock[] blocks = new TransformerBlock[config.numberOfLayers];
-        IntStream.range(0, config.numberOfLayers).parallel().forEach(i -> {
-            String base = "model.layers." + i + ".";
-            String attn = base + "self_attn.";
-            String qName = attn + "q_proj.weight";
-            String kName = attn + "k_proj.weight";
-            String vName = attn + "v_proj.weight";
-            String oName = attn + "o_proj.weight";
-            String qNormName = attn + "q_norm.weight";
-            String kNormName = attn + "k_norm.weight";
-            TensorRef qRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(qName,
-                    tensorParallelWeights::loadRef, qType));
-            TensorRef kRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(kName,
-                    tensorParallelWeights::loadRef, qType));
-            TensorRef vRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(vName,
-                    tensorParallelWeights::loadRef, qType));
-            TensorRef oRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(oName,
-                    tensorParallelWeights::loadRef, qType));
-            var qWeight = TensorRefBackedTensor.as(qRef, qType);
-            var kWeight = TensorRefBackedTensor.as(kRef, qType);
-            var vWeight = TensorRefBackedTensor.as(vRef, qType);
-            var oWeight = TensorRefBackedTensor.as(oRef, qType);
-            TensorRef qNormRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(qNormName,
-                    weights::loadRef, qType));
-            TensorRef kNormRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(kNormName,
-                    weights::loadRef, qType));
-            var qNormWeight = TensorRefBackedTensor.as(qNormRef, qNormRef.dType());
-            var kNormWeight = TensorRefBackedTensor.as(kNormRef, kNormRef.dType());
-            registerModelLineageTensor(qName, qWeight);
-            registerModelLineageTensor(kName, kWeight);
-            registerModelLineageTensor(vName, vWeight);
-            registerModelLineageTensor(oName, oWeight);
-            registerModelLineageTensor(qNormName, qNormWeight);
-            registerModelLineageTensor(kNormName, kNormWeight);
-            Qwen3KvCacheSelfAttention attention = new Qwen3KvCacheSelfAttention(
-                    this,
-                    i,
-                    qWeight,
-                    kWeight,
-                    vWeight,
-                    oWeight,
-                    qNormWeight,
-                    kNormWeight,
-                    configurableTensorProvider,
-                    metricRegistry,
-                    qName, kName, vName, oName
-            );
-
-            String mlpPrefix = base + "mlp.";
-            String gateName = mlpPrefix + "gate_proj.weight";
-            String downName = mlpPrefix + "down_proj.weight";
-            String upName = mlpPrefix + "up_proj.weight";
-            TensorRef gateRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(gateName,
-                    tensorParallelWeights::loadRef, qType));
-            TensorRef downRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(downName,
-                    tensorParallelWeights::loadRef, qType));
-            TensorRef upRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(upName,
-                    tensorParallelWeights::loadRef, qType));
-            var gateWeight = TensorRefBackedTensor.as(gateRef, qType);
-            var downWeight = TensorRefBackedTensor.as(downRef, qType);
-            var upWeight = TensorRefBackedTensor.as(upRef, qType);
-            registerModelLineageTensor(gateName, gateWeight);
-            registerModelLineageTensor(downName, downWeight);
-            registerModelLineageTensor(upName, upWeight);
-            MLPBlock mlp = new MLPBlock(
-                    this,
-                    config.activationFunction,
-                    gateWeight,
-                    downWeight,
-                    upWeight,
-                    configurableTensorProvider,
-                    "layer." + i + ".mlp.down_proj",
-                    gateName, upName, downName,
-                    i
-            );
-
-            String inputNormName = base + "input_layernorm.weight";
-            String postAttentionNormName = base + "post_attention_layernorm.weight";
-            TensorRef inputNormRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(inputNormName,
-                    weights::loadRef, qType));
-            TensorRef postAttentionNormRef = registerModelTensorRef(
-                    loadAndMaybeQuantizedExcluding1DTensors(postAttentionNormName, weights::loadRef, qType));
-            var inputNormWeight = TensorRefBackedTensor.as(inputNormRef, inputNormRef.dType());
-            var postAttentionNormWeight = TensorRefBackedTensor.as(postAttentionNormRef, postAttentionNormRef.dType());
-            registerModelLineageTensor(inputNormName, inputNormWeight);
-            registerModelLineageTensor(postAttentionNormName, postAttentionNormWeight);
-
-            blocks[i] = new TransformerBlock(
-                    this,
-                    i,
-                    new RmsNorm(this, inputNormWeight, 0.0f, metricRegistry),
-                    attention,
-                    new RmsNorm(this, postAttentionNormWeight, 0.0f, metricRegistry),
-                    mlp,
-                    configurableTensorProvider
-            );
-        });
-        return blocks;
     }
 
     @Override

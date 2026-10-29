@@ -624,7 +624,7 @@ public class AutoModelForCausaLm {
                 pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
             }
             String modelType = readModelType(new File(modelRoot, "config.json"));
-            if ("QWEN3".equals(modelType)) {
+            if ("QWEN3".equals(modelType) || "QWEN3_MOE".equals(modelType)) {
                 lighter = new Lighter(mr, pool.getUnderlying());
             } else if (provider == null){
                 ConfigurableTensorProvider base = new ConfigurableTensorProvider(allocator, pool);
@@ -814,18 +814,10 @@ public class AutoModelForCausaLm {
                 case "QWEN2" -> new Qwen2Model(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
-                case "QWEN3" -> lighter == null
-                        ? new Qwen3Model(inferenceType, config, weightLoader, tokenizer, workingMem, workingQuant,
-                        effectiveModelQType, provider, mr, allocator, settings, toolCallParser, pool,
-                        tensorParallelContext, tensorParallelCollectives, outputHeadQuantization)
-                        : new Qwen3Model(inferenceType, config, weightLoader, tokenizer, workingMem, workingQuant,
+                case "QWEN3" -> new Qwen3Model(inferenceType, config, weightLoader, tokenizer, workingMem, workingQuant,
                         effectiveModelQType, mr, settings, toolCallParser, pool, tensorParallelContext,
                         tensorParallelCollectives, outputHeadQuantization, lighter);
-                case "QWEN3_MOE" -> lighter == null
-                        ? new Qwen3MoeModel(inferenceType, config, weightLoader, tokenizer, workingMem, workingQuant,
-                        effectiveModelQType, provider, mr, allocator, settings, toolCallParser, pool,
-                        tensorParallelContext, tensorParallelCollectives, outputHeadQuantization)
-                        : new Qwen3MoeModel(inferenceType, config, weightLoader, tokenizer, workingMem, workingQuant,
+                case "QWEN3_MOE" -> new Qwen3MoeModel(inferenceType, config, weightLoader, tokenizer, workingMem, workingQuant,
                         effectiveModelQType, mr, settings, toolCallParser, pool, tensorParallelContext,
                         tensorParallelCollectives, outputHeadQuantization, lighter);
                 case "GEMMA2" -> new Gemma2Model(inferenceType, config, weightLoader,

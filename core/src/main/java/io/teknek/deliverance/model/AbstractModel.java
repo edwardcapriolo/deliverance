@@ -392,7 +392,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
             return;
         }
         this.modelLineagePlan = configurableTensorProvider == null
-                ? null
+                ? new TensorPlan(null, pool, metricRegistry, this, null, lighter)
                 : new TensorPlan(configurableTensorProvider.get(), pool, metricRegistry, this, tensorRuntime);
         logger.debug("model init start config={} inference_type={}", config.getClass().getSimpleName(), inferenceType);
         this.embedInput = inferenceType.isInput ? loadInputWeights() : null;
@@ -1688,9 +1688,6 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
 
     protected PlannedTensorRef plannedInputEmbeddingsRef(String name, TensorRef embeddings,
             io.teknek.deliverance.generator.ForwardPhase phase) {
-        if (modelLineagePlan == null) {
-            return new PlannedTensorRef(embeddings, null);
-        }
         TensorPlan.Tensor lineage = modelLineageTensor("model.embed_tokens.weight")
                 .map(upstream -> modelLineagePlan.input(name, upstream, embeddings))
                 .orElseGet(() -> modelLineagePlan.input(name, embeddings))

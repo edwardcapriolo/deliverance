@@ -280,14 +280,7 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
         io.teknek.deliverance.tensor2.GroupedQkvProjection projection = new io.teknek.deliverance.tensor2.GroupedQkvProjection(
                 input, query, key, value, queryAttentionWeights, keyAttentionWeights, valueAttentionWeights,
                 config.embeddingLength, 0, 0, kvLength);
-        if ("tensor2".equals(model.getTensorProviderName())) {
-            model.runChunks("kvcacheselfattention2.qkv_projection.grouped_decode", 0, attentionLength,
-                    model.getTensorProviderParallelSplitSize(), Optional.empty(),
-                    (offset, length) -> executeGroupedQkvProjection(projection,
-                            Math.toIntExact(offset), Math.toIntExact(length)));
-            return;
-        }
-        TensorPlan plan = new TensorPlan(model.primaryTensorOperations(), model.getPool(), metricRegistry, model,
+        TensorPlan plan = new TensorPlan(null, model.getPool(), metricRegistry, model,
                 model.getTensorRuntime(), lighter);
         TensorPlan.Tensor inputNode = plan.input("qkv.input", input);
         TensorPlan.ImmutableTensor queryWeightsNode = plan.immutable("qkv.query.weight", queryAttentionWeights);

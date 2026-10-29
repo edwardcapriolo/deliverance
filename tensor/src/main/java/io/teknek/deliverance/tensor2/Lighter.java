@@ -638,6 +638,9 @@ public class Lighter {
         Preconditions.checkArgument(b != null, "B tensor must be set");
         Preconditions.checkArgument(result.device().equals(a.device()) && result.device().equals(b.device()),
                 "Tensors must be on the same device");
+        // TODO: Revisit this once the threading API is finalized. Top-level BF16
+        // operations benefit from CHUNK + PROVIDER, but operations inside model
+        // runChunks callbacks must retain caller-managed threading (CHUNK + NONE).
         // The generic Panama BF16 batch gemmer is row-serial. Prefer the provider
         // chunk kernel for BF16 activations/weights so native providers can use
         // their parallel GEMM implementation.

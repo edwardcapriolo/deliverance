@@ -534,24 +534,7 @@ public class LlamaHfTextModelPortedTest implements HfConfigTesterMixinPort, HfMo
             MetricRegistry metrics, TensorAllocator allocator, WrappedForkJoinPool pool) {
         LlamaModel model = createLlamaModel(modelDir, tensorRefExecution, outputHeadQuantization,
                 tensorParallelContext, tensorParallelCollectives, provider, metrics, allocator, pool);
-        if (provider.get() instanceof NaiveTensorOperations) {
-            model.getLighter().putTensorOperations(TensorProviderKind.SIMD,
-                    model.getLighter().tensorOperations().get(TensorProviderKind.NAIVE));
-        } else if (provider.get() instanceof PanamaTensorOperations) {
-            model.getLighter().putTensorOperations(TensorProviderKind.SIMD,
-                    model.getLighter().tensorOperations().get(TensorProviderKind.PANAMA));
-        }
         model.init();
-        // AbstractModel installs optional native TensorRef ops during construction. These
-        // characterization models deliberately select their provider explicitly so legacy and
-        // TensorRef traces are compared on the same arithmetic path.
-        if (provider.get() instanceof NaiveTensorOperations) {
-            model.getLighter().putTensorOperations(TensorProviderKind.SIMD,
-                    model.getLighter().tensorOperations().get(TensorProviderKind.NAIVE));
-        } else if (provider.get() instanceof PanamaTensorOperations) {
-            model.getLighter().putTensorOperations(TensorProviderKind.SIMD,
-                    model.getLighter().tensorOperations().get(TensorProviderKind.PANAMA));
-        }
         return model;
     }
 

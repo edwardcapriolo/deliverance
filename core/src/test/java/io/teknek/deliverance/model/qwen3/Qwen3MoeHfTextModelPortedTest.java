@@ -16,15 +16,11 @@ import io.teknek.deliverance.safetensors.DefaultWeightLoader;
 import io.teknek.deliverance.safetensors.SafeTensorWriter;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.AbstractTensor;
-import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.kv.KvCacheSession;
-import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorInfo;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
@@ -237,13 +233,12 @@ public class Qwen3MoeHfTextModelPortedTest {
 
     static Qwen3MoeModel loadTinyModel(Path modelDir) {
         MetricRegistry metrics = new MetricRegistry();
-        TensorAllocator allocator = new ArrayQueueTensorAllocator(metrics);
         WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
         Qwen3MoeModel model = new Qwen3MoeModel(AbstractModel.InferenceType.FULL_GENERATION, configFromFile(modelDir),
                 new DefaultWeightLoader(modelDir.toFile()), Mockito.mock(PreTrainedTokenizer.class), DType.F32, DType.I8,
-                Optional.empty(), new ConfigurableTensorProvider(new NaiveTensorOperations()), metrics, allocator,
-                new KvBufferCacheSettings(true), new DefaultToolCallParser(), pool,
-                new StaticTensorParallelContext(0, 1), new SingleRankTensorParallelCollectives(), Optional.empty());
+                Optional.empty(), metrics, new KvBufferCacheSettings(true), new DefaultToolCallParser(), pool,
+                new StaticTensorParallelContext(0, 1), new SingleRankTensorParallelCollectives(), Optional.empty(),
+                new io.teknek.deliverance.tensor2.Lighter(metrics, pool.getUnderlying()));
         model.init();
         return model;
     }

@@ -84,7 +84,7 @@ public final class TensorPlan {
 
     public TensorPlan(TensorOperations operations, WrappedForkJoinPool pool, MetricRegistry metricRegistry,
             Object owner, TensorRuntime runtime, Lighter lighter) {
-        this.operations = Objects.requireNonNull(operations, "operations");
+        this.operations = operations;
         this.pool = Objects.requireNonNull(pool, "pool");
         this.metricRegistry = metricRegistry;
         this.runtime = runtime;
@@ -92,6 +92,7 @@ public final class TensorPlan {
         this.ownerClass = owner == null ? "UNKNOWN" : owner.getClass().getSimpleName();
         this.adaptiveSplitTuner = owner instanceof TensorPlanAdaptiveSplitTuner tuner ? tuner : null;
     }
+
 
     public String ownerClass() {
         return ownerClass;
