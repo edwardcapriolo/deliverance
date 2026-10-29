@@ -1,15 +1,13 @@
 package net.deliverance.http;
 
-import io.teknek.deliverance.DType;
 import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelConfig;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
+import io.teknek.deliverance.model.AutoModelForEmbeddings;
 import io.teknek.deliverance.model.CausalLanguageModel;
-import io.teknek.deliverance.model.ModelSupport;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
-import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.dropwizard.metrics5.MetricRegistry;
@@ -22,7 +20,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.File;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.Semaphore;
@@ -71,15 +68,12 @@ public class ServeController {
 
             ModelFetcher fetcher = new ModelFetcher(request.owner(), request.name()).withDownload(false);
             if (request.type() == ServeType.EMBEDDING) {
-                File modelDirectory = fetcher.maybeDownload();
-                AbstractModel model = ModelSupport.loadEmbeddingModel(
-                        modelDirectory,
-                        DType.F32,
-                        DType.I8,
-                        provider,
-                        metricRegistry,
-                        tensorAllocator,
-                        new KvBufferCacheSettings(true));
+                AutoModelForEmbeddings.Builder embeddingBuilder = AutoModelForEmbeddings.newBuilder(fetcher);
+                embeddingBuilder.withMetricRegistry(metricRegistry);
+                embeddingBuilder.withTensorAllocator(tensorAllocator);
+                embeddingBuilder.withTensorProvider(provider);
+                embeddingBuilder.withWrappedForkJoinPool(pool);
+                AbstractModel model = embeddingBuilder.buildLocalEmbeddingModel();
                 embeddingModels.put(config, model);
             } else {
                 AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(fetcher)

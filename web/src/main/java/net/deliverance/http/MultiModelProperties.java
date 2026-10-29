@@ -6,7 +6,7 @@ import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.CausalLanguageModel;
-import io.teknek.deliverance.model.ModelSupport;
+import io.teknek.deliverance.model.AutoModelForEmbeddings;
 import io.teknek.deliverance.model.TensorProviderKind;
 import io.teknek.deliverance.model.tensorparallel.GossipParallelMembership;
 import io.teknek.deliverance.model.tensorparallel.GossipParallelSettings;
@@ -31,7 +31,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.stereotype.Component;
 
-import java.io.File;
 import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
@@ -208,9 +207,13 @@ class MultiModelConfiguration {
 
     private AbstractModel embeddingModelFromConfig(MultiModelConfig config){
         ModelFetcher fetch = new ModelFetcher(config.getModelOwner(),config.getModelName());
-        File f = fetch.maybeDownload();
-        return ModelSupport.loadEmbeddingModel(f, DType.F32, DType.I8, provider,
-                metricRegistry, this.arrayQueueTensorAllocator, kvBufferCacheSettings());
+        AutoModelForEmbeddings.Builder embeddingBuilder = AutoModelForEmbeddings.newBuilder(fetch);
+        embeddingBuilder.withMetricRegistry(metricRegistry);
+        embeddingBuilder.withTensorAllocator(arrayQueueTensorAllocator);
+        embeddingBuilder.withTensorProvider(provider);
+        embeddingBuilder.withWrappedForkJoinPool(pool);
+        embeddingBuilder.withKvBufferCacheSettings(kvBufferCacheSettings());
+        return embeddingBuilder.buildLocalEmbeddingModel();
     }
 
     private CausalLanguageModel causalLanguageModelFromConfig(MultiModelConfig config){

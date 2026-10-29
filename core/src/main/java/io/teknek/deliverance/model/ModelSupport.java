@@ -53,6 +53,15 @@ import java.util.function.Function;
 
 import static io.teknek.deliverance.JsonUtils.om;
 
+/**
+ * Legacy model-loading facade.
+ *
+ * @deprecated Use the explicit task builders such as
+ * {@link AutoModelForCausaLm}, {@link AutoModelForSequenceClassification}, and
+ * {@link AutoModelForEmbeddings}. This facade remains temporarily for unconverted tools
+ * and tests.
+ */
+@Deprecated(forRemoval = true)
 public class ModelSupport {
     private static final Logger LOGGER = LoggerFactory.getLogger(ModelSupport.class);
     private static final ConcurrentMap<String,ModelType> registry = new ConcurrentHashMap<String, ModelType>();

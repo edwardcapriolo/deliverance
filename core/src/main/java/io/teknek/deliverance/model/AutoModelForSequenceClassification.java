@@ -1,141 +1,85 @@
 package io.teknek.deliverance.model;
 
-import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import io.teknek.deliverance.tensor.operations.TensorOperations;
-import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import io.dropwizard.metrics5.MetricRegistry;
 
-import java.io.File;
-import java.util.Optional;
-
-public class AutoModelForSequenceClassification {
-
-    private static final Logger LOGGER = LoggerFactory.getLogger(AutoModelForSequenceClassification.class);
-
-    public static AbstractModel fromPretrained(ModelFetcher fetcher){
-        return new AutoModelForSequenceClassification.Builder(fetcher).build();
+/** Explicit-builder entry point for encoder sequence-classification models. */
+public final class AutoModelForSequenceClassification {
+    private AutoModelForSequenceClassification() {
     }
 
-    public static Builder newBuilder(ModelFetcher fetcher){
-        return new AutoModelForSequenceClassification.Builder(fetcher);
+    public static AbstractModel fromPretrained(ModelFetcher fetcher) {
+        return newBuilder(fetcher).build();
     }
-    public static class Builder {
-        private final ModelFetcher fetch;
-        private MetricRegistry mr = new MetricRegistry();
-        private TensorAllocator allocator = new ArrayQueueTensorAllocator(mr);
-        private DType workingMem = DType.F32;
-        private DType workingQuant = DType.I8;
-        private ToolCallParser toolCallParser = new DefaultToolCallParser();
 
-        private KvBufferCacheSettings settings = new KvBufferCacheSettings(true);
-        private ConfigurableTensorProvider provider;
-        private WrappedForkJoinPool pool;
-        private String oobCheck = "2";
+    public static Builder newBuilder(ModelFetcher fetcher) {
+        return new Builder(fetcher);
+    }
 
-        public Builder(ModelFetcher fetch) {
-            this.fetch = fetch;
+    public static final class Builder {
+        private final AutoModelForCausaLm.Builder delegate;
+
+        public Builder(ModelFetcher fetcher) {
+            delegate = AutoModelForCausaLm.newBuilder(fetcher);
         }
 
-        public Builder withMetricRegistry(MetricRegistry metricRegistry) {
-            mr = metricRegistry;
+        public Builder withMetricRegistry(MetricRegistry value) {
+            delegate.withMetricRegistry(value);
             return this;
         }
 
-        public Builder withTensorAllocator(TensorAllocator arrayQueueTensorAllocator) {
-            this.allocator = arrayQueueTensorAllocator;
+        /** @deprecated V1 allocator injection; use the future Lighter-based builder API. */
+        @Deprecated(forRemoval = true)
+        public Builder withTensorAllocator(TensorAllocator value) {
+            delegate.withTensorAllocator(value);
             return this;
         }
 
-        public Builder withKvBufferCacheSettings(KvBufferCacheSettings settings) {
-            this.settings = settings;
+        public Builder withKvBufferCacheSettings(KvBufferCacheSettings value) {
+            delegate.withKvBufferCacheSettings(value);
             return this;
         }
 
-        public Builder withWorkingMemoryType(DType type) {
-            this.workingMem = type;
+        public Builder withWorkingMemoryType(DType value) {
+            delegate.withWorkingMemoryType(value);
             return this;
         }
 
-        public Builder withWorkingQuantType(DType type) {
-            this.workingQuant = type;
+        public Builder withWorkingQuantType(DType value) {
+            delegate.withWorkingQuantType(value);
             return this;
         }
 
-        public Builder withTensorProvider(ConfigurableTensorProvider provider) {
-            this.provider = provider;
+        /** @deprecated V1 provider injection; use the future Lighter-based builder API. */
+        @Deprecated(forRemoval = true)
+        public Builder withTensorProvider(ConfigurableTensorProvider value) {
+            delegate.withTensorProvider(value);
             return this;
         }
 
-        public Builder withToolCallParser(ToolCallParser toolCallParser) {
-            this.toolCallParser = toolCallParser;
+        public Builder withToolCallParser(ToolCallParser value) {
+            delegate.withToolCallParser(value);
             return this;
         }
 
-        public Builder withWrappedForkJoinPool(WrappedForkJoinPool pool){
-            this.pool = pool;
+        public Builder withWrappedForkJoinPool(WrappedForkJoinPool value) {
+            delegate.withWrappedForkJoinPool(value);
             return this;
         }
 
-        public Builder withSystemPropertyForVectorOobCheck(String value){
-            this.oobCheck = value;
+        public Builder withSystemPropertyForVectorOobCheck(String value) {
+            delegate.withSystemPropertyForVectorOobCheck(value);
             return this;
         }
 
         public AbstractModel build() {
-            System.setProperty("jdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK", this.oobCheck);
-            File modelRoot = fetch.maybeDownload();
-            if (pool == null){
-                pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
-            }
-            if (provider == null){
-                ConfigurableTensorProvider base = new ConfigurableTensorProvider(allocator, pool);
-                Optional<TensorOperations> maybe = AutoModelForCausaLm.getNative(base.get());
-                if (maybe.isPresent()){
-                    provider = new ConfigurableTensorProvider(maybe.get());
-                }
-            }
-            return ModelSupport.loadClassificationModel(modelRoot, workingMem, workingQuant, provider,
-                    mr, allocator, settings, fetch, toolCallParser, pool);
+            return delegate.buildLocalTransformerModel(AbstractModel.InferenceType.FULL_CLASSIFICATION);
         }
-
-        public ModelFetcher getFetch() {
-            return fetch;
-        }
-
-        public MetricRegistry getMr() {
-            return mr;
-        }
-
-        public TensorAllocator getAllocator() {
-            return allocator;
-        }
-
-        public DType getWorkingMem() {
-            return workingMem;
-        }
-
-        public DType getWorkingQuant() {
-            return workingQuant;
-        }
-
-        public KvBufferCacheSettings getSettings() {
-            return settings;
-        }
-
-        public ConfigurableTensorProvider getProvider() {
-            return provider;
-        }
-
-        public WrappedForkJoinPool getPool(){return pool; }
-
     }
 }

@@ -155,6 +155,7 @@ public class AutoModelForCausaLm {
         private final EnumMap<TensorProviderKind, Integer> parallelSplitSizeFixed = new EnumMap<>(TensorProviderKind.class);
         private final EnumMap<TensorProviderKind, Double> parallelSplitSizeMultiplier = new EnumMap<>(TensorProviderKind.class);
         private Optional<Integer> groupedDecodeQkvSplitSize = Optional.empty();
+        private AbstractModel.InferenceType requestedInferenceType = AbstractModel.InferenceType.FULL_GENERATION;
 
         record QuantizeOnDemand(DType targetType, String outputOwner, String outputModel) {
             QuantizeOnDemand {
@@ -175,6 +176,8 @@ public class AutoModelForCausaLm {
             mr = metricRegistry;
             return this;
         }
+        /** @deprecated V1 allocator injection; migrated builders will use {@code Lighter}. */
+        @Deprecated(forRemoval = true)
         public Builder withTensorAllocator(TensorAllocator tensorAllocator){
             this.allocator = tensorAllocator;
             return this;
@@ -201,6 +204,8 @@ public class AutoModelForCausaLm {
             this.allowDirtyTensors = allowDirtyTensors;
             return this;
         }
+        /** @deprecated V1 provider injection; migrated builders will use {@code Lighter}. */
+        @Deprecated(forRemoval = true)
         public Builder withTensorProvider(ConfigurableTensorProvider provider){
             this.provider = provider;
             this.tensorProviderExplicit = true;
@@ -589,6 +594,11 @@ public class AutoModelForCausaLm {
             return loadLocalTransformerModel();
         }
 
+        public AbstractModel buildLocalTransformerModel(AbstractModel.InferenceType inferenceType) {
+            this.requestedInferenceType = Objects.requireNonNull(inferenceType, "inferenceType");
+            return loadLocalTransformerModel();
+        }
+
         /**
          * Legacy compatibility path for callers that still need the old concrete executor plus old lifecycle behavior.
          */
@@ -737,10 +747,14 @@ public class AutoModelForCausaLm {
                 if (loraAdapter.isPresent()) {
                     weightLoader = new MergingWeightLoader(weightLoader, loraAdapter.get(), provider.get());
                 }
-                return newModel(modelType, AbstractModel.InferenceType.FULL_GENERATION, config, weightLoader, tokenizer);
+                return newModel(modelType, inferenceType(), config, weightLoader, tokenizer);
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
+        }
+
+        protected AbstractModel.InferenceType inferenceType() {
+            return requestedInferenceType;
         }
 
         public Config readConfig(File configFile, String modelType) throws IOException {
@@ -978,6 +992,8 @@ public class AutoModelForCausaLm {
             return mr;
         }
 
+        /** @deprecated V1 allocator accessor; migrated builders will expose {@code Lighter}. */
+        @Deprecated(forRemoval = true)
         public TensorAllocator getAllocator() {
             return allocator;
         }
@@ -1038,6 +1054,8 @@ public class AutoModelForCausaLm {
             return generationOptions;
         }
 
+        /** @deprecated V1 provider accessor; migrated builders will expose {@code Lighter}. */
+        @Deprecated(forRemoval = true)
         public ConfigurableTensorProvider getProvider() {
             return provider;
         }
