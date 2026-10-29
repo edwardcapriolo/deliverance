@@ -4,6 +4,7 @@ import com.google.common.base.Preconditions;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.tensor2.Lighter;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -95,6 +96,14 @@ public final class KvBlock implements AutoCloseable {
         return rowCopy(layer, position, 1, allocator);
     }
 
+    TensorRef keyRowCopy(int layer, int position, Lighter lighter) {
+        return rowCopy(layer, position, 0, lighter);
+    }
+
+    TensorRef valueRowCopy(int layer, int position, Lighter lighter) {
+        return rowCopy(layer, position, 1, lighter);
+    }
+
     TensorRef keyRowView(int layer, int position) {
         return rowView(layer, position, 0);
     }
@@ -118,6 +127,13 @@ public final class KvBlock implements AutoCloseable {
     private TensorRef rowCopy(int layer, int position, int keyOrValue, TensorAllocator allocator) {
         requireOpen();
         TensorRef copy = TensorRef.owned(allocator.getDirty(storage.dtype(keyOrValue), TensorShape.of(1, kvLength)));
+        copyRow(layer, position, keyOrValue, copy);
+        return copy;
+    }
+
+    private TensorRef rowCopy(int layer, int position, int keyOrValue, Lighter lighter) {
+        requireOpen();
+        TensorRef copy = lighter.allocate(storage.dtype(keyOrValue), TensorShape.of(1, kvLength));
         copyRow(layer, position, keyOrValue, copy);
         return copy;
     }

@@ -1,6 +1,7 @@
 package io.teknek.deliverance.embedding;
 
 import io.dropwizard.metrics5.MetricName;
+import io.dropwizard.metrics5.MetricRegistry;
 import io.dropwizard.metrics5.Timer;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForEmbeddings;
@@ -48,7 +49,7 @@ class EmbeddingGemma2EmbeddingTest {
                     System.out.println("EmbeddingGemma 2 first values: " + embedding[0] + ", " + embedding[1]
                             + ", " + embedding[2] + ", " + embedding[3]);
                     if (k == 4) {
-                        printRegisteredTimerMetrics(metrics);
+                        printRegisteredTimerMetrics(model.getMetricRegistry());
                     }
                 } finally {
                     InferenceProfiler.setEnabled(previousProfilerState);

@@ -43,7 +43,7 @@ final class LoraDeltaApplier2 {
             TensorRef weights, ForwardPhase phase, String metricName) {
         int inputLength = input.shape().last();
         int outputLength = output.shape().last();
-        model.runChunks(metricName, 0, outputLength, model.primaryTensorOperations().parallelSplitSize(),
+        model.runChunks(metricName, 0, outputLength, model.getTensorProviderParallelSplitSize(),
                 java.util.Optional.empty(), (chunkStart, chunkSize) -> {
                     if (phase == ForwardPhase.PREFILL && input.shape().first() > 1) {
                         lighter.batchDotProduct(new BatchDotProduct()

@@ -70,8 +70,7 @@ public class Lighter {
 
     public Lighter(MetricRegistry metricRegistry, ForkJoinPool providerPool){
         this(metricRegistry, providerPool, Map.of(
-                TensorProviderKind.PANAMA, new PanamaOps(providerPool),
-                TensorProviderKind.NAIVE, new NaiveOps()
+                TensorProviderKind.PANAMA, new PanamaOps(providerPool)
         ));
     }
 
@@ -125,17 +124,6 @@ public class Lighter {
 
     public Map<TensorProviderKind, CompositeOpsProvider> compositeOperationProviders() {
         return Map.copyOf(compositeOperations);
-    }
-
-    /** Returns the preferred CPU provider for a composite operation. */
-    public TensorOps preferredTensorOperations() {
-        TensorOps ops = tensorOperations.get(TensorProviderKind.SIMD);
-        if (ops != null) return ops;
-        ops = tensorOperations.get(TensorProviderKind.PANAMA);
-        if (ops != null) return ops;
-        ops = tensorOperations.get(TensorProviderKind.NAIVE);
-        if (ops != null) return ops;
-        throw new IllegalStateException("No CPU tensor operations registered");
     }
 
     /** Providers in the same priority order used by the composite fallback dispatch. */

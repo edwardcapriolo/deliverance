@@ -94,6 +94,14 @@ final class MutableKvBlock implements AutoCloseable {
         return rowCopy(layer, position, 1, allocator);
     }
 
+    TensorRef keyRowCopy(int layer, int position, Lighter lighter) {
+        return rowCopy(layer, position, 0, null);
+    }
+
+    TensorRef valueRowCopy(int layer, int position, Lighter lighter) {
+        return rowCopy(layer, position, 1, null);
+    }
+
     TensorRef keyRowView(int layer, int position) {
         return rowView(layer, position, 0);
     }

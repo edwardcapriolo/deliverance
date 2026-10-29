@@ -75,6 +75,13 @@ public final class KvCacheSession implements AutoCloseable {
         this.lighter = Objects.requireNonNull(lighter, "lighter");
     }
 
+    KvCacheSession(int layers, int contextLength, int kvLength, int blockSize, DType dtype,
+            MetricRegistry metricRegistry, boolean trackReadViews, KvBufferCacheSettings settings,
+            @Nullable TensorOperations conversionOperations, Lighter lighter) {
+        this(layers, contextLength, kvLength, blockSize, dtype, null, metricRegistry, trackReadViews,
+                settings, conversionOperations, lighter);
+    }
+
     public int length() {
         return length;
     }
@@ -242,8 +249,12 @@ public final class KvCacheSession implements AutoCloseable {
         try {
             for (int position = committed.startPosition(); position < newLength; position++) {
                 for (int layer = 0; layer < layers; layer++) {
-                    try (TensorRef key = committed.keyRowCopy(layer, position, allocator);
-                         TensorRef value = committed.valueRowCopy(layer, position, allocator)) {
+                    try (TensorRef key = allocator == null
+                            ? committed.keyRowCopy(layer, position, lighter)
+                            : committed.keyRowCopy(layer, position, allocator);
+                         TensorRef value = allocator == null
+                                 ? committed.valueRowCopy(layer, position, lighter)
+                                 : committed.valueRowCopy(layer, position, allocator)) {
                         mutable.write(layer, position, key, value);
                     }
                 }
@@ -439,13 +450,13 @@ public final class KvCacheSession implements AutoCloseable {
         int blockIndex = position / blockSize;
         KvBlock committed = committedBlocks.get(blockIndex);
         if (committed != null) {
-            return key ? committed.keyRowCopy(layer, position, allocator) : committed.valueRowCopy(layer, position, allocator);
+            return key ? committed.keyRowCopy(layer, position, lighter) : committed.valueRowCopy(layer, position, lighter);
         }
         MutableKvBlock mutable = mutableBlocks.get(blockIndex);
         if (mutable == null) {
             throw new IllegalStateException("No KV block for position " + position);
         }
-        return key ? mutable.keyRowCopy(layer, position, allocator) : mutable.valueRowCopy(layer, position, allocator);
+        return key ? mutable.keyRowCopy(layer, position, lighter) : mutable.valueRowCopy(layer, position, lighter);
     }
 
     private AbstractTensor rowView(int layer, int position, boolean key) {

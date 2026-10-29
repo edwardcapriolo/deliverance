@@ -59,6 +59,7 @@ import io.teknek.deliverance.tensorlib.TensorRuntime;
 import io.teknek.deliverance.tensorlib.TensorRuntimeMode;
 import io.teknek.deliverance.tensorlib.TensorRuntimeNative;
 import io.teknek.deliverance.tensor2.TensorOps;
+import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
 import io.teknek.deliverance.toolcallparser.LlamaToolCallParser;
 import io.teknek.deliverance.toolcallparser.QwenToolCallParser;
@@ -156,6 +157,7 @@ public class AutoModelForCausaLm {
         private final EnumMap<TensorProviderKind, Double> parallelSplitSizeMultiplier = new EnumMap<>(TensorProviderKind.class);
         private Optional<Integer> groupedDecodeQkvSplitSize = Optional.empty();
         private AbstractModel.InferenceType requestedInferenceType = AbstractModel.InferenceType.FULL_GENERATION;
+        private Lighter lighter;
 
         record QuantizeOnDemand(DType targetType, String outputOwner, String outputModel) {
             QuantizeOnDemand {
@@ -621,7 +623,10 @@ public class AutoModelForCausaLm {
             if (pool == null){
                 pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
             }
-            if (provider == null){
+            String modelType = readModelType(new File(modelRoot, "config.json"));
+            if ("QWEN3".equals(modelType)) {
+                lighter = new Lighter(mr, pool.getUnderlying());
+            } else if (provider == null){
                 ConfigurableTensorProvider base = new ConfigurableTensorProvider(allocator, pool);
                 Optional<TensorOperations> maybe = getNative(base.get());
                 TensorOperations primary = maybe.map(ops -> tunedTensorOperations(TensorProviderKind.SIMD, ops))
@@ -647,13 +652,21 @@ public class AutoModelForCausaLm {
             model.setTensorRuntimeMode(tensorRuntimeMode);
             model.setTensorRuntime(createTensorRuntime());
             model.setTensorPlanTraceEnabled(tensorPlanTrace);
-            if (!tensorProviderExplicit) {
+            if (!tensorProviderExplicit && lighter == null) {
                 model.addTensorOperations(hydrateTensorOperations());
             }
             installNativeTensor2Ops(model);
             logBuilderState(model);
             model.init();
             return model;
+        }
+
+        private String readModelType(File configFile) {
+            try {
+                return JsonUtils.om.readTree(configFile).get("model_type").textValue().toUpperCase();
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
         }
 
         private void installNativeTensor2Ops(AbstractModel model) {
@@ -675,7 +688,7 @@ public class AutoModelForCausaLm {
         }
 
         private void logBuilderState(AbstractModel model) {
-            TensorOperations primary = model.configurableTensorProvider.get();
+            TensorOperations primary = model.configurableTensorProvider == null ? null : model.configurableTensorProvider.get();
             LOGGER.info("""
                     Model builder final state
                       model={}
@@ -687,7 +700,8 @@ public class AutoModelForCausaLm {
                       prefixCacheMode={} kvBlockStoragePolicy={} kvTurboQuantBits={} kvKeyDType={} kvValueDType={} sharedPrefixBlockCacheMaxBytes={} sharedPrefixDiskCacheEnabled={} sharedPrefixDiskCacheMaxBytes={}
                       generationOptions={}
                     """,
-                    fetch.getName(), primary.name(), primary.parallelSplitSize(), model.tensorOperationsSummary(),
+                    fetch.getName(), primary == null ? "tensor2" : primary.name(),
+                    primary == null ? 0 : primary.parallelSplitSize(), model.tensorOperationsSummary(),
                     Runtime.getRuntime().availableProcessors(), SIMD_PARALLEL_SPLIT_ALIGNMENT,
                     PANAMA_PARALLEL_SPLIT_ALIGNMENT, parallelSplitSizeFixed, parallelSplitSizeMultiplier,
                     model.modelDType, model.workingDType, model.workingQType,
@@ -745,6 +759,9 @@ public class AutoModelForCausaLm {
                 PreTrainedTokenizer tokenizer = AutoTokenizer.fromPretrained(modelRoot.toPath());
                 WeightLoader weightLoader = new DefaultWeightLoader(modelRoot);
                 if (loraAdapter.isPresent()) {
+                    if (lighter != null) {
+                        throw new IllegalArgumentException("LoRA merging is not supported by the TensorRef Qwen3 path");
+                    }
                     weightLoader = new MergingWeightLoader(weightLoader, loraAdapter.get(), provider.get());
                 }
                 return newModel(modelType, inferenceType(), config, weightLoader, tokenizer);
@@ -787,9 +804,13 @@ public class AutoModelForCausaLm {
                 case "QWEN2" -> new Qwen2Model(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
-                case "QWEN3" -> new Qwen3Model(inferenceType, config, weightLoader,
-                        tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
-                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                case "QWEN3" -> lighter == null
+                        ? new Qwen3Model(inferenceType, config, weightLoader, tokenizer, workingMem, workingQuant,
+                        effectiveModelQType, provider, mr, allocator, settings, toolCallParser, pool,
+                        tensorParallelContext, tensorParallelCollectives, outputHeadQuantization)
+                        : new Qwen3Model(inferenceType, config, weightLoader, tokenizer, workingMem, workingQuant,
+                        effectiveModelQType, mr, settings, toolCallParser, pool, tensorParallelContext,
+                        tensorParallelCollectives, outputHeadQuantization, lighter);
                 case "QWEN3_MOE" -> new Qwen3MoeModel(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);

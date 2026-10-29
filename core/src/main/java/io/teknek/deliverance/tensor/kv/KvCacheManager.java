@@ -54,16 +54,30 @@ public final class KvCacheManager {
         this.dtype = Objects.requireNonNull(dtype, "dtype");
         this.settings = Objects.requireNonNull(settings, "settings");
         this.blockSize = this.settings.getBlockSize();
-        this.allocator = Objects.requireNonNull(allocator, "allocator");
+        // The TensorRef-backed path allocates through Lighter and intentionally has no V1 allocator.
+        this.allocator = allocator;
         this.metricRegistry = Objects.requireNonNull(metricRegistry, "metricRegistry");
         this.trackReadViews = trackReadViews;
         this.conversionOperations = conversionOperations;
         this.lighter = Objects.requireNonNull(lighter, "lighter");
     }
 
+    public KvCacheManager(int layers, int contextLength, int kvLength, DType dtype,
+            KvBufferCacheSettings settings, MetricRegistry metricRegistry, Lighter lighter) {
+        this(layers, contextLength, kvLength, dtype, settings, null, metricRegistry, false, null, lighter);
+    }
+
+    public KvCacheManager(int layers, int contextLength, int kvLength, DType dtype,
+            KvBufferCacheSettings settings, MetricRegistry metricRegistry, boolean trackReadViews, Lighter lighter) {
+        this(layers, contextLength, kvLength, dtype, settings, null, metricRegistry, trackReadViews, null, lighter);
+    }
+
     public KvCacheSession openSession() {
         metricRegistry.meter("kvcache.v2.session.open").mark();
-        return new KvCacheSession(layers, contextLength, kvLength, blockSize, dtype, allocator, metricRegistry,
+        return allocator == null
+                ? new KvCacheSession(layers, contextLength, kvLength, blockSize, dtype, metricRegistry,
+                trackReadViews, settings, conversionOperations, lighter)
+                : new KvCacheSession(layers, contextLength, kvLength, blockSize, dtype, allocator, metricRegistry,
                 trackReadViews, settings, conversionOperations, lighter);
     }
 }

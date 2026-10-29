@@ -180,9 +180,8 @@ public class GraniteMoeHybridHfTextModelPortedTest implements
     public void modelSupportDetectsGraniteMoeHybridConfig() throws Exception {
         Path modelDir = writeTinyCheckpoint(tempDir.resolve("granite-moe-hybrid-detect"), tinyConfig(), 1234);
 
-        assertEquals(GraniteMoeHybridConfig.class,
-                GraniteMoeHybridConfig.class,
-                JsonUtils.om.readValue(modelDir.resolve("config.json").toFile(), GraniteMoeHybridConfig.class).getClass());
+         assertEquals(GraniteMoeHybridConfig.class,
+                 JsonUtils.om.readValue(modelDir.resolve("config.json").toFile(), GraniteMoeHybridConfig.class).getClass());
     }
 
     @Test

@@ -267,7 +267,19 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     private volatile Consumer<GenerationDebugEvent> generationDebugHook = event -> {};
     private volatile Consumer<LayerDebugEvent> layerDebugHook = event -> {};
 
-    protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer t, DType workingMemoryDType,
+    protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer t,
+                             DType workingMemoryDType, DType workingQType, Optional<DType> modelQType,
+                             MetricRegistry metricRegistry, KvBufferCacheSettings kvBufferCacheSettings,
+                             ToolCallParser toolCallParser, WrappedForkJoinPool pool,
+                             TensorParallelContext tensorParallelContext,
+                             TensorParallelCollectives tensorParallelCollectives,
+                             Optional<DType> outputHeadQuantization, Lighter lighter) {
+        this(inferenceType, c, w, t, workingMemoryDType, workingQType, modelQType, null, metricRegistry, null,
+                kvBufferCacheSettings, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives,
+                outputHeadQuantization, lighter);
+    }
+
+     protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer t, DType workingMemoryDType,
                             DType workingMemoryQType, Optional<DType> modelQType, ConfigurableTensorProvider provider,
                             MetricRegistry metricRegistry, TensorAllocator tensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
                             ToolCallParser toolCallParser, WrappedForkJoinPool pool) {
@@ -303,8 +315,20 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
                             ToolCallParser toolCallParser, WrappedForkJoinPool pool,
                             TensorParallelContext tensorParallelContext,
                             TensorParallelCollectives tensorParallelCollectives,
-                            Optional<DType> outputHeadQuantization) {
-        this.inferenceType = inferenceType;
+                             Optional<DType> outputHeadQuantization) {
+         this(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType, provider, metricRegistry,
+                 tensorAllocator, kvBufferCacheSettings, toolCallParser, pool, tensorParallelContext,
+                 tensorParallelCollectives, outputHeadQuantization, new Lighter(metricRegistry));
+     }
+
+     private AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer t, DType workingMemoryDType,
+                             DType workingQType, Optional<DType> modelQType, ConfigurableTensorProvider provider,
+                             MetricRegistry metricRegistry, TensorAllocator tensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
+                             ToolCallParser toolCallParser, WrappedForkJoinPool pool,
+                             TensorParallelContext tensorParallelContext,
+                             TensorParallelCollectives tensorParallelCollectives,
+                             Optional<DType> outputHeadQuantization, Lighter lighter) {
+         this.inferenceType = inferenceType;
         this.config = c;
         this.weights = w;
         this.tokenizer = t;
@@ -317,9 +341,11 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         this.workingDType = workingMemoryDType;
         this.modelQType = modelQType;
         this.configurableTensorProvider = provider;
-        this.tensorOperations.put(TensorProviderKind.SIMD, provider.get());
+        if (provider != null) {
+            this.tensorOperations.put(TensorProviderKind.SIMD, provider.get());
+        }
         this.metricRegistry = metricRegistry;
-        this.lighter = new Lighter(metricRegistry);
+        this.lighter = Objects.requireNonNull(lighter, "lighter");
         this.lighter.setProviderObserver(event -> {
             String operation = event.operation();
             String providerName = event.kind().name().toLowerCase(java.util.Locale.ROOT);
@@ -340,17 +366,22 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         this.tensorAllocator = tensorAllocator;
         this.kvBufferCacheSettings = kvBufferCacheSettings;
         this.kvBufferCache = new KvBufferCache(this, kvBufferCacheSettings);
-        this.kvBlockManager = new KvBlockManager(metricRegistry, kvBufferCacheSettings, tensorAllocator);
-        this.kvCacheManager = new KvCacheManager(c.numberOfLayers, c.contextLength,
+        this.kvBlockManager = tensorAllocator == null
+                ? null
+                : new KvBlockManager(metricRegistry, kvBufferCacheSettings, tensorAllocator);
+        this.kvCacheManager = provider == null
+                ? new KvCacheManager(c.numberOfLayers, c.contextLength, c.kvLength / tensorParallelContext.size(),
+                workingMemoryDType, kvBufferCacheSettings, metricRegistry, lighter)
+                : new KvCacheManager(c.numberOfLayers, c.contextLength,
                 c.kvLength / tensorParallelContext.size(), workingMemoryDType, kvBufferCacheSettings, tensorAllocator,
                 metricRegistry, false, configurableTensorProvider.get(), lighter);
-        this.kvPrefixSnapshotCache = new KvPrefixSnapshotCache(c.numberOfLayers, c.contextLength,
+        this.kvPrefixSnapshotCache = tensorAllocator == null ? null : new KvPrefixSnapshotCache(c.numberOfLayers, c.contextLength,
                 c.kvLength / tensorParallelContext.size(), kvBufferCacheSettings.getBlockSize(),
                 kvBufferCacheSettings.getKvKeyDType(), kvBufferCacheSettings.getKvValueDType(),
                 tensorAllocator, metricRegistry, kvBufferCacheSettings);
         this.toolCallParser = toolCallParser;
 
-        this.workingQType = resolveWorkingQType(workingMemoryQType);
+         this.workingQType = resolveWorkingQType(workingQType);
 
         this.pool = pool;
         logger.debug("model constructor complete config={} inference_type={}", config.getClass().getSimpleName(), inferenceType);
@@ -360,7 +391,9 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         if (initialized) {
             return;
         }
-        this.modelLineagePlan = new TensorPlan(configurableTensorProvider.get(), pool, metricRegistry, this, tensorRuntime);
+        this.modelLineagePlan = configurableTensorProvider == null
+                ? null
+                : new TensorPlan(configurableTensorProvider.get(), pool, metricRegistry, this, tensorRuntime);
         logger.debug("model init start config={} inference_type={}", config.getClass().getSimpleName(), inferenceType);
         this.embedInput = inferenceType.isInput ? loadInputWeights() : null;
         boolean tensorRefExecution = inferenceType.isFwdPass && usesTensorRefExecution();
@@ -378,7 +411,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
 
     private DType resolveWorkingQType(DType requestedWorkingQType) {
         if (requestedWorkingQType == null) {
-            requestedWorkingQType = configurableTensorProvider.get().preferredWorkingQuantizedType();
+            requestedWorkingQType = DType.I8;
         }
 
         // FIXME: This is a hack to support Avoid Q8F32 evals
@@ -409,12 +442,9 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
             requestedWorkingQType = DType.F32;
         }
 
-        // Some operation providers don't support Q4I8.
-        DType providerPreferredQType = configurableTensorProvider.get().preferredWorkingQuantizedType();
-        if (modelDType == DType.Q4 && requestedWorkingQType.size() < providerPreferredQType.size()) {
-            requestedWorkingQType = providerPreferredQType;
-            logger.warn("Tensor provider {} does not support Q4. Using {} as workingMemoryType ",
-                    configurableTensorProvider.get().name(), requestedWorkingQType);
+        if (configurableTensorProvider == null) {
+            // TensorRef execution has no V1 allocator for the legacy quantization probe below.
+            return requestedWorkingQType;
         }
 
         if (requestedWorkingQType == workingDType) {
@@ -466,7 +496,11 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
 
     void setTrackKvReadViewsEnabled(boolean trackKvReadViewsEnabled) {
         this.trackKvReadViewsEnabled = trackKvReadViewsEnabled;
-        this.kvCacheManager = new KvCacheManager(config.numberOfLayers, config.contextLength,
+        this.kvCacheManager = configurableTensorProvider == null
+                ? new KvCacheManager(config.numberOfLayers, config.contextLength,
+                config.kvLength / tensorParallelContext.size(), workingDType, kvBufferCacheSettings,
+                metricRegistry, trackKvReadViewsEnabled, lighter)
+                : new KvCacheManager(config.numberOfLayers, config.contextLength,
                 config.kvLength / tensorParallelContext.size(), workingDType, kvBufferCacheSettings, tensorAllocator,
                 metricRegistry, trackKvReadViewsEnabled, configurableTensorProvider.get(), lighter);
     }
@@ -979,8 +1013,12 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
             }
         }
         kvBufferCache.close();
-        kvPrefixSnapshotCache.close();
-        kvBlockManager.close();
+        if (kvPrefixSnapshotCache != null) {
+            kvPrefixSnapshotCache.close();
+        }
+        if (kvBlockManager != null) {
+            kvBlockManager.close();
+        }
         kvCache2SessionAdapters.values().forEach(KvCacheSession::close);
         kvCache2SessionAdapters.clear();
         modelTensorRefs.forEach(TensorRef::close);
@@ -996,9 +1034,11 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
 
     private void closeTensorOperations() {
         Set<TensorOperations> closed = Collections.newSetFromMap(new IdentityHashMap<>());
-        TensorOperations primary = configurableTensorProvider.get();
-        if (closed.add(primary)) {
-            primary.close();
+        if (configurableTensorProvider != null) {
+            TensorOperations primary = configurableTensorProvider.get();
+            if (closed.add(primary)) {
+                primary.close();
+            }
         }
         for (TensorOperations operations : tensorOperations.values()) {
             if (closed.add(operations)) {
@@ -1092,11 +1132,11 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     }
 
     public String getTensorProviderName() {
-        return configurableTensorProvider.get().name();
+        return configurableTensorProvider == null ? "tensor2" : configurableTensorProvider.get().name();
     }
 
     public int getTensorProviderParallelSplitSize() {
-        return configurableTensorProvider.get().parallelSplitSize();
+        return configurableTensorProvider == null ? 32 : configurableTensorProvider.get().parallelSplitSize();
     }
 
     /**
@@ -1648,6 +1688,9 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
 
     protected PlannedTensorRef plannedInputEmbeddingsRef(String name, TensorRef embeddings,
             io.teknek.deliverance.generator.ForwardPhase phase) {
+        if (modelLineagePlan == null) {
+            return new PlannedTensorRef(embeddings, null);
+        }
         TensorPlan.Tensor lineage = modelLineageTensor("model.embed_tokens.weight")
                 .map(upstream -> modelLineagePlan.input(name, upstream, embeddings))
                 .orElseGet(() -> modelLineagePlan.input(name, embeddings))

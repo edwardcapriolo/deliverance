@@ -24,6 +24,7 @@ import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,9 +50,20 @@ public class LlamaModel extends AbstractModel {
                 tensorParallelCollectives, outputHeadQuantization);
     }
 
+    protected LlamaModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer t,
+            DType workingMemoryDType, DType workingQType, Optional<DType> modelQType,
+            MetricRegistry metricRegistry, KvBufferCacheSettings kvBufferCacheSettings,
+            ToolCallParser toolCallParser, WrappedForkJoinPool pool, TensorParallelContext tensorParallelContext,
+            TensorParallelCollectives tensorParallelCollectives, Optional<DType> outputHeadQuantization,
+            Lighter lighter) {
+        super(inferenceType, c, w, t, workingMemoryDType, workingQType, modelQType, metricRegistry,
+                kvBufferCacheSettings, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives,
+                outputHeadQuantization, lighter);
+    }
+
     @Override
     protected EmbedInput loadInputWeights() {
-        if (getClass() == LlamaModel.class) {
+        if (usesTensorRefExecution()) {
             embedTokenWeightsRef = registerModelTensorRef(weights.loadRef("model.embed_tokens.weight"));
             return new EmbedInput(this) {
                 @Override

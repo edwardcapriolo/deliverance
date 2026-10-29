@@ -62,7 +62,7 @@ public final class BertMLPBlock2 implements FeedForward2 {
         int outputLength = (int) output.shape().last();
         int inputLength = (int) input.shape().last();
         model.runChunks("bertmlp2.projection", 0, outputLength,
-                model.primaryTensorOperations().parallelSplitSize(), Optional.empty(),
+                model.getTensorProviderParallelSplitSize(), Optional.empty(),
                 (chunkStart, chunkSize) -> lighter.dotProductRows(output, input, weight, 0,
                         inputLength, chunkStart, chunkSize, chunkStart));
         for (int row = 0; row < output.shape().first(); row++) {

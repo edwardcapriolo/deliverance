@@ -27,6 +27,7 @@ import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensor2.TensorRefBackedTensor;
+import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 
 import java.util.Optional;
@@ -55,6 +56,17 @@ public class Qwen3Model extends LlamaModel {
         super(inferenceType, config, weights, tokenizer, workingDType, workingQType, modelQType,
                 configurableTensorProvider, metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings,
                 toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+    }
+
+    public Qwen3Model(InferenceType inferenceType, Config config, WeightLoader weights, PreTrainedTokenizer tokenizer,
+            DType workingDType, DType workingQType, Optional<DType> modelQType,
+            MetricRegistry metricRegistry, KvBufferCacheSettings kvBufferCacheSettings,
+            ToolCallParser toolCallParser, WrappedForkJoinPool pool, TensorParallelContext tensorParallelContext,
+            TensorParallelCollectives tensorParallelCollectives, Optional<DType> outputHeadQuantization,
+            Lighter lighter) {
+        super(inferenceType, config, weights, tokenizer, workingDType, workingQType, modelQType,
+                metricRegistry, kvBufferCacheSettings, toolCallParser, pool, tensorParallelContext,
+                tensorParallelCollectives, outputHeadQuantization, lighter);
     }
 
     @Override

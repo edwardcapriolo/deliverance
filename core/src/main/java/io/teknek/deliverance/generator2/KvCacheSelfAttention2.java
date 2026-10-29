@@ -232,14 +232,14 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
             if (config.isGQA && phase == ForwardPhase.DECODE) {
                 projectGqaQkvGroupedDecode(input, query, key, value);
             } else if (config.isGQA) {
-                projectGqaQkvPrefill(input, query, key, value, model.primaryTensorOperations().parallelSplitSize(), phase);
+                projectGqaQkvPrefill(input, query, key, value, model.getTensorProviderParallelSplitSize(), phase);
             } else {
                 project(query, input, queryAttentionWeights, config.embeddingLength, attentionLength,
-                        "kvcacheselfattention2.q_projection", model.primaryTensorOperations().parallelSplitSize(), phase);
+                        "kvcacheselfattention2.q_projection", model.getTensorProviderParallelSplitSize(), phase);
                 project(key, input, keyAttentionWeights, config.embeddingLength, kvLength,
-                        "kvcacheselfattention2.k_projection", model.primaryTensorOperations().parallelSplitSize(), phase);
+                        "kvcacheselfattention2.k_projection", model.getTensorProviderParallelSplitSize(), phase);
                 project(value, input, valueAttentionWeights, config.embeddingLength, kvLength,
-                        "kvcacheselfattention2.v_projection", model.primaryTensorOperations().parallelSplitSize(), phase);
+                        "kvcacheselfattention2.v_projection", model.getTensorProviderParallelSplitSize(), phase);
             }
             applyLora(queryWeightName, query, input, phase,
                     "kvcacheselfattention2.q_lora");
@@ -279,6 +279,13 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
         io.teknek.deliverance.tensor2.GroupedQkvProjection projection = new io.teknek.deliverance.tensor2.GroupedQkvProjection(
                 input, query, key, value, queryAttentionWeights, keyAttentionWeights, valueAttentionWeights,
                 config.embeddingLength, 0, 0, kvLength);
+        if ("tensor2".equals(model.getTensorProviderName())) {
+            model.runChunks("kvcacheselfattention2.qkv_projection.grouped_decode", 0, attentionLength,
+                    model.getTensorProviderParallelSplitSize(), Optional.empty(),
+                    (offset, length) -> executeGroupedQkvProjection(projection,
+                            Math.toIntExact(offset), Math.toIntExact(length)));
+            return;
+        }
         TensorPlan plan = new TensorPlan(model.primaryTensorOperations(), model.getPool(), metricRegistry, model,
                 model.getTensorRuntime(), lighter);
         TensorPlan.Tensor inputNode = plan.input("qkv.input", input);
@@ -380,7 +387,7 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
                     "kvcacheselfattention2.output_projection").time()) {
                 TensorRef projectionInputForChunks = projectionInput;
                 model.runChunks("kvcacheselfattention2.output_projection", 0, config.embeddingLength,
-                        model.primaryTensorOperations().parallelSplitSize(), Optional.empty(), (chunkStart, chunkSize) ->
+                        model.getTensorProviderParallelSplitSize(), Optional.empty(), (chunkStart, chunkSize) ->
                         {
                              projectChunk(output, projectionInputForChunks, outputProjectionWeights,
                                      attentionLength, chunkStart, chunkSize, phase);

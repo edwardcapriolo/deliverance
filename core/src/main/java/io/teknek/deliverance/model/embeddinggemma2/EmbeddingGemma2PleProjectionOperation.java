@@ -1,6 +1,7 @@
 package io.teknek.deliverance.model.embeddinggemma2;
 
 import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.Scale;
 import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensor2.GemmDit;
 import io.teknek.deliverance.tensorlib.TensorPlanAdaptiveSplitTuner;
@@ -65,10 +66,6 @@ public final class EmbeddingGemma2PleProjectionOperation {
         }
         GemmDit.dotProductRows(lighter, tuner, "embeddinggemma2.ple_projection", output, input, projection,
                 0, 0, inputWidth, 0, outputWidth, 0);
-        for (int row = 0; row < output.shape().first(); row++) {
-            try (TensorRef outputRow = output.slice(row)) {
-                lighter.preferredTensorOperations().scale(scale, outputRow, 0, outputWidth);
-            }
-        }
+        lighter.scale(new Scale(scale).target(output).offsetAndLength(0, (int) output.shape().size()));
     }
 }

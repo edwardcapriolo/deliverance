@@ -78,7 +78,7 @@ public class MLPBlock2 implements FeedForward2 {
                     InferenceProfiler.counter(model.getMetricRegistry(), "mlpblock2.up_weight_" + upWeights.dType()).inc();
                 }
                 model.runChunks("mlpblock2.gate_up_projection", 0, hiddenLength,
-                        model.primaryTensorOperations().parallelSplitSize(), Optional.empty(), (chunkStart, chunkSize) -> {
+                        model.getTensorProviderParallelSplitSize(), Optional.empty(), (chunkStart, chunkSize) -> {
                     DotProductBatchChunk paired = new DotProductBatchChunk()
                             .results(gate, up)
                             .input(input)
@@ -119,7 +119,7 @@ public class MLPBlock2 implements FeedForward2 {
             try (Timer.Context ignoredDown = InferenceProfiler.timer(model.getMetricRegistry(),
                     "mlpblock2.down_projection").time()) {
                 model.runChunks("mlpblock2.down_projection", 0, embeddingLength,
-                        model.primaryTensorOperations().parallelSplitSize(), Optional.empty(), (chunkStart, chunkSize) ->
+                        model.getTensorProviderParallelSplitSize(), Optional.empty(), (chunkStart, chunkSize) ->
                                 projectChunk(output, downInputForChunks, downWeights, hiddenLength, chunkStart,
                                  chunkSize, phase));
             }
@@ -153,7 +153,7 @@ public class MLPBlock2 implements FeedForward2 {
 
     private void activate(TensorRef target, ActivationFunction.Type activationFunction) {
         int batchSize = target.shape().first();
-        model.runChunks("mlpblock2.activation", 0, hiddenLength, model.primaryTensorOperations().parallelSplitSize(),
+        model.runChunks("mlpblock2.activation", 0, hiddenLength, model.getTensorProviderParallelSplitSize(),
                 Optional.empty(), (chunkStart, chunkSize) -> {
             int chunkEnd = chunkStart + chunkSize;
             for (int column = chunkStart; column < chunkEnd; column++) {
