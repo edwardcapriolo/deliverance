@@ -50,7 +50,7 @@ public class LlamaModel extends AbstractModel {
                 tensorParallelCollectives, outputHeadQuantization);
     }
 
-    protected LlamaModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer t,
+    public LlamaModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer t,
             DType workingMemoryDType, DType workingQType, Optional<DType> modelQType,
             MetricRegistry metricRegistry, KvBufferCacheSettings kvBufferCacheSettings,
             ToolCallParser toolCallParser, WrappedForkJoinPool pool, TensorParallelContext tensorParallelContext,

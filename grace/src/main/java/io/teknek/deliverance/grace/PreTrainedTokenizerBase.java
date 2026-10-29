@@ -31,6 +31,9 @@ public abstract class PreTrainedTokenizerBase {
     private final Object backend;
     private final List<Object> filesLoaded;
     private final int padTokenTypeId;
+    // HF exposes pad_token as mutable configuration; volatile publishes setup-time changes before sharing.
+    // Tokenizer configuration must not be changed concurrently with encoding.
+    private volatile String padTokenOverride;
 
     PreTrainedTokenizerBase(Map<String, String> modelSpecificSpecialTokens,
                             Optional<BigInteger> maxLen,
@@ -61,10 +64,22 @@ public abstract class PreTrainedTokenizerBase {
         this.padTokenTypeId = 0;
     }
 
+    /** Applies the Hugging Face-style runtime pad-token override used by causal LM batching. */
+    public PreTrainedTokenizerBase withPadToken(String token) {
+        Objects.requireNonNull(token, "token");
+        if (tokenToId(token).isEmpty()) {
+            throw new IllegalArgumentException("Unknown pad token: " + token);
+        }
+        this.padTokenOverride = token;
+        return this;
+    }
+
     public List<String> allSpecialTokens() {
         LinkedHashSet<String> tokens = new LinkedHashSet<>();
         for (String attribute : SPECIAL_TOKEN_ATTRIBUTES) {
-            String token = specialTokensMap.get(attribute);
+            String token = attribute.equals("pad_token") && padTokenOverride != null
+                    ? padTokenOverride
+                    : specialTokensMap.get(attribute);
             if (token != null) {
                 tokens.add(token);
             }
@@ -111,7 +126,7 @@ public abstract class PreTrainedTokenizerBase {
     }
 
     public Optional<String> padToken() {
-        return specialToken("pad_token");
+        return padTokenOverride == null ? specialToken("pad_token") : Optional.of(padTokenOverride);
     }
 
     public OptionalInt padTokenId() {
@@ -194,6 +209,9 @@ public abstract class PreTrainedTokenizerBase {
     public Tokens tokenize(String text) {
         List<String> tokens = new ArrayList<>();
         for (String segment : splitByAddedTokens(text)) {
+            if (segment.isEmpty()) {
+                continue;
+            }
             OptionalInt addedTokenId = tokenToId(segment);
             if (addedTokenId.isPresent() && addedVocab.containsKey(segment)) {
                 tokens.add(segment);

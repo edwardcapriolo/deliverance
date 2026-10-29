@@ -44,6 +44,9 @@ public class LlamaTokenizer extends GemmaTokenizer {
         List<String> tokens = new ArrayList<>();
         boolean firstPlainSegment = true;
         for (String segment : splitByAddedTokens(text)) {
+            if (segment.isEmpty()) {
+                continue;
+            }
             if (addedTokenContents.contains(segment)) {
                 tokens.add(segment);
                 firstPlainSegment = false;

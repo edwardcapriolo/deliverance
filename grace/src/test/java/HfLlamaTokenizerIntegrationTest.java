@@ -28,4 +28,33 @@ public class HfLlamaTokenizerIntegrationTest implements HfTokenizerIntegrationCo
     public String integrationExpectedDecodedText() {
         return HfTokenizerFixtures.HF_COMMON_INPUT;
     }
+
+    @org.junit.jupiter.api.Test
+    public void test_load_tiktoken_tokenizer() {
+        io.teknek.deliverance.grace.PreTrainedTokenizer tokenizer =
+                io.teknek.deliverance.grace.AutoTokenizer.fromPretrained(
+                        new io.teknek.deliverance.grace.AutoTokenizer.OwnerNameOrPath(
+                                new io.teknek.deliverance.grace.AutoTokenizer.OwnerName(
+                                        "hf-internal-testing", "llama3-tokenizer-tiktoken")));
+        String text = "This is a test";
+        int[] ids = tokenizer.encode(text, io.teknek.deliverance.grace.EncodeOptions.defaults()
+                .withoutSpecialTokens()).inputIds();
+        org.junit.jupiter.api.Assertions.assertEquals(text,
+                tokenizer.decode(new io.teknek.deliverance.grace.TokenIds(ids), false, false, false, false));
+    }
+
+    @org.junit.jupiter.api.Test
+    public void test_llama3_bpe_skips_clean_up_tokenization_spaces() {
+        io.teknek.deliverance.grace.PreTrainedTokenizer tokenizer =
+                io.teknek.deliverance.grace.AutoTokenizer.fromPretrained(
+                        new io.teknek.deliverance.grace.AutoTokenizer.OwnerNameOrPath(
+                                new io.teknek.deliverance.grace.AutoTokenizer.OwnerName(
+                                        "meta-llama", "Meta-Llama-3-8B")));
+        for (String text : new String[]{"x != y", "! ! !", "a , b"}) {
+            int[] ids = tokenizer.encode(text, io.teknek.deliverance.grace.EncodeOptions.defaults()
+                    .withoutSpecialTokens()).inputIds();
+            org.junit.jupiter.api.Assertions.assertEquals(text,
+                    tokenizer.decode(new io.teknek.deliverance.grace.TokenIds(ids), false, false, false, false));
+        }
+    }
 }

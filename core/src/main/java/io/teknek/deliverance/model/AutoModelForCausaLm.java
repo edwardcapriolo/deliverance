@@ -624,7 +624,7 @@ public class AutoModelForCausaLm {
                 pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
             }
             String modelType = readModelType(new File(modelRoot, "config.json"));
-            if ("QWEN3".equals(modelType) || "QWEN3_MOE".equals(modelType)) {
+            if ("LLAMA".equals(modelType) || "QWEN3".equals(modelType) || "QWEN3_MOE".equals(modelType)) {
                 lighter = new Lighter(mr, pool.getUnderlying());
             } else if (provider == null){
                 ConfigurableTensorProvider base = new ConfigurableTensorProvider(allocator, pool);
@@ -808,9 +808,9 @@ public class AutoModelForCausaLm {
                 PreTrainedTokenizer tokenizer) {
             Optional<DType> effectiveModelQType = quantizeOnDemand.map(QuantizeOnDemand::targetType);
             return switch (modelType) {
-                case "LLAMA" -> new LlamaModel(inferenceType, config, weightLoader,
-                        tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
-                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                case "LLAMA" -> new LlamaModel(inferenceType, config, weightLoader, tokenizer, workingMem,
+                        workingQuant, effectiveModelQType, mr, settings, toolCallParser, pool, tensorParallelContext,
+                        tensorParallelCollectives, outputHeadQuantization, lighter);
                 case "QWEN2" -> new Qwen2Model(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);

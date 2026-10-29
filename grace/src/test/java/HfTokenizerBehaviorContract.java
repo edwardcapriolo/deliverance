@@ -1,4 +1,5 @@
 import io.teknek.deliverance.grace.BatchEncoding;
+import io.teknek.deliverance.grace.EncodeOptions;
 import io.teknek.deliverance.grace.Encoding;
 import io.teknek.deliverance.grace.PaddingOptions;
 import io.teknek.deliverance.grace.PaddingSide;
@@ -30,7 +31,7 @@ public interface HfTokenizerBehaviorContract {
 
     @Test
     default void emptyInputEncodesToEmptySequence() {
-        Encoding encoding = tokenizer().encode("");
+        Encoding encoding = tokenizer().encode("", EncodeOptions.defaults().withoutSpecialTokens());
 
         assertArrayEquals(new int[0], encoding.inputIds());
         assertArrayEquals(new int[0], encoding.attentionMask());
