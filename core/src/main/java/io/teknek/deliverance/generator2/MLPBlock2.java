@@ -89,12 +89,8 @@ public class MLPBlock2 implements FeedForward2 {
                             .weightRowStart(chunkStart)
                             .weightRowCount(chunkSize)
                             .outputColumnStart(chunkStart);
-                    if (lighter.supportsDotProductBatchChunk(paired)) {
-                        model.getCompositeOps().dotProductBatchChunk(paired);
-                    } else {
-                        projectChunk(gate, input, gateWeights, embeddingLength, chunkStart, chunkSize, phase);
-                        projectChunk(up, input, upWeights, embeddingLength, chunkStart, chunkSize, phase);
-                    }
+                    projectChunk(gate, input, gateWeights, embeddingLength, chunkStart, chunkSize, phase);
+                    projectChunk(up, input, upWeights, embeddingLength, chunkStart, chunkSize, phase);
                 });
             }
             applyLora(gateWeightName, gate, input, phase, "mlpblock2.gate_lora");
@@ -145,9 +141,12 @@ public class MLPBlock2 implements FeedForward2 {
             lighter.batchDotProduct(new BatchDotProduct()
                     .result(output).a(input).b(weight)
                     .aColumnOffset(0).bColumnOffset(0).columnLength(inputLength)
-                    .resultRowOffset(0).bRowOffset(chunkStart).rowChunkSize(chunkSize));
+                    .resultRowOffset(0).bRowOffset(chunkStart).rowChunkSize(chunkSize)
+                    .threading(io.teknek.deliverance.tensor2.Threading.NONE));
         } else {
-            lighter.dotProductRows(output, input, weight, 0, inputLength, chunkStart, chunkSize, chunkStart);
+            lighter.dotProductRows(output, input, weight, 0, 0, inputLength, chunkStart, chunkSize, chunkStart,
+                    io.teknek.deliverance.tensor2.GemmKernel.ROW,
+                    io.teknek.deliverance.tensor2.Threading.NONE);
         }
     }
 

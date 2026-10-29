@@ -113,7 +113,8 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
                         tensorReducer, phase);
                 try {
                     model.emitLayerDebug(layerIndex, "attention_value", attended);
-                    return projectOutput(attended, tensorReducer, phase);
+                    TensorRef output = projectOutput(attended, tensorReducer, phase);
+                    return output;
                 } finally {
                     attended.close();
                 }
@@ -352,9 +353,13 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
             lighter.batchDotProduct(new BatchDotProduct()
                     .result(output).a(input).b(weight)
                     .aColumnOffset(0).bColumnOffset(0).columnLength(inputLength)
-                    .resultRowOffset(0).bRowOffset(chunkStart).rowChunkSize(chunkSize));
+                    .resultRowOffset(0).bRowOffset(chunkStart).rowChunkSize(chunkSize)
+                    .threading(io.teknek.deliverance.tensor2.Threading.NONE));
         } else {
-            lighter.dotProductRows(output, input, weight, 0, inputLength, chunkStart, chunkSize, chunkStart);
+            // The caller already partitions decode rows across the model ForkJoinPool.
+            lighter.dotProductRows(output, input, weight, 0, 0, inputLength, chunkStart, chunkSize, chunkStart,
+                    io.teknek.deliverance.tensor2.GemmKernel.ROW,
+                    io.teknek.deliverance.tensor2.Threading.NONE);
         }
     }
 

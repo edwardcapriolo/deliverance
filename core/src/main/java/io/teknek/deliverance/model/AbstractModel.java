@@ -1916,6 +1916,15 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         }
     }
 
+    /**
+     * Runs chunk work on the model-owned executor.
+     *
+     * <p>Operations invoked by {@code action} must not use provider-managed threading
+     * ({@code Threading.PROVIDER}). The callback already runs on model executor workers;
+     * blocking those workers while a nested provider pool executes can exhaust the
+     * bounded pools and deadlock the request. Use caller-managed/synchronous provider
+     * execution for operations inside this callback.</p>
+     */
     public void runChunks(String operation, int offset, int length, int splitSize, Optional<AbstractTensor> localityTensor,
             io.teknek.deliverance.math.BiIntConsumer action) {
         if (tensorRuntime != null) {

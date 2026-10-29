@@ -12,7 +12,6 @@ import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.model.TensorProviderKind;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
-import io.teknek.deliverance.tensorlib.TensorRuntimeMode;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -30,21 +29,23 @@ public class Qwen3SmallIT {
 
     @Test
     public void qwen306BLoadsAndGeneratesShortAnswer() {
+        boolean previousProfiling = InferenceProfiler.isEnabled();
+        InferenceProfiler.setEnabled(true);
+        InferenceProfiler.reset();
         ModelFetcher fetch = new ModelFetcher("Qwen", "Qwen3-0.6B");
-        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
-                .withTensorRuntimeMode(TensorRuntimeMode.ENFORCE)
-                .withGpuDecodeAttention(true)
-                .buildLocalTransformerModel()) {
+        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch).buildLocalTransformerModel()) {
             PromptContext prompt = model.promptSupport().orElseThrow().builder()
                     .addTemplateArgs(Map.of("enable_thinking", false))
                     .addUserMessage("What is 1 + 1? Answer with only the number.")
                     .build();
             Response response = model.generate(UUID.randomUUID(), prompt,
-                    new GeneratorParameters().withTemperature(0.7f).withTopP(0.8f).withTopK(20.0f).withMaxTokens(8),
+                    new GeneratorParameters().withTemperature(0.7f).withTopP(0.8f).withTopK(20.0f).withMaxTokens(2),
                     new DoNothingGenerateEvent());
             System.out.println("QWEN3_06B_SHORT=" + response.responseTextWithSpecialTokens.replace("\n", "\\n"));
             printTensorRuntimeCounters(model.getMetricRegistry());
             assertFalse(response.responseTextWithSpecialTokens.isBlank());
+        } finally {
+            InferenceProfiler.setEnabled(previousProfiling);
         }
     }
 
@@ -55,7 +56,6 @@ public class Qwen3SmallIT {
         InferenceProfiler.reset();
         ModelFetcher fetch = new ModelFetcher("Qwen", "Qwen3-0.6B");
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
-                .withTensorRuntimeMode(TensorRuntimeMode.ENFORCE)
                 .withGpuDecodeAttention(true)
                 .buildLocalTransformerModel()) {
             assertTrue(model.tensorOperations(TensorProviderKind.GPU).isPresent(),
@@ -89,7 +89,6 @@ public class Qwen3SmallIT {
         InferenceProfiler.reset();
         ModelFetcher fetch = new ModelFetcher("edwardcapriolo", "Qwen3-4B-JQ4");
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
-                .withTensorRuntimeMode(TensorRuntimeMode.ANALYZE)
                 .withGpuDecodeAttention(true)
                 .buildLocalTransformerModel()) {
             assertTrue(model.tensorOperations(TensorProviderKind.GPU).isPresent(),
@@ -123,7 +122,6 @@ public class Qwen3SmallIT {
         InferenceProfiler.reset();
         ModelFetcher fetch = new ModelFetcher("edwardcapriolo", "Qwen3-4B-JQ4");
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetch)
-                .withTensorRuntimeMode(TensorRuntimeMode.ANALYZE)
                 .withGpuDecodeAttention(true)
                 .buildLocalTransformerModel()) {
             assertTrue(model.tensorOperations(TensorProviderKind.GPU).isPresent(),

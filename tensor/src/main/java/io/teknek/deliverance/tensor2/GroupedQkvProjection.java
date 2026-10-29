@@ -20,12 +20,17 @@ public record GroupedQkvProjection(TensorRef input, TensorRef query, TensorRef k
     }
 
     public void execute(Lighter lighter) {
-        lighter.dotProductRows(query, input, queryWeights, 0, inputLength, offset, queryLength, offset);
+        // The caller already partitions QKV rows across the model ForkJoinPool. Do not
+        // ask NativeOps to schedule a second provider pool from those worker threads.
+        lighter.dotProductRows(query, input, queryWeights, 0, 0, inputLength, offset, queryLength, offset,
+                GemmKernel.ROW, Threading.NONE);
         int keyValueLength = Math.min(queryLength, kvLength - offset);
         if (keyValueLength <= 0) {
             return;
         }
-        lighter.dotProductRows(key, input, keyWeights, 0, inputLength, offset, keyValueLength, offset);
-        lighter.dotProductRows(value, input, valueWeights, 0, inputLength, offset, keyValueLength, offset);
+        lighter.dotProductRows(key, input, keyWeights, 0, 0, inputLength, offset, keyValueLength, offset,
+                GemmKernel.ROW, Threading.NONE);
+        lighter.dotProductRows(value, input, valueWeights, 0, 0, inputLength, offset, keyValueLength, offset,
+                GemmKernel.ROW, Threading.NONE);
     }
 }

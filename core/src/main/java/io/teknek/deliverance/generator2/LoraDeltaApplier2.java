@@ -49,10 +49,12 @@ final class LoraDeltaApplier2 {
                         lighter.batchDotProduct(new BatchDotProduct()
                                 .result(output).a(input).b(weights)
                                 .aColumnOffset(0).bColumnOffset(0).columnLength(inputLength)
-                                .resultRowOffset(0).bRowOffset(chunkStart).rowChunkSize(chunkSize));
+                                .resultRowOffset(0).bRowOffset(chunkStart).rowChunkSize(chunkSize)
+                                .threading(io.teknek.deliverance.tensor2.Threading.NONE));
                     } else {
-                        lighter.dotProductRows(output, input, weights, 0, inputLength, chunkStart, chunkSize,
-                                chunkStart);
+                        lighter.dotProductRows(output, input, weights, 0, 0, inputLength, chunkStart, chunkSize,
+                                chunkStart, io.teknek.deliverance.tensor2.GemmKernel.ROW,
+                                io.teknek.deliverance.tensor2.Threading.NONE);
                     }
                 });
     }

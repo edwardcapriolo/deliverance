@@ -689,6 +689,14 @@ public class AutoModelForCausaLm {
 
         private void logBuilderState(AbstractModel model) {
             TensorOperations primary = model.configurableTensorProvider == null ? null : model.configurableTensorProvider.get();
+            String lighterProviders = model.getLighter().tensorOperations().entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .map(entry -> entry.getKey() + "=" + entry.getValue().getClass().getSimpleName())
+                    .collect(java.util.stream.Collectors.joining(", "));
+            String primaryProvider = primary == null ? "tensor2" : primary.name();
+            int parallelSplitSize = primary == null
+                    ? model.getTensorProviderParallelSplitSize()
+                    : primary.parallelSplitSize();
             LOGGER.info("""
                     Model builder final state
                       model={}
@@ -700,8 +708,8 @@ public class AutoModelForCausaLm {
                       prefixCacheMode={} kvBlockStoragePolicy={} kvTurboQuantBits={} kvKeyDType={} kvValueDType={} sharedPrefixBlockCacheMaxBytes={} sharedPrefixDiskCacheEnabled={} sharedPrefixDiskCacheMaxBytes={}
                       generationOptions={}
                     """,
-                    fetch.getName(), primary == null ? "tensor2" : primary.name(),
-                    primary == null ? 0 : primary.parallelSplitSize(), model.tensorOperationsSummary(),
+                    fetch.getName(), primaryProvider, parallelSplitSize,
+                    primary == null ? lighterProviders : model.tensorOperationsSummary(),
                     Runtime.getRuntime().availableProcessors(), SIMD_PARALLEL_SPLIT_ALIGNMENT,
                     PANAMA_PARALLEL_SPLIT_ALIGNMENT, parallelSplitSizeFixed, parallelSplitSizeMultiplier,
                     model.modelDType, model.workingDType, model.workingQType,

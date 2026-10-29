@@ -638,6 +638,14 @@ public class Lighter {
         Preconditions.checkArgument(b != null, "B tensor must be set");
         Preconditions.checkArgument(result.device().equals(a.device()) && result.device().equals(b.device()),
                 "Tensors must be on the same device");
+        // The generic Panama BF16 batch gemmer is row-serial. Prefer the provider
+        // chunk kernel for BF16 activations/weights so native providers can use
+        // their parallel GEMM implementation.
+        if (operation.kernel() == GemmKernel.BATCH
+                && (a.dType() == DType.F32 || a.dType() == DType.BF16)
+                && b.dType() == DType.BF16 && result.dType() == DType.F32) {
+            operation.kernel(GemmKernel.CHUNK).threading(Threading.PROVIDER);
+        }
         Preconditions.checkArgument(result.dType() == DType.F32
                         || (result.dType() == DType.BF16 && a.dType() == DType.BF16
                         && b.dType() == DType.BF16),
