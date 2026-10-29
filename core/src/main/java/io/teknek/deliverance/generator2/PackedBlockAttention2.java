@@ -34,6 +34,13 @@ public final class PackedBlockAttention2 {
     public void forward(TensorRef output, TensorRef query, TensorRef keys, TensorRef values,
             int prefixRows, int queryRows, int numberOfHeads, int numberOfKeyValueHeads, int headSize,
             float scale, Float softcap, boolean causalWithinBlock) {
+        forward(output, query, keys, values, prefixRows, queryRows, numberOfHeads, numberOfKeyValueHeads,
+                headSize, scale, softcap, causalWithinBlock, 0);
+    }
+
+    public void forward(TensorRef output, TensorRef query, TensorRef keys, TensorRef values,
+            int prefixRows, int queryRows, int numberOfHeads, int numberOfKeyValueHeads, int headSize,
+            float scale, Float softcap, boolean causalWithinBlock, int slidingWindow) {
         Preconditions.checkArgument(query.shape().first() == queryRows, "query rows mismatch");
         Preconditions.checkArgument(output.shape().first() == queryRows, "output rows mismatch");
         Preconditions.checkArgument(keys.shape().first() >= prefixRows + queryRows, "keys missing visible rows");
@@ -69,7 +76,10 @@ public final class PackedBlockAttention2 {
                                     .rowChunkSize(totalVisibleRows));
                             for (int localRow = 0; localRow < blockRows; localRow++) {
                                 int row = queryRowStart + localRow;
-                                int visibleRows = causalWithinBlock ? prefixRows + row + 1 : totalVisibleRows;
+                                int visibleEnd = causalWithinBlock ? prefixRows + row + 1 : totalVisibleRows;
+                                int windowStart = slidingWindow > 0
+                                        ? Math.max(0, visibleEnd - slidingWindow) : 0;
+                                int visibleRows = visibleEnd - windowStart;
                                 try (TensorRef scoreRow = scores.slice(localRow);
                                      TensorRef outputRow = output.slice(row)) {
                                     if (prefixRows + row == totalVisibleRows - 1) {
@@ -77,13 +87,13 @@ public final class PackedBlockAttention2 {
                                     }
                                     model.getCompositeOps().scaledSoftMax(new ScaledSoftMax(scale)
                                             .target(scoreRow)
-                                            .offsetAndLength(0, visibleRows)
+                                            .offsetAndLength(windowStart, visibleRows)
                                             .softcap(softcap));
                                     if (prefixRows + row == totalVisibleRows - 1) {
                                         emitAttentionDebug("attention_probabilities", head, prefixRows + row, scoreRow);
                                     }
                                     model.getLighter().saxpy(scoreRow, values, outputRow, kvOffset, queryOffset,
-                                            headSize, 0, 0, visibleRows);
+                                             headSize, 0, windowStart, visibleRows);
                                 }
                             }
                         }

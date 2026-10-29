@@ -22,10 +22,15 @@ import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class MistralHfTextModelPortedTest implements HfConfigTesterMixinPort, HfModelTesterMixinPort {
     @TempDir
@@ -90,5 +95,23 @@ public class MistralHfTextModelPortedTest implements HfConfigTesterMixinPort, Hf
     @Override
     public AbstractTensor makeInputsEmbeds(int rows, int embeddingLength, int seed) {
         return null;
+    }
+
+    @Test
+    public void slidingWindowHandlesPrefillBeyondWindow() throws Exception {
+        Path modelDir = writeTinyCheckpoint("mistral-sliding-window", 22_001);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> config = JsonUtils.om.readValue(
+                modelDir.resolve("config.json").toFile(), LinkedHashMap.class);
+        config.put("sliding_window", 4);
+        JsonUtils.om.writeValue(modelDir.resolve("config.json").toFile(), config);
+
+        AbstractModel model = loadTinyModel(modelDir);
+        try (AbstractTensor output = model.batchForward(new int[]{3, 4, 5, 6, 7, 8, 9, 10}, 0)) {
+            assertEquals(8, output.shape().first());
+            assertFiniteTensor(output);
+        } finally {
+            closeModel(model);
+        }
     }
 }

@@ -25,7 +25,8 @@ public class MistralConfig extends Config {
             @JsonProperty("eos_token_id") int eosToken,
             @JsonProperty("hidden_act") ActivationFunction.Type activationFunction,
             @JsonProperty("rope_theta") Double ropeTheta,
-            @JsonProperty("head_dim") Integer headSize
+            @JsonProperty("head_dim") Integer headSize,
+            @JsonProperty("sliding_window") Integer slidingWindow
     ) {
         super(
                 contextLength,
@@ -51,5 +52,6 @@ public class MistralConfig extends Config {
                 null,
                 null
         );
+        this.slidingWindow = slidingWindow;
     }
 }

@@ -43,6 +43,8 @@ public class Config {
     public final Optional<BiMap<String, Integer>> classifcationLabels;
     public final List<String> architectures;
     public final boolean isEncoderDecoder;
+    /** Maximum causal attention span; null means the full cached prefix. */
+    public Integer slidingWindow;
     private Map<String,Object> ropeScaling;
 
     public Config(

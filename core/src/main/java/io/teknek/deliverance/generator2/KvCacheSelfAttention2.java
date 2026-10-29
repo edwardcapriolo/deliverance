@@ -134,16 +134,17 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
             KvCacheSession kvSession, int startPosition, CacheExecutionMode mode,
             Optional<Consumer<List<TensorRef>>> tensorReducer, ForwardPhase phase) {
         int batchSize = query.shape().first();
+        int slidingWindow = config.slidingWindow == null ? 0 : config.slidingWindow;
         TensorRef attended = model.makeDenseTensorRef(batchSize, attentionLength);
         try {
             if (startPosition == 0) {
                 packedBlockAttention.forward(attended, query, currentKeys, currentValues, 0, batchSize, numberOfHeads,
                         numberOfKeyValueHeads, config.headSize, attentionScale, config.attnLogitSoftCapping,
-                        mode != CacheExecutionMode.DENOISE_BLOCK_NO_UPDATE);
+                        mode != CacheExecutionMode.DENOISE_BLOCK_NO_UPDATE, slidingWindow);
                 return attended;
             }
             try (KvReadView readView = kvSession.readView(layerIndex, startPosition, AttentionPattern.CAUSAL)) {
-                if (mode == CacheExecutionMode.DECODE_UPDATE_CACHE && batchSize == 1) {
+                if (mode == CacheExecutionMode.DECODE_UPDATE_CACHE && batchSize == 1 && slidingWindow == 0) {
                     TensorRef[] prefixKeyPages = readView.keyPageRefs();
                     TensorRef[] prefixValuePages = null;
                     try {
@@ -160,18 +161,22 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
                     }
                     return attended;
                 }
-                int capacity = startPosition + batchSize;
+                int prefixRows = slidingWindow == 0
+                        ? startPosition : Math.min(startPosition, Math.max(0, slidingWindow - 1));
+                int prefixStart = startPosition - prefixRows;
+                int capacity = prefixRows + batchSize;
                 try (TensorRef packedKeys = lighter.allocate(readView.keyDType(), TensorShape.of(capacity, kvLength));
                      TensorRef packedValues = lighter.allocate(readView.valueDType(), TensorShape.of(capacity, kvLength))) {
                     try (Timer.Context ignoredPack = InferenceProfiler.timer(metricRegistry,
                             "kvcacheselfattention2.pack_kv").time()) {
-                        copyPrefixRows(readView, packedKeys, packedValues, startPosition);
-                        copyCurrentRows(currentKeys, packedKeys, startPosition);
-                        copyCurrentRows(currentValues, packedValues, startPosition);
+                        copyPrefixRows(readView, packedKeys, packedValues, prefixStart, prefixRows);
+                        copyCurrentRows(currentKeys, packedKeys, prefixRows);
+                        copyCurrentRows(currentValues, packedValues, prefixRows);
                     }
-                    packedBlockAttention.forward(attended, query, packedKeys, packedValues, startPosition, batchSize,
+                    packedBlockAttention.forward(attended, query, packedKeys, packedValues, prefixRows, batchSize,
                             numberOfHeads, numberOfKeyValueHeads, config.headSize, attentionScale,
-                            config.attnLogitSoftCapping, mode != CacheExecutionMode.DENOISE_BLOCK_NO_UPDATE);
+                            config.attnLogitSoftCapping, mode != CacheExecutionMode.DENOISE_BLOCK_NO_UPDATE,
+                            slidingWindow);
                 }
                 return attended;
             }
@@ -182,9 +187,11 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
     }
 
 
-    private void copyPrefixRows(KvReadView readView, TensorRef packedKeys, TensorRef packedValues, int rowCount) {
+    private void copyPrefixRows(KvReadView readView, TensorRef packedKeys, TensorRef packedValues,
+            int sourceRowStart, int rowCount) {
         for (int row = 0; row < rowCount; row++) {
-            try (TensorRef keyRow = readView.keyRowRef(row); TensorRef valueRow = readView.valueRowRef(row)) {
+            try (TensorRef keyRow = readView.keyRowRef(sourceRowStart + row);
+                 TensorRef valueRow = readView.valueRowRef(sourceRowStart + row)) {
                 copyRow(keyRow, 0, packedKeys, row, kvLength);
                 copyRow(valueRow, 0, packedValues, row, kvLength);
             }
