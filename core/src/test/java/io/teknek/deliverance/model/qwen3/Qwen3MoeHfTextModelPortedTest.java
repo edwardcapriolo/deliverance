@@ -19,11 +19,14 @@ import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
+import io.teknek.deliverance.tensor.kv.KvCacheSession;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorInfo;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.toolcallparser.DefaultToolCallParser;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Disabled;
@@ -105,6 +108,22 @@ public class Qwen3MoeHfTextModelPortedTest {
             assertEquals(4, output.shape().first());
             assertEquals(model.getConfig().embeddingLength, output.shape().last());
             assertFinite(output);
+        }
+    }
+
+    @Test
+    public void tinyTensorRefModelRunsSparseExpertPath() {
+        Path modelDir = writeTinyCheckpoint(tempDir.resolve("qwen3-moe-tensor-ref"), tinyConfig(), 2634);
+        try (Qwen3MoeModel model = loadTinyTensorRefModel(modelDir);
+             KvCacheSession session = model.newKvCacheSession();
+             TensorRef output = model.batchForwardRef(new int[]{3, 4, 5, 6}, 0, session)) {
+            assertEquals(4, output.shape().first());
+            assertEquals(model.getConfig().embeddingLength, output.shape().last());
+            for (int row = 0; row < output.shape().first(); row++) {
+                for (int column = 0; column < output.shape().last(); column++) {
+                    assertTrue(Float.isFinite(output.get(row, column)));
+                }
+            }
         }
     }
 
@@ -225,6 +244,19 @@ public class Qwen3MoeHfTextModelPortedTest {
                 Optional.empty(), new ConfigurableTensorProvider(new NaiveTensorOperations()), metrics, allocator,
                 new KvBufferCacheSettings(true), new DefaultToolCallParser(), pool,
                 new StaticTensorParallelContext(0, 1), new SingleRankTensorParallelCollectives(), Optional.empty());
+        model.init();
+        return model;
+    }
+
+    static Qwen3MoeModel loadTinyTensorRefModel(Path modelDir) {
+        MetricRegistry metrics = new MetricRegistry();
+        WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+        Qwen3MoeModel model = new Qwen3MoeModel(AbstractModel.InferenceType.FULL_GENERATION,
+                configFromFile(modelDir), new DefaultWeightLoader(modelDir.toFile()),
+                Mockito.mock(PreTrainedTokenizer.class), DType.F32, DType.I8, Optional.empty(), metrics,
+                new KvBufferCacheSettings(true), new DefaultToolCallParser(), pool,
+                new StaticTensorParallelContext(0, 1), new SingleRankTensorParallelCollectives(), Optional.empty(),
+                new Lighter(metrics, pool.getUnderlying()));
         model.init();
         return model;
     }

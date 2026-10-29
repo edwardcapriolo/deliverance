@@ -777,6 +777,8 @@ public class AutoModelForCausaLm {
         public Config readConfig(File configFile, String modelType) throws IOException {
             return switch (modelType) {
                 case "BERT" -> JsonUtils.om.readValue(configFile, io.teknek.deliverance.model.bert.BertConfig.class);
+                case "XLM-ROBERTA" -> JsonUtils.om.readValue(configFile,
+                        io.teknek.deliverance.model.bert.XlmRobertaConfig.class);
                 case "LLAMA" -> JsonUtils.om.readValue(configFile, LlamaConfig.class);
                 case "QWEN2" -> JsonUtils.om.readValue(configFile, Qwen2Config.class);
                 case "QWEN3" -> JsonUtils.om.readValue(configFile, Qwen3Config.class);
@@ -811,9 +813,13 @@ public class AutoModelForCausaLm {
                         : new Qwen3Model(inferenceType, config, weightLoader, tokenizer, workingMem, workingQuant,
                         effectiveModelQType, mr, settings, toolCallParser, pool, tensorParallelContext,
                         tensorParallelCollectives, outputHeadQuantization, lighter);
-                case "QWEN3_MOE" -> new Qwen3MoeModel(inferenceType, config, weightLoader,
-                        tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
-                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                case "QWEN3_MOE" -> lighter == null
+                        ? new Qwen3MoeModel(inferenceType, config, weightLoader, tokenizer, workingMem, workingQuant,
+                        effectiveModelQType, provider, mr, allocator, settings, toolCallParser, pool,
+                        tensorParallelContext, tensorParallelCollectives, outputHeadQuantization)
+                        : new Qwen3MoeModel(inferenceType, config, weightLoader, tokenizer, workingMem, workingQuant,
+                        effectiveModelQType, mr, settings, toolCallParser, pool, tensorParallelContext,
+                        tensorParallelCollectives, outputHeadQuantization, lighter);
                 case "GEMMA2" -> new Gemma2Model(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
@@ -839,6 +845,10 @@ public class AutoModelForCausaLm {
                 case "BERT" -> new io.teknek.deliverance.model.bert.BertModel(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                case "XLM-ROBERTA" -> new io.teknek.deliverance.model.bert.XlmRobertaModel(inferenceType, config,
+                        weightLoader, tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr,
+                        allocator, settings, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives,
+                        outputHeadQuantization);
                 case "DIFFUSION_GEMMA" -> new DiffusionGemmaModel(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
