@@ -288,6 +288,31 @@ public final class CompositeOps {
         }
     }
 
+    /** Applies RoPE from compact inverse frequencies without materializing a position-by-dimension table. */
+    public void rotaryEmbedding(TensorRef target, int heads, int headSize, int startPosition,
+            float[] inverseFrequencies) {
+        Preconditions.checkArgument(target != null && target.dims() == 2, "RoPE target must be 2D");
+        int halfHead = headSize / 2;
+        Preconditions.checkArgument(headSize > 0 && (headSize & 1) == 0
+                        && inverseFrequencies.length >= halfHead,
+                "RoPE shape is invalid");
+        for (int row = 0; row < target.shape().first(); row++) {
+            int position = startPosition + row;
+            for (int head = 0; head < heads; head++) {
+                int offset = head * headSize;
+                for (int dimension = 0; dimension < halfHead; dimension++) {
+                    float x0 = target.get(row, offset + dimension);
+                    float x1 = target.get(row, offset + dimension + halfHead);
+                    double angle = position * inverseFrequencies[dimension];
+                    float cosine = (float) Math.cos(angle);
+                    float sine = (float) Math.sin(angle);
+                    target.set(x0 * cosine - x1 * sine, row, offset + dimension);
+                    target.set(x0 * sine + x1 * cosine, row, offset + dimension + halfHead);
+                }
+            }
+        }
+    }
+
     /** Applies F32 RMSNorm using vectorized row reductions and optional scaling. */
     public void rmsNorm(TensorRef output, TensorRef input, TensorRef weights, float epsilon,
             float weightAdjustment) {

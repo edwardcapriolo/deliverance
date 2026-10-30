@@ -42,9 +42,13 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
     protected final String outputWeightName;
     protected final int attentionLength;
     protected final int kvLength;
+    protected final int headSize;
     protected final int numberOfHeads;
     protected final int numberOfKeyValueHeads;
     protected final int headGroupSize;
+    protected final int attentionWindow;
+    protected final boolean bidirectionalAttention;
+    protected final int cacheLayerIndex;
     protected final float attentionScale;
     protected final Lighter lighter;
     private final PackedBlockAttention2 packedBlockAttention;
@@ -53,6 +57,43 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
             TensorRef keyAttentionWeights, TensorRef valueAttentionWeights, TensorRef outputProjectionWeights,
             Lighter lighter, MetricRegistry metricRegistry, String queryWeightName, String keyWeightName,
             String valueWeightName, String outputWeightName) {
+        this(model, layerIndex, queryAttentionWeights, keyAttentionWeights, valueAttentionWeights,
+                outputProjectionWeights, lighter, metricRegistry, queryWeightName, keyWeightName, valueWeightName,
+                outputWeightName, model.getLocalAttentionLength(), model.getLocalKvLength(), model.getLocalNumberOfHeads(),
+                model.getLocalNumberOfKeyValueHeads(), model.getConfig().headSize,
+                model.getConfig().slidingWindow == null ? 0 : model.getConfig().slidingWindow, false, layerIndex);
+    }
+
+    protected KvCacheSelfAttention2(AbstractModel model, int layerIndex, TensorRef queryAttentionWeights,
+            TensorRef keyAttentionWeights, TensorRef valueAttentionWeights, TensorRef outputProjectionWeights,
+            Lighter lighter, MetricRegistry metricRegistry, String queryWeightName, String keyWeightName,
+            String valueWeightName, String outputWeightName, int attentionLength, int kvLength,
+            int numberOfHeads, int numberOfKeyValueHeads, int headSize) {
+        this(model, layerIndex, queryAttentionWeights, keyAttentionWeights, valueAttentionWeights,
+                outputProjectionWeights, lighter, metricRegistry, queryWeightName, keyWeightName, valueWeightName,
+                outputWeightName, attentionLength, kvLength, numberOfHeads, numberOfKeyValueHeads, headSize,
+                model.getConfig().slidingWindow == null ? 0 : model.getConfig().slidingWindow, false, layerIndex);
+    }
+
+    protected KvCacheSelfAttention2(AbstractModel model, int layerIndex, TensorRef queryAttentionWeights,
+            TensorRef keyAttentionWeights, TensorRef valueAttentionWeights, TensorRef outputProjectionWeights,
+            Lighter lighter,
+            MetricRegistry metricRegistry, String queryWeightName, String keyWeightName, String valueWeightName,
+            String outputWeightName, int attentionLength, int kvLength, int numberOfHeads,
+            int numberOfKeyValueHeads, int headSize, int attentionWindow, boolean bidirectionalAttention,
+            int cacheLayerIndex) {
+        this(model, layerIndex, queryAttentionWeights, keyAttentionWeights, valueAttentionWeights,
+                outputProjectionWeights, lighter, metricRegistry, queryWeightName, keyWeightName, valueWeightName,
+                outputWeightName, attentionLength, kvLength, numberOfHeads, numberOfKeyValueHeads, headSize,
+                attentionWindow, bidirectionalAttention, cacheLayerIndex, null);
+    }
+
+    protected KvCacheSelfAttention2(AbstractModel model, int layerIndex, TensorRef queryAttentionWeights,
+            TensorRef keyAttentionWeights, TensorRef valueAttentionWeights, TensorRef outputProjectionWeights,
+            Lighter lighter, MetricRegistry metricRegistry, String queryWeightName, String keyWeightName,
+            String valueWeightName, String outputWeightName, int attentionLength, int kvLength,
+            int numberOfHeads, int numberOfKeyValueHeads, int headSize, int attentionWindow,
+            boolean bidirectionalAttention, int cacheLayerIndex, Float attentionScaleOverride) {
         super(lighter);
         this.model = java.util.Objects.requireNonNull(model, "model");
         this.layerIndex = layerIndex;
@@ -68,16 +109,21 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
         this.keyWeightName = keyWeightName;
         this.valueWeightName = valueWeightName;
         this.outputWeightName = outputWeightName;
-        this.attentionLength = model.getLocalAttentionLength();
-        this.kvLength = model.getLocalKvLength();
-        this.numberOfHeads = model.getLocalNumberOfHeads();
-        this.numberOfKeyValueHeads = model.getLocalNumberOfKeyValueHeads();
+        this.attentionLength = attentionLength;
+        this.kvLength = kvLength;
+        this.numberOfHeads = numberOfHeads;
+        this.numberOfKeyValueHeads = numberOfKeyValueHeads;
+        this.headSize = headSize;
+        this.attentionWindow = attentionWindow;
+        this.bidirectionalAttention = bidirectionalAttention;
+        this.cacheLayerIndex = cacheLayerIndex;
         Preconditions.checkArgument(numberOfKeyValueHeads > 0 && numberOfHeads % numberOfKeyValueHeads == 0,
                 "Attention heads must be divisible by KV heads");
         this.headGroupSize = numberOfHeads / numberOfKeyValueHeads;
-        this.attentionScale = config.attentionMultiplier != null
+        this.attentionScale = attentionScaleOverride != null ? attentionScaleOverride
+                : config.attentionMultiplier != null
                 ? config.attentionMultiplier
-                : (float) (1.0 / StrictMath.sqrt(config.headSize));
+                : (float) (1.0 / StrictMath.sqrt(headSize));
         this.packedBlockAttention = new PackedBlockAttention2(model, metricRegistry, layerIndex);
     }
 
@@ -101,11 +147,13 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
             TensorRef[] qkv = projectQkv(input, phase);
             try {
                 normalizeQueryKey(qkv[0], qkv[1]);
+                normalizeValue(qkv[2]);
                 model.emitLayerDebug(layerIndex, "query_normalized", qkv[0]);
                 model.emitLayerDebug(layerIndex, "key_normalized", qkv[1]);
                 applyRotaryEmbedding(qkv[0], qkv[1], startPosition);
                 model.emitLayerDebug(layerIndex, "query_rope", qkv[0]);
                 model.emitLayerDebug(layerIndex, "key_rope", qkv[1]);
+                qkv = sharedKeyValues(qkv, kvSession);
                 if (writesCache(mode)) {
                     writeKvRows(kvSession, mode, qkv[1], qkv[2], startPosition);
                 }
@@ -127,6 +175,9 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
     protected void normalizeQueryKey(TensorRef query, TensorRef key) {
     }
 
+    protected void normalizeValue(TensorRef value) {
+    }
+
     protected void applyRotaryEmbedding(TensorRef query, TensorRef key, int startPosition) {
     }
 
@@ -134,17 +185,19 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
             KvCacheSession kvSession, int startPosition, CacheExecutionMode mode,
             Optional<Consumer<List<TensorRef>>> tensorReducer, ForwardPhase phase) {
         int batchSize = query.shape().first();
-        int slidingWindow = config.slidingWindow == null ? 0 : config.slidingWindow;
+        int slidingWindow = attentionWindow;
         TensorRef attended = model.makeDenseTensorRef(batchSize, attentionLength);
         try {
             if (startPosition == 0) {
                 packedBlockAttention.forward(attended, query, currentKeys, currentValues, 0, batchSize, numberOfHeads,
-                        numberOfKeyValueHeads, config.headSize, attentionScale, config.attnLogitSoftCapping,
+                        numberOfKeyValueHeads, headSize, attentionScale, config.attnLogitSoftCapping,
                         mode != CacheExecutionMode.DENOISE_BLOCK_NO_UPDATE, slidingWindow);
                 return attended;
             }
-            try (KvReadView readView = kvSession.readView(layerIndex, startPosition, AttentionPattern.CAUSAL)) {
-                if (mode == CacheExecutionMode.DECODE_UPDATE_CACHE && batchSize == 1 && slidingWindow == 0) {
+            try (KvReadView readView = kvSession.readView(cacheLayerIndex, startPosition,
+                    bidirectionalAttention ? AttentionPattern.BIDIRECTIONAL : AttentionPattern.CAUSAL)) {
+                if (mode == CacheExecutionMode.DECODE_UPDATE_CACHE && batchSize == 1 && slidingWindow == 0
+                        && !kvSession.isHeterogeneous()) {
                     TensorRef[] prefixKeyPages = readView.keyPageRefs();
                     TensorRef[] prefixValuePages = null;
                     try {
@@ -152,7 +205,7 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
                     compositeOps.decodePagedAttention(attended, query,
                             appendCurrentPage(prefixKeyPages, currentKeys),
                             appendCurrentPage(prefixValuePages, currentValues), startPosition + 1,
-                            numberOfHeads, numberOfKeyValueHeads, config.headSize, attentionScale,
+                            numberOfHeads, numberOfKeyValueHeads, headSize, attentionScale,
                             config.attnLogitSoftCapping, model.getPool().getUnderlying(),
                             model.getPool().getCoreCount());
                     } finally {
@@ -174,7 +227,7 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
                         copyCurrentRows(currentValues, packedValues, prefixRows);
                     }
                     packedBlockAttention.forward(attended, query, packedKeys, packedValues, prefixRows, batchSize,
-                            numberOfHeads, numberOfKeyValueHeads, config.headSize, attentionScale,
+                            numberOfHeads, numberOfKeyValueHeads, headSize, attentionScale,
                             config.attnLogitSoftCapping, mode != CacheExecutionMode.DENOISE_BLOCK_NO_UPDATE,
                             slidingWindow);
                 }
@@ -430,12 +483,16 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
                 || mode == CacheExecutionMode.VERIFY_AND_UPDATE_CACHE;
     }
 
+    protected TensorRef[] sharedKeyValues(TensorRef[] qkv, KvCacheSession kvSession) {
+        return qkv;
+    }
+
     private void writeKvRows(KvCacheSession kvSession, CacheExecutionMode mode, TensorRef keys, TensorRef values,
             int startPosition) {
         try (KvWriteCursor writer = kvSession.writer(mode)) {
             for (int row = 0; row < keys.shape().first(); row++) {
                 try (TensorRef key = keys.slice(row); TensorRef value = values.slice(row)) {
-                    writer.write(layerIndex, startPosition + row, key, value);
+                    writer.write(cacheLayerIndex, startPosition + row, key, value);
                 }
             }
         }

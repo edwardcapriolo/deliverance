@@ -220,6 +220,35 @@ class KvPrefixSnapshotCacheTest {
     }
 
     @Test
+    void heterogeneousSnapshotRestoresEachLayerWidth() {
+        KvBufferCacheSettings settings = settings();
+        KvPrefixSnapshotCache cache = new KvPrefixSnapshotCache(2, 8, 4, settings.getBlockSize(),
+                DType.F32, DType.F32, allocator, metricRegistry, settings);
+        KvCacheManager manager = new KvCacheManager(2, 8, 4, DType.F32, settings, allocator, metricRegistry);
+        manager.setLayerKvLengths(new int[] {4, 2});
+        cache.setLayerKvLengths(new int[] {4, 2});
+        try (KvCacheSession source = manager.openSession(); KvCacheSession restored = manager.openSession()) {
+            for (int position = 0; position < 4; position++) {
+                try (KvWriteCursor writer = source.writer(CacheExecutionMode.PREFILL_UPDATE_CACHE);
+                     AbstractTensor wide = wideRow(position + 1, 4);
+                     AbstractTensor narrow = wideRow(position + 2, 2)) {
+                    writer.write(0, position, wide, wide);
+                    writer.write(1, position, narrow, narrow);
+                }
+                source.advanceLength(position + 1);
+            }
+            cache.storePrefix(new int[] {1, 2, 3, 4}, source, Optional.empty());
+            assertEquals(4, cache.lookupPrefix(new int[] {1, 2, 3, 4}, Optional.empty(), restored).length());
+            try (AbstractTensor wide = restored.keyRowCopy(0, 0); AbstractTensor narrow = restored.keyRowCopy(1, 0)) {
+                assertEquals(4, wide.shape().last());
+                assertEquals(2, narrow.shape().last());
+            }
+        } finally {
+            cache.close();
+        }
+    }
+
+    @Test
     void checkpointPoliciesMatchExistingPrefixCacheBehavior() {
         KvPrefixSnapshotCache fixed = cache(settings());
         try {

@@ -111,6 +111,12 @@ final class MseTurboQuantKvBlockStorage implements KvBlockStorage {
     }
 
     @Override
+    public int layerKvLength(int layer) {
+        Preconditions.checkArgument(layer >= 0 && layer < layers, "layer out of bounds");
+        return kvLength;
+    }
+
+    @Override
     public long denseBytesEquivalent() {
         return (long) layers * tokenCount * 2 * kvLength * dtype.size();
     }

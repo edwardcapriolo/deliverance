@@ -34,7 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class Gemma4PromptIT {
     private static final boolean DEBUG_PROMPTS = Boolean.getBoolean("deliverance.gemma4.prompt.debug");
 
-    @Disabled
+    @Test
     public void chatWithThinking() {
 
         AbstractModel model = Gemma4Suite.getOrCreate();
@@ -73,6 +73,20 @@ public class Gemma4PromptIT {
         );
         assertTrue(parsed.reasoning() == null,
                 "Thinking was disabled, so reasoning should not be parsed: " + response.responseTextWithSpecialTokens);
+        assertTrue(maxConsecutiveTokenRun(response.generatedTokens) < 4,
+                "Gemma4 entered a repeated-token loop: " + response.generatedTokens);
+    }
+
+    private static int maxConsecutiveTokenRun(List<Integer> tokens) {
+        int maximum = 0;
+        int current = 0;
+        Integer previous = null;
+        for (Integer token : tokens) {
+            current = token.equals(previous) ? current + 1 : 1;
+            maximum = Math.max(maximum, current);
+            previous = token;
+        }
+        return maximum;
     }
 
     @Test
@@ -92,12 +106,32 @@ public class Gemma4PromptIT {
                 .build();
 
         assertEquals("""
-                <|turn>system
+                <bos><|turn>system
                 <|tool>declaration:get_weather{description:<|"|>Gets the current weather.<|"|>,parameters:{properties:{location:{description:<|"|>City and state.<|"|>,type:<|"|>STRING<|"|>}},required:[<|"|>location<|"|>],type:<|"|>OBJECT<|"|>}}<tool|><turn|>
                 <|turn>user
                 What is the weather in Albany, NY?<turn|>
                 <|turn>model
                 """, promptContext.getPrompt());
+    }
+
+    @Test
+    public void shortGenerationSmokeDoesNotReturnBlankOutput() {
+        AbstractModel model = Gemma4Suite.getOrCreate();
+        PromptContext promptContext = model.promptSupport().orElseThrow().builder()
+                .addTemplateArgs(Map.of("enable_thinking", false))
+                .addUserMessage("Answer in one short sentence: what is 2 plus 2?")
+                .build();
+
+        Response response = model.generate(UUID.randomUUID(), promptContext,
+                new GeneratorParameters().withTemperature(0.0f).withMaxTokens(12),
+                new GenerateEvent() {
+                    @Override
+                    public void emit(int next, String nextRaw, String nextCleaned, float timing) {
+                    }
+                });
+
+        assertTrue(!response.responseText.isBlank(), "Gemma4 produced a blank short response");
+        assertTrue(response.generatedTokens.size() <= 12, "Gemma4 exceeded the short generation budget");
     }
 
     @Disabled

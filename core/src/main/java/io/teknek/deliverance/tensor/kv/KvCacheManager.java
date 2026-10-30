@@ -15,7 +15,7 @@ import java.util.Objects;
 public final class KvCacheManager {
     private final int layers;
     private final int contextLength;
-    private final int kvLength;
+    private int kvLength;
     private final int blockSize;
     private final DType dtype;
     private final TensorAllocator allocator;
@@ -24,6 +24,7 @@ public final class KvCacheManager {
     private final KvBufferCacheSettings settings;
     private final TensorOperations conversionOperations;
     private final Lighter lighter;
+    private volatile int[] layerKvLengths;
 
     public KvCacheManager(int layers, int contextLength, int kvLength, DType dtype,
             KvBufferCacheSettings settings, TensorAllocator allocator, MetricRegistry metricRegistry) {
@@ -72,12 +73,30 @@ public final class KvCacheManager {
         this(layers, contextLength, kvLength, dtype, settings, null, metricRegistry, trackReadViews, null, lighter);
     }
 
+    public void setLayerKvLengths(int[] lengths) {
+        Preconditions.checkArgument(lengths != null && lengths.length == layers,
+                "layer KV width count must equal layer count");
+        int[] copy = lengths.clone();
+        int maximum = 0;
+        for (int length : copy) {
+            Preconditions.checkArgument(length > 0, "layer KV widths must be positive");
+            maximum = Math.max(maximum, length);
+        }
+        Preconditions.checkState(layerKvLengths == null, "layer KV widths already configured");
+        layerKvLengths = copy;
+        kvLength = maximum;
+    }
+
+    public int[] layerKvLengths() {
+        return layerKvLengths == null ? null : layerKvLengths.clone();
+    }
+
     public KvCacheSession openSession() {
         metricRegistry.meter("kvcache.v2.session.open").mark();
         return allocator == null
                 ? new KvCacheSession(layers, contextLength, kvLength, blockSize, dtype, metricRegistry,
-                trackReadViews, settings, conversionOperations, lighter)
+                trackReadViews, settings, conversionOperations, lighter, layerKvLengths)
                 : new KvCacheSession(layers, contextLength, kvLength, blockSize, dtype, allocator, metricRegistry,
-                trackReadViews, settings, conversionOperations, lighter);
+                trackReadViews, settings, conversionOperations, lighter, layerKvLengths);
     }
 }

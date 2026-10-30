@@ -16,15 +16,22 @@ public final class KvBlock implements AutoCloseable {
     private final int layers;
     private final int kvLength;
     private final KvBlockStorage storage;
+    private final int[] layerKvLengths;
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
     KvBlock(int blockIndex, int blockSize, int tokenCount, int layers, int kvLength, KvBlockStorage storage) {
+        this(blockIndex, blockSize, tokenCount, layers, kvLength, storage, null);
+    }
+
+    KvBlock(int blockIndex, int blockSize, int tokenCount, int layers, int kvLength, KvBlockStorage storage,
+            int[] layerKvLengths) {
         this.blockIndex = blockIndex;
         this.blockSize = blockSize;
         this.tokenCount = tokenCount;
         this.layers = layers;
         this.kvLength = kvLength;
         this.storage = storage;
+        this.layerKvLengths = layerKvLengths == null ? null : layerKvLengths.clone();
         Preconditions.checkArgument(tokenCount >= 0 && tokenCount <= blockSize, "tokenCount out of bounds");
     }
 
@@ -126,14 +133,15 @@ public final class KvBlock implements AutoCloseable {
 
     private TensorRef rowCopy(int layer, int position, int keyOrValue, TensorAllocator allocator) {
         requireOpen();
-        TensorRef copy = TensorRef.owned(allocator.getDirty(storage.dtype(keyOrValue), TensorShape.of(1, kvLength)));
+        TensorRef copy = TensorRef.owned(allocator.getDirty(storage.dtype(keyOrValue), TensorShape.of(1, layerKvLength(layer))));
         copyRow(layer, position, keyOrValue, copy);
         return copy;
     }
 
     private TensorRef rowCopy(int layer, int position, int keyOrValue, Lighter lighter) {
         requireOpen();
-        TensorRef copy = lighter.allocate(storage.dtype(keyOrValue), TensorShape.of(1, kvLength));
+        int width = layerKvLength(layer);
+        TensorRef copy = lighter.allocate(storage.dtype(keyOrValue), TensorShape.of(1, width));
         copyRow(layer, position, keyOrValue, copy);
         return copy;
     }
@@ -143,7 +151,7 @@ public final class KvBlock implements AutoCloseable {
         validateLayer(layer);
         Preconditions.checkArgument(containsPosition(position), "position not in block");
         Preconditions.checkArgument(destination.dims() == 2 && destination.shape().first() == 1
-                && destination.shape().last() == kvLength, "destination must be [1, kvLength]");
+                && destination.shape().last() == layerKvLength(layer), "destination must be [1, layer kvLength]");
         int blockRow = position - startPosition();
         storage.copyRow(layer, blockRow, keyOrValue, destination);
     }
@@ -171,6 +179,10 @@ public final class KvBlock implements AutoCloseable {
 
     private void validateLayer(int layer) {
         Preconditions.checkArgument(layer >= 0 && layer < layers, "layer out of bounds");
+    }
+
+    private int layerKvLength(int layer) {
+        return layerKvLengths == null ? kvLength : layerKvLengths[layer];
     }
 
     private void requireOpen() {

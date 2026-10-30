@@ -102,6 +102,7 @@ public final class KvPrefixSnapshotCache implements AutoCloseable {
     private final KvBufferCacheSettings settings;
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final Map<CacheKey, StoredPrefixEntry> prefixCache;
+    private volatile int[] layerKvLengths;
 
     public KvPrefixSnapshotCache(int layers, int contextLength, int kvLength, int blockSize, DType keyDType,
             DType valueDType,
@@ -130,6 +131,14 @@ public final class KvPrefixSnapshotCache implements AutoCloseable {
                 return evict;
             }
         });
+    }
+
+    public void setLayerKvLengths(int[] lengths) {
+        Preconditions.checkArgument(lengths != null && lengths.length == layers,
+                "layer KV width count must equal layer count");
+        int[] copy = lengths.clone();
+        for (int width : copy) Preconditions.checkArgument(width > 0, "layer KV widths must be positive");
+        layerKvLengths = copy;
     }
 
     public PrefixHit lookupPrefix(int[] tokens, Optional<String> salt, KvCacheSession destination) {
@@ -262,13 +271,16 @@ public final class KvPrefixSnapshotCache implements AutoCloseable {
         AbstractTensor[] values = new AbstractTensor[layers];
         try {
             for (int layer = 0; layer < layers; layer++) {
-                keys[layer] = allocator.getDirty(keyDType, TensorShape.of(prefixLen, kvLength));
-                values[layer] = allocator.getDirty(valueDType, TensorShape.of(prefixLen, kvLength));
+                int width = layerKvLength(layer);
+                keys[layer] = allocator.getDirty(keyDType, TensorShape.of(prefixLen, width));
+                values[layer] = allocator.getDirty(valueDType, TensorShape.of(prefixLen, width));
                 source.copyKeyRows(layer, 0, prefixLen, keys[layer], 0);
                 source.copyValueRows(layer, 0, prefixLen, values[layer], 0);
             }
-            long bytes = (long) layers * prefixLen * kvLength * keyDType.size()
-                    + (long) layers * prefixLen * kvLength * valueDType.size();
+            long bytes = 0;
+            for (int layer = 0; layer < layers; layer++) {
+                bytes += (long) prefixLen * layerKvLength(layer) * (keyDType.size() + valueDType.size());
+            }
             InferenceProfiler.counter(metricRegistry, "kvcache.v2.prefix.snapshot.bytes").inc(bytes);
             return new DenseStoredPrefixEntry(prefixLen, keys, values);
         } catch (RuntimeException | Error e) {
@@ -287,6 +299,10 @@ public final class KvPrefixSnapshotCache implements AutoCloseable {
             InferenceProfiler.timer(metricRegistry, "kvcache.v2.prefix.snapshot")
                     .update(System.nanoTime() - start, TimeUnit.NANOSECONDS);
         }
+    }
+
+    private int layerKvLength(int layer) {
+        return layerKvLengths == null ? kvLength : layerKvLengths[layer];
     }
 
     private static List<Integer> prefixTokens(int[] tokens, int prefixLen) {

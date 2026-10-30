@@ -112,17 +112,22 @@ public class Gemma4CausalSelfAttention extends BaseCausalSelfAttention {
             Timer.Context projectTimer = metricRegistry.timer("gemma4.attn.layer." + layerIndex + ".project").time();
             try {
                 project(input, queryBatch, queryWeights, queryLength);
+                model.emitLayerDebug(layerIndex, "query_projection", queryBatch);
                 logFullAttentionSummary("q_after_proj", queryBatch);
                 Gemma4RmsNormSupport.applyInPlace(queryBatch, numberOfHeads, headDim, config.layerNormEps, queryNormWeights);
+                model.emitLayerDebug(layerIndex, "query_normalized", queryBatch);
                 logFullAttentionSummary("q_after_norm", queryBatch);
 
                 if (!kvSharedLayer) {
                     project(input, keyBatch, keyWeights.orElseThrow(), kvLength);
+                    model.emitLayerDebug(layerIndex, "key_projection", keyBatch);
                     logFullAttentionSummary("k_after_proj", keyBatch);
                     project(input, valueBatch, valueWeights.orElse(keyWeights.orElseThrow()), kvLength);
+                    model.emitLayerDebug(layerIndex, "value_projection", valueBatch);
                     logFullAttentionSummary("v_after_proj", valueBatch);
                     Gemma4RmsNormSupport.applyInPlace(keyBatch, numberOfKeyValueHeads, headDim, config.layerNormEps,
                             keyNormWeights.orElseThrow());
+                    model.emitLayerDebug(layerIndex, "key_normalized", keyBatch);
                     logFullAttentionSummary("k_after_norm", keyBatch);
                     Gemma4RmsNormSupport.applyInPlace(valueBatch, numberOfKeyValueHeads, headDim, config.layerNormEps, null);
                     logFullAttentionSummary("v_after_norm", valueBatch);
@@ -134,8 +139,10 @@ public class Gemma4CausalSelfAttention extends BaseCausalSelfAttention {
             Timer.Context ropeTimer = metricRegistry.timer("gemma4.attn.layer." + layerIndex + ".rope_kv").time();
             try {
                 applyRope(queryBatch, numberOfHeads, startPosition);
+                model.emitLayerDebug(layerIndex, "query_rope", queryBatch);
                 if (!kvSharedLayer) {
                     applyRope(keyBatch, numberOfKeyValueHeads, startPosition);
+                    model.emitLayerDebug(layerIndex, "key_rope", keyBatch);
                 }
             } finally {
                 ropeTimer.stop();
@@ -163,7 +170,7 @@ public class Gemma4CausalSelfAttention extends BaseCausalSelfAttention {
                         logFullAttentionSummary("v_shared", shared.value());
                     } else {
                         logFullAttentionSummary("k_after_rope", keyBatch);
-                        logFullAttentionSummary("v_after_norm_or_raw", valueBatch);
+                            logFullAttentionSummary("v_after_norm_or_raw", valueBatch);
                     }
                     for (int position = startPosition, batchIndex = 0; position < startPosition + batchSize; position++, batchIndex++) {
                         AbstractTensor keyTensor = null;
@@ -223,6 +230,11 @@ public class Gemma4CausalSelfAttention extends BaseCausalSelfAttention {
                                 if (batchIndex == 0 && head == 0) {
                                     logFullAttentionSummary("attn_presoftcap", attn, visibleLength);
                                 }
+                                float attentionScale = config.attentionMultiplier != null
+                                        ? config.attentionMultiplier : (float) (1.0 / Math.sqrt(headDim));
+                                for (int i = 0; i < visibleLength; i++) {
+                                    attn.set(attn.get(0, i) * attentionScale, 0, i);
+                                }
                                 applyAttentionSoftcap(attn, visibleLength, config.attnLogitSoftCapping);
                                 if (batchIndex == 0 && head == 0) {
                                     logFullAttentionSummary("attn_postsoftcap", attn, visibleLength);
@@ -280,6 +292,7 @@ public class Gemma4CausalSelfAttention extends BaseCausalSelfAttention {
                 scoreTimer.stop();
             }
 
+            model.emitLayerDebug(layerIndex, "attention_value", valueOutput);
             AbstractTensor result = projectAttentionOutput(model, configurableTensorProvider, metricRegistry,
                     "gemma4.attn.layer." + layerIndex + ".out_proj", valueOutput, outputProjectionWeights,
                     queryLength, config.embeddingLength);

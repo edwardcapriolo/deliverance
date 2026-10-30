@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -37,6 +38,83 @@ import static org.mockito.Mockito.when;
 class KvCacheSessionTest {
     private final MetricRegistry metricRegistry = new MetricRegistry();
     private final TensorAllocator allocator = new ArrayQueueTensorAllocator(metricRegistry);
+
+    @Test
+    void attachmentsAreRequestLocalAndClosedExactlyOnce() {
+        KvCacheManager manager = new KvCacheManager(1, 4, 4, DType.F32,
+                new KvBufferCacheSettings(true).withBlockSize(2), allocator, metricRegistry);
+        AtomicInteger firstCloses = new AtomicInteger();
+        AtomicInteger secondCloses = new AtomicInteger();
+        AtomicInteger replacementCloses = new AtomicInteger();
+        try (KvCacheSession session = manager.openSession(); KvCacheSession second = manager.openSession()) {
+            AutoCloseable firstAttachment = firstCloses::incrementAndGet;
+            AutoCloseable secondAttachment = secondCloses::incrementAndGet;
+            AutoCloseable replacement = replacementCloses::incrementAndGet;
+            session.attach(AutoCloseable.class, firstAttachment);
+            second.attach(AutoCloseable.class, secondAttachment);
+            assertEquals(firstAttachment, session.attachment(AutoCloseable.class));
+            assertEquals(secondAttachment, second.attachment(AutoCloseable.class));
+            session.attach(AutoCloseable.class, replacement);
+            assertEquals(1, firstCloses.get());
+            assertEquals(0, secondCloses.get());
+        }
+        assertEquals(1, secondCloses.get());
+        assertEquals(1, replacementCloses.get());
+    }
+
+    @Test
+    void supportsDifferentLayerKvWidths() {
+        KvCacheManager manager = new KvCacheManager(2, 8, 4, DType.F32,
+                new KvBufferCacheSettings(true).withBlockSize(2), allocator, metricRegistry);
+        manager.setLayerKvLengths(new int[] {4, 2});
+
+        try (KvCacheSession session = manager.openSession();
+             AbstractTensor layerZeroKey = wideRow(10.0f, 4);
+             AbstractTensor layerZeroValue = wideRow(20.0f, 4);
+             AbstractTensor layerOneKey = wideRow(30.0f, 2);
+             AbstractTensor layerOneValue = wideRow(40.0f, 2);
+             KvWriteCursor writer = session.writer(CacheExecutionMode.PREFILL_UPDATE_CACHE)) {
+            writer.write(0, 0, layerZeroKey, layerZeroValue);
+            writer.write(1, 0, layerOneKey, layerOneValue);
+            writer.advanceLength(1);
+            assertTrue(session.isHeterogeneous());
+            try (AbstractTensor key = session.keyRowCopy(1, 0)) {
+                assertEquals(2, key.shape().last());
+                assertEquals(30.0f, key.get(0, 0), 0.0f);
+            }
+        }
+    }
+
+    @Test
+    void heterogeneousWidthsApplyToNormalAndSharedReadPaths() {
+        KvBufferCacheSettings settings = new KvBufferCacheSettings(true).withBlockSize(2);
+        KvCacheManager manager = new KvCacheManager(2, 8, 4, DType.F32, settings, allocator, metricRegistry);
+        manager.setLayerKvLengths(new int[] {4, 2});
+        try (KvCacheSession session = manager.openSession()) {
+            for (int position = 0; position < 2; position++) {
+                try (KvWriteCursor writer = session.writer(CacheExecutionMode.PREFILL_UPDATE_CACHE);
+                     AbstractTensor wideKey = wideRow(position + 1, 4);
+                     AbstractTensor wideValue = wideRow(position + 2, 4);
+                     AbstractTensor narrowKey = wideRow(position + 3, 2);
+                     AbstractTensor narrowValue = wideRow(position + 4, 2)) {
+                    writer.write(0, position, wideKey, wideValue);
+                    writer.write(1, position, narrowKey, narrowValue);
+                }
+            }
+            session.advanceLength(2);
+            try (KvReadView wide = session.readView(0, 2, AttentionPattern.CAUSAL);
+                 KvReadView narrow = session.readView(1, 2, AttentionPattern.CAUSAL);
+                 AbstractTensor wideKeys = wide.copyVisibleKeys();
+                 AbstractTensor narrowKeys = narrow.copyVisibleKeys();
+                 AbstractTensor widePage = wide.keyPages()[0];
+                 AbstractTensor narrowPage = narrow.keyPages()[0]) {
+                assertEquals(4, wideKeys.shape().last());
+                assertEquals(2, narrowKeys.shape().last());
+                assertEquals(4, widePage.shape().last());
+                assertEquals(2, narrowPage.shape().last());
+            }
+        }
+    }
 
     @Test
     void writeReadAndCommitImmutableBlocks() {

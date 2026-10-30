@@ -496,6 +496,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
 
     void setTrackKvReadViewsEnabled(boolean trackKvReadViewsEnabled) {
         this.trackKvReadViewsEnabled = trackKvReadViewsEnabled;
+        int[] configuredLayerKvLengths = kvCacheManager.layerKvLengths();
         this.kvCacheManager = configurableTensorProvider == null
                 ? new KvCacheManager(config.numberOfLayers, config.contextLength,
                 config.kvLength / tensorParallelContext.size(), workingDType, kvBufferCacheSettings,
@@ -503,6 +504,9 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
                 : new KvCacheManager(config.numberOfLayers, config.contextLength,
                 config.kvLength / tensorParallelContext.size(), workingDType, kvBufferCacheSettings, tensorAllocator,
                 metricRegistry, trackKvReadViewsEnabled, configurableTensorProvider.get(), lighter);
+        if (configuredLayerKvLengths != null) {
+            this.kvCacheManager.setLayerKvLengths(configuredLayerKvLengths);
+        }
     }
 
     public boolean isGpuPrefillEnabled() {

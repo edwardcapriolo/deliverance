@@ -18,6 +18,8 @@ interface KvBlockStorage extends AutoCloseable {
 
     int kvLength();
 
+    int layerKvLength(int layer);
+
     long denseBytesEquivalent();
 
     long encodedBytes();

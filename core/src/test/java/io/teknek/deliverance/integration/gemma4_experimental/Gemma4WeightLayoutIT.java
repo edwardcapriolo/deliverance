@@ -3,10 +3,12 @@ package io.teknek.deliverance.integration.gemma4_experimental;
 import io.teknek.deliverance.safetensors.DefaultWeightLoader;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.TensorInfo;
+import io.teknek.deliverance.DType;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -25,6 +27,15 @@ public class Gemma4WeightLayoutIT {
             assertTrue(loader.isWeightPresent(embed), "Missing text embedding weight used as tied output head");
             TensorInfo info = loader.tensorInfoMap().get(embed);
             assertArrayEquals(new int[]{262144, 1536}, info.shape);
+        }
+    }
+
+    @Test
+    public void e2bTiedHeadIsBfloat16InTheCheckpointAndMustBeConvertedByV2() {
+        ModelFetcher fetch = new ModelFetcher("google", "gemma-4-E2B-it");
+        try (DefaultWeightLoader loader = new DefaultWeightLoader(fetch.pathForModel().toFile())) {
+            assertEquals(DType.BF16, loader.getModelDType());
+            assertEquals(DType.BF16, loader.tensorInfoMap().get("model.language_model.embed_tokens.weight").dType);
         }
     }
 }

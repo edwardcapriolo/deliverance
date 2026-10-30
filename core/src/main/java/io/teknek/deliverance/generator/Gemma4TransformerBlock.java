@@ -99,77 +99,64 @@ public class Gemma4TransformerBlock extends TransformerBlock {
     ) {
         Timer.Context totalTimer = model.getMetricRegistry().timer("gemma4.block." + layerIndex + ".total").time();
         try {
-        AbstractTensor lnemb = preAttentionNorm.map(ln -> ln.forward(embedding)).orElse(embedding);
-        logIfInteresting("pre_attn_norm", lnemb);
+        AbstractTensor residual = embedding;
+        AbstractTensor preAttentionHiddenStates = preAttentionNorm.map(ln -> ln.forward(embedding)).orElse(embedding);
+        logIfInteresting("pre_attn_norm", preAttentionHiddenStates);
         AbstractTensor postAttention;
-        try (AbstractTensor qlnemb = model.maybeQuantizeReadOnly(lnemb,
+        try (AbstractTensor preAttentionInput = model.maybeQuantizeReadOnly(preAttentionHiddenStates,
                 "gemma4transformerblock.maybe_quantize.pre_attention")) {
-            postAttention = attention.forward(qlnemb, position, kvBuffer, tensorReducer);
+            postAttention = attention.forward(preAttentionInput, position, kvBuffer, tensorReducer);
         }
-        AbstractTensor lnattn = maybeApplyNorm(postAttention, postAttentionNorm);
+        AbstractTensor hiddenStates = maybeApplyNorm(postAttention, postAttentionNorm);
+        model.emitLayerDebug(layerIndex, "post_attention_norm", hiddenStates);
         if (model.getConfig().residualMultiplier != null) {
-            model.scale(model.getConfig().residualMultiplier, lnattn, 0, model.getConfig().embeddingLength);
+            model.scale(model.getConfig().residualMultiplier, hiddenStates, 0, model.getConfig().embeddingLength);
         }
-        configurableTensorProvider.get().accumulate(lnattn, embedding, 0, model.getConfig().embeddingLength);
-        logIfInteresting("post_attn_residual", lnattn);
+        configurableTensorProvider.get().accumulate(hiddenStates, residual, 0, model.getConfig().embeddingLength);
+        model.emitLayerDebug(layerIndex, "post_attention_residual", hiddenStates);
+        logIfInteresting("post_attn_residual", hiddenStates);
 
-        AbstractTensor lnpreFF = preFFNorm.map(ln -> ln.forward(lnattn)).orElse(lnattn);
-        AbstractTensor postFF;
-        try (AbstractTensor qlnemb2 = model.maybeQuantizeReadOnly(lnpreFF,
+        AbstractTensor preFeedForward = preFFNorm.map(ln -> ln.forward(hiddenStates)).orElse(hiddenStates);
+        model.emitLayerDebug(layerIndex, "pre_ff_norm", preFeedForward);
+        AbstractTensor postFeedForward;
+        try (AbstractTensor preFeedForwardInput = model.maybeQuantizeReadOnly(preFeedForward,
                 "gemma4transformerblock.maybe_quantize.pre_ff")) {
-            postFF = ffBlock.forward(qlnemb2, tensorReducer);
+            postFeedForward = ffBlock.forward(preFeedForwardInput, tensorReducer);
         }
+        model.emitLayerDebug(layerIndex, "post_ff_output", postFeedForward);
 
-        AbstractTensor lnpostFF;
+        AbstractTensor postFeedForwardNorm;
         if (hasMoeBlock()) {
-            lnpostFF = forwardMoeFeedForward(postFF, lnattn);
+            postFeedForwardNorm = applyMoeBranch(postFeedForward, hiddenStates);
         } else {
-            lnpostFF = maybeApplyNorm(postFF, postFFNorm);
+            postFeedForwardNorm = maybeApplyNorm(postFeedForward, postFFNorm);
         }
         if (model.getConfig().residualMultiplier != null) {
-            model.scale(model.getConfig().residualMultiplier, lnpostFF, 0, model.getConfig().embeddingLength);
+            model.scale(model.getConfig().residualMultiplier, postFeedForwardNorm, 0, model.getConfig().embeddingLength);
         }
-        configurableTensorProvider.get().accumulate(lnpostFF, lnattn, 0, model.getConfig().embeddingLength);
-        logIfInteresting("post_ff_residual", lnpostFF);
+        configurableTensorProvider.get().accumulate(postFeedForwardNorm, hiddenStates, 0, model.getConfig().embeddingLength);
+        model.emitLayerDebug(layerIndex, "post_ff_residual", postFeedForwardNorm);
+        logIfInteresting("post_ff_residual", postFeedForwardNorm);
 
-        if (perLayerInput != null && perLayerInputGateWeights.isPresent() && perLayerProjectionWeights.isPresent() && postPerLayerInputNorm.isPresent()) {
-            try (
-                    AbstractTensor gated = model.makeDenseTensor(lnpostFF.shape().first(), perLayerInputLength);
-                    AbstractTensor projected = model.makeDenseTensor(lnpostFF.shape().first(), model.getConfig().embeddingLength)
-            ) {
-                configurableTensorProvider.get().dotProductChunk(gated, lnpostFF, perLayerInputGateWeights.get(), 0,
-                        model.getConfig().embeddingLength, 0, perLayerInputLength);
-                for (int b = 0; b < gated.shape().first(); b++) {
-                    for (int i = 0; i < perLayerInputLength; i++) {
-                        float v = ActivationFunction.eval(activationFunction, gated.get(b, i)) * perLayerInput.get(b, i);
-                        gated.set(v, b, i);
-                    }
-                }
-                try (AbstractTensor gatedQ = model.maybeQuantizeReadOnly(gated,
-                        "gemma4transformerblock.maybe_quantize.per_layer_input")) {
-                    configurableTensorProvider.get().dotProductChunk(projected, gatedQ, perLayerProjectionWeights.get(), 0,
-                            perLayerInputLength, 0, model.getConfig().embeddingLength);
-                }
-                AbstractTensor normalized = postPerLayerInputNorm.get().forward(projected);
-                configurableTensorProvider.get().accumulate(normalized, lnpostFF, 0, model.getConfig().embeddingLength);
-                lnpostFF.close();
-                lnpostFF = normalized;
-            }
-            logIfInteresting("post_ple", lnpostFF);
+        if (perLayerInput != null) {
+            postFeedForwardNorm = applyPle(postFeedForwardNorm, perLayerInput);
+            logIfInteresting("post_ple", postFeedForwardNorm);
+            model.emitLayerDebug(layerIndex, "post_ple", postFeedForwardNorm);
         }
 
         if (layerScalar != 1.0f) {
-            model.scale(layerScalar, lnpostFF, 0, model.getConfig().embeddingLength);
+            model.scale(layerScalar, postFeedForwardNorm, 0, model.getConfig().embeddingLength);
         }
-        logIfInteresting("final", lnpostFF);
+        model.emitLayerDebug(layerIndex, "layer_scalar", postFeedForwardNorm);
+        logIfInteresting("final", postFeedForwardNorm);
 
-        if (lnemb != embedding) lnemb.close();
-        if (lnattn != postAttention) lnattn.close();
+        if (preAttentionHiddenStates != embedding) preAttentionHiddenStates.close();
+        if (hiddenStates != postAttention) hiddenStates.close();
         else postAttention.close();
-        if (lnpreFF != lnattn) lnpreFF.close();
-        else lnattn.close();
+        if (preFeedForward != hiddenStates) preFeedForward.close();
+        else hiddenStates.close();
 
-        return lnpostFF;
+        return postFeedForwardNorm;
         } finally {
             totalTimer.stop();
         }
@@ -197,7 +184,7 @@ public class Gemma4TransformerBlock extends TransformerBlock {
                 && moeIntermediateLength > 0;
     }
 
-    private AbstractTensor forwardMoeFeedForward(AbstractTensor denseMlpOutput, AbstractTensor feedForwardResidual) {
+    private AbstractTensor applyMoeBranch(AbstractTensor denseMlpOutput, AbstractTensor feedForwardResidual) {
         AbstractTensor denseBranch = postFeedForwardNorm1.get().forward(denseMlpOutput);
         denseMlpOutput.close();
         try (AbstractTensor expertInput = preFeedForwardNorm2.get().forward(feedForwardResidual);
@@ -207,6 +194,39 @@ public class Gemma4TransformerBlock extends TransformerBlock {
             expertBranch.close();
         }
         return maybeApplyNorm(denseBranch, postFFNorm);
+    }
+
+    private AbstractTensor applyPle(AbstractTensor hiddenStates, AbstractTensor perLayerInput) {
+        if (!perLayerInputGateWeights.isPresent() || !perLayerProjectionWeights.isPresent()
+                || postPerLayerInputNorm.isEmpty()) {
+            return hiddenStates;
+        }
+        try (
+                AbstractTensor gated = model.makeDenseTensor(hiddenStates.shape().first(), perLayerInputLength);
+                AbstractTensor projected = model.makeDenseTensor(hiddenStates.shape().first(), model.getConfig().embeddingLength)
+        ) {
+            configurableTensorProvider.get().dotProductChunk(gated, hiddenStates, perLayerInputGateWeights.get(), 0,
+                    model.getConfig().embeddingLength, 0, perLayerInputLength);
+            model.emitLayerDebug(layerIndex, "ple_gate", gated);
+            for (int b = 0; b < gated.shape().first(); b++) {
+                for (int i = 0; i < perLayerInputLength; i++) {
+                    float v = ActivationFunction.eval(activationFunction, gated.get(b, i)) * perLayerInput.get(b, i);
+                    gated.set(v, b, i);
+                }
+            }
+            model.emitLayerDebug(layerIndex, "ple_gated", gated);
+            try (AbstractTensor gatedQ = model.maybeQuantizeReadOnly(gated,
+                    "gemma4transformerblock.maybe_quantize.per_layer_input")) {
+                configurableTensorProvider.get().dotProductChunk(projected, gatedQ, perLayerProjectionWeights.get(), 0,
+                        perLayerInputLength, 0, model.getConfig().embeddingLength);
+            }
+            model.emitLayerDebug(layerIndex, "ple_projected", projected);
+            AbstractTensor normalized = postPerLayerInputNorm.get().forward(projected);
+            model.emitLayerDebug(layerIndex, "ple_normalized", normalized);
+            configurableTensorProvider.get().accumulate(normalized, hiddenStates, 0, model.getConfig().embeddingLength);
+            hiddenStates.close();
+            return normalized;
+        }
     }
 
     private AbstractTensor forwardExperts(AbstractTensor routerInput, AbstractTensor expertInput) {

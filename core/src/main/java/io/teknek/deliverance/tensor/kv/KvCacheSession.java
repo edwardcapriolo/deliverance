@@ -17,6 +17,7 @@ import io.teknek.deliverance.tensor2.TensorRefBackedTensor;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.NavigableMap;
 import java.util.Objects;
@@ -40,9 +41,11 @@ public final class KvCacheSession implements AutoCloseable {
     private final KvBufferCacheSettings settings;
     private final TensorOperations conversionOperations;
     private final Lighter lighter;
+    private final int[] layerKvLengths;
     private final NavigableMap<Integer, KvBlock> committedBlocks = new TreeMap<>();
     private final NavigableMap<Integer, KvBlockLease> committedBlockLeases = new TreeMap<>();
     private final NavigableMap<Integer, MutableKvBlock> mutableBlocks = new TreeMap<>();
+    private final HashMap<Class<?>, AutoCloseable> attachments = new HashMap<>();
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private int length;
 
@@ -61,6 +64,14 @@ public final class KvCacheSession implements AutoCloseable {
     KvCacheSession(int layers, int contextLength, int kvLength, int blockSize, DType dtype,
             TensorAllocator allocator, MetricRegistry metricRegistry, boolean trackReadViews,
             KvBufferCacheSettings settings, @Nullable TensorOperations conversionOperations, Lighter lighter) {
+        this(layers, contextLength, kvLength, blockSize, dtype, allocator, metricRegistry, trackReadViews,
+                settings, conversionOperations, lighter, null);
+    }
+
+    KvCacheSession(int layers, int contextLength, int kvLength, int blockSize, DType dtype,
+            TensorAllocator allocator, MetricRegistry metricRegistry, boolean trackReadViews,
+            KvBufferCacheSettings settings, @Nullable TensorOperations conversionOperations, Lighter lighter,
+            int[] layerKvLengths) {
         this.sessionId = "kv2-session-" + SESSION_SEQUENCE.incrementAndGet();
         this.layers = layers;
         this.contextLength = contextLength;
@@ -73,13 +84,21 @@ public final class KvCacheSession implements AutoCloseable {
         this.settings = settings;
         this.conversionOperations = conversionOperations;
         this.lighter = Objects.requireNonNull(lighter, "lighter");
+        this.layerKvLengths = layerKvLengths == null ? null : layerKvLengths.clone();
     }
 
     KvCacheSession(int layers, int contextLength, int kvLength, int blockSize, DType dtype,
             MetricRegistry metricRegistry, boolean trackReadViews, KvBufferCacheSettings settings,
             @Nullable TensorOperations conversionOperations, Lighter lighter) {
         this(layers, contextLength, kvLength, blockSize, dtype, null, metricRegistry, trackReadViews,
-                settings, conversionOperations, lighter);
+                settings, conversionOperations, lighter, null);
+    }
+
+    KvCacheSession(int layers, int contextLength, int kvLength, int blockSize, DType dtype,
+            MetricRegistry metricRegistry, boolean trackReadViews, KvBufferCacheSettings settings,
+            @Nullable TensorOperations conversionOperations, Lighter lighter, int[] layerKvLengths) {
+        this(layers, contextLength, kvLength, blockSize, dtype, null, metricRegistry, trackReadViews,
+                settings, conversionOperations, lighter, layerKvLengths);
     }
 
     public int length() {
@@ -94,6 +113,14 @@ public final class KvCacheSession implements AutoCloseable {
         return blockSize;
     }
 
+    int layerKvLength(int layer) {
+        return layerKvLengths == null ? kvLength : layerKvLengths[layer];
+    }
+
+    public boolean isHeterogeneous() {
+        return layerKvLengths != null;
+    }
+
     DType keyDType() {
         return settings.getKvKeyDType();
     }
@@ -104,6 +131,30 @@ public final class KvCacheSession implements AutoCloseable {
 
     public List<KvBlock> committedBlocks() {
         return List.copyOf(committedBlocks.values());
+    }
+
+    /** Returns the request-local attachment of {@code type}, or {@code null} when absent. */
+    public <T extends AutoCloseable> T attachment(Class<T> type) {
+        requireOpen();
+        return type.cast(attachments.get(Objects.requireNonNull(type, "type")));
+    }
+
+    /** Installs a request-local attachment. Replacing one closes the previous value. */
+    public <T extends AutoCloseable> T attach(Class<T> type, T attachment) {
+        requireOpen();
+        Objects.requireNonNull(type, "type");
+        Objects.requireNonNull(attachment, "attachment");
+        AutoCloseable previous = attachments.put(type, attachment);
+        if (previous != null) {
+            closeAttachment(previous);
+        }
+        return attachment;
+    }
+
+    public <T extends AutoCloseable> T getOrAttach(Class<T> type, java.util.function.Supplier<T> factory) {
+        requireOpen();
+        T current = attachment(type);
+        return current != null ? current : attach(type, factory.get());
     }
 
     List<KvBlockLease> committedBlockLeases() {
@@ -184,7 +235,7 @@ public final class KvCacheSession implements AutoCloseable {
                 try (var ignored = InferenceProfiler.timer(metricRegistry,
                         "kvcache.v2.write.quantize.to_" + settings.getKvKeyDType()).time()) {
                     InferenceProfiler.counter(metricRegistry, "kvcache.v2.write.quantize.provider").inc();
-                    convertedKey = conversionOperations.quantize(key, settings.getKvKeyDType(), 0, kvLength);
+                    convertedKey = conversionOperations.quantize(key, settings.getKvKeyDType(), 0, layerKvLength(layer));
                     keyToWrite = convertedKey;
                 }
             }
@@ -192,7 +243,7 @@ public final class KvCacheSession implements AutoCloseable {
                 try (var ignored = InferenceProfiler.timer(metricRegistry,
                         "kvcache.v2.write.quantize.to_" + settings.getKvValueDType()).time()) {
                     InferenceProfiler.counter(metricRegistry, "kvcache.v2.write.quantize.provider").inc();
-                    convertedValue = conversionOperations.quantize(value, settings.getKvValueDType(), 0, kvLength);
+                    convertedValue = conversionOperations.quantize(value, settings.getKvValueDType(), 0, layerKvLength(layer));
                     valueToWrite = convertedValue;
                 }
             }
@@ -245,7 +296,7 @@ public final class KvCacheSession implements AutoCloseable {
         }
         KvBlockLease lease = committedBlockLeases.remove(blockIndex);
         MutableKvBlock mutable = new MutableKvBlock(blockIndex, blockSize, layers, kvLength, dtype, allocator,
-                settings, metricRegistry, conversionOperations, lighter);
+                settings, metricRegistry, conversionOperations, lighter, layerKvLengths);
         try {
             for (int position = committed.startPosition(); position < newLength; position++) {
                 for (int layer = 0; layer < layers; layer++) {
@@ -334,11 +385,11 @@ public final class KvCacheSession implements AutoCloseable {
     }
 
     private AbstractTensor copyVisible(int layer, int visibleTokens, boolean key) {
-        AbstractTensor result = allocator.getDirty(dtype, io.teknek.deliverance.tensor.TensorShape.of(visibleTokens, kvLength));
+        AbstractTensor result = allocator.getDirty(dtype, io.teknek.deliverance.tensor.TensorShape.of(visibleTokens, layerKvLength(layer)));
         try {
             for (int position = 0; position < visibleTokens; position++) {
                 try (AbstractTensor row = rowCopy(layer, position, key)) {
-                    result.copyFrom(row, 0, result.getOffset(position, 0), kvLength);
+                    result.copyFrom(row, 0, result.getOffset(position, 0), layerKvLength(layer));
                 }
             }
             return result;
@@ -354,8 +405,8 @@ public final class KvCacheSession implements AutoCloseable {
         validateLayer(layer);
         Preconditions.checkArgument(positionStart >= 0 && rowCount >= 0 && positionStart + rowCount <= length,
                 "position range out of visible length");
-        Preconditions.checkArgument(destination.dims() == 2 && destination.shape().last() == kvLength,
-                "destination must have kvLength columns");
+        Preconditions.checkArgument(destination.dims() == 2 && destination.shape().last() == layerKvLength(layer),
+                "destination must have layer KV width columns");
         Preconditions.checkArgument(destinationRowStart >= 0
                 && destinationRowStart + rowCount <= destination.shape().first(), "destination row range out of bounds");
         int remaining = rowCount;
@@ -463,6 +514,9 @@ public final class KvCacheSession implements AutoCloseable {
         requireOpen();
         validateLayer(layer);
         Preconditions.checkArgument(position >= 0 && position < length, "position out of visible length");
+        if (isHeterogeneous()) {
+            return new TensorRefBackedTensor(rowCopyRef(layer, position, key));
+        }
         int blockIndex = position / blockSize;
         AbstractTensor view;
         KvBlock committed = committedBlocks.get(blockIndex);
@@ -483,7 +537,7 @@ public final class KvCacheSession implements AutoCloseable {
     private MutableKvBlock mutableBlock(int blockIndex) {
         return mutableBlocks.computeIfAbsent(blockIndex,
                 index -> new MutableKvBlock(index, blockSize, layers, kvLength, dtype, allocator, settings,
-                        metricRegistry, conversionOperations, lighter));
+                        metricRegistry, conversionOperations, lighter, layerKvLengths));
     }
 
     private void commitFullBlocksBefore(int newLength) {
@@ -528,7 +582,17 @@ public final class KvCacheSession implements AutoCloseable {
             committedBlocks.clear();
             committedBlockLeases.clear();
             mutableBlocks.clear();
+            attachments.values().forEach(this::closeAttachment);
+            attachments.clear();
             metricRegistry.meter("kvcache.v2.session.close").mark();
+        }
+    }
+
+    private void closeAttachment(AutoCloseable attachment) {
+        try {
+            attachment.close();
+        } catch (Exception e) {
+            throw new IllegalStateException("Unable to close KV session attachment", e);
         }
     }
 }

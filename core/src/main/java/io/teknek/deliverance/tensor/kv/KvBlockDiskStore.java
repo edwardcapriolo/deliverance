@@ -241,7 +241,8 @@ public final class KvBlockDiskStore implements AutoCloseable {
     }
 
     private boolean supportsLayout(KvBlock block) {
-        return (block.layout() == KvBlockLayout.DENSE && block.storage() instanceof DenseKvBlockStorage)
+        return (block.layout() == KvBlockLayout.DENSE && block.storage() instanceof DenseKvBlockStorage dense
+                && dense.hasUniformLayerWidths())
                 || (block.layout() == KvBlockLayout.MSE_TURBOQUANT
                 && block.storage() instanceof MseTurboQuantKvBlockStorage);
     }

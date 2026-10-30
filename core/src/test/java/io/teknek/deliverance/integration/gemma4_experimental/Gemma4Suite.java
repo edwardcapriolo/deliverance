@@ -18,7 +18,7 @@ public class Gemma4Suite {
     public static AbstractModel getOrCreate() {
         if (model == null) {
             //ModelFetcher fetch = new ModelFetcher("google", "gemma-4-E2B-it");
-            ModelFetcher fetch = new ModelFetcher("edward", "gemma-4-E2B-it-JQ4");
+            ModelFetcher fetch = new ModelFetcher("google", "gemma-4-E2B-it");
             Assumptions.assumeTrue(fetch.pathForModel().toFile().isDirectory(),
                     "Quantized Gemma4 cache is not present: " + fetch.pathForModel());
 

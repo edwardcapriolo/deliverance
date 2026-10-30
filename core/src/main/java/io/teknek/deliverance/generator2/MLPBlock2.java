@@ -33,16 +33,22 @@ public class MLPBlock2 implements FeedForward2 {
 
     public MLPBlock2(AbstractModel model, TensorRef gateWeights, TensorRef upWeights, TensorRef downWeights,
             Lighter lighter) {
-        this(model, gateWeights, upWeights, downWeights, lighter, null, null, null);
+        this(model, gateWeights, upWeights, downWeights, lighter, null, null, null, model.getConfig().hiddenLength);
     }
 
     public MLPBlock2(AbstractModel model, TensorRef gateWeights, TensorRef upWeights, TensorRef downWeights,
             Lighter lighter, String gateWeightName, String upWeightName, String downWeightName) {
+        this(model, gateWeights, upWeights, downWeights, lighter, gateWeightName, upWeightName, downWeightName,
+                model.getConfig().hiddenLength);
+    }
+
+    public MLPBlock2(AbstractModel model, TensorRef gateWeights, TensorRef upWeights, TensorRef downWeights,
+            Lighter lighter, String gateWeightName, String upWeightName, String downWeightName, int hiddenLength) {
         this.model = java.util.Objects.requireNonNull(model, "model");
         this.gateWeights = java.util.Objects.requireNonNull(gateWeights, "gateWeights");
         this.upWeights = java.util.Objects.requireNonNull(upWeights, "upWeights");
         this.downWeights = java.util.Objects.requireNonNull(downWeights, "downWeights");
-        this.hiddenLength = model.getConfig().hiddenLength;
+        this.hiddenLength = hiddenLength;
         this.embeddingLength = model.getConfig().embeddingLength;
         this.lighter = java.util.Objects.requireNonNull(lighter, "lighter");
         this.gateWeightName = gateWeightName;

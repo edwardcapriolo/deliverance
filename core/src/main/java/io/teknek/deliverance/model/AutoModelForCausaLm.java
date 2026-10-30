@@ -624,9 +624,17 @@ public class AutoModelForCausaLm {
                 pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
             }
             String modelType = readModelType(new File(modelRoot, "config.json"));
-            if ("LLAMA".equals(modelType) || "QWEN2".equals(modelType) || "QWEN3".equals(modelType)
+            if (Boolean.getBoolean("deliverance.gemma4.legacy") && "GEMMA4".equals(modelType)
+                    && provider == null) {
+                ConfigurableTensorProvider base = new ConfigurableTensorProvider(allocator, pool);
+                Optional<TensorOperations> maybe = getNative(base.get());
+                TensorOperations primary = maybe.map(ops -> tunedTensorOperations(TensorProviderKind.SIMD, ops))
+                        .orElseGet(() -> tunedTensorOperations(TensorProviderKind.PANAMA, base.get()));
+                provider = new ConfigurableTensorProvider(primary);
+                lighter = null;
+            } else if ("LLAMA".equals(modelType) || "QWEN2".equals(modelType) || "QWEN3".equals(modelType)
                     || "QWEN3_MOE".equals(modelType) || "MISTRAL".equals(modelType)
-                    || "GEMMA3_TEXT".equals(modelType)) {
+                    || "GEMMA3_TEXT".equals(modelType) || "GEMMA4".equals(modelType)) {
                 lighter = new Lighter(mr, pool.getUnderlying());
             } else if (provider == null){
                 ConfigurableTensorProvider base = new ConfigurableTensorProvider(allocator, pool);
@@ -825,9 +833,14 @@ public class AutoModelForCausaLm {
                 case "GEMMA2" -> new Gemma2Model(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
-                case "GEMMA4" -> new Gemma4Model(inferenceType, config, weightLoader,
+                case "GEMMA4" -> Boolean.getBoolean("deliverance.gemma4.legacy")
+                        ? new Gemma4Model(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
-                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization)
+                        : new Gemma4Model(inferenceType, config, weightLoader,
+                        tokenizer, workingMem, workingQuant, effectiveModelQType, mr, settings,
+                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization,
+                        lighter);
                 case "GEMMA3_TEXT" -> new Gemma3Model(inferenceType, config, weightLoader, tokenizer, workingMem,
                         workingQuant, effectiveModelQType, mr, settings, toolCallParser, pool, tensorParallelContext,
                         tensorParallelCollectives, outputHeadQuantization, lighter);

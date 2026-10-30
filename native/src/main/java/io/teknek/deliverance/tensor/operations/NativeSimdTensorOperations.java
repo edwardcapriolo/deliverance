@@ -48,6 +48,9 @@ public class NativeSimdTensorOperations implements TensorOperations {
     }
 
     public NativeSimdTensorOperations(TensorOperations delegate, int parallelSplitSize) {
+        if (!isLoaded) {
+            throw new UnsatisfiedLinkError("Native SIMD library is unavailable");
+        }
         this.delegate = delegate;
         this.parallelSplitSize = parallelSplitSize;
         int f = 0;
