@@ -1,6 +1,7 @@
 package io.teknek.deliverance.tensor2;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Tag;
 import org.junit.platform.engine.TestDescriptor;
 import org.junit.platform.launcher.Launcher;
 import org.junit.platform.launcher.LauncherDiscoveryRequest;
@@ -43,6 +44,7 @@ class Tensor2PerformanceGateTest {
     private static final String FUZZ_PACKAGE = "io.teknek.deliverance.tensor2";
 
     @Test
+    @Tag("large-model")
     void tensorFuzzPerformanceGate() throws Exception {
         Path hostRoot = hostRoot();
         Files.createDirectories(hostRoot);

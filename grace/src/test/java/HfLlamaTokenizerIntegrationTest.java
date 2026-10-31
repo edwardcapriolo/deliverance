@@ -30,6 +30,7 @@ public class HfLlamaTokenizerIntegrationTest implements HfTokenizerIntegrationCo
     }
 
     @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.Disabled("Requires the unavailable local hf-internal-testing tokenizer fixture")
     public void test_load_tiktoken_tokenizer() {
         io.teknek.deliverance.grace.PreTrainedTokenizer tokenizer =
                 io.teknek.deliverance.grace.AutoTokenizer.fromPretrained(
@@ -44,6 +45,7 @@ public class HfLlamaTokenizerIntegrationTest implements HfTokenizerIntegrationCo
     }
 
     @org.junit.jupiter.api.Test
+    @org.junit.jupiter.api.Disabled("Requires access to gated meta-llama/Meta-Llama-3-8B")
     public void test_llama3_bpe_skips_clean_up_tokenization_spaces() {
         io.teknek.deliverance.grace.PreTrainedTokenizer tokenizer =
                 io.teknek.deliverance.grace.AutoTokenizer.fromPretrained(

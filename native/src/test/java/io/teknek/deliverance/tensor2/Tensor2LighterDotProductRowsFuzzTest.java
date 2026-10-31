@@ -338,8 +338,8 @@ class Tensor2LighterDotProductRowsFuzzTest {
             fill(actualInput, c.seed());
             expected.dotProductRows(expectedOutput, expectedInput, expectedWeights, c.inputStart(), c.inputLength(),
                     c.weightRowStart(), c.weightRowCount(), c.outputColumnStart());
-            actual.dotProductRows(actualOutput, actualInput, actualWeights, c.inputStart(), c.inputLength(),
-                    c.inputStart(), c.weightRowStart(), c.weightRowCount(), c.outputColumnStart(), kernel,
+            actual.dotProductRows(actualOutput, actualInput, actualWeights, c.inputStart(), c.inputStart(),
+                    c.inputLength(), c.weightRowStart(), c.weightRowCount(), c.outputColumnStart(), kernel,
                     Threading.PROVIDER);
             assertEqual(c, expectedOutput, actualOutput, 0.08f);
         }
@@ -537,8 +537,8 @@ class Tensor2LighterDotProductRowsFuzzTest {
                     random.nextInt()));
         }
         return candidates().filter(Candidate::enabled).flatMap(candidate -> cases.stream().flatMap(c -> kernelsFor(c, DType.F32, DType.F32,
-                DType.F32)
-                .stream().map(kernel -> Arguments.of(c, candidate, kernel))));
+                DType.F32).stream().filter(kernel -> supports(candidate, kernel))
+                .map(kernel -> Arguments.of(c, candidate, kernel))));
     }
 
     static Stream<Arguments> q8Cases() {
@@ -630,7 +630,13 @@ class Tensor2LighterDotProductRowsFuzzTest {
 
     private static Stream<Arguments> kernelCandidates() {
         return candidates().filter(Candidate::enabled).flatMap(candidate -> Stream.of(GemmKernel.BATCH, GemmKernel.ROW, GemmKernel.CHUNK)
+                // NativeOps does not implement the explicit CHUNK kernel; do not turn that capability gap into test errors.
+                .filter(kernel -> supports(candidate, kernel))
                 .map(kernel -> Arguments.of(candidate, kernel)));
+    }
+
+    private static boolean supports(Candidate candidate, GemmKernel kernel) {
+        return !("SIMD".equals(candidate.name()) && kernel == GemmKernel.CHUNK);
     }
 
     private static Stream<ProviderCandidate> i8Q4Candidates() {

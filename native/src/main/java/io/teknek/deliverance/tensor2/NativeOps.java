@@ -112,7 +112,8 @@ public class NativeOps implements TensorOps, CompositeOpsProvider, AutoCloseable
                         baseSegment(result), inputBase, baseSegment(b), baseSegment(weightScale),
                         result.dType() == DType.BF16 ? 1 : 0, (int) result.shape().first(),
                         operation.aColumnOffset(), operation.bColumnOffset(), operation.columnLength(),
-                        operation.bRowOffset(), operation.rowChunkSize(), operation.resultRowOffset(),
+                        operation.bRowOffset(), operation.rowChunkSize(),
+                        operation.resultRowOffset() + operation.bRowOffset(),
                         result.stride(), a.stride(), b.stride(), weightScale.stride());
                 return status == Tensor2Native.TENSOR2_OK() ? Either.Right(null) : Either.Left(OpSupport.Unsupported);
             }

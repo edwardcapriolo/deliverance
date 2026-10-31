@@ -319,7 +319,6 @@ public class DefaultWeightLoader implements WeightLoader {
 
                         // Chunk size needs to be a multiple of the column size
                         long chunkSize = maxSplitBytes - (maxSplitBytes % bytesPerColumn);
-                        long offsetAdded = 0;
                         int chunk = 0;
                         boolean added = false;
                         while (length > 0) {
@@ -341,17 +340,14 @@ public class DefaultWeightLoader implements WeightLoader {
                             }
                             int numRowsInChunk = Ints.checkedCast((chunkEnd - offset) / bytesPerColumn);
 
-                            // This tensorInfo is relative to the split which we know is at least the mmap limit
-                            // We track the offsetAdded so we can make the offset relative to the current split
+                            // Each chunk is mapped as its own split, so its metadata starts at local offset zero.
                             TensorInfo chunkInfo = new TensorInfo(
                                     info.dType,
                                     new long[] { numRowsInChunk, info.shape[1] },
-                                    new long[] { offset - offsetAdded, chunkEnd - offsetAdded }
+                                    new long[] { 0, chunkEnd - offset }
                             );
                             tensorInfoMap.put(chunkName, chunkInfo);
                             added = true;
-                            offsetAdded += chunkEnd - offset;
-
                             offset = chunkEnd;
                             length -= chunkSize;
                         }
