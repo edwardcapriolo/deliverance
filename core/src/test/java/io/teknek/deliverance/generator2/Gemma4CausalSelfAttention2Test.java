@@ -86,8 +86,13 @@ class Gemma4CausalSelfAttention2Test {
         Lighter lighter = new Lighter(new MetricRegistry());
         try (TensorRef target = lighter.allocate(DType.F32, TensorShape.of(2, 4))) {
             fill(target, 1.0f);
-            float[] inverse = {0.25f, 0.0f};
-            new CompositeOps(lighter).rotaryEmbedding(target, 1, 4, 2, inverse);
+            float[][] frequencies = new float[8][2];
+            for (int position = 0; position < 4; position++) {
+                double angle = position * 0.25;
+                frequencies[position * 2] = new float[] {(float) Math.cos(angle), (float) Math.sin(angle)};
+                frequencies[position * 2 + 1] = new float[] {1.0f, 0.0f};
+            }
+            new CompositeOps(lighter).rotaryEmbedding(target, 1, 4, 2, frequencies);
             for (int row = 0; row < 2; row++) {
                 double angle = (row + 2) * 0.25;
                 assertEquals(Math.cos(angle) - Math.sin(angle), target.get(row, 0), 1.0e-5f);

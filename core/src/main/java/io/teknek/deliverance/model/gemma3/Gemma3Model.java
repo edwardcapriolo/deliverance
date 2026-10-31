@@ -7,8 +7,10 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.*;
 import io.teknek.deliverance.generator2.CausalSelfAttention2;
 import io.teknek.deliverance.generator2.FeedForward2;
+import io.teknek.deliverance.generator2.LayerNorm2;
 import io.teknek.deliverance.generator2.MLPBlock2;
 import io.teknek.deliverance.generator2.RmsNorm2;
+import io.teknek.deliverance.generator2.SampleOutputRef;
 import io.teknek.deliverance.generator2.TransformerBlock2;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.FloatConversions;
@@ -209,6 +211,32 @@ public class Gemma3Model extends LlamaModel {
         });
 
         return transformerBlocks;
+    }
+
+    @Override
+    protected SampleOutputRef loadOutputWeightsRef() {
+        DType qType = modelQType.orElse(this.modelDType);
+        TensorRef norm = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(
+                "model.norm.weight", weights::loadRef, qType));
+        TensorRef head = weights.loadRef("model.embed_tokens.weight");
+        DType outputDType = outputHeadQuantization.orElse(workingDType);
+        if (head.dType() != outputDType) {
+            TensorRef converted = lighter.reshape(head, outputDType);
+            head.close();
+            head = converted;
+        }
+        TensorRef outputHead = registerModelTensorRef(head);
+        return new SampleOutputRef() {
+            @Override
+            public LayerNorm2 outputLayerNorm() {
+                return new RmsNorm2(Gemma3Model.this, norm, 1.0f);
+            }
+
+            @Override
+            public TensorRef outputLogitsWeights() {
+                return outputHead;
+            }
+        };
     }
 
     @Override
