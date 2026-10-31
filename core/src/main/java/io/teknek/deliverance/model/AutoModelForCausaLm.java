@@ -634,7 +634,8 @@ public class AutoModelForCausaLm {
                 lighter = null;
             } else if ("LLAMA".equals(modelType) || "QWEN2".equals(modelType) || "QWEN3".equals(modelType)
                     || "QWEN3_MOE".equals(modelType) || "MISTRAL".equals(modelType)
-                    || "GEMMA3_TEXT".equals(modelType) || "GEMMA4".equals(modelType)) {
+                    || "GEMMA3_TEXT".equals(modelType) || "GEMMA4".equals(modelType)
+                    || "DIFFUSION_GEMMA".equals(modelType)) {
                 lighter = new Lighter(mr, pool.getUnderlying());
             } else if (provider == null){
                 ConfigurableTensorProvider base = new ConfigurableTensorProvider(allocator, pool);
@@ -865,8 +866,8 @@ public class AutoModelForCausaLm {
                         allocator, settings, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives,
                         outputHeadQuantization);
                 case "DIFFUSION_GEMMA" -> new DiffusionGemmaModel(inferenceType, config, weightLoader,
-                        tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
-                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                        tokenizer, workingMem, workingQuant, effectiveModelQType, mr, settings, toolCallParser, pool,
+                        tensorParallelContext, tensorParallelCollectives, outputHeadQuantization, lighter);
                 case "NEMOTRON_LABS_DIFFUSION" -> new NemotronLabsDiffusionModel(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);

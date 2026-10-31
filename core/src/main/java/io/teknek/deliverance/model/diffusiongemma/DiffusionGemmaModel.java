@@ -10,6 +10,7 @@ import io.teknek.deliverance.generator.LayerNorm;
 import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.generator.SampleOutput;
 import io.teknek.deliverance.generator.TransformerBlock;
+import io.teknek.deliverance.generator2.SampleOutputRef;
 import io.teknek.deliverance.grace.EncodeOptions;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.grace.TokenIds;
@@ -32,6 +33,8 @@ import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.tensor2.ScaledSoftMax;
 import io.teknek.deliverance.tensor2.GemmDit;
+import io.teknek.deliverance.tensor2.ArgMax;
+import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensor.kv.CacheExecutionMode;
 import io.teknek.deliverance.tensor.kv.KvCacheSession;
@@ -94,6 +97,19 @@ public final class DiffusionGemmaModel extends AbstractModel {
         super(inferenceType, config, weights, tokenizer, workingDType, workingQType, modelQType,
                 configurableTensorProvider, metricRegistry, tensorAllocator, kvBufferCacheSettings, toolCallParser, pool,
                 tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+        this.diffusionConfig = (DiffusionGemmaConfig) config;
+    }
+
+    /** TensorRef-native constructor used by the active DiffusionGemma runtime. */
+    public DiffusionGemmaModel(InferenceType inferenceType, Config config, WeightLoader weights,
+            PreTrainedTokenizer tokenizer, DType workingDType, DType workingQType, Optional<DType> modelQType,
+            MetricRegistry metricRegistry, KvBufferCacheSettings kvBufferCacheSettings, ToolCallParser toolCallParser,
+            WrappedForkJoinPool pool, TensorParallelContext tensorParallelContext,
+            TensorParallelCollectives tensorParallelCollectives, Optional<DType> outputHeadQuantization,
+            Lighter lighter) {
+        super(inferenceType, config, weights, tokenizer, workingDType, workingQType, modelQType, metricRegistry,
+                kvBufferCacheSettings, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives,
+                outputHeadQuantization, lighter);
         this.diffusionConfig = (DiffusionGemmaConfig) config;
     }
 
@@ -410,18 +426,18 @@ public final class DiffusionGemmaModel extends AbstractModel {
         int seed = generatorParameters.seed.orElse(42);
         List<Integer> generatedTokens = new ArrayList<>(tokensToReturn);
 
-        try (AbstractTensor promptIds = tokenTensor(promptTokens);
-             KvBufferCache.KvBuffer kvBuffer = newKvBuffer();
-             AbstractTensor canvas = tensorAllocator.getDirty(DType.F32, TensorShape.of(1, diffusionConfig.canvasLength));
-             AbstractTensor argmax = tensorAllocator.getDirty(DType.F32, TensorShape.of(1, 2))) {
-            encodeTextToCache(promptIds, kvBuffer);
-            new EntropyBoundSampler(1.0f, diffusionConfig.canvasLength, diffusionConfig.textConfig.vocabSize,
-                    new Random(seed), getLighter(), metricRegistry).initializeCanvas(canvas);
+        try (TensorRef promptIds = tokenTensorRef(promptTokens);
+             KvCacheSession kvSession = newKvCacheSession();
+             TensorRef canvas = lighter.allocate(DType.F32, TensorShape.of(1, diffusionConfig.canvasLength));
+             TensorRef argmax = lighter.allocate(DType.F32, TensorShape.of(1, 2))) {
+            encodeTextToCacheRef(promptIds, kvSession);
+            initializeCanvasRef(canvas, new Random(seed));
 
-            try (AbstractTensor hidden = forwardCanvas(canvas, null)) {
+            try (TensorRef hidden = forwardTextOnlyRef(canvas)) {
                 for (int position = 0; position < tokensToReturn; position++) {
-                    try (AbstractTensor logits = logitsForCanvasPosition(hidden, 0, position)) {
-                        configurableTensorProvider.get().argMax(logits, argmax, 0, diffusionConfig.textConfig.vocabSize);
+                    try (TensorRef logits = logitsForCanvasPositionRef(hidden, 0, position)) {
+                        lighter.argMax(new ArgMax(logits).into(argmax).offsetAndLength(0,
+                                diffusionConfig.textConfig.vocabSize));
                         int token = (int) argmax.get(0, 0);
                         generatedTokens.add(token);
                         canvas.set(token, 0, position);
@@ -442,13 +458,24 @@ public final class DiffusionGemmaModel extends AbstractModel {
 
     @Override
     protected EmbedInput loadInputWeights() {
-        decoderEmbeddingWeights = loadFirstPresent("decoder embeddings",
-                "model.decoder.embed_tokens.weight",
-                "model.encoder.language_model.embed_tokens.weight");
+        ensureTensorRefWeights();
         return new EmbedInput(this) {
             @Override
             public TensorRef inputTokenToEmbedding(int inputToken, int position) {
-                throw new UnsupportedOperationException("DiffusionGemma forward is not implemented yet");
+                try (TensorRef row = decoderEmbeddingWeightsRef.slice(inputToken)) {
+                    TensorRef embedding = makeDenseTensorRef(1, diffusionConfig.textConfig.hiddenSize);
+                    try {
+                        if (row.dType() == embedding.dType()) {
+                            lighter.copy(row, 0, embedding, 0, embedding.shape().last());
+                        } else {
+                            lighter.reshape(row, embedding);
+                        }
+                        return embedding;
+                    } catch (RuntimeException | Error error) {
+                        embedding.close();
+                        throw error;
+                    }
+                }
             }
         };
     }
@@ -472,6 +499,22 @@ public final class DiffusionGemmaModel extends AbstractModel {
             @Override
             public AbstractTensor getOutputLogitsWeights() {
                 return lmHeadWeights;
+            }
+        };
+    }
+
+    @Override
+    protected SampleOutputRef loadOutputWeightsRef() {
+        ensureTensorRefWeights();
+        return new SampleOutputRef() {
+            @Override
+            public io.teknek.deliverance.generator2.LayerNorm2 outputLayerNorm() {
+                throw new UnsupportedOperationException("DiffusionGemma output layer norm is not implemented yet");
+            }
+
+            @Override
+            public TensorRef outputLogitsWeights() {
+                return lmHeadWeightsRef;
             }
         };
     }
@@ -501,6 +544,24 @@ public final class DiffusionGemmaModel extends AbstractModel {
             encoderDownWeights[layer] = loadLayerRepresentative(false, layer, "mlp.down_proj.weight", "experts.down_proj");
         }
         return new TransformerBlock[0];
+    }
+
+    @Override
+    protected io.teknek.deliverance.generator2.TransformerBlock2[] loadTransformerBlockWeights2() {
+        ensureTensorRefWeights();
+        // The decoder attention/denoising block is deliberately not fabricated here. The custom
+        // DiffusionGemma skeleton currently stops at self-conditioning.
+        return new io.teknek.deliverance.generator2.TransformerBlock2[0];
+    }
+
+    @Override
+    protected boolean usesTensorRefExecution() {
+        return true;
+    }
+
+    @Override
+    public boolean usesKvCache2Generation() {
+        return true;
     }
 
     private AbstractTensor forwardCanvas(AbstractTensor canvasTokens, AbstractTensor selfConditioningSignal) {
@@ -706,6 +767,25 @@ public final class DiffusionGemmaModel extends AbstractModel {
             tensor.set(tokenIds[i], 0, i);
         }
         return tensor;
+    }
+
+    private TensorRef tokenTensorRef(int[] tokenIds) {
+        TensorRef tensor = lighter.allocate(DType.F32, TensorShape.of(1, tokenIds.length));
+        try {
+            for (int i = 0; i < tokenIds.length; i++) {
+                tensor.set(tokenIds[i], 0, i);
+            }
+            return tensor;
+        } catch (RuntimeException | Error error) {
+            tensor.close();
+            throw error;
+        }
+    }
+
+    private void initializeCanvasRef(TensorRef canvas, Random random) {
+        for (int position = 0; position < diffusionConfig.canvasLength; position++) {
+            canvas.set(random.nextInt(diffusionConfig.textConfig.vocabSize), 0, position);
+        }
     }
 
     private AbstractTensor zeroCanvasSignal(int batchSize) {

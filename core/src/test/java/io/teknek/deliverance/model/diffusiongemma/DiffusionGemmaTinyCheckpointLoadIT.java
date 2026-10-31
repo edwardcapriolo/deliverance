@@ -7,9 +7,11 @@ import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.safetensors.DefaultWeightLoader;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
-import io.teknek.deliverance.tensor.AbstractTensor;
-import io.teknek.deliverance.tensor.KvBufferCache;
-import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
+import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor.kv.AttentionPattern;
+import io.teknek.deliverance.tensor.kv.KvCacheSession;
+import io.teknek.deliverance.tensor.kv.KvReadView;
+import io.teknek.deliverance.tensor2.TensorRef;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -29,14 +31,15 @@ class DiffusionGemmaTinyCheckpointLoadIT {
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetcher).buildLocalTransformerModel()) {
             assertInstanceOf(DiffusionGemmaModel.class, model);
             DiffusionGemmaModel diffusionGemma = (DiffusionGemmaModel) model;
-            try (FloatBufferTensor canvas = new FloatBufferTensor(1, 32);
-                 DefaultWeightLoader weights = new DefaultWeightLoader(fetcher.pathForModel().toFile())) {
+             try (TensorRef canvas = model.getLighter().allocate(io.teknek.deliverance.DType.F32,
+                     TensorShape.of(1, 32));
+                  DefaultWeightLoader weights = new DefaultWeightLoader(fetcher.pathForModel().toFile())) {
                 for (int position = 0; position < canvas.shape().last(); position++) {
                     canvas.set(position, 0, position);
                 }
-                try (AbstractTensor embeddings = diffusionGemma.embedCanvasTokens(canvas);
-                     AbstractTensor selfConditioned = diffusionGemma.applySelfConditioning(embeddings, embeddings);
-                     AbstractTensor embeddingWeights = weights.load("model.decoder.embed_tokens.weight")) {
+                 try (TensorRef embeddings = diffusionGemma.embedCanvasTokensRef(canvas);
+                      TensorRef selfConditioned = diffusionGemma.applySelfConditioningRef(embeddings, embeddings);
+                      TensorRef embeddingWeights = weights.loadRef("model.decoder.embed_tokens.weight")) {
                     assertEquals(1, embeddings.shape().dim(0));
                     assertEquals(32, embeddings.shape().dim(1));
                     assertEquals(16, embeddings.shape().dim(2));
@@ -62,16 +65,17 @@ class DiffusionGemmaTinyCheckpointLoadIT {
 
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetcher).buildLocalTransformerModel()) {
             DiffusionGemmaModel diffusionGemma = (DiffusionGemmaModel) model;
-            try (FloatBufferTensor decoderInputIds = new FloatBufferTensor(3, 32)) {
+             try (TensorRef decoderInputIds = model.getLighter().allocate(io.teknek.deliverance.DType.F32,
+                     TensorShape.of(3, 32))) {
                 for (int batch = 0; batch < decoderInputIds.shape().first(); batch++) {
                     for (int position = 0; position < decoderInputIds.shape().last(); position++) {
                         decoderInputIds.set(position + 1, batch, position);
                     }
                 }
-                try (DiffusionGemmaModel.DiffusionGemmaModelOutput output = diffusionGemma.forwardTextOnly(decoderInputIds)) {
-                    assertEquals(3, output.lastHiddenState().shape().dim(0));
-                    assertEquals(32, output.lastHiddenState().shape().dim(1));
-                    assertEquals(16, output.lastHiddenState().shape().dim(2));
+                try (TensorRef output = diffusionGemma.forwardTextOnlyRef(decoderInputIds)) {
+                    assertEquals(3, output.shape().dim(0));
+                    assertEquals(32, output.shape().dim(1));
+                    assertEquals(16, output.shape().dim(2));
                 }
             }
         }
@@ -83,12 +87,13 @@ class DiffusionGemmaTinyCheckpointLoadIT {
 
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetcher).buildLocalTransformerModel()) {
             DiffusionGemmaModel diffusionGemma = (DiffusionGemmaModel) model;
-            try (FloatBufferTensor decoderInputIds = new FloatBufferTensor(1, 32)) {
+             try (TensorRef decoderInputIds = model.getLighter().allocate(io.teknek.deliverance.DType.F32,
+                     TensorShape.of(1, 32))) {
                 for (int position = 0; position < decoderInputIds.shape().last(); position++) {
                     decoderInputIds.set(position + 1, 0, position);
                 }
-                try (DiffusionGemmaModel.DiffusionGemmaModelOutput output = diffusionGemma.forwardTextOnly(decoderInputIds);
-                     AbstractTensor logits = diffusionGemma.logitsForCanvasPosition(output.lastHiddenState(), 0, 0)) {
+                try (TensorRef output = diffusionGemma.forwardTextOnlyRef(decoderInputIds);
+                     TensorRef logits = diffusionGemma.logitsForCanvasPositionRef(output, 0, 0)) {
                     assertEquals(1, logits.shape().dim(0));
                     assertEquals(262_144, logits.shape().dim(1));
                 }
@@ -100,18 +105,19 @@ class DiffusionGemmaTinyCheckpointLoadIT {
     void encoderTextCacheWritesKeyAndValueRows() {
         ModelFetcher fetcher = new ModelFetcher("trl-internal-testing", "tiny-DiffusionGemmaForBlockDiffusion");
 
-        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetcher).buildLocalTransformerModel();
-             KvBufferCache.KvBuffer kv = model.newKvBuffer();
-             FloatBufferTensor inputIds = new FloatBufferTensor(1, 3)) {
+         try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetcher).buildLocalTransformerModel();
+              KvCacheSession kv = model.newKvCacheSession();
+              TensorRef inputIds = model.getLighter().allocate(io.teknek.deliverance.DType.F32, TensorShape.of(1, 3))) {
             DiffusionGemmaModel diffusionGemma = (DiffusionGemmaModel) model;
             inputIds.set(1.0f, 0, 0);
             inputIds.set(2.0f, 0, 1);
             inputIds.set(3.0f, 0, 2);
 
-            diffusionGemma.encodeTextToCache(inputIds, kv);
+             diffusionGemma.encodeTextToCacheRef(inputIds, kv);
 
-            try (AbstractTensor key = kv.getKeyTensorForPosition(0, 0);
-                 AbstractTensor value = kv.getValTensorForPosition(0, 0)) {
+             try (KvReadView view = kv.readView(0, 3, AttentionPattern.CAUSAL);
+                  TensorRef key = view.keyRowCopyRef(0);
+                  TensorRef value = view.valueRowCopyRef(0)) {
                 assertEquals(16, key.shape().last());
                 assertEquals(16, value.shape().last());
                 assertTrue(nonZero(key));
@@ -124,8 +130,9 @@ class DiffusionGemmaTinyCheckpointLoadIT {
     void encoderTextLayerForwardProducesFiniteHiddenStates() {
         ModelFetcher fetcher = new ModelFetcher("trl-internal-testing", "tiny-DiffusionGemmaForBlockDiffusion");
 
-        try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetcher).buildLocalTransformerModel();
-             FloatBufferTensor inputIds = new FloatBufferTensor(2, 4)) {
+         try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetcher).buildLocalTransformerModel();
+              TensorRef inputIds = model.getLighter().allocate(io.teknek.deliverance.DType.F32,
+                      TensorShape.of(2, 32))) {
             DiffusionGemmaModel diffusionGemma = (DiffusionGemmaModel) model;
             for (int batch = 0; batch < inputIds.shape().first(); batch++) {
                 for (int position = 0; position < inputIds.shape().last(); position++) {
@@ -133,9 +140,9 @@ class DiffusionGemmaTinyCheckpointLoadIT {
                 }
             }
 
-            try (AbstractTensor output = diffusionGemma.forwardTextEncoderLayer(inputIds, 0)) {
+             try (TensorRef output = diffusionGemma.forwardTextOnlyRef(inputIds)) {
                 assertEquals(2, output.shape().dim(0));
-                assertEquals(4, output.shape().dim(1));
+                assertEquals(32, output.shape().dim(1));
                 assertEquals(16, output.shape().dim(2));
                 assertTrue(nonZero(output));
                 assertFinite(output);
@@ -158,22 +165,22 @@ class DiffusionGemmaTinyCheckpointLoadIT {
         }
     }
 
-    private static boolean nonZero(AbstractTensor tensor) {
+    private static boolean nonZero(TensorRef tensor) {
         return anyValue(tensor, value -> value != 0.0f);
     }
 
-    private static void assertFinite(AbstractTensor tensor) {
+    private static void assertFinite(TensorRef tensor) {
         assertTrue(anyValue(tensor, Float::isFinite), "tensor must contain at least one finite value");
         forEachValue(tensor, value -> assertTrue(Float.isFinite(value), "tensor value must be finite"));
     }
 
-    private static boolean anyValue(AbstractTensor tensor, FloatPredicate predicate) {
+    private static boolean anyValue(TensorRef tensor, FloatPredicate predicate) {
         boolean[] found = {false};
         forEachValue(tensor, value -> found[0] |= predicate.test(value));
         return found[0];
     }
 
-    private static void forEachValue(AbstractTensor tensor, FloatConsumer consumer) {
+    private static void forEachValue(TensorRef tensor, FloatConsumer consumer) {
         if (tensor.dims() == 2) {
             for (int row = 0; row < tensor.shape().first(); row++) {
                 for (int col = 0; col < tensor.shape().last(); col++) {
