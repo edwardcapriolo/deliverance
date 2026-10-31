@@ -292,7 +292,7 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
         }
     }
 
-    protected final TensorRef[] projectQkv(TensorRef input, ForwardPhase phase) {
+    protected TensorRef[] projectQkv(TensorRef input, ForwardPhase phase) {
         Preconditions.checkArgument(input.dims() == 2 && input.shape().last() == config.embeddingLength,
                 "Attention input must be [batch, embeddingLength]");
         int batchSize = input.shape().first();
@@ -445,7 +445,7 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
         return Math.max(1, Math.min(Math.min(configured, poolSize), attentionLength));
     }
 
-    protected final TensorRef projectOutput(TensorRef attended, Optional<Consumer<List<TensorRef>>> tensorReducer,
+    protected TensorRef projectOutput(TensorRef attended, Optional<Consumer<List<TensorRef>>> tensorReducer,
             ForwardPhase phase) {
         Preconditions.checkArgument(attended.dims() == 2 && attended.shape().last() == attentionLength,
                 "Attention output must be [batch, attentionLength]");
@@ -476,6 +476,7 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
             }
             applyLora(outputWeightName, output, projectionInput, phase,
                     "kvcacheselfattention2.o_lora");
+            applyOutputProjectionBias(output);
             if (model.getTensorParallelContext().enabled()) {
                 throw new UnsupportedOperationException("TensorRef attention output projection all-reduce is not ported");
             }
@@ -490,6 +491,10 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
                 projectionInput.close();
             }
         }
+    }
+
+    /** Hook for checkpoint formats with an output projection bias. */
+    protected void applyOutputProjectionBias(TensorRef output) {
     }
 
     private void applyLora(String weightName, TensorRef output, TensorRef input,

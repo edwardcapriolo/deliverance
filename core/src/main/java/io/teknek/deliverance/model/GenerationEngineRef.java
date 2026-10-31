@@ -171,6 +171,18 @@ public final class GenerationEngineRef {
         double ttftMs = ttft / 1_000_000.0;
         int count = response.generatedTokens == null ? 0 : response.generatedTokens.size();
         double avgMs = count == 0 ? 0.0 : totalMs / count;
+        double tokensPerSecond = totalMs <= 0.0 ? 0.0 : count * 1_000.0 / totalMs;
+        double decodeMs = Math.max(0.0, totalMs - ttftMs);
+        int decodeCount = Math.max(0, count - 1);
+        double decodeTokensPerSecond = decodeMs <= 0.0 ? 0.0 : decodeCount * 1_000.0 / decodeMs;
+        AbstractModel.logger.info("generation_complete prompt_tokens={} generated_tokens={} total_ms={} ttft_ms={} tokens_per_second={} decode_tokens_per_second={} finish_reason={}",
+                response.promptTokens,
+                count,
+                String.format(java.util.Locale.ROOT, "%.3f", totalMs),
+                String.format(java.util.Locale.ROOT, "%.3f", ttftMs),
+                String.format(java.util.Locale.ROOT, "%.3f", tokensPerSecond),
+                String.format(java.util.Locale.ROOT, "%.3f", decodeTokensPerSecond),
+                response.finishReason);
         return response.copyWithTiming(ttftMs, avgMs, totalMs);
     }
 

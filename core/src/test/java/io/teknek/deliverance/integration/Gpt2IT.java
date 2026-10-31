@@ -11,6 +11,7 @@ import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.*;
 import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -32,10 +33,13 @@ public class Gpt2IT {
             PromptContext ctx = PromptContext.of(prompt);
 
             Response response = model.generate(uuid, ctx, new GeneratorParameters()
-                            .withTemperature(0.0f).withNtokens(500).withMaxTokens(150),
+                            .withTemperature(0.0f).withNtokens(500).withMaxTokens(20),
                   new DoNothingGenerateEvent());
             //TODO cleanup
-            System.out.println(response.responseText);
+            Assertions.assertEquals("""
+              
+                    
+                    Micheal Jordan is a former professional basketball player who played for the New York Knicks from""".trim(), response.responseText.trim());
             //assertEquals("", response.responseText);
         }
     }
