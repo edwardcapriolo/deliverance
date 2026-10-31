@@ -29,10 +29,13 @@ import io.teknek.deliverance.tensor.TensorNormalization;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.tensor2.ScaledSoftMax;
+import io.teknek.deliverance.tensor2.GemmDit;
 import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.tensor.kv.CacheExecutionMode;
+import io.teknek.deliverance.tensor.kv.KvCacheSession;
+import io.teknek.deliverance.tensor.kv.KvWriteCursor;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 
 import java.util.ArrayList;
@@ -72,6 +75,15 @@ public final class DiffusionGemmaModel extends AbstractModel {
     private AbstractTensor[] encoderGateWeights;
     private AbstractTensor[] encoderUpWeights;
     private AbstractTensor[] encoderDownWeights;
+    private TensorRef decoderEmbeddingWeightsRef;
+    private TensorRef lmHeadWeightsRef;
+    private TensorRef selfConditioningPreNormRef;
+    private TensorRef selfConditioningGateRef;
+    private TensorRef selfConditioningUpRef;
+    private TensorRef selfConditioningDownRef;
+    private TensorRef[] encoderKeyWeightsRef;
+    private TensorRef[] encoderValueWeightsRef;
+    private DiffusionGemmaSelfConditioning selfConditioningRef;
 
     public DiffusionGemmaModel(InferenceType inferenceType, Config config, WeightLoader weights,
             PreTrainedTokenizer tokenizer, DType workingDType, DType workingQType, Optional<DType> modelQType,
@@ -122,6 +134,107 @@ public final class DiffusionGemmaModel extends AbstractModel {
         Preconditions.checkState(selfConditioning != null,
                 "DiffusionGemmaModel must be initialized before applying self-conditioning");
         return selfConditioning.forward(inputsEmbeds, selfConditioningSignal);
+    }
+
+    /** TensorRef equivalent of {@link #embedCanvasTokens(AbstractTensor)}. */
+    public TensorRef embedCanvasTokensRef(TensorRef canvasTokens) {
+        ensureTensorRefWeights();
+        Preconditions.checkArgument(canvasTokens.dims() == 2, "canvasTokens must have shape [batch, canvasLength]");
+        Preconditions.checkArgument(canvasTokens.shape().last() == diffusionConfig.canvasLength,
+                "canvasTokens length must match config.canvasLength");
+        TensorRef embeddings = lighter.allocate(DType.F32, TensorShape.of(canvasTokens.shape().first(),
+                diffusionConfig.canvasLength, diffusionConfig.textConfig.hiddenSize));
+        try {
+            for (int batch = 0; batch < canvasTokens.shape().first(); batch++) {
+                for (int position = 0; position < diffusionConfig.canvasLength; position++) {
+                    int token = (int) canvasTokens.get(batch, position);
+                    Preconditions.checkArgument(token >= 0 && token < decoderEmbeddingWeightsRef.shape().first(),
+                            "canvas token id out of bounds");
+                    for (int column = 0; column < diffusionConfig.textConfig.hiddenSize; column++) {
+                        embeddings.set(decoderEmbeddingWeightsRef.get(token, column), batch, position, column);
+                    }
+                }
+            }
+            return embeddings;
+        } catch (RuntimeException | Error error) {
+            embeddings.close();
+            throw error;
+        }
+    }
+
+    public TensorRef applySelfConditioningRef(TensorRef inputsEmbeds, TensorRef selfConditioningSignal) {
+        ensureTensorRefWeights();
+        return selfConditioningRef.forward(inputsEmbeds, selfConditioningSignal);
+    }
+
+    /** TensorRef equivalent of the tested single canvas-position output projection. */
+    public TensorRef logitsForCanvasPositionRef(TensorRef hiddenStates, int batch, int position) {
+        ensureTensorRefWeights();
+        Preconditions.checkArgument(hiddenStates.dims() == 3, "hiddenStates must be [batch, canvasLength, hiddenSize]");
+        TensorRef row = lighter.allocate(DType.F32, TensorShape.of(1, diffusionConfig.textConfig.hiddenSize));
+        TensorRef logits = lighter.allocate(DType.F32, TensorShape.of(1, diffusionConfig.textConfig.vocabSize));
+        try {
+            for (int column = 0; column < row.shape().last(); column++) {
+                row.set(hiddenStates.get(batch, position, column), 0, column);
+            }
+            GemmDit.dotProductRows(lighter, this, "diffusiongemma.logits", logits, row, lmHeadWeightsRef,
+                    0, 0, row.shape().last(), 0, logits.shape().last(), 0);
+            return logits;
+        } catch (RuntimeException | Error error) {
+            logits.close();
+            throw error;
+        } finally {
+            row.close();
+        }
+    }
+
+    /** TensorRef self-conditioning boundary; decoder attention remains intentionally out of scope. */
+    public TensorRef forwardTextOnlyRef(TensorRef decoderInputIds) {
+        try (TensorRef embeddings = embedCanvasTokensRef(decoderInputIds);
+             TensorRef zero = lighter.allocate(DType.F32, embeddings.shape())) {
+            lighter.clear(zero);
+            return applySelfConditioningRef(embeddings, zero);
+        }
+    }
+
+    /** Writes encoder projection rows through KVCache2 without adapting through KvBufferCache. */
+    public void encodeTextToCacheRef(TensorRef inputIds, KvCacheSession session) {
+        ensureTensorRefWeights();
+        Preconditions.checkArgument(inputIds.dims() == 2, "inputIds must be [batch, sequence]");
+        int batch = inputIds.shape().first();
+        int sequence = inputIds.shape().last();
+        int hidden = diffusionConfig.textConfig.hiddenSize;
+        try (TensorRef embeddings = lighter.allocate(DType.F32, TensorShape.of(batch * sequence, hidden));
+             KvWriteCursor writer = session.writer(CacheExecutionMode.PREFILL_UPDATE_CACHE)) {
+            for (int b = 0; b < batch; b++) {
+                for (int position = 0; position < sequence; position++) {
+                    int token = (int) inputIds.get(b, position);
+                    int row = b * sequence + position;
+                    for (int column = 0; column < hidden; column++) {
+                        embeddings.set(decoderEmbeddingWeightsRef.get(token, column), row, column);
+                    }
+                }
+            }
+            for (int layer = 0; layer < diffusionConfig.textConfig.numHiddenLayers; layer++) {
+                int kvLength = encoderKeyWeightsRef[layer].shape().first();
+                try (TensorRef keys = lighter.allocate(DType.F32, TensorShape.of(batch * sequence, kvLength));
+                     TensorRef values = lighter.allocate(DType.F32, TensorShape.of(batch * sequence, kvLength))) {
+                    lighter.dotProductRows(keys, embeddings, encoderKeyWeightsRef[layer], 0, hidden, 0, kvLength, 0);
+                    TensorRef valueWeight = encoderValueWeightsRef[layer] == null
+                            ? encoderKeyWeightsRef[layer] : encoderValueWeightsRef[layer];
+                    lighter.dotProductRows(values, embeddings, valueWeight, 0, hidden, 0, kvLength, 0);
+                    for (int b = 0; b < batch; b++) {
+                        for (int position = 0; position < sequence; position++) {
+                            int row = b * sequence + position;
+                            try (TensorRef key = keys.slice(row); TensorRef value = values.slice(row)) {
+                                writer.write(layer, row, key, value);
+                            }
+                        }
+                    }
+                }
+            }
+            writer.advanceLength(batch * sequence);
+        }
     }
 
     /**
@@ -621,6 +734,61 @@ public final class DiffusionGemmaModel extends AbstractModel {
                     candidates.toArray(String[]::new));
         }
         return loadFirstPresentOptional(candidates.toArray(String[]::new));
+    }
+
+    private void ensureTensorRefWeights() {
+        if (selfConditioningRef != null) {
+            return;
+        }
+        decoderEmbeddingWeightsRef = registerModelTensorRef(loadRefFirstPresent("decoder embeddings",
+                "model.decoder.embed_tokens.weight", "model.encoder.language_model.embed_tokens.weight"));
+        lmHeadWeightsRef = registerModelTensorRef(loadRefFirstPresent("lm head", "lm_head.weight",
+                "model.decoder.embed_tokens.weight"));
+        selfConditioningPreNormRef = registerModelTensorRef(loadRefFirstPresent("self-conditioning pre norm",
+                "model.decoder.self_conditioning.pre_norm.weight"));
+        selfConditioningGateRef = registerModelTensorRef(loadRefFirstPresent("self-conditioning gate",
+                "model.decoder.self_conditioning.gate_proj.weight"));
+        selfConditioningUpRef = registerModelTensorRef(loadRefFirstPresent("self-conditioning up",
+                "model.decoder.self_conditioning.up_proj.weight"));
+        selfConditioningDownRef = registerModelTensorRef(loadRefFirstPresent("self-conditioning down",
+                "model.decoder.self_conditioning.down_proj.weight"));
+        encoderKeyWeightsRef = new TensorRef[diffusionConfig.textConfig.numHiddenLayers];
+        encoderValueWeightsRef = new TensorRef[diffusionConfig.textConfig.numHiddenLayers];
+        for (int layer = 0; layer < encoderKeyWeightsRef.length; layer++) {
+            encoderKeyWeightsRef[layer] = registerModelTensorRef(loadRefFirstPresent(
+                    "encoder layer " + layer + " key", layerNames(layer, "self_attn.k_proj.weight")));
+            encoderValueWeightsRef[layer] = loadRefFirstPresentOptional(layerNames(layer, "self_attn.v_proj.weight"));
+            if (encoderValueWeightsRef[layer] != null) {
+                encoderValueWeightsRef[layer] = registerModelTensorRef(encoderValueWeightsRef[layer]);
+            }
+        }
+        selfConditioningRef = new DiffusionGemmaSelfConditioning(diffusionConfig.textConfig,
+                selfConditioningPreNormRef, selfConditioningGateRef, selfConditioningUpRef, selfConditioningDownRef,
+                lighter, compositeOps);
+    }
+
+    private String[] layerNames(int layer, String suffix) {
+        return new String[] {"model.decoder.layers." + layer + "." + suffix,
+                "model.encoder.language_model.layers." + layer + "." + suffix};
+    }
+
+    private TensorRef loadRefFirstPresent(String description, String... names) {
+        TensorRef ref = loadRefFirstPresentOptional(names);
+        if (ref == null) {
+            throw new IllegalStateException("DiffusionGemma checkpoint missing " + description + ": "
+                    + String.join(", ", names));
+        }
+        return ref;
+    }
+
+    private TensorRef loadRefFirstPresentOptional(String... names) {
+        DType qType = modelQType.orElse(modelDType);
+        for (String name : names) {
+            if (weights.isWeightPresent(name)) {
+                return loadAndMaybeQuantizedExcluding1DTensors(name, weights::loadRef, qType);
+            }
+        }
+        return null;
     }
 
     private AbstractTensor loadFirstPresent(String description, String... names) {
