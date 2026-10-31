@@ -294,23 +294,18 @@ public final class CompositeOps {
         Preconditions.checkArgument(target != null && target.dims() == 2, "RoPE target must be 2D");
         int halfHead = headSize / 2;
         Preconditions.checkArgument(headSize > 0 && (headSize & 1) == 0
-                        && inverseFrequencies.length >= halfHead,
+                && inverseFrequencies.length >= halfHead,
                 "RoPE shape is invalid");
-        for (int row = 0; row < target.shape().first(); row++) {
-            int position = startPosition + row;
-            for (int head = 0; head < heads; head++) {
-                int offset = head * headSize;
-                for (int dimension = 0; dimension < halfHead; dimension++) {
-                    float x0 = target.get(row, offset + dimension);
-                    float x1 = target.get(row, offset + dimension + halfHead);
-                    double angle = position * inverseFrequencies[dimension];
-                    float cosine = (float) Math.cos(angle);
-                    float sine = (float) Math.sin(angle);
-                    target.set(x0 * cosine - x1 * sine, row, offset + dimension);
-                    target.set(x0 * sine + x1 * cosine, row, offset + dimension + halfHead);
-                }
+        int frequencyRows = startPosition + target.shape().first();
+        float[][] frequencies = new float[frequencyRows * halfHead][2];
+        for (int position = 0; position < frequencyRows; position++) {
+            for (int dimension = 0; dimension < halfHead; dimension++) {
+                double angle = position * (double) inverseFrequencies[dimension];
+                frequencies[position * halfHead + dimension][0] = (float) FastMath.cos(angle);
+                frequencies[position * halfHead + dimension][1] = (float) FastMath.sin(angle);
             }
         }
+        rotaryEmbedding(target, heads, headSize, startPosition, frequencies);
     }
 
     /** Applies F32 RMSNorm using vectorized row reductions and optional scaling. */

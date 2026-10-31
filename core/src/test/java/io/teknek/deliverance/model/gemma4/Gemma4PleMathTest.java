@@ -7,6 +7,10 @@ import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
 import io.teknek.deliverance.tensor2.CompositeOps;
 import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.ActivationMultiplyQuantize;
+import io.teknek.deliverance.math.ActivationFunction;
+import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.DType;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -56,6 +60,31 @@ public class Gemma4PleMathTest {
             } finally {
                 for (AbstractTensor tensor : split) {
                     tensor.close();
+                }
+            }
+        }
+    }
+
+    @Test
+    public void pleActivationMultiplyMatchesReferenceTensorCalculation() {
+        Lighter lighter = new Lighter(new MetricRegistry());
+        try (var gate = lighter.allocate(DType.F32, TensorShape.of(2, 3));
+             var input = lighter.allocate(DType.F32, TensorShape.of(2, 3));
+             var output = lighter.allocate(DType.F32, TensorShape.of(2, 3))) {
+            for (int row = 0; row < 2; row++) {
+                for (int column = 0; column < 3; column++) {
+                    gate.set((row + 1.0f) * (column - 1.5f), row, column);
+                    input.set(column + 0.25f * row, row, column);
+                }
+            }
+            new CompositeOps(lighter).activationMultiplyQuantize(new ActivationMultiplyQuantize(
+                    gate, input, ActivationFunction.Type.GELU_PYTORCH_TANH, DType.F32)
+                    .output(output).offsetAndLength(0, 3));
+            for (int row = 0; row < 2; row++) {
+                for (int column = 0; column < 3; column++) {
+                    float expected = ActivationFunction.eval(ActivationFunction.Type.GELU_PYTORCH_TANH,
+                            gate.get(row, column)) * input.get(row, column);
+                    assertEquals(expected, output.get(row, column), 1.0e-5f);
                 }
             }
         }

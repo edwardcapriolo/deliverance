@@ -37,14 +37,14 @@ class I8Tensor extends Tensor {
         Preconditions.checkState(scale != null, "I8 tensor scale sidecar is not attached");
         int[] scaleDims = java.util.Arrays.copyOf(dims, dims.length);
         scaleDims[scaleDims.length - 1] = Q8Layout.scaleColumn(scaleDims[scaleDims.length - 1]);
-        return underlyingByteBuffer.get(shape.getOffset(dims)) * scale.get(scaleDims);
+        return underlyingByteBuffer.get(Math.toIntExact(shape.getOffset(dims))) * scale.get(scaleDims);
     }
 
     @Override
     public float get(int row, int column) {
         Preconditions.checkArgument(2 == shape.dims(), "Shape is not 2 dimensions");
         Preconditions.checkState(scale != null, "I8 tensor scale sidecar is not attached");
-        return underlyingByteBuffer.get(shape.getOffset(row, column)) * scale.get(row, Q8Layout.scaleColumn(column));
+        return underlyingByteBuffer.get(Math.toIntExact(shape.getOffset(row, column))) * scale.get(row, Q8Layout.scaleColumn(column));
     }
 
     @Override
@@ -52,7 +52,7 @@ class I8Tensor extends Tensor {
         Preconditions.checkArgument(2 == shape.dims(), "Must specify all dimensions");
         Preconditions.checkState(scale != null, "I8 tensor scale sidecar is not attached");
         float factor = scale.get(row, Q8Layout.scaleColumn(column));
-        underlyingByteBuffer.put(shape.getOffset(row, column), quantizedByte(v, factor));
+        underlyingByteBuffer.put(Math.toIntExact(shape.getOffset(row, column)), quantizedByte(v, factor));
     }
 
     @Override
@@ -62,17 +62,17 @@ class I8Tensor extends Tensor {
         Preconditions.checkState(scale != null, "I8 tensor scale sidecar is not attached");
         int[] scaleDims = java.util.Arrays.copyOf(dims, dims.length);
         scaleDims[scaleDims.length - 1] = Q8Layout.scaleColumn(scaleDims[scaleDims.length - 1]);
-        underlyingByteBuffer.put(shape.getOffset(dims), quantizedByte(v, scale.get(scaleDims)));
+        underlyingByteBuffer.put(Math.toIntExact(shape.getOffset(dims)), quantizedByte(v, scale.get(scaleDims)));
     }
 
     void setRawByte(byte value, int row, int column) {
         Preconditions.checkArgument(2 == shape.dims(), "Must specify all dimensions");
-        underlyingByteBuffer.put(shape.getOffset(row, column), value);
+        underlyingByteBuffer.put(Math.toIntExact(shape.getOffset(row, column)), value);
     }
 
     byte getRawByte(int row, int column) {
         Preconditions.checkArgument(2 == shape.dims(), "Must specify all dimensions");
-        return underlyingByteBuffer.get(shape.getOffset(row, column));
+        return underlyingByteBuffer.get(Math.toIntExact(shape.getOffset(row, column)));
     }
 
     byte getRawByte(int offset) {

@@ -127,7 +127,13 @@ public abstract class BaseCausalSelfAttention2 implements SelfAttention2 {
     }
 
     protected void closeAll(TensorRef[] tensors) {
-        for (TensorRef tensor : tensors) {
+        for (int i = 0; i < tensors.length; i++) {
+            TensorRef tensor = tensors[i];
+            boolean duplicate = false;
+            for (int previous = 0; previous < i; previous++) {
+                duplicate |= tensors[previous] == tensor;
+            }
+            if (duplicate) continue;
             if (tensor != null) {
                 tensor.close();
             }

@@ -1,6 +1,7 @@
 # Gemma4 Text: Transformers vs Deliverance
 
-This document is a structural comparison, not a claim of faithful numerical parity.
+This document is an implementation comparison with explicit evidence status; it is not a
+claim of faithful numerical parity unless a row is marked source-parity verified.
 Transformers is always on the left; Deliverance is always on the right. Source line
 numbers refer to the checked-out files in this workspace and should be refreshed when
 either source moves.
@@ -25,18 +26,43 @@ Transformers documents `modular_gemma4.py` as the source of the generated model.
 
 ## Naming And Shape Alignment
 
-| Transformers name | Deliverance name | Structural result |
+This first port step changes identifiers only. It does not change algorithms, tensor
+operations, ownership, control flow, or method signatures. The exact mappings in the
+V2 paths are:
+
+| Transformers source variable | Deliverance V2 variable | Status |
 |---|---|---|
-| `hidden_states` | `hiddenStates` | Used in the V2 block and documentation checkpoints |
-| `residual` | `residual` | Same residual variable at attention and FF boundaries |
-| `post_attention_layernorm` | `postAttentionNorm` | Same post-attention normalization boundary |
-| `post_feedforward_layernorm` | `postFFNorm` | Same post-FF normalization boundary |
-| `per_layer_input` | `perLayerInput` | Same layer-selected PLE slice |
-| `shared_kv_states` | `sharedKeyValues` / `v2SharedKeyValues` | Same type/source concept, different ownership API |
-| `apply_layer_scalar` (inline HF multiply) | `applyLayerScalar` | Explicit final block operation |
-| HF MoE branch | `applyMoeBranch` | Explicit branch operation in both blocks |
-| HF PLE branch | `applyPle` | Explicit branch operation in both blocks |
-| HF expert dispatch | `applyMoeBranch` / `applyMoeExpert` | Explicit router and expert operations in V2 |
+| `hidden_states` | `hiddenStates` | Applied in `TransformerBlock2` and V2 model forward |
+| `residual` | `residual` | Already aligned; retained |
+| `post_attention` | `postAttention` | Applied in `TransformerBlock2` |
+| `pre_feedforward` | `preFeedForward` | Applied in `TransformerBlock2` |
+| `post_feedforward` | `postFeedForward` | Applied in `TransformerBlock2` |
+| `per_layer_input` | `perLayerInput` | Applied to the layer-selected PLE input |
+| `query_states` | `queryStates` | Applied to Gemma4 V2 attention hook locals |
+| `key_states` | `keyStates` | Applied to Gemma4 V2 attention hook and shared-state locals |
+| `value_states` | `valueStates` | Applied to Gemma4 V2 attention hook and shared-state locals |
+| `shared_kv_states` | `sharedKvStates` | Applied to the V2 request-local shared-KV local |
+| `past_key_values` | `kvSession` | Existing API name; no API rename was made in this step |
+| `post_attention_layernorm` | `postAttentionNorm` | Structural field mapping; names differ because this is a norm object |
+| `post_feedforward_layernorm` | `postFFNorm` | Structural field mapping; names differ because this is a norm object |
+| `apply_layer_scalar` (inline HF multiply) | `applyLayerScalar` | Explicit target helper; behavior unchanged |
+| HF MoE branch | `applyMoeBranch` | Explicit target helper; behavior unchanged |
+| HF PLE branch | `applyPle` | Explicit target helper; behavior unchanged |
+
+### Explicit Differences In This Step
+
+- `past_key_values` is represented by the existing `kvSession` parameter rather than a
+  new name because it is a public target API boundary.
+- `shared_kv_states` is a `V2SharedKeyValues` object stored on the session; it is not
+  the same ownership or cache API as Transformers' mapping.
+- `qkv` remains an indexed target array in `KvCacheSelfAttention2`; this step renames
+  only the Gemma4 V2 hook and shared-state locals to avoid changing the inherited
+  implementation.
+- `embedding`, `input_layernorm`, and `preAttentionInput` do not have one-to-one
+  variable-name mappings in the target; the V2 forward locals were aligned where the
+  source `hidden_states`, `residual`, and PLE names are directly applicable.
+- This is an identifier-only pass. Numerical parity, cache-history parity, and
+  algorithmic equivalence remain unclaimed.
 
 ## Decoder Layer
 
@@ -127,3 +153,31 @@ repository, the core compile, and focused Gemma4 unit tests. Those checks valida
 integrity and local behavior; they do not establish faithful HF parity. A parity claim still
 requires the same real checkpoint and token IDs, tensor checkpoints through every layer,
 shared-KV source/consumer comparisons, final pre-sampling logits, and only then generation.
+
+## Current Evidence (2026-10-30)
+
+The mandatory source comparison was refreshed against the checked-out Transformers files:
+
+| Transformers source | Deliverance target | Evidence |
+|---|---|---|
+| `configuration_gemma4.py:185-234` | `Gemma4Config.java:98-177` | Source/default layer pattern, per-layer RoPE parameters, proportional identity tail, and bidirectional mode are represented; serialization and all config variants remain unproven. |
+| `modular_gemma4.py:1061-1122` | `Gemma4CausalSelfAttention2.java:57-104`, `KvCacheSelfAttention2.java:130-341` | Synthetic Q/K normalization, RoPE, window, shared-history and cache tests pass. HF `v_norm` behavior was corrected so the no-scale value RMSNorm is applied even when K aliases V. |
+| `modular_gemma4.py:1192-1249` | `TransformerBlock2.java:113-174` | Synthetic dense/MoE/PLE mechanics pass; real activation checkpoints are not source-parity verified. |
+| `modular_gemma4.py:1356-1435` | `Gemma4Model.java:744-846`, `Gemma4PleSupport.java:15-50` | PLE shape and arithmetic tests pass; no HF tensor dump comparison is available. |
+| `modular_gemma4.py:1473-1529` | `Gemma4Model.java:150-201` | Request-local shared KV now persists through the `KvCacheSession`; synthetic interleaved-session history test passes. |
+| `modular_gemma4.py:1575-1607` | `Gemma4Model.java:309-424` and sampler callers | Final softcap/logits and generation boundary remain unproven against HF logits. |
+
+### Before/After Measurements
+
+- Before the fixes, the focused suite could not compile: `Gemma4CausalSelfAttention2Test.java:90` passed `float[]` to the then-current `float[][]` RoPE API. After rebuilding dependencies with the repository JDK options, the suite compiles.
+- Before shared-history attention handling, `Gemma4V2SharedKvHistoryTest` errored with an out-of-bounds copy at `BaseCausalSelfAttention2.java:125`. After the full-history branch, the same test passes.
+- Focused post-change result: 53 tests run, 0 failures, 0 errors, 22 skipped.
+- Real cached `Gemma4PromptIT#chatWithThinking`, temperature `0`, max tokens `10`: the existing mechanical assertions passed, but emitted `This is a classic riddle of thought y a posal`; the complete-sentence assertion now correctly rejects this output.
+
+### Hard Blockers And Unproven Items
+
+- Hard blocker: the local HF reference tooling is unavailable (`transformers`, `torch`, `tokenizers`, `huggingface_hub`, and `numpy` are absent). The cached Java tokenizer is not an HF reference dump, so tokenizer/chat-template/BOS parity cannot be claimed.
+- Real-checkpoint intermediate tensors and pre-sampling logits have not been compared against Transformers.
+- Dense MLP, embedding scale, final RMSNorm, output-head tying, masks, heterogeneous KV dtype transitions, and sampler logits remain synthetic or structural evidence only.
+- Multimodal vision/audio paths and multimodal block masks remain outside this text-only port.
+- The final intelligible-sentence acceptance test is red by design until the generated text is corrected; completion is not claimed.

@@ -40,18 +40,17 @@ public class Gemma4PromptIT {
         AbstractModel model = Gemma4Suite.getOrCreate();
         PromptSupport.Builder builder = model.promptSupport().get().builder()
                 .addTemplateArgs(Map.of("enable_thinking", false))
-                /*
+
                 .addUserMessage("""
-                        You MUST perform reasoning before writing the reply.
-                        Your internal thought process MUST be generated BEFORE any final answer.
-                        Show your reasoning in <think> tags, then provide the final, concise answer.
+                  
                         Take your time and evaluate multiple alternative explanations.
-                        You have to choose between buying gold or buying silver. What do you buy?
-                        """);*/
-                .addUserMessage("""
-                        
-                            You have to choose between buying gold or buying silver. What do you buy?
+                        You have to choose between buying gold or buying silver. What do you buy? Explain why in detail.
+                        Use historical facts and recent market trends to justify.
                         """);
+              //  .addUserMessage("""
+              //
+              //              You have to choose between buying gold or buying silver. What do you buy?
+              //          """);
         PromptContext promptContext = builder.build();
         debugPrompt(model, promptContext);
 
@@ -59,7 +58,7 @@ public class Gemma4PromptIT {
                 UUID.randomUUID(),
                 promptContext,
                 new GeneratorParameters().withTemperature(0.0f)
-                        /*.withLogProbs(true).withTopLogProbs(10)*/.withMaxTokens(90),
+                        /*.withLogProbs(true).withTopLogProbs(10)*/.withMaxTokens(10),
                 new GenerateEvent() {
                     @Override
                     public void emit(int next, String nextRaw, String nextCleaned, float timing) {
@@ -73,8 +72,11 @@ public class Gemma4PromptIT {
         );
         assertTrue(parsed.reasoning() == null,
                 "Thinking was disabled, so reasoning should not be parsed: " + response.responseTextWithSpecialTokens);
-        assertTrue(maxConsecutiveTokenRun(response.generatedTokens) < 4,
-                "Gemma4 entered a repeated-token loop: " + response.generatedTokens);
+        assertTrue(response.generatedTokens.size() <= 10,
+                "Gemma4 exceeded the ten-token answer budget: " + response.generatedTokens);
+        assertTrue(response.responseText.trim().matches(
+                        "(?i)(?:I (?:would )?(?:choose|buy) (?:gold|silver)(?: because [a-z ]+)?|(?:gold|silver) is the choice)[.!?]"),
+                "Gemma4 did not produce a crisp choice sentence: " + response.responseText);
     }
 
     private static int maxConsecutiveTokenRun(List<Integer> tokens) {

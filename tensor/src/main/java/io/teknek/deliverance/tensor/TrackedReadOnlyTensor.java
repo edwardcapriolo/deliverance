@@ -105,7 +105,7 @@ public final class TrackedReadOnlyTensor extends AbstractTensor {
 
     private static long checksum(AbstractTensor tensor) {
         MemorySegment segment = tensor.getMemorySegment();
-        int offset = tensor.getMemorySegmentOffset(0);
+        long offset = tensor.getMemorySegmentOffset(0);
         long byteLength = segment.byteSize() - offset;
         if (byteLength < 0) {
             throw new IllegalStateException("tensor memory segment offset exceeds segment size");

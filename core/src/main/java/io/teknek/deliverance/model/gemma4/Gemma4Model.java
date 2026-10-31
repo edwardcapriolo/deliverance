@@ -20,10 +20,14 @@ import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.*;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor2.TensorRefBackedTensor;
 import io.teknek.deliverance.tensor2.Scale;
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
+import io.teknek.deliverance.tensor.kv.AttentionPattern;
+import io.teknek.deliverance.tensor.kv.KvCacheSession;
+import io.teknek.deliverance.tensor.kv.KvReadView;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -153,25 +157,23 @@ public class Gemma4Model extends LlamaModel {
         if (v2Lighter == null || gemma4Config().hiddenSizePerLayerInput == null) {
             return super.batchForwardRef(tokenIds, startPos, kvSession, tensorReducer);
         }
-        V2SharedKeyValues state = kvSession.getOrAttach(V2SharedKeyValues.class, V2SharedKeyValues::new);
-        state.clear();
-        TensorRef embedding = embedInput.batchInputsToEmbeddings(tokenIds, startPos);
-        emitLayerDebug(-1, "embedding", embedding);
-        TensorRef[] ple = computePerLayerInputsRef(tokenIds, embedding);
+        V2SharedKeyValues sharedKvStates = kvSession.getOrAttach(V2SharedKeyValues.class, V2SharedKeyValues::new);
+        TensorRef hiddenStates = embedInput.batchInputsToEmbeddings(tokenIds, startPos);
+        emitLayerDebug(-1, "embedding", hiddenStates);
+        TensorRef[] perLayerInputs = computePerLayerInputsRef(tokenIds, hiddenStates);
         try {
-            for (int i = 0; i < ple.length; i++) emitLayerDebug(i, "ple_input", ple[i]);
+            for (int i = 0; i < perLayerInputs.length; i++) emitLayerDebug(i, "ple_input", perLayerInputs[i]);
             for (int layer = 0; layer < transformerBlocks2.length; layer++) {
-                TensorRef old = embedding;
-                embedding = transformerBlocks2[layer].forward(old, ple[layer], startPos, kvSession,
+                TensorRef residual = hiddenStates;
+                hiddenStates = transformerBlocks2[layer].forward(residual, perLayerInputs[layer], startPos, kvSession,
                         tensorReducer, ForwardPhase.PREFILL, tokenIds.length, tokenIds.length, null);
-                old.close();
-                emitLayerDebug(layer, "layer_output", embedding);
+                residual.close();
+                emitLayerDebug(layer, "layer_output", hiddenStates);
             }
             kvSession.advanceLength(startPos + tokenIds.length);
-            return embedding;
+            return hiddenStates;
         } finally {
-            for (TensorRef value : ple) if (value != null) value.close();
-            state.clear();
+            for (TensorRef perLayerInput : perLayerInputs) if (perLayerInput != null) perLayerInput.close();
         }
     }
 
@@ -182,43 +184,82 @@ public class Gemma4Model extends LlamaModel {
         if (v2Lighter == null || gemma4Config().hiddenSizePerLayerInput == null) {
             return super.forwardRef(tokenId, pos, kvSession, tensorReducer);
         }
-        V2SharedKeyValues state = kvSession.getOrAttach(V2SharedKeyValues.class, V2SharedKeyValues::new);
-        state.clear();
-        TensorRef embedding = embedInput.inputTokenToEmbedding(tokenId, pos);
-        TensorRef[] ple = computePerLayerInputsRef(new int[] { tokenId }, embedding);
+        V2SharedKeyValues sharedKvStates = kvSession.getOrAttach(V2SharedKeyValues.class, V2SharedKeyValues::new);
+        TensorRef hiddenStates = embedInput.inputTokenToEmbedding(tokenId, pos);
+        TensorRef[] perLayerInputs = computePerLayerInputsRef(new int[] { tokenId }, hiddenStates);
         try {
             for (int layer = 0; layer < transformerBlocks2.length; layer++) {
-                TensorRef old = embedding;
-                embedding = transformerBlocks2[layer].forward(old, ple[layer], pos, kvSession,
+                TensorRef residual = hiddenStates;
+                hiddenStates = transformerBlocks2[layer].forward(residual, perLayerInputs[layer], pos, kvSession,
                         tensorReducer, ForwardPhase.DECODE, 1, 1, null);
-                old.close();
+                residual.close();
             }
             kvSession.advanceLength(pos + 1);
-            return embedding;
+            return hiddenStates;
         } finally {
-            for (TensorRef value : ple) if (value != null) value.close();
-            state.clear();
+            for (TensorRef perLayerInput : perLayerInputs) if (perLayerInput != null) perLayerInput.close();
         }
     }
 
     public static final class V2SharedKeyValues implements AutoCloseable {
         private final Map<Integer, AbstractTensor[]> values = new HashMap<>();
 
-        public void store(int source, TensorRef key, TensorRef value, Lighter lighter) {
-            TensorRef keyCopy = lighter.allocate(key.dType(), key.shape());
-            TensorRef valueCopy = lighter.allocate(value.dType(), value.shape());
+        public void store(int source, int startPosition, TensorRef key, TensorRef value, Lighter lighter) {
+            AbstractTensor[] previous = values.get(source);
+            int previousRows = previous == null ? 0 : previous[0].shape().first();
+            if (startPosition > previousRows) {
+                throw new IllegalStateException("Missing shared KV prefix for source " + source
+                        + " at position " + startPosition + "; available rows=" + previousRows);
+            }
+            int resultRows = startPosition + key.shape().first();
+            TensorRef keyCopy = lighter.allocate(key.dType(), TensorShape.of(resultRows, key.shape().last()));
+            TensorRef valueCopy = lighter.allocate(value.dType(), TensorShape.of(resultRows, value.shape().last()));
             try {
-                int keySize = key.shape().first() * key.shape().last();
-                int valueSize = value.shape().first() * value.shape().last();
-                lighter.copy(key, 0, keyCopy, 0, keySize);
-                lighter.copy(value, 0, valueCopy, 0, valueSize);
-                AbstractTensor[] previous = values.put(source, new AbstractTensor[] {
+                if (previous != null) {
+                    try (TensorRef oldKey = TensorRef.borrowed(previous[0]);
+                         TensorRef oldValue = TensorRef.borrowed(previous[1])) {
+                        lighter.copy(oldKey, 0, keyCopy, 0, startPosition * key.shape().last());
+                        lighter.copy(oldValue, 0, valueCopy, 0, startPosition * value.shape().last());
+                    }
+                }
+                int keyOffset = startPosition * key.shape().last();
+                int valueOffset = startPosition * value.shape().last();
+                lighter.copy(key, 0, keyCopy, keyOffset, key.shape().first() * key.shape().last());
+                lighter.copy(value, 0, valueCopy, valueOffset, value.shape().first() * value.shape().last());
+                values.put(source, new AbstractTensor[] {
                         new TensorRefBackedTensor(keyCopy), new TensorRefBackedTensor(valueCopy)});
                 if (previous != null) { previous[0].close(); previous[1].close(); }
             } catch (RuntimeException | Error e) {
                 keyCopy.close();
                 valueCopy.close();
                 throw e;
+            }
+        }
+
+        public void restorePrefix(int source, KvCacheSession session, int prefixRows, Lighter lighter) {
+            if (prefixRows == 0 || values.containsKey(source)) return;
+            try (KvReadView view = session.readView(source, prefixRows, AttentionPattern.CAUSAL);
+                 TensorRef firstKey = view.keyRowCopyRef(0);
+                 TensorRef firstValue = view.valueRowCopyRef(0)) {
+                TensorRef key = lighter.allocate(firstKey.dType(),
+                        TensorShape.of(prefixRows, firstKey.shape().last()));
+                TensorRef value = lighter.allocate(firstValue.dType(),
+                        TensorShape.of(prefixRows, firstValue.shape().last()));
+                try {
+                    for (int row = 0; row < prefixRows; row++) {
+                        try (TensorRef keyRow = view.keyRowCopyRef(row);
+                             TensorRef valueRow = view.valueRowCopyRef(row)) {
+                            lighter.copy(keyRow, 0, key, row * key.shape().last(), key.shape().last());
+                            lighter.copy(valueRow, 0, value, row * value.shape().last(), value.shape().last());
+                        }
+                    }
+                    values.put(source, new AbstractTensor[] {
+                            new TensorRefBackedTensor(key), new TensorRefBackedTensor(value)});
+                } catch (RuntimeException | Error e) {
+                    key.close();
+                    value.close();
+                    throw e;
+                }
             }
         }
 
@@ -259,12 +300,15 @@ public class Gemma4Model extends LlamaModel {
             String vName = projectionBase + "self_attn.v_proj.weight";
             String oName = base + "self_attn.o_proj.weight";
             TensorRef q = registerModelTensorRef(loadV2(qName, qType));
-            TensorRef k = registerModelTensorRef(loadV2(kName, qType));
-            TensorRef v = registerModelTensorRef(loadV2(vName, qType));
+            boolean sharedConsumer = source >= 0;
+            TensorRef k = sharedConsumer ? null : registerModelTensorRef(loadV2(kName, qType));
+            boolean keyEqualsValue = !sharedConsumer && cfg.attentionKEqV && "full_attention".equals(type);
+            TensorRef v = sharedConsumer ? null : keyEqualsValue ? k : registerModelTensorRef(loadV2(vName, qType));
             TensorRef o = registerModelTensorRef(loadV2(oName, qType));
             TensorRef qNorm = registerModelTensorRef(loadV2(base + "self_attn.q_norm.weight", qType));
-            TensorRef kNorm = registerModelTensorRef(loadV2(projectionBase + "self_attn.k_norm.weight", qType));
-            layerKvLengths[i] = k.shape().first();
+            TensorRef kNorm = sharedConsumer ? null
+                    : registerModelTensorRef(loadV2(projectionBase + "self_attn.k_norm.weight", qType));
+            layerKvLengths[i] = cfg.getLayerKvLength(type);
             int headDim = cfg.getLayerHeadDim(type);
             Gemma4CausalSelfAttention2 attention = new Gemma4CausalSelfAttention2(this, i, q, qNorm, k, v, kNorm, o,
                     v2Lighter, metricRegistry, cfg.numberOfHeads, cfg.getLayerKeyValueProjectionHeads(type),
@@ -743,38 +787,51 @@ public class Gemma4Model extends LlamaModel {
         int batchSize = tokenIds.length;
         int packedLength = cfg.numberOfLayers * cfg.hiddenSizePerLayerInput;
         TensorRef tokenIdentity = makeDenseTensorRef(batchSize, packedLength);
-        TensorRef projected = makeDenseTensorRef(batchSize, packedLength);
+        TensorRef perLayerProjection = makeDenseTensorRef(batchSize, packedLength);
         try {
             loadPerLayerIdentityRows(tokenIds, tokenIdentity);
             getCompositeOps().multiplyInPlace(new io.teknek.deliverance.tensor2.MultiplyInPlace(
                     perLayerEmbeddingScale()).target(tokenIdentity).offsetAndLength(0, packedLength));
+            emitLayerDebug(-1, "ple_token_identity", tokenIdentity);
             getLighter().batchDotProduct(new io.teknek.deliverance.tensor2.BatchDotProduct()
-                    .result(projected).a(embeddings).b(perLayerModelProjectionWeightsRef)
+                    .result(perLayerProjection).a(embeddings).b(perLayerModelProjectionWeightsRef)
                     .aColumnOffset(0).bColumnOffset(0).columnLength(cfg.embeddingLength)
                     .resultRowOffset(0).bRowOffset(0).rowChunkSize(packedLength));
             getCompositeOps().multiplyInPlace(new io.teknek.deliverance.tensor2.MultiplyInPlace(
-                    perLayerModelProjectionScale()).target(projected).offsetAndLength(0, packedLength));
-            getCompositeOps().groupedRmsNormInPlace(projected, cfg.numberOfLayers,
+                    perLayerModelProjectionScale()).target(perLayerProjection).offsetAndLength(0, packedLength));
+            emitLayerDebug(-1, "ple_projection_scaled", perLayerProjection);
+            getCompositeOps().groupedRmsNormInPlace(perLayerProjection, cfg.numberOfLayers,
                     cfg.hiddenSizePerLayerInput, cfg.layerNormEps, perLayerProjectionNormWeightsRef);
+            emitLayerDebug(-1, "ple_projection_norm", perLayerProjection);
             getLighter().accumulate(new io.teknek.deliverance.tensor2.Accumulate(tokenIdentity)
-                    .into(projected).offsetAndLength(0, packedLength));
+                    .into(perLayerProjection).offsetAndLength(0, packedLength));
             getCompositeOps().multiplyInPlace(new io.teknek.deliverance.tensor2.MultiplyInPlace(
-                    perLayerInputScale()).target(projected).offsetAndLength(0, packedLength));
+                    perLayerInputScale()).target(perLayerProjection).offsetAndLength(0, packedLength));
+            emitLayerDebug(-1, "ple_combined", perLayerProjection);
             tokenIdentity.close();
             tokenIdentity = null;
-            TensorRef[] split = splitPerLayerInputsRef(projected, batchSize, cfg.numberOfLayers,
+            TensorRef[] split = splitPerLayerInputsRef(perLayerProjection, batchSize, cfg.numberOfLayers,
                     cfg.hiddenSizePerLayerInput);
-            projected.close();
-            projected = null;
+            perLayerProjection.close();
+            perLayerProjection = null;
             return split;
         } finally {
             if (tokenIdentity != null) tokenIdentity.close();
-            if (projected != null) projected.close();
+            if (perLayerProjection != null) perLayerProjection.close();
         }
     }
 
     private void loadPerLayerIdentityRows(int[] tokenIds, TensorRef destination) {
         String name = resolveTextModelWeight("embed_tokens_per_layer.weight");
+        for (int row = 0; row < tokenIds.length; row++) {
+            try (AbstractTensor source = weights.loadRows(name, tokenIds[row], 1)) {
+                for (int column = 0; column < destination.shape().last(); column++) {
+                    destination.set(source.get(0, column), row, column);
+                }
+            }
+        }
+        return;
+        /*
         TensorRef[] parts = new TensorRef[16];
         try {
             int partCount = 0;
@@ -784,11 +841,13 @@ public class Gemma4Model extends LlamaModel {
                 parts[partCount] = weights.loadRef(partName);
             }
             if (partCount == 0) {
-                TensorRef table = loadV2(name, destination.dType());
-                try {
-                    getLighter().gatherRowsScale(destination, table, tokenIds, 1.0f);
-                } finally {
-                    table.close();
+                for (int row = 0; row < tokenIds.length; row++) {
+                    try (AbstractTensor source = weights.loadRows(name, tokenIds[row], 1)) {
+                        if (row == tokenIds.length - 1) emitLayerDebug(-1, "ple_loaded_row", source);
+                        for (int column = 0; column < destination.shape().last(); column++) {
+                            destination.set(source.get(0, column), row, column);
+                        }
+                    }
                 }
                 return;
             }
@@ -821,6 +880,7 @@ public class Gemma4Model extends LlamaModel {
         } finally {
             for (TensorRef part : parts) if (part != null) part.close();
         }
+        */
     }
 
     private TensorRef[] splitPerLayerInputsRef(TensorRef packed, int batchSize, int numberOfLayers,

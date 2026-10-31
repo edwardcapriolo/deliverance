@@ -84,13 +84,13 @@ public final class TensorNormalization {
                         AbstractTensor in = ctx.tensor("input");
                         AbstractTensor out = ctx.tensor("output");
                         int row = (int) rowOffset;
-                        out.copyFrom(in, in.getOffset(row, 0), out.getOffset(row, 0), hidden);
+                        out.copyFrom(in, Math.toIntExact(in.getOffset(row, 0)), Math.toIntExact(out.getOffset(row, 0)), hidden);
                     })
                     .map("squared[row] = input[row]", TensorPlan.TensorOp.CUSTOM, (ctx, rowOffset, rowLength) -> {
                         AbstractTensor in = ctx.tensor("input");
                         AbstractTensor square = ctx.tensor("squared");
                         int row = (int) rowOffset;
-                        square.copyFrom(in, in.getOffset(row, 0), square.getOffset(row, 0), hidden);
+                        square.copyFrom(in, Math.toIntExact(in.getOffset(row, 0)), Math.toIntExact(square.getOffset(row, 0)), hidden);
                     })
                     .map("squared[row] *= input[row]", TensorPlan.TensorOp.MUL_IN_PLACE,
                             (ctx, rowOffset, rowLength) -> {
@@ -166,7 +166,7 @@ public final class TensorNormalization {
                         int position = flatRow % rows;
                         AbstractTensor in = ctx.tensor("input");
                         AbstractTensor flat = ctx.tensor("flatInput");
-                        flat.copyFrom(in, in.getOffset(batch, position, 0), flat.getOffset(flatRow, 0), hidden);
+                flat.copyFrom(in, Math.toIntExact(in.getOffset(batch, position, 0)), Math.toIntExact(flat.getOffset(flatRow, 0)), hidden);
                     })
                     .tensor()
                     .materialize();
@@ -193,7 +193,7 @@ public final class TensorNormalization {
                         int position = flatRow % rows;
                         AbstractTensor flat = ctx.tensor("flatOutput");
                         AbstractTensor out = ctx.tensor("output");
-                        out.copyFrom(flat, flat.getOffset(flatRow, 0), out.getOffset(batch, position, 0), hidden);
+                out.copyFrom(flat, Math.toIntExact(flat.getOffset(flatRow, 0)), Math.toIntExact(out.getOffset(batch, position, 0)), hidden);
                     })
                     .tensor()
                     .materialize();

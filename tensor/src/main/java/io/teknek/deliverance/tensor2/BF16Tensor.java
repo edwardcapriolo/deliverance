@@ -41,25 +41,25 @@ class BF16Tensor extends Tensor {
     public float get(int... dims) {
         Preconditions.checkArgument(dims.length <= shape.dims(), "Too many dimensions specified");
         Preconditions.checkArgument(dims.length == shape.dims(), "Must specify all dimensions");
-        return FloatConversions.bFloat16ToFloat32(underlyingByteBuffer.get(shape.getOffset(dims)));
+        return FloatConversions.bFloat16ToFloat32(underlyingByteBuffer.get(Math.toIntExact(shape.getOffset(dims))));
     }
 
     @Override
     public float get(int row, int column) {
         Preconditions.checkArgument(2 == shape.dims(), "Shape is not 2 dimensions");
-        return FloatConversions.bFloat16ToFloat32(underlyingByteBuffer.get(shape.getOffset(row, column)));
+        return FloatConversions.bFloat16ToFloat32(underlyingByteBuffer.get(Math.toIntExact(shape.getOffset(row, column))));
     }
 
     @Override
     public void set(float v, int row, int column) {
         Preconditions.checkArgument(2 == shape.dims(), "Must specify all dimensions");
-        underlyingByteBuffer.put(shape.getOffset(row, column), FloatConversions.float32ToBFloat16(v));
+        underlyingByteBuffer.put(Math.toIntExact(shape.getOffset(row, column)), FloatConversions.float32ToBFloat16(v));
     }
 
     @Override
     public void set(float v, int... dims) {
         Preconditions.checkArgument(dims.length <= shape.dims(), "Too many dimensions specified for tensor");
         Preconditions.checkArgument(dims.length == shape.dims(), "Must specify all dimensions");
-        underlyingByteBuffer.put(shape.getOffset(dims), FloatConversions.float32ToBFloat16(v));
+        underlyingByteBuffer.put(Math.toIntExact(shape.getOffset(dims)), FloatConversions.float32ToBFloat16(v));
     }
 }

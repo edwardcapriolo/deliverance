@@ -159,7 +159,8 @@ class Gemma4V2SharedKvHistoryTest {
         text.put("head_dim", 4);
         text.put("layer_types", List.of("full_attention", "full_attention"));
         text.put("num_kv_shared_layers", 1);
-        text.put("attention_k_eq_v", false);
+        // Full attention omits v_proj in HF when V aliases K.
+        text.put("attention_k_eq_v", true);
         text.put("enable_moe_block", false);
         text.put("use_double_wide_mlp", false);
         text.put("rope_parameters", Map.of("full_attention", Map.of("rope_type", "default", "rope_theta", 10000.0)));
@@ -185,9 +186,12 @@ class Gemma4V2SharedKvHistoryTest {
             tensors.put(prefix + "mlp.gate_proj.weight", zeros(4, 4));
             tensors.put(prefix + "mlp.up_proj.weight", zeros(4, 4));
             tensors.put(prefix + "mlp.down_proj.weight", zeros(4, 4));
-            tensors.put(prefix + "self_attn.k_proj.weight", zeros(4, 4));
-            tensors.put(prefix + "self_attn.v_proj.weight", identity());
-            tensors.put(prefix + "self_attn.k_norm.weight", ones());
+            // HF shared consumers have no K/V tensors of their own.  The source
+            // layer remains fully materialized so replay also covers its history.
+            if (layer == 0) {
+                tensors.put(prefix + "self_attn.k_proj.weight", zeros(4, 4));
+                tensors.put(prefix + "self_attn.k_norm.weight", ones());
+            }
         }
         SafeTensorWriter.writeModel(directory, Map.of("format", "pt"), tensors);
         tensors.values().forEach(AbstractTensor::close);

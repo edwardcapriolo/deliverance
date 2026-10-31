@@ -7,6 +7,8 @@ import io.teknek.deliverance.model.gemma4.Gemma4Config;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.tensor2.CompositeOps;
+import io.teknek.deliverance.tensor.kv.CacheExecutionMode;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
@@ -71,6 +73,31 @@ class Gemma4CausalSelfAttention2Test {
         }
     }
 
+    @Test
+    void bidirectionalGemma4DisablesCausalWithinBlockMask() throws Exception {
+        try (Fixture fixture = new Fixture(true)) {
+            assertEquals(false, invoke(fixture.attention, "causalWithinBlock",
+                    CacheExecutionMode.PREFILL_UPDATE_CACHE));
+        }
+    }
+
+    @Test
+    void compactRopeMatchesReferenceRotationIncludingProportionalIdentityTail() {
+        Lighter lighter = new Lighter(new MetricRegistry());
+        try (TensorRef target = lighter.allocate(DType.F32, TensorShape.of(2, 4))) {
+            fill(target, 1.0f);
+            float[] inverse = {0.25f, 0.0f};
+            new CompositeOps(lighter).rotaryEmbedding(target, 1, 4, 2, inverse);
+            for (int row = 0; row < 2; row++) {
+                double angle = (row + 2) * 0.25;
+                assertEquals(Math.cos(angle) - Math.sin(angle), target.get(row, 0), 1.0e-5f);
+                assertEquals(Math.sin(angle) + Math.cos(angle), target.get(row, 2), 1.0e-5f);
+                assertEquals(1.0f, target.get(row, 1), 1.0e-5f);
+                assertEquals(1.0f, target.get(row, 3), 1.0e-5f);
+            }
+        }
+    }
+
     private static Object invoke(Object target, String name, Object... args) throws Exception {
         for (Class<?> type = target.getClass(); type != null; type = type.getSuperclass()) {
             for (Method method : type.getDeclaredMethods()) {
@@ -105,7 +132,9 @@ class Gemma4CausalSelfAttention2Test {
         private final Lighter lighter = new Lighter(new MetricRegistry());
         private final Gemma4CausalSelfAttention2 attention;
 
-        private Fixture() {
+        private Fixture() { this(false); }
+
+        private Fixture(boolean bidirectional) {
             Gemma4Config config = new Gemma4Config(new LinkedHashMap<>(Map.ofEntries(
                     Map.entry("max_position_embeddings", 16), Map.entry("hidden_size", 8),
                     Map.entry("intermediate_size", 16), Map.entry("num_attention_heads", 2),
@@ -126,7 +155,8 @@ class Gemma4CausalSelfAttention2Test {
             attention = new Gemma4CausalSelfAttention2(model, 0,
                     tensor(8, 8), queryNorm, tensor(4, 8), tensor(4, 8), ones(4), tensor(8, 8),
                     lighter, new MetricRegistry(), 2, 1, 4, 8, 4,
-                    config.ropeInvFreqsByLayerType.get("sliding_attention"), "q", "k", "v", "o");
+                    config.ropeInvFreqsByLayerType.get("sliding_attention"), "q", "k", "v", "o",
+                    false, bidirectional, 0, 0);
         }
 
         private TensorRef tensor(int... shape) { return lighter.allocate(DType.F32, TensorShape.of(shape)); }

@@ -72,7 +72,7 @@ public final class Gemma4RmsNormSupport {
         for (int row = 0; row < batchSize; row++) {
             for (int group = 0; group < groups; group++) {
                 int offset = group * groupSize;
-                int base = floatTensor.getOffset(row, offset);
+                int base = Math.toIntExact(floatTensor.getOffset(row, offset));
                 double sumSquares = sumSquares(floatTensor, base, groupSize);
                 float invRms = (float) (1.0 / FastMath.sqrt((sumSquares / groupSize) + eps));
                 scaleGroup(floatTensor, weights, decodedWeights, base, groupSize, invRms);

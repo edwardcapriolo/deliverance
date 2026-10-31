@@ -91,8 +91,8 @@ public class NativeSimdTensorOperations implements TensorOperations {
         int N = rowChunkSize; // b.shape().dim(0);
         int K = columnLength; // a.shape().dim(1);
 
-        int aOffset = at.getOffset(0, aColumnOffset);
-        int bOffset = bt.getOffset(bt.shape().sparseRowOffset(), bColumnOffset);
+        int aOffset = Math.toIntExact(at.getOffset(0, aColumnOffset));
+        int bOffset = Math.toIntExact(bt.getOffset(bt.shape().sparseRowOffset(), bColumnOffset));
 
         // Adjusts for both sparse columns and rows this goes negative because we subtract the row offset
         // And the row offsets need to add to the result offset
@@ -139,7 +139,7 @@ public class NativeSimdTensorOperations implements TensorOperations {
                             aOffset,
                             b.getBlockF().getMemorySegment(),
                             b.getMemorySegment(),
-                            b.getMemorySegmentOffset(bOffset),
+                            Math.toIntExact(b.getMemorySegmentOffset(bOffset)),
                             result.getMemorySegment(),
                             rOffset,
                             M,
@@ -147,7 +147,7 @@ public class NativeSimdTensorOperations implements TensorOperations {
                             N,
                             K,
                             at.getStride(),
-                            b.getMemorySegmentOffset(b.getStride()),
+                             Math.toIntExact(b.getMemorySegmentOffset(b.getStride())),
                             b.getBlockF().getStride(),
                             result.getStride()
                         );
@@ -203,7 +203,7 @@ public class NativeSimdTensorOperations implements TensorOperations {
                             aOffset,
                             b.getBlockF().getMemorySegment(),
                             b.getMemorySegment(),
-                            b.getMemorySegmentOffset(bOffset),
+                             Math.toIntExact(b.getMemorySegmentOffset(bOffset)),
                             result.getMemorySegment(),
                             rOffset,
                             M,
@@ -211,7 +211,7 @@ public class NativeSimdTensorOperations implements TensorOperations {
                             N,
                             K,
                             at.getStride(),
-                            b.getMemorySegmentOffset(b.getStride()),
+                             Math.toIntExact(b.getMemorySegmentOffset(b.getStride())),
                             b.getBlockF().getStride(),
                             result.getStride()
                         );
@@ -224,7 +224,7 @@ public class NativeSimdTensorOperations implements TensorOperations {
                                 aOffset,
                                 b8.getBlockF().getMemorySegment(),
                                 b8.getMemorySegment(),
-                                b8.getMemorySegmentOffset(bOffset),
+                                 Math.toIntExact(b8.getMemorySegmentOffset(bOffset)),
                                 result.getMemorySegment(),
                                 rOffset,
                                 M,
@@ -232,7 +232,7 @@ public class NativeSimdTensorOperations implements TensorOperations {
                                 N,
                                 K,
                                 at.getStride(),
-                                b8.getMemorySegmentOffset(b8.getStride()),
+                                 Math.toIntExact(b8.getMemorySegmentOffset(b8.getStride())),
                                 b8.getBlockF().getStride(),
                                 result.getStride()
                         );
@@ -253,7 +253,7 @@ public class NativeSimdTensorOperations implements TensorOperations {
                             aOffset,
                             b.getBlockF().getMemorySegment(),
                             b.getMemorySegment(),
-                            b.getMemorySegmentOffset(bOffset),
+                             Math.toIntExact(b.getMemorySegmentOffset(bOffset)),
                             result.getMemorySegment(),
                             rOffset,
                             M,
@@ -262,7 +262,7 @@ public class NativeSimdTensorOperations implements TensorOperations {
                             K,
                             a.getStride(),
                             a.getBlockF().getStride(),
-                            b.getMemorySegmentOffset(b.getStride()),
+                             Math.toIntExact(b.getMemorySegmentOffset(b.getStride())),
                             b.getBlockF().getStride(),
                             result.getStride()
                         );
@@ -313,8 +313,8 @@ public class NativeSimdTensorOperations implements TensorOperations {
         int N = rowChunkSize; // b.shape().dim(0);
         int K = columnLength; // a.shape().dim(1);
 
-        int aOffset = a.getOffset(0, columnOffset);
-        int bOffset = b[0].getOffset(b[0].shape().sparseRowOffset(), columnOffset);
+        int aOffset = Math.toIntExact(a.getOffset(0, columnOffset));
+        int bOffset = Math.toIntExact(b[0].getOffset(b[0].shape().sparseRowOffset(), columnOffset));
 
         int adjBRowOffset = bRowOffset - b[0].shape().sparseRowOffset();
 
@@ -371,7 +371,7 @@ public class NativeSimdTensorOperations implements TensorOperations {
                             aOffset,
                             rc,
                             rb,
-                            bt.getMemorySegmentOffset(bOffset),
+                             Math.toIntExact(bt.getMemorySegmentOffset(bOffset)),
                             ra,
                             rOffset,
                             M,
@@ -379,7 +379,7 @@ public class NativeSimdTensorOperations implements TensorOperations {
                             N,
                             K,
                             a.getStride(),
-                            b[0].getMemorySegmentOffset(b[0].getStride()),
+                             Math.toIntExact(b[0].getMemorySegmentOffset(b[0].getStride())),
                             bt.getBlockF().getStride(),
                             r[0].getStride()
                         );
@@ -438,7 +438,7 @@ public class NativeSimdTensorOperations implements TensorOperations {
                             aOffset,
                             rc,
                             rb,
-                            bt.getMemorySegmentOffset(bOffset),
+                             Math.toIntExact(bt.getMemorySegmentOffset(bOffset)),
                             ra,
                             rOffset,
                             M,
@@ -446,7 +446,7 @@ public class NativeSimdTensorOperations implements TensorOperations {
                             N,
                             K,
                             a.getStride(),
-                            b[0].getMemorySegmentOffset(b[0].getStride()),
+                            Math.toIntExact(b[0].getMemorySegmentOffset(b[0].getStride())),
                             bt.getBlockF().getStride(),
                             r[0].getStride()
                         );
@@ -474,7 +474,7 @@ public class NativeSimdTensorOperations implements TensorOperations {
                             aOffset,
                             rc,
                             rb,
-                            bt.getMemorySegmentOffset(bOffset),
+                             Math.toIntExact(bt.getMemorySegmentOffset(bOffset)),
                             ra,
                             rOffset,
                             M,
@@ -483,7 +483,7 @@ public class NativeSimdTensorOperations implements TensorOperations {
                             K,
                             a.getStride(),
                             at.getBlockF().getStride(),
-                            bt.getMemorySegmentOffset(bt.getStride()),
+                             Math.toIntExact(bt.getMemorySegmentOffset(bt.getStride())),
                             bt.getBlockF().getStride(),
                             r[0].getStride()
                         );

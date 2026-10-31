@@ -396,12 +396,12 @@ public class NativeGPUTensorOperations implements TensorOperations {
                 default -> throw new RuntimeException("Unsupported type: " + bt.dType());
             };
 
-            int aOffset = at.getOffset(0, aColumnOffset);
-            int aLimit = at.getOffset(M, aColumnOffset);
+            int aOffset = Math.toIntExact(at.getOffset(0, aColumnOffset));
+            int aLimit = Math.toIntExact(at.getOffset(M, aColumnOffset));
             if (aLimit > at.size()) aLimit = (int) at.size();
 
-            int bOffset = bt.getOffset(bRowOffset + bt.shape().sparseRowOffset(), bColumnOffset);
-            int bLimit = bt.getOffset(bRowOffset + N + bt.shape().sparseRowOffset(), bColumnOffset);
+            int bOffset = Math.toIntExact(bt.getOffset(bRowOffset + bt.shape().sparseRowOffset(), bColumnOffset));
+            int bLimit = Math.toIntExact(bt.getOffset(bRowOffset + N + bt.shape().sparseRowOffset(), bColumnOffset));
             if (bLimit > bt.size()) bLimit = (int) bt.size();
 
             // Adjusts for both sparse columns and rows this goes negative because we subtract the row offset
@@ -425,15 +425,15 @@ public class NativeGPUTensorOperations implements TensorOperations {
                     shaderId,
                     at.getMemorySegment(),
                     at.dType() == DType.I8 ? ((Q8ByteBufferTensor) at).getBlockF().getMemorySegment() : MemorySegment.NULL,
-                    at.getMemorySegmentOffset(aOffset),
-                    at.getMemorySegmentOffset(aLimit),
+                    Math.toIntExact(at.getMemorySegmentOffset(aOffset)),
+                    Math.toIntExact(at.getMemorySegmentOffset(aLimit)),
                     btId,
                     bid2,
-                    bt.getMemorySegmentOffset(bOffset),
-                    bt.getMemorySegmentOffset(bLimit),
+                    Math.toIntExact(bt.getMemorySegmentOffset(bOffset)),
+                    Math.toIntExact(bt.getMemorySegmentOffset(bLimit)),
                     result.getMemorySegment(),
                     rOffset,
-                    result.getMemorySegmentOffset(rLimit),
+                    Math.toIntExact(result.getMemorySegmentOffset(rLimit)),
                     M,
                     adjBRowOffset,
                     N,
@@ -483,8 +483,8 @@ public class NativeGPUTensorOperations implements TensorOperations {
         Long btId = tensorCache.get(b[0].getUid());
         if (gpuSupported(btId, a.dType(), b[0].dType(), r[0].dType())) {
             long resultBytes = r[0].size() * r[0].dType().size();
-            int aOffset = a.getOffset(0, columnOffset);
-            int aLimit = a.getOffset(a.shape().first(), columnOffset);
+            int aOffset = Math.toIntExact(a.getOffset(0, columnOffset));
+            int aLimit = Math.toIntExact(a.getOffset(a.shape().first(), columnOffset));
             if (aLimit > a.size()) aLimit = (int) a.size();
             boolean allRegistered = true;
             long[] bids = new long[b.length];
@@ -524,8 +524,8 @@ public class NativeGPUTensorOperations implements TensorOperations {
                     };
                     default -> throw new RuntimeException("Unsupported type: " + b[0].dType());
                 };
-                int bOffset = b[0].getOffset(bRowOffset + b[0].shape().sparseRowOffset(), columnOffset);
-                int bLimit = b[0].getOffset(bRowOffset + N + b[0].shape().sparseRowOffset(), columnOffset);
+                int bOffset = Math.toIntExact(b[0].getOffset(bRowOffset + b[0].shape().sparseRowOffset(), columnOffset));
+                int bLimit = Math.toIntExact(b[0].getOffset(bRowOffset + N + b[0].shape().sparseRowOffset(), columnOffset));
                 if (bLimit > b[0].size()) bLimit = (int) b[0].size();
                 int rOffset = r[0].shape().sparseColumnOffset() - b[0].shape().sparseRowOffset();
                 synchronized (GPU_SUBMIT_LOCK) {
@@ -535,12 +535,12 @@ public class NativeGPUTensorOperations implements TensorOperations {
                             r.length,
                             a.getMemorySegment(),
                             a.dType() == DType.I8 ? ((Q8ByteBufferTensor) a).getBlockF().getMemorySegment() : MemorySegment.NULL,
-                            a.getMemorySegmentOffset(aOffset),
-                            a.getMemorySegmentOffset(aLimit),
+                            Math.toIntExact(a.getMemorySegmentOffset(aOffset)),
+                            Math.toIntExact(a.getMemorySegmentOffset(aLimit)),
                             MemorySegment.ofBuffer(bidsBuffer),
                             MemorySegment.ofBuffer(bid2sBuffer),
-                            b[0].getMemorySegmentOffset(bOffset),
-                            b[0].getMemorySegmentOffset(bLimit),
+                            Math.toIntExact(b[0].getMemorySegmentOffset(bOffset)),
+                            Math.toIntExact(b[0].getMemorySegmentOffset(bLimit)),
                             MemorySegment.ofBuffer(resultPointersBuffer),
                             rOffset,
                             (int) (resultBytes),
@@ -782,14 +782,14 @@ public class NativeGPUTensorOperations implements TensorOperations {
                     scratchId,
                     decodePagedAttentionF32Id,
                     query.getMemorySegment(),
-                    query.getMemorySegmentOffset(query.getOffset(0, 0)),
+                    Math.toIntExact(query.getMemorySegmentOffset(query.getOffset(0, 0))),
                     (int) query.getMemorySegment().byteSize(),
                     packedKey.getMemorySegment(),
                     (int) packedKey.getMemorySegment().byteSize(),
                     packedValue.getMemorySegment(),
                     (int) packedValue.getMemorySegment().byteSize(),
                     valueOut.getMemorySegment(),
-                    valueOut.getOffset(0, 0),
+                    Math.toIntExact(valueOut.getOffset(0, 0)),
                     visibleRows,
                     numberOfHeads,
                     numberOfKeyValueHeads,
@@ -824,13 +824,13 @@ public class NativeGPUTensorOperations implements TensorOperations {
             };
             default -> throw new RuntimeException("Unsupported type: " + bt.dType());
         };
-        int aOffset = at.getOffset(0, aColumnOffset);
-        int aLimit = at.getOffset(m, aColumnOffset);
+        int aOffset = Math.toIntExact(at.getOffset(0, aColumnOffset));
+        int aLimit = Math.toIntExact(at.getOffset(m, aColumnOffset));
         if (aLimit > at.size()) {
             aLimit = (int) at.size();
         }
-        int bOffset = bt.getOffset(bt.shape().sparseRowOffset(), bColumnOffset);
-        int bLimit = bt.getOffset(n + bt.shape().sparseRowOffset(), bColumnOffset);
+        int bOffset = Math.toIntExact(bt.getOffset(bt.shape().sparseRowOffset(), bColumnOffset));
+        int bLimit = Math.toIntExact(bt.getOffset(n + bt.shape().sparseRowOffset(), bColumnOffset));
         if (bLimit > bt.size()) {
             bLimit = (int) bt.size();
         }
@@ -846,15 +846,15 @@ public class NativeGPUTensorOperations implements TensorOperations {
                         shaderId,
                         at.getMemorySegment(),
                         at.dType() == DType.I8 ? ((Q8ByteBufferTensor) at).getBlockF().getMemorySegment() : MemorySegment.NULL,
-                        at.getMemorySegmentOffset(aOffset),
-                        at.getMemorySegmentOffset(aLimit),
+                        Math.toIntExact(at.getMemorySegmentOffset(aOffset)),
+                        Math.toIntExact(at.getMemorySegmentOffset(aLimit)),
                         btId,
                         -1,
-                        bt.getMemorySegmentOffset(bOffset),
-                        bt.getMemorySegmentOffset(bLimit),
+                        Math.toIntExact(bt.getMemorySegmentOffset(bOffset)),
+                        Math.toIntExact(bt.getMemorySegmentOffset(bLimit)),
                         result.getMemorySegment(),
                         rOffset,
-                        result.getMemorySegmentOffset(rLimit),
+                        Math.toIntExact(result.getMemorySegmentOffset(rLimit)),
                         m,
                         0,
                         n,

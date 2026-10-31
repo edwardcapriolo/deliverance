@@ -1191,7 +1191,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
      */
     int [] constructPromptTokens(long[] encoded){
         int[] promptTokens;
-        if (addBosToken()) {
+        if (addBosToken() && (encoded.length == 0 || encoded[0] != config.bosToken)) {
             promptTokens = new int[(1 + encoded.length)];
             promptTokens[0] = config.bosToken;
             for (int i = 1; i <= encoded.length; i++) {

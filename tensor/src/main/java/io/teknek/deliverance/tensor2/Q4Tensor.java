@@ -35,7 +35,7 @@ class Q4Tensor extends Tensor {
         Preconditions.checkArgument(dims.length <= shape.dims(), "Too many dimensions specified");
         Preconditions.checkArgument(dims.length == shape.dims(), "Must specify all dimensions");
         Preconditions.checkState(scale != null, "Q4 tensor scale sidecar is not attached");
-        int offset = shape.getOffset(dims);
+        int offset = Math.toIntExact(shape.getOffset(dims));
         int[] scaleDims = java.util.Arrays.copyOf(dims, dims.length);
         scaleDims[scaleDims.length - 1] = Q4Layout.blockIndex(scaleDims[scaleDims.length - 1]);
         return signedNibble(offset) * scale.get(scaleDims);
@@ -45,7 +45,7 @@ class Q4Tensor extends Tensor {
     public float get(int row, int column) {
         Preconditions.checkArgument(2 == shape.dims(), "Shape is not 2 dimensions");
         Preconditions.checkState(scale != null, "Q4 tensor scale sidecar is not attached");
-        int offset = shape.getOffset(row, column);
+        int offset = Math.toIntExact(shape.getOffset(row, column));
         return signedNibble(offset) * scale.get(row, Q4Layout.blockIndex(column));
     }
 
@@ -64,7 +64,7 @@ class Q4Tensor extends Tensor {
         Preconditions.checkArgument(packedColumn >= 0 && packedColumn < Q4Layout.HALF_BLOCK,
                 "Packed Q4 column must be within a half block");
         int column = blockColumn * Q4Layout.BLOCK_SIZE + packedColumn;
-        underlyingByteBuffer.put(byteIndex(shape.getOffset(row, column)), value);
+        underlyingByteBuffer.put(byteIndex(Math.toIntExact(shape.getOffset(row, column))), value);
     }
 
     byte getPackedByte(int row, int blockColumn, int packedColumn) {
@@ -72,7 +72,7 @@ class Q4Tensor extends Tensor {
         Preconditions.checkArgument(packedColumn >= 0 && packedColumn < Q4Layout.HALF_BLOCK,
                 "Packed Q4 column must be within a half block");
         int column = blockColumn * Q4Layout.BLOCK_SIZE + packedColumn;
-        return underlyingByteBuffer.get(byteIndex(shape.getOffset(row, column)));
+        return underlyingByteBuffer.get(byteIndex(Math.toIntExact(shape.getOffset(row, column))));
     }
 
     byte getRawPackedByte(int byteIndex) {

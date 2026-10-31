@@ -31,7 +31,8 @@ public abstract class AbstractTensor implements AutoCloseable, ReadableTensor {
         this.dType = dType;
         this.shape = shape;
         this.sliceCache = cacheSlices ? new AbstractTensor[shape.first()] : null;
-        this.stride = shape.first() > 1 && dims() == 2 ? getOffset(shape.sparseRowOffset() + 1, shape.sparseColumnOffset()) : 0;
+        this.stride = shape.first() > 1 && dims() == 2
+                ? getOffset(shape.sparseRowOffset() + 1, shape.sparseColumnOffset()) : 0;
     }
 
     public String getUid() {
@@ -233,9 +234,11 @@ public abstract class AbstractTensor implements AutoCloseable, ReadableTensor {
         return stride;
     }
 
+    /** Returns the local int element offset within this tensor's resident storage. */
     public final int getOffset(int... dims) {
         return shape.getOffset(dims);
     }
+    /** Returns the local int element offset within this tensor's resident storage. */
     public final int getOffset(int row, int col) {
         return shape.getOffset(row, col);
     }
@@ -273,6 +276,7 @@ public abstract class AbstractTensor implements AutoCloseable, ReadableTensor {
 
     public abstract MemorySegment getMemorySegment();
 
+    /** Returns the local int byte offset within this tensor's resident memory segment. */
     public abstract int getMemorySegmentOffset(int offset);
 
     /**

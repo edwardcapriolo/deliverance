@@ -157,6 +157,10 @@ public class TensorShape {
      * coordinates, not local coordinates relative to the resident window. The sparse offsets are subtracted here
      * so callers can continue to reason in logical tensor space.</p>
      */
+    /**
+     * Returns the local int element offset within this tensor's resident storage.
+     * Absolute safetensor file offsets are long and are split by the loader before mapping.
+     */
     public final int getOffset(int row, int column){
         return sparseColumnLength * (row - sparseRowOffset) + column - sparseColumnOffset;
     }
@@ -165,6 +169,10 @@ public class TensorShape {
      * Note: This method will return positions outside the tensor
      * @param pdims one or more dimenstions
      * @return the position in the 1 Demensional view of the tensor
+     */
+    /**
+     * Returns the local int element offset within this tensor's resident storage.
+     * This is not an absolute safetensor file offset; file offsets remain long in the loader.
      */
     public final int getOffset(int... pdims) {
         switch (pdims.length) {

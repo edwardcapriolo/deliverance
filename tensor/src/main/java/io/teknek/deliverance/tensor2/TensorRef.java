@@ -215,8 +215,8 @@ public class TensorRef implements AutoCloseable {
             }
             int nibble = offset % Q4Layout.BLOCK_SIZE < Q4Layout.HALF_BLOCK
                     ? packed & 0x0F : (packed >>> 4) & 0x0F;
-            int row = shape.dims() == 2 ? offset / shape.last() : 0;
-            int column = shape.dims() == 2 ? offset % shape.last() : offset;
+            int row = shape.dims() == 2 ? Math.toIntExact(offset / shape.last()) : 0;
+            int column = shape.dims() == 2 ? Math.toIntExact(offset % shape.last()) : Math.toIntExact(offset);
             return (nibble - 8) * scaleSidecar.get(row, column / Q4Layout.BLOCK_SIZE);
         }
 
@@ -224,8 +224,8 @@ public class TensorRef implements AutoCloseable {
             if (scaleSidecar == null) {
                 throw new UnsupportedOperationException("Scalar I8 reads require an I8 scale sidecar");
             }
-            int row = shape.dims() == 2 ? offset / shape.last() : 0;
-            int column = shape.dims() == 2 ? offset % shape.last() : offset;
+            int row = shape.dims() == 2 ? Math.toIntExact(offset / shape.last()) : 0;
+            int column = shape.dims() == 2 ? Math.toIntExact(offset % shape.last()) : Math.toIntExact(offset);
             return value * scaleSidecar.get(row, column / Q8Layout.BLOCK_SIZE);
         }
 

@@ -1,0 +1,4 @@
+- [ ] every line of gemma4 is a "faithful port" from transformers to deliverance
+- [ ] a second audit is done to ensure the performance characterisics are similar (Tokens Per Second prefill time
+- [ ] I used the faithful port and behaivor fix for each change
+- [ ] the test produces 10 crisp clean tokens that make a human readable english sentence

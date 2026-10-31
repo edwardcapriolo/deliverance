@@ -1,63 +1,113 @@
 ---
 name: faithful-port
-description: Use when porting or migrating an existing implementation between interfaces, tensor types, providers, or execution frameworks while preserving behavior and performance.
+description: Use when porting an implementation from another language or upstream repository and behavioral fidelity is required; compare source and target class-by-class, preserve semantics, and prove changes with fast tests.
 ---
 
 # Faithful Port
 
-Use this skill whenever the task is to port existing code rather than redesign
-it. Treat the existing implementation as the behavioral, scheduling, provider,
-and performance specification.
+Use this skill for ports from a source implementation such as Hugging Face Transformers into Deliverance. The source implementation is the behavioral authority. Do not call a structural approximation a faithful port.
 
-## Required Standards
+## Core Rule
 
-- Mathematical correctness must be proven within explicitly stated numerical tolerances.
-- Mathematical equivalence alone is insufficient. A port that computes the same dot product but makes it materially slower is not faithful and moves the project backward.
-- Preserve operation granularity, scheduling, provider selection, kernel selection, fallback behavior, memory layout, offsets, strides, and tuning behavior unless a deliberate deviation is requested and documented.
-- Do not replace an existing execution plan with a simpler loop merely because the simpler loop is easier to implement.
-- Static analysis showing that a capability is not active on one current code path is not a reason to omit its implementation.
-- If a provider operation supports multiple dtype or shape permutations, implement all applicable permutations. If a permutation is genuinely unsupported, add a clear `TODO` comment describing the missing functionality, its constraints, and the affected path.
+For every source class and method, create an explicit target counterpart. Compare the source on the left and the target on the right.
 
-## Tests
+```text
+SOURCE IMPLEMENTATION        TARGET IMPLEMENTATION
+class/method                  class/method
+variable                      variable
+operation                     operation
+shape                         shape
+dtype                         dtype
+cache ownership               cache ownership
+```
 
-- Every port must include short-running characterization tests using random data with the same shapes as the production path.
-- Characterization tests must compare the old and new paths for output parity and report timings for the same warmed-up workload.
-- Tests must cover relevant dtype permutations, offsets, strides, tails, row chunks, page boundaries, and non-divisible ranges.
-- Definable behavior must be asserted in unit tests. This includes candidate selection, fallback selection, provider dispatch, split counts, and other observable policy.
-- A test that only proves numerical output is insufficient when the port changes execution strategy.
-- Do not hide required characterization behind new opt-in tags or system properties unless the existing project convention already requires that behavior.
+## Naming
 
-## Missing Functionality
+- Retain source class and method concepts.
+- Convert naming idiomatically only where required: `hidden_states` becomes `hiddenStates`, `past_key_values` becomes `pastKeyValues`.
+- Keep equivalent variables in the same scope and order.
+- Do not hide a source operation inside an unrelated generic helper when a named target method makes the correspondence clearer.
+- Name compound operations after their source behavior: `applyPle`, `applyMoeBranch`, `applyLayerScalar`, `updatePastKeyValues`.
 
-- Missing functionality is mandatory to document with a nearby `TODO` comment.
-- The comment must identify what is missing, why it matters, which code path is affected, and what parity or performance behavior remains unverified.
-- Do not silently fall through to a naive or scalar implementation when the old path used an optimized provider.
+## Nothing Is Omitted Silently
+
+- Port every source branch, even when it appears unused by the first target checkpoint.
+- Do not omit RoPE scaling, mask variants, cache branches, optional norms, dtype conversions, tied weights, or configuration fields because the current model does not seem to use them.
+- If a branch is genuinely unsupported, retain a clearly documented target method or explicit failure and list it in the parity document.
+- Do not replace behavior with a plausible shortcut.
+
+## Performance And Correctness
+
+- Correctness comes before performance.
+- Do not replace an operation with a scalar Java loop merely because it is easier to implement.
+- Use provider-backed tensor operations, Vector API/Panama implementations, chunking, or native acceleration where the target architecture supports them.
+- A slow implementation is not faithful if it changes execution semantics or makes production use impractical.
+- If the source uses an operation unavailable in the target, document the gap next to the replacement and add a characterization test at representative dimensions.
+
+## Tests Before And After
+
+Every ported behavior needs evidence at the smallest useful level.
+
+1. Add a source test port with matching assertions when the source test maps to the target API.
+2. Add a focused unit test for the mechanics: shapes, values, masks, cache ownership, dtype boundaries, and operation order.
+3. Add a characterization/performance test for provider selection, vectorization, chunking, or allocation behavior when performance matters.
+4. Capture the baseline before changing behavior when fixing a bug.
+5. Rerun the same test after the fix.
+6. Report the exact before/after result: failure becomes pass, tensor drift changes, allocation changes, throughput changes, or no measured change.
+
+Do not write a test only after the fix and present its green result as proof that the fix helped. A green post-change test proves only that the new assertion passes.
+
+## Reference Dumps
+
+For model ports, generate a source reference dump and compare the target at named checkpoints:
+
+- input IDs and attention masks
+- embedding output
+- every intermediate projection
+- normalization output
+- positional encoding output
+- attention scores/probabilities/output
+- residual outputs
+- PLE or auxiliary streams
+- MoE router scores, top-k indices, weights, and expert output
+- persistent and temporary cache contents
+- final normalized hidden state
+- pre-sampling logits
+
+Stop at the first numerical divergence. Do not diagnose from generated text alone.
+
+## Cache Ownership
+
+- Distinguish persistent request state from current-forward temporary state.
+- Persistent cache state belongs to the request/session cache.
+- Temporary shared state belongs to that same request/forward context.
+- Immutable cache blocks may be shared with leases/refcounts.
+- Never store request-specific mutable cache state on a model singleton.
+- Test interleaved requests, cache reuse, cold replay, and session close/reopen.
 
 ## Documentation
 
-- Every method added or changed as part of the port requires Javadoc, including private methods.
-- Javadoc must describe contracts, supported dtypes and shapes, offsets and stride assumptions, provider behavior, and fallback behavior where applicable.
-- Private visibility is not an excuse to omit documentation.
-- Remove duplication when adding shared port infrastructure, but do not collapse distinct execution paths if doing so obscures provider or scheduling differences.
+Create a side-by-side Markdown document for each substantial port:
 
-## Review
+- source path and line range on the left
+- target path and line range on the right
+- aligned names and method structure
+- exact tensor shapes and dtype transitions
+- explicit unsupported/unproven items
+- before/after test evidence
+- remaining parity risks
 
-- Every post-change review must be assigned to a subagent.
-- The reviewer must independently inspect the old and new paths, provider dispatch, scheduling, tests, and performance evidence.
-- Do not lead the reviewer with a prompt such as "I did this; verify it is correct." State the behavior that must be preserved and ask the reviewer to find deviations, missing permutations, missing tests, and performance risks.
-- Do not claim a port is complete until the independent review has reported no unresolved findings or the findings have been fixed and re-reviewed.
+Use words such as `implemented structurally`, `compiled`, `synthetically verified`, `source-parity verified`, and `production verified` precisely. Reserve `complete`, `faithful`, and `parity` for evidence-backed states.
 
-## Completion Criteria
+## Completion Gate
 
-A faithful port is complete only when:
+Do not declare the port complete until:
 
-1. The old and new execution paths have been mapped side by side.
-2. Provider operations and kernel choices are equivalent or explicitly documented as changed.
-3. Randomized, production-shaped characterization tests prove output parity within tolerance.
-4. Timings show no unexplained material regression.
-5. Missing functionality has nearby `TODO` documentation.
-6. Unit tests assert all definable behavior.
-7. A subagent has independently reviewed the changes.
-
-Never call a numerically equivalent rewrite a faithful port when its execution
-strategy, provider path, or performance behavior differs without approval.
+- all source branches are represented or explicitly rejected;
+- class and method comparisons are documented;
+- focused unit tests pass;
+- mapped upstream tests pass;
+- provider/performance characterization exists where relevant;
+- reference tensors/logits match for representative real checkpoints;
+- cached and cold generation agree;
+- final generated output is checked only after tensor parity is established.

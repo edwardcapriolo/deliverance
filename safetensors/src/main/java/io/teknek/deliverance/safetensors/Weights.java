@@ -95,7 +95,7 @@ public class Weights implements WeightLoader {
     }
 
     private static int stride(TensorShape shape) {
-        return shape.first() > 1 && shape.dims() == 2 ? shape.getOffset(1, 0) : 0;
+        return shape.first() > 1 && shape.dims() == 2 ? Math.toIntExact(shape.getOffset(1, 0)) : 0;
     }
 
     TensorRef loadRef(String name, TensorShardSpec shardSpec, Lighter lighter, WeightLoader sidecarLoader) {
@@ -337,7 +337,8 @@ public class Weights implements WeightLoader {
                         shard.set(full.get(row, shardSpec.startInclusive() + col), row, col);
                     }
                 } else {
-                    shard.copyFrom(full, full.getOffset(row, shardSpec.startInclusive()), shard.getOffset(row, 0),
+                    shard.copyFrom(full, Math.toIntExact(full.getOffset(row, shardSpec.startInclusive())),
+                            Math.toIntExact(shard.getOffset(row, 0)),
                             shardSpec.length());
                 }
             }

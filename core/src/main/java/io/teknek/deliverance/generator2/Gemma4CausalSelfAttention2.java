@@ -55,31 +55,35 @@ public final class Gemma4CausalSelfAttention2 extends KvCacheSelfAttention2 {
     }
 
     @Override
-    protected void normalizeQueryKey(TensorRef query, TensorRef key) {
-        normalize(query, queryNormWeights, numberOfHeads);
-        normalize(key, keyNormWeights, numberOfKeyValueHeads);
+    protected void normalizeQueryKey(TensorRef queryStates, TensorRef keyStates) {
+        normalize(queryStates, queryNormWeights, numberOfHeads);
+        normalize(keyStates, keyNormWeights, numberOfKeyValueHeads);
     }
 
     @Override
-    protected void normalizeValue(TensorRef value) {
-        normalize(value, null, numberOfKeyValueHeads);
+    protected void normalizeValue(TensorRef valueStates) {
+        // HF's v_norm has no learned scale, but it still performs RMS normalization.
+        normalize(valueStates, null, numberOfKeyValueHeads);
     }
 
     @Override
-    protected TensorRef[] sharedKeyValues(TensorRef[] qkv, KvCacheSession kvSession) {
-        io.teknek.deliverance.model.gemma4.Gemma4Model.V2SharedKeyValues state =
+    protected TensorRef[] sharedKeyValues(TensorRef[] qkv, KvCacheSession kvSession, int startPosition) {
+        io.teknek.deliverance.model.gemma4.Gemma4Model.V2SharedKeyValues sharedKvStates =
                 kvSession.getOrAttach(io.teknek.deliverance.model.gemma4.Gemma4Model.V2SharedKeyValues.class,
                         io.teknek.deliverance.model.gemma4.Gemma4Model.V2SharedKeyValues::new);
         if (sharedKvSource < 0) {
-            state.store(layerIndex, qkv[1], qkv[2], ((io.teknek.deliverance.model.gemma4.Gemma4Model) model).getLighter());
+            io.teknek.deliverance.model.gemma4.Gemma4Model gemma4 =
+                    (io.teknek.deliverance.model.gemma4.Gemma4Model) model;
+            sharedKvStates.restorePrefix(layerIndex, kvSession, startPosition, gemma4.getLighter());
+            sharedKvStates.store(layerIndex, startPosition, qkv[1], qkv[2], gemma4.getLighter());
             return qkv;
         }
-        TensorRef sharedKey = state.get(sharedKvSource, true);
-        TensorRef sharedValue = state.get(sharedKvSource, false);
-        qkv[1].close();
-        qkv[2].close();
-        qkv[1] = sharedKey;
-        qkv[2] = sharedValue;
+        TensorRef keyStates = sharedKvStates.get(sharedKvSource, true);
+        TensorRef valueStates = sharedKvStates.get(sharedKvSource, false);
+        if (qkv[1] != null && qkv[1] != keyStates) qkv[1].close();
+        if (qkv[2] != null && qkv[2] != valueStates && qkv[2] != qkv[1]) qkv[2].close();
+        qkv[1] = keyStates;
+        qkv[2] = valueStates;
         return qkv;
     }
 
@@ -89,9 +93,18 @@ public final class Gemma4CausalSelfAttention2 extends KvCacheSelfAttention2 {
     }
 
     @Override
-    protected void applyRotaryEmbedding(TensorRef query, TensorRef key, int startPosition) {
-        compositeOps.rotaryEmbedding(query, numberOfHeads, headSize, startPosition, inverseRopeFrequencies);
-        compositeOps.rotaryEmbedding(key, numberOfKeyValueHeads, headSize, startPosition, inverseRopeFrequencies);
+    protected void closeAll(TensorRef[] tensors) {
+        if (sharedKvSource >= 0) {
+            if (tensors[0] != null) tensors[0].close();
+            return;
+        }
+        super.closeAll(tensors);
+    }
+
+    @Override
+    protected void applyRotaryEmbedding(TensorRef queryStates, TensorRef keyStates, int startPosition) {
+        compositeOps.rotaryEmbedding(queryStates, numberOfHeads, headSize, startPosition, inverseRopeFrequencies);
+        compositeOps.rotaryEmbedding(keyStates, numberOfKeyValueHeads, headSize, startPosition, inverseRopeFrequencies);
     }
 
     private void normalize(TensorRef tensor, TensorRef weights, int heads) {

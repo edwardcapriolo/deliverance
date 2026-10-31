@@ -143,6 +143,7 @@ class Allocator {
     }
 
     private static int stride(TensorShape shape) {
-        return shape.first() > 1 && shape.dims() == 2 ? shape.getOffset(shape.sparseRowOffset() + 1, shape.sparseColumnOffset()) : 0;
+        return shape.first() > 1 && shape.dims() == 2
+                ? Math.toIntExact(shape.getOffset(shape.sparseRowOffset() + 1, shape.sparseColumnOffset())) : 0;
     }
 }

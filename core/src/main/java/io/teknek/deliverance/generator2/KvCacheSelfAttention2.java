@@ -99,8 +99,8 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
         this.layerIndex = layerIndex;
         this.config = model.getConfig();
         this.queryAttentionWeights = java.util.Objects.requireNonNull(queryAttentionWeights, "queryAttentionWeights");
-        this.keyAttentionWeights = java.util.Objects.requireNonNull(keyAttentionWeights, "keyAttentionWeights");
-        this.valueAttentionWeights = java.util.Objects.requireNonNull(valueAttentionWeights, "valueAttentionWeights");
+        this.keyAttentionWeights = keyAttentionWeights;
+        this.valueAttentionWeights = valueAttentionWeights;
         this.outputProjectionWeights = java.util.Objects.requireNonNull(outputProjectionWeights,
                 "outputProjectionWeights");
         this.lighter = java.util.Objects.requireNonNull(lighter, "lighter");
@@ -146,14 +146,14 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
             model.emitLayerDebug(layerIndex, "attention_projection_input", input);
             TensorRef[] qkv = projectQkv(input, phase);
             try {
-                normalizeQueryKey(qkv[0], qkv[1]);
-                normalizeValue(qkv[2]);
+                if (qkv[1] != null) normalizeQueryKey(qkv[0], qkv[1]);
+                if (qkv[2] != null) normalizeValue(qkv[2]);
                 model.emitLayerDebug(layerIndex, "query_normalized", qkv[0]);
-                model.emitLayerDebug(layerIndex, "key_normalized", qkv[1]);
-                applyRotaryEmbedding(qkv[0], qkv[1], startPosition);
+                if (qkv[1] != null) model.emitLayerDebug(layerIndex, "key_normalized", qkv[1]);
+                if (qkv[1] != null) applyRotaryEmbedding(qkv[0], qkv[1], startPosition);
                 model.emitLayerDebug(layerIndex, "query_rope", qkv[0]);
-                model.emitLayerDebug(layerIndex, "key_rope", qkv[1]);
-                qkv = sharedKeyValues(qkv, kvSession);
+                if (qkv[1] != null) model.emitLayerDebug(layerIndex, "key_rope", qkv[1]);
+                qkv = sharedKeyValues(qkv, kvSession, startPosition);
                 if (writesCache(mode)) {
                     writeKvRows(kvSession, mode, qkv[1], qkv[2], startPosition);
                 }
@@ -191,7 +191,17 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
             if (startPosition == 0) {
                 packedBlockAttention.forward(attended, query, currentKeys, currentValues, 0, batchSize, numberOfHeads,
                         numberOfKeyValueHeads, headSize, attentionScale, config.attnLogitSoftCapping,
-                        mode != CacheExecutionMode.DENOISE_BLOCK_NO_UPDATE, slidingWindow);
+                        causalWithinBlock(mode), slidingWindow);
+                return attended;
+            }
+            // Shared Gemma4 KV is deliberately retained outside the normal layer cache because
+            // sliding layers may discard rows that a later shared consumer still needs. In that
+            // case the supplied tensors already contain the prefix and current rows.
+            if (currentKeys.shape().first() >= startPosition + batchSize) {
+                int sharedPrefixRows = currentKeys.shape().first() - batchSize;
+                packedBlockAttention.forward(attended, query, currentKeys, currentValues, sharedPrefixRows,
+                        batchSize, numberOfHeads, numberOfKeyValueHeads, headSize, attentionScale,
+                        config.attnLogitSoftCapping, causalWithinBlock(mode), slidingWindow);
                 return attended;
             }
             try (KvReadView readView = kvSession.readView(cacheLayerIndex, startPosition,
@@ -228,7 +238,8 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
                     }
                     packedBlockAttention.forward(attended, query, packedKeys, packedValues, prefixRows, batchSize,
                             numberOfHeads, numberOfKeyValueHeads, headSize, attentionScale,
-                            config.attnLogitSoftCapping, mode != CacheExecutionMode.DENOISE_BLOCK_NO_UPDATE,
+                             config.attnLogitSoftCapping,
+                             causalWithinBlock(mode),
                             slidingWindow);
                 }
                 return attended;
@@ -286,11 +297,19 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
                 "Attention input must be [batch, embeddingLength]");
         int batchSize = input.shape().first();
         TensorRef query = model.makeDenseTensorRef(batchSize, attentionLength);
-        TensorRef key = model.makeDenseTensorRef(batchSize, kvLength);
-        TensorRef value = model.makeDenseTensorRef(batchSize, kvLength);
+        TensorRef key = keyAttentionWeights == null ? null : model.makeDenseTensorRef(batchSize, kvLength);
+        TensorRef value = valueAttentionWeights == null ? null
+                : valueAttentionWeights == keyAttentionWeights ? key : model.makeDenseTensorRef(batchSize, kvLength);
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
                 "kvcacheselfattention2.qkv_projection").time()) {
-            if (config.isGQA && phase == ForwardPhase.DECODE) {
+            if (key == null || value == null || value == key) {
+                project(query, input, queryAttentionWeights, config.embeddingLength, attentionLength,
+                        "kvcacheselfattention2.q_projection", model.getTensorProviderParallelSplitSize(), phase);
+                if (key != null) {
+                    project(key, input, keyAttentionWeights, config.embeddingLength, kvLength,
+                            "kvcacheselfattention2.k_projection", model.getTensorProviderParallelSplitSize(), phase);
+                }
+            } else if (config.isGQA && phase == ForwardPhase.DECODE) {
                 projectGqaQkvGroupedDecode(input, query, key, value);
             } else if (config.isGQA) {
                 projectGqaQkvPrefill(input, query, key, value, model.getTensorProviderParallelSplitSize(), phase);
@@ -304,20 +323,24 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
             }
             applyLora(queryWeightName, query, input, phase,
                     "kvcacheselfattention2.q_lora");
-            applyLora(keyWeightName, key, input, phase,
+            if (key != null) applyLora(keyWeightName, key, input, phase,
                     "kvcacheselfattention2.k_lora");
-            applyLora(valueWeightName, value, input, phase,
+            if (value != null && value != key) applyLora(valueWeightName, value, input, phase,
                     "kvcacheselfattention2.v_lora");
             model.emitLayerDebug(layerIndex, "query_projection", query);
-            model.emitLayerDebug(layerIndex, "key_projection", key);
-            model.emitLayerDebug(layerIndex, "value_projection", value);
+            if (key != null) model.emitLayerDebug(layerIndex, "key_projection", key);
+            if (value != null) model.emitLayerDebug(layerIndex, "value_projection", value);
             return new TensorRef[] {query, key, value};
         } catch (RuntimeException | Error e) {
             query.close();
-            key.close();
-            value.close();
+            if (key != null && key != value) key.close();
+            if (value != null) value.close();
             throw e;
         }
+    }
+
+    boolean causalWithinBlock(CacheExecutionMode mode) {
+        return !bidirectionalAttention && mode != CacheExecutionMode.DENOISE_BLOCK_NO_UPDATE;
     }
 
     private void projectGqaQkvPrefill(TensorRef input, TensorRef query, TensorRef key, TensorRef value,
@@ -483,7 +506,7 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
                 || mode == CacheExecutionMode.VERIFY_AND_UPDATE_CACHE;
     }
 
-    protected TensorRef[] sharedKeyValues(TensorRef[] qkv, KvCacheSession kvSession) {
+    protected TensorRef[] sharedKeyValues(TensorRef[] qkv, KvCacheSession kvSession, int startPosition) {
         return qkv;
     }
 

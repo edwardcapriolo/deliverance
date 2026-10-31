@@ -9,7 +9,7 @@ import io.teknek.deliverance.tensor.kv.KvCacheSession;
 import io.teknek.deliverance.tensor2.CompositeOps;
 import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensor2.MultiplyInPlace;
-import io.teknek.deliverance.math.ActivationFunction;
+import io.teknek.deliverance.tensor2.ActivationMultiplyQuantize;
 
 import java.util.List;
 import java.util.Optional;
@@ -110,30 +110,30 @@ public class TransformerBlock2 {
         this.moeBlock = moeBlock;
     }
 
-    public TensorRef forward(TensorRef embedding, int startPosition, KvCacheSession kvSession,
+    public TensorRef forward(TensorRef hiddenStates, int startPosition, KvCacheSession kvSession,
             Optional<Consumer<List<TensorRef>>> tensorReducer, ForwardPhase phase) {
-        return forward(embedding, startPosition, kvSession, tensorReducer, phase,
-                1, (int) embedding.shape().first(), null);
+        return forward(hiddenStates, startPosition, kvSession, tensorReducer, phase,
+                1, (int) hiddenStates.shape().first(), null);
     }
 
-    public TensorRef forward(TensorRef embedding, int startPosition, KvCacheSession kvSession,
+    public TensorRef forward(TensorRef hiddenStates, int startPosition, KvCacheSession kvSession,
             Optional<Consumer<List<TensorRef>>> tensorReducer, ForwardPhase phase, int batchSize,
             int sequenceLength, int[] attentionMask) {
-        return forward(embedding, null, startPosition, kvSession, tensorReducer, phase, batchSize, sequenceLength,
+        return forward(hiddenStates, null, startPosition, kvSession, tensorReducer, phase, batchSize, sequenceLength,
                 attentionMask);
     }
 
-    public TensorRef forward(TensorRef embedding, TensorRef perLayerInput, int startPosition,
+    public TensorRef forward(TensorRef hiddenStates, TensorRef perLayerInput, int startPosition,
             KvCacheSession kvSession, Optional<Consumer<List<TensorRef>>> tensorReducer, ForwardPhase phase,
             int batchSize, int sequenceLength, int[] attentionMask) {
         Timer timer = InferenceProfiler.timer(model.getMetricRegistry(), "transformerblock.forward");
         try (Timer.Context ignored = timer.time()) {
-            TensorRef residual = embedding;
-            TensorRef preAttentionHiddenStates = preAttentionNorm.map(ln -> ln.forward(embedding)).orElse(embedding);
+            TensorRef residual = hiddenStates;
+            TensorRef inputHiddenStates = hiddenStates;
+            TensorRef preAttentionInput = preAttentionNorm.map(ln -> ln.forward(inputHiddenStates)).orElse(inputHiddenStates);
             TensorRef postAttention;
-            TensorRef hiddenStates;
-            try (AbstractModel.TensorRefLease preAttentionInput = preAttentionProjectionInput(preAttentionHiddenStates)) {
-                postAttention = attention.forward(preAttentionInput.tensor(), startPosition, kvSession, tensorReducer, phase,
+            try (AbstractModel.TensorRefLease preAttentionProjectionInput = preAttentionProjectionInput(preAttentionInput)) {
+                postAttention = attention.forward(preAttentionProjectionInput.tensor(), startPosition, kvSession, tensorReducer, phase,
                         batchSize, sequenceLength, attentionMask);
             }
             hiddenStates = maybeApplyNorm(postAttention, postAttentionNorm);
@@ -141,7 +141,8 @@ public class TransformerBlock2 {
             applyResidual(hiddenStates, residual, "post_attention_residual");
             model.emitLayerDebug(layerIndex, "post_attention_residual", hiddenStates);
 
-            TensorRef preFeedForward = preFFNorm.map(ln -> ln.forward(hiddenStates)).orElse(hiddenStates);
+            TensorRef attentionHiddenStates = hiddenStates;
+            TensorRef preFeedForward = preFFNorm.map(ln -> ln.forward(attentionHiddenStates)).orElse(attentionHiddenStates);
             model.emitLayerDebug(layerIndex, "pre_ff_norm", preFeedForward);
             TensorRef postFeedForward;
             try (AbstractModel.TensorRefLease preFeedForwardInput = preFFProjectionInput(preFeedForward)) {
@@ -149,27 +150,27 @@ public class TransformerBlock2 {
             }
             model.emitLayerDebug(layerIndex, "post_ff_output", postFeedForward);
 
-            TensorRef postFeedForwardNorm = moeBlock != null && moeDenseNorm.isPresent()
+            hiddenStates = moeBlock != null && moeDenseNorm.isPresent()
                     && moeInputNorm.isPresent() && moeOutputNorm.isPresent()
-                    ? applyMoeBranch(postFeedForward, hiddenStates, tensorReducer, phase)
+                    ? applyMoeBranch(postFeedForward, attentionHiddenStates, tensorReducer, phase)
                     : maybeApplyNorm(postFeedForward, postFFNorm);
 
-            applyResidual(postFeedForwardNorm, hiddenStates, "post_ff_residual");
-            model.emitLayerDebug(layerIndex, "post_ff_residual", postFeedForwardNorm);
-            postFeedForwardNorm = applyPle(postFeedForwardNorm, perLayerInput, batchSize);
+            applyResidual(hiddenStates, attentionHiddenStates, "post_ff_residual");
+            model.emitLayerDebug(layerIndex, "post_ff_residual", hiddenStates);
+            hiddenStates = applyPle(hiddenStates, perLayerInput, batchSize);
 
-            postFeedForwardNorm = applyLayerScalar(postFeedForwardNorm);
-            model.emitLayerDebug(layerIndex, "layer_scalar", postFeedForwardNorm);
+            hiddenStates = applyLayerScalar(hiddenStates);
+            model.emitLayerDebug(layerIndex, "layer_scalar", hiddenStates);
 
-            if (preAttentionHiddenStates != embedding) preAttentionHiddenStates.close();
-            if (preFeedForward != hiddenStates) {
-                hiddenStates.close();
+            if (preAttentionInput != residual) preAttentionInput.close();
+            if (preFeedForward != attentionHiddenStates) {
+                attentionHiddenStates.close();
                 preFeedForward.close();
             } else {
-                hiddenStates.close();
+                attentionHiddenStates.close();
             }
 
-            return maybeApplyNorm(postFeedForwardNorm, preResponseNorm);
+            return maybeApplyNorm(hiddenStates, preResponseNorm);
         }
     }
 
@@ -217,12 +218,9 @@ public class TransformerBlock2 {
             model.emitLayerDebug(layerIndex, "ple_gate", pleGate);
             TensorRef pleGated = model.makeDenseTensorRef(batchSize, pleLength);
             try {
-                for (int row = 0; row < batchSize; row++) {
-                    for (int column = 0; column < pleLength; column++) {
-                        pleGated.set(ActivationFunction.eval(model.getConfig().activationFunction,
-                                pleGate.get(row, column)) * perLayerInput.get(row, column), row, column);
-                    }
-                }
+                compositeOps.activationMultiplyQuantize(new ActivationMultiplyQuantize(pleGate, perLayerInput,
+                        model.getConfig().activationFunction, io.teknek.deliverance.DType.F32)
+                        .output(pleGated).offsetAndLength(0, pleLength));
                 model.emitLayerDebug(layerIndex, "ple_gated", pleGated);
                 TensorRef pleProjected = model.makeDenseTensorRef(batchSize, model.getConfig().embeddingLength);
                 try (AbstractModel.TensorRefLease gatedQ = model.maybeQuantizeReadOnly(pleGated,

@@ -332,7 +332,7 @@ public final class PanamaTensorOperations implements TensorOperations {
                     b.shape().sparseColumnOffset(),
                     b.shape().sparseColumnOffset() + b.shape().sparseColumnLength());
 
-            int flatIndex = b.getOffset(row, column);
+            int flatIndex = Math.toIntExact(b.getOffset(row, column));
             int blockBaseByte = (flatIndex / Q4ByteBufferTensor.BLOCK_SIZE) * Q4ByteBufferTensor.HALF_BLOCK;
             int withinBlock = flatIndex % Q4ByteBufferTensor.BLOCK_SIZE;
             int byteIndex = blockBaseByte + (withinBlock % Q4ByteBufferTensor.HALF_BLOCK);
@@ -355,8 +355,8 @@ public final class PanamaTensorOperations implements TensorOperations {
                 var aSegment = a.getMemorySegment();
                 var bSegment = b.getMemorySegment();
                 while (remaining >= Q4ByteBufferTensor.BLOCK_SIZE) {
-                    int aFlat = a.getOffset(i, aidx);
-                    int bFlat = b.getOffset(j, bidx);
+                    int aFlat = Math.toIntExact(a.getOffset(i, aidx));
+                    int bFlat = Math.toIntExact(b.getOffset(j, bidx));
                     long aByteBase = a.getMemorySegmentOffset(aFlat);
                     long bByteBase = b.getMemorySegmentOffset(bFlat);
                     float scale = b.getFactorForIndex(j, bidx);
@@ -410,13 +410,13 @@ public final class PanamaTensorOperations implements TensorOperations {
             for (int aidx = aColumnOffset, bidx = bColumnOffset, remaining = k;
                  remaining >= Q4ByteBufferTensor.BLOCK_SIZE;
                  aidx += Q4ByteBufferTensor.BLOCK_SIZE, bidx += Q4ByteBufferTensor.BLOCK_SIZE, remaining -= Q4ByteBufferTensor.BLOCK_SIZE) {
-                int aFlat = a.getOffset(i, aidx);
+                int aFlat = Math.toIntExact(a.getOffset(i, aidx));
                 long aByteBase = a.getMemorySegmentOffset(aFlat);
 
-                int bFlat0 = b.getOffset(j, bidx);
-                int bFlat1 = b.getOffset(j + 1, bidx);
-                int bFlat2 = b.getOffset(j + 2, bidx);
-                int bFlat3 = b.getOffset(j + 3, bidx);
+                int bFlat0 = Math.toIntExact(b.getOffset(j, bidx));
+                int bFlat1 = Math.toIntExact(b.getOffset(j + 1, bidx));
+                int bFlat2 = Math.toIntExact(b.getOffset(j + 2, bidx));
+                int bFlat3 = Math.toIntExact(b.getOffset(j + 3, bidx));
                 long bByteBase0 = b.getMemorySegmentOffset(bFlat0);
                 long bByteBase1 = b.getMemorySegmentOffset(bFlat1);
                 long bByteBase2 = b.getMemorySegmentOffset(bFlat2);
@@ -475,16 +475,16 @@ public final class PanamaTensorOperations implements TensorOperations {
             for (int aidx = aColumnOffset, bidx = bColumnOffset, remaining = k;
                  remaining >= Q4ByteBufferTensor.BLOCK_SIZE;
                  aidx += Q4ByteBufferTensor.BLOCK_SIZE, bidx += Q4ByteBufferTensor.BLOCK_SIZE, remaining -= Q4ByteBufferTensor.BLOCK_SIZE) {
-                int aFlat0 = a.getOffset(i, aidx);
-                int aFlat1 = a.getOffset(i + 1, aidx);
-                int aFlat2 = a.getOffset(i + 2, aidx);
-                int aFlat3 = a.getOffset(i + 3, aidx);
+                int aFlat0 = Math.toIntExact(a.getOffset(i, aidx));
+                int aFlat1 = Math.toIntExact(a.getOffset(i + 1, aidx));
+                int aFlat2 = Math.toIntExact(a.getOffset(i + 2, aidx));
+                int aFlat3 = Math.toIntExact(a.getOffset(i + 3, aidx));
                 long aByteBase0 = a.getMemorySegmentOffset(aFlat0);
                 long aByteBase1 = a.getMemorySegmentOffset(aFlat1);
                 long aByteBase2 = a.getMemorySegmentOffset(aFlat2);
                 long aByteBase3 = a.getMemorySegmentOffset(aFlat3);
 
-                int bFlat = b.getOffset(j, bidx);
+                int bFlat = Math.toIntExact(b.getOffset(j, bidx));
                 long bByteBase = b.getMemorySegmentOffset(bFlat);
                 float scale = b.getFactorForIndex(j, bidx);
 
@@ -534,19 +534,19 @@ public final class PanamaTensorOperations implements TensorOperations {
             for (int aidx = aColumnOffset, bidx = bColumnOffset, remaining = k;
                  remaining >= Q4ByteBufferTensor.BLOCK_SIZE;
                  aidx += Q4ByteBufferTensor.BLOCK_SIZE, bidx += Q4ByteBufferTensor.BLOCK_SIZE, remaining -= Q4ByteBufferTensor.BLOCK_SIZE) {
-                int aFlat0 = a.getOffset(i, aidx);
-                int aFlat1 = a.getOffset(i + 1, aidx);
-                int aFlat2 = a.getOffset(i + 2, aidx);
-                int aFlat3 = a.getOffset(i + 3, aidx);
+                int aFlat0 = Math.toIntExact(a.getOffset(i, aidx));
+                int aFlat1 = Math.toIntExact(a.getOffset(i + 1, aidx));
+                int aFlat2 = Math.toIntExact(a.getOffset(i + 2, aidx));
+                int aFlat3 = Math.toIntExact(a.getOffset(i + 3, aidx));
                 long aByteBase0 = a.getMemorySegmentOffset(aFlat0);
                 long aByteBase1 = a.getMemorySegmentOffset(aFlat1);
                 long aByteBase2 = a.getMemorySegmentOffset(aFlat2);
                 long aByteBase3 = a.getMemorySegmentOffset(aFlat3);
 
-                int bFlat0 = b.getOffset(j, bidx);
-                int bFlat1 = b.getOffset(j + 1, bidx);
-                int bFlat2 = b.getOffset(j + 2, bidx);
-                int bFlat3 = b.getOffset(j + 3, bidx);
+                int bFlat0 = Math.toIntExact(b.getOffset(j, bidx));
+                int bFlat1 = Math.toIntExact(b.getOffset(j + 1, bidx));
+                int bFlat2 = Math.toIntExact(b.getOffset(j + 2, bidx));
+                int bFlat3 = Math.toIntExact(b.getOffset(j + 3, bidx));
                 long bByteBase0 = b.getMemorySegmentOffset(bFlat0);
                 long bByteBase1 = b.getMemorySegmentOffset(bFlat1);
                 long bByteBase2 = b.getMemorySegmentOffset(bFlat2);

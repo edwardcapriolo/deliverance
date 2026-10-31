@@ -253,7 +253,22 @@ public class DefaultWeightLoader implements WeightLoader {
         }
     }
 
+    /**
+     * Computes mmap regions for a safetensor file. File positions are long because a model file may exceed 2 GiB;
+     * each resulting region is kept within the int-sized local tensor-offset contract used by tensor storage.
+     */
     static Map<List<Long>, List<String>> computeMmapSplits(Map<String, TensorInfo> tensorInfoMap, long fileLength) {
+        return computeMmapSplits(tensorInfoMap, fileLength, Integer.MAX_VALUE);
+    }
+
+    /**
+     * Computes bounded mmap regions using absolute file offsets as map keys. The tensor metadata created for each
+     * split is relative to that split, so callers loading a split use local int-sized tensor offsets while the loader
+     * retains long absolute positions for the file.
+     */
+    static Map<List<Long>, List<String>> computeMmapSplits(Map<String, TensorInfo> tensorInfoMap,
+                                                            long fileLength,
+                                                            int maxSplitBytes) {
         Map<List<Long>, List<String>> splits = new HashMap<>();
         long lastSplitOffset = 0;
         int tensorsInFile = tensorInfoMap.size();
@@ -264,7 +279,7 @@ public class DefaultWeightLoader implements WeightLoader {
         Map.Entry<String, TensorInfo> next = null;
         while (tensorsSplit < tensorsInFile && (it.hasNext() || next != null)) {
             tensors.clear();
-            long limit = lastSplitOffset + Integer.MAX_VALUE;
+            long limit = lastSplitOffset + maxSplitBytes;
             long startOffset = fileLength;
             long endOffset = 0;
 
@@ -298,16 +313,17 @@ public class DefaultWeightLoader implements WeightLoader {
                         info.dataOffsets[0] -= lastSplitOffset;
                         info.dataOffsets[1] -= lastSplitOffset;
 
-                        long offset = info.dataOffsets[0];
-                        long length = info.dataOffsets[1] - offset;
+                            long offset = info.dataOffsets[0];
+                            long relativeEnd = info.dataOffsets[1];
+                            long length = relativeEnd - offset;
 
                         // Chunk size needs to be a multiple of the column size
-                        long chunkSize = Integer.MAX_VALUE - (Integer.MAX_VALUE % bytesPerColumn);
+                        long chunkSize = maxSplitBytes - (maxSplitBytes % bytesPerColumn);
                         long offsetAdded = 0;
                         int chunk = 0;
                         boolean added = false;
                         while (length > 0) {
-                            long chunkEnd = Math.min(offset + chunkSize, endOffset);
+                                long chunkEnd = Math.min(offset + chunkSize, relativeEnd);
                             String chunkName = next.getKey() + "-part-" + chunk++;
                             LOGGER.debug(
                                     "Adding chunk {} to split {}-{} {}",
@@ -316,7 +332,8 @@ public class DefaultWeightLoader implements WeightLoader {
                                     chunkEnd,
                                     Ints.checkedCast(chunkEnd - offset)
                             );
-                            splits.put(List.of(offset, chunkEnd), List.of(chunkName));
+                                splits.put(List.of(lastSplitOffset + offset, lastSplitOffset + chunkEnd),
+                                        List.of(chunkName));
 
                             // Add TensorInfo for the chunk
                             if (info.shape.length != 2){
@@ -458,7 +475,8 @@ public class DefaultWeightLoader implements WeightLoader {
                                 merged = allocateLike(dType, rowCount, cols);
                             }
                             for (int row = 0; row < localCount; row++) {
-                                merged.copyFrom(partSlice, partSlice.getOffset(row, 0), merged.getOffset(copiedRows + row, 0), cols);
+                                merged.copyFrom(partSlice, Math.toIntExact(partSlice.getOffset(row, 0)),
+                                        Math.toIntExact(merged.getOffset(copiedRows + row, 0)), cols);
                             }
                         copiedRows += localCount;
                     }

@@ -166,8 +166,8 @@ public class Gemma2TensorParallelWeightShardParityIT {
         int localBlockColumn = localCol / Q4ByteBufferTensor.BLOCK_SIZE;
         float fullScale = fullQ4.getBlockF().get(fullRow, fullBlockColumn);
         float shardScale = shardQ4.getBlockF().get(localRow, localBlockColumn);
-        int fullLogicalOffset = fullQ4.getOffset(fullRow, fullCol);
-        int shardLogicalOffset = shardQ4.getOffset(localRow, localCol);
+        int fullLogicalOffset = Math.toIntExact(fullQ4.getOffset(fullRow, fullCol));
+        int shardLogicalOffset = Math.toIntExact(shardQ4.getOffset(localRow, localCol));
         int fullByteOffset = q4PackedByteOffset(fullLogicalOffset);
         int shardByteOffset = q4PackedByteOffset(shardLogicalOffset);
         byte fullByte = fullQ4.getMemorySegment().get(ValueLayout.JAVA_BYTE, fullByteOffset);
