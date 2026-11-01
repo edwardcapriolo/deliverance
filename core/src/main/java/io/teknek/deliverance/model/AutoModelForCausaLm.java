@@ -875,7 +875,7 @@ public class AutoModelForCausaLm {
                 case "GRANITEMOEHYBRID" -> new GraniteMoeHybridModel(inferenceType,
                         config, weightLoader, tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr,
                         allocator, settings, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives,
-                        outputHeadQuantization);
+                        outputHeadQuantization, lighter);
                 case "BERT" -> new io.teknek.deliverance.model.bert.BertModel(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);

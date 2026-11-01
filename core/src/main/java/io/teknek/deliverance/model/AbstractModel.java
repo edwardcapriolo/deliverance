@@ -321,7 +321,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
                  tensorParallelCollectives, outputHeadQuantization, new Lighter(metricRegistry));
      }
 
-     private AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer t, DType workingMemoryDType,
+     protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer t, DType workingMemoryDType,
                              DType workingQType, Optional<DType> modelQType, ConfigurableTensorProvider provider,
                              MetricRegistry metricRegistry, TensorAllocator tensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
                              ToolCallParser toolCallParser, WrappedForkJoinPool pool,
