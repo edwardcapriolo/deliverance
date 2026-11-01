@@ -681,8 +681,25 @@ public class AutoModelForCausaLm {
         }
 
         private void installNativeTensor2Ops(AbstractModel model) {
+            if (gpuProvider) {
+                gpuTensor2Ops().ifPresent(ops -> model.getLighter().putTensorOperations(
+                        io.teknek.deliverance.tensor2.TensorProviderKind.GPU, ops));
+            }
             nativeTensor2Ops().ifPresent(ops -> model.getLighter().putTensorOperations(
                     io.teknek.deliverance.tensor2.TensorProviderKind.SIMD, ops));
+        }
+
+        private Optional<TensorOps> gpuTensor2Ops() {
+            try {
+                Class<?> gpuOpsClass = Class.forName("io.teknek.deliverance.tensor2.GpuOps");
+                boolean available = (Boolean) gpuOpsClass.getMethod("isAvailable").invoke(null);
+                if (!available) {
+                    return Optional.empty();
+                }
+                return Optional.of((TensorOps) gpuOpsClass.getConstructor().newInstance());
+            } catch (ReflectiveOperationException | LinkageError e) {
+                return Optional.empty();
+            }
         }
 
         private Optional<TensorOps> nativeTensor2Ops() {

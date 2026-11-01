@@ -16,6 +16,10 @@ import io.teknek.deliverance.generator.Response;
 import io.teknek.deliverance.generator.RmsNorm;
 import io.teknek.deliverance.generator.SampleOutput;
 import io.teknek.deliverance.generator.TransformerBlock;
+import io.teknek.deliverance.generator2.MLPBlock2;
+import io.teknek.deliverance.generator2.RmsNorm2;
+import io.teknek.deliverance.generator2.SampleOutputRef;
+import io.teknek.deliverance.generator2.TransformerBlock2;
 import io.teknek.deliverance.grace.TokenIds;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
@@ -30,16 +34,18 @@ import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.safetensors.fetch.LoraAdapterModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
-import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
+import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.kv.CacheExecutionMode;
 import io.teknek.deliverance.tensor.kv.KvCacheSession;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor2.Scale;
 import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.tensor2.ScaledSoftMax;
 import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.tensor2.ArgMax;
 import io.teknek.deliverance.tensorlib.TensorPlan;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import org.slf4j.Logger;
@@ -66,6 +72,8 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
     private static final String LINEAR_SPEC_LORA_ADAPTER_ID = "nemotron_linear_spec_lora";
 
     private volatile AbstractTensor embedTokenWeights;
+    private volatile TensorRef embedTokenWeightsRef;
+    // Retained only for the inherited V1 loader hooks; usesTensorRefExecution() is always true.
     private AbstractTensor[] inputNormWeights;
     private AbstractTensor[] queryWeights;
     private AbstractTensor[] keyWeights;
@@ -79,6 +87,8 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
     private MLPBlock[] mlpBlocks;
     private AbstractTensor finalNormWeight;
     private AbstractTensor diffusionHeadWeight;
+    private TensorRef finalNormWeightRef;
+    private TensorRef diffusionHeadWeightRef;
     private final NemotronLabsDiffusionRope rope;
     private boolean linearSpecLoraAdapterRegistered;
 
@@ -114,6 +124,30 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
 
     @Override
     protected EmbedInput loadInputWeights() {
+        if (usesTensorRefExecution()) {
+            embedTokenWeightsRef = registerModelTensorRef(weights.loadRef("encoder.embed_tokens.weight"));
+            return new EmbedInput(this) {
+                @Override
+                public TensorRef inputTokenToEmbedding(int inputToken, int unused) {
+                    try (TensorRef row = embedTokenWeightsRef.slice(inputToken)) {
+                        TensorRef embedding = makeDenseTensorRef(1, config.embeddingLength);
+                        try {
+                            if (row.dType() == embedding.dType()) {
+                                lighter.copy(row, 0, embedding, 0, config.embeddingLength);
+                            } else {
+                                try (TensorRef converted = lighter.reshape(row, embedding.dType())) {
+                                    lighter.copy(converted, 0, embedding, 0, config.embeddingLength);
+                                }
+                            }
+                            return embedding;
+                        } catch (RuntimeException | Error e) {
+                            embedding.close();
+                            throw e;
+                        }
+                    }
+                }
+            };
+        }
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
                 "nemotron_labs_diffusion.embedding.load").time()) {
             if (embedTokenWeights == null) {
@@ -133,6 +167,81 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
                 AbstractTensor embedding = parent.getTensorAllocator().getDirty(row.dType(), row.shape());
                 embedding.copyFrom(row, 0, 0, config.embeddingLength);
                 return TensorRef.owned(embedding);
+            }
+        };
+    }
+
+    @Override
+    protected boolean usesTensorRefExecution() {
+        return true;
+    }
+
+    @Override
+    public boolean usesKvCache2Generation() {
+        return usesTensorRefExecution();
+    }
+
+    @Override
+    protected TransformerBlock2[] loadTransformerBlockWeights2() {
+        DType qType = modelQType.orElse(this.modelDType);
+        TransformerBlock2[] blocks = new TransformerBlock2[config.numberOfLayers];
+        IntStream.range(0, config.numberOfLayers).parallel().forEach(layer -> {
+            String base = "encoder.layers." + layer + ".";
+            String attentionPrefix = base + "self_attn.";
+            String qName = attentionPrefix + "q_proj.weight";
+            String kName = attentionPrefix + "k_proj.weight";
+            String vName = attentionPrefix + "v_proj.weight";
+            String oName = attentionPrefix + "o_proj.weight";
+            NemotronLabsDiffusionKvCacheSelfAttention2 attention =
+                    new NemotronLabsDiffusionKvCacheSelfAttention2(this, layer,
+                            registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(qName, weights::loadRef, qType)),
+                            registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(kName, weights::loadRef, qType)),
+                            registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(vName, weights::loadRef, qType)),
+                            registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(oName, weights::loadRef, qType)),
+                            lighter, metricRegistry, qName, kName, vName, oName, rope);
+            String mlpPrefix = base + "mlp.";
+            String gateName = mlpPrefix + "gate_proj.weight";
+            String upName = mlpPrefix + "up_proj.weight";
+            String downName = mlpPrefix + "down_proj.weight";
+            MLPBlock2 mlp = new MLPBlock2(this,
+                    registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(gateName, weights::loadRef, qType)),
+                    registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(upName, weights::loadRef, qType)),
+                    registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(downName, weights::loadRef, qType)),
+                    lighter, gateName, upName, downName);
+            String inputNormName = base + "input_layernorm.weight";
+            String postAttentionNormName = base + "post_attention_layernorm.weight";
+            blocks[layer] = new TransformerBlock2(this, layer,
+                    Optional.of(new RmsNorm2(this, registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(
+                            inputNormName, weights::loadRef, qType)), 0.0f)), attention, Optional.empty(),
+                    Optional.of(new RmsNorm2(this, registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(
+                            postAttentionNormName, weights::loadRef, qType)), 0.0f)), mlp, Optional.empty(),
+                    Optional.empty(), configurableTensorProvider);
+        });
+        return blocks;
+    }
+
+    @Override
+    protected SampleOutputRef loadOutputWeightsRef() {
+        DType qType = modelQType.orElse(this.modelDType);
+        finalNormWeightRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(
+                "encoder.norm.weight", weights::loadRef, qType));
+        TensorRef head = weights.loadRef("diffusion_head.weight");
+        if (outputHeadQuantization.isPresent() && lighter.shouldQuantizeForEfficiency(head,
+                outputHeadQuantization.get())) {
+            TensorRef quantized = lighter.reshape(head, outputHeadQuantization.get());
+            head.close();
+            head = quantized;
+        }
+        diffusionHeadWeightRef = registerModelTensorRef(head);
+        return new SampleOutputRef() {
+            @Override
+            public io.teknek.deliverance.generator2.LayerNorm2 outputLayerNorm() {
+                return new RmsNorm2(NemotronLabsDiffusionModel.this, finalNormWeightRef, 0.0f);
+            }
+
+            @Override
+            public TensorRef outputLogitsWeights() {
+                return diffusionHeadWeightRef;
             }
         };
     }
@@ -257,10 +366,10 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
 
         try (AbstractModel.TensorPlanTraceScope ignoredTrace = openTensorPlanTrace(sessionId);
              KvCacheSession kvSession = newKvCacheSession();
-             AbstractTensor argMax = tensorAllocator.getDirty(DType.F32, TensorShape.of(1, 2))) {
-            try (AbstractTensor promptHidden = forwardCausalWithCache(promptTokens, 0, kvSession);
-                 AbstractTensor logits = logitsForHiddenRow(promptHidden, promptTokens.length - 1)) {
-                configurableTensorProvider.get().argMax(logits, argMax, 0, config.vocabularySize);
+             TensorRef argMax = lighter.allocate(DType.F32, TensorShape.of(1, 2))) {
+            try (TensorRef promptHidden = batchForwardRef(promptTokens, 0, kvSession);
+                 TensorRef logits = logitsForHiddenRowRef(promptHidden, (int) promptHidden.shape().first() - 1)) {
+                lighter.argMax(new ArgMax(logits).into(argMax).offsetAndLength(0, config.vocabularySize));
                 int token = (int) argMax.get(0, 0);
                 generated.add(token);
                 firstTokenNanos = System.nanoTime() - startNanos;
@@ -273,9 +382,9 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
                 }
                 int previousToken = generated.getLast();
                 int position = kvSession.length();
-                try (AbstractTensor hidden = forwardCausalWithCache(new int[] { previousToken }, position, kvSession);
-                     AbstractTensor logits = logitsForHiddenRow(hidden, 0)) {
-                    configurableTensorProvider.get().argMax(logits, argMax, 0, config.vocabularySize);
+                try (TensorRef hidden = forwardRef(previousToken, position, kvSession);
+                     TensorRef logits = logitsForHiddenRowRef(hidden, 0)) {
+                    lighter.argMax(new ArgMax(logits).into(argMax).offsetAndLength(0, config.vocabularySize));
                     int token = (int) argMax.get(0, 0);
                     generated.add(token);
                     String raw = decodeTokens(new int[] { token }, false);
@@ -376,8 +485,9 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
 
         try (AbstractModel.TensorPlanTraceScope ignoredTrace = openTensorPlanTrace(sessionId);
              KvCacheSession kvSession = newKvCacheSession();
-             AbstractTensor promptHidden = forwardCausalWithCache(promptTokens, 0, kvSession)) {
-            int nextToken = tokenFromHiddenRow(promptHidden, promptTokens.length - 1, temperature, random);
+             TensorRef promptHidden = forwardRefWithCache(promptTokens, 0, kvSession,
+                     CacheExecutionMode.PREFILL_UPDATE_CACHE)) {
+             int nextToken = tokenFromHiddenRowRef(promptHidden, promptTokens.length - 1, temperature, random);
             emitToken(nextToken, generated, eventFired, startNanos);
             firstTokenNanos = System.nanoTime() - startNanos;
             if (config.eosTokens.contains(nextToken)) {
@@ -401,8 +511,9 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
                 do {
                     nfe++;
                     enableLinearSpecDraftAdapter();
-                    try (AbstractTensor hidden = forwardDenoisingBlock(kvSession, block)) {
-                        int accepted = fillMaskedPositionsFromDraft(hidden, block, masked, threshold, temperature,
+                    try (TensorRef hidden = forwardRefWithCache(block, cacheLength, kvSession,
+                            CacheExecutionMode.DENOISE_BLOCK_NO_UPDATE)) {
+                        int accepted = fillMaskedPositionsFromDraftRef(hidden, block, masked, threshold, temperature,
                                 random);
                         metricRegistry.counter("nemotron_labs_diffusion.diffusion.transferred_tokens").inc(accepted);
                         metricRegistry.counter("nemotron_labs_diffusion.diffusion.mask_tokens_remaining")
@@ -413,9 +524,9 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
                 } while (threshold > 0.0f && anyMasked(masked));
 
                 int[] verifiedTokens;
-                try (AbstractTensor verifiedHidden = forwardCausalWithCache(block, cacheLength, kvSession,
+                try (TensorRef verifiedHidden = forwardRefWithCache(block, cacheLength, kvSession,
                         CacheExecutionMode.VERIFY_AND_UPDATE_CACHE)) {
-                    verifiedTokens = tokensFromHiddenRows(verifiedHidden, temperature, random);
+                    verifiedTokens = tokensFromHiddenRowsRef(verifiedHidden, temperature, random);
                     nfe++;
                 }
                 int accepted = acceptedPrefixLength(block, verifiedTokens);
@@ -510,6 +621,13 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
         }
     }
 
+    private int tokenFromHiddenRowRef(TensorRef hidden, int row, float temperature, Random random) {
+        try (TensorRef logits = logitsForHiddenRowRef(hidden, row);
+             TensorRef argMax = getLighter().allocate(DType.F32, TensorShape.of(1, 2))) {
+            return tokenFromLogitsRef(logits, argMax, temperature, random, false).token();
+        }
+    }
+
     private int fillMaskedPositionsFromDraft(AbstractTensor hidden, int[] block, boolean[] masked, float threshold,
             float temperature, Random random) {
         int accepted = 0;
@@ -548,6 +666,39 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
         return accepted;
     }
 
+    private int fillMaskedPositionsFromDraftRef(TensorRef hidden, int[] block, boolean[] masked, float threshold,
+            float temperature, Random random) {
+        int accepted = 0;
+        float bestConfidence = Float.NEGATIVE_INFINITY;
+        int bestPosition = -1;
+        int bestToken = -1;
+        try (TensorRef logits = logitsForHiddenRowsRef(hidden);
+             TensorRef argMax = getLighter().allocate(DType.F32, TensorShape.of(1, 2))) {
+            for (int position = 0; position < block.length; position++) {
+                if (!masked[position]) continue;
+                try (TensorRef rowLogits = logits.slice(position)) {
+                    TokenConfidence confidence = tokenFromLogitsRef(rowLogits, argMax,
+                            threshold > 0.0f ? Math.max(temperature, 0.0f) : temperature, random, threshold > 0.0f);
+                    if (threshold == 0.0f || confidence.confidence() >= threshold) {
+                        block[position] = confidence.token();
+                        masked[position] = false;
+                        accepted++;
+                    } else if (confidence.confidence() > bestConfidence) {
+                        bestConfidence = confidence.confidence();
+                        bestPosition = position;
+                        bestToken = confidence.token();
+                    }
+                }
+            }
+        }
+        if (accepted == 0 && bestPosition >= 0) {
+            block[bestPosition] = bestToken;
+            masked[bestPosition] = false;
+            accepted = 1;
+        }
+        return accepted;
+    }
+
     private int[] tokensFromHiddenRows(AbstractTensor hidden, float temperature, Random random) {
         int rows = (int) hidden.shape().first();
         int[] tokens = new int[rows];
@@ -560,6 +711,44 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
             }
         }
         return tokens;
+    }
+
+    private int[] tokensFromHiddenRowsRef(TensorRef hidden, float temperature, Random random) {
+        int rows = (int) hidden.shape().first();
+        int[] tokens = new int[rows];
+        try (TensorRef logits = logitsForHiddenRowsRef(hidden);
+             TensorRef argMax = getLighter().allocate(DType.F32, TensorShape.of(1, 2))) {
+            for (int row = 0; row < rows; row++) {
+                try (TensorRef rowLogits = logits.slice(row)) {
+                    tokens[row] = tokenFromLogitsRef(rowLogits, argMax, temperature, random, false).token();
+                }
+            }
+        }
+        return tokens;
+    }
+
+    private TokenConfidence tokenFromLogitsRef(TensorRef logits, TensorRef argMax, float temperature,
+            Random random, boolean requireConfidence) {
+        if (temperature > 0.0f) {
+            getLighter().scale(new Scale(1.0f / temperature).target(logits)
+                    .offsetAndLength(0, config.vocabularySize));
+            getCompositeOps().scaledSoftMax(new ScaledSoftMax(1.0f).target(logits)
+                    .offsetAndLength(0, config.vocabularySize));
+            float sample = random.nextFloat();
+            float cumulative = 0.0f;
+            int selected = config.vocabularySize - 1;
+            for (int token = 0; token < config.vocabularySize; token++) {
+                cumulative += logits.get(0, token);
+                if (sample <= cumulative) { selected = token; break; }
+            }
+            return new TokenConfidence(selected, logits.get(0, selected));
+        }
+        if (requireConfidence) {
+            getCompositeOps().scaledSoftMax(new ScaledSoftMax(1.0f).target(logits)
+                    .offsetAndLength(0, config.vocabularySize));
+        }
+        getLighter().argMax(new ArgMax(logits).into(argMax).offsetAndLength(0, config.vocabularySize));
+        return new TokenConfidence((int) argMax.get(0, 0), argMax.get(0, 1));
     }
 
     private TokenConfidence tokenFromLogits(AbstractTensor logits, AbstractTensor argMax, float temperature,
@@ -627,6 +816,32 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
                 current.close();
                 throw e;
             }
+        }
+    }
+
+    private TensorRef forwardRefWithCache(int[] inputIds, int startPosition, KvCacheSession kvSession,
+            CacheExecutionMode mode) {
+        Preconditions.checkArgument(startPosition == kvSession.length(),
+                "startPosition must match KV session length");
+        TensorRef current = makeDenseTensorRef(inputIds.length, config.embeddingLength);
+        try {
+            embedTokensRef(inputIds, current);
+            ForwardPhase phase = inputIds.length == 1 ? ForwardPhase.DECODE : ForwardPhase.PREFILL;
+            for (int layer = 0; layer < config.numberOfLayers; layer++) {
+                TensorRef next = transformerBlocks2[layer].forward(current, startPosition, kvSession,
+                        Optional.empty(), phase, mode);
+                current.close();
+                current = next;
+            }
+            TensorRef normalized = new RmsNorm2(this, finalNormWeightRef, 0.0f).forward(current);
+            current.close();
+            if (mode != CacheExecutionMode.DENOISE_BLOCK_NO_UPDATE) {
+                kvSession.advanceLength(startPosition + inputIds.length);
+            }
+            return normalized;
+        } catch (RuntimeException | Error e) {
+            current.close();
+            throw e;
         }
     }
 
@@ -735,6 +950,57 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
         }
     }
 
+    private TensorRef logitsForHiddenRowRef(TensorRef hidden, int row) {
+        try (TensorRef hiddenRow = hidden.slice(row);
+             TensorRef normalized = new RmsNorm2(this, finalNormWeightRef, 0.0f).forward(hiddenRow)) {
+            TensorRef logits = makeDenseTensorRef(1, config.vocabularySize);
+            TensorRef projectionInput = normalized;
+            boolean closeProjectionInput = false;
+            try {
+                if (projectionInput.dType() != diffusionHeadWeightRef.dType()
+                        && diffusionHeadWeightRef.dType() == DType.Q4) {
+                    projectionInput = lighter.reshape(projectionInput, getWorkingQType());
+                    closeProjectionInput = true;
+                }
+                lighter.dotProductRows(logits, projectionInput, diffusionHeadWeightRef, 0, config.embeddingLength,
+                        0, config.vocabularySize, 0);
+                return logits;
+            } catch (RuntimeException | Error e) {
+                logits.close();
+                throw e;
+            } finally {
+                if (closeProjectionInput) {
+                    projectionInput.close();
+                }
+            }
+        }
+    }
+
+    private TensorRef logitsForHiddenRowsRef(TensorRef hidden) {
+        TensorRef normalized = new RmsNorm2(this, finalNormWeightRef, 0.0f).forward(hidden);
+        TensorRef logits = makeDenseTensorRef((int) hidden.shape().first(), config.vocabularySize);
+        TensorRef projectionInput = normalized;
+        boolean closeProjectionInput = false;
+        try {
+            if (projectionInput.dType() != diffusionHeadWeightRef.dType() && diffusionHeadWeightRef.dType() == DType.Q4) {
+                projectionInput = getLighter().reshape(projectionInput, getWorkingQType());
+                closeProjectionInput = true;
+            }
+            getLighter().batchDotProduct(new io.teknek.deliverance.tensor2.BatchDotProduct()
+                    .result(logits).a(projectionInput).b(diffusionHeadWeightRef)
+                    .aColumnOffset(0).bColumnOffset(0).columnLength(config.embeddingLength)
+                    .resultRowOffset(0).bRowOffset(0).rowChunkSize(config.vocabularySize)
+                    .threading(io.teknek.deliverance.tensor2.Threading.NONE));
+            return logits;
+        } catch (RuntimeException | Error e) {
+            logits.close();
+            throw e;
+        } finally {
+            normalized.close();
+            if (closeProjectionInput) projectionInput.close();
+        }
+    }
+
     private void gpuLogitsBlockProjection(AbstractTensor logits, AbstractTensor projectionInput) {
         TensorOperations gpu = tensorOperations(TensorProviderKind.GPU)
                 .orElseThrow(() -> new IllegalStateException("GPU diffusion block projection requested, but GPU provider is unavailable"));
@@ -801,6 +1067,27 @@ public class NemotronLabsDiffusionModel extends LlamaModel {
                          AbstractTensor converted = configurableTensorProvider.get().quantize(rowView, output.dType(), 0,
                                  config.embeddingLength)) {
                         output.copyFrom(converted, 0, output.getOffset(row, 0), config.embeddingLength);
+                    }
+                }
+            }
+        }
+    }
+
+    private void embedTokensRef(int[] inputIds, TensorRef output) {
+        try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry,
+                "nemotron_labs_diffusion.embedding").time()) {
+            for (int row = 0; row < inputIds.length; row++) {
+                int token = inputIds[row];
+                Preconditions.checkArgument(token >= 0 && token < embedTokenWeightsRef.shape().first(),
+                        "token out of bounds");
+                try (TensorRef source = embedTokenWeightsRef.slice(token)) {
+                    if (source.dType() == output.dType()) {
+                        getLighter().copy(source, 0, output, row * config.embeddingLength, config.embeddingLength);
+                    } else {
+                        try (TensorRef converted = getLighter().reshape(source, output.dType())) {
+                            getLighter().copy(converted, 0, output, row * config.embeddingLength,
+                                    config.embeddingLength);
+                        }
                     }
                 }
             }

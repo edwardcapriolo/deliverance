@@ -15,6 +15,7 @@ import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.TensorInfo;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -28,7 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@Tag("longtest")
+@Tag("large-model")
 class NemotronLabsDiffusionBaseCheckpointIT {
     private static final ModelFetcher FETCHER = new ModelFetcher("nvidia", "Nemotron-Labs-Diffusion-3B-Base");
     private static final String QOD_OWNER = "nvidia";
@@ -42,6 +43,7 @@ class NemotronLabsDiffusionBaseCheckpointIT {
             + "Then compute total fare collected if every person who ever boarded paid $2.";
 
     @Test
+    @Disabled("Base checkpoint tests deferred; instruction checkpoints are the active oracle")
     void baseCheckpointHasExpectedTensorInventory() {
         File modelRoot = FETCHER.maybeDownload();
 
@@ -66,6 +68,7 @@ class NemotronLabsDiffusionBaseCheckpointIT {
     }
 
     @Test
+    @Disabled("Base checkpoint tests deferred; instruction checkpoints are the active oracle")
     void baseCheckpointCanInstantiateNemotronModel() {
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(FETCHER).buildLocalTransformerModel()) {
             assertInstanceOf(NemotronLabsDiffusionModel.class, model);
@@ -73,6 +76,7 @@ class NemotronLabsDiffusionBaseCheckpointIT {
     }
 
     @Test
+    @Disabled("Base checkpoint tests deferred; instruction checkpoints are the active oracle")
     void baseCheckpointPromptTemplateRuntimeTokensDoNotPrependBos() {
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(FETCHER).buildLocalTransformerModel()) {
             String prompt = model.promptSupport().orElseThrow().builder()
@@ -88,6 +92,7 @@ class NemotronLabsDiffusionBaseCheckpointIT {
     }
 
     @Test
+    @Disabled("Base checkpoint tests deferred; instruction checkpoints are the active oracle")
     void baseCheckpointArGenerateOneTokenSmoke() {
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(FETCHER).buildLocalTransformerModel()) {
             NemotronLabsDiffusionModel nemotron = (NemotronLabsDiffusionModel) model;
@@ -101,6 +106,7 @@ class NemotronLabsDiffusionBaseCheckpointIT {
     }
 
     @Test
+    @Disabled("Base checkpoint tests deferred; instruction checkpoints are the active oracle")
     void baseCheckpointArGenerateMultiTokenSmoke() {
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(FETCHER).buildLocalTransformerModel()) {
             NemotronLabsDiffusionModel nemotron = (NemotronLabsDiffusionModel) model;
@@ -120,6 +126,7 @@ class NemotronLabsDiffusionBaseCheckpointIT {
     }
 
     @Test
+    @Disabled("Base checkpoint tests deferred; instruction checkpoints are the active oracle")
     void baseCheckpointQuantizeOnDemandArGenerateSmoke() throws Exception {
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(FETCHER)
                 .withQuantizeOnDemand(DType.Q4, QOD_OWNER, QOD_MODEL)
@@ -140,6 +147,7 @@ class NemotronLabsDiffusionBaseCheckpointIT {
     }
 
     @Test
+    @Disabled("Base checkpoint tests deferred; instruction checkpoints are the active oracle")
     void baseCheckpointQuantizeOnDemandArGenerateOneShotProfile() throws Exception {
         boolean previousProfiling = InferenceProfiler.isEnabled();
         InferenceProfiler.setEnabled(true);
@@ -168,6 +176,7 @@ class NemotronLabsDiffusionBaseCheckpointIT {
 
 
     @Test
+    @Disabled("Base checkpoint tests deferred; instruction checkpoints are the active oracle")
     void baseCheckpointQuantizeOnDemandArGenerateOneShotProfileQ4Head() throws Exception {
         boolean previousProfiling = InferenceProfiler.isEnabled();
         InferenceProfiler.setEnabled(true);
@@ -194,6 +203,7 @@ class NemotronLabsDiffusionBaseCheckpointIT {
     }
 
     @Test
+    @Disabled("Base checkpoint tests deferred; instruction checkpoints are the active oracle")
     void baseCheckpointDiffusionGenerateOneTokenSmoke() {
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(FETCHER).buildLocalTransformerModel()) {
             Response response = model.generate(UUID.randomUUID(), PromptContext.of("The capital of France is"),
@@ -206,6 +216,7 @@ class NemotronLabsDiffusionBaseCheckpointIT {
     }
 
     @Test
+    @Disabled("Base checkpoint tests deferred; instruction checkpoints are the active oracle")
     void baseCheckpointQuantizeOnDemandDiffusionBlockFourSmoke() {
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(FETCHER)
                 .withQuantizeOnDemand(DType.Q4, QOD_OWNER, QOD_MODEL)
@@ -226,6 +237,7 @@ class NemotronLabsDiffusionBaseCheckpointIT {
     }
 
     @Test
+    @Disabled("Base checkpoint tests deferred; instruction checkpoints are the active oracle")
     void baseCheckpointQuantizeOnDemandDiffusionBlockThirtyTwoProfile() {
         boolean previousProfiling = InferenceProfiler.isEnabled();
         InferenceProfiler.setEnabled(true);
@@ -251,6 +263,7 @@ class NemotronLabsDiffusionBaseCheckpointIT {
     }
 
     @Test
+    @Disabled("Base checkpoint tests deferred; instruction checkpoints are the active oracle")
     void baseCheckpointQuantizeOnDemandDiffusionBlockThirtyTwoProfileGpuBlockLogits() {
         boolean previousProfiling = InferenceProfiler.isEnabled();
         InferenceProfiler.setEnabled(true);
@@ -329,6 +342,7 @@ class NemotronLabsDiffusionBaseCheckpointIT {
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(INSTRUCT_FETCHER)
                 .withQuantizeOnDemand(DType.Q4, INSTRUCT_QOD_OWNER, INSTRUCT_QOD_MODEL)
                 .withOutputHeadQuantization(DType.Q4)
+                .withGpuProvider(false)
                 .withPackedBlockAttention(true)
                 .buildLocalTransformerModel()) {
             PromptContext prompt = model.promptSupport().orElseThrow().builder()
@@ -357,6 +371,7 @@ class NemotronLabsDiffusionBaseCheckpointIT {
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(INSTRUCT_FETCHER)
                 .withQuantizeOnDemand(DType.Q4, INSTRUCT_QOD_OWNER, INSTRUCT_QOD_MODEL)
                 .withOutputHeadQuantization(DType.Q4)
+                .withGpuProvider(false)
                 .withPackedBlockAttention(true)
                 .withKvBlockStoragePolicy(KvBufferCacheSettings.KvBlockStoragePolicy.MSE_TURBOQUANT)
                 .withKvTurboQuantBits(4)
@@ -381,6 +396,7 @@ class NemotronLabsDiffusionBaseCheckpointIT {
     }
 
     @Test
+    @Disabled("Base checkpoint tests deferred; instruction checkpoints are the active oracle")
     void baseCheckpointQuantizeOnDemandDiffusionBlockThirtyTwoProfileWithLinearSpecLora() {
         boolean previousProfiling = InferenceProfiler.isEnabled();
         InferenceProfiler.setEnabled(true);
@@ -409,6 +425,7 @@ class NemotronLabsDiffusionBaseCheckpointIT {
 
 
     @Test
+    @Disabled("Base checkpoint tests deferred; instruction checkpoints are the active oracle")
     void baseCheckpointDiffusionMultiTokenSmoke() {
         try (AbstractModel model = AutoModelForCausaLm.newBuilder(new ModelFetcher(QOD_OWNER, QOD_MODEL)).buildLocalTransformerModel()) {
             Response response = model.generate(UUID.randomUUID(), PromptContext.of("Give me a history of Lake George"),

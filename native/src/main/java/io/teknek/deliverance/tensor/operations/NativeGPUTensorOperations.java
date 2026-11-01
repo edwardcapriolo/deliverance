@@ -253,10 +253,10 @@ public class NativeGPUTensorOperations implements TensorOperations {
             .reduce((a, b) -> a + "\n" + b)
             .map(f -> f.trim().getBytes(StandardCharsets.UTF_8))
             .orElseThrow(() -> new RuntimeException("Failed to load shader"));
-        ByteBuffer shaderBuffer = ByteBuffer.allocateDirect(shader.length + 1);
+        ByteBuffer shaderBuffer = ByteBuffer.allocateDirect(shader.length);
         shaderBuffer.put(shader);
         shaderBuffer.flip();
-        long id = NativeGPU.register_shader(MemorySegment.ofBuffer(shaderBuffer), shader.length + 1);
+        long id = NativeGPU.register_shader(MemorySegment.ofBuffer(shaderBuffer), shader.length);
         if (id == -1) {
             throw new RuntimeException("Failed to register shader: " + name);
         }
@@ -303,7 +303,6 @@ public class NativeGPUTensorOperations implements TensorOperations {
             long gemmF32Id = RuntimeSupport.isMac() ? registerShader("gemm_f32.wgsl")
                     : registerShader("gemm_f32_v4.wgsl");
 
-            gemmF32Id = registerShader("gemm_f32_v4.wgsl");
             if (gemmF32Id == -1) {
                 throw new RuntimeException("Error creating shader");
             }

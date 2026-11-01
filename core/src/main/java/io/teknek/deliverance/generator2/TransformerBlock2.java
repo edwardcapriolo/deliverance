@@ -6,6 +6,7 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.kv.KvCacheSession;
+import io.teknek.deliverance.tensor.kv.CacheExecutionMode;
 import io.teknek.deliverance.tensor2.CompositeOps;
 import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensor2.MultiplyInPlace;
@@ -117,6 +118,12 @@ public class TransformerBlock2 {
     }
 
     public TensorRef forward(TensorRef hiddenStates, int startPosition, KvCacheSession kvSession,
+            Optional<Consumer<List<TensorRef>>> tensorReducer, ForwardPhase phase, CacheExecutionMode mode) {
+        return forward(hiddenStates, null, startPosition, kvSession, tensorReducer, phase, 1,
+                (int) hiddenStates.shape().first(), null, mode);
+    }
+
+    public TensorRef forward(TensorRef hiddenStates, int startPosition, KvCacheSession kvSession,
             Optional<Consumer<List<TensorRef>>> tensorReducer, ForwardPhase phase, int batchSize,
             int sequenceLength, int[] attentionMask) {
         return forward(hiddenStates, null, startPosition, kvSession, tensorReducer, phase, batchSize, sequenceLength,
@@ -170,6 +177,41 @@ public class TransformerBlock2 {
                 attentionHiddenStates.close();
             }
 
+            return maybeApplyNorm(hiddenStates, preResponseNorm);
+        }
+    }
+
+    private TensorRef forward(TensorRef hiddenStates, TensorRef perLayerInput, int startPosition,
+            KvCacheSession kvSession, Optional<Consumer<List<TensorRef>>> tensorReducer, ForwardPhase phase,
+            int batchSize, int sequenceLength, int[] attentionMask, CacheExecutionMode mode) {
+        Timer timer = InferenceProfiler.timer(model.getMetricRegistry(), "transformerblock.forward");
+        try (Timer.Context ignored = timer.time()) {
+            TensorRef residual = hiddenStates;
+            TensorRef inputHiddenStates = hiddenStates;
+            TensorRef preAttentionInput = preAttentionNorm.map(ln -> ln.forward(inputHiddenStates)).orElse(inputHiddenStates);
+            TensorRef postAttention;
+            try (AbstractModel.TensorRefLease lease = preAttentionProjectionInput(preAttentionInput)) {
+                postAttention = attention.forward(lease.tensor(), startPosition, kvSession, tensorReducer, phase, mode);
+            }
+            hiddenStates = maybeApplyNorm(postAttention, postAttentionNorm);
+            applyResidual(hiddenStates, residual, "post_attention_residual");
+            TensorRef attentionHiddenStates = hiddenStates;
+            TensorRef preFeedForward = preFFNorm.map(ln -> ln.forward(attentionHiddenStates)).orElse(attentionHiddenStates);
+            TensorRef postFeedForward;
+            try (AbstractModel.TensorRefLease lease = preFFProjectionInput(preFeedForward)) {
+                postFeedForward = ffBlock.forward(lease.tensor(), tensorReducer, phase);
+            }
+            hiddenStates = maybeApplyNorm(postFeedForward, postFFNorm);
+            applyResidual(hiddenStates, attentionHiddenStates, "post_ff_residual");
+            hiddenStates = applyPle(hiddenStates, perLayerInput, batchSize);
+            hiddenStates = applyLayerScalar(hiddenStates);
+            if (preAttentionInput != residual) preAttentionInput.close();
+            if (preFeedForward != attentionHiddenStates) {
+                attentionHiddenStates.close();
+                preFeedForward.close();
+            } else {
+                attentionHiddenStates.close();
+            }
             return maybeApplyNorm(hiddenStates, preResponseNorm);
         }
     }

@@ -130,13 +130,20 @@ public abstract class KvCacheSelfAttention2 extends BaseCausalSelfAttention2 {
     @Override
     public TensorRef forward(TensorRef input, int startPosition, KvCacheSession kvSession,
             Optional<Consumer<List<TensorRef>>> tensorReducer, ForwardPhase phase) {
+        CacheExecutionMode mode = phase == ForwardPhase.DECODE
+                ? CacheExecutionMode.DECODE_UPDATE_CACHE
+                : CacheExecutionMode.PREFILL_UPDATE_CACHE;
+        return forward(input, startPosition, kvSession, tensorReducer, phase, mode);
+    }
+
+    @Override
+    public TensorRef forward(TensorRef input, int startPosition, KvCacheSession kvSession,
+            Optional<Consumer<List<TensorRef>>> tensorReducer, ForwardPhase phase,
+            CacheExecutionMode mode) {
         Preconditions.checkArgument(input.dims() == 2 && input.shape().last() == config.embeddingLength,
                 "Attention input must be [batch, embeddingLength]");
         Preconditions.checkArgument(startPosition >= 0 && startPosition <= kvSession.length(),
                 "startPosition must be within KV session length");
-        CacheExecutionMode mode = phase == ForwardPhase.DECODE
-                ? CacheExecutionMode.DECODE_UPDATE_CACHE
-                : CacheExecutionMode.PREFILL_UPDATE_CACHE;
         int batchSize = input.shape().first();
             Preconditions.checkArgument(mode != CacheExecutionMode.DECODE_UPDATE_CACHE || batchSize == 1,
                 "decode update expects one token at a time");

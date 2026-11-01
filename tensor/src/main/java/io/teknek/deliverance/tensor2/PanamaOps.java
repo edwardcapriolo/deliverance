@@ -989,6 +989,18 @@ class PanamaOps implements TensorOps {
                     .bRowOffset(weightRowStart)
                     .rowChunkSize(weightRowCount));
         }
+        if (output.dType() == DType.F32 && input.dType() == DType.BF16 && weights.dType() == DType.Q4) {
+            return batchDotProduct(new BatchDotProduct()
+                    .result(output)
+                    .a(input)
+                    .b(weights)
+                    .aColumnOffset(inputColumnStart)
+                    .bColumnOffset(weightColumnStart)
+                    .columnLength(columnLength)
+                    .resultRowOffset(outputColumnStart - weightRowStart)
+                    .bRowOffset(weightRowStart)
+                    .rowChunkSize(weightRowCount));
+        }
         if (output.dType() != DType.F32 || input.dType() != DType.F32
                 || (weights.dType() != DType.F32 && weights.dType() != DType.I8)) {
             return Either.Left(OpSupport.Unsupported);
@@ -1503,7 +1515,7 @@ class PanamaOps implements TensorOps {
         float dot(int aRow, int bRow) {
             TensorRef a = operation.a();
             TensorRef b = operation.b();
-            FloatVector sum = FloatVector.zero(FloatVector.SPECIES_512);
+            float sum = 0.0f;
             int aColumn = operation.aColumnOffset();
             int bColumn = operation.bColumnOffset();
             int end = operation.aColumnOffset() + operation.columnLength();
@@ -1511,17 +1523,26 @@ class PanamaOps implements TensorOps {
                 float scale = weightScale.get(bRow, Q4Layout.blockIndex(bColumn));
                 ByteVector packedWeights = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, b.memorySegment(),
                         memoryOffset(b, bRow, bColumn), ByteOrder.LITTLE_ENDIAN);
-                FloatVector low = (FloatVector) packedWeights.lanewise(VectorOperators.AND, Q4_MASK)
-                        .sub(Q4_ZERO).convertShape(VectorOperators.B2F, FloatVector.SPECIES_512, 0);
-                FloatVector high = (FloatVector) packedWeights.lanewise(VectorOperators.ASHR, Q4_SHIFT)
-                        .lanewise(VectorOperators.AND, Q4_MASK).sub(Q4_ZERO)
-                        .convertShape(VectorOperators.B2F, FloatVector.SPECIES_512, 0);
-                FloatVector inputLow = bf16Vector512(a, aRow, aColumn);
-                FloatVector inputHigh = bf16Vector512(a, aRow, aColumn + Q4Layout.HALF_BLOCK);
-                sum = FloatVector.broadcast(FloatVector.SPECIES_512, scale)
-                        .fma(low.mul(inputLow).add(high.mul(inputHigh)), sum);
+                ByteVector lowBytes = packedWeights.lanewise(VectorOperators.AND, Q4_MASK).sub(Q4_ZERO);
+                ByteVector highBytes = packedWeights.lanewise(VectorOperators.ASHR, Q4_SHIFT)
+                        .lanewise(VectorOperators.AND, Q4_MASK).sub(Q4_ZERO);
+                FloatVector low0 = (FloatVector) lowBytes.convertShape(VectorOperators.B2F,
+                        FloatVector.SPECIES_256, 0);
+                FloatVector low1 = (FloatVector) lowBytes.convertShape(VectorOperators.B2F,
+                        FloatVector.SPECIES_256, 1);
+                FloatVector high0 = (FloatVector) highBytes.convertShape(VectorOperators.B2F,
+                        FloatVector.SPECIES_256, 0);
+                FloatVector high1 = (FloatVector) highBytes.convertShape(VectorOperators.B2F,
+                        FloatVector.SPECIES_256, 1);
+                sum += scale * low0.mul(bf16Vector(a, aRow, aColumn)).reduceLanes(VectorOperators.ADD);
+                sum += scale * low1.mul(bf16Vector(a, aRow, aColumn + 8))
+                        .reduceLanes(VectorOperators.ADD);
+                sum += scale * high0.mul(bf16Vector(a, aRow, aColumn + Q4Layout.HALF_BLOCK))
+                        .reduceLanes(VectorOperators.ADD);
+                sum += scale * high1.mul(bf16Vector(a, aRow, aColumn + Q4Layout.HALF_BLOCK + 8))
+                        .reduceLanes(VectorOperators.ADD);
             }
-            return sum.reduceLanes(VectorOperators.ADD);
+            return sum;
         }
     }
 
@@ -1575,15 +1596,6 @@ class PanamaOps implements TensorOps {
                 .convertShape(VectorOperators.S2I, IntVector.SPECIES_256, 0)
                 .lanewise(VectorOperators.AND, IntVector.broadcast(IntVector.SPECIES_256, 0xffff))
                 .lanewise(VectorOperators.LSHL, BF16_BYTE_SHIFT_256)
-                .reinterpretAsFloats();
-    }
-
-    private static FloatVector bf16Vector512(TensorRef tensor, int row, int column) {
-        return ShortVector.fromMemorySegment(ShortVector.SPECIES_256, tensor.memorySegment(),
-                        memoryOffset(tensor, row, column), ByteOrder.LITTLE_ENDIAN)
-                .convertShape(VectorOperators.S2I, IntVector.SPECIES_512, 0)
-                .lanewise(VectorOperators.AND, IntVector.broadcast(IntVector.SPECIES_512, 0xffff))
-                .lanewise(VectorOperators.LSHL, 16)
                 .reinterpretAsFloats();
     }
 

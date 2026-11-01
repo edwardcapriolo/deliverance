@@ -89,6 +89,42 @@ final class NemotronLabsDiffusionRope {
         }
     }
 
+    /** Applies the same YaRN transform directly to the TensorRef execution path. */
+    void apply(TensorRef query, TensorRef key, int startPosition, int queryHeads, int keyValueHeads) {
+        Preconditions.checkArgument(query.dims() == 2 && key.dims() == 2, "query/key must be 2D");
+        Preconditions.checkArgument(query.shape().first() == key.shape().first(), "query/key rows must match");
+        int half = rotaryDim / 2;
+        for (int row = 0; row < query.shape().first(); row++) {
+            int absolutePosition = startPosition + row;
+            applyToTensor(query, row, absolutePosition, queryHeads);
+            applyToTensor(key, row, absolutePosition, keyValueHeads);
+            float queryScale = llama4QueryScale(absolutePosition);
+            if (queryScale != 1.0f) {
+                for (int column = 0; column < queryHeads * headDim; column++) {
+                    query.set(query.get(row, column) * queryScale, row, column);
+                }
+            }
+        }
+    }
+
+    private void applyToTensor(TensorRef tensor, int row, int absolutePosition, int heads) {
+        int half = rotaryDim / 2;
+        for (int i = 0; i < half; i++) {
+            float angle = absolutePosition * invFreq[i];
+            float cos = (float) FastMath.cos(angle) * attentionScaling;
+            float sin = (float) FastMath.sin(angle) * attentionScaling;
+            for (int head = 0; head < heads; head++) {
+                int headOffset = head * headDim;
+                int xOffset = headOffset + i;
+                int yOffset = headOffset + i + half;
+                float x = tensor.get(row, xOffset);
+                float y = tensor.get(row, yOffset);
+                tensor.set(x * cos - y * sin, row, xOffset);
+                tensor.set(y * cos + x * sin, row, yOffset);
+            }
+        }
+    }
+
     private void applyToTensor(AbstractTensor tensor, int row, int absolutePosition, int heads) {
         int half = rotaryDim / 2;
         for (int i = 0; i < half; i++) {

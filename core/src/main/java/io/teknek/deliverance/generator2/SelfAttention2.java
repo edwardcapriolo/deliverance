@@ -3,6 +3,7 @@ package io.teknek.deliverance.generator2;
 import io.teknek.deliverance.generator.ForwardPhase;
 import io.teknek.deliverance.tensor.KvBufferCache;
 import io.teknek.deliverance.tensor.kv.KvCacheSession;
+import io.teknek.deliverance.tensor.kv.CacheExecutionMode;
 import io.teknek.deliverance.tensor2.TensorRef;
 
 import java.util.List;
@@ -26,6 +27,12 @@ public interface SelfAttention2 {
     default TensorRef forward(TensorRef input, int startPosition, KvCacheSession kvSession,
             Optional<Consumer<List<TensorRef>>> tensorReducer, ForwardPhase phase, int batchSize,
             int sequenceLength, int[] attentionMask) {
+        return forward(input, startPosition, kvSession, tensorReducer, phase);
+    }
+
+    default TensorRef forward(TensorRef input, int startPosition, KvCacheSession kvSession,
+            Optional<Consumer<List<TensorRef>>> tensorReducer, ForwardPhase phase,
+            CacheExecutionMode mode) {
         return forward(input, startPosition, kvSession, tensorReducer, phase);
     }
 }

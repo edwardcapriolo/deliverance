@@ -1044,6 +1044,20 @@ void gpu_gemm(int64_t scratch_id, int64_t shader, const void *a, const void *a2,
     release_tensor(B2_registered_buffer);
 }
 
+void tensor2_gpu_batch_dot_i8_q4(int64_t scratch_id, int64_t shader, const void *a, const void *a2,
+        int aoffset, int alimit, int64_t bid, int64_t bid2, int boffset, int blimit, float *r,
+        int roffset, int rlimit, int m, int n0, int n, int k, int lda, int ldb, int ldc) {
+    gpu_gemm(scratch_id, shader, a, a2, aoffset, alimit, bid, bid2, boffset, blimit, r,
+            roffset, rlimit, m, n0, n, k, lda, ldb, ldc, 0);
+}
+
+void tensor2_gpu_batch_dot_f32_q4(int64_t scratch_id, int64_t shader, const void *a, int aoffset, int alimit,
+        int64_t bid, int64_t bid2, int boffset, int blimit, float *r, int roffset, int rlimit,
+        int m, int n0, int n, int k, int lda, int ldb, int ldc) {
+    gpu_gemm(scratch_id, shader, a, NULL, aoffset, alimit, bid, bid2, boffset, blimit, r,
+            roffset, rlimit, m, n0, n, k, lda, ldb, ldc, 0);
+}
+
 void gpu_gemm_batch(int64_t scratch_id, int64_t shader, int batch_num, const void *a, const void *a2, int aoffset, int alimit, const int64_t *bid, const int64_t *bid2, int boffset, int blimit, float **r, int roffset, int rlimit, int m, int n0, int n, int k, int lda, int ldb, int ldc, int m1_optimized) {
     WGPUShaderModule shader_module = shader_lookup[shader];
     assert(shader_module);

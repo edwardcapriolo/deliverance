@@ -52,6 +52,7 @@ class Tensor2LighterBatchDotProductFuzzTest {
             GemmKernel kernel) {
         Lighter expected = naiveOnly();
         Lighter actual = candidate.lighter();
+        long gpuCallsBefore = GpuOps.gpuCalls();
         try (TensorRef expectedA = sharedOperand(expected, DType.I8, c.aRows(), c.aColumns(), c.seed(), false);
              TensorRef expectedB = sharedOperand(expected, DType.Q4, c.bRows(), c.bColumns(), c.seed() + 17, true);
              TensorRef expectedResult = expected.allocate(DType.F32, TensorShape.of(c.resultRows(), c.resultColumns()));
@@ -65,6 +66,9 @@ class Tensor2LighterBatchDotProductFuzzTest {
                     assertEquals(expectedResult.get(row, column), actualResult.get(row, column), 0.30f,
                             c + " " + candidate.name() + " row=" + row + " column=" + column);
                 }
+            }
+            if (candidate.name().equals("GPU")) {
+                assertEquals(gpuCallsBefore + 1, GpuOps.gpuCalls(), "GPU provider counter " + c);
             }
         }
     }
@@ -219,8 +223,11 @@ class Tensor2LighterBatchDotProductFuzzTest {
         Candidate simd = new Candidate("SIMD", NativeOps.isAvailable(), () -> new Lighter(nullMetricRegistry(), Map.of(
                 TensorProviderKind.SIMD, new NativeOps(), TensorProviderKind.PANAMA, new PanamaOps(),
                 TensorProviderKind.NAIVE, new NaiveOps())));
+        Candidate gpu = new Candidate("GPU", GpuOps.isAvailable(), () -> new Lighter(nullMetricRegistry(), Map.of(
+                TensorProviderKind.GPU, new GpuOps(), TensorProviderKind.PANAMA, new PanamaOps(),
+                TensorProviderKind.NAIVE, new NaiveOps())));
         return BatchDotProductFuzzCases.sharedI8Q4Cases()
-                .flatMap(args -> Stream.of(panama, simd).filter(Candidate::enabled).flatMap(candidate -> kernelsFor((BatchDotProductFuzzCases.Case) args.get()[0], DType.I8,
+                .flatMap(args -> Stream.of(panama, simd, gpu).filter(Candidate::enabled).flatMap(candidate -> kernelsFor((BatchDotProductFuzzCases.Case) args.get()[0], DType.I8,
                         DType.Q4, DType.F32).stream()
                         .map(kernel -> Arguments.of(args.get()[0], candidate, kernel))));
     }
