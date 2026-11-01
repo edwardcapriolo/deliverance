@@ -869,8 +869,9 @@ public class AutoModelForCausaLm {
                         tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
                 case "MIXTRAL" -> new MixtralModel(inferenceType, config, weightLoader,
-                        tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
-                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                        tokenizer, workingMem, workingQuant, effectiveModelQType, mr, settings,
+                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization,
+                        lighter);
                 case "GRANITEMOEHYBRID" -> new GraniteMoeHybridModel(inferenceType,
                         config, weightLoader, tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr,
                         allocator, settings, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives,
