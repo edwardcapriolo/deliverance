@@ -733,6 +733,9 @@ public class Lighter {
         Preconditions.checkArgument(output != null, "Output tensor must be set");
         Preconditions.checkArgument(input != null, "Input tensor must be set");
         Preconditions.checkArgument(weights != null, "Weights tensor must be set");
+        Preconditions.checkArgument(output.device().equals(input.device())
+                        && output.device().equals(weights.device()),
+                "Tensors must be on the same device");
         Preconditions.checkArgument(output.dims() == 2 && input.dims() == 2 && weights.dims() == 2,
                 "dotProductRows requires 2D tensors");
         Preconditions.checkArgument(output.shape().first() == input.shape().first(),

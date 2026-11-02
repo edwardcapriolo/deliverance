@@ -46,6 +46,8 @@ public final class GpuOps implements TensorOps, AutoCloseable {
         if (operation.result().dType() != DType.F32 || operation.a().dType() != DType.I8
                 && operation.a().dType() != DType.F32 || operation.b().dType() != DType.Q4 || operation.a().dims() != 2
                 || operation.b().dims() != 2 || operation.result().dims() != 2
+                || !"gpu".equals(operation.a().device()) || !"gpu".equals(operation.b().device())
+                || !"gpu".equals(operation.result().device())
                 || !aligned(operation) || operation.rowChunkSize() <= 0) {
             return Either.Left(OpSupport.Unsupported);
         }
