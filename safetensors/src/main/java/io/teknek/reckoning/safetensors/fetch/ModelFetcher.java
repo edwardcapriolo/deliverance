@@ -30,6 +30,7 @@ public class ModelFetcher {
     }
 
     protected Path baseDir;
+    protected Path legacyBaseDir;
     protected String owner;
     protected String name;
     protected String token;
@@ -44,7 +45,8 @@ public class ModelFetcher {
         this.owner = owner;
         this.name = name;
         String home = System.getProperty("user.home");
-        baseDir = Path.of(home, ".deliverance");
+        baseDir = Path.of(home, ".reckoning");
+        legacyBaseDir = Path.of(home, ".deliverance");
         token = System.getenv(HF_TOKEN);
         String tokenProp = System.getProperty(HF_PROP);
         if (tokenProp != null) {
@@ -64,7 +66,7 @@ public class ModelFetcher {
     public File maybeDownload(FetchPolicy fetchPolicy){
         if (!Files.exists(baseDir)){
             try {
-                Files.createDirectory(baseDir);
+                Files.createDirectories(baseDir);
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
@@ -72,6 +74,10 @@ public class ModelFetcher {
         Path modelDir = pathForModel();
         if (isLocallyComplete(fetchPolicy, modelDir)) {
             return modelDir.toFile();
+        }
+        Path legacyModelDir = legacyPathForModel();
+        if (isLocallyComplete(fetchPolicy, legacyModelDir)) {
+            return legacyModelDir.toFile();
         }
         if (!download) {
             throw new IllegalStateException("Model is not available locally and downloads are disabled: " + modelDir);
@@ -92,6 +98,11 @@ public class ModelFetcher {
      */
     public Path pathForModel(){
         return Paths.get(baseDir.toString(), owner + "_" + name);
+    }
+
+    /** Returns the pre-Reckoning cache location without making it the write destination. */
+    protected Path legacyPathForModel() {
+        return legacyBaseDir.resolve(pathForModel().getFileName());
     }
 
     public String owner() {

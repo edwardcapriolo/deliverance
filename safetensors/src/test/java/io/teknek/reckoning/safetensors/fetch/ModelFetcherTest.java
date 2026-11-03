@@ -223,6 +223,52 @@ public class ModelFetcherTest {
         Assertions.assertEquals(modelDir.toFile(), local);
     }
 
+    @Test
+    void readsCompleteLegacyDeliveranceCache() throws Exception {
+        Path home = Files.createTempDirectory("fetcher-legacy-home");
+        String previousHome = System.getProperty("user.home");
+        try {
+            System.setProperty("user.home", home.toString());
+            ModelFetcher fetch = new ModelFetcher("legacy", "model").withDownload(false);
+            Path modelDir = home.resolve(".deliverance").resolve("legacy_model");
+            Files.createDirectories(modelDir);
+            Files.writeString(modelDir.resolve("config.json"), "{}");
+            Files.writeString(modelDir.resolve("tokenizer.json"), "{}");
+            Files.writeString(modelDir.resolve("model.safetensors.index.json"), "{}");
+
+            Assertions.assertEquals(modelDir.toFile(), fetch.maybeDownload());
+            Assertions.assertEquals(home.resolve(".reckoning").resolve("legacy_model"), fetch.pathForModel());
+        } finally {
+            if (previousHome == null) {
+                System.clearProperty("user.home");
+            } else {
+                System.setProperty("user.home", previousHome);
+            }
+        }
+    }
+
+    @Test
+    void incompleteLegacyCacheDoesNotBecomeWriteDestination() throws Exception {
+        Path home = Files.createTempDirectory("fetcher-new-home");
+        String previousHome = System.getProperty("user.home");
+        try {
+            System.setProperty("user.home", home.toString());
+            ModelFetcher fetch = new ModelFetcher("new", "model").withDownload(false);
+            Path legacyModelDir = home.resolve(".deliverance").resolve("new_model");
+            Files.createDirectories(legacyModelDir);
+            Files.writeString(legacyModelDir.resolve("config.json"), "{}");
+
+            IllegalStateException ex = Assertions.assertThrows(IllegalStateException.class, fetch::maybeDownload);
+            Assertions.assertTrue(ex.getMessage().contains(home.resolve(".reckoning").resolve("new_model").toString()));
+        } finally {
+            if (previousHome == null) {
+                System.clearProperty("user.home");
+            } else {
+                System.setProperty("user.home", previousHome);
+            }
+        }
+    }
+
     private static void assertDownloaded(File modelDir, String name) {
         File file = modelDir.toPath().resolve(name).toFile();
         Assertions.assertTrue(file.isFile() && file.length() > 0,
