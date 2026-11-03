@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
+import java.util.ArrayList;
 
 @RestController
 public class ModelController {
@@ -28,6 +29,7 @@ public class ModelController {
     public ListModelsResponse listModels(){
         ListModelsResponse response = new ListModelsResponse();
         response._object(ListModelsResponse.ObjectEnum.LIST);
+        response.data(new ArrayList<>());
         for (Map.Entry<MultiModelConfig, CausalLanguageModel> model : causalLanguageModels.entrySet()){
             response.addDataItem(new Model()
                     .ownedBy(model.getKey().getModelOwner())

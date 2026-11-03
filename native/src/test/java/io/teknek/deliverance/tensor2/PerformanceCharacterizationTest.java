@@ -4,6 +4,7 @@ import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.TensorShape;
 import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -20,6 +21,7 @@ import java.util.stream.Stream;
  * using deterministic synthetic tensors so the kernel strategies can be compared without a model
  * download.</p>
  */
+@Tag("large-model")
 class PerformanceCharacterizationTest {
     private static final int WARMUPS = 2;
     private static final int REPETITIONS = 8;
