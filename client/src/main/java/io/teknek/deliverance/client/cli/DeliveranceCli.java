@@ -1,4 +1,4 @@
-package io.teknek.deliverance.inferj;
+package io.teknek.deliverance.client.cli;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -20,10 +20,10 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 
-public final class InferjCli {
+public final class DeliveranceCli {
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    private InferjCli() {
+    private DeliveranceCli() {
     }
 
     public static void main(String[] args) throws Exception {
@@ -32,35 +32,30 @@ public final class InferjCli {
             usage();
             return;
         }
-
-        String command = args[0];
         Options options = Options.parse(args);
         ModelsApi api = modelsApi(options.endpoint());
-        switch (command) {
+        switch (options.command()) {
             case "fetch" -> fetch(api, options);
             case "serve" -> serve(api, options);
-            default -> throw new IllegalArgumentException("Unknown command: " + command);
+            default -> throw new IllegalArgumentException("Unknown command: " + options.command());
         }
     }
 
     private static void fetch(ModelsApi api, Options options) throws IOException {
         Response<FetchResponse> response = api.fetchModel(new FetchRequest()
-                .owner(options.owner())
-                .name(options.name())).execute();
+                .owner(options.owner()).name(options.name())).execute();
         requireSuccess(response, "fetch");
         FetchResponse body = response.body();
         System.out.println("Fetched " + body.getOwner() + "/" + body.getName());
     }
 
     private static void serve(ModelsApi api, Options options) throws IOException {
-        ServeRequest request = new ServeRequest()
-                .owner(options.owner())
-                .name(options.name())
+        ServeRequest request = new ServeRequest().owner(options.owner()).name(options.name())
                 .type(ServeRequest.TypeEnum.valueOf(options.type().toUpperCase()));
         if (options.configJson() != null) {
-            request.config(JSON.readValue(options.configJson(), new TypeReference<Map<String, Object>>() {}));
+            request.config(JSON.readValue(options.configJson(), new TypeReference<Map<String, Object>>() { }));
         } else if (options.configFile() != null) {
-            request.config(JSON.readValue(Files.readString(options.configFile()), new TypeReference<Map<String, Object>>() {}));
+            request.config(JSON.readValue(Files.readString(options.configFile()), new TypeReference<Map<String, Object>>() { }));
         }
         Response<ServeResponse> response = api.serveModel(request).execute();
         requireSuccess(response, "serve");
@@ -69,9 +64,7 @@ public final class InferjCli {
     }
 
     private static void requireSuccess(Response<?> response, String operation) throws IOException {
-        if (response.isSuccessful() && response.body() != null) {
-            return;
-        }
+        if (response.isSuccessful() && response.body() != null) return;
         String detail = response.errorBody() == null ? response.message() : response.errorBody().string();
         throw new IOException(operation + " failed (HTTP " + response.code() + "): " + detail);
     }
@@ -88,42 +81,32 @@ public final class InferjCli {
 
     private static void usage() {
         System.out.println("Usage:");
-        System.out.println("  inferj-cli fetch OWNER MODEL [--endpoint URL]");
-        System.out.println("  inferj-cli serve OWNER MODEL --type TYPE [--config-json JSON] [--config FILE]");
+        System.out.println("  deliverance fetch OWNER MODEL [--endpoint URL]");
+        System.out.println("  deliverance serve OWNER MODEL --type TYPE [--config-json JSON] [--config FILE]");
     }
 
-    private record Options(String endpoint, String owner, String name, String type,
+    private record Options(String command, String endpoint, String owner, String name, String type,
                            String configJson, Path configFile) {
         static Options parse(String[] args) {
-            if (args.length < 3) {
-                throw new IllegalArgumentException("owner and model are required");
-            }
-            String endpoint = "http://localhost:8080";
-            String type = null;
-            String configJson = null;
-            Path configFile = null;
+            if (args.length < 3) throw new IllegalArgumentException("owner and model are required");
             Map<String, String> flags = new HashMap<>();
             for (int i = 3; i < args.length; i++) {
-                String arg = args[i];
-                if (!arg.startsWith("--") || i + 1 >= args.length) {
-                    throw new IllegalArgumentException("Invalid option: " + arg);
+                if (!args[i].startsWith("--") || i + 1 >= args.length) {
+                    throw new IllegalArgumentException("Invalid option: " + args[i]);
                 }
-                flags.put(arg, args[++i]);
+                flags.put(args[i], args[++i]);
             }
-            endpoint = flags.getOrDefault("--endpoint", endpoint);
-            type = flags.get("--type");
-            configJson = flags.get("--config-json");
+            String type = flags.get("--type");
+            String configJson = flags.get("--config-json");
             String configPath = flags.get("--config");
-            if (configPath != null) {
-                configFile = Path.of(configPath);
-            }
             if ("serve".equals(args[0]) && type == null) {
                 throw new IllegalArgumentException("--type is required for serve");
             }
-            if (configJson != null && configFile != null) {
+            if (configJson != null && configPath != null) {
                 throw new IllegalArgumentException("use either --config-json or --config");
             }
-            return new Options(endpoint, args[1], args[2], type, configJson, configFile);
+            return new Options(args[0], flags.getOrDefault("--endpoint", "http://localhost:8080"),
+                    args[1], args[2], type, configJson, configPath == null ? null : Path.of(configPath));
         }
     }
 }
