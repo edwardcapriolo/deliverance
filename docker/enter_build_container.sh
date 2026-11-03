@@ -1,1 +1,1 @@
-docker run -it --entrypoint /bin/ash deliverance-base
+docker run -it --entrypoint /bin/ash reckoning-base

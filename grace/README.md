@@ -1,6 +1,6 @@
 # grace
 
-`grace` is Deliverance's tokenizer and prompt-processing module.
+`grace` is Reckoning's tokenizer and prompt-processing module.
 
 It is intended to be a fuller-featured alternative to the older lightweight tokenizer path that lives in `core`, especially for modern Hugging Face tokenizers and prompt templates.
 

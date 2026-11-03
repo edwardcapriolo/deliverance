@@ -25,13 +25,13 @@ Guided decoding is one of the things that makes the inference engine a "real" in
 an inference engine in a programmatic workflow like an agent framework, the components typically need to 
 exchange messages matching exact schema. If they want JSON in a specific format, a run-on blob of text won't work.
 
-Deliverance now has support for the guided decoding options: Guided Choice, Guided Regex, and one 
+Reckoning now has support for the guided decoding options: Guided Choice, Guided Regex, and one 
 of the most powerful Guided JSON.  
 
 
 ## 2. Guided Choice First Implementation
 
-The first guided decoding feature in Deliverance was guided choice.
+The first guided decoding feature in Reckoning was guided choice.
 
 The idea is simple: if the user says the answer must be one of a small set of strings, the sampler should only choose tokens that can still lead to one of those strings.
 
@@ -86,7 +86,7 @@ So after the model has generated `a`, the guide knows that only `b` or `c` can c
 
 That is the bridge to guided regex. A regex becomes an automaton. The automaton becomes token transitions. The sampler uses those transitions to decide which token ids are allowed.
 
-Deliverance's flow is:
+Reckoning's flow is:
 
 ```text
 regex + Vocabulary
@@ -209,7 +209,7 @@ larger schemas
 polymorphic cat/dog style schemas
 ```
 
-The inference profiler now shows guided decoding costs directly. The benchmark showed the important cost pattern: guided decoding runtime is mostly normal inference, but setup can matter. That is why Deliverance caches JSON-schema-to-regex and per-model regex indexes.
+The inference profiler now shows guided decoding costs directly. The benchmark showed the important cost pattern: guided decoding runtime is mostly normal inference, but setup can matter. That is why Reckoning caches JSON-schema-to-regex and per-model regex indexes.
 
 For the technical metric names and profiling rows, see [Guided generation](guided_generation.md).
 
@@ -217,7 +217,7 @@ This is no longer a toy feature. We can run it against quantized Qwen3 and see w
 
 ## 7. How Far We Have Come
 
-Deliverance did not start with the standard inference-engine feature set. It grew into it.
+Reckoning did not start with the standard inference-engine feature set. It grew into it.
 
 There was a time when generation was basically greedy sampling. Now the sampler supports the features users expect from serious inference engines:
 
@@ -237,7 +237,7 @@ guided JSON
 
 See [Generator sampling](generator_sampling.md) for temperature, top-p / nucleus sampling, top-k, logprobs, top logprobs, and XTC / exclude top choice.
 
-That matters because modern inference engines are not just matrix multiplication loops. They are request processors. The center of that in Deliverance is `GeneratorParameters`: the object that collects the knobs a real application needs for one generation request.
+That matters because modern inference engines are not just matrix multiplication loops. They are request processors. The center of that in Reckoning is `GeneratorParameters`: the object that collects the knobs a real application needs for one generation request.
 
 `GeneratorParameters` now covers the kind of controls people expect from a serious local inference engine:
 
@@ -251,7 +251,7 @@ new GeneratorParameters()
         .withGuidedRegex("TICKET-[0-9]{4}");
 ```
 
-Add the industry-standard chat API, tool calls, reasoning fields, streaming, and guided JSON on top of that, and it starts to feel a lot less like a toy local runner and a lot more like the core feature set of the major inference engines. Holy crap, Deliverance is getting pretty close.
+Add the industry-standard chat API, tool calls, reasoning fields, streaming, and guided JSON on top of that, and it starts to feel a lot less like a toy local runner and a lot more like the core feature set of the major inference engines. Holy crap, Reckoning is getting pretty close.
 
 Guided BNF / CFG is still missing, but the current `Guide` / `Index` structure is the place it will fit.
 
@@ -263,6 +263,6 @@ Related feature docs:
 - [Tool call parser](tool_parser.md)
 - [Reasoning field support](reasoning_field_support.md)
 
-The goal is not only to chase giant-server inference stacks. Deliverance is optimized for the common case: local hardware, practical quantized models, CPU-first execution, and users who want control without a massive serving platform.
+The goal is not only to chase giant-server inference stacks. Reckoning is optimized for the common case: local hardware, practical quantized models, CPU-first execution, and users who want control without a massive serving platform.
 
-Guided decoding is another step in that direction. It turns Deliverance from "a thing that can run a model" into a more complete inference engine: one that can sample flexibly, shape outputs, measure costs, and expose modern structured-generation features on normal hardware.
+Guided decoding is another step in that direction. It turns Reckoning from "a thing that can run a model" into a more complete inference engine: one that can sample flexibly, shape outputs, measure costs, and expose modern structured-generation features on normal hardware.

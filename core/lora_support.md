@@ -1,10 +1,10 @@
 # LoRA / PEFT Adapter Support
 
-Deliverance is adding support for LoRA (Low-Rank Adaptation) adapters in the standard
+Reckoning is adding support for LoRA (Low-Rank Adaptation) adapters in the standard
 HuggingFace PEFT format. The goal is to let a single resident base model take on specialized
 behavior — a particular skill, style, or persona — by loading a small adapter file on top of
 it, instead of downloading and holding a second full multi-gigabyte checkpoint per variant.
-This page is written for readers who know Deliverance but have never worked with LoRA/PEFT
+This page is written for readers who know Reckoning but have never worked with LoRA/PEFT
 adapters before.
 
 ## What Is A LoRA Adapter?
@@ -31,13 +31,13 @@ model, and it does not duplicate the base model's weights.
   base model loaded and switch which adapter is applied per request, rather than loading a
   different full model for each behavior.
 - **Standard, portable format**: adapters trained anywhere in the HuggingFace PEFT ecosystem
-  should work with Deliverance's support, without a Deliverance-specific training or export
+  should work with Reckoning's support, without a Reckoning-specific training or export
   step.
 
 ## Current Status
 
 **This is not usable for inference today.** As of this doc, only adapter *parsing* has landed
-([#153](https://github.com/edwardcapriolo/deliverance/pull/153)): Deliverance can fetch a PEFT
+([#153](https://github.com/edwardcapriolo/reckoning/pull/153)): Reckoning can fetch a PEFT
 adapter repository, parse its `adapter_config.json`, and read the low-rank weight deltas out of
 its `adapter_model.safetensors` file. Nothing in model loading or generation consumes an adapter
 yet — there is no way to actually apply one to a running model. Treat the feature as
@@ -45,7 +45,7 @@ in-progress, not available.
 
 ## Roadmap
 
-1. **Adapter parsing** — done. Deliverance can read an adapter's config and weights into memory
+1. **Adapter parsing** — done. Reckoning can read an adapter's config and weights into memory
    and validate them against the adapter's own declared shape.
 2. **Merge-at-load (Phase 1)** — planned next. The adapter's weights are merged into a copy of
    the base model's weights when the model is loaded, producing a single adapted model. This is
@@ -73,11 +73,11 @@ in-progress, not available.
 - **Hot-swap**: applying (or switching) an adapter against a resident base model at inference
   time, without merging into a persistent copy of the weights (Phase 2).
 - **PEFT**: HuggingFace's "Parameter-Efficient Fine-Tuning" library and adapter format;
-  Deliverance's adapter support targets PEFT's standard output format.
+  Reckoning's adapter support targets PEFT's standard output format.
 
 ## Where This Comes From
 
-Deliverance's adapter support targets the standard HuggingFace PEFT adapter layout: an
+Reckoning's adapter support targets the standard HuggingFace PEFT adapter layout: an
 `adapter_config.json` file alongside an `adapter_model.safetensors` file. For the deeper
 mechanics of LoRA and PEFT — the math behind the low-rank decomposition, how adapters are
 trained — see [HuggingFace's PEFT documentation](https://huggingface.co/docs/peft/index),

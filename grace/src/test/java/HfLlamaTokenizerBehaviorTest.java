@@ -1,5 +1,5 @@
-import io.teknek.deliverance.grace.AutoTokenizer;
-import io.teknek.deliverance.grace.PreTrainedTokenizer;
+import io.teknek.reckoning.grace.AutoTokenizer;
+import io.teknek.reckoning.grace.PreTrainedTokenizer;
 
 /** Llama-specific padding behavior used by causal Sentence-Transformers models. */
 public class HfLlamaTokenizerBehaviorTest implements HfTokenizerBehaviorContract {
@@ -22,7 +22,7 @@ public class HfLlamaTokenizerBehaviorTest implements HfTokenizerBehaviorContract
 
     @Override
     public int[] sampleTokenIds() {
-        return tokenizer().encode("This is a test", io.teknek.deliverance.grace.EncodeOptions.defaults()
+        return tokenizer().encode("This is a test", io.teknek.reckoning.grace.EncodeOptions.defaults()
                 .withoutSpecialTokens()).inputIds();
     }
 }

@@ -1,6 +1,6 @@
 # Benchmarking
 
-Deliverance includes a benchmark runner and several shell scripts for repeatable local inference tests. The runner is `io.teknek.deliverance.benchmark.InferenceBenchmark`; the scripts wrap it with the JVM flags, native-library paths, and model defaults we use most often.
+Reckoning includes a benchmark runner and several shell scripts for repeatable local inference tests. The runner is `io.teknek.reckoning.benchmark.InferenceBenchmark`; the scripts wrap it with the JVM flags, native-library paths, and model defaults we use most often.
 
 For the complete CLI reference, see [Inference Benchmark](InferenceBenchmark.md). This page is the practical guide for the scripts and the benchmark workflow.
 
@@ -22,10 +22,10 @@ native/target/native-lib-only/linux-aarch_64
 You can override classifier detection with:
 
 ```sh
-DELIVERANCE_NATIVE_CLASSIFIER=osx-aarch_64 ./benchmarks/run-qwen-single-benchmark.sh
+RECKONING_NATIVE_CLASSIFIER=osx-aarch_64 ./benchmarks/run-qwen-single-benchmark.sh
 ```
 
-Most scripts accept extra benchmark arguments through `DELIVERANCE_BENCHMARK_ARGS`. Setting this variable replaces the script's default benchmark argument block.
+Most scripts accept extra benchmark arguments through `RECKONING_BENCHMARK_ARGS`. Setting this variable replaces the script's default benchmark argument block.
 
 ## Main Scripts
 
@@ -71,10 +71,10 @@ Outputs:
 Pass `--profile-stages` (on by default in the script) to also print `[profile]` timing summaries
 per case/variant, using the same `InferenceProfiler` instrumentation the other benchmarks use.
 
-Override the model/adapter pairing with `DELIVERANCE_BENCHMARK_ARGS`:
+Override the model/adapter pairing with `RECKONING_BENCHMARK_ARGS`:
 
 ```sh
-DELIVERANCE_BENCHMARK_ARGS="--owner tjake --model gemma-2-2b-it --adapter-owner someuser --adapter-model some-lora-adapter --output target/gemma-lora.csv --jsonl-output target/gemma-lora.jsonl --max-tokens 128 --profile-stages" \
+RECKONING_BENCHMARK_ARGS="--owner tjake --model gemma-2-2b-it --adapter-owner someuser --adapter-model some-lora-adapter --output target/gemma-lora.csv --jsonl-output target/gemma-lora.jsonl --max-tokens 128 --profile-stages" \
 ./benchmarks/run-lora-adapter-benchmark.sh
 ```
 
@@ -102,18 +102,18 @@ Default benchmark options include:
 --max-tokens 256
 --warmup-cases 0
 --profile-stages
---output target/deliverance-single-benchmark.csv
---jsonl-output target/deliverance-single-benchmark.jsonl
+--output target/reckoning-single-benchmark.csv
+--jsonl-output target/reckoning-single-benchmark.jsonl
 ```
 
 Use this script for quick Qwen3 smoke/performance checks. For QOD-generated models, pass the generated target model name:
 
 ```sh
-DELIVERANCE_BENCHMARK_ARGS="--output-head-quantization Q4 --pool-size 16 --max-tokens 256 --warmup-cases 0 --profile-stages --output target/qwen4b-qod.csv --jsonl-output target/qwen4b-qod.jsonl" \
+RECKONING_BENCHMARK_ARGS="--output-head-quantization Q4 --pool-size 16 --max-tokens 256 --warmup-cases 0 --profile-stages --output target/qwen4b-qod.csv --jsonl-output target/qwen4b-qod.jsonl" \
 ./benchmarks/run-qwen-single-benchmark.sh
 ```
 
-If you need to change owner/model, run `InferenceBenchmark` directly or adjust the script; the Qwen JQ4 scripts now default to the uploaded `edwardcapriolo/Qwen3-*-JQ4` repositories before `DELIVERANCE_BENCHMARK_ARGS`.
+If you need to change owner/model, run `InferenceBenchmark` directly or adjust the script; the Qwen JQ4 scripts now default to the uploaded `edwardcapriolo/Qwen3-*-JQ4` repositories before `RECKONING_BENCHMARK_ARGS`.
 
 ### Nemotron AR And Diffusion Q4 Benchmarks
 
@@ -152,7 +152,7 @@ The diffusion script uses `benchmarks/configs/nemotron-labs-diffusion-3b-base-jq
 ### Gemma2 Single-Model Benchmark
 
 ```sh
-./benchmarks/run-deliverance-single-benchmark.sh
+./benchmarks/run-reckoning-single-benchmark.sh
 ```
 
 Default model:
@@ -166,7 +166,7 @@ This is the baseline single-process native SIMD benchmark. It writes CSV and JSO
 ### Gemma2 Tensor-Parallel Benchmark
 
 ```sh
-./benchmarks/run-deliverance-benchmark.sh
+./benchmarks/run-reckoning-benchmark.sh
 ```
 
 Default tensor-parallel options include:
@@ -186,10 +186,10 @@ This runs the local in-process tensor-parallel path with HTTP collectives. It is
 ### Netty Tensor-Parallel Benchmark
 
 ```sh
-./run-deliverance-netty-benchmark.sh
+./run-reckoning-netty-benchmark.sh
 ```
 
-This is the same broad shape as `benchmarks/run-deliverance-benchmark.sh`, but uses:
+This is the same broad shape as `benchmarks/run-reckoning-benchmark.sh`, but uses:
 
 ```text
 --tensor-parallel-collective-transport netty
@@ -200,7 +200,7 @@ Use it when comparing collective transport overhead.
 ### Panama Benchmark
 
 ```sh
-./run-deliverance-panama-benchmark.sh
+./run-reckoning-panama-benchmark.sh
 ```
 
 This script does not set `java.library.path` or `-Dexec.classpathScope=test`. It is useful when you want to compare the Panama/vector path rather than native SIMD.
@@ -208,7 +208,7 @@ This script does not set `java.library.path` or `-Dexec.classpathScope=test`. It
 ### Mixtral Benchmark
 
 ```sh
-./run-deliverance-mixtral-benchmark.sh
+./run-reckoning-mixtral-benchmark.sh
 ```
 
 Default model:
@@ -227,7 +227,7 @@ For anything beyond the script defaults, call the benchmark runner directly. Exa
 mvn -q -pl core \
   -Dexec.classpathScope=test \
   -Dexec.executable=java \
-  -Dexec.args="-Djava.library.path=native/target/native-lib-only/osx-aarch_64 --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.deliverance.benchmark.InferenceBenchmark --engine deliverance --owner edwardcapriolo --model Qwen3-4B-JQ4 --output-head-quantization Q4 --pool-size 16 --max-tokens 256 --warmup-cases 0 --profile-stages --output target/qwen3-4b-jq4.csv --jsonl-output target/qwen3-4b-jq4.jsonl" \
+  -Dexec.args="-Djava.library.path=native/target/native-lib-only/osx-aarch_64 --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.reckoning.benchmark.InferenceBenchmark --engine reckoning --owner edwardcapriolo --model Qwen3-4B-JQ4 --output-head-quantization Q4 --pool-size 16 --max-tokens 256 --warmup-cases 0 --profile-stages --output target/qwen3-4b-jq4.csv --jsonl-output target/qwen3-4b-jq4.jsonl" \
   org.codehaus.mojo:exec-maven-plugin:3.5.0:exec
 ```
 
@@ -235,7 +235,7 @@ Use `exec:exec`, not `exec:java`, so the forked JVM receives the `--add-modules`
 
 ## QOD Benchmark Workflow
 
-The benchmark runner loads model names from the Deliverance cache. It does not currently create a QOD target itself.
+The benchmark runner loads model names from the Reckoning cache. It does not currently create a QOD target itself.
 
 The practical QOD benchmark workflow is:
 
@@ -270,7 +270,7 @@ JSONL output is for qualitative review. Each line records the prompt/request, re
 Each recorded turn prints a compact progress line like:
 
 ```text
-[deliverance] model=edwardcapriolo/Qwen3-0.6B-JQ4 case=builtin-reasoning-1 category=reasoning turn=2 prompt_tokens=405 generated=256 total_ms=13460.8 tok_s=24.62 finish=MAX_TOKENS
+[reckoning] model=edwardcapriolo/Qwen3-0.6B-JQ4 case=builtin-reasoning-1 category=reasoning turn=2 prompt_tokens=405 generated=256 total_ms=13460.8 tok_s=24.62 finish=MAX_TOKENS
 ```
 
 Read this as:
@@ -293,7 +293,7 @@ These profiles are useful for identifying whether time is going into attention, 
 
 ## Interpreting Token Rates
 
-Deliverance response objects include total time and time-to-first-token. For short generations, total average milliseconds per token can look worse because it includes prefill and first-token setup.
+Reckoning response objects include total time and time-to-first-token. For short generations, total average milliseconds per token can look worse because it includes prefill and first-token setup.
 
 For a more useful decode estimate:
 

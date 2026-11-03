@@ -6,8 +6,8 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>io.teknek.deliverance</groupId>
-        <artifactId>deliverance-parent</artifactId>
+        <groupId>io.teknek.reckoning</groupId>
+        <artifactId>reckoning-parent</artifactId>
         <version>0.0.17-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
@@ -137,7 +137,7 @@
                             <shadedClassifierName>all</shadedClassifierName>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>io.teknek.deliverance.client.cli.DeliveranceCli</mainClass>
+                                    <mainClass>io.teknek.reckoning.client.cli.ReckoningCli</mainClass>
                                 </transformer>
                             </transformers>
                         </configuration>
@@ -167,7 +167,7 @@
                             <goal>generate</goal>
                         </goals>
                         <configuration>
-                            <inputSpec>${project.basedir}/../web/deliverance_specification.yaml</inputSpec>
+                            <inputSpec>${project.basedir}/../web/reckoning_specification.yaml</inputSpec>
                             <generatorName>java</generatorName>
                             <library>retrofit2</library>
                             <generateApis>true</generateApis>
@@ -181,9 +181,9 @@
                             <output>${project.build.directory}/generated-sources/openapi</output>
 
                             <!-- Ensure client does NOT clash with web-generated packages -->
-                            <apiPackage>io.teknek.deliverance.client.api</apiPackage>
-                            <modelPackage>io.teknek.deliverance.client.model</modelPackage>
-                            <invokerPackage>io.teknek.deliverance.client.core</invokerPackage>
+                            <apiPackage>io.teknek.reckoning.client.api</apiPackage>
+                            <modelPackage>io.teknek.reckoning.client.model</modelPackage>
+                            <invokerPackage>io.teknek.reckoning.client.core</invokerPackage>
 
                             <configOptions>
                                 <dateLibrary>java8</dateLibrary>

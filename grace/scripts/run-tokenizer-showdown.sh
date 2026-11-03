@@ -21,7 +21,7 @@ echo "== Grace Java =="
 mvn -q -pl grace \
   -Dexec.classpathScope=test \
   -Dexec.executable=java \
-  -Dexec.args="--add-modules jdk.incubator.vector -cp %classpath io.teknek.deliverance.grace.GraceTokenizerBenchmarkMain $COMMON_ARGS" \
+  -Dexec.args="--add-modules jdk.incubator.vector -cp %classpath io.teknek.reckoning.grace.GraceTokenizerBenchmarkMain $COMMON_ARGS" \
   org.codehaus.mojo:exec-maven-plugin:3.5.0:exec
 
 echo "Cooling down for 10 seconds before Hugging Face run..."

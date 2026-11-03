@@ -5,8 +5,8 @@
  */
 public class HfQwen2TokenizerIntegrationTest implements HfTokenizerIntegrationContract {
     @Override
-    public io.teknek.deliverance.grace.AutoTokenizer.OwnerName tokenizerOwnerName() {
-        return new io.teknek.deliverance.grace.AutoTokenizer.OwnerName("Qwen", "Qwen2.5-7B-Instruct");
+    public io.teknek.reckoning.grace.AutoTokenizer.OwnerName tokenizerOwnerName() {
+        return new io.teknek.reckoning.grace.AutoTokenizer.OwnerName("Qwen", "Qwen2.5-7B-Instruct");
     }
 
     @Override

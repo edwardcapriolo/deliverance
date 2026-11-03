@@ -1,6 +1,6 @@
 # JQ4 Tensor Format
 
-JQ4 is Deliverance's safetensors-friendly Q4 model layout. It is not GGUF. It keeps Hugging Face-style model directories and rewrites selected tensors into Deliverance Q4 tensors plus scale sidecars.
+JQ4 is Reckoning's safetensors-friendly Q4 model layout. It is not GGUF. It keeps Hugging Face-style model directories and rewrites selected tensors into Reckoning Q4 tensors plus scale sidecars.
 
 ## Files
 
@@ -15,10 +15,10 @@ model.safetensors.index.json
 README.md
 ```
 
-Deliverance quantized outputs also include:
+Reckoning quantized outputs also include:
 
 ```text
-deliverance-quantization.json
+reckoning-quantization.json
 .finished
 ```
 

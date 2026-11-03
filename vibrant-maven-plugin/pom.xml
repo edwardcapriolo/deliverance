@@ -1,7 +1,7 @@
 <project>
     <parent>
-        <groupId>io.teknek.deliverance</groupId>
-        <artifactId>deliverance-parent</artifactId>
+        <groupId>io.teknek.reckoning</groupId>
+        <artifactId>reckoning-parent</artifactId>
         <version>0.0.17-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
@@ -64,13 +64,13 @@
         </dependency>
 
         <dependency>
-            <groupId>io.teknek.deliverance</groupId>
+            <groupId>io.teknek.reckoning</groupId>
             <artifactId>core</artifactId>
             <version>${project.version}</version>
         </dependency>
 
         <dependency>
-            <groupId>io.teknek.deliverance</groupId>
+            <groupId>io.teknek.reckoning</groupId>
             <artifactId>native</artifactId>
             <version>${project.version}</version>
             <classifier>${os.detected.name}-${os.detected.arch}</classifier>

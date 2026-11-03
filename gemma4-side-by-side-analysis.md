@@ -1,22 +1,22 @@
 # Gemma4 Side-by-Side Analysis
 
-This document compares the current Deliverance `gemma4` implementation against upstream and adjacent runtimes before further implementation work.
+This document compares the current Reckoning `gemma4` implementation against upstream and adjacent runtimes before further implementation work.
 
 Primary goals:
 - identify the exact Gemma4 text-path steps
-- map those steps to the current Deliverance code
+- map those steps to the current Reckoning code
 - call out confirmed mismatches and likely causes of slow/incorrect behavior
 - separate architecture facts from serving/runtime packaging facts
 
 ## References
 
-- Deliverance current code
-  - `core/src/main/java/io/teknek/deliverance/model/gemma4/Gemma4Model.java`
-  - `core/src/main/java/io/teknek/deliverance/generator/Gemma4CausalSelfAttention.java`
-  - `core/src/main/java/io/teknek/deliverance/generator/Gemma4TransformerBlock.java`
-  - `core/src/main/java/io/teknek/deliverance/model/gemma4/Gemma4Config.java`
-  - `safetensors/src/main/java/io/teknek/deliverance/safetensors/DefaultWeightLoader.java`
-  - `safetensors/src/main/java/io/teknek/deliverance/safetensors/Weights.java`
+- Reckoning current code
+  - `core/src/main/java/io/teknek/reckoning/model/gemma4/Gemma4Model.java`
+  - `core/src/main/java/io/teknek/reckoning/generator/Gemma4CausalSelfAttention.java`
+  - `core/src/main/java/io/teknek/reckoning/generator/Gemma4TransformerBlock.java`
+  - `core/src/main/java/io/teknek/reckoning/model/gemma4/Gemma4Config.java`
+  - `safetensors/src/main/java/io/teknek/reckoning/safetensors/DefaultWeightLoader.java`
+  - `safetensors/src/main/java/io/teknek/reckoning/safetensors/Weights.java`
 - Hugging Face upstream
   - `transformers/models/gemma4/modeling_gemma4.py`
   - `transformers/models/gemma4/configuration_gemma4.py`
@@ -28,7 +28,7 @@ Primary goals:
 
 ## Bottom Line
 
-The current Deliverance Gemma4 path is not yet a faithful implementation of upstream Gemma4 text inference.
+The current Reckoning Gemma4 path is not yet a faithful implementation of upstream Gemma4 text inference.
 
 The two biggest confirmed issues are:
 
@@ -146,11 +146,11 @@ Upstream shared-KV behavior is keyed by `layer_type`, not by arbitrary earlier l
 - tied `lm_head` to `embed_tokens.weight`
 - optional final logit softcap
 
-## What Deliverance Currently Does
+## What Reckoning Currently Does
 
 ### High-Level Path
 
-Current Deliverance Gemma4 path:
+Current Reckoning Gemma4 path:
 
 1. `Gemma4Model.loadInputWeights()` loads `embed_tokens.weight`
 2. `batchForward(...)`
@@ -167,9 +167,9 @@ Current Deliverance Gemma4 path:
    - otherwise fallback identity norm
    - ties to embedding weights if no explicit `lm_head`
 
-### PLE in Deliverance
+### PLE in Reckoning
 
-Current Deliverance PLE path is conceptually close to upstream:
+Current Reckoning PLE path is conceptually close to upstream:
 
 - logical row load from `embed_tokens_per_layer.weight`
 - packed global `per_layer_model_projection`
@@ -245,7 +245,7 @@ not decoder implementation.
 
 Upstream scales attention logits by `head_dim^-0.5`.
 
-Current Deliverance `Gemma4CausalSelfAttention.score(...)` does not apply that scaling before softmax.
+Current Reckoning `Gemma4CausalSelfAttention.score(...)` does not apply that scaling before softmax.
 
 This alone can destroy generation quality.
 
@@ -258,7 +258,7 @@ Upstream full-attention behavior is more specific:
 - when `attention_k_eq_v == false`, full layers still use `num_key_value_heads`
 - `num_global_key_value_heads` matters in the `attention_k_eq_v` path
 
-Current Deliverance likely over-applies `numGlobalKeyValueHeads` for full attention.
+Current Reckoning likely over-applies `numGlobalKeyValueHeads` for full attention.
 
 ### 3. `attention_k_eq_v` is not properly implemented
 
@@ -273,7 +273,7 @@ This is not just a future edge case. It is part of the Gemma4 architecture surfa
 
 ### 4. RoPE implementation is not upstream-equivalent
 
-Current Deliverance precomputes per-layer-type frequencies from:
+Current Reckoning precomputes per-layer-type frequencies from:
 
 - `rope_theta`
 - `partial_rotary_factor`
@@ -286,13 +286,13 @@ But upstream uses:
 - additional `attention_scaling`
 - dynamic rope update support
 
-Current Deliverance does not model the full upstream rope behavior, especially for full-attention proportional rope.
+Current Reckoning does not model the full upstream rope behavior, especially for full-attention proportional rope.
 
 This is a major likely correctness bug.
 
 ### 5. Masking behavior is oversimplified
 
-Current Deliverance uses manual causal/window skipping in the attention loop.
+Current Reckoning uses manual causal/window skipping in the attention loop.
 
 Upstream explicitly constructs masks:
 
@@ -304,7 +304,7 @@ For a text-only tiny prompt, the oversimplification may still run, but it is not
 
 ### 6. Shared-KV path is only approximate
 
-Current Deliverance uses thread-local copied tensors keyed by source layer index.
+Current Reckoning uses thread-local copied tensors keyed by source layer index.
 
 Upstream behavior is keyed by layer type and explicitly stores full-length same-type KV states for later shared layers.
 

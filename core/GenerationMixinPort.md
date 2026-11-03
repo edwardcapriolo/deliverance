@@ -1,6 +1,6 @@
 # Generation Mixin Port
 
-This document tracks the line-by-line port of Hugging Face generation concepts into Deliverance. The goal is not to copy
+This document tracks the line-by-line port of Hugging Face generation concepts into Reckoning. The goal is not to copy
 Python implementation style. The goal is to model the same generation concepts with explicit Java types, production-grade
 ownership rules, and no untyped kwargs bag.
 
@@ -22,9 +22,9 @@ Current understanding:
 
 * It sets or loads generation configuration.
 * It can replace `self.generate` with trusted remote custom generation code.
-* It carries Hugging Face auto-class and pipeline context that Deliverance does not currently have.
+* It carries Hugging Face auto-class and pipeline context that Reckoning does not currently have.
 
-Deliverance decision:
+Reckoning decision:
 
 * Do not support remote Python code execution.
 * If a future API exposes `trust_remote_code`, it should fail explicitly.
@@ -81,7 +81,7 @@ User reported all tests pass.
 
 ### Typed Inputs Instead Of Kwargs
 
-Hugging Face builds a dictionary of model inputs. Deliverance uses `GenerationStepInputs` instead.
+Hugging Face builds a dictionary of model inputs. Reckoning uses `GenerationStepInputs` instead.
 
 Decision:
 
@@ -109,7 +109,7 @@ Decision:
 
 ### Past Key Values Are Not Just `KvBuffer`
 
-HF `past_key_values` and Deliverance `KvBufferCache.KvBuffer` serve the same broad purpose, but they are not equivalent.
+HF `past_key_values` and Reckoning `KvBufferCache.KvBuffer` serve the same broad purpose, but they are not equivalent.
 
 Decision:
 
@@ -143,7 +143,7 @@ Current status:
 
 Future consideration:
 
-* `int[][]` or a typed batch token structure if Deliverance generation supports multiple prompts in one call.
+* `int[][]` or a typed batch token structure if Reckoning generation supports multiple prompts in one call.
 
 ### Compileable Cache / 4D Masks
 
@@ -152,7 +152,7 @@ HF has a block that creates 4D masks for compileable caches.
 Current decision:
 
 * Not implemented yet.
-* Deliverance needs typed mask and cache capability abstractions before this can be represented cleanly.
+* Reckoning needs typed mask and cache capability abstractions before this can be represented cleanly.
 
 ### Remote Code Compatibility
 
@@ -161,7 +161,7 @@ HF has a remote-code compatibility block for `cache_position`.
 Current decision:
 
 * Not supported.
-* Do not add this unless Deliverance gains a safe local Java equivalent.
+* Do not add this unless Reckoning gains a safe local Java equivalent.
 
 ## Next Method To Continue
 
@@ -189,7 +189,7 @@ else:
     input_name = self.main_input_name
 ```
 
-Deliverance concepts already started for this:
+Reckoning concepts already started for this:
 
 * `Config.isEncoderDecoder`
 * `AbstractModel.getMainInputName()`
@@ -197,7 +197,7 @@ Deliverance concepts already started for this:
 
 Questions for next session:
 
-* How should Deliverance represent an encoder-side model/capability?
+* How should Reckoning represent an encoder-side model/capability?
 * Does `AbstractModel` need `getEncoderMainInputName()` before actual encoder-decoder support exists?
 * What should replace HF's `inputs` plus `model_kwargs` split without introducing a kwargs map?
 

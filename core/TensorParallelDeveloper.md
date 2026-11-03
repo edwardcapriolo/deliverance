@@ -1,6 +1,6 @@
 # Tensor Parallel Developer Notes
 
-This document summarizes the internal changes that support tensor-parallel generation in Deliverance.
+This document summarizes the internal changes that support tensor-parallel generation in Reckoning.
 
 Tensor parallelism is currently implemented and integration-tested for Gemma2. Other model families still need explicit
 weight policies, shape validation, and end-to-end tests before they should be advertised as supported.
@@ -125,7 +125,7 @@ can change floating-point reduction order.
 * Tensor-parallel generation does not currently expose local prefix-cache reuse through `GenerationBackend.prefixLength()`.
 * Runtime tensor payloads currently support `DType.F32`.
 * Kubernetes performance depends heavily on node size, CPU contention, rank count, and transport overhead.
-* Gossip liveness remains operationally important. Deliverance depends on `io.teknek.gossip` handling direct contact from down members and same-id/new-URI replacement correctly.
+* Gossip liveness remains operationally important. Reckoning depends on `io.teknek.gossip` handling direct contact from down members and same-id/new-URI replacement correctly.
 * Broader model support needs family-specific review. GPT2 packed QKV and MoE models are not expected to work without
   custom policies.
 

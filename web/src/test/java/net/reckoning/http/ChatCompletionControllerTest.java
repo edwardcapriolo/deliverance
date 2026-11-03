@@ -1,0 +1,238 @@
+package net.reckoning.http;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import io.teknek.reckoning.JSON;
+import io.teknek.reckoning.JsonUtils;
+import io.teknek.reckoning.generator.FinishReason;
+import io.teknek.reckoning.generator.Response;
+import io.teknek.reckoning.model.*;
+import io.teknek.reckoning.model.Error;
+import io.teknek.reckoning.model.ReasoningFieldNames;
+import io.teknek.reckoning.model.ServeRequest;
+import io.teknek.reckoning.safetensors.prompt.Tool;
+import io.teknek.dysfx.Either;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mockito;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.core.env.Environment;
+import org.springframework.http.MediaType;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
+
+import java.math.BigDecimal;
+import java.util.*;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+
+@ExtendWith(SpringExtension.class)
+//@SpringBootTest(args = "--add-modules jdk.incubator.vector", properties = {"reckoning.tensor.operations.type=jvector"})
+@SpringBootTest(args = "--add-modules jdk.incubator.vector" )
+@AutoConfigureMockMvc
+public class ChatCompletionControllerTest {
+
+    @Autowired
+    MockMvc mockMvc;
+
+
+    @Test
+    public void whenUsingSpringBootTestArgs_thenCommandLineArgSet(@Autowired Environment env) throws Exception {
+        ServeRequest serveRequest = new ServeRequest()
+                .owner("tjake")
+                .name("TinyLlama-1.1B-Chat-v1.0-Jlama-Q4")
+                .type(ServeRequest.TypeEnum.GENERATION)
+                .config(Map.of("download", false));
+        JSON j = new JSON();
+        mockMvc.perform(MockMvcRequestBuilders.post("/api/serve")
+                        .with(httpBasic("1","2"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(j.getMapper().writeValueAsString(serveRequest)))
+                .andExpect(status().isOk());
+
+        CreateChatCompletionRequest request = new CreateChatCompletionRequest()
+                .model("TinyLlama-1.1B-Chat-v1.0-Jlama-Q4")
+                .stop(null);
+        request.addMessagesItem(new ChatCompletionRequestMessage(
+                new ChatCompletionRequestUserMessage().content(
+                        new ChatCompletionRequestUserMessageContent("Generate the first letter of the alphabet is"))));
+
+        String s = j.getMapper().writeValueAsString(request);
+            mockMvc.perform(MockMvcRequestBuilders.post("/chat/completions")
+                            .with(httpBasic("1","2"))
+                .contentType(MediaType.APPLICATION_JSON).content(s))
+                .andExpect(status().isOk());
+    }
+
+
+    @Test
+    public void toolsSetup(@Autowired Environment env) throws Exception {
+
+        /*
+            auto (Default): The model automatically decides whether to call a tool (or multiple tools) and which tool to use based on the prompt.
+    none: The model is forced to not use any tools and instead responds with a text message.
+    any / required: The model is forced to call at least one tool, though it chooses which one.
+    tool / Specific Function: You can explicitly name a specific tool the model must use, forcing the output to follow that tool's structure.
+         */
+        CreateChatCompletionRequest request = new CreateChatCompletionRequest()
+                .model("TinyLlama-1.1B-Chat-v1.0-Jlama-Q4")
+                .stop(null);
+        request.addMessagesItem(new ChatCompletionRequestMessage(
+                new ChatCompletionRequestUserMessage().content(
+                        new ChatCompletionRequestUserMessageContent("Generate the first letter of the alphabet is"))));
+
+        request.addToolsItem(new ChatCompletionTool().function(new FunctionObject()
+                .name("some tool")
+                .description("test tool")
+                .parameters(Map.of("type", "object", "properties", Map.of()))));
+        CausalLanguageModel m = Mockito.mock(CausalLanguageModel.class);
+        io.teknek.reckoning.safetensors.prompt.PromptSupport promptSupport = Mockito.mock(io.teknek.reckoning.safetensors.prompt.PromptSupport.class);
+        io.teknek.reckoning.safetensors.prompt.PromptSupport.Builder builder = Mockito.mock(io.teknek.reckoning.safetensors.prompt.PromptSupport.Builder.class);
+        Mockito.when(m.promptSupport()).thenReturn(Optional.of(promptSupport));
+        Mockito.when(promptSupport.builder()).thenReturn(builder);
+
+        Either<Error, PreparedRequest> response = ChatCompletionService.mapRequest(new HashMap<>(), m , request);
+        Object mapped = response.productElement(0);
+        assertTrue(mapped instanceof PreparedRequest, () -> "tool request mapping failed: " + mapped);
+        Mockito.verify(builder).addToolItem(Mockito.argThat(tool ->
+                "some tool".equals(tool.getFunction().getName())));
+
+    }
+
+    @Test
+    public void requestMapsLogprobFlags() {
+        CreateChatCompletionRequest request = new CreateChatCompletionRequest()
+                .model("TinyLlama-1.1B-Chat-v1.0-Jlama-Q4")
+                .logprobs(true)
+                .topLogprobs(5)
+                .stop(null);
+        request.addMessagesItem(new ChatCompletionRequestMessage(
+                new ChatCompletionRequestUserMessage().content(
+                        new ChatCompletionRequestUserMessageContent("Generate the first letter of the alphabet is"))));
+
+        CausalLanguageModel m = Mockito.mock(CausalLanguageModel.class);
+        io.teknek.reckoning.safetensors.prompt.PromptSupport promptSupport = Mockito.mock(io.teknek.reckoning.safetensors.prompt.PromptSupport.class);
+        io.teknek.reckoning.safetensors.prompt.PromptSupport.Builder builder = Mockito.mock(io.teknek.reckoning.safetensors.prompt.PromptSupport.Builder.class);
+        Mockito.when(m.promptSupport()).thenReturn(Optional.of(promptSupport));
+        Mockito.when(promptSupport.builder()).thenReturn(builder);
+        Mockito.when(builder.addUserMessage(Mockito.anyString())).thenReturn(builder);
+
+        Either<Error, PreparedRequest> response = ChatCompletionService.mapRequest(new HashMap<>(), m, request);
+        PreparedRequest prepared = (PreparedRequest) response.productElement(0);
+        assertEquals(true, prepared.generatorParameters().logProbs.orElse(false));
+        assertEquals(5, prepared.generatorParameters().topLogProbs.orElse(0));
+    }
+
+    @Test
+    public void requestMapsGuidedRegex() {
+        CreateChatCompletionRequest request = new CreateChatCompletionRequest()
+                .model("TinyLlama-1.1B-Chat-v1.0-Jlama-Q4")
+                .guidedRegex("(Giants|Jets)")
+                .stop(null);
+        request.addMessagesItem(new ChatCompletionRequestMessage(
+                new ChatCompletionRequestUserMessage().content(
+                        new ChatCompletionRequestUserMessageContent("Who is the better NFL football team?"))));
+
+        CausalLanguageModel m = Mockito.mock(CausalLanguageModel.class);
+        io.teknek.reckoning.safetensors.prompt.PromptSupport promptSupport = Mockito.mock(io.teknek.reckoning.safetensors.prompt.PromptSupport.class);
+        io.teknek.reckoning.safetensors.prompt.PromptSupport.Builder builder = Mockito.mock(io.teknek.reckoning.safetensors.prompt.PromptSupport.Builder.class);
+        Mockito.when(m.promptSupport()).thenReturn(Optional.of(promptSupport));
+        Mockito.when(promptSupport.builder()).thenReturn(builder);
+        Mockito.when(builder.addUserMessage(Mockito.anyString())).thenReturn(builder);
+
+        Either<Error, PreparedRequest> response = ChatCompletionService.mapRequest(new HashMap<>(), m, request);
+        PreparedRequest prepared = (PreparedRequest) response.productElement(0);
+        assertEquals("(Giants|Jets)", prepared.generatorParameters().guidedRegex.orElseThrow());
+    }
+
+    @Test
+    public void requestMapsGuidedJson() {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", Map.of("foo", Map.of("type", "integer")));
+        schema.put("required", List.of("foo"));
+        schema.put("additionalProperties", false);
+
+        CreateChatCompletionRequest request = new CreateChatCompletionRequest()
+                .model("TinyLlama-1.1B-Chat-v1.0-Jlama-Q4")
+                .guidedJson(schema)
+                .stop(null);
+        request.addMessagesItem(new ChatCompletionRequestMessage(
+                new ChatCompletionRequestUserMessage().content(
+                        new ChatCompletionRequestUserMessageContent("Return foo as JSON"))));
+
+        CausalLanguageModel m = Mockito.mock(CausalLanguageModel.class);
+        io.teknek.reckoning.safetensors.prompt.PromptSupport promptSupport = Mockito.mock(io.teknek.reckoning.safetensors.prompt.PromptSupport.class);
+        io.teknek.reckoning.safetensors.prompt.PromptSupport.Builder builder = Mockito.mock(io.teknek.reckoning.safetensors.prompt.PromptSupport.Builder.class);
+        Mockito.when(m.promptSupport()).thenReturn(Optional.of(promptSupport));
+        Mockito.when(promptSupport.builder()).thenReturn(builder);
+        Mockito.when(builder.addUserMessage(Mockito.anyString())).thenReturn(builder);
+
+        Either<Error, PreparedRequest> response = ChatCompletionService.mapRequest(new HashMap<>(), m, request);
+        PreparedRequest prepared = (PreparedRequest) response.productElement(0);
+        assertTrue(prepared.generatorParameters().guidedJson.orElseThrow().contains("\"foo\""));
+    }
+
+    @Test
+    public void responseMapsSamplerReturnsIntoChoiceLogprobs() {
+        PriorityQueue<IndexValueToken> top = new PriorityQueue<>();
+        IndexValueToken chosen = new IndexValueToken(973, 20.0f, " //");
+        chosen.logProb = -1.25f;
+        IndexValueToken alt = new IndexValueToken(18171, 19.0f, "~~");
+        alt.logProb = -2.25f;
+        top.add(chosen);
+        top.add(alt);
+
+        Response response = new Response(" //", " //", io.teknek.reckoning.generator.FinishReason.MAX_TOKENS,
+                1, List.of(973), 0, 0, List.of(new SamplerReturn(973, top)));
+
+        CreateChatCompletionResponseChoicesInnerLogprobs logprobs = ChatCompletionController.toLogProbs(response);
+        assertTrue(logprobs != null && logprobs.getContent() != null);
+        assertEquals(" //", logprobs.getContent().get(0).getToken());
+        assertEquals(BigDecimal.valueOf(-1.25f), logprobs.getContent().get(0).getLogprob());
+        assertEquals(2, logprobs.getContent().get(0).getTopLogprobs().size());
+    }
+
+    @Test
+    public void toolParsing() throws JsonProcessingException {
+        String tool = """
+                  {
+                    "type": "function",
+                    "function": {
+                      "name": "get_current_weather",
+                      "description": "Get the current weather in a given location",
+                      "parameters": {
+                        "type": "object",
+                        "properties": {
+                          "city": { "type": "string", "description": "City name" },
+                          "state": { "type": "string", "description": "State abbreviation" },
+                          "unit": { "type": "string", "enum": ["celsius", "fahrenheit"] }
+                        },
+                        "required": ["city", "state", "unit"]
+                      }
+                    }
+                  }
+                """;
+        ChatCompletionTool t = JSON.getDefault().getMapper().readValue(tool, ChatCompletionTool.class);
+
+        Tool prompTool = ChatCompletionService.convert(t);
+
+        assertEquals("get_current_weather", prompTool.getFunction().getName());
+        assertEquals("Get the current weather in a given location", prompTool.getFunction().getDescription());
+        assertEquals(Arrays.asList("city", "state", "unit"), prompTool.getFunction().getParameters().getRequired());
+        assertEquals("object", prompTool.getFunction().getParameters().getType());
+        //TODO this looks dubious s there is another layer of properties in here.
+        //assertEquals( Arrays.asList("string", "string"), prompTool.getFunction().getParameters().getProperties());
+
+    }
+
+
+
+}

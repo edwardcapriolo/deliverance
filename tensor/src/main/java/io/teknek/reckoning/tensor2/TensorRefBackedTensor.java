@@ -1,0 +1,107 @@
+package io.teknek.reckoning.tensor2;
+
+import com.google.common.base.Preconditions;
+import io.teknek.reckoning.DType;
+import io.teknek.reckoning.tensor.AbstractTensor;
+import io.teknek.reckoning.tensor.TensorShape;
+import io.teknek.reckoning.tensor.impl.Q4ByteBufferTensor;
+
+import java.lang.foreign.MemorySegment;
+
+/**
+ * Temporary bridge that lets old tensor code consume a tensor2-owned result.
+ */
+public final class TensorRefBackedTensor extends AbstractTensor {
+    private final TensorRef ref;
+    private boolean closed;
+
+    public TensorRefBackedTensor(TensorRef ref) {
+        super(ref.dType(), ref.shape(), false);
+        this.ref = java.util.Objects.requireNonNull(ref, "ref");
+    }
+
+    public static AbstractTensor as(TensorRef ref, DType expectedDType) {
+        Preconditions.checkNotNull(ref, "ref");
+        Preconditions.checkNotNull(expectedDType, "expectedDType");
+        Preconditions.checkArgument(ref.dType() == expectedDType,
+                "TensorRef dtype %s does not match expected dtype %s", ref.dType(), expectedDType);
+        return switch (expectedDType) {
+            case Q4 -> new Q4ByteBufferTensor(ref);
+            case I8 -> throw new UnsupportedOperationException("TensorRef-backed I8 adapter is not implemented");
+            case F32, F16, BF16 -> new TensorRefBackedTensor(ref);
+            default -> throw new UnsupportedOperationException(
+                    "TensorRef-backed adapter is not implemented for " + expectedDType);
+        };
+    }
+
+    @Override
+    protected AbstractTensor make(TensorShape shape) {
+        throw new UnsupportedOperationException("TensorRef-backed tensor does not support creating views");
+    }
+
+    @Override
+    protected AbstractTensor make(int heapOffset, int heapLength, TensorShape shape, boolean cacheSlices) {
+        Preconditions.checkArgument(shape.dims() == 2 && shape.first() == 1 && ref.dims() == 2,
+                "TensorRef-backed views only support one-row 2D slices");
+        Preconditions.checkArgument(heapOffset % ref.shape().last() == 0,
+                "TensorRef-backed row view must be row aligned");
+        return new TensorRefBackedTensor(ref.slice(heapOffset / ref.shape().last()));
+    }
+
+    @Override
+    public AbstractTensor slice(boolean cacheInnerSlice, int... dims) {
+        return new TensorRefBackedTensor(ref.slice(dims));
+    }
+
+    @Override
+    public float get(int... dims) {
+        return ref.underlying().get(dims);
+    }
+
+    @Override
+    public float get(int row, int column) {
+        return ref.underlying().get(row, column);
+    }
+
+    @Override
+    public void set(float v, int... dims) {
+        ref.underlying().set(v, dims);
+    }
+
+    @Override
+    public void set(float v, int row, int column) {
+        ref.underlying().set(v, row, column);
+    }
+
+    @Override
+    public MemorySegment getMemorySegment() {
+        return ref.underlying().getMemorySegment();
+    }
+
+    @Override
+    public int getMemorySegmentOffset(int offset) {
+        return ref.underlying().getMemorySegmentOffset(offset);
+    }
+
+
+    @Override
+    public void copyFrom(AbstractTensor src, int srcOffset, int destOffset, int length) {
+        Preconditions.checkArgument(src.dType() == dType(), "different types");
+        long bytes = (long) length * dType().size();
+        getMemorySegment().asSlice(getMemorySegmentOffset(destOffset), bytes)
+                .copyFrom(src.getMemorySegment().asSlice(src.getMemorySegmentOffset(srcOffset), bytes));
+    }
+
+    @Override
+    public void clear() {
+        getMemorySegment().fill((byte) 0);
+    }
+
+    @Override
+    public void close() {
+        if (!closed) {
+            closed = true;
+            ref.close();
+        }
+    }
+}

@@ -1,12 +1,12 @@
 <project>
     <modelVersion>4.0.0</modelVersion>
-    <groupId>io.teknek.deliverance</groupId>
-    <artifactId>deliverance-parent</artifactId>
+    <groupId>io.teknek.reckoning</groupId>
+    <artifactId>reckoning-parent</artifactId>
     <packaging>pom</packaging>
 
-    <name>deliverance-parent</name>
-    <description>deliverance parent pom</description>
-    <url>http://github.com/edwardcapriolo/deliverance</url>
+    <name>reckoning-parent</name>
+    <description>reckoning parent pom</description>
+    <url>http://github.com/edwardcapriolo/reckoning</url>
     <version>0.0.17-SNAPSHOT</version>
 
     <parent>
@@ -67,12 +67,13 @@
         <module>web</module>
         <module>grace</module>
         <module>client</module>
-        <module>client-spring</module>
-        <module>spring-ai-deliverance</module>
-        <module>spring-ai-deliverance-embedded</module>
-        <module>spring-ai-deliverance-demo</module>
-        <module>nanocode-deliverance</module>
-        <module>deliverance-antares-cli</module>
+        <!-- Deferred to the downstream Reckoning Spring repository. -->
+        <!-- <module>client-spring</module> -->
+        <!-- <module>spring-ai-deliverance</module> -->
+        <!-- <module>spring-ai-deliverance-embedded</module> -->
+        <!-- <module>spring-ai-deliverance-demo</module> -->
+        <module>reckoning-nanocode</module>
+        <module>reckoning-antares-cli</module>
         <module>vibrant-maven-plugin</module>
         <module>vibrant-maven-plugin-demo</module>
     </modules>
@@ -260,9 +261,9 @@
         </developer>
     </developers>
     <scm>
-        <url>http://github.com/edwardcapriolo/deliverance/tree/master</url>
-        <connection>https://github.com/edwardcapriolo/deliverance.git</connection>
-        <developerConnection>scm:git:git@github.com:edwardcapriolo/deliverance.git</developerConnection>
+        <url>http://github.com/edwardcapriolo/reckoning/tree/master</url>
+        <connection>https://github.com/edwardcapriolo/reckoning.git</connection>
+        <developerConnection>scm:git:git@github.com:edwardcapriolo/reckoning.git</developerConnection>
     </scm>
 
     <dependencyManagement>

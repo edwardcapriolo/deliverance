@@ -12,7 +12,7 @@ curl -L -o /tmp/mt_bench_question.jsonl \
   https://raw.githubusercontent.com/lm-sys/FastChat/main/fastchat/llm_judge/data/mt_bench/question.jsonl
 ```
 
-## Deliverance
+## Reckoning
 
 ```sh
 MAVEN_OPTS="-XX:TieredStopAtLevel=1" mvn -q -pl core -am -DskipTests compile
@@ -20,7 +20,7 @@ MAVEN_OPTS="-XX:TieredStopAtLevel=1" mvn -q -pl core -am -DskipTests compile
 MAVEN_OPTS="-XX:TieredStopAtLevel=1" mvn -q -pl core \
   -Dexec.classpathScope=test \
   -Dexec.executable=java \
-  -Dexec.args="--add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.deliverance.benchmark.InferenceBenchmark --engine deliverance --owner tjake --model gemma-2-2b-it-JQ4 --max-tokens 256 --output target/deliverance-benchmark.csv --jsonl-output target/deliverance-benchmark.jsonl" \
+  -Dexec.args="--add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.reckoning.benchmark.InferenceBenchmark --engine reckoning --owner tjake --model gemma-2-2b-it-JQ4 --max-tokens 256 --output target/reckoning-benchmark.csv --jsonl-output target/reckoning-benchmark.jsonl" \
   org.codehaus.mojo:exec-maven-plugin:3.5.0:exec
 ```
 
@@ -40,7 +40,7 @@ MAVEN_OPTS="-XX:TieredStopAtLevel=1" mvn -q -pl core -am -DskipTests compile
 MAVEN_OPTS="-XX:TieredStopAtLevel=1" mvn -q -pl core \
   -Dexec.classpathScope=test \
   -Dexec.executable=java \
-  -Dexec.args="--add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.deliverance.benchmark.InferenceBenchmark --engine ollama --ollama-model llama3.2 --max-tokens 256 --output target/ollama-benchmark.csv --jsonl-output target/ollama-benchmark.jsonl" \
+  -Dexec.args="--add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.reckoning.benchmark.InferenceBenchmark --engine ollama --ollama-model llama3.2 --max-tokens 256 --output target/ollama-benchmark.csv --jsonl-output target/ollama-benchmark.jsonl" \
   org.codehaus.mojo:exec-maven-plugin:3.5.0:exec
 ```
 
@@ -52,7 +52,7 @@ MAVEN_OPTS="-XX:TieredStopAtLevel=1" mvn -q -pl core -am -DskipTests compile
 MAVEN_OPTS="-XX:TieredStopAtLevel=1" mvn -q -pl core \
   -Dexec.classpathScope=test \
   -Dexec.executable=java \
-  -Dexec.args="--add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.deliverance.benchmark.InferenceBenchmark --engine both --owner tjake --model gemma-2-2b-it-JQ4 --ollama-model llama3.2 --suite-file /tmp/mt_bench_question.jsonl --max-cases 20 --max-tokens 256 --output target/inference-benchmark.csv --jsonl-output target/inference-benchmark.jsonl" \
+  -Dexec.args="--add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.reckoning.benchmark.InferenceBenchmark --engine both --owner tjake --model gemma-2-2b-it-JQ4 --ollama-model llama3.2 --suite-file /tmp/mt_bench_question.jsonl --max-cases 20 --max-tokens 256 --output target/inference-benchmark.csv --jsonl-output target/inference-benchmark.jsonl" \
   org.codehaus.mojo:exec-maven-plugin:3.5.0:exec
 ```
 
@@ -67,38 +67,38 @@ native-provider warning logs.
 
 ## Local Tensor Parallel
 
-Use `--tensor-parallel-size 2` to run Deliverance through an in-process tensor-parallel group with two local rank models
+Use `--tensor-parallel-size 2` to run Reckoning through an in-process tensor-parallel group with two local rank models
 and a coordinator model. This mirrors the tensor-parallel integration-test shape without starting gossip workers.
 
 ```sh
 MAVEN_OPTS="-XX:TieredStopAtLevel=1" mvn -q -pl core \
   -Dexec.classpathScope=test \
   -Dexec.executable=java \
-  -Dexec.args="--add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.deliverance.benchmark.InferenceBenchmark --engine deliverance --owner tjake --model gemma-2-2b-it-JQ4 --tensor-parallel-size 2 --max-tokens 256 --output target/deliverance-tp2-benchmark.csv --jsonl-output target/deliverance-tp2-benchmark.jsonl" \
+  -Dexec.args="--add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.reckoning.benchmark.InferenceBenchmark --engine reckoning --owner tjake --model gemma-2-2b-it-JQ4 --tensor-parallel-size 2 --max-tokens 256 --output target/reckoning-tp2-benchmark.csv --jsonl-output target/reckoning-tp2-benchmark.jsonl" \
   org.codehaus.mojo:exec-maven-plugin:3.5.0:exec
 ```
 
 ## Output Columns
 
-* `engine`: `deliverance` or `ollama`
+* `engine`: `reckoning` or `ollama`
 * `model`: model identifier
 * `case_id`, `category`, `turn`: prompt-suite identifiers
 * `prompt_chars`: rendered prompt/request size in characters
-* `prompt_tokens`: Deliverance `Response.promptTokens` or Ollama `prompt_eval_count`
-* `generated_tokens`: Deliverance generated token count or Ollama `eval_count`
+* `prompt_tokens`: Reckoning `Response.promptTokens` or Ollama `prompt_eval_count`
+* `generated_tokens`: Reckoning generated token count or Ollama `eval_count`
 * `total_ms`: full request latency
-* `generation_ms`: generated-token decode time estimate. For Ollama this is `eval_duration`; for Deliverance this is
+* `generation_ms`: generated-token decode time estimate. For Ollama this is `eval_duration`; for Reckoning this is
   `total_ms - time_to_first_token_ms`, so it excludes prefill plus first-token latency and is approximate.
 * `tokens_per_second`: generated tokens per second using `generation_ms`
 * `response_chars`: response text size
 * `finish_reason`: engine finish reason when available
 
-Ollama's tokens/sec is computed from `eval_count / eval_duration`. Deliverance's tokens/sec is computed from generated
-token count after the first token divided by `total_ms - time_to_first_token_ms`, because Deliverance does not yet expose
+Ollama's tokens/sec is computed from `eval_count / eval_duration`. Reckoning's tokens/sec is computed from generated
+token count after the first token divided by `total_ms - time_to_first_token_ms`, because Reckoning does not yet expose
 a separate decode-only duration field.
 
 ## JSONL Transcripts
 
 Pass `--jsonl-output target/inference-benchmark.jsonl` to write one JSON object per turn. Each record includes the chat
-messages so far, rendered Deliverance prompt or Ollama request JSON, response text, response text with special tokens, and
+messages so far, rendered Reckoning prompt or Ollama request JSON, response text, response text with special tokens, and
 the same metrics written to CSV. The JSONL file is flushed after every turn so partial results survive interrupted runs.

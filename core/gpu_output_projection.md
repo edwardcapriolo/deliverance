@@ -1,10 +1,10 @@
 # GPU Output Projection
 
-You heard only C and C++ get to party with GPUs? Deliverance can now use WebGPU/Dawn to offload work to GPUs, including the one in your Mac.
+You heard only C and C++ get to party with GPUs? Reckoning can now use WebGPU/Dawn to offload work to GPUs, including the one in your Mac.
 
-![Deliverance GPU output projection benchmark](gpu_output_projection_bars.svg)
+![Reckoning GPU output projection benchmark](gpu_output_projection_bars.svg)
 
-We did not have to go all-in on MLX or write a full Metal backend. Dawn gives us a portable path: Metal on macOS, Vulkan/DirectX elsewhere. That matters because Deliverance is still a Java inference engine, and we want GPU acceleration without turning the whole project into platform-specific glue code.
+We did not have to go all-in on MLX or write a full Metal backend. Dawn gives us a portable path: Metal on macOS, Vulkan/DirectX elsewhere. That matters because Reckoning is still a Java inference engine, and we want GPU acceleration without turning the whole project into platform-specific glue code.
 
 The interesting part is that we did not start by moving the entire model to the GPU. We profiled first.
 
@@ -42,7 +42,7 @@ The result is a useful beachhead: Java orchestration, safetensors/JQ4 weights, W
 
 ## Current Limits
 
-- GPU output projection is opportunistic. If Dawn/GPU support is unavailable, Deliverance falls back to the primary tensor provider.
+- GPU output projection is opportunistic. If Dawn/GPU support is unavailable, Reckoning falls back to the primary tensor provider.
 - The optimized path currently targets `F32 x Q4 -> F32` output projection.
 - Native GPU is not yet a general-purpose replacement for Native SIMD.
 - Offset/sharded GPU GEMM cases are deliberately delegated until fully proven.

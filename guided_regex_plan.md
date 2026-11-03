@@ -20,7 +20,7 @@ JSON Schema -> regex -> automaton/guide -> allowed token ids -> logits mask
 
 ## Web/OpenAPI
 
-- Add `guided_regex` to `CreateChatCompletionRequest` in `web/deliverance_specification.yaml`.
+- Add `guided_regex` to `CreateChatCompletionRequest` in `web/reckoning_specification.yaml`.
 - Regenerate OpenAPI sources through the existing web Maven generator.
 - Map `request.getGuidedRegex()` in `ChatCompletionService.mapRequest(...)` to `params.withGuidedRegex(...)`.
 - Add web mapping tests that assert the generated request field reaches `GeneratorParameters`.

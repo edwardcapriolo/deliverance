@@ -1,7 +1,7 @@
 # Qwen3 Support
 
-Qwen3 is the next Deliverance text-generation target after Qwen2. The goal is to make Qwen3 the first reliable
-thinking-capable model family in Deliverance, without assuming the older Qwen2 implementation is correct.
+Qwen3 is the next Reckoning text-generation target after Qwen2. The goal is to make Qwen3 the first reliable
+thinking-capable model family in Reckoning, without assuming the older Qwen2 implementation is correct.
 
 ## Current Status
 
@@ -48,11 +48,11 @@ non-thinking mode:
   top_k       = 20
 ```
 
-In Deliverance, greedy decoding means `temperature=0.0`: each step picks the highest-logit token directly, without
+In Reckoning, greedy decoding means `temperature=0.0`: each step picks the highest-logit token directly, without
 sampling from a probability distribution. Do not use `temperature=0.0` as the default thinking-mode check. The upstream
 model card says greedy decoding can lead to degraded performance and endless repetitions in thinking mode.
 
-Deliverance's `top_k` supports the Qwen model-card form: values greater than or equal to `1.0` are interpreted as an
+Reckoning's `top_k` supports the Qwen model-card form: values greater than or equal to `1.0` are interpreted as an
 absolute candidate count, so `top_k=20` means keep the top 20 candidates before applying `top_p`.
 
 ## Architecture Notes
@@ -73,7 +73,7 @@ Important Qwen3 details:
 - Supports optional sliding-window layer typing in config.
 - Uses Qwen tokenizer/chat template family with `<think>` / `</think>` tokens for thinking output.
 
-Deliverance adds a family-specific hook in `CausalSelfAttention`:
+Reckoning adds a family-specific hook in `CausalSelfAttention`:
 
 ```java
 protected void normalizeQueryKey(AbstractTensor queryBatch, AbstractTensor keyBatch)

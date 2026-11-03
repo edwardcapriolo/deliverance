@@ -1,24 +1,15 @@
-## deliverance
+## reckoning
 
-Deliverance is a Java inference engine, capable of generating text, tokenizing input, computing embeddings, and more. 
+Reckoning is a Java inference engine, capable of generating text, tokenizing input, computing embeddings, and more. 
  
 
 ### Where did you get the name?
 
-The name `Deliverance` 
+The name `Reckoning` 
 
-https://www.merriam-webster.com/dictionary/deliverance
+https://www.merriam-webster.com/dictionary/reckoning
 
-: the act of delivering someone or something : the state of being delivered
-especially : liberation, `rescue`
-
-Have you ever spent 15 minutes building VLLM to end up with a disk full from its 20GB image and 60GB of docker layers?
-Deliverance compiles < 2 minutes. Into a < 50MB boot application. 
-
-: something delivered
-especially : an `opinion` or `decision` (such as the verdict of a jury) expressed publicly.
-
-We aren't `inferencing`, we are `delivering`
+A reckoning literally means the act, process, or result of calculating, estimating, or counting (Merriam-Webster).
 
 ### Models supported
 Generation:
@@ -44,30 +35,30 @@ Generation:
 - [Qwen3 support](core/qwen3_support.md) Documents Qwen3 integration status, tests, and limitations
 - [Nemotron Labs Diffusion support](core/nemotron_labs_diffusion.md) Explains AR, diffusion, linear self-speculation, KVCache2, benchmark scripts, and QOD configs
 - [Granite 4.0 / GraniteMoeHybrid support](core/granite_support.md) Documents dense Antares and hybrid Granite support, Mamba/MoE notes, and current limitations
-- [Gemma4 support](core/gemma4_support.md) High-level status, usage, and notes for Gemma 4 support in Deliverance
-- [LoRA/PEFT adapter support](core/lora_support.md) Explains what LoRA adapters are, why Deliverance is adding support, and current implementation status
-- [Grace tokenizer module](grace/README.md) Explains Deliverance's fuller-featured tokenizer path and how to use it
+- [Gemma4 support](core/gemma4_support.md) High-level status, usage, and notes for Gemma 4 support in Reckoning
+- [LoRA/PEFT adapter support](core/lora_support.md) Explains what LoRA adapters are, why Reckoning is adding support, and current implementation status
+- [Grace tokenizer module](grace/README.md) Explains Reckoning's fuller-featured tokenizer path and how to use it
 - [Tokenizer showdown](grace/tokenizer_showdown.md) Compares Grace Java tokenization against Hugging Face's Rust-backed tokenizers
 - [Inference engine flow](core/inference_flow.md) Explains the transformations and flows http/prompt/jinja/ etc.
 - [Industry-standard chat API](core/chat_api.md) Explains `/chat/completions`, generated API models, request mapping, streaming, tools, and guided fields
 - [Tool call parser](core/tool_parser.md) Explains how the tool call parser is implemented in the stack
 - [Reasoning field support](core/reasoning_field_support.md) Documents `reasoning_content`, model reasoning channels, and nanocode behavior
-- [Deliverance Antares CLI](deliverance-antares-cli/README.md) Runs Antares-style vulnerability localization against Deliverance `/v1/completions` with streamed output and command approval
+- [Reckoning Antares CLI](reckoning-antares-cli/README.md) Runs Antares-style vulnerability localization against Reckoning `/v1/completions` with streamed output and command approval
 - [Quantize On Demand](core/quantize_on_demand.md) Explains local Q4 model generation, cache reuse, and provenance files
 - [Benchmarking](core/benchmarking.md) Explains benchmark scripts, profile output, CSV/JSONL artifacts, and QOD benchmark workflow
 - [Tuning with InferenceProfiler](core/tuning_with_inference_profiler.md) Walks through finding a Qwen4B hotspot, fusing activation/multiply/quantize, and validating Java/native wins
 - [Lighter and Tensor2](core/lighter_tensor2.md) Explains the explicit tensor2 provider model, SIMD batch-dot path, and Qwen prefill win
 - [Tensor engines and JQ4](core/tensor_engines_and_jq4.md) Explains why tensor kernels, safetensors, and Q4 layout matter for local inference
 - [TensorPlan](tensor/tensor_plan.md) Documents the lazy tensor workflow, ownership model, ASCII plans, and MLP fusion replay benchmark
-- [JQ4 tensor format](core/jq4_tensor_format.md) Documents Deliverance's Q4 tensor representation and sidecar scale tensors
+- [JQ4 tensor format](core/jq4_tensor_format.md) Documents Reckoning's Q4 tensor representation and sidecar scale tensors
 - [Native SIMD kernels](core/native_simd_kernels.md) Explains native GEMM/SAXPY support and the dtype combinations currently accelerated
-- [GPU output projection](core/gpu_output_projection.md) Shows how Deliverance uses WebGPU/Dawn for targeted Q4 output-head acceleration
+- [GPU output projection](core/gpu_output_projection.md) Shows how Reckoning uses WebGPU/Dawn for targeted Q4 output-head acceleration
 - [Vibrant Maven plugin](https://www.youtube.com/watch?v=Glp_hAieOq8) Watch a video on Vibrant Maven plugin generate code from XML based spec inside pom
 - [Generator sampling](core/generator_sampling.md) Explains temperature, top_p, top_k, XTC, and `uniform_top_p`
 - [Sampler-side random setup choices](core/uniform_top_p_game_setup.md) Shows why `uniform_top_p` avoids generating long option lists just to pick one in user code
 - [Guided generation](core/guided_generation.md) Explains guided choice, guided regex, guided JSON, sketches-core, and the FSA/token masking flow
-- [Guided decoding overview](core/guided_decoding_real_inference_engine.md) A narrative walkthrough of guided decoding and how it moves Deliverance toward a full inference-engine feature set
-- [No-black-box AI for Spring developers](spring-ai-deliverance/no_black_box_java_ai.md) Positions Deliverance with Spring AI for Java-first local prototyping
+- [Guided decoding overview](core/guided_decoding_real_inference_engine.md) A narrative walkthrough of guided decoding and how it moves Reckoning toward a full inference-engine feature set
+- [No-black-box AI for Spring developers](spring-ai-reckoning/no_black_box_java_ai.md) Positions Reckoning with Spring AI for Java-first local prototyping
 - [Prefix cache](core/PrefixCache.md) Describes how to get the most benefits from the prefix cache
 - [Shared KV block cache plan](core/shared_kv_block_cache_plan.md) Plans KVCache2 shared immutable blocks, leases, and disk prefix persistence boundaries
 - [Prefix cache MSE TurboQuant](core/prefix_cache_turboquant.md) Documents experimental compressed prefix snapshots and tradeoffs
@@ -75,7 +66,7 @@ Generation:
 - [KVCache2 roadmap](core/KVCache2Roadmap.md) Tracks configurable KV precision, automatic prefix caching, and disk-backed KV2 work
 - [Tensor parallel guide](core/TensorParallelGuide.md) Explains how to enable tensor-parallel generation for Gemma2
 - [Tensor parallel developer notes](core/TensorParallelDeveloper.md) Details the implementation changes behind tensor parallelism
-- [GKE Qwen TP8 runbook](charts/deliverance-tp/GKE_QWEN_TP8.md) Shows the Helm/GKE setup for Qwen3 0.6B with shared Filestore cache
+- [GKE Qwen TP8 runbook](charts/reckoning-tp/GKE_QWEN_TP8.md) Shows the Helm/GKE setup for Qwen3 0.6B with shared Filestore cache
 - [Build and test guide](build.md) Explains normal builds, Java-only native builds, native logs, and test flags
 
 
@@ -87,7 +78,7 @@ Generation:
 - classification "You are a whack coder" -> {"nice":.10f, "mean":.90f}
 
 #### Embedded inference engine usage (ml-ops)
-Deliverance is capable of running as an API inside your application.
+Reckoning is capable of running as an API inside your application.
 
 #### Generation 
 Large Language Models are very resource intensive, but smaller quantized models fit the embedded cases. It only takes a few lines of code to get started:
@@ -136,18 +127,18 @@ try (AbstractModel model = AutoModelForSequenceClassification
 
 #### Coding assistant (chat-bot, vibrant-maven-plugin, rag-chat)
 
-Deliverance can back local coding-assistant experiments and spec-driven generation workflows.
+Reckoning can back local coding-assistant experiments and spec-driven generation workflows.
 
-![nanocode-deliverance terminal screenshot](nanocode-deliverance/nanocode.png)
+![reckoning-nanocode terminal screenshot](reckoning-nanocode/nanocode.png)
 
 - [`vibrant-maven-plugin`](vibrant-maven-plugin/README.md) generates code from Maven-managed prompt/spec definitions. It is useful when you want repeatable, checked-in generation steps instead of one-off chat output. See also the [vibrant-maven-plugin video](https://www.youtube.com/watch?v=Glp_hAieOq8).
-- [`nanocode-deliverance`](nanocode-deliverance/README.md) is a tiny terminal coding agent inspired by `nanocode.java`, backed by a running Deliverance HTTP server.
+- [`reckoning-nanocode`](reckoning-nanocode/README.md) is a tiny terminal coding agent inspired by `nanocode.java`, backed by a running Reckoning HTTP server.
 
-These projects are intentionally small integration surfaces: start a Deliverance HTTP server with the model you want, then point the assistant/plugin at that local endpoint.
+These projects are intentionally small integration surfaces: start a Reckoning HTTP server with the model you want, then point the assistant/plugin at that local endpoint.
 
 #### Nemotron Labs Diffusion
 
-Nemotron Labs Diffusion is a different beast: one checkpoint can act like a traditional autoregressive language model and also run block-diffusion style generation. Deliverance supports the `nvidia/Nemotron-Labs-Diffusion-3B` family with AR, linear self-speculation, QOD/JQ4 loading, GPU block-logit projection, packed block attention, KVCache2, and experimental TurboQuant KV storage.
+Nemotron Labs Diffusion is a different beast: one checkpoint can act like a traditional autoregressive language model and also run block-diffusion style generation. Reckoning supports the `nvidia/Nemotron-Labs-Diffusion-3B` family with AR, linear self-speculation, QOD/JQ4 loading, GPU block-logit projection, packed block attention, KVCache2, and experimental TurboQuant KV storage.
 
 If AR is the one-token-at-a-time classic, diffusion is the block-at-a-time newcomer: mask a region, denoise it, verify what stuck, and move forward. That makes it a useful playground for CPU inference research because the runtime has to expose cache state, acceptance rates, denoising steps, and attention costs instead of hiding everything behind a single decode loop.
 
@@ -157,17 +148,17 @@ Read the dedicated [Nemotron Labs Diffusion support](core/nemotron_labs_diffusio
 
 ##### Running from Docker
 
-There are a variety of scripts to build and run deliverance using [dockerscripts](docker)
+There are a variety of scripts to build and run reckoning using [dockerscripts](docker)
 
-Each release images are pushed to [dockerhub](https://hub.docker.com/repository/docker/ecapriolo/deliverance/tags/0.0.5/sha256-5114ef84ef91534773c8e6052fafa5641dcf75e14699d1e3d0f8ac78cc90af17) 
+Each release images are pushed to [dockerhub](https://hub.docker.com/repository/docker/ecapriolo/reckoning/tags/0.0.5/sha256-5114ef84ef91534773c8e6052fafa5641dcf75e14699d1e3d0f8ac78cc90af17) 
 
-During inferencing deliverance will automatically download models from huggingface and store them ~{HOME}/.deliverance directory. Because the models are large it is wise to ensure you can share them on your local system and inside the docker. The recipe below uses a bind mount to provide read only access
-to the data directory. To stage the data initially replace ~/.deliverance:/home/deliverance/.deliverance:ro with ~/.deliverance:/home/deliverance/.deliverance:rw 
+During inferencing reckoning will automatically download models from huggingface and store them ~{HOME}/.deliverance directory. Because the models are large it is wise to ensure you can share them on your local system and inside the docker. The recipe below uses a bind mount to provide read only access
+to the data directory. To stage the data initially replace ~/.deliverance:/home/reckoning/.deliverance:ro with ~/.deliverance:/home/reckoning/.deliverance:rw 
 
 ```sh
 docker run -p 8085:8080 \
--it -v ~/.deliverance:/home/deliverance/.deliverance:ro \
--e DELIVERANCE_OPTS=" -Dspring.config.location=file:/deliverance/simple.yaml " ecapriolo/deliverance:0.0.5
+-it -v ~/.deliverance:/home/reckoning/.deliverance:ro \
+-e RECKONING_OPTS=" -Dspring.config.location=file:/reckoning/simple.yaml " ecapriolo/reckoning:0.0.5
 ```
 
 After it starts up you can use the embedding-test.sh to issue a simple request:
@@ -197,9 +188,9 @@ WARNING: Using incubator modules: jdk./run.incubator.vector
 
  :: Spring Boot ::                (v3.5.5)
 
-2025-10-30T14:37:10.247-04:00  INFO 218011 --- [           main] n.d.http.DeliveranceApplication          : Starting DeliveranceApplication using Java 24.0.2 with PID 218011 (/home/edward/deliverence/web/target/web-0.0.1-SNAPSHOT.jar started by edward in /home/edward/deliverence/web)
+2025-10-30T14:37:10.247-04:00  INFO 218011 --- [           main] n.d.http.ReckoningApplication          : Starting ReckoningApplication using Java 24.0.2 with PID 218011 (/home/edward/deliverence/web/target/web-0.0.1-SNAPSHOT.jar started by edward in /home/edward/deliverence/web)
 2025-10-30T14:38:52.134-04:00  INFO 218011 --- [           main] o.s.b.a.w.s.WelcomePageHandlerMapping    : Adding welcome page: class path resource [public/index.html]
-2025-10-30T14:38:53.002-04:00  INFO 218011 --- [           main] n.d.http.DeliveranceApplication          : Started DeliveranceApplication in 103.909 seconds (process running for 105.417)
+2025-10-30T14:38:53.002-04:00  INFO 218011 --- [           main] n.d.http.ReckoningApplication          : Started ReckoningApplication in 103.909 seconds (process running for 105.417)
 
 ```
 The is a small example HTML application that communicates to the HTTP server. It is not a primary focus of the development at this time and is not part of the test automation. 
@@ -214,14 +205,14 @@ Open your browser to http://localhost:8080
 
 ### Tensor Engines, Panama, Native SIMD, And JQ4
 
-Deliverance's performance story is the combination of safetensors loading, memory-mapped tensor storage, Project Panama vector operations, native SIMD kernels, and JQ4 quantized weights. This is not a DataFrame API; it is a small set of inference-focused tensor operations that execute tens of thousands of times per request.
+Reckoning's performance story is the combination of safetensors loading, memory-mapped tensor storage, Project Panama vector operations, native SIMD kernels, and JQ4 quantized weights. This is not a DataFrame API; it is a small set of inference-focused tensor operations that execute tens of thousands of times per request.
 
 For example, a Qwen3-4B Q4 benchmark can execute attention and MLP kernels more than 9,000 times in a single 256-token turn, with `causalselfattention.score_value`, `mlpblock.forward`, and `sampler.output_projection` dominating latency. That is where memory layout, Q4 scale blocks, and native/Panama kernels matter.
 
 Read more:
 
 - [Tensor engines and JQ4](core/tensor_engines_and_jq4.md) explains the problem, the tensor engine stack, and benchmark-profile examples.
-- [JQ4 tensor format](core/jq4_tensor_format.md) describes how Deliverance stores Q4 weights and `.qb` scale sidecars.
+- [JQ4 tensor format](core/jq4_tensor_format.md) describes how Reckoning stores Q4 weights and `.qb` scale sidecars.
 - [Native SIMD kernels](core/native_simd_kernels.md) explains the native GEMM paths and where Native SIMD still delegates to Panama.
 
 ### Building And Testing
@@ -230,7 +221,7 @@ See [Build and test guide](build.md) for normal builds, Java-only native builds,
 
 ### 🔍 Semantic Search & Embeddings
 
-Deliverance supports embedding models for semantic search, information retrieval, RAG, and code understanding. 
+Reckoning supports embedding models for semantic search, information retrieval, RAG, and code understanding. 
 See [Semantic Search & Embeddings](core/semantic_search.md) for LEAF model notes and a full Java example.
 
 ### Performance
@@ -250,7 +241,7 @@ each other. The class *ConfigurableTensorProvider* will auto pick, but you can u
 
 #### DISK/Ram
 
-For larger models (even quanitized ones) the disk footprint is large 4GB - 100GB. Deliverance memory maps those files however
+For larger models (even quanitized ones) the disk footprint is large 4GB - 100GB. Reckoning memory maps those files however
 fast disk and ample RAM are needed as the disk access is very heavy (load from disk , load from disk , multiply). If you
 do not have enough RAM disk cache and IOWait will be a big bottleneck
 

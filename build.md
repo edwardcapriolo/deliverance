@@ -1,13 +1,13 @@
 # Build And Test Guide
 
-Deliverance requires JDK 25 for most modules. The generated OpenAPI `client` module targets Java 17 internally, but normal repo builds should use JDK 25.
+Reckoning requires JDK 25 for most modules. The generated OpenAPI `client` module targets Java 17 internally, but normal repo builds should use JDK 25.
 
 ## Standard Build
 
 ```sh
 export JAVA_HOME=/usr/lib/jvm/java-25-temurin-jdk/
-git clone git@github.com:edwardcapriolo/deliverance.git
-cd deliverance
+git clone git@github.com:edwardcapriolo/reckoning.git
+cd reckoning
 mvn install -DskipTests
 ```
 

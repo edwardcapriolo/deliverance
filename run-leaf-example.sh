@@ -70,4 +70,4 @@ java -cp "$CP" \
     --add-opens java.base/java.nio=ALL-UNNAMED \
     --add-modules jdk.incubator.vector \
     --enable-preview \
-    io.teknek.deliverance.examples.LeafModelExample "$@"
+    io.teknek.reckoning.examples.LeafModelExample "$@"

@@ -1,8 +1,8 @@
 # Gemma4 Support
 
-This page explains Deliverance's current Gemma 4 support at a high level, what works today, and how to use it.
+This page explains Reckoning's current Gemma 4 support at a high level, what works today, and how to use it.
 
-## What Gemma4 Means In Deliverance
+## What Gemma4 Means In Reckoning
 
 Gemma 4 is not treated as a simple Gemma 2 checkpoint refresh.
 
@@ -29,7 +29,7 @@ The main target today is:
 
 - `google/gemma-4-E2B-it`
 
-Deliverance also has infrastructure for broader Gemma 4 work, but E2B is the most actively exercised configuration.
+Reckoning also has infrastructure for broader Gemma 4 work, but E2B is the most actively exercised configuration.
 
 ## Using A Gemma4 Model
 
@@ -64,7 +64,7 @@ PromptSupport.Builder prompt = model.promptSupport().orElseThrow().builder()
         .addUserMessage("Bob is a carpenter. Sara is a teacher. Who should you call to fix your roof?");
 ```
 
-When the model emits a thought channel, Deliverance will parse it into:
+When the model emits a thought channel, Reckoning will parse it into:
 
 - `response.responseText`
 - `response.reasoning`
@@ -75,7 +75,7 @@ Note that enabling thinking does not guarantee that the model will always emit a
 
 For Gemma 4, the important thing is not only the rendered prompt string, but the exact prompt token ids.
 
-Deliverance now supports using the `grace` tokenizer path in runtime encoding, which is important because Gemma 4 expects prompt-control tokens like:
+Reckoning now supports using the `grace` tokenizer path in runtime encoding, which is important because Gemma 4 expects prompt-control tokens like:
 
 - `<|turn>`
 - `<turn|>`
@@ -86,7 +86,7 @@ The legacy core tokenizer path can still be useful for comparison/debugging, but
 
 ## Local Models And Quantized Models
 
-Deliverance stores fetched and local models under:
+Reckoning stores fetched and local models under:
 
 - `~/.deliverance/<owner>_<model>/`
 
@@ -94,7 +94,7 @@ This applies to:
 
 - Hugging Face fetched models
 - tokenizer-only fetches
-- local quantized model outputs created by Deliverance
+- local quantized model outputs created by Reckoning
 
 If the required local files already exist, the fetch path now prefers the local directory before contacting Hugging Face.
 

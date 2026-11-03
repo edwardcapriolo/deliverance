@@ -1,4 +1,4 @@
-Deliverance tokenizer showdown corpus.
+Reckoning tokenizer showdown corpus.
 
 This document intentionally mixes plain English, code, punctuation, whitespace, numbers, and Unicode so tokenizer behavior has to handle more than simple ASCII prose.
 

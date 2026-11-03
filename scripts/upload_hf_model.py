@@ -13,7 +13,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("repo_id", help="Hugging Face repo id, for example edwardcapriolo/model-name")
     parser.add_argument("local_dir", help="Local model directory to upload")
     parser.add_argument("--private", action="store_true", help="Create the model repo as private")
-    parser.add_argument("--message", default="Upload Deliverance model", help="Commit message")
+    parser.add_argument("--message", default="Upload Reckoning model", help="Commit message")
     return parser.parse_args()
 
 

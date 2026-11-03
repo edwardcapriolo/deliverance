@@ -179,7 +179,7 @@ guidedJson
 Add `guided_json` to `CreateChatCompletionRequest` in:
 
 ```text
-web/deliverance_specification.yaml
+web/reckoning_specification.yaml
 ```
 
 Then regenerate sources:
@@ -201,7 +201,7 @@ Add web mapping tests in `ChatCompletionControllerTest`.
 Add focused tests similar to guided regex:
 
 ```text
-core/src/test/java/io/teknek/deliverance/guided/GuidedJsonLogitsProcessorTest.java
+core/src/test/java/io/teknek/reckoning/guided/GuidedJsonLogitsProcessorTest.java
 ```
 
 Use a tiny controlled model/vocabulary. Example schema:

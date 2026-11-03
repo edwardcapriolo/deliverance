@@ -2,7 +2,7 @@
 
 ## Goal
 
-Port DiffusionGemma support into Deliverance by following Hugging Face source and tests first. The port should use small deterministic test models with real tensor names and scaled shape formulas before attempting real model loading.
+Port DiffusionGemma support into Reckoning by following Hugging Face source and tests first. The port should use small deterministic test models with real tensor names and scaled shape formulas before attempting real model loading.
 
 The implementation must avoid slow scalar scaffolding in production paths. Panama is the Java baseline, native SIMD is required for CPU hot paths, and GPU shaders should be used only for large canvas operations where transfer costs can be amortized.
 
@@ -40,7 +40,7 @@ Acceptance criteria:
 
 - Every HF DiffusionGemma test is named and classified.
 - The doc contains enough tensor names and shape formulas to build a tiny checkpoint writer.
-- The doc separates exact HF behavior from Deliverance implementation decisions.
+- The doc separates exact HF behavior from Reckoning implementation decisions.
 - No model implementation begins before this document exists.
 
 ## Phase 2: Tiny Config And Checkpoint Writer
@@ -82,7 +82,7 @@ Tests:
 
 ## Phase 3: Configuration Port
 
-Implement Deliverance config classes:
+Implement Reckoning config classes:
 
 - `DiffusionGemmaConfig`
 - `DiffusionGemmaTextConfig`

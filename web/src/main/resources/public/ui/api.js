@@ -5,7 +5,7 @@ function postRequest(input, session, signal) {
   return fetch(URL, {
     method: 'POST',
     headers: {
-      'X-Deliverance-Session': session,
+      'X-Reckoning-Session': session,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({"model": "ignore", "messages": [{"role": "user", "content": input}], "stream": true }),

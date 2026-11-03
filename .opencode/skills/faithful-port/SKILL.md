@@ -5,7 +5,7 @@ description: Use when porting an implementation from another language or upstrea
 
 # Faithful Port
 
-Use this skill for ports from a source implementation such as Hugging Face Transformers into Deliverance. The source implementation is the behavioral authority. Do not call a structural approximation a faithful port.
+Use this skill for ports from a source implementation such as Hugging Face Transformers into Reckoning. The source implementation is the behavioral authority. Do not call a structural approximation a faithful port.
 
 ## Core Rule
 

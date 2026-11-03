@@ -1,6 +1,6 @@
 # Industry-Standard Chat API
 
-Deliverance exposes an industry-standard `/chat/completions` API from the `web` module. This API maps HTTP JSON requests onto the same embedded inference engine used by Java callers.
+Reckoning exposes an industry-standard `/chat/completions` API from the `web` module. This API maps HTTP JSON requests onto the same embedded inference engine used by Java callers.
 
 ## Request Flow
 
@@ -19,13 +19,13 @@ HTTP /chat/completions
 The generated request model comes from:
 
 ```text
-web/deliverance_specification.yaml
+web/reckoning_specification.yaml
 ```
 
 The request mapping lives in:
 
 ```text
-web/src/main/java/net/deliverance/http/ChatCompletionService.java
+web/src/main/java/net/reckoning/http/ChatCompletionService.java
 ```
 
 ## Generation Parameters
@@ -48,7 +48,7 @@ These are request-time controls. They do not change model weights or model const
 
 ## Chat Templates
 
-Deliverance uses model-specific prompt support to render chat messages into the format expected by the model.
+Reckoning uses model-specific prompt support to render chat messages into the format expected by the model.
 
 ```text
 messages[]
@@ -63,13 +63,13 @@ This is important because Llama, Gemma, Qwen, and other model families do not sh
 
 ## Tool Calls
 
-Tool requests are converted into Deliverance prompt-tool objects and then parsed from model output by model-family-specific tool parsers.
+Tool requests are converted into Reckoning prompt-tool objects and then parsed from model output by model-family-specific tool parsers.
 
 See [Tool call parser](tool_parser.md).
 
 ## Guided Output Fields
 
-Deliverance exposes guided decoding fields directly on chat completion requests:
+Reckoning exposes guided decoding fields directly on chat completion requests:
 
 ```json
 {

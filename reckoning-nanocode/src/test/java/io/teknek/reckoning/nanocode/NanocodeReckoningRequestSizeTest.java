@@ -1,0 +1,176 @@
+package io.teknek.reckoning.nanocode;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.teknek.reckoning.client.model.CreateChatCompletionRequest;
+import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class NanocodeReckoningRequestSizeTest {
+    private static final ObjectMapper JSON = NanocodeReckoning.clientMapper();
+
+    @Test
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    void defaultToolsProduceSmallChatRequest() throws Exception {
+        NanocodeReckoning agent = new NanocodeReckoning(new NanocodeReckoning.Config(
+                "http://localhost:8085", "Llama-3.2-3B-Instruct-JQ4", null, 256, 2000, 3, 0.0d, true, false, true,
+                "eclipse-temurin:25-jdk", true, "You are a concise coding assistant.", "small",
+                Map.of("small", "Reason briefly. Keep reasoning under 2 sentences."), false));
+        CreateChatCompletionRequest request = new CreateChatCompletionRequest()
+                .model("Llama-3.2-3B-Instruct-JQ4")
+                .maxTokens(256)
+                .temperature(BigDecimal.ZERO)
+
+                .messages((List) List.of(
+                        NanocodeReckoning.message("system", "You are a concise coding assistant. cwd: /tmp."),
+                        NanocodeReckoning.message("user", "hi")))
+                .tools(agent.toolSchema())
+                .parallelToolCalls(false);
+
+        String json = JSON.writeValueAsString(request);
+        int bytes = json.getBytes(StandardCharsets.UTF_8).length;
+        System.out.println("nanocode request bytes=" + bytes);
+        System.out.println(json);
+        assertTrue(bytes < 20_000, "expected tool request to remain small, bytes=" + bytes);
+    }
+
+    @Test
+    void systemPromptTellsModelToCallToolsInsteadOfDescribingJson() {
+        String prompt = NanocodeReckoning.systemPrompt("/tmp/work");
+
+        assertTrue(prompt.contains("concise coding assistant"));
+        assertTrue(prompt.contains("cwd: /tmp/work"));
+    }
+
+    @Test
+    void defaultToolsIncludeWebFetch() {
+        NanocodeReckoning agent = new NanocodeReckoning(new NanocodeReckoning.Config(
+                "http://localhost:8085", "test", null, 256, 2000, 3, 0.0d, true, false, true,
+                "eclipse-temurin:25-jdk", true, "You are a concise coding assistant.", "small",
+                Map.of("small", "Reason briefly. Keep reasoning under 2 sentences."), false));
+
+        assertTrue(agent.toolSchema().stream()
+                .anyMatch(tool -> "web_fetch".equals(tool.getFunction().getName())));
+    }
+
+    @Test
+    void terminalAliasIsAdvertisedOnlyWhenRiskyToolsAreEnabled() {
+        NanocodeReckoning safeAgent = new NanocodeReckoning(new NanocodeReckoning.Config(
+                "http://localhost:8085", "test", null, 256, 2000, 3, 0.0d, true, false, true,
+                "eclipse-temurin:25-jdk", true, "You are a concise coding assistant.", "small",
+                Map.of("small", "Reason briefly. Keep reasoning under 2 sentences."), false));
+        NanocodeReckoning riskyAgent = new NanocodeReckoning(new NanocodeReckoning.Config(
+                "http://localhost:8085", "test", null, 256, 2000, 3, 0.0d, true, true, true,
+                "eclipse-temurin:25-jdk", true, "You are a concise coding assistant.", "small",
+                Map.of("small", "Reason briefly. Keep reasoning under 2 sentences."), false));
+
+        assertTrue(safeAgent.toolSchema().stream()
+                .noneMatch(tool -> "terminal".equals(tool.getFunction().getName())));
+        assertTrue(riskyAgent.toolSchema().stream()
+                .anyMatch(tool -> "terminal".equals(tool.getFunction().getName())));
+    }
+
+    @Test
+    void terminalAliasRoutesToShellExecutorWhenEnabled() throws Exception {
+        String result = NanocodeReckoning.runToolForTest("terminal", JSON.readTree("{\"command\":\"printf antares\"}"),
+                true, null);
+
+        assertEquals("antares", result);
+    }
+
+    @Test
+    void webFetchRejectsNonPublicUrls() throws Exception {
+        assertTrue(NanocodeReckoning.executeTool("web_fetch", JSON.readTree("{\"url\":\"file:///etc/passwd\"}"))
+                .contains("supports only http and https"));
+        assertTrue(NanocodeReckoning.executeTool("web_fetch", JSON.readTree("{\"url\":\"http://localhost:8080\"}"))
+                .contains("only fetches public"));
+    }
+
+    @Test
+    void configLoadsFromSingleJsonFile() throws Exception {
+        Path config = Files.createTempFile("nanocode", ".json");
+        Files.writeString(config, """
+                {
+                  "baseUrl": "http://localhost:8085/",
+                  "model": "Qwen3-4B-JQ4",
+                  "maxTokens": 512,
+                  "maxToolRounds": 5,
+                  "enableThinking": false
+                }
+                """);
+
+        NanocodeReckoning.Config loaded = NanocodeReckoning.Config.parse(new String[] {"--config", config.toString()});
+
+        assertEquals("http://localhost:8085", loaded.baseUrl());
+        assertEquals("Qwen3-4B-JQ4", loaded.model());
+        assertEquals(512, loaded.maxTokens());
+        assertEquals(5, loaded.maxToolRounds());
+        assertEquals(2000, loaded.maxToolResultChars());
+        assertTrue(loaded.toolsEnabled());
+        assertTrue(!loaded.enableThinking());
+    }
+
+    @Test
+    void configCommandSetsRoundsAndThinking() {
+        NanocodeReckoning agent = new NanocodeReckoning(new NanocodeReckoning.Config(
+                "http://localhost:8085", "test", null, 256, 2000, 3, 0.0d, true, false, true,
+                "eclipse-temurin:25-jdk", true, "You are a concise coding assistant.", "small",
+                Map.of("small", "Reason briefly. Keep reasoning under 2 sentences."), false));
+
+        assertTrue(agent.handleConfigCommand("/config set rounds 5"));
+        assertTrue(agent.handleConfigCommand("/config set thinking off"));
+        assertTrue(agent.handleConfigCommand("/config get rounds"));
+        assertTrue(agent.handleConfigCommand("/config get thinking"));
+    }
+
+    @Test
+    void configRejectsOldSwitches() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> NanocodeReckoning.Config.parse(new String[] {"--model", "Qwen3-4B-JQ4"}));
+
+        assertTrue(error.getMessage().contains("--config"));
+    }
+
+    @Test
+    void reasoningDeltaReadsOpenAiAndVllmFields() throws Exception {
+        assertEquals("openai", NanocodeReckoning.reasoningDelta(JSON.readTree("{\"" + NanocodeReckoning.OPENAI_REASONING_FIELD + "\":\"openai\"}")));
+        assertEquals("vllm", NanocodeReckoning.reasoningDelta(JSON.readTree("{\"" + NanocodeReckoning.VLLM_REASONING_FIELD + "\":\"vllm\"}")));
+    }
+
+    @Test
+    void assistantMessageForNextRoundDoesNotIncludeReasoning() {
+        var responseMessage = NanocodeReckoning.streamingMessage("final answer", "hidden reasoning", List.of());
+
+        var nextRoundMessage = NanocodeReckoning.assistantMessage(responseMessage);
+
+        assertEquals("assistant", nextRoundMessage.get("role"));
+        assertEquals("final answer", nextRoundMessage.get("content"));
+        assertTrue(!nextRoundMessage.containsKey("reasoning"));
+        assertTrue(!nextRoundMessage.containsKey(NanocodeReckoning.OPENAI_REASONING_FIELD));
+        assertTrue(!nextRoundMessage.toString().contains("hidden reasoning"));
+    }
+
+    @Test
+    void configLoadsRootPromptAndReasoningPromptPresets() throws Exception {
+        Path config = Path.of("config-qwen3-4b-jq4.json");
+
+        NanocodeReckoning.Config loaded = NanocodeReckoning.Config.fromJson(config);
+
+        assertEquals("small", loaded.reasoningPrompt());
+        assertTrue(loaded.rootPrompt().contains("concise coding assistant"));
+        assertTrue(loaded.reasoningPrompts().containsKey("small"));
+        assertTrue(loaded.reasoningPrompts().containsKey("medium"));
+        assertTrue(loaded.reasoningPrompts().containsKey("large"));
+        assertTrue(loaded.reasoningPrompts().get("small").contains("under 2 sentences"));
+        assertTrue(NanocodeReckoning.systemPrompt("/tmp", loaded.systemPromptText()).contains("under 2 sentences"));
+    }
+}

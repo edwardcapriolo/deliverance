@@ -38,7 +38,7 @@ LIB     := $(LIB_DIR)/$(LIB_NAME).$(LIB_EXT)
 TENSOR2_SRC_DIR := src/main/c/tensor2
 TENSOR2_SRCS    := $(wildcard $(TENSOR2_SRC_DIR)/*.c)
 TENSOR2_OBJS    := $(TENSOR2_SRCS:$(TENSOR2_SRC_DIR)/%.c=$(OBJ_DIR)/tensor2/%.o)
-TENSOR2_LIB_NAME ?= libdeliverance_tensor2
+TENSOR2_LIB_NAME ?= libreckoning_tensor2
 TENSOR2_LIB      := $(LIB_DIR)/$(TENSOR2_LIB_NAME).$(LIB_EXT)
 
 # GPU‐accelerated build (optional; enabled if CFLAGS2 is set)

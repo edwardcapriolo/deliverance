@@ -2,13 +2,13 @@
 
 You hear on the internet that you should "prototype in Python, then optimize the hot parts in Rust." But what if you could just write it once in Java and have it run 1.6x faster?
 
-This harness compares Deliverance Grace tokenization against Hugging Face's Rust-backed `tokenizers` package on the same local `tokenizer.json` and the same UTF-8 text corpus.
+This harness compares Reckoning Grace tokenization against Hugging Face's Rust-backed `tokenizers` package on the same local `tokenizer.json` and the same UTF-8 text corpus.
 
 ![Tokenizer showdown bar chart](tokenizer_showdown_bars.svg)
 
 ## What Is Grace?
 
-Grace is Deliverance's Java tokenizer library: Hugging Face-style tokenizer behavior, Java APIs, local cache loading, special-token handling, byte-level BPE, decode support, chat-template integration, and parity tests against Hugging Face outputs. See the [Grace README](README.md) for details.
+Grace is Reckoning's Java tokenizer library: Hugging Face-style tokenizer behavior, Java APIs, local cache loading, special-token handling, byte-level BPE, decode support, chat-template integration, and parity tests against Hugging Face outputs. See the [Grace README](README.md) for details.
 
 ## Current Result
 

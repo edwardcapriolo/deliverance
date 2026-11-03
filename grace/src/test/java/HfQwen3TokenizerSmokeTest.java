@@ -1,7 +1,7 @@
-import io.teknek.deliverance.grace.AutoTokenizer;
-import io.teknek.deliverance.grace.Encoding;
-import io.teknek.deliverance.grace.PreTrainedTokenizer;
-import io.teknek.deliverance.grace.TokenIds;
+import io.teknek.reckoning.grace.AutoTokenizer;
+import io.teknek.reckoning.grace.Encoding;
+import io.teknek.reckoning.grace.PreTrainedTokenizer;
+import io.teknek.reckoning.grace.TokenIds;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

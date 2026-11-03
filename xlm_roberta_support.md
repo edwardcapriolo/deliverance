@@ -126,14 +126,14 @@ The Java design should follow the modular architecture, not the generated-file l
 
 ### `grace` Findings
 
-`grace/src/main/java/io/teknek/deliverance/grace/AutoTokenizer.java`
+`grace/src/main/java/io/teknek/reckoning/grace/AutoTokenizer.java`
 
 - Does not recognize `XLMRobertaTokenizer`.
 - Its generic BPE path is selected mainly for byte-level BPE tokenizers.
 - XLM-R uses SentencePiece-style `U+2581` word markers and its own special-token
   post-processing, so routing it through `ByteLevelBpeTokenizer` would not be faithful.
 
-`grace/src/main/java/io/teknek/deliverance/grace/PreTrainedTokenizerBase.java`
+`grace/src/main/java/io/teknek/reckoning/grace/PreTrainedTokenizerBase.java`
 
 - Already provides useful shared behavior for encoding, attention masks, padding,
   truncation, special-token masks, added tokens, and batch encoding.
@@ -142,13 +142,13 @@ The Java design should follow the modular architecture, not the generated-file l
 - The generic special-token builder can insert BOS/EOS, but XLM-R needs an explicit
   `<s> tokens </s>` post-processor and must preserve the model's token IDs.
 
-`grace/src/main/java/io/teknek/deliverance/grace/BytePairEncodingModel.java`
+`grace/src/main/java/io/teknek/reckoning/grace/BytePairEncodingModel.java`
 
 - Stores only the current generic BPE vocabulary, merge ranks, pre-tokenizer config, and
   unknown token.
 - It has no representation for the XLM-R tokenizer's model/post-processor semantics.
 
-`grace/src/main/java/io/teknek/deliverance/grace/Encoding.java` and
+`grace/src/main/java/io/teknek/reckoning/grace/Encoding.java` and
 `PreTrainedTokenizerBase.pad(...)`
 
 - Already expose the `inputIds`, `attentionMask`, and special-token mask needed by core.
@@ -156,19 +156,19 @@ The Java design should follow the modular architecture, not the generated-file l
 
 ### `core` Findings
 
-`core/src/main/java/io/teknek/deliverance/model/ModelSupport.java`
+`core/src/main/java/io/teknek/reckoning/model/ModelSupport.java`
 
 - Registers `BERT` but not `XLM-ROBERTA`.
 - `detectModel` will therefore reject the target checkpoint before model construction.
 
-`core/src/main/java/io/teknek/deliverance/model/bert/BertConfig.java`
+`core/src/main/java/io/teknek/reckoning/model/bert/BertConfig.java`
 
 - Parses most shared encoder fields and `label2id`.
 - Does not currently model the XLM-R-specific `bos_token_id`, `eos_token_id`, or the
   distinction between RoBERTa-family padding-index position defaults and ordinary BERT
   position defaults.
 
-`core/src/main/java/io/teknek/deliverance/model/bert/BertModel.java`
+`core/src/main/java/io/teknek/reckoning/model/bert/BertModel.java`
 
 - Already contains the production TensorRef/SIMD-capable encoder implementation.
 - Weight lookup accepts `""` and `"bert."` prefixes, not `"roberta."`.
@@ -183,7 +183,7 @@ The Java design should follow the modular architecture, not the generated-file l
   `classifier.dense`, activation, then `classifier.out_proj`, with dropout around the
   dense projection.
 
-`core/src/main/java/io/teknek/deliverance/model/AbstractModel.java`
+`core/src/main/java/io/teknek/reckoning/model/AbstractModel.java`
 
 - The public `classify(String, PoolingType)` API already performs vectorized classifier
   scoring and softmax.

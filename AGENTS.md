@@ -70,7 +70,7 @@
 
 ## OpenAPI Generated Client
 
-- `client` generates sources from `web/deliverance_specification.yaml` during `generate-sources`.
+- `client` generates sources from `web/reckoning_specification.yaml` during `generate-sources`.
 - Generated OpenAPI tests can confuse IDEs and compilation. `client/pom.xml` disables generated API/model tests and deletes `target/generated-sources/openapi/src/test` during generation; preserve that behavior.
 
 ## Embeddings

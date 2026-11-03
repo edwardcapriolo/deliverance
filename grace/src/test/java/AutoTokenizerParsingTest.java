@@ -1,5 +1,5 @@
-import io.teknek.deliverance.grace.AutoTokenizer;
-import io.teknek.deliverance.grace.BytePairEncodingModel;
+import io.teknek.reckoning.grace.AutoTokenizer;
+import io.teknek.reckoning.grace.BytePairEncodingModel;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;

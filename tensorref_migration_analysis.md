@@ -2,7 +2,7 @@
 
 ## Context
 
-Deliverance is migrating transformer execution from `AbstractTensor` and `TensorOperations` to `TensorRef` and
+Reckoning is migrating transformer execution from `AbstractTensor` and `TensorOperations` to `TensorRef` and
 `Lighter`. The intended migration is a structural mirror of the existing implementation, changing only the tensor
 library boundary.
 
@@ -68,9 +68,9 @@ read the wrong key columns for most GQA heads.
 
 Relevant files:
 
-- `core/src/main/java/io/teknek/deliverance/generator2/KvCacheSelfAttention2.java`
-- `native/src/main/java/io/teknek/deliverance/tensor2/NativeOps.java`
-- `native/src/test/java/io/teknek/deliverance/tensor2/Tensor2LighterDotProductRowsFuzzTest.java`
+- `core/src/main/java/io/teknek/reckoning/generator2/KvCacheSelfAttention2.java`
+- `native/src/main/java/io/teknek/reckoning/tensor2/NativeOps.java`
+- `native/src/test/java/io/teknek/reckoning/tensor2/Tensor2LighterDotProductRowsFuzzTest.java`
 
 The current guard prevents corruption by rejecting unequal offsets, but it sends those operations to Panama. The
 native `batchDotProduct` ABI already supports separate offsets and is a better production implementation target.

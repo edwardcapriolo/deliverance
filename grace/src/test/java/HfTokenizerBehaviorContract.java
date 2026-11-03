@@ -1,13 +1,13 @@
-import io.teknek.deliverance.grace.BatchEncoding;
-import io.teknek.deliverance.grace.EncodeOptions;
-import io.teknek.deliverance.grace.Encoding;
-import io.teknek.deliverance.grace.PaddingOptions;
-import io.teknek.deliverance.grace.PaddingSide;
-import io.teknek.deliverance.grace.PaddingStrategy;
-import io.teknek.deliverance.grace.PreTrainedTokenizer;
-import io.teknek.deliverance.grace.TokenIds;
-import io.teknek.deliverance.grace.TruncationOptions;
-import io.teknek.deliverance.grace.TruncationSide;
+import io.teknek.reckoning.grace.BatchEncoding;
+import io.teknek.reckoning.grace.EncodeOptions;
+import io.teknek.reckoning.grace.Encoding;
+import io.teknek.reckoning.grace.PaddingOptions;
+import io.teknek.reckoning.grace.PaddingSide;
+import io.teknek.reckoning.grace.PaddingStrategy;
+import io.teknek.reckoning.grace.PreTrainedTokenizer;
+import io.teknek.reckoning.grace.TokenIds;
+import io.teknek.reckoning.grace.TruncationOptions;
+import io.teknek.reckoning.grace.TruncationSide;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

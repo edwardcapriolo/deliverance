@@ -1,0 +1,18 @@
+package io.teknek.reckoning.model.mistral;
+
+import io.teknek.reckoning.model.AbstractModel;
+import io.teknek.reckoning.model.ModelType;
+import io.teknek.reckoning.safetensors.Config;
+
+public class MistralModelType implements ModelType {
+    @Override
+    public Class<? extends AbstractModel> getModelClass() {
+        return MistralModel.class;
+    }
+
+    @Override
+    public Class<? extends Config> getConfigClass() {
+        return MistralConfig.class;
+    }
+
+}

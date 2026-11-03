@@ -40,13 +40,13 @@ jobs:
             make \
             unzip
 
-      - name: Cache Deliverance model downloads
+      - name: Cache Reckoning model downloads
         uses: actions/cache@v4
         with:
           path: ~/.deliverance
-          key: deliverance-models-${{ runner.os }}-v1
+          key: reckoning-models-${{ runner.os }}-v1
           restore-keys: |
-            deliverance-models-${{ runner.os }}-
+            reckoning-models-${{ runner.os }}-
 
       - name: Compile Java 25 modules
         run: mvn -B -pl core,safetensors,native -am -DskipTests compile

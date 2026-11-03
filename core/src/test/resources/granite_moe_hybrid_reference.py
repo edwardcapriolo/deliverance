@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Print Hugging Face GraniteMoeHybrid reference logits for a local checkpoint.
 
-Usage from the Deliverance repo root:
+Usage from the Reckoning repo root:
 
     PYTHONPATH=/path/to/transformers/src \
       python core/src/test/resources/granite_moe_hybrid_reference.py \

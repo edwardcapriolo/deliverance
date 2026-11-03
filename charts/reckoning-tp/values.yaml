@@ -1,0 +1,96 @@
+image:
+  repository: ecapriolo/reckoning
+  tag: 0.0.14-SNAPSHOT
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+model:
+  owner: tjake
+  name: gemma-2-2b-it-JQ4
+  outputHeadQuantization: Q4
+
+tensorOperations:
+  type: simd
+
+tensorParallel:
+  cluster: reckoning-gemma2-tp
+  deployment: gemma2-demo
+  size: 4
+  maxRanksPerWorker: 1
+  collectiveTransport: http
+  assignmentMode: automatic
+  gossipPort: 42606
+  readyTimeoutSeconds: 180
+  rankEndpointTimeoutSeconds: 300
+  rankConnectTimeoutSeconds: 5
+  rankRequestTimeoutSeconds: 30
+  rankOperationTimeoutSeconds: 60
+  rankCloseTimeoutSeconds: 10
+
+workers:
+  replicas: 4
+  adminPort: 8081
+  poolSize: 16
+  workingDType: F32
+  workingQType: I8
+  profileStages: true
+  resources: {}
+  # The image must be able to run this class with all Reckoning runtime dependencies on the classpath.
+  command:
+    - sh
+    - -lc
+  baseArgs:
+    - >-
+      cp_dir=${RECKONING_CLASSPATH_DIR:-/tmp/reckoning-cp};
+      mkdir -p "$cp_dir";
+      cd "$cp_dir";
+      jar xf /reckoning/web.jar BOOT-INF/classes BOOT-INF/lib;
+      if [ -n "${RECKONING_COORDINATOR_GOSSIP_HOST:-}" ]; then
+      coordinator_ip=$(getent hosts "$RECKONING_COORDINATOR_GOSSIP_HOST" | awk 'NR == 1 { print $1 }');
+      if [ -z "$coordinator_ip" ]; then echo "Unable to resolve coordinator gossip host $RECKONING_COORDINATOR_GOSSIP_HOST" >&2; exit 1; fi;
+      set -- "$@" --seed "$coordinator_ip=udp://$coordinator_ip:${RECKONING_GOSSIP_PORT:-42606}";
+      fi;
+      exec java --add-modules jdk.incubator.vector
+      --add-opens java.base/java.nio=ALL-UNNAMED
+      --enable-native-access=ALL-UNNAMED
+      -cp BOOT-INF/classes:BOOT-INF/lib/*
+      io.teknek.reckoning.benchmark.TpLocalCluster "$@"
+    - tp-worker
+
+coordinator:
+  replicas: 1
+  service:
+    type: ClusterIP
+    clusterIP: None
+    port: 8080
+  resources: {}
+  command:
+    - java
+  args:
+    - --add-modules
+    - jdk.incubator.vector
+    - --add-opens
+    - java.base/java.nio=ALL-UNNAMED
+    - --enable-native-access=ALL-UNNAMED
+    - -jar
+    - /reckoning/web.jar
+
+cache:
+  enabled: true
+  mountPath: /home/reckoning/.deliverance
+  storageClassName: ""
+  accessModes:
+    - ReadWriteMany
+  size: 100Gi
+  filestore:
+    createStorageClass: true
+    tier: standard
+    network: default
+
+podAnnotations: {}
+podSecurityContext: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

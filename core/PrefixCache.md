@@ -65,7 +65,7 @@ This is the stronger user-facing contract documented by major serving systems wi
 generated output with cache == generated output without cache
 ```
 
-Deliverance should only claim this when the relevant model and tensor-provider configuration also satisfies split-prefill
+Reckoning should only claim this when the relevant model and tensor-provider configuration also satisfies split-prefill
 equivalence:
 
 ```
@@ -82,18 +82,18 @@ batchForward(suffixTokens, prefixLength)
 If split-prefill equivalence fails, prefix cache may still be mechanically correct, but it is not transparent in the
 strict serving-system sense for that runtime configuration.
 
-### What Deliverance supports today
+### What Reckoning supports today
 
-Deliverance prefix cache currently supports the mechanical cache behavior: block-aligned lookup, KV copy round trips,
+Reckoning prefix cache currently supports the mechanical cache behavior: block-aligned lookup, KV copy round trips,
 and correct decode-start/token-budget math. This is useful for reducing prefill work on shared prompt prefixes.
 
 The disk KV backend is separate from prefix-cache identity. `KvBufferCacheSettings(File)` stores active KV pages as
 memory-mapped page files for live `KvBuffer` instances; it does not make those files durable prefix-cache entries. When
-disk KV is enabled, Deliverance skips prefix snapshot storage entirely. This is intentional: the current prefix cache is
+disk KV is enabled, Reckoning skips prefix snapshot storage entirely. This is intentional: the current prefix cache is
 copy-snapshot based, and storing every block-aligned prefix snapshot as disk-backed KV pages can create quadratic disk
 growth. See `core/DiskKvBackend.md` for the active disk-page storage contract, cleanup behavior, and metrics.
 
-Deliverance does not currently provide a documented deterministic or batch/chunk-invariant inference mode. That means
+Reckoning does not currently provide a documented deterministic or batch/chunk-invariant inference mode. That means
 the project does not currently promise exact generated-token or generated-text equality between cold full-prefill and
 cache-hit split-prefill paths for every model and tensor-provider configuration.
 
@@ -141,7 +141,7 @@ hold. Otherwise the mismatch may be caused by ordinary chunk-shape numerical dif
 A number of metrics were added to the feature, but we are so proud of it we even log information every prompt
 
 ```
-[main] INFO io.teknek.deliverance.model.AbstractModel - time_to_first_token=811.371745 prefix_length=24
+[main] INFO io.teknek.reckoning.model.AbstractModel - time_to_first_token=811.371745 prefix_length=24
 ```
 
 The higher the prefix_length the larger KV match you found. time_to_first_token should be a lower number when 

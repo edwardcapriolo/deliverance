@@ -1,6 +1,6 @@
 # Nemotron Labs Diffusion Support
 
-Nemotron Labs Diffusion support brings a different kind of text generation into Deliverance: one checkpoint can run as a normal autoregressive language model, as a diffusion language model, and as a linear self-speculation model. It is not just another Llama-shaped port. It is a three-way generation system sharing one Ministral-style transformer backbone and one output head.
+Nemotron Labs Diffusion support brings a different kind of text generation into Reckoning: one checkpoint can run as a normal autoregressive language model, as a diffusion language model, and as a linear self-speculation model. It is not just another Llama-shaped port. It is a three-way generation system sharing one Ministral-style transformer backbone and one output head.
 
 ## Models
 
@@ -40,7 +40,7 @@ prompt tokens -> prefill KV cache -> sample one token -> append token -> repeat
 
 Each generated token depends on the prompt and all prior generated tokens. The model sees a causal attention mask, so token `n` cannot look ahead to token `n + 1`.
 
-Nemotron supports AR because the same transformer can be run in causal mode. In Deliverance, AR mode is useful as:
+Nemotron supports AR because the same transformer can be run in causal mode. In Reckoning, AR mode is useful as:
 
 - a loader and logits sanity check
 - a baseline for the shared weights, RoPE, KV cache, and output head
@@ -78,7 +78,7 @@ causal prefix -> append a block of mask tokens -> denoise masked block -> accept
 
 The block can use bidirectional information inside the active block during denoising. That is the big difference from AR: a token being filled inside the block can use information from neighboring block positions that are also being denoised.
 
-In practice, Deliverance currently focuses on Nemotron's linear self-speculation path because it maps well onto the existing generation and KV-cache machinery:
+In practice, Reckoning currently focuses on Nemotron's linear self-speculation path because it maps well onto the existing generation and KV-cache machinery:
 
 ```text
 causal prefill
@@ -98,7 +98,7 @@ The model still returns ordinary generated text, but the runtime counters tell a
 - attention time
 - logits block projection time
 
-## Generation Modes In Deliverance
+## Generation Modes In Reckoning
 
 Nemotron reads mode settings from `AutoModelConfig.generationOptions`.
 
@@ -188,7 +188,7 @@ try (AbstractModel model = AutoModelForCausaLm.newBuilder(fetcher)
 }
 ```
 
-The uploaded Deliverance QOD/JQ4 artifact is available at:
+The uploaded Reckoning QOD/JQ4 artifact is available at:
 
 ```text
 https://huggingface.co/edwardcapriolo/Nemotron-Labs-Diffusion-3B-JQ4
@@ -202,7 +202,7 @@ new ModelFetcher("edwardcapriolo", "Nemotron-Labs-Diffusion-3B-JQ4")
 
 ## Runtime Internals
 
-Deliverance's Nemotron path is built around KVCache2 because diffusion and speculation need explicit cache modes.
+Reckoning's Nemotron path is built around KVCache2 because diffusion and speculation need explicit cache modes.
 
 Core cache modes:
 

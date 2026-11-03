@@ -1,16 +1,16 @@
 # Native SIMD Kernels
 
-Deliverance can run tensor operations through Java/Panama or through JNI-backed native SIMD kernels. The native provider is selected automatically when the `deliverance` native library is available on `java.library.path` or loadable from the jar.
+Reckoning can run tensor operations through Java/Panama or through JNI-backed native SIMD kernels. The native provider is selected automatically when the `reckoning` native library is available on `java.library.path` or loadable from the jar.
 
 Startup logs identify the active provider:
 
 ```text
-[main] INFO io.teknek.deliverance.model.AbstractModel - Tensor provider = Native SIMD Operations, parallelSplitSize = 32
+[main] INFO io.teknek.reckoning.model.AbstractModel - Tensor provider = Native SIMD Operations, parallelSplitSize = 32
 ```
 
 ## What A GEMM Kernel Does
 
-GEMM means general matrix multiplication. In Deliverance, GEMM-style kernels power most projection work:
+GEMM means general matrix multiplication. In Reckoning, GEMM-style kernels power most projection work:
 
 ```text
 output = activation_or_hidden_state x weight_matrix
@@ -76,7 +76,7 @@ native/target/native-lib-only/linux-x86_64
 The benchmark scripts detect the classifier and pass the correct library path. You can override detection with:
 
 ```sh
-DELIVERANCE_NATIVE_CLASSIFIER=osx-aarch_64 ./benchmarks/run-qwen-single-benchmark.sh
+RECKONING_NATIVE_CLASSIFIER=osx-aarch_64 ./benchmarks/run-qwen-single-benchmark.sh
 ```
 
 ## Related Pages

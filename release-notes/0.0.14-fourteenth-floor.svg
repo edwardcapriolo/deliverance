@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
-  <title id="title">Deliverance 0.0.14 - The Fourteenth Floor</title>
-  <desc id="desc">Release artwork for Deliverance 0.0.14, codename The Fourteenth Floor, showing an elevator arriving at floor 14 with tensor-parallel ranks, LoRA, embeddings, Spring AI, Helm, and multi-arch images.</desc>
+  <title id="title">Reckoning 0.0.14 - The Fourteenth Floor</title>
+  <desc id="desc">Release artwork for Reckoning 0.0.14, codename The Fourteenth Floor, showing an elevator arriving at floor 14 with tensor-parallel ranks, LoRA, embeddings, Spring AI, Helm, and multi-arch images.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#07111f"/>

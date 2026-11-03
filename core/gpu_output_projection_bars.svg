@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="920" height="420" viewBox="0 0 920 420" role="img" aria-labelledby="title desc">
-  <title id="title">Deliverance output projection CPU versus WebGPU</title>
+  <title id="title">Reckoning output projection CPU versus WebGPU</title>
   <desc id="desc">A bar chart showing CPU SIMD output projection around 4.8 seconds and hybrid WebGPU output projection around 3.1 seconds per 256 generated tokens.</desc>
   <rect width="920" height="420" rx="28" fill="#10151f"/>
   <text x="46" y="62" fill="#f6f0df" font-family="Inter, Arial, sans-serif" font-size="33" font-weight="800">GPU Output Projection</text>

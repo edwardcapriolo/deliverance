@@ -1,6 +1,6 @@
 # Tuning With InferenceProfiler
 
-This is a practical workflow for finding and validating inference optimizations in Deliverance.
+This is a practical workflow for finding and validating inference optimizations in Reckoning.
 
 The short version:
 

@@ -1,6 +1,6 @@
 # Lighter And Tensor2
 
-`Lighter` is Deliverance's newer tensor operation layer. It is intentionally smaller and stricter than the older `TensorOperations` interface.
+`Lighter` is Reckoning's newer tensor operation layer. It is intentionally smaller and stricter than the older `TensorOperations` interface.
 
 The design goal is simple: make hot operations explicit, prove them with shared tests, and let each provider either support the operation or reject it. A provider should not quietly fall into a slow path that makes a benchmark look correct while hiding why production is slow.
 
@@ -55,7 +55,7 @@ The provider order is explicit. The current tests assert that `SIMD` is tried be
 The native tensor2 provider lives in the `native` module:
 
 ```text
-native/src/main/java/io/teknek/deliverance/tensor2/NativeOps.java
+native/src/main/java/io/teknek/reckoning/tensor2/NativeOps.java
 ```
 
 The tensor module does not import it and does not reflectively load it.
@@ -131,7 +131,7 @@ native/jextract_tensor2_native.sh
 The generated Java files live under:
 
 ```text
-native/src/main/java/io/teknek/deliverance/tensor/operations/tensor2native/
+native/src/main/java/io/teknek/reckoning/tensor/operations/tensor2native/
 ```
 
 ## Shared Fuzz Tests
@@ -141,13 +141,13 @@ Batch-dot has the same test style as tensor2 multiply-accumulate.
 The shared case generator is:
 
 ```text
-native/src/test/java/io/teknek/deliverance/tensor2/BatchDotProductFuzzCases.java
+native/src/test/java/io/teknek/reckoning/tensor2/BatchDotProductFuzzCases.java
 ```
 
 The fuzzer is:
 
 ```text
-native/src/test/java/io/teknek/deliverance/tensor2/Tensor2LighterBatchDotProductFuzzTest.java
+native/src/test/java/io/teknek/reckoning/tensor2/Tensor2LighterBatchDotProductFuzzTest.java
 ```
 
 It compares providers through `Lighter` against a naive `Lighter` reference.
@@ -165,7 +165,7 @@ Current coverage includes:
 The tensor2 native path also has a focused native parity test:
 
 ```text
-native/src/test/java/io/teknek/deliverance/tensor2/NativeOpsBatchDotProductTest.java
+native/src/test/java/io/teknek/reckoning/tensor2/NativeOpsBatchDotProductTest.java
 ```
 
 ## Shot At The Title

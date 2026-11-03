@@ -5,11 +5,11 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.module.jsonSchema.factories.SchemaFactoryWrapper;
-import io.teknek.deliverance.generator.GeneratorParameters;
-import io.teknek.deliverance.generator.Response;
-import io.teknek.deliverance.model.CausalLanguageModel;
-import io.teknek.deliverance.model.DoNothingGenerateEvent;
-import io.teknek.deliverance.safetensors.prompt.PromptContext;
+import io.teknek.reckoning.generator.GeneratorParameters;
+import io.teknek.reckoning.generator.Response;
+import io.teknek.reckoning.model.CausalLanguageModel;
+import io.teknek.reckoning.model.DoNothingGenerateEvent;
+import io.teknek.reckoning.safetensors.prompt.PromptContext;
 
 import java.util.List;
 import java.util.UUID;

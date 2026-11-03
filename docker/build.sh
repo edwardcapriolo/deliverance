@@ -64,7 +64,7 @@ build_one() {
     --build-arg "REPO_URL=$REPO_URL"
     --build-arg "REPO_COMMIT_SHA=$REPO_COMMIT_SHA"
     --build-arg "MAVEN_OPTS=$MAVEN_OPTS"
-    --target deliverance
+    --target reckoning
     -t "$IMAGE_REPO:$VERSION-$suffix"
     -t "$IMAGE_REPO:latest-$suffix"
     --load

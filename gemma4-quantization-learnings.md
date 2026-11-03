@@ -1,6 +1,6 @@
 # Gemma4, Quantization, and Kernel Learnings
 
-This document is a working summary of what we learned while bringing up Gemma 4 support, tokenizer parity, model quantization, and BF16/Q4 execution paths in Deliverance.
+This document is a working summary of what we learned while bringing up Gemma 4 support, tokenizer parity, model quantization, and BF16/Q4 execution paths in Reckoning.
 
 It is intended as a practical engineering note so we do not re-learn the same lessons by trial and error.
 
@@ -24,10 +24,10 @@ It is intended as a practical engineering note so we do not re-learn the same le
 - removed the legacy token-rendering layer
 - fixed Gemma 4 attention scaling mismatch:
   - upstream/vLLM use normalized attention with scaling `1.0`
-  - Deliverance had incorrectly applied `1/sqrt(head_dim)`
+  - Reckoning had incorrectly applied `1/sqrt(head_dim)`
 - fixed Gemma 4 block/final RMSNorm semantics:
   - upstream uses `RMSNorm(x) * weight`
-  - Deliverance had been doing `RMSNorm(x) * (1 + weight)`
+  - Reckoning had been doing `RMSNorm(x) * (1 + weight)`
 
 ### What changed in outputs over time
 
@@ -75,7 +75,7 @@ Prompt rendering and tokenization are separate concerns:
 - rendered prompt string can look correct
 - token ids can still be wrong
 
-The final Deliverance runtime prompt path should be checked at the token-id level.
+The final Reckoning runtime prompt path should be checked at the token-id level.
 
 ### Final validated state for the target prompt
 
@@ -203,7 +203,7 @@ Useful focused debugging stages were:
 
 One major learning from side-by-side comparison:
 
-- Deliverance had been scaling Gemma 4 attention by `1/sqrt(head_dim)`
+- Reckoning had been scaling Gemma 4 attention by `1/sqrt(head_dim)`
 - Hugging Face / vLLM use normalized attention with `scaling = 1.0`
 - removing that extra scale materially improved behavior
 

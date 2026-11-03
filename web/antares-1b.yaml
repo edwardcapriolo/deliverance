@@ -4,7 +4,7 @@ model:
   type: GENERATION
   config:
     outputHeadQuantization: Q4
-deliverance:
+reckoning:
   gpu:
     provider: true
   max-prefill-batch-size: 2048

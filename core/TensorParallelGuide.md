@@ -158,7 +158,7 @@ automatic local worker startup, four HTTP rank endpoints, and `TensorParallelGen
 
 ## Operational Notes
 
-* Keep all nodes on the same model files and Deliverance build.
+* Keep all nodes on the same model files and Reckoning build.
 * Do not mix model families in one deployment.
 * Use one deployment id per logical model deployment.
 * Wait for all rank endpoints before serving traffic; `openGenerationGroup()` requires a completed assignment and rank

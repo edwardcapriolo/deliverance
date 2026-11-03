@@ -1,0 +1,328 @@
+package io.teknek.reckoning.tensor;
+
+import com.google.common.base.Preconditions;
+import com.google.common.primitives.Ints;
+
+import java.lang.foreign.MemorySegment;
+import java.util.Arrays;
+import java.util.Optional;
+import java.util.UUID;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import io.teknek.reckoning.DType;
+
+public abstract class AbstractTensor implements AutoCloseable, ReadableTensor {
+    private static final Logger logger = LoggerFactory.getLogger(AbstractTensor.class);
+
+    protected volatile String uid;
+    protected final TensorShape shape;
+    protected final DType dType;
+    protected final AbstractTensor[] sliceCache;
+    protected final int stride;
+    private volatile TensorLocality locality;
+
+
+    protected AbstractTensor(DType dType, TensorShape shape, boolean cacheSlices) {
+        Preconditions.checkArgument(shape != null && shape.dims() > 0);
+        this.uid = UUID.randomUUID().toString();
+        this.dType = dType;
+        this.shape = shape;
+        this.sliceCache = cacheSlices ? new AbstractTensor[shape.first()] : null;
+        this.stride = shape.first() > 1 && dims() == 2
+                ? getOffset(shape.sparseRowOffset() + 1, shape.sparseColumnOffset()) : 0;
+    }
+
+    public String getUid() {
+        return uid;
+    }
+
+    public Optional<TensorLocality> locality() {
+        return Optional.ofNullable(locality);
+    }
+
+    public void setLocality(TensorLocality locality) {
+        this.locality = locality;
+    }
+
+    public void clearLocality() {
+        this.locality = null;
+    }
+
+    public void setUid(String uid) {
+        this.uid = uid;
+    }
+
+    /** Create a new tensor with the given shape of the same Tensor implementation */
+    protected abstract AbstractTensor make(TensorShape shape);
+
+    /** Create a new tensor with the given shape of the same Tensor implementation, including offsets to underlying heap */
+    protected abstract AbstractTensor make(int heapOffset, int heapLength, TensorShape shape, boolean cacheSlices);
+
+    /** Number of dimensions */
+    public final int dims() {
+        return shape.dims();
+    }
+
+    /** Represents the dimensions of the tensor */
+    public final TensorShape shape() {
+        return shape;
+    }
+
+    /** Total capacity of the tensor */
+    public final long size() {
+        return shape.size();
+    }
+
+    /** Get a value at the given coordinates */
+    public abstract float get(int... dims);
+
+    /**
+     * potentially avoids array autoboxing.
+     * @return value at this position
+     */
+    public float get(int row, int column){
+        return get(new int[] { row, column });
+    }
+
+    /** Set a value at the given coordinates */
+    public abstract void set(float v, int... dims);
+
+    /**
+     * sets value potentially avoids autoboxing
+     */
+    public void set(float v, int row, int column){
+        set(v, new int[] { row, column});
+    }
+    /**
+     * For 2D tensor (3,4) slice(1) will return the second row (4 elements).
+     * @param dims the dimension to slice on
+     * @return tensor backed by the original tensor with new shape
+     */
+    public AbstractTensor slice(int... dims) {
+        return slice(false, dims);
+    }
+
+    /**
+     *
+     * @param cacheInnerSlice if true and this tensor has a slice cache return from sliceCache
+     * @param dims the dimension to slice on
+     * @return tensor backed by the original tensor with new shape
+     */
+    public AbstractTensor slice(boolean cacheInnerSlice, int... dims) {
+        Preconditions.checkArgument(dims.length < shape.dims(), "Too many dimensions specified for tensor");
+        if (dims.length == 1 && sliceCache != null && sliceCache[dims[0]] != null) {
+            return sliceCache[dims[0]];
+        }
+        TensorShape slicedShape = shape.slice(dims.length);
+        int totalOffset = sliceOffset(dims);
+
+        AbstractTensor r = this.make(totalOffset, (int) slicedShape.size(), slicedShape, cacheInnerSlice);
+        if (dims.length == 1 && sliceCache != null) {
+            sliceCache[dims[0]] = r;
+        }
+        return r;
+    }
+
+    private int sliceOffset(int... dims) {
+        int totalOffset = 0;
+        if (dims.length == 1 && this.shape.dims() == 2) {
+            totalOffset = shape.sparseColumnLength() * dims[0];
+        } else {
+            for (int d = 0; d <= dims.length - 1; d++) {
+                int offset = shape.sparseColumnLength();
+                for (int i = shape.dims() - 2; i > d; i--) {
+                    offset *= shape.dim(i);
+                }
+                totalOffset += dims[d] * offset;
+            }
+        }
+        return totalOffset;
+    }
+
+    /**
+     * Creates a sparse tensor that acts like a dense one but is missing the data outside
+     * the range of in last dimension.
+     */
+    public AbstractTensor sparsify(int offset, int length) {
+        if (shape.isSparse()) {
+            return this;
+        }
+        if (length == shape.last()) {
+            return this;
+        }
+        AbstractTensor sparseT = this.make(shape.sparsifyColumns(offset, length));
+        int originalLength = shape.last();
+        int[] cursor = new int[shape.dims()];
+        try {
+            do {
+                cursor[cursor.length - 1] = offset;
+                sparseT.copyFrom(this, getOffset(cursor), sparseT.getOffset(cursor), length);
+                cursor[cursor.length - 1] = originalLength - 1; // Reset last dimension, so it iterates in the next lower dimension
+            } while (iterate(cursor));
+        } catch (Throwable t) {
+            logger.warn("Cursor = {}", Arrays.toString(cursor), t);
+            throw t;
+        }
+        return sparseT;
+    }
+
+    /** Split the tensor into numChunks along the given dimension */
+    public AbstractTensor[] split(int numChunks, int dim) {
+        AbstractTensor[] chunks = new AbstractTensor[numChunks];
+        int innerLength = this.shape.dim(dim) / numChunks;
+
+        if (innerLength * numChunks != this.shape.dim(dim)) {
+            throw new IllegalStateException("Chunks must be of equal size");
+        }
+
+        TensorShape newShape = shape.setDimValue(dim, innerLength);
+        for (int i = 0; i < numChunks; i++) {
+            chunks[i] = this.make(Ints.checkedCast(i * newShape.size()), Ints.checkedCast(newShape.size()), newShape, true);
+        }
+
+        return chunks;
+    }
+
+    /**
+     * Does inplace iteration based on the current values from innermost to outermost offset
+     * Meaning if I pass [0,0,99] for a tensor of shape (100,100,100).  It will alter values to be
+     * [0,1,0] and so on
+     * @param cursor
+     * @return false if cursor has hit its limit, otherwise true
+     */
+    public final boolean iterate(int[] cursor) {
+        Preconditions.checkArgument(cursor.length == shape.dims());
+
+        for (int i = cursor.length - 1; i >= 0; i--) {
+            Preconditions.checkArgument(cursor[i] >= 0 && cursor[i] < shape.dim(i));
+            if (cursor[i] + 1 < shape.dim(i)) {
+                cursor[i]++;
+                break;
+            } else {
+                cursor[i] = 0;
+                if (i == 0) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    public final int getStride() {
+        return stride;
+    }
+
+    /** Returns the local int element offset within this tensor's resident storage. */
+    public final int getOffset(int... dims) {
+        return shape.getOffset(dims);
+    }
+    /** Returns the local int element offset within this tensor's resident storage. */
+    public final int getOffset(int row, int col) {
+        return shape.getOffset(row, col);
+    }
+
+    /** Transpose the tensor across all dimensions*/
+    public final AbstractTensor transpose() {
+        Preconditions.checkArgument(!shape.isSparse(), "Cannot transpose a sparse tensor");
+
+        // Reverse the dimensions
+        int[] tshape = new int[dims()];
+        for (int i = 0; i < tshape.length; i++)
+            tshape[i] = shape.dim(shape.dims() - i - 1);
+
+        AbstractTensor tt = this.make(TensorShape.of(tshape));
+        int[] cursor = new int[dims()];
+        int[] tcursor = new int[dims()];
+        do {
+            float v = this.get(cursor);
+
+            // 1000(0), 100(0), 10(1) -> 1
+            // 10, 100, 1000 -> 10001
+            for (int i = 0; i < tcursor.length; i++) {
+                tcursor[i] = cursor[cursor.length - i - 1];
+            }
+
+            tt.set(v, tcursor);
+        } while (iterate(cursor));
+
+        return tt;
+    }
+
+    public final DType dType() {
+        return dType;
+    }
+
+    public abstract MemorySegment getMemorySegment();
+
+    /** Returns the local int byte offset within this tensor's resident memory segment. */
+    public abstract int getMemorySegmentOffset(int offset);
+
+    /**
+     * Copies {@code length} logical tensor elements from {@code src} into this tensor.
+     *
+     * <p>The offsets and length are expressed in tensor elements, not bytes. Implementations that
+     * copy through raw memory segments must convert element counts to byte counts according to
+     * their storage width. For example, F32 copies {@code length * 4} bytes, BF16/F16 copy
+     * {@code length * 2} bytes, I8 copies {@code length} bytes, and packed Q4 copies
+     * {@code length / 2} bytes plus its side metadata.</p>
+     */
+    public abstract void copyFrom(AbstractTensor src, int srcOffset, int destOffset, int length);
+
+    /** Zero out the tensor */
+    public abstract void clear();
+
+    public void close() {
+    }
+
+
+
+    /*
+    public AbstractTensor quantize(DType dType) {
+        return quantize(dType, false);
+    }
+
+    public AbstractTensor quantize(DType dType, boolean force) {
+        if (!force && (this.shape().first() == 1 || this.dType == dType || this.dType.size() < dType.size())) {
+            return this;
+        }
+        if (shape.isSparse()) {
+            logger.info("Quantizing sparse tensor is not supported");
+            return this;
+        }
+        return switch (dType) {
+            case Q4 -> new Q4ByteBufferTensor(this);
+            case I8 -> new Q8ByteBufferTensor(this);
+            case F32 -> new FloatBufferTensor(this);
+            case BF16 -> new BFloat16BufferTensor(this);
+            default -> this;
+        };
+    }
+
+    public TensorInfo save(FileChannel out) throws IOException {
+        Preconditions.checkArgument(!shape.isSparse(), "Cannot save a sparse tensor");
+        ByteBuffer bb = getMemorySegment().asByteBuffer().order(ByteOrder.LITTLE_ENDIAN);
+        long startOffset = out.position();
+        out.write(bb);
+        long[] lshape = new long[shape.dims()];
+        for (int i = 0; i < shape.dims(); i++) {
+            lshape[i] = shape.dim(i);
+        }
+        return new TensorInfo(dType, lshape, new long[] { startOffset, out.position() });
+    }
+
+
+     */
+    public void debug(String id) {
+        double tmp = 0.0;
+        for (int i = 0; i < size(); i++) {
+            tmp += get(0, i);
+        }
+        System.out.printf("%s = %.5f%n", id, tmp);
+    }
+
+    public DType getDType(){
+        return dType;
+    }
+}

@@ -1,11 +1,11 @@
 package io.teknek.sketches;
 
-import io.teknek.deliverance.generator.FinishReason;
-import io.teknek.deliverance.generator.GeneratorParameters;
-import io.teknek.deliverance.generator.Response;
-import io.teknek.deliverance.model.CausalLanguageModel;
-import io.teknek.deliverance.model.GenerateEvent;
-import io.teknek.deliverance.safetensors.prompt.PromptContext;
+import io.teknek.reckoning.generator.FinishReason;
+import io.teknek.reckoning.generator.GeneratorParameters;
+import io.teknek.reckoning.generator.Response;
+import io.teknek.reckoning.model.CausalLanguageModel;
+import io.teknek.reckoning.model.GenerateEvent;
+import io.teknek.reckoning.safetensors.prompt.PromptContext;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 

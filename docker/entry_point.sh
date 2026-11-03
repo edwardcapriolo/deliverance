@@ -4,6 +4,6 @@ D_OPTS="$D_OPTS -XX:+AlignVector -XX:-UseCompactObjectHeaders -XX:+UseStringDedu
 D_OPTS="$D_OPTS -XX:+UnlockDiagnosticVMOptions -XX:CompilerDirectivesFile=inlinerules.json "
 D_OPTS="$D_OPTS --add-opens java.base/java.nio=ALL-UNNAMED "
 
-D_OPTS="$D_OPTS $DELIVERANCE_OPTS"
+D_OPTS="$D_OPTS $RECKONING_OPTS"
 
 java $D_OPTS -jar web.jar

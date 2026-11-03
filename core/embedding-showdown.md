@@ -1,6 +1,6 @@
 # Embedding Showdown
 
-This harness compares Deliverance's Java EmbeddingGemma 2 text path against the
+This harness compares Reckoning's Java EmbeddingGemma 2 text path against the
 upstream Sentence Transformers implementation on the same local checkpoint and
 the same controlled corpus.
 
@@ -31,7 +31,7 @@ Both runners use:
 
 ## Requirements
 
-Java requires the normal Deliverance build environment. Python requires:
+Java requires the normal Reckoning build environment. Python requires:
 
 ```sh
 python3 -m pip install sentence-transformers numpy pillow torchvision

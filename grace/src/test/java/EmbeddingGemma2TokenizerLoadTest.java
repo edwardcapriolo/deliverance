@@ -1,8 +1,8 @@
-import io.teknek.deliverance.grace.AutoTokenizer;
-import io.teknek.deliverance.grace.EncodeOptions;
-import io.teknek.deliverance.grace.Encoding;
-import io.teknek.deliverance.grace.PreTrainedTokenizer;
-import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
+import io.teknek.reckoning.grace.AutoTokenizer;
+import io.teknek.reckoning.grace.EncodeOptions;
+import io.teknek.reckoning.grace.Encoding;
+import io.teknek.reckoning.grace.PreTrainedTokenizer;
+import io.teknek.reckoning.safetensors.fetch.ModelFetcher;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 

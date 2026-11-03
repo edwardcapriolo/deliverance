@@ -1,5 +1,5 @@
-import io.teknek.deliverance.grace.AutoTokenizer;
-import io.teknek.deliverance.grace.PreTrainedTokenizer;
+import io.teknek.reckoning.grace.AutoTokenizer;
+import io.teknek.reckoning.grace.PreTrainedTokenizer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 
-: "${TP_CLUSTER:=deliverance-tp-local}"
+: "${TP_CLUSTER:=reckoning-tp-local}"
 : "${TP_HOST:=127.0.0.1}"
 : "${TP_NODE0_PORT:=42604}"
 : "${TP_NODE1_PORT:=42605}"
@@ -28,11 +28,11 @@
 : "${TP_ADMIN_PORT:=8081}"
 
 TP_LOCAL_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-DELIVERANCE_ROOT=$(CDPATH= cd -- "$TP_LOCAL_DIR/.." && pwd)
+RECKONING_ROOT=$(CDPATH= cd -- "$TP_LOCAL_DIR/.." && pwd)
 TP_RUN_DIR="$TP_LOCAL_DIR/run"
 TP_LOG_DIR="$TP_LOCAL_DIR/logs"
 TP_TMP_DIR="$TP_RUN_DIR/tmp"
-TP_MAIN_CLASS="io.teknek.deliverance.benchmark.TpLocalCluster"
+TP_MAIN_CLASS="io.teknek.reckoning.benchmark.TpLocalCluster"
 TP_COORDINATOR_CONFIG="$TP_LOCAL_DIR/coordinator.yaml"
 OS_NAME=$(uname -s)
 OS_ARCH=$(uname -m)
@@ -43,8 +43,8 @@ case "$OS_NAME:$OS_ARCH" in
   Linux:x86_64|Linux:amd64) TP_NATIVE_CLASSIFIER=linux-x86_64 ;;
   *) printf '%s\n' "Unsupported native platform: $OS_NAME $OS_ARCH" >&2; exit 1 ;;
 esac
-TP_NATIVE_CLASSIFIER=${DELIVERANCE_NATIVE_CLASSIFIER:-$TP_NATIVE_CLASSIFIER}
-TP_NATIVE_LIB_DIR="$DELIVERANCE_ROOT/native/target/native-lib-only/$TP_NATIVE_CLASSIFIER"
+TP_NATIVE_CLASSIFIER=${RECKONING_NATIVE_CLASSIFIER:-$TP_NATIVE_CLASSIFIER}
+TP_NATIVE_LIB_DIR="$RECKONING_ROOT/native/target/native-lib-only/$TP_NATIVE_CLASSIFIER"
 
 tp_seed_args() {
   printf '%s' "--seed node-0=udp://$TP_HOST:$TP_NODE0_PORT --seed node-1=udp://$TP_HOST:$TP_NODE1_PORT"
@@ -56,25 +56,25 @@ tp_common_args() {
 
 tp_classpath() {
   mkdir -p "$TP_RUN_DIR" "$TP_TMP_DIR"
-  if [ ! -d "$DELIVERANCE_ROOT/core/target/classes" ]; then
+  if [ ! -d "$RECKONING_ROOT/core/target/classes" ]; then
     printf '%s\n' "core/target/classes not found. Compile first: mvn -pl core -am -DskipTests compile" >&2
     exit 1
   fi
   MAVEN_OPTS="${MAVEN_OPTS:-} -Djansi.tmpdir=$TP_TMP_DIR" \
-    mvn -q -f "$DELIVERANCE_ROOT/pom.xml" -pl core -am -DincludeScope=test dependency:build-classpath \
+    mvn -q -f "$RECKONING_ROOT/pom.xml" -pl core -am -DincludeScope=test dependency:build-classpath \
       -Dmdep.outputFile="$TP_RUN_DIR/classpath.txt"
   if [ ! -s "$TP_RUN_DIR/classpath.txt" ]; then
     printf '%s\n' "dependency classpath was not generated: $TP_RUN_DIR/classpath.txt" >&2
     exit 1
   fi
   printf '%s:%s:%s:%s:%s:%s:%s' \
-    "$DELIVERANCE_ROOT/core/target/test-classes" \
-    "$DELIVERANCE_ROOT/core/target/classes" \
-    "$DELIVERANCE_ROOT/native/target/classes" \
-    "$DELIVERANCE_ROOT/grace/target/classes" \
-    "$DELIVERANCE_ROOT/safetensors/target/classes" \
-    "$DELIVERANCE_ROOT/tensor/target/classes" \
-    "$DELIVERANCE_ROOT/math/target/classes" \
+    "$RECKONING_ROOT/core/target/test-classes" \
+    "$RECKONING_ROOT/core/target/classes" \
+    "$RECKONING_ROOT/native/target/classes" \
+    "$RECKONING_ROOT/grace/target/classes" \
+    "$RECKONING_ROOT/safetensors/target/classes" \
+    "$RECKONING_ROOT/tensor/target/classes" \
+    "$RECKONING_ROOT/math/target/classes" \
     "$(cat "$TP_RUN_DIR/classpath.txt")"
 }
 
@@ -116,7 +116,7 @@ tp_start_web() {
     printf '%s\n' "$name already running pid=$(cat "$pid_file")"
     exit 0
   fi
-  web_jar=$(set -- "$DELIVERANCE_ROOT"/web/target/web-*-SNAPSHOT.jar; printf '%s' "$1")
+  web_jar=$(set -- "$RECKONING_ROOT"/web/target/web-*-SNAPSHOT.jar; printf '%s' "$1")
   if [ ! -f "$web_jar" ]; then
     printf '%s\n' "web jar not found. Package first: mvn -pl web -am -DskipTests package" >&2
     exit 1
@@ -124,7 +124,7 @@ tp_start_web() {
   nohup java \
     -Djava.library.path="$TP_NATIVE_LIB_DIR" \
     -XX:+UnlockDiagnosticVMOptions \
-    -XX:CompilerDirectivesFile="$DELIVERANCE_ROOT/inlinerules.json" \
+    -XX:CompilerDirectivesFile="$RECKONING_ROOT/inlinerules.json" \
     -XX:+AlignVector \
     -XX:-UseCompactObjectHeaders \
     -XX:+UseStringDeduplication \

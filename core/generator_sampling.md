@@ -119,12 +119,12 @@ Another draw might generate 0.88 or 88%. That lands in the second bucket. That i
 
 `top_k` limits the number of candidate tokens before a random sample is drawn.
 
-Deliverance supports two `top_k` modes:
+Reckoning supports two `top_k` modes:
 
 * `top_k < 1.0`: legacy fractional cutoff mode.
 * `top_k >= 1.0`: absolute candidate count. For example, `top_k=64` keeps at most the 64 highest-probability tokens.
 
-When both `top_k` and `top_p` are supplied, Deliverance applies `top_k` first, then applies `top_p` nucleus filtering within those candidates. This supports model-card recommendations such as:
+When both `top_k` and `top_p` are supplied, Reckoning applies `top_k` first, then applies `top_p` nucleus filtering within those candidates. This supports model-card recommendations such as:
 
 ```text
 temperature=1.0

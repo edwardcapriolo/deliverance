@@ -1,7 +1,7 @@
 <project>
     <parent>
-        <groupId>io.teknek.deliverance</groupId>
-        <artifactId>deliverance-parent</artifactId>
+        <groupId>io.teknek.reckoning</groupId>
+        <artifactId>reckoning-parent</artifactId>
         <version>0.0.17-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
@@ -20,46 +20,46 @@
     <dependencies>
 
         <dependency>
-            <groupId>io.teknek.deliverance</groupId>
+            <groupId>io.teknek.reckoning</groupId>
             <artifactId>tensor</artifactId>
             <version>${project.version}</version>
             <scope>compile</scope>
         </dependency>
 
         <dependency>
-            <groupId>io.teknek.deliverance</groupId>
+            <groupId>io.teknek.reckoning</groupId>
             <artifactId>tensor-test</artifactId>
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
 
         <dependency>
-            <groupId>io.teknek.deliverance</groupId>
+            <groupId>io.teknek.reckoning</groupId>
             <artifactId>math</artifactId>
             <version>${project.version}</version>
             <scope>compile</scope>
         </dependency>
 
         <dependency>
-            <groupId>io.teknek.deliverance</groupId>
+            <groupId>io.teknek.reckoning</groupId>
             <artifactId>safetensors</artifactId>
             <version>${project.version}</version>
         </dependency>
 
         <dependency>
-            <groupId>io.teknek.deliverance</groupId>
+            <groupId>io.teknek.reckoning</groupId>
             <artifactId>grace</artifactId>
             <version>${project.version}</version>
         </dependency>
 
         <dependency>
-            <groupId>io.teknek.deliverance</groupId>
+            <groupId>io.teknek.reckoning</groupId>
             <artifactId>sketches-core</artifactId>
             <version>${project.version}</version>
         </dependency>
 
         <dependency>
-            <groupId>io.teknek.deliverance</groupId>
+            <groupId>io.teknek.reckoning</groupId>
             <artifactId>native</artifactId>
             <version>${project.version}</version>
             <classifier>${os.detected.name}-${os.detected.arch}</classifier>

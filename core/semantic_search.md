@@ -1,6 +1,6 @@
 # Semantic Search & Embeddings
 
-Deliverance supports embedding models for semantic search, information retrieval, and code understanding. The [LEAF model](https://huggingface.co/MongoDB/mdbr-leaf-ir) is a compact, efficient embedding model optimized for information retrieval tasks, including semantic code search, RAG applications, and understanding codebases semantically.
+Reckoning supports embedding models for semantic search, information retrieval, and code understanding. The [LEAF model](https://huggingface.co/MongoDB/mdbr-leaf-ir) is a compact, efficient embedding model optimized for information retrieval tasks, including semantic code search, RAG applications, and understanding codebases semantically.
 
 ## Use Cases
 
@@ -11,15 +11,15 @@ Deliverance supports embedding models for semantic search, information retrieval
 
 ```java
 import com.codahale.metrics.MetricRegistry;
-import io.teknek.deliverance.DType;
-import io.teknek.deliverance.embedding.PoolingType;
-import io.teknek.deliverance.math.VectorMathUtils;
-import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.model.ModelSupport;
-import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
-import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.reckoning.DType;
+import io.teknek.reckoning.embedding.PoolingType;
+import io.teknek.reckoning.math.VectorMathUtils;
+import io.teknek.reckoning.model.AbstractModel;
+import io.teknek.reckoning.model.ModelSupport;
+import io.teknek.reckoning.safetensors.fetch.ModelFetcher;
+import io.teknek.reckoning.tensor.KvBufferCacheSettings;
+import io.teknek.reckoning.tensor.ArrayQueueTensorAllocator;
+import io.teknek.reckoning.tensor.operations.ConfigurableTensorProvider;
 import java.io.File;
 
 public void semanticCodeSearch() {
@@ -74,4 +74,4 @@ For tools that need to understand code semantically, you can use LEAF embeddings
 
 The LEAF model's compact size, 23M parameters and 384 dimensions, makes it useful for production IDE and code-analysis workflows where low latency and memory efficiency matter.
 
-See `core/src/main/java/io/teknek/deliverance/examples/LeafModelExample.java` for a complete example with CLI flags for normalization, batch size, and parallel processing.
+See `core/src/main/java/io/teknek/reckoning/examples/LeafModelExample.java` for a complete example with CLI flags for normalization, batch size, and parallel processing.

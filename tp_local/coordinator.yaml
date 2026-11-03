@@ -8,7 +8,7 @@ model:
 
 tensorParallel:
   enabled: true
-  cluster: ${TP_CLUSTER:deliverance-tp-local}
+  cluster: ${TP_CLUSTER:reckoning-tp-local}
   node-id: coordinator
   uri: udp://${TP_HOST:127.0.0.1}:${TP_COORDINATOR_PORT:42606}
   seeds:
@@ -27,7 +27,7 @@ tensorParallel:
   rank-close-timeout-seconds: ${TP_RANK_CLOSE_TIMEOUT_SECONDS:10}
   output-head-quantization: ${TP_OUTPUT_HEAD_QUANTIZATION:Q4}
 
-deliverance:
+reckoning:
   kv:
     prefix:
       max-entries: 0

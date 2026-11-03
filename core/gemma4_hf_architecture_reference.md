@@ -3,7 +3,7 @@
 **Scope.** This is a source reference for the Hugging Face Gemma4 implementation in
 `/ai-code/transformers`, with a text-only inference focus and a boundary description of
 the multimodal path. It was written from the upstream implementation, upstream tests,
-and the checked-in Deliverance implementation. It does not modify production code.
+and the checked-in Reckoning implementation. It does not modify production code.
 
 Source paths below are absolute so that a parity investigation can jump directly to the
 relevant code. `modeling_gemma4.py` is generated from `modular_gemma4.py`; the modular
@@ -395,8 +395,8 @@ top_k_weight: [B*S,K]
 Each selected expert computes `down(act(gate) * up)` and index-adds the weighted result
 into `[B*S,H]` (`modeling_gemma4.py:1267-1304`). The decoder combines dense and MoE
 branches using three additional RMSNorms before the final post-feedforward norm
-(`:1403-1418`). Deliverance's corresponding routing and packed shapes are visible in
-`core/src/main/java/io/teknek/deliverance/model/gemma4/Gemma4MoeFeedForward2.java:49-71,89-130`;
+(`:1403-1418`). Reckoning's corresponding routing and packed shapes are visible in
+`core/src/main/java/io/teknek/reckoning/model/gemma4/Gemma4MoeFeedForward2.java:49-71,89-130`;
 its router implementation is a comparison, not an upstream authority.
 
 ## Multimodal Boundary For Text-Only Inference
@@ -417,7 +417,7 @@ position IDs with `(-1,-1)` (`image_processing_gemma4.py:87-116,243-259`). Audio
 mel-extracted, then two stride-2 convolutional subsampling layers reduce the time mask;
 the processor inserts begin/audio-soft/end placeholders based on the resulting valid
 count (`feature_extraction_gemma4.py:169-224`; `processing_gemma4.py:241-252`). These
-are outside text-only generation and are not evidence that Deliverance's text path
+are outside text-only generation and are not evidence that Reckoning's text path
 supports multimodal inference.
 
 ## Tokenizer, Chat Template, BOS
@@ -445,7 +445,7 @@ checkpoint's `chat_template.jinja`, only converter references to a remote templa
 (`convert_gemma4_weights.py:71-74,2551-2553`). Therefore the exact production rendered
 string is an **open question** unless the local model directory is inspected.
 
-Deliverance comparison: its support document correctly says the Grace tokenizer path is
+Reckoning comparison: its support document correctly says the Grace tokenizer path is
 the intended Gemma4 runtime path and calls out `<|turn>`/`<turn|>`
 (`core/gemma4_support.md:74-85`). The local tokenizer behavior test verifies pad ID 0
 and a cached tokenizer fixture, but does not verify BOS or chat rendering
@@ -468,18 +468,18 @@ render chat template
        -> logits -> stopping/sampling
 ```
 
-The HF model itself does not define Deliverance's sampling policy. Deliverance's
+The HF model itself does not define Reckoning's sampling policy. Reckoning's
 prefill/decode entry points are `Gemma4Model.batchForwardRef` and `forwardRef`
-(`core/src/main/java/io/teknek/deliverance/model/gemma4/Gemma4Model.java:135-177`),
+(`core/src/main/java/io/teknek/reckoning/model/gemma4/Gemma4Model.java:135-177`),
 while its legacy paths are `batchForward`/`forward` (`:481-539`).
 
-## Deliverance Versus HF
+## Reckoning Versus HF
 
-| Area | HF verified behavior | Current Deliverance behavior | Status / risk |
+| Area | HF verified behavior | Current Reckoning behavior | Status / risk |
 |---|---|---|---|
 | Main embedding | Scale by `sqrt(H)` (`modeling_gemma4.py:1563-1566`) | Same scale, bfloat16-rounded (`Gemma4Model.java:287-321`) | Approximate dtype behavior; verify numerically |
 | PLE | Packed `[Vple,L*P]`, projection scale `H^-1/2`, RMSNorm, combine `2^-1/2` | Explicit packed/split/combine support (`Gemma4PleSupport.java:15-49`; `Gemma4Model.java:495-505`) | High-level match; shape/dtype parity still needs golden tensors |
-| Layer order | Norm-attention-norm-residual, dense/MoE, PLE, scalar (`modeling_gemma4.py:1384-1430`) | Same intended order (`Gemma4TransformerBlock.java:102-164`) | Compare residual multiplier behavior; Deliverance has generic multiplier hooks |
+| Layer order | Norm-attention-norm-residual, dense/MoE, PLE, scalar (`modeling_gemma4.py:1384-1430`) | Same intended order (`Gemma4TransformerBlock.java:102-164`) | Compare residual multiplier behavior; Reckoning has generic multiplier hooks |
 | Head dimensions | Per-layer `per_layer_config`; full and sliding can differ (`modeling_gemma4.py:1162-1201`) | Explicit layer head/KV length helpers (`Gemma4Config.java:122-151`) | Match for represented configs |
 | Q/K/V norms | Q/K learned RMSNorm, V unscaled RMSNorm; shared layers omit KV modules | Same broad path (`Gemma4CausalSelfAttention.java:113-139`) | `attention_k_eq_v` needs variant coverage |
 | Text attention scale | Exactly `1.0` (`modeling_gemma4.py:1165-1167`) | Unscaled dot product (`Gemma4CausalSelfAttention.java:207-226`) | Match |
@@ -522,11 +522,11 @@ while its legacy paths are `batchForward`/`forward` (`:481-539`).
 
 **Verified:** all architecture, shape, scale, layer-order, mask, and cache statements
 above that cite HF source lines; the skipped upstream random-embedding test; the four-layer
-shared-KV/MoE test configuration (`test_modeling_gemma4.py:74-109`); and Deliverance's
+shared-KV/MoE test configuration (`test_modeling_gemma4.py:74-109`); and Reckoning's
 corresponding classes and support docs cited in the comparison.
 
 **Open or not proven by these repositories:** exact production checkpoint chat-template
-rendering; numerical equality of Deliverance proportional RoPE; numerical MoE parity;
-multimodal generation parity in Deliverance; and whether every arbitrary `inputs_embeds`
+rendering; numerical equality of Reckoning proportional RoPE; numerical MoE parity;
+multimodal generation parity in Reckoning; and whether every arbitrary `inputs_embeds`
 case can be reversed exactly enough for PLE. Do not convert these into implementation
 requirements without a checkpoint fixture or a focused cross-runtime tensor comparison.

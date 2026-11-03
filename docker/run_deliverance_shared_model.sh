@@ -1,1 +1,0 @@
-docker run -p 8085:8080 -it --mount type=bind,src=.deliverance,dst=/home/deliverance/.deliverance -e DELIVERANCE_OPTS=" -Dspring.config.location=file:/deliverance/simple.yaml " deliverance

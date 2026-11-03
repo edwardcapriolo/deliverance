@@ -2,18 +2,18 @@
     {
         "match": ["*.*"],
         "inline": [
-            "+io.teknek.deliverance.tensor.operations.PanamaTensorOperations::dotProduct*",
-            "+io.teknek.deliverance.tensor.operations.PanamaTensorOperations::quantize*",
-            "+io.teknek.deliverance.tensor.operations.PanamaTensorOperations*::mpack*",
-            "+io.teknek.deliverance.tensor.AbstractTensor::getOffset*",
-            "+io.teknek.deliverance.tensor.*::getVector*",
-            "+io.teknek.deliverance.tensor.impl.*::getVector*",
-            "+io.teknek.deliverance.tensor2.PanamaOps::scale*",
-            "+io.teknek.deliverance.tensor2.PanamaOps::memoryOffset*",
-            "+io.teknek.deliverance.tensor2.TensorRef::requireOpen*",
-            "+io.teknek.deliverance.tensor2.TensorRef::underlying*",
-            "+io.teknek.deliverance.tensor2.TensorRef::shape*",
-            "+io.teknek.deliverance.tensor2.TensorRef::stride*"
+            "+io.teknek.reckoning.tensor.operations.PanamaTensorOperations::dotProduct*",
+            "+io.teknek.reckoning.tensor.operations.PanamaTensorOperations::quantize*",
+            "+io.teknek.reckoning.tensor.operations.PanamaTensorOperations*::mpack*",
+            "+io.teknek.reckoning.tensor.AbstractTensor::getOffset*",
+            "+io.teknek.reckoning.tensor.*::getVector*",
+            "+io.teknek.reckoning.tensor.impl.*::getVector*",
+            "+io.teknek.reckoning.tensor2.PanamaOps::scale*",
+            "+io.teknek.reckoning.tensor2.PanamaOps::memoryOffset*",
+            "+io.teknek.reckoning.tensor2.TensorRef::requireOpen*",
+            "+io.teknek.reckoning.tensor2.TensorRef::underlying*",
+            "+io.teknek.reckoning.tensor2.TensorRef::shape*",
+            "+io.teknek.reckoning.tensor2.TensorRef::stride*"
         ]
     }
 ]

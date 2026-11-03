@@ -1,8 +1,8 @@
-import io.teknek.deliverance.grace.AutoTokenizer;
-import io.teknek.deliverance.grace.BatchEncoding;
-import io.teknek.deliverance.grace.EncodeOptions;
-import io.teknek.deliverance.grace.PaddingOptions;
-import io.teknek.deliverance.grace.PreTrainedTokenizer;
+import io.teknek.reckoning.grace.AutoTokenizer;
+import io.teknek.reckoning.grace.BatchEncoding;
+import io.teknek.reckoning.grace.EncodeOptions;
+import io.teknek.reckoning.grace.PaddingOptions;
+import io.teknek.reckoning.grace.PreTrainedTokenizer;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -38,7 +38,7 @@ public class HfXlmRobertaTokenizerBehaviorTest {
     @Test
     public void truncatesAfterAddingSpecialTokens() {
         var encoding = tokenizer().encode("This is a deliberately long sentence for truncation.",
-                EncodeOptions.defaults().withTruncation(io.teknek.deliverance.grace.TruncationOptions.maxLength(6)));
+                EncodeOptions.defaults().withTruncation(io.teknek.reckoning.grace.TruncationOptions.maxLength(6)));
         assertEquals(6, encoding.inputIds().length);
         assertEquals(0, encoding.inputIds()[0]);
         assertEquals(2, encoding.inputIds()[5]);

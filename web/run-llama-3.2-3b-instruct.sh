@@ -13,21 +13,21 @@ java \
   --add-opens java.base/java.nio=ALL-UNNAMED \
   --add-modules jdk.incubator.vector \
   -Xmx4G \
-  -Dserver.port=${DELIVERANCE_PORT:-8085} \
-  ${DELIVERANCE_KV_DISK_DIR:+-Ddeliverance.kv.disk-dir=$DELIVERANCE_KV_DISK_DIR} \
-  -Ddeliverance.debug.chat-request=${DELIVERANCE_DEBUG_CHAT_REQUEST:-true} \
-  -Ddebug=${DELIVERANCE_SPRING_DEBUG:-false} \
-  -Dlogging.level.root=${DELIVERANCE_ROOT_LOG_LEVEL:-INFO} \
-  -Dlogging.level.net.deliverance.http=${DELIVERANCE_HTTP_LOG_LEVEL:-DEBUG} \
-  -Dlogging.level.net.deliverance.http.ChatCompletionController=${DELIVERANCE_CHAT_LOG_LEVEL:-DEBUG} \
-  -Dlogging.level.net.deliverance.http.ChatCompletionService=${DELIVERANCE_CHAT_LOG_LEVEL:-DEBUG} \
-  -Dlogging.level.io.teknek.deliverance=${DELIVERANCE_CORE_LOG_LEVEL:-INFO} \
-  -Dlogging.level.io.teknek.deliverance.model=${DELIVERANCE_MODEL_LOG_LEVEL:-DEBUG} \
-  -Dlogging.level.io.teknek.deliverance.model.AbstractModel=${DELIVERANCE_MODEL_LOG_LEVEL:-INFO} \
-  -Dlogging.level.io.teknek.deliverance.generator=${DELIVERANCE_GENERATOR_LOG_LEVEL:-INFO} \
-  -Dlogging.level.org.springframework.web=${DELIVERANCE_SPRING_WEB_LOG_LEVEL:-DEBUG} \
+  -Dserver.port=${RECKONING_PORT:-8085} \
+  ${RECKONING_KV_DISK_DIR:+-Dreckoning.kv.disk-dir=$RECKONING_KV_DISK_DIR} \
+  -Dreckoning.debug.chat-request=${RECKONING_DEBUG_CHAT_REQUEST:-true} \
+  -Ddebug=${RECKONING_SPRING_DEBUG:-false} \
+  -Dlogging.level.root=${RECKONING_ROOT_LOG_LEVEL:-INFO} \
+  -Dlogging.level.net.reckoning.http=${RECKONING_HTTP_LOG_LEVEL:-DEBUG} \
+  -Dlogging.level.net.reckoning.http.ChatCompletionController=${RECKONING_CHAT_LOG_LEVEL:-DEBUG} \
+  -Dlogging.level.net.reckoning.http.ChatCompletionService=${RECKONING_CHAT_LOG_LEVEL:-DEBUG} \
+  -Dlogging.level.io.teknek.reckoning=${RECKONING_CORE_LOG_LEVEL:-INFO} \
+  -Dlogging.level.io.teknek.reckoning.model=${RECKONING_MODEL_LOG_LEVEL:-DEBUG} \
+  -Dlogging.level.io.teknek.reckoning.model.AbstractModel=${RECKONING_MODEL_LOG_LEVEL:-INFO} \
+  -Dlogging.level.io.teknek.reckoning.generator=${RECKONING_GENERATOR_LOG_LEVEL:-INFO} \
+  -Dlogging.level.org.springframework.web=${RECKONING_SPRING_WEB_LOG_LEVEL:-DEBUG} \
   -Dserver.undertow.accesslog.enabled=true \
-  -Dserver.undertow.accesslog.dir=${DELIVERANCE_ACCESS_LOG_DIR:-./logs} \
+  -Dserver.undertow.accesslog.dir=${RECKONING_ACCESS_LOG_DIR:-./logs} \
   -Dserver.undertow.accesslog.prefix=access_log \
   -Dserver.undertow.accesslog.suffix=.log \
   -Dspring.config.location=file:./llama-3.2-3b-instruct.yaml \

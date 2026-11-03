@@ -1,5 +1,5 @@
-import io.teknek.deliverance.grace.AutoTokenizer;
-import io.teknek.deliverance.grace.PreTrainedTokenizer;
+import io.teknek.reckoning.grace.AutoTokenizer;
+import io.teknek.reckoning.grace.PreTrainedTokenizer;
 
 public class HfQwen2TokenizerBehaviorTest implements HfTokenizerBehaviorContract {
     @Override

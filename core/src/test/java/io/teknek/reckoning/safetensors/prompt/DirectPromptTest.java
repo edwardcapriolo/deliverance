@@ -1,0 +1,69 @@
+package io.teknek.reckoning.safetensors.prompt;
+
+import io.teknek.reckoning.integration.llama.TinyLlamaSuite;
+import io.teknek.reckoning.model.*;
+import io.teknek.reckoning.generator.GeneratorParameters;
+import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+public class DirectPromptTest {
+
+    @Test
+    public void sample() throws IOException {
+        AbstractModel m = TinyLlamaSuite.getOrCreate();
+        String prompt = "What is the best season to plant avocados?";
+        PromptContext ctx;
+        {
+            PromptSupport ps = m.promptSupport().get();
+            ctx = ps.builder().addSystemMessage("You are a chatbot that writes short correct responses.")
+                    .addUserMessage(prompt).build();
+            String expected = """
+                    <|system|>
+                    You are a chatbot that writes short correct responses.</s>
+                    <|user|>
+                    What is the best season to plant avocados?</s>
+                    <|assistant|>
+                    """;
+            assertEquals(expected, ctx.getPrompt());
+        }
+        {
+            PromptSupport ps = m.promptSupport().get();
+            ctx = ps.builder().addSystemMessage("You are a chatbot that writes short correct responses.")
+                    .addUserMessage(prompt).build();
+            String expected = """
+                    <|system|>
+                    You are a chatbot that writes short correct responses.</s>
+                    <|user|>
+                    What is the best season to plant avocados?</s>
+                    <|assistant|>
+                    """;
+            assertEquals(expected, ctx.getPrompt());
+
+            var response = m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(42).withMaxTokens(50),
+                    new DoNothingGenerateEvent());
+            assertFalse(response.generatedTokens.isEmpty());
+            assertFalse(response.responseText.isBlank());
+        }
+
+    }
+
+    @Test
+    public void rejectTooManyTokens() throws IOException {
+
+        AbstractModel m = TinyLlamaSuite.getOrCreate();
+        String prompt = "What is the best season to plant avocados?";
+        PromptContext ctx;
+        {
+            PromptSupport ps = m.promptSupport().get();
+            ctx = ps.builder().addSystemMessage("You are a chatbot that writes short correct responses.")
+                    .addUserMessage(prompt).build();
+        }
+        assertThrows(GenerationException.class, () -> m.generate(UUID.randomUUID(), ctx, new GeneratorParameters()
+                .withSeed(42).withNtokens(5_000_000), new DoNothingGenerateEvent()));
+    }
+
+}

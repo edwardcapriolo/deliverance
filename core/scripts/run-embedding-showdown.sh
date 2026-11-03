@@ -15,7 +15,7 @@ PYTHON_OUTPUT=${PYTHON_OUTPUT:-"$ROOT_DIR/core/target/embedding-showdown-python.
 FORCE_BUILD=${FORCE_BUILD:-0}
 
 cd "$ROOT_DIR"
-JAVA_MAIN_CLASS="$ROOT_DIR/core/target/test-classes/io/teknek/deliverance/embedding/EmbeddingShowdownMain.class"
+JAVA_MAIN_CLASS="$ROOT_DIR/core/target/test-classes/io/teknek/reckoning/embedding/EmbeddingShowdownMain.class"
 NEEDS_BUILD=0
 if [ ! -f "$JAVA_MAIN_CLASS" ]; then
   NEEDS_BUILD=1
@@ -30,11 +30,11 @@ fi
 
 COMMON_ARGS="--model-dir $MODEL_DIR --corpus $CORPUS --warmup $WARMUP --iterations $ITERATIONS"
 
-echo "== Deliverance Java =="
+echo "== Reckoning Java =="
 mvn -q -pl core \
   -Dexec.classpathScope=test \
   -Dexec.executable=java \
-  -Dexec.args="--add-modules jdk.incubator.vector --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.deliverance.embedding.EmbeddingShowdownMain $COMMON_ARGS --pool-size $POOL_SIZE --output $JAVA_OUTPUT" \
+  -Dexec.args="--add-modules jdk.incubator.vector --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.reckoning.embedding.EmbeddingShowdownMain $COMMON_ARGS --pool-size $POOL_SIZE --output $JAVA_OUTPUT" \
   org.codehaus.mojo:exec-maven-plugin:3.5.0:exec
 
 echo "== Sentence Transformers Python =="

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
-  <title id="title">Deliverance 0.0.15 - State of Diffusion</title>
-  <desc id="desc">Release artwork for Deliverance 0.0.15, codename State of Diffusion, showing masked diffusion tokens resolving into text while KV cache keys persist into a namespaced disk vault.</desc>
+  <title id="title">Reckoning 0.0.15 - State of Diffusion</title>
+  <desc id="desc">Release artwork for Reckoning 0.0.15, codename State of Diffusion, showing masked diffusion tokens resolving into text while KV cache keys persist into a namespaced disk vault.</desc>
   <defs>
     <radialGradient id="bg" cx="50%" cy="43%" r="72%">
       <stop offset="0" stop-color="#19324f"/>

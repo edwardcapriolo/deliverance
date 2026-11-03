@@ -5,8 +5,8 @@
                              http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <parent>
-    <groupId>io.teknek.deliverance</groupId>
-    <artifactId>deliverance-parent</artifactId>
+    <groupId>io.teknek.reckoning</groupId>
+    <artifactId>reckoning-parent</artifactId>
     <version>0.0.17-SNAPSHOT</version>
   </parent>
   <artifactId>native</artifactId>
@@ -16,7 +16,7 @@
     <exe.make>make</exe.make>
     <exe.compiler>gcc</exe.compiler>
     <exe.archiver>ld</exe.archiver>
-    <nativeLibName>libdeliverance</nativeLibName>
+    <nativeLibName>libreckoning</nativeLibName>
     <nativeIncludeDir>${project.basedir}/src/main/c</nativeIncludeDir>
     <nativeJarWorkdir>${project.build.directory}/native-jar-work</nativeJarWorkdir>
     <nativeObjsOnlyDir>${project.build.directory}/native-objs-only/${os.detected.classifier}</nativeObjsOnlyDir>
@@ -37,7 +37,7 @@
     </dependency>
 
     <dependency>
-      <groupId>io.teknek.deliverance</groupId>
+      <groupId>io.teknek.reckoning</groupId>
       <artifactId>tensor</artifactId>
       <version>${project.version}</version>
       <scope>compile</scope>
@@ -93,11 +93,11 @@
               --add-modules jdk.incubator.vector
               -Djdk.attach.allowAttachSelf=true
                --enable-native-access=ALL-UNNAMED
-               -Ddeliverance.tensor2.timing.csv=true
+               -Dreckoning.tensor2.timing.csv=true
                 -Djava.library.path=${project.build.directory}/native-lib-only/${os.detected.classifier}
             </argLine>
             <systemPropertyVariables>
-              <deliverance.tensor2.timing.csv>true</deliverance.tensor2.timing.csv>
+              <reckoning.tensor2.timing.csv>true</reckoning.tensor2.timing.csv>
             </systemPropertyVariables>
           </configuration>
         </plugin>
@@ -160,7 +160,7 @@
 <profile>
   <id>native-java-only</id>
   <properties>
-    <deliverance.native.skip>true</deliverance.native.skip>
+    <reckoning.native.skip>true</reckoning.native.skip>
   </properties>
 </profile>
 <profile>
@@ -188,7 +188,7 @@
               <goal>run</goal>
             </goals>
             <configuration>
-              <target unless="deliverance.native.skip">
+              <target unless="reckoning.native.skip">
                 <copy todir="${nativeJarWorkdir}">
                   <zipfileset src="${defaultJarFile}" />
                 </copy>
@@ -216,7 +216,7 @@
               <goal>run</goal>
             </goals>
             <configuration>
-              <target unless="deliverance.native.skip">
+              <target unless="reckoning.native.skip">
                 <echo message="Native build log: ${project.build.directory}/native-build.log" />
                 <record name="${project.build.directory}/native-build.log" action="start" append="false" />
                 <exec executable="./download_dawn.sh" failonerror="true" resolveexecutable="true">
@@ -252,7 +252,7 @@
               <goal>run</goal>
             </goals>
             <configuration>
-              <target unless="deliverance.native.skip">
+              <target unless="reckoning.native.skip">
                 <echo message="Native smoke test log: ${project.build.directory}/native-smoke-test.log" />
                 <record name="${project.build.directory}/native-smoke-test.log" action="start" append="false" />
                 <exec executable="${exe.make}" failonerror="true" resolveexecutable="true">
@@ -300,7 +300,7 @@
               <goal>run</goal>
             </goals>
             <configuration>
-              <target unless="deliverance.native.skip">
+              <target unless="reckoning.native.skip">
                 <copy todir="${nativeJarWorkdir}">
                   <zipfileset src="${defaultJarFile}" />
                 </copy>
@@ -325,7 +325,7 @@
               <goal>run</goal>
             </goals>
             <configuration>
-              <target unless="deliverance.native.skip">
+              <target unless="reckoning.native.skip">
                 <echo message="Native build log: ${project.build.directory}/native-build.log" />
                 <record name="${project.build.directory}/native-build.log" action="start" append="false" />
                 <exec executable="${exe.make}" failonerror="true" resolveexecutable="true">
@@ -350,7 +350,7 @@
               <goal>run</goal>
             </goals>
             <configuration>
-                <target unless="deliverance.native.skip">
+                <target unless="reckoning.native.skip">
                 <echo message="Native smoke test log: ${project.build.directory}/native-smoke-test.log" />
                 <record name="${project.build.directory}/native-smoke-test.log" action="start" append="false" />
                 <exec executable="${exe.make}" failonerror="true" resolveexecutable="true">
@@ -396,7 +396,7 @@
                 <goal>run</goal>
               </goals>
               <configuration>
-                <target unless="deliverance.native.skip">
+                <target unless="reckoning.native.skip">
                   <copy todir="${nativeJarWorkdir}">
                     <zipfileset src="${defaultJarFile}" />
                   </copy>
@@ -424,7 +424,7 @@
                 <goal>run</goal>
               </goals>
               <configuration>
-                <target unless="deliverance.native.skip">
+                <target unless="reckoning.native.skip">
                   <echo message="Native build log: ${project.build.directory}/native-build.log" />
                   <record name="${project.build.directory}/native-build.log" action="start" append="false" />
                   <exec executable="C:\Program Files\Git\bin\bash.exe" failonerror="true" resolveexecutable="true">
@@ -458,7 +458,7 @@
                 <goal>run</goal>
               </goals>
               <configuration>
-                <target unless="deliverance.native.skip">
+                <target unless="reckoning.native.skip">
                   <echo message="Native smoke test log: ${project.build.directory}/native-smoke-test.log" />
                   <record name="${project.build.directory}/native-smoke-test.log" action="start" append="false" />
                   <exec executable="${exe.make}" failonerror="true" resolveexecutable="true">
@@ -509,7 +509,7 @@
                 <goal>run</goal>
               </goals>
               <configuration>
-                <target unless="deliverance.native.skip">
+                <target unless="reckoning.native.skip">
                   <copy todir="${nativeJarWorkdir}">
                     <zipfileset src="${defaultJarFile}" />
                   </copy>
@@ -537,7 +537,7 @@
                 <goal>run</goal>
               </goals>
               <configuration>
-                <target unless="deliverance.native.skip">
+                <target unless="reckoning.native.skip">
                   <echo message="Native build log: ${project.build.directory}/native-build.log" />
                   <record name="${project.build.directory}/native-build.log" action="start" append="false" />
                   <exec executable="./download_dawn.sh" failonerror="true" resolveexecutable="true">
@@ -571,7 +571,7 @@
                 <goal>run</goal>
               </goals>
               <configuration>
-                <target unless="deliverance.native.skip">
+                <target unless="reckoning.native.skip">
                   <echo message="Native smoke test log: ${project.build.directory}/native-smoke-test.log" />
                   <record name="${project.build.directory}/native-smoke-test.log" action="start" append="false" />
                   <exec executable="${exe.make}" failonerror="true" resolveexecutable="true">
@@ -622,7 +622,7 @@
                 <goal>run</goal>
               </goals>
               <configuration>
-                <target unless="deliverance.native.skip">
+                <target unless="reckoning.native.skip">
                   <copy todir="${nativeJarWorkdir}">
                     <zipfileset src="${defaultJarFile}" />
                   </copy>
@@ -650,7 +650,7 @@
                 <goal>run</goal>
               </goals>
               <configuration>
-                <target unless="deliverance.native.skip">
+                <target unless="reckoning.native.skip">
                   <echo message="Native build log: ${project.build.directory}/native-build.log" />
                   <record name="${project.build.directory}/native-build.log" action="start" append="false" />
                   <exec executable="./download_dawn.sh" failonerror="true" resolveexecutable="true">

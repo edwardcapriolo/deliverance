@@ -19,7 +19,7 @@ case "$OS_NAME:$OS_ARCH" in
   Linux:x86_64|Linux:amd64) NATIVE_CLASSIFIER=linux-x86_64 ;;
   *) printf '%s\n' "Unsupported native platform: $OS_NAME $OS_ARCH" >&2; exit 1 ;;
 esac
-NATIVE_CLASSIFIER=${DELIVERANCE_NATIVE_CLASSIFIER:-$NATIVE_CLASSIFIER}
+NATIVE_CLASSIFIER=${RECKONING_NATIVE_CLASSIFIER:-$NATIVE_CLASSIFIER}
 NATIVE_LIB_DIR="$SCRIPT_DIR/native/target/native-lib-only/$NATIVE_CLASSIFIER"
 
 if [ ! -d "$NATIVE_LIB_DIR" ]; then
@@ -56,8 +56,8 @@ $BENCHMARK_JVM_OPTS \
 --add-opens java.base/java.nio=ALL-UNNAMED \
 --enable-native-access=ALL-UNNAMED \
 -cp %classpath \
-io.teknek.deliverance.benchmark.InferenceBenchmark \
---engine deliverance \
+io.teknek.reckoning.benchmark.InferenceBenchmark \
+--engine reckoning \
 --owner $owner \
 --model $model \
 $config_args \

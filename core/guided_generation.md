@@ -1,6 +1,6 @@
 # Guided Generation
 
-Deliverance supports guided generation: request-time constraints that limit which tokens the sampler may choose. This is how features such as `guided_choice`, `guided_regex`, and `guided_json` force structured outputs during generation instead of validating and repairing text after the model has already produced it.
+Reckoning supports guided generation: request-time constraints that limit which tokens the sampler may choose. This is how features such as `guided_choice`, `guided_regex`, and `guided_json` force structured outputs during generation instead of validating and repairing text after the model has already produced it.
 
 ## Features
 
@@ -114,7 +114,7 @@ Current JSON Schema support includes the subset needed for useful structured ext
 - `anyOf`
 - `oneOf`
 
-Object property permutations are intentionally not expanded. JSON objects are semantically unordered, but guided generation only needs one valid output ordering. Deliverance currently emits fields in schema order to avoid factorial regex and index growth.
+Object property permutations are intentionally not expanded. JSON objects are semantically unordered, but guided generation only needs one valid output ordering. Reckoning currently emits fields in schema order to avoid factorial regex and index growth.
 
 ## Relationship To Sketches And Outlines
 
@@ -127,7 +127,7 @@ The `sketches-core` module contains the structured generation model and runtime 
 - `IndexGuide`
 - `JsonSchemaRegexBuilder`
 
-Outlines separates user-facing structured output APIs from lower-level guided decoding machinery. Its lower-level `outlines-core` library uses concepts such as `Vocabulary`, `Index`, and `Guide` to map text constraints to allowed token ids. Deliverance follows the same broad architecture with Java-specific integration:
+Outlines separates user-facing structured output APIs from lower-level guided decoding machinery. Its lower-level `outlines-core` library uses concepts such as `Vocabulary`, `Index`, and `Guide` to map text constraints to allowed token ids. Reckoning follows the same broad architecture with Java-specific integration:
 
 ```text
 User request
@@ -141,7 +141,7 @@ The split is intentional:
 
 - `core` owns inference, model execution, sampling, and web-facing request parameters.
 - `sketches-core` owns structured-output guide mechanics.
-- The core adapter translates Deliverance models/tokenizers into sketches `Vocabulary` and wraps guides as logits processors.
+- The core adapter translates Reckoning models/tokenizers into sketches `Vocabulary` and wraps guides as logits processors.
 
 ## Generation Flow
 

@@ -7,14 +7,14 @@ Compared against Hugging Face `transformers` main branch:
 - `src/transformers/models/gemma4/modeling_gemma4.py`
 - `src/transformers/models/gemma4/configuration_gemma4.py`
 
-Local Deliverance files compared:
+Local Reckoning files compared:
 
-- `core/src/main/java/io/teknek/deliverance/model/gemma4/Gemma4Config.java`
-- `core/src/main/java/io/teknek/deliverance/model/gemma4/Gemma4Model.java`
-- `core/src/main/java/io/teknek/deliverance/generator/Gemma4CausalSelfAttention.java`
-- `core/src/main/java/io/teknek/deliverance/generator/Gemma4TransformerBlock.java`
-- `core/src/main/java/io/teknek/deliverance/model/gemma4/Gemma4PleSupport.java`
-- `core/src/main/java/io/teknek/deliverance/generator/Gemma4RmsNormSupport.java`
+- `core/src/main/java/io/teknek/reckoning/model/gemma4/Gemma4Config.java`
+- `core/src/main/java/io/teknek/reckoning/model/gemma4/Gemma4Model.java`
+- `core/src/main/java/io/teknek/reckoning/generator/Gemma4CausalSelfAttention.java`
+- `core/src/main/java/io/teknek/reckoning/generator/Gemma4TransformerBlock.java`
+- `core/src/main/java/io/teknek/reckoning/model/gemma4/Gemma4PleSupport.java`
+- `core/src/main/java/io/teknek/reckoning/generator/Gemma4RmsNormSupport.java`
 
 ## Important Correction
 
@@ -27,7 +27,7 @@ The actual checkpoint metadata says:
 "model_type": "gemma4"
 ```
 
-The Hugging Face Gemma4 text path does not include Gemma3n AltUp, Laurel, or activation sparsity. Those features should not be added to Deliverance Gemma4 unless the actual Gemma4 checkpoint contains those fields/weights.
+The Hugging Face Gemma4 text path does not include Gemma3n AltUp, Laurel, or activation sparsity. Those features should not be added to Reckoning Gemma4 unless the actual Gemma4 checkpoint contains those fields/weights.
 
 ## HF Gemma4 Text Architecture Summary
 
@@ -76,7 +76,7 @@ if self.rope_parameters is None:
     }
 ```
 
-Deliverance currently assumes `layer_types` and `rope_parameters` are present. The checked-in fixture `core/src/test/resources/gemma_4_config.json` does provide both, so this is not currently the likely failure for that fixture. It is still a robustness difference.
+Reckoning currently assumes `layer_types` and `rope_parameters` are present. The checked-in fixture `core/src/test/resources/gemma_4_config.json` does provide both, so this is not currently the likely failure for that fixture. It is still a robustness difference.
 
 ### MLP
 
@@ -91,7 +91,7 @@ self.intermediate_size = config.intermediate_size * (2 if use_double_wide_mlp el
 down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
 ```
 
-Deliverance equivalent:
+Reckoning equivalent:
 
 - `Gemma4Config.getLayerHiddenLength(...)`, lines 165-168
 - `VariableMLPBlock.forward(...)`, lines 69-99
@@ -115,13 +115,13 @@ attn_weights = torch.matmul(query, key_states.transpose(2, 3)) * scaling
 
 HF Gemma4 text attention does not pass an attention-logit softcap. It only uses final logit softcap at the LM head.
 
-Deliverance equivalent:
+Reckoning equivalent:
 
 - `Gemma4CausalSelfAttention.score(...)`, lines 388-397
 
-Deliverance score is an unscaled dot product, which is equivalent to HF scaling `1.0`.
+Reckoning score is an unscaled dot product, which is equivalent to HF scaling `1.0`.
 
-Deliverance only applies attention softcap if `config.attnLogitSoftCapping != null`. The Gemma4 fixture has `final_logit_softcapping` but no text `attn_logit_softcapping`, so attention softcap should not activate for Gemma4 text.
+Reckoning only applies attention softcap if `config.attnLogitSoftCapping != null`. The Gemma4 fixture has `final_logit_softcapping` but no text `attn_logit_softcapping`, so attention softcap should not activate for Gemma4 text.
 
 Assessment: attention score scaling is not the likely mismatch.
 
@@ -149,7 +149,7 @@ else:
     value_states = value_states.transpose(1, 2)
 ```
 
-Deliverance equivalent:
+Reckoning equivalent:
 
 - Q projection/norm/RoPE: `Gemma4CausalSelfAttention.forward(...)`, lines 113-118 and 134-140
 - K/V projection/norm/RoPE: lines 119-129 and 134-140
@@ -158,7 +158,7 @@ Deliverance equivalent:
 Assessment: broadly matches. One important conditional remains:
 
 - HF omits `v_proj` for `attention_k_eq_v && !is_sliding`, using key projection as value input.
-- Deliverance currently always loads `v_proj` for non-shared layers in `Gemma4Model.loadTransformerBlockWeights(...)`, lines 156-157.
+- Reckoning currently always loads `v_proj` for non-shared layers in `Gemma4Model.loadTransformerBlockWeights(...)`, lines 156-157.
 - For the checked fixture, `attention_k_eq_v=false`, so this is not the current E2B fixture issue.
 
 ### Shared KV
@@ -186,7 +186,7 @@ if self.store_full_length_kv:
     shared_kv_states[self.layer_type] = key_states, value_states
 ```
 
-Deliverance equivalent:
+Reckoning equivalent:
 
 - shared layer detection: `Gemma4Config.getSharedKvSourceLayer(...)`, lines 170-182
 - store-source detection: `Gemma4Config.storesSharedKvState(...)`, lines 184-194
@@ -233,7 +233,7 @@ if self.hidden_size_per_layer_input:
 hidden_states *= self.layer_scalar
 ```
 
-Deliverance equivalent:
+Reckoning equivalent:
 
 - token identity: `Gemma4Model.computeTokenIdentityPerLayerInputs(...)`, lines 430-439
 - context projection: `Gemma4Model.computeProjectedPerLayerInputs(...)`, lines 441-451
@@ -264,7 +264,7 @@ PLE block if present
 hidden_states *= layer_scalar
 ```
 
-Deliverance equivalent:
+Reckoning equivalent:
 
 - `Gemma4TransformerBlock.forward(...)`, lines 67-129
 
@@ -283,7 +283,7 @@ if self.config.final_logit_softcapping is not None:
     logits = logits * self.config.final_logit_softcapping
 ```
 
-Deliverance:
+Reckoning:
 
 - output norm and head setup: `Gemma4Model.loadOutputWeights(...)`, lines 111-132
 - final logit softcap: `AbstractGeneratorSampler`, lines 197-204 for the current sampler path
@@ -302,19 +302,19 @@ HF Gemma4 text path has no AltUp, no Laurel, and no activation sparsity. Any suc
 
 Status: no action.
 
-HF Gemma4 text attention scaling is `1.0`; Deliverance uses unscaled dot product. That matches.
+HF Gemma4 text attention scaling is `1.0`; Reckoning uses unscaled dot product. That matches.
 
 ### Finding 3: Text Attention Softcap Should Be Inactive
 
 Status: no action unless a config contains text `attn_logit_softcapping`.
 
-The Gemma4 fixture has final logit softcap but no text attention softcap. Deliverance will not apply attention softcap unless `attnLogitSoftCapping` is non-null.
+The Gemma4 fixture has final logit softcap but no text attention softcap. Reckoning will not apply attention softcap unless `attnLogitSoftCapping` is non-null.
 
 ### Finding 4: RoPE Is The Highest-Value Remaining Static Mismatch To Verify
 
 Status: needs deeper check.
 
-HF delegates proportional RoPE to `ROPE_INIT_FUNCTIONS["proportional"]`, passing `head_dim_key="global_head_dim"` for full attention. Deliverance has a hand-written proportional RoPE implementation in `Gemma4Config.precomputeRopeFreqs(...)`, lines 127-163.
+HF delegates proportional RoPE to `ROPE_INIT_FUNCTIONS["proportional"]`, passing `head_dim_key="global_head_dim"` for full attention. Reckoning has a hand-written proportional RoPE implementation in `Gemma4Config.precomputeRopeFreqs(...)`, lines 127-163.
 
 This is the next best target because a small RoPE frequency/scaling mismatch can produce coherent early text and then semantic drift, while still passing batch-vs-token and decode-vs-cold replay checks.
 
@@ -322,20 +322,20 @@ This is the next best target because a small RoPE frequency/scaling mismatch can
 
 Status: likely not E2B fixture issue because fixture has `attention_k_eq_v=false`.
 
-If a Gemma4 checkpoint sets `attention_k_eq_v=true`, HF omits `v_proj` for full attention and derives values from K projection before K norm/RoPE. Deliverance currently loads/uses `v_proj` for all non-shared layers. This should be fixed before supporting such checkpoint variants.
+If a Gemma4 checkpoint sets `attention_k_eq_v=true`, HF omits `v_proj` for full attention and derives values from K projection before K norm/RoPE. Reckoning currently loads/uses `v_proj` for all non-shared layers. This should be fixed before supporting such checkpoint variants.
 
 ### Finding 6: Masking Is Equivalent Only For Plain Text, No Padding, Causal Use
 
 Status: acceptable for current tests; not complete.
 
-HF builds full and sliding causal masks and passes them to attention. Deliverance manually limits visible rows by position/window. This is equivalent for unpadded text-only causal generation, but it does not cover padding, bidirectional modes, image/audio token masks, or multimodal block sequence masks.
+HF builds full and sliding causal masks and passes them to attention. Reckoning manually limits visible rows by position/window. This is equivalent for unpadded text-only causal generation, but it does not cover padding, bidirectional modes, image/audio token masks, or multimodal block sequence masks.
 
 ## Recommended Next Step
 
 Do a focused RoPE parity check next:
 
 1. Extract HF proportional RoPE formula from `ROPE_INIT_FUNCTIONS["proportional"]`.
-2. Compare Deliverance `Gemma4Config.precomputeRopeFreqs(...)` against HF for:
+2. Compare Reckoning `Gemma4Config.precomputeRopeFreqs(...)` against HF for:
    - `sliding_attention`
    - `full_attention`
    - positions 0, 1, 2, 128, 511, 512, 4096
@@ -346,13 +346,13 @@ Do not reintroduce Gemma3n AltUp/Laurel/activation sparsity into Gemma4.
 
 ## Execution-Order Mapping
 
-This table maps the HF Gemma4 text path to Deliverance in execution order. It is intended for line-by-line print parity work.
+This table maps the HF Gemma4 text path to Reckoning in execution order. It is intended for line-by-line print parity work.
 
-| Order | HF Operation | Deliverance Mapping | Status | Suggested Probe |
+| Order | HF Operation | Reckoning Mapping | Status | Suggested Probe |
 |---:|---|---|---|---|
 | 1 | `Gemma4ForCausalLM.forward` calls `self.model(...)` with ids, masks, cache, `per_layer_inputs` | `Gemma4Model.batchForward(...)` embeds, computes PLE, calls `forwardGemma4(...)`; single-token path in `forward(...)` | approx | Print input ids, position ids/startPos, last hidden first8 |
 | 2 | `hidden_states = outputs.last_hidden_state`; `logits = lm_head(...)`; optional final softcap | `Gemma4Model.loadOutputWeights()` plus sampler output norm/projection and final softcap | approx | Print hidden before final norm, after norm, logits pre/post softcap |
-| 3 | Return `Gemma4CausalLMOutputWithPast` | Deliverance returns generation response / sampler token | different | Compare logits and next token, not object shape |
+| 3 | Return `Gemma4CausalLMOutputWithPast` | Reckoning returns generation response / sampler token | different | Compare logits and next token, not object shape |
 | 4 | Text forward requires exactly one of `input_ids` or `inputs_embeds` | Java has token-id paths and an embedding overload | approx | Print which Java entrypoint is used |
 | 5 | `inputs_embeds = embed_tokens(input_ids)` scaled by `sqrt(hidden_size)` | `Gemma4Model.loadInputWeights`, lines 83-108 | match | Print raw/scaled embedding first8 and scale |
 | 6 | If PLE enabled, call `get_per_layer_inputs(input_ids, inputs_embeds)` | `computePerLayerInputs(...)`, lines 373-390 | match for token-id path | Print token identity packed row |
@@ -373,7 +373,7 @@ This table maps the HF Gemma4 text path to Deliverance in execution order. It is
 | 21 | Decoder: self attention call | `attention.forward(...)`, lines 70-72 | match | Print q/k/v and attention stages |
 | 22 | Decoder: post-attn norm then residual add | `maybeApplyNorm` then `accumulate`, lines 73-78 | match | Print post-attention residual |
 | 23 | Decoder: pre-FF norm then MLP | lines 80-84 | match | Print MLP gate/up/product/down |
-| 24 | HF optional MoE block | Deliverance Gemma4 does not implement MoE | missing if `enable_moe_block=true` | Print config `enableMoeBlock`; E2B fixture false |
+| 24 | HF optional MoE block | Reckoning Gemma4 does not implement MoE | missing if `enable_moe_block=true` | Print config `enableMoeBlock`; E2B fixture false |
 | 25 | Decoder: post-FF norm then residual add | lines 86-91 | match | Print post-FF residual |
 | 26 | Decoder: PLE gate/activation/multiply/project/norm/residual add | lines 93-115 | match | Print PLE gate, product, projection, norm |
 | 27 | Decoder: `hidden_states *= layer_scalar` | lines 118-120 | match | Print layer scalar and hidden before/after |

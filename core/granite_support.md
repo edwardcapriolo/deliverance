@@ -1,6 +1,6 @@
 # Granite 4.0 / GraniteMoeHybrid Support
 
-Deliverance supports the Hugging Face `granitemoehybrid` model family used by IBM Granite 4.0 and Antares.
+Reckoning supports the Hugging Face `granitemoehybrid` model family used by IBM Granite 4.0 and Antares.
 
 GraniteMoeHybrid is a family name, not one fixed block layout. A checkpoint can be dense attention-only, or it can combine Mamba sequence-modeling layers, transformer attention layers, and sparse Mixture-of-Experts feed-forward blocks.
 
@@ -17,7 +17,7 @@ num_experts_per_tok=0
 layer_types=["attention", ...]
 ```
 
-Deliverance supports this path and verifies it with real-model smoke/parity tests. The important prompt/runtime detail is that Granite/Antares templates already own their special tokens, so Deliverance does not prepend an extra BOS token for this model family.
+Reckoning supports this path and verifies it with real-model smoke/parity tests. The important prompt/runtime detail is that Granite/Antares templates already own their special tokens, so Reckoning does not prepend an extra BOS token for this model family.
 
 ### Hybrid Granite Path
 
@@ -29,7 +29,7 @@ num_local_experts=64
 num_experts_per_tok=6
 ```
 
-Deliverance supports loading and smoke-generating with this hybrid path. The current implementation includes:
+Reckoning supports loading and smoke-generating with this hybrid path. The current implementation includes:
 
 - Granite attention layers using the existing causal attention path.
 - Granite shared MLP formula.
@@ -47,7 +47,7 @@ MoE means Mixture of Experts. Instead of running one dense feed-forward network 
 
 ## Prompt And Reasoning Notes
 
-Granite/Antares chat templates render their own role and special-token markers. Deliverance has model-family tests for this because an extra BOS token caused bad Antares output.
+Granite/Antares chat templates render their own role and special-token markers. Reckoning has model-family tests for this because an extra BOS token caused bad Antares output.
 
 Antares templates can end the rendered prompt inside a `<think>` block:
 
@@ -55,17 +55,17 @@ Antares templates can end the rendered prompt inside a `<think>` block:
 <|start_of_role|>assistant<|end_of_role|><think>
 ```
 
-That means generated text begins as reasoning until the model emits `</think>`. Deliverance represents this behavior in `ReasoningTextSplitter` tests so streaming code does not treat reasoning as normal assistant content.
+That means generated text begins as reasoning until the model emits `</think>`. Reckoning represents this behavior in `ReasoningTextSplitter` tests so streaming code does not treat reasoning as normal assistant content.
 
 ## Quantization
 
-Deliverance can quantize Antares-1B to JQ4. Local smoke testing showed coherent output from the generated `antares-1b-JQ4` model.
+Reckoning can quantize Antares-1B to JQ4. Local smoke testing showed coherent output from the generated `antares-1b-JQ4` model.
 
 Granite 4.0 hybrid tiny can also be quantized, but the size reduction is limited today because its large MoE expert tensors are stored as three-dimensional tensors and the current quantizer keeps non-2D tensors dense.
 
 ## API Notes
 
-Antares is trained as a terminal-style vulnerability-localization agent. Its official CLI expects a raw OpenAI-compatible `/v1/completions` endpoint, not chat completions. Deliverance includes a minimal legacy completions endpoint that passes raw prompt text directly to generation without applying a chat template.
+Antares is trained as a terminal-style vulnerability-localization agent. Its official CLI expects a raw OpenAI-compatible `/v1/completions` endpoint, not chat completions. Reckoning includes a minimal legacy completions endpoint that passes raw prompt text directly to generation without applying a chat template.
 
 ## Tests
 

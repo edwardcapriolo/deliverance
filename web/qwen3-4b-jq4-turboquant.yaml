@@ -4,7 +4,7 @@ model:
   type: GENERATION
   config:
     outputHeadQuantization: Q4
-deliverance:
+reckoning:
   tensor:
     operations:
       simd:

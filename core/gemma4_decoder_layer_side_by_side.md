@@ -5,12 +5,12 @@ This is a direct comparison of the current source. It is not a claim of parity.
 Sources:
 
 - Transformers: `/ai-code/transformers/src/transformers/models/gemma4/modular_gemma4.py:1192-1249`
-- Deliverance: `/ai-code/del5/core/src/main/java/io/teknek/deliverance/generator2/TransformerBlock2.java:126-224`
+- Reckoning: `/ai-code/del5/core/src/main/java/io/teknek/reckoning/generator2/TransformerBlock2.java:126-224`
 
 <table>
 <tr>
 <th>Transformers Gemma4TextDecoderLayer.forward</th>
-<th>Deliverance TransformerBlock2.forward</th>
+<th>Reckoning TransformerBlock2.forward</th>
 </tr>
 <tr>
 <td valign="top">
@@ -168,8 +168,8 @@ helper retains its `layerScalar == 1.0` fast path.
 
 ## Known Differences
 
-- Deliverance still has scalar Java loops for PLE activation/multiplication.
-- Deliverance passes through generic optional norms and `preResponseNorm`, which must be proven equivalent to Gemma4's exact block fields.
+- Reckoning still has scalar Java loops for PLE activation/multiplication.
+- Reckoning passes through generic optional norms and `preResponseNorm`, which must be proven equivalent to Gemma4's exact block fields.
 - MoE input, routing, packed experts, and branch norm ordering require tensor-level parity, not structural similarity.
 - KV sharing and heterogeneous per-layer KV widths occur inside the attention/cache implementation and are not visible in this block-level comparison.
 - `...` above represents omitted Java argument plumbing only; it is not evidence that the omitted arguments are equivalent.

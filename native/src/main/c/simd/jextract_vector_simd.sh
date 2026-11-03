@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 NATIVE_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/../../../.." && pwd)
 OUT_DIR="$NATIVE_DIR/src/main/java"
-PACKAGE="io.teknek.deliverance.tensor.operations.cnative"
+PACKAGE="io.teknek.reckoning.tensor.operations.cnative"
 JEXTRACT=${JEXTRACT:-/Users/edward.capriolo/Downloads/jextract-22/bin/jextract}
 
 if [ ! -x "$JEXTRACT" ]; then
@@ -19,6 +19,6 @@ cd "$SCRIPT_DIR"
   --output "$OUT_DIR" \
   -t "$PACKAGE" \
   -I "$SCRIPT_DIR" \
-  -l deliverance \
+  -l reckoning \
   --header-class-name NativeSimd \
   vector_simd.h

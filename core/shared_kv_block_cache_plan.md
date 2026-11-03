@@ -211,7 +211,7 @@ For tensor parallelism, include rank-local identity:
 - rank id
 - assignment epoch or generation id
 - local shard range / local KV length
-- Deliverance build/cache format version if rank workers may run different binaries
+- Reckoning build/cache format version if rank workers may run different binaries
 
 In local mode these fields should normalize to a single logical rank identity, for example `tpSize=1` and `tpRank=0`. That keeps one cache key shape for both local and tensor-parallel execution while making TP rank ownership explicit.
 

@@ -15,7 +15,7 @@ cache from creating many cumulative disk-backed KV buffers for every block-align
 Use `KvBufferCacheSettings(File workingDirectory)` to enable disk-backed active pages:
 
 ```java
-KvBufferCacheSettings settings = new KvBufferCacheSettings(new File("/tmp/deliverance-kv"));
+KvBufferCacheSettings settings = new KvBufferCacheSettings(new File("/tmp/reckoning-kv"));
 ```
 
 The backend creates the working directory if it does not already exist.
@@ -27,7 +27,7 @@ fallback, not the default fast path; it trades direct-memory pressure for memory
 For debugging or performance inspection, pages can be retained:
 
 ```java
-KvBufferCacheSettings settings = new KvBufferCacheSettings(new File("/tmp/deliverance-kv"))
+KvBufferCacheSettings settings = new KvBufferCacheSettings(new File("/tmp/reckoning-kv"))
         .withDeleteDiskPagesOnClose(false);
 ```
 
@@ -42,7 +42,7 @@ for orphaned files from crashes, interrupted runs, or retained inspection pages;
 Sweeper settings:
 
 ```java
-KvBufferCacheSettings settings = new KvBufferCacheSettings(new File("/tmp/deliverance-kv"))
+KvBufferCacheSettings settings = new KvBufferCacheSettings(new File("/tmp/reckoning-kv"))
         .withDiskPageSweeperEnabled(true)
         .withDiskPageSweepInterval(Duration.ofMinutes(5))
         .withDiskPageMaxAge(Duration.ofHours(1));

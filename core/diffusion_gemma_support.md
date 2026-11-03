@@ -1,6 +1,6 @@
 # DiffusionGemma Support Map
 
-This document maps Hugging Face DiffusionGemma source and tests to a Deliverance port plan. It is a source-derived implementation guide, not a design sketch. The initial port should satisfy the small synthetic Hugging Face tests before any real 26B checkpoint work.
+This document maps Hugging Face DiffusionGemma source and tests to a Reckoning port plan. It is a source-derived implementation guide, not a design sketch. The initial port should satisfy the small synthetic Hugging Face tests before any real 26B checkpoint work.
 
 ## Source Files
 
@@ -283,7 +283,7 @@ valid generated tokens excluding prompt and pad / decoder forward passes
 
 Port first. These require no model weights.
 
-| HF test | Behavior | Deliverance target |
+| HF test | Behavior | Reckoning target |
 | --- | --- | --- |
 | `test_generation_config_interface` | accepts AR-compatible config subset | `DiffusionGemmaGenerationParametersTest` |
 | `test_bad_diffusion_generation_config_parameterization` | rejects AR-only generation fields | same |
@@ -301,7 +301,7 @@ Port first. These require no model weights.
 
 Port after config classes and tiny checkpoint writer.
 
-| HF test | Behavior | Deliverance target |
+| HF test | Behavior | Reckoning target |
 | --- | --- | --- |
 | `test_config` | common config properties | `DiffusionGemmaConfigTest` |
 | `test_model` | base forward shape with/without masks/decoder IDs | `DiffusionGemmaModelShapeTest` |
@@ -312,7 +312,7 @@ Port after config classes and tiny checkpoint writer.
 
 Port after mask builder.
 
-| HF test | Behavior | Deliverance target |
+| HF test | Behavior | Reckoning target |
 | --- | --- | --- |
 | `test_diffusion_decoder_mask_no_cache_raises_exception` | cache required | `DiffusionGemmaMaskTest` |
 | `test_diffusion_decoder_mask_dynamic_cache` | dynamic no-padding shortcut | same |
@@ -326,7 +326,7 @@ Port after mask builder.
 
 Port after text forward and generation loop.
 
-| HF test | Behavior | Deliverance target |
+| HF test | Behavior | Reckoning target |
 | --- | --- | --- |
 | `test_generate` variants | dynamic/static cache, custom sampler/temp/stopping | `DiffusionGemmaGenerateTest` |
 | `test_generate_text_only` | no image inputs | same |
@@ -340,7 +340,7 @@ Port after text forward and generation loop.
 
 Port after vision path.
 
-| HF test | Behavior | Deliverance target |
+| HF test | Behavior | Reckoning target |
 | --- | --- | --- |
 | `test_diffusion_gemma_chat_template` | text chat template | tokenizer/template test |
 | `test_diffusion_gemma_chat_template_image` | image placeholder template | tokenizer/template image test |
@@ -385,7 +385,7 @@ vision_patch_size = 5
 vision_image_size = 20
 ```
 
-For Deliverance tests, keep the exact HF values where they affect mask counts and canvas shapes. Use padded vocab only in tests that need provider-friendly matmul dimensions.
+For Reckoning tests, keep the exact HF values where they affect mask counts and canvas shapes. Use padded vocab only in tests that need provider-friendly matmul dimensions.
 
 ## Risk List
 

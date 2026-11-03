@@ -2,9 +2,9 @@
 
 ## Objective
 
-Port Google's `google/embeddinggemma-2` into Deliverance while preserving the
+Port Google's `google/embeddinggemma-2` into Reckoning while preserving the
 Transformers behavior, tensor layouts, numerical results, provider execution
-strategy, and performance characteristics wherever Deliverance supports an
+strategy, and performance characteristics wherever Reckoning supports an
 equivalent path.
 
 The port is a full multimodal port. Implementation may proceed in dependency
@@ -34,7 +34,7 @@ the source when the modular file differs.
 
 ## Existing Gemma Code Is Untrusted
 
-The existing Deliverance Gemma 3 and Gemma 4 implementations, including any
+The existing Reckoning Gemma 3 and Gemma 4 implementations, including any
 PLE/PLC-related implementation, are not correctness references. Previous
 Gemma work produced corrupted output after extended generation, so those paths
 must be treated as potentially defective even when they appear structurally
@@ -58,9 +58,9 @@ Passing an existing Gemma 3 or Gemma 4 test is not evidence that reused code is
 correct for EmbeddingGemma 2. The port must establish correctness independently
 before relying on any such code.
 
-## Deliverance Gaps
+## Reckoning Gaps
 
-| Area | Current Deliverance | Required Work |
+| Area | Current Reckoning | Required Work |
 |---|---|---|
 | Model registration | No `embedding_gemma2` | Add config/model registration |
 | Text model | BERT and causal Gemma paths only | New EmbeddingGemma 2 encoder |
@@ -99,7 +99,7 @@ before relying on any such code.
 - Every changed or added method requires Javadoc, including private methods,
   covering contracts, shape assumptions, provider behavior, and fallbacks.
 - Every post-change review must independently inspect the reference and
-  Deliverance paths, tests, provider dispatch, and performance evidence.
+  Reckoning paths, tests, provider dispatch, and performance evidence.
 
 ### Edge-Performance Constraint
 
@@ -131,10 +131,10 @@ Every upstream EmbeddingGemma 2 test module and test case must have a named
 Java counterpart. Preserve the upstream test module and test-case names in the
 Java naming or an explicit mapping so coverage can be audited mechanically.
 The Java test should directly reproduce the Python test's behavior, inputs,
-assertions, and error semantics whenever the Deliverance API can express the
+assertions, and error semantics whenever the Reckoning API can express the
 same contract.
 
-If a test cannot execute yet because the required Deliverance implementation,
+If a test cannot execute yet because the required Reckoning implementation,
 media backend, provider, fixture, or dependency is not available, add the
 counterpart anyway and mark it ignored/disabled with a concise reason and the
 upstream test reference. An ignored test is a tracked port gap, not completed
@@ -160,7 +160,7 @@ Before production implementation:
 2. Capture the model configuration, tokenizer configuration, Sentence
    Transformers metadata, processor configuration, and safetensors header.
 3. Enumerate all checkpoint tensor names, shapes, dtypes, and namespaces.
-4. Map each Transformers module and test to its intended Deliverance class or
+4. Map each Transformers module and test to its intended Reckoning class or
    test contract.
 5. Identify behavior that is Python-framework-specific and needs a Java API
    decision rather than a literal translation.
@@ -231,7 +231,7 @@ path in place:
 
 Transformers' `EmbeddingGemma2Model.forward()` does not accept MRL or
 Sentence Transformers output options. Those options belong to the higher-level
-embedding API. Deliverance must keep model inputs separate from embedding
+embedding API. Reckoning must keep model inputs separate from embedding
 post-processing so the same contract works for text and later multimodal
 inputs.
 
@@ -285,7 +285,7 @@ the leading-dimension and norm invariants must also be asserted.
 
 ## Phase 2: Text Tests
 
-Port the relevant Transformers tests and add Deliverance-specific tests.
+Port the relevant Transformers tests and add Reckoning-specific tests.
 
 ### Configuration and checkpoint tests
 
@@ -329,7 +329,7 @@ Using a tiny checkpoint with real tensor names:
 
 ### Reference parity tests
 
-- Compare Deliverance against Transformers on deterministic text cases.
+- Compare Reckoning against Transformers on deterministic text cases.
 - Compare intermediate outputs where practical, not only final embeddings.
 - Use documented tolerances for FP32 and BF16.
 - Preserve versioned expected fixtures so tests do not depend on an internal

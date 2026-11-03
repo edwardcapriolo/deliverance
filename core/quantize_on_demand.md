@@ -1,10 +1,10 @@
 # Quantize On Demand
 
-Quantize On Demand, or Q.O.D., lets Deliverance generate a local quantized copy of a model the first time you ask for it, then reuse that generated model on later runs.
+Quantize On Demand, or Q.O.D., lets Reckoning generate a local quantized copy of a model the first time you ask for it, then reuse that generated model on later runs.
 
 The common flow is:
 
-1. Resolve the source model from the Deliverance cache, downloading it if allowed.
+1. Resolve the source model from the Reckoning cache, downloading it if allowed.
 2. Check whether the requested quantized target already exists locally.
 3. If the target exists and is complete, load it directly.
 4. If the target is missing, quantize the source into a staging directory.
@@ -40,9 +40,9 @@ AutoModelForCausaLm.newBuilder(new ModelFetcher("Qwen", "Qwen3-0.6B"))
         .buildLocalTransformerModel();
 ```
 
-With downloads disabled, the source model must already exist in the local Deliverance cache. Generated quantized targets are always loaded locally and do not contact Hugging Face.
+With downloads disabled, the source model must already exist in the local Reckoning cache. Generated quantized targets are always loaded locally and do not contact Hugging Face.
 
-If the target directory already exists but is incomplete, Deliverance fails rather than overwriting it. Remove the incomplete target directory manually if you want to regenerate it.
+If the target directory already exists but is incomplete, Reckoning fails rather than overwriting it. Remove the incomplete target directory manually if you want to regenerate it.
 
 ## What Gets Quantized
 
@@ -106,10 +106,10 @@ Do not enable TurboQuant prefix cache for Nemotron during the first Q.O.D. run. 
 
 ## Generated Files
 
-Q.O.D. generated model directories include the normal copied model metadata and rewritten safetensor weights. They also include Deliverance-specific provenance files:
+Q.O.D. generated model directories include the normal copied model metadata and rewritten safetensor weights. They also include Reckoning-specific provenance files:
 
-- `README.md`: prepends a Deliverance Q.O.D. summary, original vs quantized local size, and a note that the copied model-card content belongs to the original model authors.
-- `deliverance-quantization.json`: records source/output directories, target dtype, size information, tensor dtype changes, generated `.qb` sidecars, and shape-normalization transforms.
+- `README.md`: prepends a Reckoning Q.O.D. summary, original vs quantized local size, and a note that the copied model-card content belongs to the original model authors.
+- `reckoning-quantization.json`: records source/output directories, target dtype, size information, tensor dtype changes, generated `.qb` sidecars, and shape-normalization transforms.
 - `.finished`: marks the local generated model as complete for offline loading.
 
 ## Progress Logging

@@ -21,16 +21,16 @@ case "$OS_NAME:$OS_ARCH" in
   *) printf '%s\n' "Unsupported native platform: $OS_NAME $OS_ARCH" >&2; exit 1 ;;
 esac
 
-NATIVE_CLASSIFIER=${DELIVERANCE_NATIVE_CLASSIFIER:-$NATIVE_CLASSIFIER}
+NATIVE_CLASSIFIER=${RECKONING_NATIVE_CLASSIFIER:-$NATIVE_CLASSIFIER}
 NATIVE_LIB_DIR="$ROOT_DIR/native/target/native-lib-only/$NATIVE_CLASSIFIER"
-OUTPUT=${DELIVERANCE_LORA_BENCHMARK_OUTPUT:-"$BENCHMARK_RUN_DIR/lora-adapter-benchmark.csv"}
-JSONL_OUTPUT=${DELIVERANCE_LORA_BENCHMARK_JSONL_OUTPUT:-"$BENCHMARK_RUN_DIR/lora-adapter-benchmark.jsonl"}
-BENCHMARK_ARGS=${DELIVERANCE_BENCHMARK_ARGS:-"--owner unsloth --model Llama-3.2-1B-Instruct --adapter-owner bunnycore --adapter-model Llama-3.2-1b-chatml-lora_model --output $OUTPUT --jsonl-output $JSONL_OUTPUT --max-tokens 128 --profile-stages"}
+OUTPUT=${RECKONING_LORA_BENCHMARK_OUTPUT:-"$BENCHMARK_RUN_DIR/lora-adapter-benchmark.csv"}
+JSONL_OUTPUT=${RECKONING_LORA_BENCHMARK_JSONL_OUTPUT:-"$BENCHMARK_RUN_DIR/lora-adapter-benchmark.jsonl"}
+BENCHMARK_ARGS=${RECKONING_BENCHMARK_ARGS:-"--owner unsloth --model Llama-3.2-1B-Instruct --adapter-owner bunnycore --adapter-model Llama-3.2-1b-chatml-lora_model --output $OUTPUT --jsonl-output $JSONL_OUTPUT --max-tokens 128 --profile-stages"}
 
 cd "$ROOT_DIR"
 
 mvn -q -pl core \
   -Dexec.classpathScope=test \
   -Dexec.executable="$JAVA_BIN" \
-  -Dexec.args="$BENCHMARK_JVM_OPTS -Djava.library.path=$NATIVE_LIB_DIR --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.deliverance.benchmark.LoraAdapterBenchmark $BENCHMARK_ARGS" \
+  -Dexec.args="$BENCHMARK_JVM_OPTS -Djava.library.path=$NATIVE_LIB_DIR --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.reckoning.benchmark.LoraAdapterBenchmark $BENCHMARK_ARGS" \
   org.codehaus.mojo:exec-maven-plugin:3.5.0:exec

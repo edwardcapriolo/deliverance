@@ -43,9 +43,9 @@ and the special-token opt-out test observes no two-token difference.
 - Transformers `tokenization_python.py:865-950`
 - Transformers `tokenization_utils_tokenizers.py:626-650`
 - Transformers `convert_embedding_gemma2_weights.py:877-878`
-- Deliverance `PreTrainedTokenizerBase.encode`
-- Deliverance `PreTrainedTokenizerBase.buildInputsWithSpecialTokens`
-- Deliverance `GemmaTokenizer`
+- Reckoning `PreTrainedTokenizerBase.encode`
+- Reckoning `PreTrainedTokenizerBase.buildInputsWithSpecialTokens`
+- Reckoning `GemmaTokenizer`
 
 ## Completion Criteria
 

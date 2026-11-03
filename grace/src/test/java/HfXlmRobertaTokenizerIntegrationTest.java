@@ -1,6 +1,6 @@
-import io.teknek.deliverance.grace.EncodeOptions;
-import io.teknek.deliverance.grace.PreTrainedTokenizer;
-import io.teknek.deliverance.grace.TokenIds;
+import io.teknek.reckoning.grace.EncodeOptions;
+import io.teknek.reckoning.grace.PreTrainedTokenizer;
+import io.teknek.reckoning.grace.TokenIds;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
@@ -10,8 +10,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 /** Port of Hugging Face XLMRobertaTokenizationTest integration golden data. */
 public class HfXlmRobertaTokenizerIntegrationTest implements HfTokenizerIntegrationContract {
     @Override
-    public io.teknek.deliverance.grace.AutoTokenizer.OwnerName tokenizerOwnerName() {
-        return new io.teknek.deliverance.grace.AutoTokenizer.OwnerName(
+    public io.teknek.reckoning.grace.AutoTokenizer.OwnerName tokenizerOwnerName() {
+        return new io.teknek.reckoning.grace.AutoTokenizer.OwnerName(
                 "papluca", "xlm-roberta-base-language-detection");
     }
 

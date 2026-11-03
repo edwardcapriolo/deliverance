@@ -1,0 +1,16 @@
+{{- if .Values.cache.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "reckoning-tp.cachePvcName" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "reckoning-tp.name" . }}
+    app.kubernetes.io/component: model-cache
+spec:
+  accessModes:
+{{ toYaml .Values.cache.accessModes | indent 4 }}
+  storageClassName: {{ include "reckoning-tp.cacheStorageClassName" . | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.cache.size }}
+{{- end }}

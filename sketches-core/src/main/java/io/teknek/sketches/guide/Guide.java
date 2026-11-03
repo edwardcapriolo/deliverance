@@ -10,7 +10,7 @@ import java.util.List;
  * accepts a token.</p>
  *
  * <p>Guides are request-scoped and mutable. Do not share one guide across concurrent generations. Implementations should
- * keep all constraint state internally and should not depend on Deliverance-specific classes such as logits tensors or
+ * keep all constraint state internally and should not depend on Reckoning-specific classes such as logits tensors or
  * response contexts; backend adapters are responsible for translating {@link #getTokens()} into backend-specific masks.</p>
  */
 public interface Guide {

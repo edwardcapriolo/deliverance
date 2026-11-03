@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "reckoning-tp.workerName" . }}
+  labels:
+    app.kubernetes.io/name: {{ include "reckoning-tp.name" . }}
+    app.kubernetes.io/component: worker
+spec:
+  serviceName: {{ include "reckoning-tp.workerName" . }}
+  replicas: {{ .Values.workers.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "reckoning-tp.name" . }}
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      annotations:
+{{ toYaml .Values.podAnnotations | indent 8 }}
+      labels:
+        app.kubernetes.io/name: {{ include "reckoning-tp.name" . }}
+        app.kubernetes.io/component: worker
+    spec:
+      securityContext:
+{{ toYaml .Values.podSecurityContext | indent 8 }}
+      containers:
+        - name: worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+{{ toYaml .Values.workers.command | indent 12 }}
+          args:
+{{ toYaml .Values.workers.baseArgs | indent 12 }}
+            - --role
+            - worker
+            - --node-id
+            - $(POD_IP)
+            - --uri
+            - udp://$(POD_IP):{{ .Values.tensorParallel.gossipPort }}
+{{ include "reckoning-tp.workerSeedArgs" . | indent 12 }}
+{{ include "reckoning-tp.workerCommonArgs" . | indent 12 }}
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: RECKONING_COORDINATOR_GOSSIP_HOST
+              value: {{ include "reckoning-tp.coordinatorName" . }}.$(POD_NAMESPACE).svc.cluster.local
+            - name: RECKONING_GOSSIP_PORT
+              value: {{ .Values.tensorParallel.gossipPort | quote }}
+          ports:
+            - name: gossip
+              containerPort: {{ .Values.tensorParallel.gossipPort }}
+              protocol: UDP
+            - name: admin
+              containerPort: {{ .Values.workers.adminPort }}
+              protocol: TCP
+          volumeMounts:
+{{- if .Values.cache.enabled }}
+            - name: model-cache
+              mountPath: {{ .Values.cache.mountPath }}
+{{- end }}
+          resources:
+{{ toYaml .Values.workers.resources | indent 12 }}
+      nodeSelector:
+{{ toYaml .Values.nodeSelector | indent 8 }}
+      tolerations:
+{{ toYaml .Values.tolerations | indent 8 }}
+      affinity:
+{{ toYaml .Values.affinity | indent 8 }}
+{{- if .Values.cache.enabled }}
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: {{ include "reckoning-tp.cachePvcName" . }}
+{{- end }}

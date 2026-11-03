@@ -1,7 +1,7 @@
 <project>
     <parent>
-        <groupId>io.teknek.deliverance</groupId>
-        <artifactId>deliverance-parent</artifactId>
+        <groupId>io.teknek.reckoning</groupId>
+        <artifactId>reckoning-parent</artifactId>
         <version>0.0.17-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
@@ -54,7 +54,7 @@
             <version>${jwt.version}</version>
         </dependency>
         <dependency>
-            <groupId>io.teknek.deliverance</groupId>
+            <groupId>io.teknek.reckoning</groupId>
             <artifactId>core</artifactId>
             <version>${project.version}</version>
             <exclusions>
@@ -70,7 +70,7 @@
             <version>${dysfx.version}</version>
         </dependency>
         <dependency>
-            <groupId>io.teknek.deliverance</groupId>
+            <groupId>io.teknek.reckoning</groupId>
             <artifactId>native</artifactId>
             <version>${project.version}</version>
             <classifier>${os.detected.name}-${os.detected.arch}</classifier>
@@ -105,20 +105,14 @@
 
         <!-- Use generated client for end-to-end tests -->
         <dependency>
-            <groupId>io.teknek.deliverance</groupId>
+            <groupId>io.teknek.reckoning</groupId>
             <artifactId>client</artifactId>
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>io.teknek.deliverance</groupId>
-            <artifactId>client-spring</artifactId>
-            <version>${project.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.teknek.deliverance</groupId>
-            <artifactId>nanocode-deliverance</artifactId>
+            <groupId>io.teknek.reckoning</groupId>
+            <artifactId>reckoning-nanocode</artifactId>
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
@@ -204,7 +198,7 @@
                             <goal>generate</goal>
                         </goals>
                         <configuration>
-                            <inputSpec>${project.basedir}/deliverance_specification.yaml</inputSpec>
+                            <inputSpec>${project.basedir}/reckoning_specification.yaml</inputSpec>
                             <generatorName>java</generatorName>
                             <library>jersey3</library>
                             <skipValidateSpec>true</skipValidateSpec>
@@ -212,8 +206,8 @@
                             <generateSupportingFiles>true</generateSupportingFiles>
                             <supportingFilesToGenerate>ApiException.java,JSON.java,RFC3339DateFormat.java,RFC3339InstantDeserializer.java,RFC3339JavaTimeModule.java,AbstractOpenApiSchema.java</supportingFilesToGenerate>
                             <generateModelTests>false</generateModelTests>
-                            <apiPackage>io.teknek.deliverance.api</apiPackage>
-                            <modelPackage>io.teknek.deliverance.model</modelPackage>
+                            <apiPackage>io.teknek.reckoning.api</apiPackage>
+                            <modelPackage>io.teknek.reckoning.model</modelPackage>
                             <output>${project.build.directory}/generated-sources/openapi</output>
                             <configOptions>
                                 <useTags>true</useTags>

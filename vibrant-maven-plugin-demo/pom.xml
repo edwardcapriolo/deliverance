@@ -1,7 +1,7 @@
 <project>
     <parent>
-        <groupId>io.teknek.deliverance</groupId>
-        <artifactId>deliverance-parent</artifactId>
+        <groupId>io.teknek.reckoning</groupId>
+        <artifactId>reckoning-parent</artifactId>
         <version>0.0.17-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
@@ -28,7 +28,7 @@
                 </configuration>
             </plugin>
             <plugin>
-                <groupId>io.teknek.deliverance</groupId>
+                <groupId>io.teknek.reckoning</groupId>
                 <artifactId>vibrant-maven-plugin</artifactId>
                 <version>${project.version}</version>
                 <configuration>

@@ -1,5 +1,5 @@
-import io.teknek.deliverance.grace.AutoTokenizer;
-import io.teknek.deliverance.grace.PreTrainedTokenizer;
+import io.teknek.reckoning.grace.AutoTokenizer;
+import io.teknek.reckoning.grace.PreTrainedTokenizer;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
@@ -27,7 +27,7 @@ public class GemmaTokenizerGoldenTest {
                 """;
 
         int[] actualIds = tokenizer.encode(prompt).inputIds();
-        String actualDecoded = tokenizer.decode(new io.teknek.deliverance.grace.TokenIds(actualIds), false, false, false, false);
+        String actualDecoded = tokenizer.decode(new io.teknek.reckoning.grace.TokenIds(actualIds), false, false, false, false);
 
         /*
 python3 - <<'PY'

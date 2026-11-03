@@ -5,7 +5,7 @@ NATIVE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT_DIR=$(CDPATH= cd -- "$NATIVE_DIR/.." && pwd)
 HEADER_DIR="$NATIVE_DIR/src/main/c/tensor2"
 OUT_DIR="$NATIVE_DIR/src/main/java"
-PACKAGE="io.teknek.deliverance.tensor.operations.tensor2native"
+PACKAGE="io.teknek.reckoning.tensor.operations.tensor2native"
 case "$(uname -s):$(uname -m)" in
   Darwin:arm64|Darwin:aarch64) JEXTRACT_PLATFORM="macos-aarch64" ;;
   Darwin:x86_64|Darwin:amd64) JEXTRACT_PLATFORM="macos-x64" ;;
@@ -33,7 +33,7 @@ cd "$HEADER_DIR"
   --output "$OUT_DIR" \
   -t "$PACKAGE" \
   -I "$HEADER_DIR" \
-  -l deliverance_tensor2 \
+  -l reckoning_tensor2 \
   --header-class-name Tensor2Native \
   --include-function tensor2_dot_product_rows_f32_f32 \
   --include-function tensor2_dot_product_rows_bf16_bf16 \
@@ -66,4 +66,4 @@ cd "$HEADER_DIR"
 # the loader lookup so macOS does not require a second path-based library open.
 PACKAGE_PATH=$(printf '%s' "$PACKAGE" | tr '.' '/')
 GENERATED="$OUT_DIR/$PACKAGE_PATH/Tensor2Native.java"
-perl -0pi -e 's#SymbolLookup\.libraryLookup\(System\.mapLibraryName\("deliverance_tensor2"\), LIBRARY_ARENA\)\s*\.or\(SymbolLookup\.loaderLookup\(\)\)\s*\.or\(Linker\.nativeLinker\(\)\.defaultLookup\(\)\)#SymbolLookup.loaderLookup()\n            .or(Linker.nativeLinker().defaultLookup())#' "$GENERATED"
+perl -0pi -e 's#SymbolLookup\.libraryLookup\(System\.mapLibraryName\("reckoning_tensor2"\), LIBRARY_ARENA\)\s*\.or\(SymbolLookup\.loaderLookup\(\)\)\s*\.or\(Linker\.nativeLinker\(\)\.defaultLookup\(\)\)#SymbolLookup.loaderLookup()\n            .or(Linker.nativeLinker().defaultLookup())#' "$GENERATED"

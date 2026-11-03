@@ -1,7 +1,7 @@
 <project>
   <parent>
-    <groupId>io.teknek.deliverance</groupId>
-    <artifactId>deliverance-parent</artifactId>
+    <groupId>io.teknek.reckoning</groupId>
+    <artifactId>reckoning-parent</artifactId>
     <version>0.0.17-SNAPSHOT</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
@@ -23,7 +23,7 @@
       <version>${dysfx.version}</version>
     </dependency>
     <dependency>
-      <groupId>io.teknek.deliverance</groupId>
+      <groupId>io.teknek.reckoning</groupId>
       <artifactId>safetensors</artifactId>
       <version>${project.version}</version>
     </dependency>

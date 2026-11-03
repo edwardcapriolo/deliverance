@@ -292,7 +292,7 @@ interface KvCompressionCodec {
 
 ### Implemented: Standalone v2 Core Slice
 
-- Added standalone v2 package `io.teknek.deliverance.tensor.kv`.
+- Added standalone v2 package `io.teknek.reckoning.tensor.kv`.
 - Added `KvCacheManager`, `KvCacheSession`, `KvWriteCursor`, `KvReadView`, `KvBlock`, `MutableKvBlock`, `AttentionPattern`, and `CacheExecutionMode`.
 - `AbstractModel` now owns a side-by-side `KvCacheManager` and exposes `kvCacheManager()` / `newKvCacheSession()`.
 - v2 storage is real block storage, not a wrapper/delegate over `KvBufferCache`.

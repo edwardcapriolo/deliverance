@@ -19,7 +19,7 @@ case "$OS_NAME:$OS_ARCH" in
   Linux:x86_64|Linux:amd64) NATIVE_CLASSIFIER=linux-x86_64 ;;
   *) printf '%s\n' "Unsupported native platform: $OS_NAME $OS_ARCH" >&2; exit 1 ;;
 esac
-NATIVE_CLASSIFIER=${DELIVERANCE_NATIVE_CLASSIFIER:-$NATIVE_CLASSIFIER}
+NATIVE_CLASSIFIER=${RECKONING_NATIVE_CLASSIFIER:-$NATIVE_CLASSIFIER}
 NATIVE_LIB_DIR="$SCRIPT_DIR/native/target/native-lib-only/$NATIVE_CLASSIFIER"
 
 if [ ! -d "$NATIVE_LIB_DIR" ]; then
@@ -33,5 +33,5 @@ cd "$SCRIPT_DIR"
 mvn -q -pl core \
   -Dexec.classpathScope=test \
   -Dexec.executable="$JAVA_BIN" \
-  -Dexec.args="$BENCHMARK_JVM_OPTS -Djava.library.path=$NATIVE_LIB_DIR --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.deliverance.benchmark.InferenceBenchmark --engine deliverance --owner edwardcapriolo --model Qwen3-0.6B-JQ4 ${DELIVERANCE_BENCHMARK_ARGS:---output-head-quantization Q4 --pool-size 16 --max-tokens 256 --warmup-cases 0 --profile-stages --output $BENCHMARK_RUN_DIR/qwen-q4-single-benchmark.csv --jsonl-output $BENCHMARK_RUN_DIR/qwen-q4-single-benchmark.jsonl}" \
+  -Dexec.args="$BENCHMARK_JVM_OPTS -Djava.library.path=$NATIVE_LIB_DIR --add-modules jdk.incubator.vector,jdk.httpserver,java.net.http --add-opens java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED -cp %classpath io.teknek.reckoning.benchmark.InferenceBenchmark --engine reckoning --owner edwardcapriolo --model Qwen3-0.6B-JQ4 ${RECKONING_BENCHMARK_ARGS:---output-head-quantization Q4 --pool-size 16 --max-tokens 256 --warmup-cases 0 --profile-stages --output $BENCHMARK_RUN_DIR/qwen-q4-single-benchmark.csv --jsonl-output $BENCHMARK_RUN_DIR/qwen-q4-single-benchmark.jsonl}" \
   org.codehaus.mojo:exec-maven-plugin:3.5.0:exec

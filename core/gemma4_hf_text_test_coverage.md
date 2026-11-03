@@ -10,14 +10,14 @@ Source tests:
 - `/ai-code/transformers/tests/generation/test_utils.py`
 - `/ai-code/transformers/tests/test_configuration_common.py`
 
-Deliverance tests:
+Reckoning tests:
 
-- `core/src/test/java/io/teknek/deliverance/model/gemma4/Gemma4HfTextModelPortedTest.java`
-- reusable HF-style JUnit mixins under `core/src/test/java/io/teknek/deliverance/model/hf/`
+- `core/src/test/java/io/teknek/reckoning/model/gemma4/Gemma4HfTextModelPortedTest.java`
+- reusable HF-style JUnit mixins under `core/src/test/java/io/teknek/reckoning/model/hf/`
 
 ## Reusable Mixins
 
-Deliverance now ports feasible HF common tests through public JUnit 5 interfaces:
+Reckoning now ports feasible HF common tests through public JUnit 5 interfaces:
 
 - `HfTextCommonTestAdapter`
 - `HfConfigTesterMixinPort`
@@ -69,30 +69,30 @@ Model tests implement the adapter by supplying a tiny checkpoint writer, model l
 
 ## MoE Coverage
 
-- HF Gemma4 text tester enables MoE. Deliverance Gemma4 now loads router/expert weights and routes through the Gemma4-specific MoE branch when `enable_moe_block=true`.
+- HF Gemma4 text tester enables MoE. Reckoning Gemma4 now loads router/expert weights and routes through the Gemma4-specific MoE branch when `enable_moe_block=true`.
 - `hfTextModelTesterMoeExpertsAffectForwardOutput` changes only MoE weights and expects output drift.
 - `denseGemma4ConfigDoesNotRequireMoeWeights` verifies dense Gemma4 configs still load without router/expert weights.
 
 ## Disabled Directional Tests
 
-- HF `test_generate_from_random_inputs_embeds` is empty in Gemma4 because upstream skips the inherited common test. Deliverance keeps it disabled but now includes a directional body based on HF `GenerationTesterMixin.test_generate_from_random_inputs_embeds`.
+- HF `test_generate_from_random_inputs_embeds` is empty in Gemma4 because upstream skips the inherited common test. Reckoning keeps it disabled but now includes a directional body based on HF `GenerationTesterMixin.test_generate_from_random_inputs_embeds`.
 - HF RoPE scaling common tests remain disabled because upstream skips them for Gemma4's per-layer-type RoPE.
 - HF SDPA/FlashAttention/torch-compile tests remain disabled with upstream skip reasons where HF skips them.
 
 ## Unsupported Or Not Text-Only
 
-- HF CausalLM inherited classification/QA head tests: Deliverance Gemma4 exposes causal-LM generation, not sequence/token-classification or QA heads.
-- HF `PipelineTesterMixin`: targets transformers pipelines; Deliverance does not implement HF pipelines.
-- HF `TrainingTesterMixin`: requires autograd/training APIs; Deliverance Gemma4 tests are inference-only.
-- HF `TensorParallelTesterMixin`: targets transformers `tp_plan`/device mesh APIs; Deliverance TP uses separate runtime and transport APIs.
-- HF advanced generation tests for beam/sample/assistant/speculative/cache-implementation behavior require HF `generate` features not currently present in Deliverance generation.
-- HF mutable torch module tests for resize/tie/offload/meta-device behavior do not map directly to Deliverance safetensors checkpoint loading.
-- HF attention backend tests for eager/SDPA/Flash/Flex dispatch do not map directly to Deliverance's Java attention implementation.
+- HF CausalLM inherited classification/QA head tests: Reckoning Gemma4 exposes causal-LM generation, not sequence/token-classification or QA heads.
+- HF `PipelineTesterMixin`: targets transformers pipelines; Reckoning does not implement HF pipelines.
+- HF `TrainingTesterMixin`: requires autograd/training APIs; Reckoning Gemma4 tests are inference-only.
+- HF `TensorParallelTesterMixin`: targets transformers `tp_plan`/device mesh APIs; Reckoning TP uses separate runtime and transport APIs.
+- HF advanced generation tests for beam/sample/assistant/speculative/cache-implementation behavior require HF `generate` features not currently present in Reckoning generation.
+- HF mutable torch module tests for resize/tie/offload/meta-device behavior do not map directly to Reckoning safetensors checkpoint loading.
+- HF attention backend tests for eager/SDPA/Flash/Flex dispatch do not map directly to Reckoning's Java attention implementation.
 - Gemma4 audio, image, video, processor, and multimodal feature tests are outside this text-only port.
 
 ## Remaining Work
 
 - Validate Gemma4 MoE numerics against a Python HF reference dump for a tiny deterministic checkpoint.
-- Continue expanding active common tests where Deliverance has matching APIs, especially save/load parity and generation API behavior.
-- Convert unsupported areas from broad disabled documentation into narrower disabled directional tests when a concrete Deliverance API boundary exists.
-- Reuse the public `io.teknek.deliverance.model.hf` mixins for other model families by adding model-specific tiny checkpoint adapters.
+- Continue expanding active common tests where Reckoning has matching APIs, especially save/load parity and generation API behavior.
+- Convert unsupported areas from broad disabled documentation into narrower disabled directional tests when a concrete Reckoning API boundary exists.
+- Reuse the public `io.teknek.reckoning.model.hf` mixins for other model families by adding model-specific tiny checkpoint adapters.

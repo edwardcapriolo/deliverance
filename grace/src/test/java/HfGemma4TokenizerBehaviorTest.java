@@ -1,6 +1,6 @@
-import io.teknek.deliverance.grace.AutoTokenizer;
-import io.teknek.deliverance.grace.PreTrainedTokenizer;
-import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
+import io.teknek.reckoning.grace.AutoTokenizer;
+import io.teknek.reckoning.grace.PreTrainedTokenizer;
+import io.teknek.reckoning.safetensors.fetch.ModelFetcher;
 import org.junit.jupiter.api.Assumptions;
 
 public class HfGemma4TokenizerBehaviorTest implements HfTokenizerBehaviorContract {

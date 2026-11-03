@@ -5,8 +5,8 @@
  */
 public class HfLlamaTokenizerIntegrationTest implements HfTokenizerIntegrationContract {
     @Override
-    public io.teknek.deliverance.grace.AutoTokenizer.OwnerName tokenizerOwnerName() {
-        return new io.teknek.deliverance.grace.AutoTokenizer.OwnerName("hf-internal-testing", "llama-tokenizer");
+    public io.teknek.reckoning.grace.AutoTokenizer.OwnerName tokenizerOwnerName() {
+        return new io.teknek.reckoning.grace.AutoTokenizer.OwnerName("hf-internal-testing", "llama-tokenizer");
     }
 
     @Override
@@ -32,31 +32,31 @@ public class HfLlamaTokenizerIntegrationTest implements HfTokenizerIntegrationCo
     @org.junit.jupiter.api.Test
     @org.junit.jupiter.api.Disabled("Requires the unavailable local hf-internal-testing tokenizer fixture")
     public void test_load_tiktoken_tokenizer() {
-        io.teknek.deliverance.grace.PreTrainedTokenizer tokenizer =
-                io.teknek.deliverance.grace.AutoTokenizer.fromPretrained(
-                        new io.teknek.deliverance.grace.AutoTokenizer.OwnerNameOrPath(
-                                new io.teknek.deliverance.grace.AutoTokenizer.OwnerName(
+        io.teknek.reckoning.grace.PreTrainedTokenizer tokenizer =
+                io.teknek.reckoning.grace.AutoTokenizer.fromPretrained(
+                        new io.teknek.reckoning.grace.AutoTokenizer.OwnerNameOrPath(
+                                new io.teknek.reckoning.grace.AutoTokenizer.OwnerName(
                                         "hf-internal-testing", "llama3-tokenizer-tiktoken")));
         String text = "This is a test";
-        int[] ids = tokenizer.encode(text, io.teknek.deliverance.grace.EncodeOptions.defaults()
+        int[] ids = tokenizer.encode(text, io.teknek.reckoning.grace.EncodeOptions.defaults()
                 .withoutSpecialTokens()).inputIds();
         org.junit.jupiter.api.Assertions.assertEquals(text,
-                tokenizer.decode(new io.teknek.deliverance.grace.TokenIds(ids), false, false, false, false));
+                tokenizer.decode(new io.teknek.reckoning.grace.TokenIds(ids), false, false, false, false));
     }
 
     @org.junit.jupiter.api.Test
     @org.junit.jupiter.api.Disabled("Requires access to gated meta-llama/Meta-Llama-3-8B")
     public void test_llama3_bpe_skips_clean_up_tokenization_spaces() {
-        io.teknek.deliverance.grace.PreTrainedTokenizer tokenizer =
-                io.teknek.deliverance.grace.AutoTokenizer.fromPretrained(
-                        new io.teknek.deliverance.grace.AutoTokenizer.OwnerNameOrPath(
-                                new io.teknek.deliverance.grace.AutoTokenizer.OwnerName(
+        io.teknek.reckoning.grace.PreTrainedTokenizer tokenizer =
+                io.teknek.reckoning.grace.AutoTokenizer.fromPretrained(
+                        new io.teknek.reckoning.grace.AutoTokenizer.OwnerNameOrPath(
+                                new io.teknek.reckoning.grace.AutoTokenizer.OwnerName(
                                         "meta-llama", "Meta-Llama-3-8B")));
         for (String text : new String[]{"x != y", "! ! !", "a , b"}) {
-            int[] ids = tokenizer.encode(text, io.teknek.deliverance.grace.EncodeOptions.defaults()
+            int[] ids = tokenizer.encode(text, io.teknek.reckoning.grace.EncodeOptions.defaults()
                     .withoutSpecialTokens()).inputIds();
             org.junit.jupiter.api.Assertions.assertEquals(text,
-                    tokenizer.decode(new io.teknek.deliverance.grace.TokenIds(ids), false, false, false, false));
+                    tokenizer.decode(new io.teknek.reckoning.grace.TokenIds(ids), false, false, false, false));
         }
     }
 }

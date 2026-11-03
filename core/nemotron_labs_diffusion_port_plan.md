@@ -4,7 +4,7 @@ For the user-facing support guide, generation examples, benchmark commands, and 
 
 ## Goal
 
-Port `nvidia/Nemotron-Labs-Diffusion-3B-Base` into Deliverance in small, source-backed slices with diffusion text generation as the primary goal. The point of this port is to measure whether diffusion decoding changes CPU text-generation throughput in a meaningful way. Autoregressive generation is an intermediate correctness and loader milestone only; another CPU AR decoder by itself is not a major deliverable.
+Port `nvidia/Nemotron-Labs-Diffusion-3B-Base` into Reckoning in small, source-backed slices with diffusion text generation as the primary goal. The point of this port is to measure whether diffusion decoding changes CPU text-generation throughput in a meaningful way. Autoregressive generation is an intermediate correctness and loader milestone only; another CPU AR decoder by itself is not a major deliverable.
 
 The Base checkpoint is the first target because it has the same core architecture as the chat/instruct repo while avoiding the extra linear-spec LoRA payload. Use `nvidia/Nemotron-Labs-Diffusion-3B` later as a secondary validation target for chat/instruct behavior.
 
@@ -164,7 +164,7 @@ Current smoke results on this CPU-only environment:
 Current limitations:
 
 - Diffusion currently recomputes prompt plus generated prefix plus active block for each denoising step instead of using upstream's causal prefix cache plus bidirectional block attention.
-- YaRN RoPE is not HF-parity yet; existing Deliverance RoPE precomputation is still simpler than upstream Transformers YaRN.
+- YaRN RoPE is not HF-parity yet; existing Reckoning RoPE precomputation is still simpler than upstream Transformers YaRN.
 - The diffusion path has Java control loops around attention heads/positions and RoPE. Heavy vector math uses tensor operations, but this path should be profiled and gradually moved toward TensorPlan/provider kernels where practical.
 - No clean-sentence quality gate has passed yet; do not quantize this model based only on current one-token smokes.
 - TurboQuant prefix cache has not been validated for Nemotron and must remain off/experimental.
@@ -205,9 +205,9 @@ These are acceptance criteria for all new Nemotron implementation work.
 
    Large-model checks are useful, but each major path should also have a small synthetic or tiny-shape smoke test that runs quickly and validates shape/layout/control-flow assumptions without requiring the full 3B checkpoint.
 
-9. Confirm behavior against upstream; do not assume existing Deliverance implementations are perfect.
+9. Confirm behavior against upstream; do not assume existing Reckoning implementations are perfect.
 
-   Existing Llama/Mistral-style code can be reused only after the relevant behavior is checked against Nemotron's upstream custom source and local tests. Mistral support in Deliverance has not been fully vetted, so matching a Mistral-shaped implementation is not sufficient proof of correctness. For each reused component, document the upstream method or formula being matched and add focused tests for the specific assumption.
+   Existing Llama/Mistral-style code can be reused only after the relevant behavior is checked against Nemotron's upstream custom source and local tests. Mistral support in Reckoning has not been fully vetted, so matching a Mistral-shaped implementation is not sufficient proof of correctness. For each reused component, document the upstream method or formula being matched and add focused tests for the specific assumption.
 
 ## Source Artifacts To Inspect
 
@@ -300,7 +300,7 @@ Acceptance:
 ### Slice 5: YaRN And Llama-4 Attention Scaling
 
 - Verify upstream `modeling_ministral.py` RoPE implementation.
-- Implement or adapt Deliverance RoPE support for `rope_type=yarn` and `_get_llama_4_attn_scale`.
+- Implement or adapt Reckoning RoPE support for `rope_type=yarn` and `_get_llama_4_attn_scale`.
 - Add direct numeric tests against small upstream-derived examples where possible.
 
 Acceptance:

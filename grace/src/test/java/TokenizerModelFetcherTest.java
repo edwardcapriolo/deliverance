@@ -1,5 +1,5 @@
-import io.teknek.deliverance.grace.TokenizerModelFetcher;
-import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
+import io.teknek.reckoning.grace.TokenizerModelFetcher;
+import io.teknek.reckoning.safetensors.fetch.ModelFetcher;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 

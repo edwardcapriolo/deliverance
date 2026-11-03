@@ -5,8 +5,8 @@
  */
 public class HfGemmaTokenizerIntegrationTest implements HfTokenizerIntegrationContract {
     @Override
-    public io.teknek.deliverance.grace.AutoTokenizer.OwnerName tokenizerOwnerName() {
-        return new io.teknek.deliverance.grace.AutoTokenizer.OwnerName("hf-internal-testing", "dummy-gemma");
+    public io.teknek.reckoning.grace.AutoTokenizer.OwnerName tokenizerOwnerName() {
+        return new io.teknek.reckoning.grace.AutoTokenizer.OwnerName("hf-internal-testing", "dummy-gemma");
     }
 
     @Override

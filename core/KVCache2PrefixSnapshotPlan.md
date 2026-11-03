@@ -48,7 +48,7 @@ Compression can come later. Dense snapshots first.
 Add:
 
 ```text
-core/src/main/java/io/teknek/deliverance/tensor/kv/KvPrefixSnapshotCache.java
+core/src/main/java/io/teknek/reckoning/tensor/kv/KvPrefixSnapshotCache.java
 ```
 
 Suggested public/package API:
@@ -211,7 +211,7 @@ Use new KVCache2 names:
 Add:
 
 ```text
-core/src/test/java/io/teknek/deliverance/tensor/kv/KvPrefixSnapshotCacheTest.java
+core/src/test/java/io/teknek/reckoning/tensor/kv/KvPrefixSnapshotCacheTest.java
 ```
 
 Unit tests:

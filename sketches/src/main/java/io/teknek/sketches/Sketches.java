@@ -1,8 +1,8 @@
 package io.teknek.sketches;
 
 import com.google.common.collect.BiMap;
-import io.teknek.deliverance.model.AbstractModel;
-import io.teknek.deliverance.model.CausalLanguageModel;
+import io.teknek.reckoning.model.AbstractModel;
+import io.teknek.reckoning.model.CausalLanguageModel;
 import io.teknek.sketches.types.ContextFreeGrammar;
 import io.teknek.sketches.types.JsonSchema;
 import io.teknek.sketches.types.Regex;
@@ -71,10 +71,10 @@ public class Sketches {
 
 
 
-    /* deliverance looks somewhat like transformers and with grace we will get much closer. This
+    /* reckoning looks somewhat like transformers and with grace we will get much closer. This
     interface uses the current model and its grace tokenizer.
      */
-    public SteerableModel frommDeliverance(AbstractModel model){
+    public SteerableModel frommReckoning(AbstractModel model){
         return null;
     }
 }

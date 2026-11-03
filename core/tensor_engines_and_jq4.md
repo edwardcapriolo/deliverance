@@ -1,6 +1,6 @@
 # Tensor Engines And JQ4
 
-Deliverance spends most of its time multiplying model activations by model weights. JQ4 is Deliverance's way of keeping the model in a normal safetensors directory while shrinking the large weight matrices that dominate local inference.
+Reckoning spends most of its time multiplying model activations by model weights. JQ4 is Reckoning's way of keeping the model in a normal safetensors directory while shrinking the large weight matrices that dominate local inference.
 
 The short version: smaller weights mean less memory traffic, and local CPU inference is often limited by memory bandwidth. When the same prompt and model architecture run with Q4 projection weights, token/sec can go up because the CPU has less weight data to move for every generated token.
 
@@ -8,7 +8,7 @@ For example, on a Qwen3-0.6B path we observed dense BF16 generation around the l
 
 ## The Bread-And-Butter Operation
 
-Inside every transformer layer, Deliverance repeatedly does projection math like this:
+Inside every transformer layer, Reckoning repeatedly does projection math like this:
 
 ```text
 hidden_state x weight_matrix -> projected_state
@@ -81,7 +81,7 @@ Those calls are dominated by matrix multiplies, attention score/value work, outp
 
 ## Tensor Engine Stack
 
-Deliverance has three main tensor operation implementations:
+Reckoning has three main tensor operation implementations:
 
 - `NaiveTensorOperations`: straightforward Java loops and array-style access. Useful for correctness and fallback behavior.
 - `PanamaTensorOperations`: Java Foreign Memory and Vector API operations using lane-wise hardware acceleration from Project Panama.
@@ -90,16 +90,16 @@ Deliverance has three main tensor operation implementations:
 Startup logs tell you which provider is active:
 
 ```text
-[main] INFO io.teknek.deliverance.model.ModelSupport - Machine Vector Spec: 128 Byte Order: LITTLE_ENDIAN
-[main] INFO io.teknek.deliverance.model.AbstractModel - Tensor provider = Native SIMD Operations, parallelSplitSize = 32
-[main] INFO io.teknek.deliverance.model.AbstractModel - Model type = Q4, Working memory type = F32, Quantized memory type = I8
+[main] INFO io.teknek.reckoning.model.ModelSupport - Machine Vector Spec: 128 Byte Order: LITTLE_ENDIAN
+[main] INFO io.teknek.reckoning.model.AbstractModel - Tensor provider = Native SIMD Operations, parallelSplitSize = 32
+[main] INFO io.teknek.reckoning.model.AbstractModel - Model type = Q4, Working memory type = F32, Quantized memory type = I8
 ```
 
 `Machine Vector Spec` is what the JVM sees for vector lane width. Wider lanes let Panama process more values per vector instruction when the operation is implemented with the Vector API.
 
 ## Q4 And JQ4 Models
 
-Deliverance Q4 model directories, often named with a `JQ4` suffix, store selected large projection weights in Deliverance's Q4 tensor format. Keeping the model in safetensors means normal model metadata, tokenizer files, and model cards can stay alongside quantized weights.
+Reckoning Q4 model directories, often named with a `JQ4` suffix, store selected large projection weights in Reckoning's Q4 tensor format. Keeping the model in safetensors means normal model metadata, tokenizer files, and model cards can stay alongside quantized weights.
 
 [Quantize On Demand](quantize_on_demand.md) can generate one of these directories locally:
 
@@ -130,7 +130,7 @@ These counters show that hidden states are still computed in F32 while output-pr
 In a Qwen3-0.6B benchmark, the JQ4 model was the clear winner. The dense model was around the low-to-mid teens in tokens/sec, while the local JQ4 model hit about `24 tok/s` on the same style of reasoning workload:
 
 ```text
-[deliverance] model=edwardcapriolo/Qwen3-0.6B-JQ4 case=builtin-reasoning-1 category=reasoning turn=2 prompt_tokens=405 generated=256 total_ms=13460.8 tok_s=24.62 finish=MAX_TOKENS
+[reckoning] model=edwardcapriolo/Qwen3-0.6B-JQ4 case=builtin-reasoning-1 category=reasoning turn=2 prompt_tokens=405 generated=256 total_ms=13460.8 tok_s=24.62 finish=MAX_TOKENS
 ```
 
 That is the sales pitch for JQ4: same model family, local safetensors, smaller projection weights, and a visible tokens/sec jump.
@@ -141,7 +141,7 @@ The profile also confirmed the hot output projection was using Q4 weights:
 [profile-counter] sampler.output_weight_Q4 count=256
 ```
 
-The exact number will move with hardware, prompt length, and native/Panama path, but this is the kind of win Deliverance is trying to make easy: download a safetensors model, generate a JQ4 copy locally, then run it faster without leaving the Java stack.
+The exact number will move with hardware, prompt length, and native/Panama path, but this is the kind of win Reckoning is trying to make easy: download a safetensors model, generate a JQ4 copy locally, then run it faster without leaving the Java stack.
 
 ## Related Pages
 

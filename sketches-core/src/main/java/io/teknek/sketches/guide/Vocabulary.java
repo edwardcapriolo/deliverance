@@ -45,7 +45,7 @@ public final class Vocabulary {
     /**
      * Returns the first EOS token id.
      *
-     * <p>This method mirrors Outlines Core's single-EOS API. Use {@link #getEosTokenIds()} when adapting Deliverance
+     * <p>This method mirrors Outlines Core's single-EOS API. Use {@link #getEosTokenIds()} when adapting Reckoning
      * models that expose multiple EOS tokens.</p>
      */
     public int getEosTokenId() {
