@@ -4,8 +4,6 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorAllocator;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import io.dropwizard.metrics5.MetricRegistry;
 
@@ -34,13 +32,6 @@ public final class AutoModelForSequenceClassification {
             return this;
         }
 
-        /** @deprecated V1 allocator injection; use the future Lighter-based builder API. */
-        @Deprecated(forRemoval = true)
-        public Builder withTensorAllocator(TensorAllocator value) {
-            delegate.withTensorAllocator(value);
-            return this;
-        }
-
         public Builder withKvBufferCacheSettings(KvBufferCacheSettings value) {
             delegate.withKvBufferCacheSettings(value);
             return this;
@@ -53,13 +44,6 @@ public final class AutoModelForSequenceClassification {
 
         public Builder withWorkingQuantType(DType value) {
             delegate.withWorkingQuantType(value);
-            return this;
-        }
-
-        /** @deprecated V1 provider injection; use the future Lighter-based builder API. */
-        @Deprecated(forRemoval = true)
-        public Builder withTensorProvider(ConfigurableTensorProvider value) {
-            delegate.withTensorProvider(value);
             return this;
         }
 

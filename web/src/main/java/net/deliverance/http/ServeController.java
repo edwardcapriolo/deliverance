@@ -8,8 +8,6 @@ import io.teknek.deliverance.model.AutoModelForEmbeddings;
 import io.teknek.deliverance.model.CausalLanguageModel;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
-import io.teknek.deliverance.tensor.TensorAllocator;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.dropwizard.metrics5.MetricRegistry;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpHeaders;
@@ -29,24 +27,18 @@ public class ServeController {
 
     private final Map<MultiModelConfig, AbstractModel> embeddingModels;
     private final Map<MultiModelConfig, CausalLanguageModel> causalLanguageModels;
-    private final ConfigurableTensorProvider provider;
     private final MetricRegistry metricRegistry;
-    private final TensorAllocator tensorAllocator;
     private final WrappedForkJoinPool pool;
     private final Semaphore serveGate = new Semaphore(1);
 
     public ServeController(
             @Qualifier("embeddingModels") Map<MultiModelConfig, AbstractModel> embeddingModels,
             @Qualifier("causalLanguageModels") Map<MultiModelConfig, CausalLanguageModel> causalLanguageModels,
-            ConfigurableTensorProvider provider,
             MetricRegistry metricRegistry,
-            TensorAllocator tensorAllocator,
             WrappedForkJoinPool pool) {
         this.embeddingModels = embeddingModels;
         this.causalLanguageModels = causalLanguageModels;
-        this.provider = provider;
         this.metricRegistry = metricRegistry;
-        this.tensorAllocator = tensorAllocator;
         this.pool = pool;
     }
 
@@ -70,16 +62,12 @@ public class ServeController {
             if (request.type() == ServeType.EMBEDDING) {
                 AutoModelForEmbeddings.Builder embeddingBuilder = AutoModelForEmbeddings.newBuilder(fetcher);
                 embeddingBuilder.withMetricRegistry(metricRegistry);
-                embeddingBuilder.withTensorAllocator(tensorAllocator);
-                embeddingBuilder.withTensorProvider(provider);
                 embeddingBuilder.withWrappedForkJoinPool(pool);
                 AbstractModel model = embeddingBuilder.buildLocalEmbeddingModel();
                 embeddingModels.put(config, model);
             } else {
                 AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(fetcher)
                         .withMetricRegistry(metricRegistry)
-                        .withTensorAllocator(tensorAllocator)
-                        .withPrimaryTensorProvider(provider)
                         .withWrappedForkJoinPool(pool);
                 if (request.config() != null && !request.config().isEmpty()) {
                     builder.withConfig(JsonUtils.om.convertValue(request.config(), AutoModelConfig.class));

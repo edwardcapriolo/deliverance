@@ -17,10 +17,9 @@ import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
-import io.teknek.deliverance.tensor.TensorAllocator;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.tensor2.TensorRefBackedTensor;
 import io.teknek.deliverance.tensor2.Split;
 import io.teknek.deliverance.tensor2.Transpose;
 import io.teknek.deliverance.tensor.TensorShape;
@@ -33,13 +32,13 @@ public class Gpt2Model extends AbstractModel{
 
     public Gpt2Model(AbstractModel.InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer t, DType workingMemoryDType,
                       DType workingMemoryQType, Optional<DType> modelQType,
-                      ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
-                      TensorAllocator arrayQueueTensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
-                      ToolCallParser toolCallParser, WrappedForkJoinPool pool, TensorParallelContext tensorParallelContext,
-                      TensorParallelCollectives tensorParallelCollectives, Optional<DType> outputHeadQuantization) {
-        super(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType, configurableTensorProvider,
-                metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, toolCallParser, pool, tensorParallelContext,
-                tensorParallelCollectives, outputHeadQuantization);
+                       MetricRegistry metricRegistry, KvBufferCacheSettings kvBufferCacheSettings,
+                       ToolCallParser toolCallParser, WrappedForkJoinPool pool, TensorParallelContext tensorParallelContext,
+                       TensorParallelCollectives tensorParallelCollectives, Optional<DType> outputHeadQuantization,
+                       Lighter lighter) {
+         super(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType,
+                 metricRegistry, kvBufferCacheSettings, toolCallParser, pool, tensorParallelContext,
+                 tensorParallelCollectives, outputHeadQuantization, lighter);
     }
 
     @Override
@@ -64,7 +63,7 @@ public class Gpt2Model extends AbstractModel{
         return new EmbedInput(this) {
             @Override
             public TensorRef inputTokenToEmbedding(int inputToken, int position) {
-                AbstractTensor embedding = makeDenseTensor(1, config.embeddingLength);
+                AbstractTensor embedding = new TensorRefBackedTensor(makeDenseTensorRef(1, config.embeddingLength));
                 for (int i = 0; i < config.embeddingLength; i++) {
                     float v = wte.get(inputToken, i) + wpe.get(position, i);
                     embedding.set(v, 0, i);
@@ -74,73 +73,7 @@ public class Gpt2Model extends AbstractModel{
         };
     }
 
-    @Override
-    protected SampleOutput loadOutputWeights() {
-        final AbstractTensor wte = weights.load("wte.weight");
-        this.configurableTensorProvider.get().registerModelTensor(wte);
-        final LayerNorm layerNorm = new LayerNorm(this, weights.load("ln_f.bias"),
-                weights.load("ln_f.weight"), metricRegistry);
 
-        return new SampleOutput() {
-            @Override
-            public LayerNorm getOutputLayerNorm() {
-                return layerNorm;
-            }
-
-            @Override
-            public AbstractTensor getOutputLogitsWeights() {
-                return wte;
-            }
-        };
-    }
-
-    @Override
-    protected TransformerBlock[] loadTransformerBlockWeights() {
-        TransformerBlock[] transformerBlocks = new TransformerBlock[config.numberOfLayers];
-
-        for (int i = 0; i < config.numberOfLayers; i++) {
-            String b = "h." + i + ".";
-            String prefix = b + "attn.";
-
-            AbstractTensor[] attnBias = weights.load(prefix + "c_attn.bias").split(3, 1);
-            AbstractTensor[] attnWeights = weights.load(prefix + "c_attn.weight").transpose().split(3, 0);
-            CausalSelfAttention attention = new CausalSelfAttention(
-                    this,
-                    i,
-                    Optional.of(attnBias[0]),
-                    Optional.of(attnBias[1]),
-                    Optional.of(attnBias[2]),
-                    attnWeights[0],
-                    attnWeights[1],
-                    attnWeights[2],
-                    Optional.of(weights.load(prefix + "c_proj.bias")),
-                    weights.load(prefix + "c_proj.weight").transpose(),
-                    configurableTensorProvider,
-                    metricRegistry
-            );
-
-            prefix = b + "mlp.";
-            MLPBlock mlpBlock = new MLPBlock(
-                    this,
-                    config.activationFunction,
-                    weights.load(prefix + "c_fc.bias"),
-                    weights.load(prefix + "c_fc.weight").transpose(),
-                    weights.load(prefix + "c_proj.bias"),
-                    weights.load(prefix + "c_proj.weight").transpose(),
-                    configurableTensorProvider
-            );
-
-            LayerNorm layerNorm1 = new LayerNorm(this, weights.load(b + "ln_1.bias"),
-                    weights.load(b + "ln_1.weight"), metricRegistry);
-            LayerNorm layerNorm2 = new LayerNorm(this, weights.load(b + "ln_2.bias"),
-                    weights.load(b + "ln_2.weight"), metricRegistry);
-
-            transformerBlocks[i] = new TransformerBlock(this, i, layerNorm1, attention, layerNorm2, mlpBlock,
-                    configurableTensorProvider);
-        }
-
-        return transformerBlocks;
-    }
 
     @Override
     protected boolean usesTensorRefExecution() {
@@ -180,7 +113,7 @@ public class Gpt2Model extends AbstractModel{
                     attention, Optional.empty(),
                     Optional.of(new LayerNorm2(this, registerModelTensorRef(weights.loadRef(base + "ln_2.bias")),
                             registerModelTensorRef(weights.loadRef(base + "ln_2.weight")), metricRegistry)),
-                    mlp, Optional.empty(), Optional.empty(), configurableTensorProvider);
+                     mlp, Optional.empty(), Optional.empty());
         }
         return blocks;
     }

@@ -6,10 +6,12 @@ import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.TensorRef;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Disabled;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /** Characterizes V2 shared-KV history independently of model and generation code. */
+@Disabled("Gemma4 is not an active supported model path")
 class Gemma4V2SharedKvStateCharacterizationTest {
 
     @Test

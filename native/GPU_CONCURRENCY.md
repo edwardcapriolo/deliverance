@@ -102,3 +102,166 @@ Any concurrency change should verify:
   teardown.
 - Tensor2 and legacy provider parity under the same workload.
 - GPU fuzz and Nemotron GPU oracle coverage.
+
+## GPU Redesign Contract
+
+This section is the normative design for the next GPU implementation. The current
+implementation is a staging implementation and must not be treated as the target
+architecture.
+
+### Device Tensor Ownership
+
+`TensorRef.device()` identifies the storage location of every operand. A GPU tensor
+must have a nonzero `deviceHandle()` and does not need a host `MemorySegment`.
+`memorySegment()` is a CPU-storage API and must not be used by GPU providers.
+
+Every operation must validate that all tensor operands are on the same device before
+provider selection. CPU/GPU mixing is not implicit. Transfers are explicit through
+`Lighter.to(source, targetDevice)`.
+
+### Quantized Sidecars
+
+I8 and Q4 tensors consist of two device allocations:
+
+- Packed payload.
+- F32 quantization-scale sidecar.
+
+Allocation, transfer, pooling, and release must preserve both allocations. A GPU
+quantized tensor without its matching sidecar is invalid and must be rejected before
+dispatch.
+
+`Lighter.to(...)` must transfer the payload and sidecar as one ownership unit. A
+successful transfer returns a complete TensorRef; partial transfers must clean up all
+already-created allocations.
+
+### Tensor Layout and Strides
+
+Tensor shape and storage layout are separate concepts. For every 2D tensor:
+
+- `stride` is the physical distance between row starts in logical elements.
+- A one-row tensor still has a nonzero stride equal to its row width.
+- Q4 payload byte offsets are logical element offsets divided by two.
+- I8, BF16, F16, and F32 payload offsets use their dtype byte width.
+- Scale offsets use the dtype-specific block index, not payload byte offsets.
+
+GPU ABI calls must receive logical offsets, byte offsets, and strides in explicitly
+named parameters. No ABI function may infer these values from a nullable host
+memory segment.
+
+### GPU GEMM ABI
+
+The normal Tensor2 GPU GEMM contract is:
+
+```text
+GPU input + GPU scales + GPU Q4 weights + GPU weight scales -> GPU result
+```
+
+The ABI must accept:
+
+- Input buffer handle.
+- Input scale buffer handle when applicable.
+- Weight buffer handle.
+- Weight scale buffer handle.
+- Result buffer handle.
+- Logical row/column offsets.
+- Physical strides.
+- Matrix dimensions.
+- Kernel kind.
+
+The ABI must return a status. Invalid handles, ranges, unsupported kernels, command
+encoding failures, and submission failures must be observable by Java. A `void`
+entrypoint that silently returns on error is not acceptable for the V2 provider.
+
+### Command Completion
+
+Returning from a native GPU method does not imply that GPU work is complete. Every
+operation must expose a completion boundary before its result is read or its buffers
+are released.
+
+The required sequence is:
+
+1. Encode the command.
+2. End every pass and finish the command encoder.
+3. Submit the command buffer.
+4. Await queue completion or an operation fence.
+5. Only then allow readback or resource release.
+
+The result of a GPU GEMM must be readable through an explicit GPU-to-CPU transfer
+after this completion boundary.
+
+### Provider Capabilities
+
+Providers must advertise exact support. GPU support is not equivalent to generic
+Tensor2 support.
+
+Each provider capability must specify:
+
+- Input dtype.
+- Weight dtype.
+- Result dtype.
+- Supported kernel kinds.
+- Alignment requirements.
+- Supported device.
+- Whether the operation is synchronous or asynchronous.
+
+For example, if a native shader implements only batch GEMM, `GpuOps` must reject
+`ROW` and `CHUNK` kernels. It must not claim support and produce an incomplete or
+zero result.
+
+### Host-Staging Operations
+
+Some GPU operations may intentionally stage CPU data through the GPU. Those are a
+separate operation category and must be explicitly named as host-staging operations.
+They must not be exposed as the normal GPU Tensor2 provider contract.
+
+The normal `GpuOps` provider is device-pure. A future staging provider must document:
+
+- Which operands remain on CPU.
+- Which transfers occur.
+- Whether the operation blocks for completion.
+- Which buffers are shared or pooled.
+- The expected transfer cost.
+
+### Resource Pools and Concurrency
+
+Per-operation resources should eventually be leased from a pool:
+
+- Input buffers.
+- Scale buffers.
+- Parameter buffers.
+- Result buffers.
+- Readback buffers.
+- Command encoder/submission state.
+
+The lease remains live until GPU completion. It may not be returned when the Java
+downcall returns if the command is still in flight.
+
+Once resources are per-operation and completion is explicit, multiple operations
+may be in flight. Until then, the shared-runtime lock described above remains the
+correct safety boundary.
+
+## Required GPU Test Matrix
+
+The GPU test harness must create CPU oracle tensors, explicitly transfer complete
+operands to GPU, execute the GPU operation using GPU TensorRefs, transfer the result
+back to CPU, and compare against the CPU oracle.
+
+The harness must be reusable and cover:
+
+- F32 x Q4 -> F32 where supported.
+- I8 x Q4 -> F32.
+- One-row and multi-row inputs.
+- One-row and multi-row result ranges.
+- Input offsets and tails.
+- Q4 weight offsets and tails.
+- Result offsets.
+- Q8 and Q4 sidecars.
+- BATCH, ROW, and CHUNK only when the provider advertises them.
+
+Unsupported provider/dtype/kernel combinations are assumptions or explicit skipped
+cases. They are not silent successes. Supported cases must assert provider usage,
+finite output, and numerical parity with the CPU oracle.
+
+The minimum diagnostic test is a single `I8 x Q4 -> F32` case with `k=32`, followed
+by the full fuzz matrix. The single case must validate payload transfer, sidecar
+transfer, dispatch, completion, result copy, and readback before broad fuzzing.

@@ -22,8 +22,6 @@ import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorAllocator;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.Scale;
@@ -42,29 +40,6 @@ public class Gemma3Model extends LlamaModel {
     private final float embeddingScalingFactor;
     private AbstractTensor wte;
 
-
-    public Gemma3Model(
-            InferenceType inferenceType,
-            Config config,
-            WeightLoader weights,
-            PreTrainedTokenizer tokenizer,
-            DType workingDType,
-            DType workingQType,
-            Optional<DType> modelQType, ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
-            TensorAllocator arrayQueueTensorAllocator, KvBufferCacheSettings kvBufferCacheSettings, ToolCallParser toolCallParser,
-            WrappedForkJoinPool pool, TensorParallelContext tensorParallelContext,
-            TensorParallelCollectives tensorParallelCollectives,
-            Optional<DType> outputHeadQuantization
-    ) {
-        super(inferenceType, config, weights, tokenizer, workingDType, workingQType, modelQType,
-                configurableTensorProvider, metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, toolCallParser,
-                pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
-        // https://github.com/huggingface/transformers/blob/1082361a1978d30db5c3932d1ee08914d74d9697/src/transformers/models/gemma/modeling_gemma.py#L898
-        // This is the scaling factor for the embedding layer but google's implementation is a is rounded to 16 bits
-        this.embeddingScalingFactor = FloatConversions.bFloat16ToFloat32(
-                FloatConversions.float32ToBFloat16((float) Math.pow(config.embeddingLength, 0.5))
-        );
-    }
 
     public Gemma3Model(InferenceType inferenceType, Config config, WeightLoader weights,
             PreTrainedTokenizer tokenizer, DType workingDType, DType workingQType, Optional<DType> modelQType,
@@ -158,60 +133,11 @@ public class Gemma3Model extends LlamaModel {
                     mlp,
                     Optional.of(new RmsNorm2(this, registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(
                             postFeedForwardNorm, weights::loadRef, qType)), 1.0f)),
-                    Optional.empty(), configurableTensorProvider);
+                     Optional.empty());
         });
         return blocks;
     }
 
-    @Override
-    protected TransformerBlock[] loadTransformerBlockWeights() {
-        DType qType = modelQType.orElse(this.modelDType);
-        TransformerBlock[] transformerBlocks = new TransformerBlock[config.numberOfLayers];
-        IntStream.range(0, config.numberOfLayers).parallel().forEach(i -> {
-            String base = "model.layers." + i + ".";
-            String prefix = base + "self_attn.";
-            String qName = prefix + "q_proj.weight";
-            String kName = prefix + "k_proj.weight";
-            String vName = prefix + "v_proj.weight";
-            String oName = prefix + "o_proj.weight";
-            CausalSelfAttention attention = new CausalSelfAttention(this, i,
-                    quantize(weights.load(qName), qType),
-                    quantize(weights.load(kName), qType),
-                    quantize(weights.load(vName), qType),
-                    quantize(weights.load(oName), qType),
-                    configurableTensorProvider,
-                    metricRegistry,
-                    qName, kName, vName, oName
-            );
-
-            prefix = base + "mlp.";
-            String gateName = prefix + "gate_proj.weight";
-            String downName = prefix + "down_proj.weight";
-            String upName = prefix + "up_proj.weight";
-            MLPBlock mlp = new MLPBlock(
-                    this,
-                    config.activationFunction,
-                    quantize(weights.load(gateName), qType), // w1
-                    quantize(weights.load(downName), qType), // w2
-                    quantize(weights.load(upName), qType), // w3,
-                    configurableTensorProvider,
-                    gateName, upName, downName
-            );
-
-            transformerBlocks[i] = new TransformerBlock(this, i,
-                    new RmsNorm(this, quantize(weights.load(base + "input_layernorm.weight"), qType), 1.0f, metricRegistry),
-                    attention,
-                    new RmsNorm(this, quantize(weights.load(base + "post_attention_layernorm.weight"), qType), 1.0f, metricRegistry),
-                    new RmsNorm(this, quantize(weights.load(base + "pre_feedforward_layernorm.weight"), qType), 1.0f, metricRegistry),
-                    mlp,
-                    new RmsNorm(this, quantize(weights.load(base + "post_feedforward_layernorm.weight"), qType), 1.0f, metricRegistry),
-                    configurableTensorProvider
-            );
-
-        });
-
-        return transformerBlocks;
-    }
 
     @Override
     protected SampleOutputRef loadOutputWeightsRef() {
@@ -239,24 +165,4 @@ public class Gemma3Model extends LlamaModel {
         };
     }
 
-    @Override
-    protected SampleOutput loadOutputWeights() {
-        DType qType = modelQType.orElse(this.modelDType);
-        if (wte == null) {
-            wte = quantize( weights.load("model.embed_tokens.weight"), workingDType);
-        }
-        final LayerNorm layerNorm = new RmsNorm(this, quantize( weights.load("model.norm.weight"), qType),
-                1.0f, metricRegistry);
-        return new SampleOutput() {
-            @Override
-            public LayerNorm getOutputLayerNorm() {
-                return layerNorm;
-            }
-
-            @Override
-            public AbstractTensor getOutputLogitsWeights() {
-                return wte;
-            }
-        };
-    }
 }

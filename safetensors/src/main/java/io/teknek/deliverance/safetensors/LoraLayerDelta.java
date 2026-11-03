@@ -10,7 +10,7 @@ import io.teknek.deliverance.tensor.AbstractTensor;
  *
  * <p>{@code loraA} has shape {@code [rank, inFeatures]}; {@code scaledLoraB} has shape
  * {@code [outFeatures, rank]} and already has the adapter's {@code alpha/r} scale baked in, so
- * applying this delta never needs a separate {@code TensorOperations#scale} call.</p>
+ * applying this delta never needs a separate provider scale call.</p>
  */
 public record LoraLayerDelta(AbstractTensor loraA, AbstractTensor scaledLoraB, int rank) {
 }

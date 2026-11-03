@@ -45,7 +45,7 @@ public class TensorParallelWorker implements AutoCloseable {
                         server.uri().toString()));
                 LOGGER.info("Started tensor-parallel rank server node={} rank={} size={} uri={} provider={}",
                         membership.localNodeId(), model.getTensorParallelContext().rank(),
-                        model.getTensorParallelContext().size(), server.uri(), model.getTensorProviderName());
+                        model.getTensorParallelContext().size(), server.uri(), "tensor2");
             }
             endpoints.sort(Comparator.comparingInt(TensorParallelRankEndpoint::rank));
             TensorParallelWorker worker = new TensorParallelWorker(List.copyOf(servers), List.copyOf(endpoints));

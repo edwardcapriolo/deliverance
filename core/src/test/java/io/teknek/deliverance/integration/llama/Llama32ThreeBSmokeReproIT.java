@@ -40,7 +40,7 @@ public class Llama32ThreeBSmokeReproIT {
 
     @Test
     void smokeCaseWarmupThenMeasuredGeneration() throws Exception {
-        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+        KvBufferCacheSettings settings = new KvBufferCacheSettings()
                 .withMaxEntries(10_000)
                 .withBlockSize(32)
                 .withMaxPrefixTokensPerPrompt(512)

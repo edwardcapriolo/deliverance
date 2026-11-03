@@ -1,7 +1,6 @@
 package io.teknek.deliverance.tensor.kv;
 
 import com.google.common.base.Preconditions;
-import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensor2.Lighter;
@@ -95,14 +94,6 @@ public final class KvBlock implements AutoCloseable {
         copyRows(layer, positionStart, rowCount, 1, destination, destinationRowStart);
     }
 
-    TensorRef keyRowCopy(int layer, int position, TensorAllocator allocator) {
-        return rowCopy(layer, position, 0, allocator);
-    }
-
-    TensorRef valueRowCopy(int layer, int position, TensorAllocator allocator) {
-        return rowCopy(layer, position, 1, allocator);
-    }
-
     TensorRef keyRowCopy(int layer, int position, Lighter lighter) {
         return rowCopy(layer, position, 0, lighter);
     }
@@ -129,13 +120,6 @@ public final class KvBlock implements AutoCloseable {
         requireOpen();
         validateLayer(layer);
         return storage.pageView(layer, 1);
-    }
-
-    private TensorRef rowCopy(int layer, int position, int keyOrValue, TensorAllocator allocator) {
-        requireOpen();
-        TensorRef copy = TensorRef.owned(allocator.getDirty(storage.dtype(keyOrValue), TensorShape.of(1, layerKvLength(layer))));
-        copyRow(layer, position, keyOrValue, copy);
-        return copy;
     }
 
     private TensorRef rowCopy(int layer, int position, int keyOrValue, Lighter lighter) {

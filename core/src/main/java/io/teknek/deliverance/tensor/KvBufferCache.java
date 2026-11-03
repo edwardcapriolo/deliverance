@@ -8,6 +8,8 @@ import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.tensor.impl.BFloat16BufferTensor;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.TensorRefBackedTensor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -44,14 +46,16 @@ public class KvBufferCache implements Closeable {
 
     private final AbstractModel model;
     private final KvBufferCacheSettings kvBufferCacheSettings;
+    private final Lighter lighter;
     private final Set<Path> activeDiskPages = Collections.synchronizedSet(new HashSet<>());
     private final Map<Path, Long> diskPageBytes = Collections.synchronizedMap(new HashMap<>());
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private ScheduledExecutorService diskSweeperExecutor;
 
-    public KvBufferCache(AbstractModel model, KvBufferCacheSettings kvBufferCacheSettings) {
+    public KvBufferCache(AbstractModel model, KvBufferCacheSettings kvBufferCacheSettings, Lighter lighter) {
         this.model = model;
         this.kvBufferCacheSettings = kvBufferCacheSettings;
+        this.lighter = lighter;
         prepareDiskWorkingDirectory();
         startDiskPageSweeper();
     }
@@ -234,9 +238,7 @@ public class KvBufferCache implements Closeable {
             if (kvBufferCacheSettings.isEphemeral()) {
                 this.raf = null;
                 this.diskPath = null;
-                TensorAllocator tc = kvBufferCacheSettings.getDedicatedCache() == null ?
-                        model.getTensorAllocator() : kvBufferCacheSettings.getDedicatedCache();
-                this.tensor = tc.get(model.getWorkingDType(), pageCtx.pageShape);
+                this.tensor = new TensorRefBackedTensor(lighter.allocate(model.getWorkingDType(), pageCtx.pageShape));
             } else {
                 Path path = normalizeDiskPagePath(Paths.get(
                         kvBufferCacheSettings.getWorkingDirectory().toString(),

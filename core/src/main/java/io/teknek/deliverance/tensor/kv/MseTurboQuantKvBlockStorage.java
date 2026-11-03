@@ -7,10 +7,10 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.MseTurboQuantCodec;
-import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensor2.TensorRefBackedTensor;
+import io.teknek.deliverance.tensor2.Lighter;
 
 import java.util.concurrent.TimeUnit;
 
@@ -22,24 +22,24 @@ final class MseTurboQuantKvBlockStorage implements KvBlockStorage {
     private final int tokenCount;
     private final int blockSize;
     private final int kvLength;
-    private final TensorAllocator allocator;
+    private final Lighter lighter;
     private final MetricRegistry metricRegistry;
     private final MseTurboQuantCodec.EncodedRows encodedRows;
 
     private MseTurboQuantKvBlockStorage(DType dtype, int layers, int tokenCount, int blockSize, int kvLength,
-            TensorAllocator allocator, MetricRegistry metricRegistry, MseTurboQuantCodec.EncodedRows encodedRows) {
+            Lighter lighter, MetricRegistry metricRegistry, MseTurboQuantCodec.EncodedRows encodedRows) {
         this.dtype = dtype;
         this.layers = layers;
         this.tokenCount = tokenCount;
         this.blockSize = blockSize;
         this.kvLength = kvLength;
-        this.allocator = allocator;
+        this.lighter = lighter;
         this.metricRegistry = metricRegistry;
         this.encodedRows = encodedRows;
     }
 
     static MseTurboQuantKvBlockStorage encode(AbstractTensor denseStorage, int layers, int tokenCount, int blockSize,
-            int kvLength, int bitWidth, TensorAllocator allocator, MetricRegistry metricRegistry) {
+            int kvLength, int bitWidth, Lighter lighter, MetricRegistry metricRegistry) {
         Preconditions.checkArgument(tokenCount == blockSize, "TurboQuant KV initially supports full committed blocks only");
         long start = System.nanoTime();
         MseTurboQuantCodec.EncodedRows encoded = MseTurboQuantCodec.allocate(layers * blockSize * 2, kvLength, bitWidth);
@@ -61,13 +61,13 @@ final class MseTurboQuantKvBlockStorage implements KvBlockStorage {
         InferenceProfiler.counter(metricRegistry, METRIC_PREFIX + ".dense.bytes.equivalent").inc(denseBytes);
         InferenceProfiler.counter(metricRegistry, METRIC_PREFIX + ".encoded.bytes").inc(encoded.encodedBytes());
         denseStorage.close();
-        return new MseTurboQuantKvBlockStorage(denseStorage.dType(), layers, tokenCount, blockSize, kvLength, allocator,
+        return new MseTurboQuantKvBlockStorage(denseStorage.dType(), layers, tokenCount, blockSize, kvLength, lighter,
                 metricRegistry, encoded);
     }
 
     static MseTurboQuantKvBlockStorage fromEncoded(DType dtype, int layers, int tokenCount, int blockSize, int kvLength,
-            TensorAllocator allocator, MetricRegistry metricRegistry, MseTurboQuantCodec.EncodedRows encodedRows) {
-        return new MseTurboQuantKvBlockStorage(dtype, layers, tokenCount, blockSize, kvLength, allocator,
+            Lighter lighter, MetricRegistry metricRegistry, MseTurboQuantCodec.EncodedRows encodedRows) {
+        return new MseTurboQuantKvBlockStorage(dtype, layers, tokenCount, blockSize, kvLength, lighter,
                 metricRegistry, encodedRows);
     }
 
@@ -128,7 +128,7 @@ final class MseTurboQuantKvBlockStorage implements KvBlockStorage {
 
     @Override
     public TensorRef rowView(int layer, int blockRow, int keyOrValue) {
-        TensorRef decoded = TensorRef.owned(allocator.getDirty(dtype, TensorShape.of(1, kvLength)));
+        TensorRef decoded = lighter.allocateDirty(dtype, TensorShape.of(1, kvLength));
         try {
             decodeRow(layer, blockRow, keyOrValue, decoded);
             return decoded;
@@ -140,7 +140,7 @@ final class MseTurboQuantKvBlockStorage implements KvBlockStorage {
 
     @Override
     public TensorRef pageView(int layer, int keyOrValue) {
-        TensorRef decoded = TensorRef.owned(allocator.getDirty(dtype, TensorShape.of(tokenCount, kvLength)));
+        TensorRef decoded = lighter.allocateDirty(dtype, TensorShape.of(tokenCount, kvLength));
         try {
             copyRows(layer, keyOrValue, 0, tokenCount, decoded, 0);
             return decoded;

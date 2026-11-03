@@ -1068,6 +1068,14 @@ class PanamaOps implements TensorOps {
     @Override
     public Either<OpSupport, Void> saxpy(TensorRef alpha, TensorRef x, TensorRef y, int xOffset, int yOffset,
             int length, int alphaOffset, int xRowOffset, int batchSize) {
+        if (alpha.dType() == DType.BF16 && x.dType() == DType.BF16 && y.dType() == DType.BF16
+                && y.shape().first() == 1) {
+            for (int row = 0; row < batchSize; row++) {
+                saxpyBF16BF16(alpha.get(0, alphaOffset + row), x, xRowOffset + row, y, 0,
+                        xOffset, yOffset, length);
+            }
+            return Either.Right(null);
+        }
         if (alpha.dType() == DType.F32 && x.dType() == DType.BF16 && y.dType() == DType.F32
                 && y.shape().first() == 1) {
             for (int row = 0; row < batchSize; row++) {
@@ -1086,6 +1094,46 @@ class PanamaOps implements TensorOps {
         }
         return Either.Right(null);
     }
+
+    private static void saxpyBF16BF16(float alpha, TensorRef x, int xRow, TensorRef y, int yRow,
+            int xOffset, int yOffset, int length) {
+        VectorSpecies<Short> shortSpecies = BF16_SPECIES;
+        VectorSpecies<Float> floatSpecies = F32_BF16_SPECIES;
+        FloatVector factor = FloatVector.broadcast(floatSpecies, alpha);
+        MemorySegment xSegment = x.memorySegment();
+        MemorySegment ySegment = y.memorySegment();
+        long xBase = x.memorySegmentOffset(x.shape().getOffset(xRow, xOffset));
+        long yBase = y.memorySegmentOffset(y.shape().getOffset(yRow, yOffset));
+        int upper = floatSpecies.loopBound(length);
+        int column = 0;
+        for (; column < upper; column += floatSpecies.length()) {
+            long xAddress = xBase + (long) column * Short.BYTES;
+            long yAddress = yBase + (long) column * Short.BYTES;
+            FloatVector xValues = ShortVector.fromMemorySegment(shortSpecies, xSegment, xAddress,
+                            ByteOrder.LITTLE_ENDIAN)
+                    .convertShape(VectorOperators.S2I, IntVector.SPECIES_256, 0)
+                    .lanewise(VectorOperators.LSHL, BF16_BYTE_SHIFT_256)
+                    .reinterpretAsFloats();
+            FloatVector yValues = ShortVector.fromMemorySegment(shortSpecies, ySegment, yAddress,
+                            ByteOrder.LITTLE_ENDIAN)
+                    .convertShape(VectorOperators.S2I, IntVector.SPECIES_256, 0)
+                    .lanewise(VectorOperators.LSHL, BF16_BYTE_SHIFT_256)
+                    .reinterpretAsFloats();
+            IntVector bits = yValues.add(xValues.mul(factor)).reinterpretAsInts();
+            IntVector rounded = bits.add(BF16_ROUND_BIAS)
+                    .add(bits.lanewise(VectorOperators.LSHR, BF16_BYTE_SHIFT_256)
+                            .lanewise(VectorOperators.AND, BF16_ROUND_LSB_MASK));
+            ShortVector encoded = (ShortVector) rounded.lanewise(VectorOperators.LSHR, BF16_BYTE_SHIFT_256)
+                    .convertShape(VectorOperators.I2S, shortSpecies, 0);
+            encoded.intoMemorySegment(ySegment, yAddress, ByteOrder.LITTLE_ENDIAN);
+        }
+        for (; column < length; column++) {
+            int xColumn = xOffset + column;
+            int yColumn = yOffset + column;
+            y.set(y.get(yRow, yColumn) + alpha * x.get(xRow, xColumn), yRow, yColumn);
+        }
+    }
+
 
     private static void saxpyF32(float alpha, TensorRef x, int xRow, TensorRef y, int yRow,
             int xOffset, int yOffset, int length) {

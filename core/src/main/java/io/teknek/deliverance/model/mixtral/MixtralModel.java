@@ -11,7 +11,6 @@ import io.teknek.deliverance.generator2.TransformerBlock2;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.model.llama.*;
-import io.teknek.deliverance.model.MixtureOfExpertsBlock;
 import io.teknek.deliverance.model.AbstractModel.InferenceType;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelContext;
@@ -19,8 +18,6 @@ import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorAllocator;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
@@ -104,7 +101,7 @@ public class MixtralModel extends LlamaModel {
                     attention, Optional.empty(),
                     Optional.of(new RmsNorm2(this, registerModelTensorRef(
                             loadAndMaybeQuantizedExcluding1DTensors(postAttentionNormName, weights::loadRef, qType)), 0.0f)),
-                    moe, Optional.empty(), Optional.empty(), configurableTensorProvider);
+                     moe, Optional.empty(), Optional.empty());
         });
         return blocks;
     }
@@ -118,61 +115,4 @@ public class MixtralModel extends LlamaModel {
         return result;
     }
 
-    @Override
-    protected TransformerBlock[] loadTransformerBlockWeights() {
-        MixtralConfig mixtralConfig = (MixtralConfig) config;
-        DType qType = modelQType.orElse(this.modelDType);
-        TransformerBlock[] transformerBlocks = new TransformerBlock[config.numberOfLayers];
-
-        IntStream.range(0, config.numberOfLayers).parallel().forEach(i -> {
-            String base = "model.layers." + i + ".";
-            String prefix = base + "self_attn.";
-
-            CausalSelfAttention attention = new CausalSelfAttention(
-                    this,
-                    i,
-                    quantize(weights.load(prefix + "q_proj.weight"), qType),
-                    quantize(weights.load(prefix + "k_proj.weight"), qType),
-                    quantize(weights.load(prefix + "v_proj.weight"), qType),
-                    quantize(weights.load(prefix + "o_proj.weight"), qType),
-                    this.configurableTensorProvider,
-                    this.metricRegistry
-            );
-
-            prefix = base + "block_sparse_moe.";
-
-            AbstractTensor[] expertGateWeights = new AbstractTensor[mixtralConfig.numberOfExperts];
-            AbstractTensor[] expertDownWeights = new AbstractTensor[mixtralConfig.numberOfExperts];
-            AbstractTensor[] expertUpWeights = new AbstractTensor[mixtralConfig.numberOfExperts];
-
-            for (int e = 0; e < mixtralConfig.numberOfExperts; e++) {
-                String expertPrefix = prefix + "experts." + e + ".";
-                expertGateWeights[e] = quantize(weights.load(expertPrefix + "w1.weight"), qType);
-                expertDownWeights[e] = quantize(weights.load(expertPrefix + "w2.weight"), qType);
-                expertUpWeights[e] = quantize(weights.load(expertPrefix + "w3.weight"), qType);
-            }
-
-            MixtureOfExpertsBlock moe = new MixtureOfExpertsBlock(
-                    this,
-                    mixtralConfig.numberOfExperts,
-                    mixtralConfig.numberOfExpertsPerToken,
-                    config.activationFunction,
-                    quantize(weights.load(prefix + "gate.weight"), qType),
-                    expertGateWeights, // w1
-                    expertDownWeights, // w2
-                    expertUpWeights
-            ); // w3
-
-            transformerBlocks[i] = new TransformerBlock(
-                    this,
-                    i,
-                    new RmsNorm(this, quantize(weights.load(base + "input_layernorm.weight"), qType), metricRegistry),
-                    attention,
-                    new RmsNorm(this, quantize(weights.load(base + "post_attention_layernorm.weight"), qType), metricRegistry),
-                    moe,
-                    configurableTensorProvider);
-
-        });
-        return transformerBlocks;
-    }
 }

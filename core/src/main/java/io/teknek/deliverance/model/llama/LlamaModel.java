@@ -21,9 +21,8 @@ import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.AbstractTensor;
 
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorAllocator;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.tensor2.TensorRefBackedTensor;
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import org.slf4j.Logger;
@@ -39,16 +38,6 @@ public class LlamaModel extends AbstractModel {
 
     private volatile AbstractTensor embedTokenWeights;
     private volatile TensorRef embedTokenWeightsRef;
-    public LlamaModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer t, DType workingMemoryDType,
-                       DType workingMemoryQType, Optional<DType> modelQType,
-                      ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
-                      TensorAllocator arrayQueueTensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
-                      ToolCallParser toolCallParser, WrappedForkJoinPool pool, TensorParallelContext tensorParallelContext,
-                      TensorParallelCollectives tensorParallelCollectives, Optional<DType> outputHeadQuantization) {
-        super(inferenceType, c, w, t, workingMemoryDType, workingMemoryQType, modelQType, configurableTensorProvider,
-                metricRegistry, arrayQueueTensorAllocator, kvBufferCacheSettings, toolCallParser, pool, tensorParallelContext,
-                tensorParallelCollectives, outputHeadQuantization);
-    }
 
     public LlamaModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer t,
             DType workingMemoryDType, DType workingQType, Optional<DType> modelQType,
@@ -100,7 +89,6 @@ public class LlamaModel extends AbstractModel {
                     ? loadedEmbeddings : quantize(loadedEmbeddings, workingDType);
             LOGGER.debug("loaded input embeddings shape={} dtype={}", embedTokenWeights.shape(), embedTokenWeights.dType());
             registerModelLineageTensor("model.embed_tokens.weight", embedTokenWeights);
-            configurableTensorProvider.get().registerModelTensor(embedTokenWeights);
         }
 
         return new EmbedInput(this) {
@@ -109,16 +97,16 @@ public class LlamaModel extends AbstractModel {
             public TensorRef inputTokenToEmbedding(int inputToken, int unused) {
                 if (embedTokenWeights.dType() == DType.BF16) {
                     // Handle old style model with BF16 embeddings
-                    AbstractTensor embedding = makeDenseTensor(1, config.embeddingLength);
+                    AbstractTensor embedding = new TensorRefBackedTensor(makeDenseTensorRef(1, config.embeddingLength));
                     AbstractTensor at = embedTokenWeights.slice(true, inputToken);
                     if (embedTokenWeights.dType() != embedding.dType()) {
-                        at = configurableTensorProvider.get().quantize(at, embedding.dType(), 0, config.embeddingLength);
+                        at = quantize(at, embedding.dType());
                     }
                     embedding.copyFrom(at, 0, 0, config.embeddingLength);
                     return TensorRef.owned(embedding);
                 } else {
                     AbstractTensor at = embedTokenWeights.slice(true, inputToken);
-                    AbstractTensor embedding = parent.getTensorAllocator().getDirty(at.dType(), at.shape());
+                    AbstractTensor embedding = new TensorRefBackedTensor(parent.getLighter().allocateDirty(at.dType(), at.shape()));
                     embedding.copyFrom(at, 0, 0, config.embeddingLength);
                     return TensorRef.owned(embedding);
                 }
@@ -137,75 +125,6 @@ public class LlamaModel extends AbstractModel {
         return true;
     }
 
-    @Override
-    protected TransformerBlock[] loadTransformerBlockWeights() {
-        DType qType = modelQType.orElse(this.modelDType);
-        TransformerBlock[] transformerBlocks = new TransformerBlock[config.numberOfLayers];
-        IntStream.range(0, config.numberOfLayers).parallel().forEach(i -> {
-            int relativeLayer = i;
-            String base = "model.layers." + i + ".";
-            String prefix = base + "self_attn.";
-            String qName = prefix + "q_proj.weight";
-            String kName = prefix + "k_proj.weight";
-            String vName = prefix + "v_proj.weight";
-            String oName = prefix + "o_proj.weight";
-            AbstractTensor qWeight = quantize(weights.load(qName), qType);
-            AbstractTensor kWeight = quantize(weights.load(kName), qType);
-            AbstractTensor vWeight = quantize(weights.load(vName), qType);
-            AbstractTensor oWeight = quantize(weights.load(oName), qType);
-            registerModelLineageTensor(qName, qWeight);
-            registerModelLineageTensor(kName, kWeight);
-            registerModelLineageTensor(vName, vWeight);
-            registerModelLineageTensor(oName, oWeight);
-            CausalSelfAttention attention = new CausalSelfAttention(
-                    this,
-                    relativeLayer,
-                    qWeight,
-                    kWeight,
-                    vWeight,
-                    oWeight,
-                    configurableTensorProvider,
-                    metricRegistry,
-                    qName, kName, vName, oName
-            );
-
-            prefix = base + "mlp.";
-            String gateName = prefix + "gate_proj.weight";
-            String downName = prefix + "down_proj.weight";
-            String upName = prefix + "up_proj.weight";
-            AbstractTensor gateWeight = quantize(weights.load(gateName), qType);
-            AbstractTensor downWeight = quantize(weights.load(downName), qType);
-            AbstractTensor upWeight = quantize(weights.load(upName), qType);
-            registerModelLineageTensor(gateName, gateWeight);
-            registerModelLineageTensor(downName, downWeight);
-            registerModelLineageTensor(upName, upWeight);
-            MLPBlock mlp = new MLPBlock(
-                    this,
-                    config.activationFunction,
-                    gateWeight, // w1
-                    downWeight, // w2
-                    upWeight,
-                    configurableTensorProvider,
-                    gateName, upName, downName
-            ); // w3
-
-            AbstractTensor inputNormWeight = quantize(weights.load(base + "input_layernorm.weight"), qType);
-            AbstractTensor postAttentionNormWeight = quantize(weights.load(base + "post_attention_layernorm.weight"), qType);
-            registerModelLineageTensor(base + "input_layernorm.weight", inputNormWeight);
-            registerModelLineageTensor(base + "post_attention_layernorm.weight", postAttentionNormWeight);
-
-            transformerBlocks[relativeLayer] = new TransformerBlock(
-                    this,
-                    relativeLayer,
-                    new RmsNorm(this, inputNormWeight, metricRegistry),
-                    attention,
-                    new RmsNorm(this, postAttentionNormWeight, metricRegistry),
-                    mlp,
-                    configurableTensorProvider
-            );
-        });
-        return transformerBlocks;
-    }
 
     /** Enables the TensorRef path only for the concrete Llama family, not its subclasses. */
     @Override
@@ -261,46 +180,11 @@ public class LlamaModel extends AbstractModel {
                     Optional.empty(),
                     Optional.of(new RmsNorm2(this, registerModelTensorRef(
                             loadAndMaybeQuantizedExcluding1DTensors(postAttentionNormName, weights::loadRef, qType)), 0.0f)),
-                    mlp, Optional.empty(), Optional.empty(), configurableTensorProvider);
+                     mlp, Optional.empty(), Optional.empty());
         });
         return blocks;
     }
 
-    @Override
-    protected SampleOutput loadOutputWeights() {
-        DType qType = modelQType.orElse(this.modelDType);
-        LOGGER.debug("loading output norm weight=model.norm.weight target_dtype={}", qType);
-        AbstractTensor outputNormWeight = quantize(weights.load("model.norm.weight"), qType);
-        registerModelLineageTensor("model.norm.weight", outputNormWeight);
-        final LayerNorm outputLayerNorm = new RmsNorm(this, outputNormWeight, metricRegistry);
-        DType outputHeadDType = outputHeadQuantization.orElse(workingDType);
-        boolean forceOutputHeadQuantization = outputHeadQuantization.isPresent();
-        // Some llama models don't have a classification head
-        boolean hasLmHead = weights.isWeightPresent("lm_head.weight");
-        LOGGER.debug("loading output logits weight={} target_dtype={} force_quantization={}",
-                hasLmHead ? "lm_head.weight" : "model.embed_tokens.weight", outputHeadDType, forceOutputHeadQuantization);
-        AbstractTensor classificationWeights = weights.isWeightPresent("lm_head.weight")
-                ? io.teknek.deliverance.tensor.AbstractTensorUtils.quantize(weights.load("lm_head.weight"), outputHeadDType,
-                forceOutputHeadQuantization)
-                : io.teknek.deliverance.tensor.AbstractTensorUtils.quantize(
-                        embedTokenWeights == null ? weights.load("model.embed_tokens.weight") : embedTokenWeights,
-                        outputHeadDType,
-                        forceOutputHeadQuantization);
-        registerModelLineageTensor(hasLmHead ? "lm_head.weight" : "model.embed_tokens.weight#output_head", classificationWeights);
-        LOGGER.debug("loaded output logits shape={} dtype={}", classificationWeights.shape(), classificationWeights.dType());
-        configurableTensorProvider.get().registerModelTensor(classificationWeights);
-        return new SampleOutput() {
-            @Override
-            public LayerNorm getOutputLayerNorm() {
-                return outputLayerNorm;
-            }
-
-            @Override
-            public AbstractTensor getOutputLogitsWeights() {
-                return classificationWeights;
-            }
-        };
-    }
 
     @Override
     protected SampleOutputRef loadOutputWeightsRef() {
@@ -345,7 +229,7 @@ public class LlamaModel extends AbstractModel {
         if (t.dType() == workingQType) {
             return super.maybeQuantize(t);
         }
-        return configurableTensorProvider.get().quantize(t, workingQType, 0, Ints.checkedCast(t.shape().last()));
+        return quantize(t, workingQType);
     }
 
 }

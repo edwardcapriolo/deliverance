@@ -2,7 +2,7 @@ package io.teknek.deliverance.model.tensorparallel;
 
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.GenerateEvent;
-import io.teknek.deliverance.model.GenerationBackend;
+import io.teknek.deliverance.model.GenerationBackendRef;
 import io.teknek.deliverance.model.GenerationCursor;
 import io.teknek.deliverance.generator.GeneratorParameters;
 import io.teknek.deliverance.generator.Response;
@@ -11,7 +11,7 @@ import io.teknek.deliverance.model.tensorparallel.transport.SharedKvPrefixRestor
 import io.teknek.deliverance.model.tensorparallel.transport.SharedKvPrefixStoreRequest;
 import io.teknek.deliverance.model.tensorparallel.transport.TensorParallelRankService;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
-import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor2.TensorRef;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -77,51 +77,6 @@ public class TensorParallelGenerationGroup implements AutoCloseable {
     }
 
     /**
-     * Runs prompt/prefix forward on every rank and returns rank 0's reduced output.
-     *
-     * <p>All rank models must enter the same collective calls in the same order. Non-zero rank outputs are closed before
-     * this method returns. The caller owns the returned rank 0 output tensor.</p>
-     */
-    public AbstractTensor batchForward(int[] tokenIds, int startPosition) {
-        List<AbstractTensor> outputs = forwardAllRanks((index, model) ->
-                model.batchForward(sessionId, tokenIds, startPosition));
-        AbstractTensor rankZero = outputs.get(0);
-        for (int i = 1; i < outputs.size(); i++) {
-            outputs.get(i).close();
-        }
-        return rankZero;
-    }
-
-    /**
-     * Runs prompt/prefix forward on every rank and returns every rank's reduced output.
-     *
-     * <p>The caller owns every returned tensor. This method is useful for tests that need to verify rank outputs agree.</p>
-     */
-    public List<AbstractTensor> batchForwardAllRanks(int[] tokenIds, int startPosition) {
-        return forwardAllRanks((index, model) -> model.batchForward(sessionId, tokenIds, startPosition));
-    }
-
-    /**
-     * Runs one decode-token forward step on every rank and returns rank 0's reduced output.
-     */
-    public AbstractTensor forward(int tokenId, int position) {
-        List<AbstractTensor> outputs = forwardAllRanks((index, model) ->
-                model.forward(sessionId, tokenId, position));
-        AbstractTensor rankZero = outputs.get(0);
-        for (int i = 1; i < outputs.size(); i++) {
-            outputs.get(i).close();
-        }
-        return rankZero;
-    }
-
-    /**
-     * Runs one decode-token forward step on every rank and returns every rank's reduced output.
-     */
-    public List<AbstractTensor> forwardAllRanks(int tokenId, int position) {
-        return forwardAllRanks((index, model) -> model.forward(sessionId, tokenId, position));
-    }
-
-    /**
      * Generates text through the tensor-parallel rank endpoints.
      *
      * <p>The supplied coordinator model owns tokenizer, output projection, sampling, stop handling, and response
@@ -135,23 +90,20 @@ public class TensorParallelGenerationGroup implements AutoCloseable {
     public Response generate(UUID sessionId, AbstractModel coordinatorModel, PromptContext promptContext,
                               GeneratorParameters generatorParameters, GenerateEvent eventFired) {
         Objects.requireNonNull(coordinatorModel, "coordinatorModel");
-        return coordinatorModel.generateWithBackend(sessionId, promptContext, generatorParameters, eventFired,
-                new TensorParallelGenerationBackend(promptContext));
+        return coordinatorModel.generateWithBackendRef(sessionId, promptContext, generatorParameters, eventFired,
+                new TensorParallelGenerationBackend());
     }
 
-    private final class TensorParallelGenerationBackend implements GenerationBackend {
-        private TensorParallelGenerationBackend(PromptContext ignoredPromptContext) {
-        }
-
+    private final class TensorParallelGenerationBackend implements GenerationBackendRef {
         @Override
-        public GenerationSession open(UUID sessionId, int[] promptTokens, GeneratorParameters parameters) {
+        public GenerationSessionRef openRef(UUID sessionId, int[] promptTokens, GeneratorParameters parameters) {
             String cacheSalt = parameters.cacheSalt.orElse("");
             int prefixLength = restoreSharedKvPrefix(sessionId, promptTokens, cacheSalt);
             return new TensorParallelGenerationSession(sessionId, promptTokens, cacheSalt, prefixLength);
         }
     }
 
-    private final class TensorParallelGenerationSession implements GenerationBackend.GenerationSession {
+    private final class TensorParallelGenerationSession implements GenerationBackendRef.GenerationSessionRef {
         private final UUID sessionId;
         private final int[] promptTokens;
         private final String cacheSalt;
@@ -170,8 +122,8 @@ public class TensorParallelGenerationGroup implements AutoCloseable {
         }
 
         @Override
-        public AbstractTensor prefill(GenerationCursor cursor) {
-            AbstractTensor output;
+        public TensorRef prefill(GenerationCursor cursor) {
+            TensorRef output;
             if (cursor.hasTokensToProcess()) {
                 output = TensorParallelGenerationGroup.this.batchForward(sessionId, cursor.tokensToProcess(), cursor.startPosition());
                 storeSharedKvPrefix(sessionId, promptTokens, cacheSalt);
@@ -182,7 +134,7 @@ public class TensorParallelGenerationGroup implements AutoCloseable {
         }
 
         @Override
-        public AbstractTensor decode(int tokenId, int position) {
+        public TensorRef decode(int tokenId, int position) {
             return TensorParallelGenerationGroup.this.forward(sessionId, tokenId, position);
         }
 
@@ -200,9 +152,9 @@ public class TensorParallelGenerationGroup implements AutoCloseable {
         }
     }
 
-    private List<AbstractTensor> forwardAllRanks(RankForward forward) {
-        List<Future<AbstractTensor>> futures = new ArrayList<>();
-        List<AbstractTensor> outputs = new ArrayList<>();
+    private List<TensorRef> forwardAllRanks(RankForward forward) {
+        List<Future<TensorRef>> futures = new ArrayList<>();
+        List<TensorRef> outputs = new ArrayList<>();
         try {
             for (int i = 0; i < endpoints.size(); i++) {
                 int index = i;
@@ -214,7 +166,7 @@ public class TensorParallelGenerationGroup implements AutoCloseable {
             return outputs;
         } catch (Exception e) {
             cancelAll(futures);
-            for (AbstractTensor output : outputs) {
+            for (TensorRef output : outputs) {
                 output.close();
             }
             throw new RuntimeException("Tensor-parallel forward failed", e);
@@ -272,23 +224,23 @@ public class TensorParallelGenerationGroup implements AutoCloseable {
     }
 
     private interface RankForward {
-        AbstractTensor apply(int index, TensorParallelRankService model);
+        TensorRef apply(int index, TensorParallelRankService model);
     }
 
-    private AbstractTensor batchForward(UUID sessionId, int[] tokenIds, int startPosition) {
-        List<AbstractTensor> outputs = forwardAllRanks((index, model) ->
+    private TensorRef batchForward(UUID sessionId, int[] tokenIds, int startPosition) {
+        List<TensorRef> outputs = forwardAllRanks((index, model) ->
                 model.batchForward(sessionId, tokenIds, startPosition));
-        AbstractTensor rankZero = outputs.get(0);
+        TensorRef rankZero = outputs.get(0);
         for (int i = 1; i < outputs.size(); i++) {
             outputs.get(i).close();
         }
         return rankZero;
     }
 
-    private AbstractTensor forward(UUID sessionId, int tokenId, int position) {
-        List<AbstractTensor> outputs = forwardAllRanks((index, model) ->
+    private TensorRef forward(UUID sessionId, int tokenId, int position) {
+        List<TensorRef> outputs = forwardAllRanks((index, model) ->
                 model.forward(sessionId, tokenId, position));
-        AbstractTensor rankZero = outputs.get(0);
+        TensorRef rankZero = outputs.get(0);
         for (int i = 1; i < outputs.size(); i++) {
             outputs.get(i).close();
         }

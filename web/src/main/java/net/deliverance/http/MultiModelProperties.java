@@ -17,8 +17,6 @@ import io.teknek.deliverance.model.tensorparallel.TensorParallelRankEndpoint;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelTimeoutSettings;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorAllocator;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.gossip.GossipSettings;
 import io.teknek.gossip.Member;
 import io.teknek.gossip.event.GossipState;
@@ -80,8 +78,6 @@ class MultiModelConfiguration {
 
     private final MultiModelProperties multiModelProperties;
     private final MetricRegistry metricRegistry;
-    private final TensorAllocator arrayQueueTensorAllocator;
-    private final ConfigurableTensorProvider provider;
     private final WrappedForkJoinPool pool;
     private final String kvDiskDirectory;
     private final int kvPrefixMaxEntries;
@@ -114,8 +110,6 @@ class MultiModelConfiguration {
     private final int maxPrefillBatchSize;
 
     public MultiModelConfiguration(MultiModelProperties multiModelProperties, MetricRegistry metricRegistry,
-                                     TensorAllocator arrayQueueTensorAllocator,
-                                     ConfigurableTensorProvider provider,
                                      WrappedForkJoinPool pool,
                                      @Value("${deliverance.kv.disk-dir:}") String kvDiskDirectory,
                                      @Value("${deliverance.kv.prefix.max-entries:10000}") int kvPrefixMaxEntries,
@@ -148,8 +142,6 @@ class MultiModelConfiguration {
                                        @Value("${deliverance.tensor.operations.simd.parallel-split-size:0}") int simdParallelSplitSize){
         this.multiModelProperties = multiModelProperties;
         this.metricRegistry = metricRegistry;
-        this.arrayQueueTensorAllocator = arrayQueueTensorAllocator;
-        this.provider = provider;
         this.pool = pool;
         this.kvDiskDirectory = kvDiskDirectory;
         this.kvPrefixMaxEntries = kvPrefixMaxEntries;
@@ -209,8 +201,6 @@ class MultiModelConfiguration {
         ModelFetcher fetch = new ModelFetcher(config.getModelOwner(),config.getModelName());
         AutoModelForEmbeddings.Builder embeddingBuilder = AutoModelForEmbeddings.newBuilder(fetch);
         embeddingBuilder.withMetricRegistry(metricRegistry);
-        embeddingBuilder.withTensorAllocator(arrayQueueTensorAllocator);
-        embeddingBuilder.withTensorProvider(provider);
         embeddingBuilder.withWrappedForkJoinPool(pool);
         embeddingBuilder.withKvBufferCacheSettings(kvBufferCacheSettings());
         return embeddingBuilder.buildLocalEmbeddingModel();
@@ -220,8 +210,6 @@ class MultiModelConfiguration {
         ModelFetcher fetch = new ModelFetcher(config.getModelOwner(), config.getModelName());
         AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(fetch)
                 .withMetricRegistry(metricRegistry)
-                .withTensorAllocator(arrayQueueTensorAllocator)
-                .withPrimaryTensorProvider(provider)
                 .withWrappedForkJoinPool(pool)
                 .withKvBufferCacheSettings(kvBufferCacheSettings());
         if (groupedDecodeQkvSplitSize > 0) {

@@ -53,8 +53,7 @@ class Tensor2LighterSaxpyTest {
              TensorRef expected = actual.allocate(DType.F32, TensorShape.of(1, c.yOffset() + c.length() + 3))) {
             fill(x, legacyX);
             fill(expected, legacyExpected);
-            new io.teknek.deliverance.tensor.operations.NaiveTensorOperations().saxpy(1.75f, legacyX,
-                    legacyExpected, c.xOffset(), c.yOffset(), c.length());
+            referenceSaxpy(1.75f, legacyX, legacyExpected, c.xOffset(), c.yOffset(), c.length());
             actual.saxpy(1.75f, x, expected, c.xOffset(), c.yOffset(), c.length());
             assertClose(expected, legacyExpected);
         }
@@ -75,9 +74,8 @@ class Tensor2LighterSaxpyTest {
             fill(alpha, legacyAlpha);
             fill(x, legacyX);
             fill(expected, legacyExpected);
-            new io.teknek.deliverance.tensor.operations.NaiveTensorOperations().saxpy(legacyAlpha, legacyX,
-                    legacyExpected, c.xOffset(), c.yOffset(), c.length(), c.alphaOffset(), c.xRowOffset(),
-                    c.batchSize());
+            referenceSaxpy(legacyAlpha, legacyX, legacyExpected, c.xOffset(), c.yOffset(), c.length(),
+                    c.alphaOffset(), c.xRowOffset(), c.batchSize());
             actual.saxpy(alpha, x, expected, c.xOffset(), c.yOffset(), c.length(), c.alphaOffset(),
                     c.xRowOffset(), c.batchSize());
             assertClose(expected, legacyExpected);
@@ -155,6 +153,44 @@ class Tensor2LighterSaxpyTest {
         }
     }
 
+    @ParameterizedTest(name = "BF16 target batch {0} {1}")
+    @MethodSource("batchCasesAndCandidates")
+    void bf16TargetBatchSaxpyMatchesReference(SaxpyCases.BatchCase c, Candidate candidate) {
+        Lighter actual = candidate.lighter();
+        try (FloatBufferTensor alphaDense = vector(1, c.alphaOffset() + c.batchSize() + 3);
+             FloatBufferTensor xDense = vector(c.xRowOffset() + c.batchSize() + 2,
+                     c.xOffset() + c.length() + 3);
+             FloatBufferTensor yDense = vector(1, c.yOffset() + c.length() + 3);
+             BFloat16BufferTensor alphaReference = new BFloat16BufferTensor(alphaDense);
+             BFloat16BufferTensor xReference = new BFloat16BufferTensor(xDense);
+             BFloat16BufferTensor expected = new BFloat16BufferTensor(yDense);
+             TensorRef alphaF32 = actual.allocate(DType.F32, TensorShape.of(1, alphaDense.shape().last()));
+             TensorRef xF32 = actual.allocate(DType.F32, TensorShape.of(xDense.shape().first(), xDense.shape().last()));
+             TensorRef yF32 = actual.allocate(DType.F32, TensorShape.of(1, yDense.shape().last()))) {
+            fill(alphaF32, alphaDense);
+            fill(xF32, xDense);
+            fill(yF32, yDense);
+            for (int row = 0; row < c.batchSize(); row++) {
+                float factor = alphaReference.get(0, c.alphaOffset() + row);
+                for (int column = 0; column < c.length(); column++) {
+                    int xColumn = c.xOffset() + column;
+                    int yColumn = c.yOffset() + column;
+                    expected.set(expected.get(0, yColumn)
+                                    + factor * xReference.get(c.xRowOffset() + row, xColumn), 0, yColumn);
+                }
+            }
+            try (TensorRef alpha = actual.reshape(alphaF32, DType.BF16);
+                 TensorRef x = actual.reshape(xF32, DType.BF16);
+                 TensorRef y = actual.reshape(yF32, DType.BF16)) {
+                actual.saxpy(alpha, x, y, c.xOffset(), c.yOffset(), c.length(), c.alphaOffset(),
+                        c.xRowOffset(), c.batchSize());
+                for (int column = 0; column < expected.shape().last(); column++) {
+                    assertEquals(expected.get(0, column), y.get(0, column), 0.01f, "column=" + column);
+                }
+            }
+        }
+    }
+
     static Stream<Arguments> scalarCases() {
         return SaxpyCases.scalarCases();
     }
@@ -218,6 +254,28 @@ class Tensor2LighterSaxpyTest {
                 target.set(source.get(row, column), row, column);
             }
         }
+    }
+
+    private static void referenceSaxpy(float alpha, FloatBufferTensor x, FloatBufferTensor y, int xOffset,
+            int yOffset, int length) {
+        for (int column = 0; column < length; column++) {
+            y.set(y.get(0, yOffset + column) + alpha * x.get(0, xOffset + column), 0, yOffset + column);
+        }
+    }
+
+    private static void referenceSaxpy(FloatBufferTensor alpha, FloatBufferTensor x, FloatBufferTensor y,
+            int xOffset, int yOffset, int length, int alphaOffset, int xRowOffset, int batchSize) {
+        for (int row = 0; row < batchSize; row++) {
+            referenceSaxpy(alpha.get(0, alphaOffset + row), xRow(x, xRowOffset + row), y, xOffset, yOffset, length);
+        }
+    }
+
+    private static FloatBufferTensor xRow(FloatBufferTensor source, int row) {
+        FloatBufferTensor result = new FloatBufferTensor(1, (int) source.shape().last());
+        for (int column = 0; column < source.shape().last(); column++) {
+            result.set(source.get(row, column), 0, column);
+        }
+        return result;
     }
 
     private static void assertClose(TensorRef actual, FloatBufferTensor expected) {

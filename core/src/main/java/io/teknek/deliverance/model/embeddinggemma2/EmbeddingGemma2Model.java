@@ -6,8 +6,6 @@ import io.teknek.deliverance.JsonUtils;
 import io.teknek.deliverance.embedding.PoolingLayer;
 import io.teknek.deliverance.embedding.PoolingType;
 import io.teknek.deliverance.generator.EmbedInput;
-import io.teknek.deliverance.generator.SampleOutput;
-import io.teknek.deliverance.generator.TransformerBlock;
 import io.teknek.deliverance.grace.EncodeOptions;
 import io.teknek.deliverance.grace.Encoding;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
@@ -18,11 +16,9 @@ import io.teknek.deliverance.model.tensorparallel.TensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelContext;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
-import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorAllocator;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor2.TensorRef;
+import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 import io.teknek.deliverance.tensor.TensorShape;
 
@@ -45,13 +41,12 @@ public final class EmbeddingGemma2Model extends AbstractModel {
     /** Creates an EmbeddingGemma 2 model using the standard reflective model constructor. */
     public EmbeddingGemma2Model(InferenceType inferenceType, Config config, WeightLoader weights,
             PreTrainedTokenizer tokenizer, DType workingDType, DType workingQType, Optional<DType> modelQType,
-            ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
-            TensorAllocator tensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
+            MetricRegistry metricRegistry, KvBufferCacheSettings kvBufferCacheSettings,
             ToolCallParser toolCallParser, WrappedForkJoinPool pool, TensorParallelContext tensorParallelContext,
-            TensorParallelCollectives tensorParallelCollectives, Optional<DType> outputHeadQuantization) {
+            TensorParallelCollectives tensorParallelCollectives, Optional<DType> outputHeadQuantization, Lighter lighter) {
         super(inferenceType, config, weights, tokenizer, workingDType, workingQType, modelQType,
-                configurableTensorProvider, metricRegistry, tensorAllocator, kvBufferCacheSettings, toolCallParser,
-                pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                metricRegistry, kvBufferCacheSettings, toolCallParser,
+                pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization, lighter);
         this.textConfig = ((EmbeddingGemma2Config) config).textConfig;
     }
 
@@ -85,15 +80,7 @@ public final class EmbeddingGemma2Model extends AbstractModel {
         return new io.teknek.deliverance.generator2.TransformerBlock2[0];
     }
 
-    @Override
-    protected SampleOutput loadOutputWeights() {
-        throw new UnsupportedOperationException("EmbeddingGemma 2 has no language-model output head");
-    }
 
-    @Override
-    protected TransformerBlock[] loadTransformerBlockWeights() {
-        return new TransformerBlock[0];
-    }
 
     @Override
     protected float[] timedEmbedding(String input, PoolingType poolingType) {

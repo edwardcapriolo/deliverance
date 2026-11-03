@@ -45,7 +45,7 @@ public class ExcludeTopChoicePicker {
             return Optional.empty();
         }
         SortedSet<IndexValueToken> aboveThreshold = new TreeSet<>();
-        AbstractTensor logSum = abstractModel.getTensorAllocator().getDirty(logits.dType(), logits.shape());
+        AbstractTensor logSum = abstractModel.allocateDirty(logits.dType(), logits.shape());
         VectorTensorMathUtils.logSumExpTensor(logSum, logits);
         for (int i =0; i< logSum.size(); i++) {
             float ls = logSum.get(0, i);

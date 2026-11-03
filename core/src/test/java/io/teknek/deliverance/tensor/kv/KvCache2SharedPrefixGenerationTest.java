@@ -23,7 +23,7 @@ public class KvCache2SharedPrefixGenerationTest {
     @Test
     public void qwen306BRepeatedPromptReusesSharedKvCache2PrefixBlocks() {
         int blockSize = 8;
-        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+        KvBufferCacheSettings settings = new KvBufferCacheSettings()
                 .withBlockSize(blockSize)
                 .withMaxPrefixTokensPerPrompt(256)
                 .withPrefixCacheMode(KvBufferCacheSettings.PrefixCacheMode.SHARED_BLOCKS);

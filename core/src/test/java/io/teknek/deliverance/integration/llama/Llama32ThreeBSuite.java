@@ -20,7 +20,7 @@ public class Llama32ThreeBSuite {
     public static AbstractModel getOrCreate() {
         if (model == null) {
             ModelFetcher fetch = new ModelFetcher("tjake", "Llama-3.2-3B-Instruct-JQ4");
-            KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+            KvBufferCacheSettings settings = new KvBufferCacheSettings()
                     .withMaxPrefixTokensPerPrompt(512)
                     .withMaxEntries(10_000)
                     .withBlockSize(8);

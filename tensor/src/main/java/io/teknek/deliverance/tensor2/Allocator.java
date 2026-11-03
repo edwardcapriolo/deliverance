@@ -12,8 +12,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
 
 class Allocator {
-    //This is be a TensorAllocator howwever to must unerstand multiple devices
-    //it must always allocate the tensor its not a "cache" that hands back raw tensors when its "full"
+    // This allocator owns pooled storage across CPU and registered accelerator devices.
     private static final String CPU = "cpu";
     private final ConcurrentMap<TensorPoolKey, ConcurrentLinkedQueue<Tensor>> availableByShape = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, DeviceAllocator> deviceAllocators = new ConcurrentHashMap<>();
@@ -39,10 +38,20 @@ class Allocator {
         if (!CPU.equals(device)) {
             DeviceAllocator deviceAllocator = deviceAllocators.get(device);
             Preconditions.checkArgument(deviceAllocator != null, "No allocator registered for device %s", device);
+            Map<String, TensorRef> sidecars = Map.of();
+            if (dType == DType.I8 || dType == DType.Q4) {
+                String sidecarName = dType == DType.I8 ? Q8Layout.SCALE_SIDECAR : Q4Layout.SCALE_SIDECAR;
+                TensorShape scaleShape = dType == DType.I8 ? Q8Layout.scaleShape(shape) : Q4Layout.scaleShape(shape);
+                sidecars = Map.of(sidecarName, allocate(DType.F32, scaleShape, device, zero));
+            }
             long handle = deviceAllocator.allocate(dType, shape, zero);
-            Preconditions.checkArgument(handle != 0L, "Device allocator returned an invalid handle");
+            if (handle == 0L) {
+                sidecars.values().forEach(TensorRef::close);
+                throw new IllegalArgumentException("Device allocator returned an invalid handle");
+            }
             return new TensorRef(new TensorRefState(LeaseState.USED, this,
-                    new GpuTensor(handle, dType, shape, stride(shape)), shape, dType, stride(shape), device, Map.of(), null));
+                    new GpuTensor(handle, dType, shape, stride(shape)), shape, dType, stride(shape), device,
+                    sidecars, null));
         }
         if (dType == DType.I8 || dType == DType.Q4) {
             return allocateQuantized(dType, shape, device, zero);
@@ -143,7 +152,8 @@ class Allocator {
     }
 
     private static int stride(TensorShape shape) {
-        return shape.first() > 1 && shape.dims() == 2
-                ? Math.toIntExact(shape.getOffset(shape.sparseRowOffset() + 1, shape.sparseColumnOffset())) : 0;
+        return shape.dims() == 2
+                ? Math.toIntExact(shape.getOffset(shape.sparseRowOffset() + 1, shape.sparseColumnOffset())
+                        - shape.getOffset(shape.sparseRowOffset(), shape.sparseColumnOffset())) : 0;
     }
 }

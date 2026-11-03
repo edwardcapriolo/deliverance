@@ -7,14 +7,11 @@ import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.ReadOnlyTensor;
-import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TrackedReadOnlyTensor;
-import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensor2.TensorRefBackedTensor;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -35,11 +32,9 @@ public final class KvCacheSession implements AutoCloseable {
     private final int kvLength;
     private final int blockSize;
     private final DType dtype;
-    private final TensorAllocator allocator;
     private final MetricRegistry metricRegistry;
     private final boolean trackReadViews;
     private final KvBufferCacheSettings settings;
-    private final TensorOperations conversionOperations;
     private final Lighter lighter;
     private final int[] layerKvLengths;
     private final NavigableMap<Integer, KvBlock> committedBlocks = new TreeMap<>();
@@ -50,27 +45,8 @@ public final class KvCacheSession implements AutoCloseable {
     private int length;
 
     KvCacheSession(int layers, int contextLength, int kvLength, int blockSize, DType dtype,
-            TensorAllocator allocator, MetricRegistry metricRegistry, boolean trackReadViews, KvBufferCacheSettings settings) {
-        this(layers, contextLength, kvLength, blockSize, dtype, allocator, metricRegistry, trackReadViews, settings, null);
-    }
-
-    KvCacheSession(int layers, int contextLength, int kvLength, int blockSize, DType dtype,
-            TensorAllocator allocator, MetricRegistry metricRegistry, boolean trackReadViews,
-            KvBufferCacheSettings settings, @Nullable TensorOperations conversionOperations) {
-        this(layers, contextLength, kvLength, blockSize, dtype, allocator, metricRegistry, trackReadViews, settings,
-                conversionOperations, new Lighter(metricRegistry));
-    }
-
-    KvCacheSession(int layers, int contextLength, int kvLength, int blockSize, DType dtype,
-            TensorAllocator allocator, MetricRegistry metricRegistry, boolean trackReadViews,
-            KvBufferCacheSettings settings, @Nullable TensorOperations conversionOperations, Lighter lighter) {
-        this(layers, contextLength, kvLength, blockSize, dtype, allocator, metricRegistry, trackReadViews,
-                settings, conversionOperations, lighter, null);
-    }
-
-    KvCacheSession(int layers, int contextLength, int kvLength, int blockSize, DType dtype,
-            TensorAllocator allocator, MetricRegistry metricRegistry, boolean trackReadViews,
-            KvBufferCacheSettings settings, @Nullable TensorOperations conversionOperations, Lighter lighter,
+            MetricRegistry metricRegistry, boolean trackReadViews,
+            KvBufferCacheSettings settings, Lighter lighter,
             int[] layerKvLengths) {
         this.sessionId = "kv2-session-" + SESSION_SEQUENCE.incrementAndGet();
         this.layers = layers;
@@ -78,27 +54,18 @@ public final class KvCacheSession implements AutoCloseable {
         this.kvLength = kvLength;
         this.blockSize = blockSize;
         this.dtype = dtype;
-        this.allocator = allocator;
         this.metricRegistry = metricRegistry;
         this.trackReadViews = trackReadViews;
         this.settings = settings;
-        this.conversionOperations = conversionOperations;
         this.lighter = Objects.requireNonNull(lighter, "lighter");
         this.layerKvLengths = layerKvLengths == null ? null : layerKvLengths.clone();
     }
 
     KvCacheSession(int layers, int contextLength, int kvLength, int blockSize, DType dtype,
             MetricRegistry metricRegistry, boolean trackReadViews, KvBufferCacheSettings settings,
-            @Nullable TensorOperations conversionOperations, Lighter lighter) {
-        this(layers, contextLength, kvLength, blockSize, dtype, null, metricRegistry, trackReadViews,
-                settings, conversionOperations, lighter, null);
-    }
-
-    KvCacheSession(int layers, int contextLength, int kvLength, int blockSize, DType dtype,
-            MetricRegistry metricRegistry, boolean trackReadViews, KvBufferCacheSettings settings,
-            @Nullable TensorOperations conversionOperations, Lighter lighter, int[] layerKvLengths) {
-        this(layers, contextLength, kvLength, blockSize, dtype, null, metricRegistry, trackReadViews,
-                settings, conversionOperations, lighter, layerKvLengths);
+            Lighter lighter) {
+        this(layers, contextLength, kvLength, blockSize, dtype, metricRegistry, trackReadViews,
+                settings, lighter, null);
     }
 
     public int length() {
@@ -231,19 +198,23 @@ public final class KvCacheSession implements AutoCloseable {
         try {
             AbstractTensor keyToWrite = key;
             AbstractTensor valueToWrite = value;
-            if (conversionOperations != null && key.dType() != settings.getKvKeyDType()) {
+            if (key.dType() != settings.getKvKeyDType()) {
                 try (var ignored = InferenceProfiler.timer(metricRegistry,
                         "kvcache.v2.write.quantize.to_" + settings.getKvKeyDType()).time()) {
-                    InferenceProfiler.counter(metricRegistry, "kvcache.v2.write.quantize.provider").inc();
-                    convertedKey = conversionOperations.quantize(key, settings.getKvKeyDType(), 0, layerKvLength(layer));
+                    InferenceProfiler.counter(metricRegistry, "kvcache.v2.write.quantize.lighter").inc();
+                    try (TensorRef keyRef = TensorRef.borrowed(key)) {
+                        convertedKey = new TensorRefBackedTensor(lighter.reshape(keyRef, settings.getKvKeyDType()));
+                    }
                     keyToWrite = convertedKey;
                 }
             }
-            if (conversionOperations != null && value.dType() != settings.getKvValueDType()) {
+            if (value.dType() != settings.getKvValueDType()) {
                 try (var ignored = InferenceProfiler.timer(metricRegistry,
                         "kvcache.v2.write.quantize.to_" + settings.getKvValueDType()).time()) {
-                    InferenceProfiler.counter(metricRegistry, "kvcache.v2.write.quantize.provider").inc();
-                    convertedValue = conversionOperations.quantize(value, settings.getKvValueDType(), 0, layerKvLength(layer));
+                    InferenceProfiler.counter(metricRegistry, "kvcache.v2.write.quantize.lighter").inc();
+                    try (TensorRef valueRef = TensorRef.borrowed(value)) {
+                        convertedValue = new TensorRefBackedTensor(lighter.reshape(valueRef, settings.getKvValueDType()));
+                    }
                     valueToWrite = convertedValue;
                 }
             }
@@ -295,17 +266,13 @@ public final class KvCacheSession implements AutoCloseable {
             return;
         }
         KvBlockLease lease = committedBlockLeases.remove(blockIndex);
-        MutableKvBlock mutable = new MutableKvBlock(blockIndex, blockSize, layers, kvLength, dtype, allocator,
-                settings, metricRegistry, conversionOperations, lighter, layerKvLengths);
+        MutableKvBlock mutable = new MutableKvBlock(blockIndex, blockSize, layers, kvLength, dtype,
+                settings, metricRegistry, lighter, layerKvLengths);
         try {
             for (int position = committed.startPosition(); position < newLength; position++) {
                 for (int layer = 0; layer < layers; layer++) {
-                    try (TensorRef key = allocator == null
-                            ? committed.keyRowCopy(layer, position, lighter)
-                            : committed.keyRowCopy(layer, position, allocator);
-                         TensorRef value = allocator == null
-                                 ? committed.valueRowCopy(layer, position, lighter)
-                                 : committed.valueRowCopy(layer, position, allocator)) {
+                        try (TensorRef key = committed.keyRowCopy(layer, position, lighter);
+                             TensorRef value = committed.valueRowCopy(layer, position, lighter)) {
                         mutable.write(layer, position, key, value);
                     }
                 }
@@ -385,7 +352,8 @@ public final class KvCacheSession implements AutoCloseable {
     }
 
     private AbstractTensor copyVisible(int layer, int visibleTokens, boolean key) {
-        AbstractTensor result = allocator.getDirty(dtype, io.teknek.deliverance.tensor.TensorShape.of(visibleTokens, layerKvLength(layer)));
+        AbstractTensor result = new TensorRefBackedTensor(lighter.allocateDirty(dtype,
+                io.teknek.deliverance.tensor.TensorShape.of(visibleTokens, layerKvLength(layer))));
         try {
             for (int position = 0; position < visibleTokens; position++) {
                 try (AbstractTensor row = rowCopy(layer, position, key)) {
@@ -536,8 +504,8 @@ public final class KvCacheSession implements AutoCloseable {
 
     private MutableKvBlock mutableBlock(int blockIndex) {
         return mutableBlocks.computeIfAbsent(blockIndex,
-                index -> new MutableKvBlock(index, blockSize, layers, kvLength, dtype, allocator, settings,
-                        metricRegistry, conversionOperations, lighter, layerKvLengths));
+                index -> new MutableKvBlock(index, blockSize, layers, kvLength, dtype, settings,
+                        metricRegistry, lighter, layerKvLengths));
     }
 
     private void commitFullBlocksBefore(int newLength) {
@@ -550,7 +518,7 @@ public final class KvCacheSession implements AutoCloseable {
         }
     }
 
-    private void closeCommittedBlock(KvBlock block, @Nullable KvBlockLease lease) {
+    private void closeCommittedBlock(KvBlock block, KvBlockLease lease) {
         if (lease != null) {
             lease.close();
         } else {

@@ -6,8 +6,6 @@ import io.teknek.deliverance.tensor.TensorDisplayUtil;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.deliverance.tensor.operations.MachineSpec;
-import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
-import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -159,35 +157,6 @@ public class TensorShardWeightLoaderTest {
             gate.close();
             up.close();
             down.close();
-        }
-    }
-
-    @Test
-    public void loadedQ4RowShardProducesSamePanamaProjectionAsFullTensor() {
-        int batchSize = 13;
-        int embeddingLength = 2304;
-        int fullRows = 2048;
-        int shardRows = 512;
-        FloatBufferTensor input = deterministicMatrix(batchSize, embeddingLength, 1.0f / 64.0f);
-        FloatBufferTensor weights = deterministicMatrix(fullRows, embeddingLength, 1.0f / 80.0f);
-        SafeTensorWriter.write(tempDir.resolve("model.safetensors"), Map.of(), Map.of(
-                "projection.weight", new Q4ByteBufferTensor(weights)));
-
-        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile());
-             AbstractTensor fullWeight = loader.load("projection.weight");
-             AbstractTensor shardWeight = loader.load("projection.weight",
-                     new TensorShardSpec(TensorShardAxis.ROWS, 0, shardRows));
-             AbstractTensor fullOutput = new FloatBufferTensor(batchSize, fullRows);
-             AbstractTensor shardOutput = new FloatBufferTensor(batchSize, shardRows);
-             WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
-            PanamaTensorOperations ops = new PanamaTensorOperations(MachineSpec.VECTOR_TYPE,
-                    Mockito.mock(TensorAllocator.class), pool);
-            ops.batchDotProduct(fullOutput, input, fullWeight, 0, 0, embeddingLength, 0, 0, fullRows);
-            ops.batchDotProduct(shardOutput, input, shardWeight, 0, 0, embeddingLength, 0, 0, shardRows);
-            assertProjectionShardEquals(fullOutput, shardOutput, batchSize - 1, 0.0001f);
-        } finally {
-            input.close();
-            weights.close();
         }
     }
 

@@ -83,7 +83,7 @@ public class NettyTensorParallelCollectives implements TensorParallelCollectives
             try {
                 byte[] response = pendingResponse.get(30, TimeUnit.SECONDS);
                 try (Timer.Context ignoredDecode = InferenceProfiler.timer(METRICS, "collective.client.deserialize").time()) {
-                    return codec.decode(response);
+                    return codec.decodeAbstract(response);
                 }
             } catch (Exception e) {
                 throw new RuntimeException("Netty collective request failed", e);

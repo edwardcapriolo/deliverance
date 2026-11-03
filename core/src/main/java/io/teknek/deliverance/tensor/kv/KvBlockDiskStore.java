@@ -8,7 +8,6 @@ import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
 import io.teknek.deliverance.tensor.MseTurboQuantCodec;
-import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.TensorRef;
@@ -68,7 +67,6 @@ public final class KvBlockDiskStore implements AutoCloseable {
 
     private final Path root;
     private final MetricRegistry metricRegistry;
-    private final TensorAllocator allocator;
     private final Lighter lighter;
     private final long maxBytes;
     private final long reservedFreeBytes;
@@ -77,12 +75,11 @@ public final class KvBlockDiskStore implements AutoCloseable {
     private final Thread writerThread;
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
-    private KvBlockDiskStore(Path root, MetricRegistry metricRegistry, TensorAllocator allocator, long maxBytes,
+    private KvBlockDiskStore(Path root, MetricRegistry metricRegistry, Lighter lighter, long maxBytes,
             long reservedFreeBytes, int admitMinTokens, int queueSize) {
         this.root = root;
         this.metricRegistry = metricRegistry;
-        this.allocator = allocator;
-        this.lighter = new Lighter(metricRegistry);
+        this.lighter = lighter;
         this.maxBytes = maxBytes;
         this.reservedFreeBytes = reservedFreeBytes;
         this.admitMinTokens = admitMinTokens;
@@ -93,7 +90,7 @@ public final class KvBlockDiskStore implements AutoCloseable {
     }
 
     @Nullable
-    public static KvBlockDiskStore open(KvBufferCacheSettings settings, TensorAllocator allocator,
+    public static KvBlockDiskStore open(KvBufferCacheSettings settings, Lighter lighter,
             MetricRegistry metricRegistry) {
         Objects.requireNonNull(settings, "settings");
         if (!settings.isSharedPrefixDiskCacheEnabled()) {
@@ -118,7 +115,7 @@ public final class KvBlockDiskStore implements AutoCloseable {
             InferenceProfiler.counter(metricRegistry, METRIC_PREFIX + ".disabled.usable_bytes_too_small").inc();
             return null;
         }
-        KvBlockDiskStore store = new KvBlockDiskStore(root, metricRegistry, allocator,
+        KvBlockDiskStore store = new KvBlockDiskStore(root, metricRegistry, lighter,
                 settings.getSharedPrefixDiskCacheMaxBytes(), settings.getSharedPrefixDiskCacheReservedFreeBytes(),
                 settings.getSharedPrefixDiskCacheAdmitMinTokens(), settings.getSharedPrefixDiskCacheWriterQueueSize());
         store.evictToBudget();
@@ -320,7 +317,7 @@ public final class KvBlockDiskStore implements AutoCloseable {
         }
         return new KvBlock(key.blockIndex(), key.blockSize(), key.tokenCount(), key.layers(), key.kvLength(),
                 MseTurboQuantKvBlockStorage.fromEncoded(key.keyDType(), key.layers(), key.tokenCount(), key.blockSize(),
-                        key.kvLength(), allocator, metricRegistry, allocated));
+                        key.kvLength(), lighter, metricRegistry, allocated));
     }
 
     private void writeTensor(ByteArrayOutputStream out, TensorRef tensor) throws IOException {

@@ -46,6 +46,7 @@ public final class GpuOps implements TensorOps, AutoCloseable {
         if (operation.result().dType() != DType.F32 || operation.a().dType() != DType.I8
                 && operation.a().dType() != DType.F32 || operation.b().dType() != DType.Q4 || operation.a().dims() != 2
                 || operation.b().dims() != 2 || operation.result().dims() != 2
+                || operation.kernel() != GemmKernel.BATCH
                 || !"gpu".equals(operation.a().device()) || !"gpu".equals(operation.b().device())
                 || !"gpu".equals(operation.result().device())
                 || !aligned(operation) || operation.rowChunkSize() <= 0) {
@@ -53,7 +54,8 @@ public final class GpuOps implements TensorOps, AutoCloseable {
         }
         TensorRef inputScale = operation.a().dType() == DType.I8 ? Q8Layout.scale(operation.a()) : null;
         TensorRef weightScale = Q4Layout.scale(operation.b());
-        if (operation.a().dType() == DType.I8 && inputScale == null || weightScale == null) {
+        if (operation.a().dType() == DType.I8 && (inputScale == null || !"gpu".equals(inputScale.device()))
+                || weightScale == null || !"gpu".equals(weightScale.device())) {
             return Either.Left(OpSupport.Unsupported);
         }
 
@@ -67,36 +69,27 @@ public final class GpuOps implements TensorOps, AutoCloseable {
             int bLimit = byteOffset(operation.b(), operation.bRowOffset() + n, operation.bColumnOffset());
             int resultOffset = operation.result().shape().sparseColumnOffset()
                     - operation.b().shape().sparseRowOffset() - operation.resultRowOffset();
-            int resultLimit = Math.toIntExact(operation.result().underlying().getMemorySegment().byteSize());
-            long weights = -1;
-            long scales = -1;
+            int resultLimit = Math.toIntExact(operation.result().shape().size() * (long) DType.F32.size());
             try {
-                weights = NativeGPU.register_tensor(operation.b().memorySegment(),
-                        Math.toIntExact(operation.b().memorySegment().byteSize()));
-                scales = NativeGPU.register_tensor(weightScale.memorySegment(),
-                        Math.toIntExact(weightScale.memorySegment().byteSize()));
-                if (weights < 0 || scales < 0) {
-                    return Either.Left(OpSupport.Unsupported);
-                }
                 if (operation.a().dType() == DType.I8) {
-                    Tensor2GpuNative.batchDotI8Q4(state.scratchId, state.i8ShaderId, operation.a().memorySegment(),
-                            inputScale.memorySegment(), aOffset, aLimit, weights, scales, bOffset, bLimit,
-                            operation.result().memorySegment(), resultOffset, resultLimit, m,
+                    Tensor2GpuNative.batchDotI8Q4Device(state.scratchId, state.i8ShaderId,
+                            operation.a().deviceHandle(), inputScale.deviceHandle(), aOffset, aLimit,
+                            operation.b().deviceHandle(), weightScale.deviceHandle(), bOffset, bLimit,
+                            operation.result().deviceHandle(), resultOffset, resultLimit, m,
                             operation.bRowOffset(), n, operation.columnLength(), operation.a().stride(),
                             operation.b().stride(), operation.result().stride());
                 } else {
-                    Tensor2GpuNative.batchDotF32Q4(state.scratchId, state.f32ShaderId, operation.a().memorySegment(),
-                            aOffset, aLimit, weights, scales, bOffset, bLimit, operation.result().memorySegment(),
-                            resultOffset, resultLimit, m, operation.bRowOffset(), n, operation.columnLength(),
+                    Tensor2GpuNative.batchDotF32Q4Device(state.scratchId, state.f32ShaderId,
+                            operation.a().deviceHandle(), 0L, aOffset, aLimit,
+                            operation.b().deviceHandle(), weightScale.deviceHandle(), bOffset, bLimit,
+                            operation.result().deviceHandle(), resultOffset, resultLimit, m,
+                            operation.bRowOffset(), n, operation.columnLength(),
                             operation.a().stride(), operation.b().stride(), operation.result().stride());
                 }
                 GPU_CALLS.incrementAndGet();
                 return Either.Right(null);
             } catch (LinkageError | RuntimeException e) {
                 return Either.Left(OpSupport.Unsupported);
-            } finally {
-                if (scales >= 0) NativeGPU.unregister_tensor(scales);
-                if (weights >= 0) NativeGPU.unregister_tensor(weights);
             }
         }
     }
@@ -108,7 +101,23 @@ public final class GpuOps implements TensorOps, AutoCloseable {
 
     @Override
     public Either<OpSupport, Void> scale(float factor, TensorRef target, int offset, int length) {
-        return Either.Left(OpSupport.Unsupported);
+        if (target == null || target.dType() != DType.F32 || target.dims() != 2
+                || !"gpu".equals(target.device()) || target.deviceHandle() == 0L
+                || offset < 0 || length <= 0 || offset > target.shape().last() - length
+                || !Float.isFinite(factor)) {
+            return Either.Left(OpSupport.Unsupported);
+        }
+        synchronized (GpuOps.class) {
+            try {
+                RuntimeState state = state();
+                NativeGPU.tensor2_gpu_scale_f32_device(state.scaleShaderId, target.deviceHandle(), factor,
+                        offset, length, target.shape().first(), target.shape().last());
+                GPU_CALLS.incrementAndGet();
+                return Either.Right(null);
+            } catch (LinkageError | RuntimeException e) {
+                return Either.Left(OpSupport.Unsupported);
+            }
+        }
     }
 
     @Override
@@ -123,7 +132,8 @@ public final class GpuOps implements TensorOps, AutoCloseable {
     }
 
     private static int byteOffset(TensorRef tensor, int row, int column) {
-        return Math.toIntExact(tensor.memorySegmentOffset(tensor.shape().getOffset(row, column)));
+        long offset = tensor.shape().getOffset(row, column);
+        return Math.toIntExact(tensor.dType() == DType.Q4 ? offset / 2L : offset * tensor.dType().size());
     }
 
     private static RuntimeState state() {
@@ -140,10 +150,11 @@ public final class GpuOps implements TensorOps, AutoCloseable {
                 if (values.get(0) < 0) throw new IllegalStateException("No GPU adapter");
                 long i8Shader = registerShader("/gemm_i8q4.wgsl");
                 long f32Shader = registerShader("/gemm_q4.wgsl");
+                long scaleShader = registerScaleShader("/scale_f32.wgsl");
                  long scratch = NativeGPU.register_scratch_buffers(PARAMS_SIZE, INPUT_SCRATCH_SIZE,
                         RESULT_SCRATCH_SIZE);
                 if (scratch < 0) throw new IllegalStateException("GPU scratch allocation failed");
-                runtime = new RuntimeState(scratch, i8Shader, f32Shader);
+                runtime = new RuntimeState(scratch, i8Shader, f32Shader, scaleShader);
                 return runtime;
             } catch (Throwable t) {
                 unavailable = t;
@@ -173,6 +184,18 @@ public final class GpuOps implements TensorOps, AutoCloseable {
         }
     }
 
-    private record RuntimeState(long scratchId, long i8ShaderId, long f32ShaderId) {
+    private static long registerScaleShader(String resource) throws IOException {
+        try (InputStream input = GpuOps.class.getResourceAsStream(resource)) {
+            if (input == null) throw new IOException("Missing GPU shader " + resource);
+            byte[] source = input.readAllBytes();
+            ByteBuffer buffer = ByteBuffer.allocateDirect(source.length);
+            buffer.put(source).flip();
+            long id = NativeGPU.tensor2_register_scale_shader(MemorySegment.ofBuffer(buffer), source.length);
+            if (id < 0) throw new IllegalStateException("GPU scale shader registration failed");
+            return id;
+        }
+    }
+
+    private record RuntimeState(long scratchId, long i8ShaderId, long f32ShaderId, long scaleShaderId) {
     }
 }

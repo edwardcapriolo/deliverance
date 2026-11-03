@@ -7,7 +7,6 @@ import io.teknek.deliverance.embedding.PoolingLayer;
 import io.teknek.deliverance.embedding.PoolingType;
 import io.teknek.deliverance.embedding.SentenceTransformersPooling;
 import io.teknek.deliverance.generator.ForwardPhase;
-import io.teknek.deliverance.generator.SampleOutput;
 import io.teknek.deliverance.grace.EncodeOptions;
 import io.teknek.deliverance.grace.Encoding;
 import io.teknek.deliverance.grace.PreTrainedTokenizer;
@@ -18,10 +17,9 @@ import io.teknek.deliverance.model.tensorparallel.TensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelContext;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
-import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorAllocator;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor.kv.KvCacheSession;
 import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensor2.TensorRefBackedTensor;
@@ -37,13 +35,12 @@ public class BertModel extends BertFamilyModel {
 
     public BertModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer tokenizer,
             DType workingDType, DType workingQType, Optional<DType> modelQType,
-            ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
-            TensorAllocator tensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
+            MetricRegistry metricRegistry, KvBufferCacheSettings kvBufferCacheSettings,
             ToolCallParser toolCallParser, WrappedForkJoinPool pool, TensorParallelContext tensorParallelContext,
-            TensorParallelCollectives tensorParallelCollectives, Optional<DType> outputHeadQuantization) {
+            TensorParallelCollectives tensorParallelCollectives, Optional<DType> outputHeadQuantization, Lighter lighter) {
         super(inferenceType, c, w, tokenizer, workingDType, workingQType, modelQType,
-                configurableTensorProvider, metricRegistry, tensorAllocator, kvBufferCacheSettings, toolCallParser,
-                pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                metricRegistry, kvBufferCacheSettings, toolCallParser, pool, tensorParallelContext,
+                tensorParallelCollectives, outputHeadQuantization, lighter);
     }
 
     @Override
@@ -96,24 +93,20 @@ public class BertModel extends BertFamilyModel {
         }
     }
 
-    @Override
-    protected SampleOutput loadOutputWeights() {
-        throw new UnsupportedOperationException();
-    }
 
     @Override
     protected ClassifyOutput loadClassifierWeights() {
         if (config.isClassifier()) {
-            final AbstractTensor classifierWeight = loadWeight("classifier.weight");
-            final AbstractTensor classifierBias = loadWeight("classifier.bias");
+            final TensorRef classifierWeight = registerModelTensorRef(loadWeightRef("classifier.weight"));
+            final TensorRef classifierBias = registerModelTensorRef(loadWeightRef("classifier.bias"));
             return new ClassifyOutput() {
                 @Override
-                public AbstractTensor getClassificationWeights() {
+                public TensorRef getClassificationWeights() {
                     return classifierWeight;
                 }
 
                 @Override
-                public Optional<AbstractTensor> getClassificationBias() {
+                public Optional<TensorRef> getClassificationBias() {
                     return Optional.of(classifierBias);
                 }
             };

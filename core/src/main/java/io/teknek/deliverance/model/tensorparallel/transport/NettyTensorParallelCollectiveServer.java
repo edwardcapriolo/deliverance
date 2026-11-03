@@ -147,7 +147,7 @@ public class NettyTensorParallelCollectiveServer implements AutoCloseable {
         bodyBuffer.get(tensorBytes);
         try {
             AllReduceSumRequest request = JsonUtils.om.readValue(header, AllReduceSumRequest.class);
-            return new DecodedRequest(request, codec.decode(tensorBytes));
+            return new DecodedRequest(request, codec.decodeAbstract(tensorBytes));
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

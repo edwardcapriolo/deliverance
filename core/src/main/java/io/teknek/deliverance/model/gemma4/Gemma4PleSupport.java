@@ -1,7 +1,6 @@
 package io.teknek.deliverance.model.gemma4;
 
 import io.teknek.deliverance.tensor.AbstractTensor;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor2.CompositeOps;
 import io.teknek.deliverance.tensor2.MultiplyInPlace;
 import io.teknek.deliverance.tensor2.TensorRef;
@@ -16,15 +15,15 @@ final class Gemma4PleSupport {
      * Upstream combines token-identity and projected PLE components as `(identity + projected) / sqrt(2)`.
      */
     static void combinePerLayerInputs(
-            ConfigurableTensorProvider configurableTensorProvider,
             CompositeOps compositeOps,
             AbstractTensor projected,
             AbstractTensor tokenIdentity,
             float perLayerInputScale,
             int packedLength
     ) {
-        configurableTensorProvider.get().accumulate(projected, tokenIdentity, 0, packedLength);
-        try (TensorRef projectedRef = TensorRef.borrowed(projected)) {
+        try (TensorRef projectedRef = TensorRef.borrowed(projected);
+             TensorRef identityRef = TensorRef.borrowed(tokenIdentity)) {
+            compositeOps.addResidual(projectedRef, identityRef, 1.0f);
             compositeOps.multiplyInPlace(new MultiplyInPlace(perLayerInputScale).target(projectedRef)
                     .offsetAndLength(0, packedLength));
         }

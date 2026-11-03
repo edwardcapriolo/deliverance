@@ -138,6 +138,12 @@ void work_done_callback(WGPUQueueWorkDoneStatus status, void *userdata1, void *u
     }
 }
 
+static void scale_work_done_callback(WGPUQueueWorkDoneStatus status, void *userdata1, void *userdata2) {
+    UNUSED(status)
+    UNUSED(userdata2)
+    *(bool *) userdata1 = true;
+}
+
 static void shader_compilation_callback(WGPUCompilationInfoRequestStatus status, struct WGPUCompilationInfo const* compilationInfo, void* userdata1, void* userdata2)
 {
     if (status != WGPUCompilationInfoRequestStatus_Success)
@@ -376,7 +382,7 @@ WGPUComputePipeline init_pipeline(WGPUShaderModule shader_module) {
 WGPUShaderModule create_shader_module(WGPUDevice device, const char* shader_code, size_t shader_size);
 WGPUBuffer create_working_buffer(WGPUDevice device, char const *label, size_t size, WGPUBufferUsage usage);
 
-int64_t register_scale_shader(const char *data, int size) {
+int64_t tensor2_register_scale_shader(const char *data, int size) {
     WGPUShaderModule shader = create_shader_module(device, data, (size_t) size);
     if (shader == NULL || has_errored) {
         return -1;
@@ -442,7 +448,7 @@ int64_t register_scale_shader(const char *data, int size) {
     return (int64_t) runtime;
 }
 
-void free_scale_shader(int64_t id) {
+void tensor2_free_scale_shader(int64_t id) {
     ScaleRuntime *runtime = (ScaleRuntime *) id;
     if (runtime == NULL) {
         return;
@@ -456,7 +462,8 @@ void free_scale_shader(int64_t id) {
     free(runtime);
 }
 
-void gpu_scale_f32(int64_t id, int64_t tensor, float factor, int offset, int length, int rows, int columns) {
+void tensor2_gpu_scale_f32_device(int64_t id, int64_t tensor, float factor, int offset, int length,
+        int rows, int columns) {
     ScaleRuntime *runtime = (ScaleRuntime *) id;
     if (runtime == NULL || tensor == 0 || offset < 0 || length <= 0 || rows <= 0 || columns <= 0
             || offset > columns || length > columns - offset) {
@@ -494,6 +501,17 @@ void gpu_scale_f32(int64_t id, int64_t tensor, float factor, int offset, int len
         .label = "scale_f32_command"
     });
     wgpuQueueSubmit(queue, 1, &command);
+
+    bool complete = false;
+    WGPUQueueWorkDoneCallbackInfo callback = {
+        .mode = WGPUCallbackMode_AllowSpontaneous,
+        .callback = scale_work_done_callback,
+        .userdata1 = &complete
+    };
+    wgpuQueueOnSubmittedWorkDone(queue, callback);
+    while (!complete) {
+        wgpuInstanceProcessEvents(instance);
+    }
     wgpuCommandBufferRelease(command);
     wgpuCommandEncoderRelease(encoder);
     wgpuBindGroupRelease(bindGroup);
@@ -1056,6 +1074,101 @@ void tensor2_gpu_batch_dot_f32_q4(int64_t scratch_id, int64_t shader, const void
         int m, int n0, int n, int k, int lda, int ldb, int ldc) {
     gpu_gemm(scratch_id, shader, a, NULL, aoffset, alimit, bid, bid2, boffset, blimit, r,
             roffset, rlimit, m, n0, n, k, lda, ldb, ldc, 0);
+}
+
+static void tensor2_gpu_batch_dot_device(int64_t scratch_id, int64_t shader, int64_t aid, int64_t a2id,
+        int aoffset, int alimit, int64_t bid, int64_t bid2, int boffset, int blimit, int64_t rid,
+        int roffset, int rlimit, int m, int n0, int n, int k, int lda, int ldb, int ldc) {
+    if (scratch_id < 0 || shader < 0 || aid == 0 || bid == 0 || bid2 == 0 || rid == 0
+            || aoffset < 0 || alimit <= aoffset || boffset < 0 || blimit <= boffset
+            || m <= 0 || n <= 0 || k <= 0 || lda <= 0 || ldb <= 0 || ldc <= 0) {
+        return;
+    }
+    Scratch s = scratch_lookup[scratch_id];
+    size_t A_size = (size_t) (alimit - aoffset);
+    size_t A2_size = a2id == 0 ? 8 : (A_size * 4) / Q8_BLOCK_SIZE;
+    size_t A2_offset = a2id == 0 ? 0 : ((size_t) aoffset * 4) / Q8_BLOCK_SIZE;
+    size_t B_size = (size_t) (blimit - boffset);
+    size_t B2_size = (B_size * 2 * 4) / Q4_BLOCK_SIZE;
+    size_t B2_offset = ((size_t) boffset * 2 * 4) / Q4_BLOCK_SIZE;
+    size_t result_size = ((size_t) (m - 1) * (size_t) ldc + (size_t) n) * sizeof(float);
+    if (A_size > MAX_SCRATCH_SIZE || A2_size > MAX_SCRATCH_SIZE || result_size > MAX_SCRATCH_SIZE
+            || result_size > (size_t) rlimit || result_size == 0) {
+        return;
+    }
+
+    WGPUBuffer A = s.input_buffer;
+    WGPUBuffer A2 = a2id == 0 ? s.empty_buffer : s.input2_buffer;
+    WGPUBuffer B = (WGPUBuffer) bid;
+    WGPUBuffer B2 = (WGPUBuffer) bid2;
+    WGPUBuffer R = s.result_buffer;
+    WGPUBuffer output = (WGPUBuffer) rid;
+    size_t alignedBOffset = (size_t) boffset & ~(storageAlign - 1);
+    size_t alignedB2Offset = B2_offset & ~(storageAlign - 1);
+    uint32_t bSub = (uint32_t) ((size_t) boffset - alignedBOffset);
+    uint32_t b2Sub = (uint32_t) (B2_offset - alignedB2Offset);
+    size_t alignedBSize = (B_size + bSub + 3) & ~3u;
+    size_t alignedB2Size = (B2_size + b2Sub + 3) & ~3u;
+    Params params = {(uint32_t) m, (uint32_t) n, (uint32_t) k, (uint32_t) lda, (uint32_t) ldb,
+            (uint32_t) ldc, bSub, b2Sub};
+    wgpuQueueWriteBuffer(queue, s.params_buffer, 0, &params, sizeof(params));
+
+    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(device, &(const WGPUCommandEncoderDescriptor){
+            .label = "tensor2_device_command_encoder"});
+    wgpuCommandEncoderCopyBufferToBuffer(encoder, (WGPUBuffer) aid, (size_t) aoffset, A, 0, A_size);
+    if (a2id != 0) {
+        wgpuCommandEncoderCopyBufferToBuffer(encoder, (WGPUBuffer) a2id, A2_offset, A2, 0, A2_size);
+    }
+    WGPUBindGroupEntry entries[6] = {
+        {.binding = 0, .buffer = A, .offset = 0, .size = A_size},
+        {.binding = 1, .buffer = A2, .offset = 0, .size = A2_size},
+        {.binding = 2, .buffer = B, .offset = alignedBOffset, .size = alignedBSize},
+        {.binding = 3, .buffer = B2, .offset = alignedB2Offset, .size = alignedB2Size},
+        {.binding = 4, .buffer = R, .offset = 0, .size = result_size},
+        {.binding = 5, .buffer = s.params_buffer, .offset = 0, .size = sizeof(Params)}
+    };
+    WGPUBindGroup bindGroup = wgpuDeviceCreateBindGroup(device, &(WGPUBindGroupDescriptor){
+            .layout = bind_group_layout, .entryCount = 6, .entries = entries});
+    WGPUComputePassEncoder pass = wgpuCommandEncoderBeginComputePass(encoder, &(const WGPUComputePassDescriptor){
+            .label = "tensor2_device_compute_pass"});
+    wgpuComputePassEncoderSetPipeline(pass, shader_pipeline_lookup[shader]);
+    wgpuComputePassEncoderSetBindGroup(pass, 0, bindGroup, 0, NULL);
+    wgpuComputePassEncoderDispatchWorkgroups(pass, (n + RN - 1) / RN, (m + RM - 1) / RM, 1);
+    wgpuComputePassEncoderEnd(pass);
+    wgpuComputePassEncoderRelease(pass);
+    for (int row = 0; row < m; row++) {
+        int64_t destination_elements = (int64_t) row * ldc + n0 - roffset;
+        if (destination_elements < 0
+                || (uint64_t) destination_elements * sizeof(float) + (size_t) n * sizeof(float)
+                        > (size_t) rlimit) {
+            wgpuBindGroupRelease(bindGroup);
+            wgpuCommandEncoderRelease(encoder);
+            return;
+        }
+        size_t destination = (size_t) destination_elements * sizeof(float);
+        wgpuCommandEncoderCopyBufferToBuffer(encoder, R, (size_t) row * (size_t) ldc * sizeof(float),
+                output, destination, (size_t) n * sizeof(float));
+    }
+    WGPUCommandBuffer command = wgpuCommandEncoderFinish(encoder, &(const WGPUCommandBufferDescriptor){
+            .label = "tensor2_device_command"});
+    wgpuQueueSubmit(queue, 1, &command);
+    wgpuCommandBufferRelease(command);
+    wgpuBindGroupRelease(bindGroup);
+    wgpuCommandEncoderRelease(encoder);
+}
+
+void tensor2_gpu_batch_dot_i8_q4_device(int64_t scratch_id, int64_t shader, int64_t a, int64_t a2,
+        int aoffset, int alimit, int64_t bid, int64_t bid2, int boffset, int blimit, int64_t r,
+        int roffset, int rlimit, int m, int n0, int n, int k, int lda, int ldb, int ldc) {
+    tensor2_gpu_batch_dot_device(scratch_id, shader, a, a2, aoffset, alimit, bid, bid2, boffset, blimit,
+            r, roffset, rlimit, m, n0, n, k, lda, ldb, ldc);
+}
+
+void tensor2_gpu_batch_dot_f32_q4_device(int64_t scratch_id, int64_t shader, int64_t a, int64_t a2,
+        int aoffset, int alimit, int64_t bid, int64_t bid2, int boffset, int blimit, int64_t r,
+        int roffset, int rlimit, int m, int n0, int n, int k, int lda, int ldb, int ldc) {
+    tensor2_gpu_batch_dot_device(scratch_id, shader, a, a2, aoffset, alimit, bid, bid2, boffset, blimit,
+            r, roffset, rlimit, m, n0, n, k, lda, ldb, ldc);
 }
 
 void gpu_gemm_batch(int64_t scratch_id, int64_t shader, int batch_num, const void *a, const void *a2, int aoffset, int alimit, const int64_t *bid, const int64_t *bid2, int boffset, int blimit, float **r, int roffset, int rlimit, int m, int n0, int n, int k, int lda, int ldb, int ldc, int m1_optimized) {

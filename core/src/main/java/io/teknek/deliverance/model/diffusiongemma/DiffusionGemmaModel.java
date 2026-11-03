@@ -3,8 +3,6 @@ package io.teknek.deliverance.model.diffusiongemma;
 import com.google.common.base.Preconditions;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.generator.FinishReason;
-import io.teknek.deliverance.generator.SampleOutput;
-import io.teknek.deliverance.generator.TransformerBlock;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.generator.EmbedInput;
 import io.teknek.deliverance.generator.GeneratorParameters;
@@ -286,16 +284,10 @@ public final class DiffusionGemmaModel extends AbstractModel {
     }
 
     /** Required by the shared model contract; V1 execution is intentionally unavailable for this migrated family. */
-    @Override
-    protected TransformerBlock[] loadTransformerBlockWeights() {
-        return new TransformerBlock[0];
-    }
+
 
     /** Required by the shared model contract; V2 initialization uses {@link #loadOutputWeightsRef()}. */
-    @Override
-    protected SampleOutput loadOutputWeights() {
-        throw new UnsupportedOperationException("DiffusionGemma uses TensorRef output weights");
-    }
+
 
     @Override
     protected boolean usesTensorRefExecution() {
@@ -306,166 +298,6 @@ public final class DiffusionGemmaModel extends AbstractModel {
     public boolean usesKvCache2Generation() {
         return true;
     }
-
-    /*
-     * The decoder canvas is intentionally not routed through the legacy transformer implementation. DiffusionGemma
-     * needs cross-attention and denoising masks that are not expressible by the generic TransformerBlock2 contract yet.
-     */
-    /*
-        int hidden = diffusionConfig.textConfig.hiddenSize;
-        int attentionLength = (int) encoderQueryWeights[layerIndex].shape().first();
-        int kvLength = (int) encoderKeyWeights[layerIndex].shape().first();
-        int headDim = diffusionConfig.textConfig.headDim;
-        int numberOfHeads = diffusionConfig.textConfig.numAttentionHeads;
-        int numberOfKeyValueHeads = diffusionConfig.textConfig.numKeyValueHeads;
-        Preconditions.checkArgument(attentionLength == numberOfHeads * headDim,
-                "q_proj rows must match numAttentionHeads * headDim");
-        Preconditions.checkArgument(kvLength == numberOfKeyValueHeads * headDim,
-                "k_proj rows must match numKeyValueHeads * headDim");
-        Preconditions.checkArgument(numberOfHeads % numberOfKeyValueHeads == 0,
-                "numAttentionHeads must be divisible by numKeyValueHeads");
-        AbstractTensor valueWeight = encoderValueWeights[layerIndex] == null
-                ? encoderKeyWeights[layerIndex]
-                : encoderValueWeights[layerIndex];
-        TensorOperations ops = configurableTensorProvider.get();
-
-        try (AbstractTensor normed = tensorAllocator.getDirty(DType.F32, input.shape());
-             AbstractTensor query = tensorAllocator.getDirty(DType.F32, TensorShape.of(batchSize * sequenceLength,
-                     attentionLength));
-             AbstractTensor key = tensorAllocator.getDirty(DType.F32, TensorShape.of(batchSize * sequenceLength,
-                     kvLength));
-             AbstractTensor value = tensorAllocator.getDirty(DType.F32, TensorShape.of(batchSize * sequenceLength,
-                     kvLength));
-             AbstractTensor attended = tensorAllocator.getDirty(DType.F32, TensorShape.of(batchSize * sequenceLength,
-                     attentionLength));
-             AbstractTensor attentionOutput = tensorAllocator.getDirty(DType.F32, input.shape());
-             AbstractTensor residualAfterAttention = tensorAllocator.getDirty(DType.F32, input.shape());
-             AbstractTensor postAttentionNorm = tensorAllocator.getDirty(DType.F32, input.shape())) {
-            TensorNormalization.rmsNorm(normed, input, encoderInputNormWeights[layerIndex],
-                    diffusionConfig.textConfig.rmsNormEps, ops, pool);
-            project(query, normed, encoderQueryWeights[layerIndex], hidden, attentionLength);
-            project(key, normed, encoderKeyWeights[layerIndex], hidden, kvLength);
-            project(value, normed, valueWeight, hidden, kvLength);
-            fullSequenceAttention(attended, query, key, value, batchSize, sequenceLength, attentionLength, kvLength);
-            project(attentionOutput, attended, encoderOutputWeights[layerIndex], attentionLength, hidden);
-
-            residualAfterAttention.copyFrom(input, 0, 0, (int) input.size());
-            ops.accumulate(residualAfterAttention, attentionOutput, 0, hidden);
-            TensorNormalization.rmsNorm(postAttentionNorm, residualAfterAttention,
-                    encoderPostAttentionNormWeights[layerIndex], diffusionConfig.textConfig.rmsNormEps, ops, pool);
-            try (AbstractTensor mlpOutput = mlpForward(postAttentionNorm, layerIndex)) {
-                ops.accumulate(residualAfterAttention, mlpOutput, 0, hidden);
-                return copyTensor(residualAfterAttention);
-            }
-        }
-    }
-
-    private AbstractTensor mlpForward(AbstractTensor input, int layerIndex) {
-        int hidden = diffusionConfig.textConfig.hiddenSize;
-        int intermediate = diffusionConfig.textConfig.intermediateSize;
-        TensorOperations ops = configurableTensorProvider.get();
-        try (AbstractTensor gate = tensorAllocator.getDirty(DType.F32, TensorShape.of((int) input.shape().first(),
-                     intermediate));
-             AbstractTensor up = tensorAllocator.getDirty(DType.F32, TensorShape.of((int) input.shape().first(),
-                     intermediate))) {
-            project(gate, input, encoderGateWeights[layerIndex], hidden, intermediate);
-            project(up, input, encoderUpWeights[layerIndex], hidden, intermediate);
-            try (AbstractTensor activated = ops.activationMultiplyQuantize(gate, up,
-                         diffusionConfig.textConfig.hiddenActivation, DType.F32, 0, intermediate)) {
-                AbstractTensor output = tensorAllocator.getDirty(DType.F32, input.shape());
-                try {
-                    project(output, activated, encoderDownWeights[layerIndex], intermediate, hidden);
-                    return output;
-                } catch (RuntimeException | Error e) {
-                    output.close();
-                    throw e;
-                }
-            }
-        }
-    }
-
-    private void fullSequenceAttention(AbstractTensor output, AbstractTensor query, AbstractTensor key,
-            AbstractTensor value, int batchSize, int sequenceLength, int attentionLength, int kvLength) {
-        TensorOperations ops = configurableTensorProvider.get();
-        int headDim = diffusionConfig.textConfig.headDim;
-        int numberOfHeads = diffusionConfig.textConfig.numAttentionHeads;
-        int numberOfKeyValueHeads = diffusionConfig.textConfig.numKeyValueHeads;
-        int headGroupSize = numberOfHeads / numberOfKeyValueHeads;
-        float scale = (float) (1.0 / StrictMath.sqrt(headDim));
-        output.clear();
-        for (int batch = 0; batch < batchSize; batch++) {
-            try (AbstractTensor queryBatch = tensorAllocator.getDirty(DType.F32,
-                         TensorShape.of(sequenceLength, attentionLength));
-                 AbstractTensor keyBatch = tensorAllocator.getDirty(DType.F32,
-                         TensorShape.of(sequenceLength, kvLength));
-                 AbstractTensor valueBatch = tensorAllocator.getDirty(DType.F32,
-                         TensorShape.of(sequenceLength, kvLength));
-                 AbstractTensor scores = tensorAllocator.getDirty(DType.F32, TensorShape.of(1, sequenceLength))) {
-                copyBatchRows(query, queryBatch, batch, sequenceLength, attentionLength);
-                copyBatchRows(key, keyBatch, batch, sequenceLength, kvLength);
-                copyBatchRows(value, valueBatch, batch, sequenceLength, kvLength);
-                for (int row = 0; row < sequenceLength; row++) {
-                    try (AbstractTensor queryRow = queryBatch.slice(row);
-                         AbstractTensor outputRow = output.slice(batch * sequenceLength + row)) {
-                        for (int head = 0; head < numberOfHeads; head++) {
-                            int kvHead = head / headGroupSize;
-                            int queryOffset = head * headDim;
-                            int kvOffset = kvHead * headDim;
-                            for (int keyPosition = 0; keyPosition < sequenceLength; keyPosition++) {
-                                try (AbstractTensor keyRow = keyBatch.slice(keyPosition)) {
-                                    scores.set(ops.dotProduct(queryRow, keyRow, queryOffset, kvOffset, headDim), 0,
-                                            keyPosition);
-                                }
-                            }
-                            try (TensorRef scoresRef = TensorRef.borrowed(scores)) {
-                                getCompositeOps().scaledSoftMax(new ScaledSoftMax(scale)
-                                        .target(scoresRef)
-                                        .offsetAndLength(0, sequenceLength));
-                            }
-                            ops.saxpy(scores, valueBatch, outputRow, kvOffset, queryOffset, headDim, 0, 0,
-                                    sequenceLength);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private void project(AbstractTensor output, AbstractTensor input, AbstractTensor weight, int inputLength,
-            int outputLength) {
-        for (int start = 0; start < outputLength; start += configurableTensorProvider.get().parallelSplitSize()) {
-            int chunk = Math.min(configurableTensorProvider.get().parallelSplitSize(), outputLength - start);
-            configurableTensorProvider.get().dotProductChunk(output, input, weight, 0, inputLength, start, chunk);
-        }
-    }
-
-    private void copyBatchRows(AbstractTensor source, AbstractTensor target, int batch, int rows, int rowLength) {
-        int sourceStart = batch * rows;
-        for (int row = 0; row < rows; row++) {
-            target.copyFrom(source, source.getOffset(sourceStart + row, 0), target.getOffset(row, 0), rowLength);
-        }
-    }
-
-    private void inflate3d(AbstractTensor source, AbstractTensor target, int batchSize, int rows, int rowLength) {
-        for (int batch = 0; batch < batchSize; batch++) {
-            for (int row = 0; row < rows; row++) {
-                int flatRow = batch * rows + row;
-                target.copyFrom(source, source.getOffset(flatRow, 0), target.getOffset(batch, row, 0), rowLength);
-            }
-        }
-    }
-
-    private AbstractTensor copyTensor(AbstractTensor source) {
-        AbstractTensor copy = tensorAllocator.getDirty(source.dType(), source.shape());
-        copy.copyFrom(source, 0, 0, (int) source.size());
-        return copy;
-    }
-
-    private AbstractTensor tokenTensor(int[] tokenIds) {
-        AbstractTensor tensor = tensorAllocator.getDirty(DType.F32, TensorShape.of(1, tokenIds.length));
-        for (int i = 0; i < tokenIds.length; i++) tensor.set(tokenIds[i], 0, i);
-        return tensor;
-    } */
 
     private TensorRef tokenTensorRef(int[] tokenIds) {
         TensorRef tensor = lighter.allocate(DType.F32, TensorShape.of(1, tokenIds.length));

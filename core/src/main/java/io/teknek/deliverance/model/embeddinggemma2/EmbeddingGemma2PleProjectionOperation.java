@@ -66,6 +66,6 @@ public final class EmbeddingGemma2PleProjectionOperation {
         }
         GemmDit.dotProductRows(lighter, tuner, "embeddinggemma2.ple_projection", output, input, projection,
                 0, 0, inputWidth, 0, outputWidth, 0);
-        lighter.scale(new Scale(scale).target(output).offsetAndLength(0, (int) output.shape().size()));
+        lighter.scale(new Scale(scale).target(output).offsetAndLength(0, (int) output.shape().last()));
     }
 }

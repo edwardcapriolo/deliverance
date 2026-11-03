@@ -9,8 +9,7 @@ import io.teknek.deliverance.model.tensorparallel.TensorParallelContext;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorAllocator;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.toolcallparser.ToolCallParser;
 
 import java.util.Optional;
@@ -19,12 +18,11 @@ import java.util.Optional;
 public class XlmRobertaModel extends RobertaModel {
     public XlmRobertaModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer tokenizer,
             DType workingDType, DType workingQType, Optional<DType> modelQType,
-            ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
-            TensorAllocator tensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
+            MetricRegistry metricRegistry, KvBufferCacheSettings kvBufferCacheSettings,
             ToolCallParser toolCallParser, WrappedForkJoinPool pool, TensorParallelContext tensorParallelContext,
-            TensorParallelCollectives tensorParallelCollectives, Optional<DType> outputHeadQuantization) {
+            TensorParallelCollectives tensorParallelCollectives, Optional<DType> outputHeadQuantization, Lighter lighter) {
         super(inferenceType, c, w, tokenizer, workingDType, workingQType, modelQType,
-                configurableTensorProvider, metricRegistry, tensorAllocator, kvBufferCacheSettings, toolCallParser,
-                pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                metricRegistry, kvBufferCacheSettings, toolCallParser, pool, tensorParallelContext,
+                tensorParallelCollectives, outputHeadQuantization, lighter);
     }
 }

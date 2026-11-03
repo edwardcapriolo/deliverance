@@ -5,9 +5,12 @@ import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
 import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor.operations.gpunative.GpuBufferAllocator;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
@@ -223,13 +226,51 @@ class Tensor2LighterBatchDotProductFuzzTest {
         Candidate simd = new Candidate("SIMD", NativeOps.isAvailable(), () -> new Lighter(nullMetricRegistry(), Map.of(
                 TensorProviderKind.SIMD, new NativeOps(), TensorProviderKind.PANAMA, new PanamaOps(),
                 TensorProviderKind.NAIVE, new NaiveOps())));
-        Candidate gpu = new Candidate("GPU", GpuOps.isAvailable(), () -> new Lighter(nullMetricRegistry(), Map.of(
-                TensorProviderKind.GPU, new GpuOps(), TensorProviderKind.PANAMA, new PanamaOps(),
-                TensorProviderKind.NAIVE, new NaiveOps())));
         return BatchDotProductFuzzCases.sharedI8Q4Cases()
-                .flatMap(args -> Stream.of(panama, simd, gpu).filter(Candidate::enabled).flatMap(candidate -> kernelsFor((BatchDotProductFuzzCases.Case) args.get()[0], DType.I8,
+                .flatMap(args -> Stream.of(panama, simd).filter(Candidate::enabled).flatMap(candidate -> kernelsFor((BatchDotProductFuzzCases.Case) args.get()[0], DType.I8,
                         DType.Q4, DType.F32).stream()
                         .map(kernel -> Arguments.of(args.get()[0], candidate, kernel))));
+    }
+
+    @ParameterizedTest(name = "gpu {0} {1}")
+    @MethodSource("gpuSharedI8Q4Cases")
+    void gpuSharedI8Q4CasesMatchCpuOracle(BatchDotProductFuzzCases.Case c, GemmKernel kernel) {
+        try (GpuBatchDotHarness gpu = GpuBatchDotHarness.create()) {
+            Lighter expected = naiveOnly();
+            try (TensorRef expectedA = sharedOperand(expected, DType.I8, c.aRows(), c.aColumns(), c.seed(), false);
+                 TensorRef expectedB = sharedOperand(expected, DType.Q4, c.bRows(), c.bColumns(), c.seed() + 17, true);
+                 TensorRef expectedResult = expected.allocate(DType.F32,
+                         TensorShape.of(c.resultRows(), c.resultColumns()));
+                 TensorRef gpuA = gpu.toGpu(expectedA);
+                 TensorRef gpuB = gpu.toGpu(expectedB);
+                 TensorRef gpuResult = gpu.lighter().allocate(DType.F32,
+                         TensorShape.of(c.resultRows(), c.resultColumns()), "gpu")) {
+                expected.batchDotProduct(operation(c, expectedResult, expectedA, expectedB, GemmKernel.BATCH));
+                try {
+                    gpu.lighter().batchDotProduct(operation(c, gpuResult, gpuA, gpuB, kernel));
+                } catch (IllegalStateException | UnsupportedOperationException unsupported) {
+                    Assumptions.assumeTrue(false, "GPU case unsupported: " + unsupported.getMessage());
+                }
+                try (TensorRef actualResult = gpu.lighter().to(gpuResult, "cpu")) {
+                    assertClose(new DTypeCase(DType.I8, DType.Q4, 0.30f), c, expectedResult, actualResult);
+                }
+            }
+        } catch (IllegalArgumentException | IllegalStateException unsupported) {
+            Assumptions.assumeTrue(false, "GPU case unsupported: " + unsupported.getMessage());
+        }
+    }
+
+    @Test
+    void gpuSingleSharedI8Q4CaseMatchesCpuOracle() {
+        Arguments arguments = gpuSharedI8Q4Cases().findFirst().orElseThrow();
+        Object[] values = arguments.get();
+        gpuSharedI8Q4CasesMatchCpuOracle((BatchDotProductFuzzCases.Case) values[0], (GemmKernel) values[1]);
+    }
+
+    static Stream<Arguments> gpuSharedI8Q4Cases() {
+        return BatchDotProductFuzzCases.sharedI8Q4Cases()
+                .flatMap(args -> kernelsFor((BatchDotProductFuzzCases.Case) args.get()[0], DType.I8, DType.Q4,
+                        DType.F32).stream().map(kernel -> Arguments.of(args.get()[0], kernel)));
     }
 
     static Stream<Arguments> panamaStrictDTypeCases() {
@@ -331,6 +372,51 @@ class Tensor2LighterBatchDotProductFuzzTest {
             for (int column = 0; column < tensor.shape().last(); column++) {
                 float value = ((row * 17 + column * 31 + seed) % 257 - 128) / 64.0f;
                 tensor.underlying().set(value, row, column);
+            }
+        }
+    }
+
+    private static final class GpuBatchDotHarness implements AutoCloseable {
+        private final GpuBufferAllocator allocator;
+        private final GpuOps ops;
+        private final Lighter lighter;
+
+        private GpuBatchDotHarness(GpuBufferAllocator allocator, GpuOps ops) {
+            this.allocator = allocator;
+            this.ops = ops;
+            this.lighter = new Lighter(nullMetricRegistry(), Map.of(TensorProviderKind.GPU, ops));
+            this.lighter.registerDeviceAllocator(allocator);
+        }
+
+        static GpuBatchDotHarness create() {
+            GpuBufferAllocator allocator = null;
+            try {
+                allocator = new GpuBufferAllocator();
+                GpuOps ops = new GpuOps();
+                return new GpuBatchDotHarness(allocator, ops);
+            } catch (Throwable failure) {
+                if (allocator != null) {
+                    allocator.close();
+                }
+                Assumptions.assumeTrue(false, "GPU unavailable: " + failure);
+                throw new AssertionError(failure);
+            }
+        }
+
+        Lighter lighter() {
+            return lighter;
+        }
+
+        TensorRef toGpu(TensorRef source) {
+            return lighter.to(source, "gpu");
+        }
+
+        @Override
+        public void close() {
+            try {
+                ops.close();
+            } finally {
+                allocator.close();
             }
         }
     }

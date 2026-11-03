@@ -6,7 +6,8 @@ import io.teknek.deliverance.DType;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorAllocator;
+import io.teknek.deliverance.tensor2.Lighter;
+import io.teknek.deliverance.tensor2.TensorRefBackedTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 
 import java.util.ArrayList;
@@ -97,7 +98,7 @@ public final class KvPrefixSnapshotCache implements AutoCloseable {
     private final int blockSize;
     private final DType keyDType;
     private final DType valueDType;
-    private final TensorAllocator allocator;
+    private final Lighter lighter;
     private final MetricRegistry metricRegistry;
     private final KvBufferCacheSettings settings;
     private final AtomicBoolean closed = new AtomicBoolean(false);
@@ -106,7 +107,7 @@ public final class KvPrefixSnapshotCache implements AutoCloseable {
 
     public KvPrefixSnapshotCache(int layers, int contextLength, int kvLength, int blockSize, DType keyDType,
             DType valueDType,
-            TensorAllocator allocator, MetricRegistry metricRegistry, KvBufferCacheSettings settings) {
+            Lighter lighter, MetricRegistry metricRegistry, KvBufferCacheSettings settings) {
         Preconditions.checkArgument(layers > 0, "layers must be > 0");
         Preconditions.checkArgument(contextLength > 0, "contextLength must be > 0");
         Preconditions.checkArgument(kvLength > 0, "kvLength must be > 0");
@@ -117,7 +118,7 @@ public final class KvPrefixSnapshotCache implements AutoCloseable {
         this.blockSize = blockSize;
         this.keyDType = keyDType;
         this.valueDType = valueDType;
-        this.allocator = allocator;
+        this.lighter = lighter;
         this.metricRegistry = metricRegistry;
         this.settings = settings;
         this.prefixCache = Collections.synchronizedMap(new LinkedHashMap<CacheKey, StoredPrefixEntry>(16, 0.75f, true) {
@@ -272,8 +273,8 @@ public final class KvPrefixSnapshotCache implements AutoCloseable {
         try {
             for (int layer = 0; layer < layers; layer++) {
                 int width = layerKvLength(layer);
-                keys[layer] = allocator.getDirty(keyDType, TensorShape.of(prefixLen, width));
-                values[layer] = allocator.getDirty(valueDType, TensorShape.of(prefixLen, width));
+                keys[layer] = new TensorRefBackedTensor(lighter.allocateDirty(keyDType, TensorShape.of(prefixLen, width)));
+                values[layer] = new TensorRefBackedTensor(lighter.allocateDirty(valueDType, TensorShape.of(prefixLen, width)));
                 source.copyKeyRows(layer, 0, prefixLen, keys[layer], 0);
                 source.copyValueRows(layer, 0, prefixLen, values[layer], 0);
             }

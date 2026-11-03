@@ -9,7 +9,6 @@ import io.teknek.deliverance.math.WrappedForkJoinPool;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
-import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.tensor2.CompositeOps;
 import io.teknek.deliverance.tensor2.BatchDotProduct;
 import io.teknek.deliverance.tensor2.GemmKernel;
@@ -49,7 +48,6 @@ public final class TensorPlan {
         CALLER_THREAD
     }
 
-    private final TensorOperations operations;
     private final WrappedForkJoinPool pool;
     private final MetricRegistry metricRegistry;
     private final TensorRuntime runtime;
@@ -58,33 +56,32 @@ public final class TensorPlan {
     private final TensorPlanAdaptiveSplitTuner adaptiveSplitTuner;
     private RunMode runMode = RunMode.DEFAULT;
 
-    public TensorPlan(TensorOperations operations, WrappedForkJoinPool pool) {
-        this(operations, pool, null);
+    public TensorPlan(WrappedForkJoinPool pool) {
+        this(pool, null);
     }
 
-    public TensorPlan(TensorOperations operations, WrappedForkJoinPool pool, MetricRegistry metricRegistry) {
-        this(operations, pool, metricRegistry, null);
+    public TensorPlan(WrappedForkJoinPool pool, MetricRegistry metricRegistry) {
+        this(pool, metricRegistry, null);
     }
 
-    public TensorPlan(TensorOperations operations, WrappedForkJoinPool pool, MetricRegistry metricRegistry,
+    public TensorPlan(WrappedForkJoinPool pool, MetricRegistry metricRegistry,
             Object owner) {
-        this(operations, pool, metricRegistry, owner, null);
+        this(pool, metricRegistry, owner, null);
     }
 
-    public TensorPlan(TensorOperations operations, WrappedForkJoinPool pool, MetricRegistry metricRegistry,
+    public TensorPlan(WrappedForkJoinPool pool, MetricRegistry metricRegistry,
             TensorRuntime runtime) {
-        this(operations, pool, metricRegistry, null, runtime);
+        this(pool, metricRegistry, null, runtime);
     }
 
-    public TensorPlan(TensorOperations operations, WrappedForkJoinPool pool, MetricRegistry metricRegistry,
+    public TensorPlan(WrappedForkJoinPool pool, MetricRegistry metricRegistry,
             Object owner, TensorRuntime runtime) {
-        this(operations, pool, metricRegistry, owner, runtime, new Lighter(metricRegistry == null ? new MetricRegistry()
+        this(pool, metricRegistry, owner, runtime, new Lighter(metricRegistry == null ? new MetricRegistry()
                 : metricRegistry));
     }
 
-    public TensorPlan(TensorOperations operations, WrappedForkJoinPool pool, MetricRegistry metricRegistry,
+    public TensorPlan(WrappedForkJoinPool pool, MetricRegistry metricRegistry,
             Object owner, TensorRuntime runtime, Lighter lighter) {
-        this.operations = operations;
         this.pool = Objects.requireNonNull(pool, "pool");
         this.metricRegistry = metricRegistry;
         this.runtime = runtime;
@@ -874,15 +871,7 @@ public final class TensorPlan {
 
         @Override
         public Eval eval() {
-            Eval a = input.eval();
-            Eval b = weight.eval();
-            AbstractTensor result = new FloatBufferTensor((int) a.tensor().shape().first(), (int) b.tensor().shape().first());
-            a.tensor().locality().ifPresent(result::setLocality);
-            run("tensorplan.batchDot", 0, Optional.of(a.tensor()), () -> operations.dotProductChunk(result, a.tensor(),
-                    b.tensor(), 0, (int) a.tensor().shape().last(), 0, (int) b.tensor().shape().first()));
-            closeIfOwned(a);
-            closeIfOwned(b);
-            return new Eval(result, true, true);
+            throw new UnsupportedOperationException("AbstractTensor TensorPlan execution was removed; use TensorRef");
         }
 
         @Override
@@ -946,10 +935,9 @@ public final class TensorPlan {
 
         @Override
         public Eval eval() {
-            Eval inputEval = input.eval();
+            throw new UnsupportedOperationException("AbstractTensor TensorPlan execution was removed; use TensorRef");
+            /* Eval inputEval = input.eval();
             Eval gateWeightEval = gateWeight.eval();
-            Eval upWeightEval = upWeight.eval();
-            Eval downWeightEval = downWeight.eval();
             int batchSize = (int) inputEval.tensor().shape().first();
             int embeddingLength = (int) inputEval.tensor().shape().last();
             int hiddenLength = (int) gateWeightEval.tensor().shape().first();
@@ -1005,7 +993,7 @@ public final class TensorPlan {
                 closeIfOwned(gateWeightEval);
                 closeIfOwned(upWeightEval);
                 closeIfOwned(downWeightEval);
-            }
+            } */
         }
 
         @Override
@@ -1111,7 +1099,7 @@ public final class TensorPlan {
         public Eval eval() {
             Eval in = input.eval();
             AbstractTensor out = in.owned() || in.mutable() ? in.tensor() : copyOf(in.tensor());
-            // Optimization gap: TensorOperations has no activation primitive today, so activation remains a TensorPlan
+                // Activation remains a TensorPlan operation on the legacy tensor representation.
             // Java loop. Add a provider-backed activation op or fused physical lowering before relying on this broadly.
             applyActivationInPlace(out, activation);
             return new Eval(out, in.owned(), in.mutable());
@@ -1171,7 +1159,7 @@ public final class TensorPlan {
                 Eval rhs = right.eval();
                 AbstractTensor out = base.owned() || base.mutable() ? base.tensor() : copyOf(base.tensor());
                 // Optimization gap: this fused activation*multiply avoids an extra pass, but still performs activation
-                // through a Java loop because TensorOperations has no provider-backed activation primitive yet.
+                // through a Java loop because no provider-backed activation primitive is available here.
                 applyActivationMultiplyInPlace(out, rhs.tensor(), activationNode.activation);
                 closeIfOwned(rhs);
                 return new Eval(out, base.owned(), base.mutable());
@@ -1179,10 +1167,7 @@ public final class TensorPlan {
             Eval lhs = left.eval();
             Eval rhs = right.eval();
             AbstractTensor out = lhs.owned() || lhs.mutable() ? lhs.tensor() : copyOf(lhs.tensor());
-            run("tensorplan.multiply", 0, Optional.of(lhs.tensor()), () -> operations.maccumulate(out, rhs.tensor(), 0,
-                    (int) out.shape().last()));
-            closeIfOwned(rhs);
-            return new Eval(out, lhs.owned(), lhs.mutable());
+            throw new UnsupportedOperationException("AbstractTensor TensorPlan execution was removed; use TensorRef");
         }
 
         @Override
@@ -1244,10 +1229,7 @@ public final class TensorPlan {
             Eval lhs = left.eval();
             Eval rhs = right.eval();
             AbstractTensor out = lhs.owned() || lhs.mutable() ? lhs.tensor() : copyOf(lhs.tensor());
-            run("tensorplan.add", 0, Optional.of(out), () -> operations.accumulate(out, rhs.tensor(), 0,
-                    (int) out.shape().last()));
-            closeIfOwned(rhs);
-            return new Eval(out, lhs.owned(), lhs.mutable());
+            throw new UnsupportedOperationException("AbstractTensor TensorPlan execution was removed; use TensorRef");
         }
 
         @Override
@@ -1510,22 +1492,11 @@ public final class TensorPlan {
                 Eval base = activationNode.input.eval();
                 Eval rhs = multiplyNode.right.eval();
                 final AbstractTensor[] result = new AbstractTensor[1];
-                run("tensorplan.activation_multiply_quantize", 0, Optional.of(base.tensor()),
-                        () -> result[0] = operations.activationMultiplyQuantize(base.tensor(), rhs.tensor(),
-                                activationNode.activation, dtype, 0, (int) base.tensor().shape().last()));
-                base.tensor().locality().ifPresent(result[0]::setLocality);
-                closeIfOwned(base);
-                closeIfOwned(rhs);
-                return new Eval(result[0], true, true);
+                throw new UnsupportedOperationException("AbstractTensor TensorPlan execution was removed; use TensorRef");
             }
             Eval in = input.eval();
             final AbstractTensor[] result = new AbstractTensor[1];
-            run("tensorplan.quantize", 0, Optional.of(in.tensor()), () -> result[0] = operations.quantize(in.tensor(),
-                    dtype, 0, (int) in.tensor().shape().last()));
-            AbstractTensor out = result[0];
-            in.tensor().locality().ifPresent(out::setLocality);
-            closeIfOwned(in);
-            return new Eval(out, true, true);
+            throw new UnsupportedOperationException("AbstractTensor TensorPlan execution was removed; use TensorRef");
         }
 
         @Override
@@ -1910,7 +1881,8 @@ public final class TensorPlan {
     }
 
     private void runRowChunks(String operation, int rowCount, AbstractTensor representative, RowChunk action) {
-        List<TensorSplit> splits = TensorLib.calculateTSplits(0, rowCount, Math.max(1, operations.parallelSplitSize()));
+        List<TensorSplit> splits = TensorLib.calculateTSplits(0, rowCount,
+                Math.max(1, pool.getUnderlying().getParallelism()));
         if (useTensorRuntime()) {
             runtime.runChunks(operation, 0, rowCount, splits.size(), Optional.of(representative), action::run);
             return;
@@ -1925,7 +1897,8 @@ public final class TensorPlan {
     }
 
     private void runProviderRowChunks(int rowCount, RowChunk action) {
-        List<TensorSplit> splits = TensorLib.calculateTSplits(0, rowCount, Math.max(1, operations.parallelSplitSize()));
+        List<TensorSplit> splits = TensorLib.calculateTSplits(0, rowCount,
+                Math.max(1, pool.getUnderlying().getParallelism()));
         if (useTensorRuntime()) {
             runtime.runChunks("tensorplan.provider_row_chunks", 0, rowCount, splits.size(), Optional.empty(), action::run);
             return;

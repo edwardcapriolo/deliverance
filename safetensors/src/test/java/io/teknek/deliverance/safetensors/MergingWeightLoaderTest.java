@@ -5,7 +5,7 @@ import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorInfo;
 import io.teknek.deliverance.tensor.impl.BFloat16BufferTensor;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
-import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
+import io.teknek.deliverance.tensor2.Lighter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -76,7 +76,7 @@ public class MergingWeightLoaderTest {
 
         try (DefaultWeightLoader delegate = DefaultWeightLoader.open(baseDir.toFile());
                 LoraAdapter adapter = LoraAdapter.load(adapterDir.toFile())) {
-            MergingWeightLoader merging = new MergingWeightLoader(delegate, adapter, new NaiveTensorOperations());
+            MergingWeightLoader merging = new MergingWeightLoader(delegate, adapter, new Lighter());
             try (AbstractTensor merged = merging.load(Q_PROJ)) {
                 for (int o = 0; o < OUT_FEATURES; o++) {
                     for (int i = 0; i < IN_FEATURES; i++) {
@@ -108,7 +108,7 @@ public class MergingWeightLoaderTest {
 
         try (DefaultWeightLoader delegate = DefaultWeightLoader.open(baseDir.toFile());
                 LoraAdapter adapter = LoraAdapter.load(adapterDir.toFile())) {
-            MergingWeightLoader merging = new MergingWeightLoader(delegate, adapter, new NaiveTensorOperations());
+            MergingWeightLoader merging = new MergingWeightLoader(delegate, adapter, new Lighter());
             try (AbstractTensor unchanged = merging.load(K_PROJ)) {
                 for (int o = 0; o < OUT_FEATURES; o++) {
                     for (int i = 0; i < IN_FEATURES; i++) {
@@ -152,7 +152,7 @@ public class MergingWeightLoaderTest {
             adapter = LoraAdapter.load(adapterDir.toFile());
             LoraAdapter finalAdapter = adapter;
             assertThrows(UnsupportedOperationException.class,
-                    () -> new MergingWeightLoader(q4Delegate, finalAdapter, new NaiveTensorOperations()));
+                     () -> new MergingWeightLoader(q4Delegate, finalAdapter, new Lighter()));
         } catch (IOException e) {
             throw new RuntimeException(e);
         } finally {
@@ -177,7 +177,7 @@ public class MergingWeightLoaderTest {
 
         try (DefaultWeightLoader delegate = DefaultWeightLoader.open(baseDir.toFile());
              LoraAdapter adapter = LoraAdapter.load(adapterDir.toFile())) {
-            MergingWeightLoader merging = new MergingWeightLoader(delegate, adapter, new NaiveTensorOperations());
+            MergingWeightLoader merging = new MergingWeightLoader(delegate, adapter, new Lighter());
             assertThrows(UnsupportedOperationException.class, () -> merging.loadRows(Q_PROJ, 0, 2));
             assertThrows(UnsupportedOperationException.class,
                     () -> merging.load(Q_PROJ, new TensorShardSpec(TensorShardAxis.ROWS, 0, 2)));
@@ -203,7 +203,7 @@ public class MergingWeightLoaderTest {
 
         try (DefaultWeightLoader delegate = DefaultWeightLoader.open(baseDir.toFile());
              LoraAdapter adapter = LoraAdapter.load(adapterDir.toFile())) {
-            MergingWeightLoader merging = new MergingWeightLoader(delegate, adapter, new NaiveTensorOperations());
+            MergingWeightLoader merging = new MergingWeightLoader(delegate, adapter, new Lighter());
             try (AbstractTensor merged = merging.load(Q_PROJ)) {
                 assertEquals(DType.BF16, merged.dType());
                 assertEquals(3.0f, merged.get(0, 0), 0.05f);

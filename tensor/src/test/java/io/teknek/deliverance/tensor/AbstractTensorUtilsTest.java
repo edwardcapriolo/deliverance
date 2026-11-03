@@ -1,11 +1,7 @@
 package io.teknek.deliverance.tensor;
 
-import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
-import io.teknek.deliverance.tensor.operations.TensorOperations;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 

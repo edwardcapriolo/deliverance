@@ -1,6 +1,5 @@
 package io.teknek.deliverance.benchmark;
 
-import io.dropwizard.metrics5.MetricRegistry;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.teknek.deliverance.DType;
@@ -20,9 +19,6 @@ import io.teknek.deliverance.model.tensorparallel.TensorParallelGenerationGroup;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelTimeoutSettings;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
-import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
-import io.teknek.deliverance.tensor.TensorAllocator;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.gossip.GossipSettings;
 import io.teknek.gossip.Member;
 import io.teknek.gossip.RemoteMember;
@@ -78,7 +74,7 @@ public final class TpLocalCluster {
         Runtime.getRuntime().addShutdownHook(new Thread(model::close, "tp-local-worker-shutdown-" + options.nodeId));
         Runtime.getRuntime().addShutdownHook(new Thread(adminServer::close, "tp-local-worker-admin-shutdown-" + options.nodeId));
         LOGGER.info("Worker started node={} provider={} splitSize={} dtype={} workingDtype={} workingQtype={}",
-                options.nodeId, model.getTensorProviderName(), model.getTensorProviderParallelSplitSize(),
+                        options.nodeId, "tensor2", 32,
                 model.getModelDType(), model.getWorkingDType(), model.getWorkingQType());
         waitForever();
     }
@@ -110,7 +106,7 @@ public final class TpLocalCluster {
             coordinatorModel.close();
         }, "tp-local-coordinator-shutdown-" + options.nodeId));
         LOGGER.info("Coordinator model ready provider={} splitSize={} dtype={} workingDtype={} workingQtype={}",
-                coordinatorModel.getTensorProviderName(), coordinatorModel.getTensorProviderParallelSplitSize(),
+                "tensor2", 32,
                 coordinatorModel.getModelDType(), coordinatorModel.getWorkingDType(), coordinatorModel.getWorkingQType());
 
         GeneratorParameters parameters = new GeneratorParameters()
@@ -134,15 +130,6 @@ public final class TpLocalCluster {
                 .withWorkingMemoryType(options.workingDType)
                 .withWorkingQuantType(options.workingQType)
                 .withWrappedForkJoinPool(pool);
-        if ("jvector".equals(options.tensorOperations)) {
-            MetricRegistry metrics = new MetricRegistry();
-            TensorAllocator allocator = new ArrayQueueTensorAllocator(metrics);
-            builder.withMetricRegistry(metrics)
-                    .withTensorAllocator(allocator)
-                    .withTensorProvider(new ConfigurableTensorProvider(allocator, pool));
-        } else if (!"auto".equals(options.tensorOperations) && !"simd".equals(options.tensorOperations)) {
-            throw new IllegalArgumentException("--tensor-operations must be auto, simd, or jvector");
-        }
         if (options.outputHeadQuantization != null) {
             builder.withOutputHeadQuantization(options.outputHeadQuantization);
         }
@@ -223,7 +210,6 @@ public final class TpLocalCluster {
         private String owner = "tjake";
         private String model = "gemma-2-2b-it-JQ4";
         private int poolSize = 16;
-        private String tensorOperations = "auto";
         private int adminPort = 8081;
         private DType workingDType = DType.F32;
         private DType workingQType = DType.I8;
@@ -256,7 +242,6 @@ public final class TpLocalCluster {
                     case "--owner" -> options.owner = args[++i];
                     case "--model" -> options.model = args[++i];
                     case "--pool-size" -> options.poolSize = Integer.parseInt(args[++i]);
-                    case "--tensor-operations" -> options.tensorOperations = args[++i].toLowerCase(Locale.ROOT);
                     case "--admin-port" -> options.adminPort = Integer.parseInt(args[++i]);
                     case "--working-dtype" -> options.workingDType = DType.valueOf(args[++i]);
                     case "--working-qtype" -> options.workingQType = DType.valueOf(args[++i]);

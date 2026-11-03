@@ -6,14 +6,11 @@ import io.dropwizard.metrics5.Timer;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.TensorShape;
-import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensor2.TensorRefBackedTensor;
 
-import javax.annotation.Nullable;
 import java.util.BitSet;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -27,36 +24,27 @@ final class MutableKvBlock implements AutoCloseable {
     private final BitSet writtenRows;
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final KvBufferCacheSettings settings;
-    private final TensorAllocator allocator;
     private final MetricRegistry metricRegistry;
-    private final TensorOperations conversionOperations;
     private boolean committed;
     private final Lighter lighter;
     private final int[] layerKvLengths;
 
-    MutableKvBlock(int blockIndex, int blockSize, int layers, int kvLength, DType dtype, TensorAllocator allocator,
-            KvBufferCacheSettings settings, MetricRegistry metricRegistry) {
-        this(blockIndex, blockSize, layers, kvLength, dtype, allocator, settings, metricRegistry, null, null);
+    MutableKvBlock(int blockIndex, int blockSize, int layers, int kvLength, DType dtype,
+            KvBufferCacheSettings settings, MetricRegistry metricRegistry,
+            Lighter lighter) {
+        this(blockIndex, blockSize, layers, kvLength, dtype, settings, metricRegistry,
+                lighter, null);
     }
 
-    MutableKvBlock(int blockIndex, int blockSize, int layers, int kvLength, DType dtype, TensorAllocator allocator,
+    MutableKvBlock(int blockIndex, int blockSize, int layers, int kvLength, DType dtype,
             KvBufferCacheSettings settings, MetricRegistry metricRegistry,
-            @Nullable TensorOperations conversionOperations, Lighter lighter) {
-        this(blockIndex, blockSize, layers, kvLength, dtype, allocator, settings, metricRegistry,
-                conversionOperations, lighter, null);
-    }
-
-    MutableKvBlock(int blockIndex, int blockSize, int layers, int kvLength, DType dtype, TensorAllocator allocator,
-            KvBufferCacheSettings settings, MetricRegistry metricRegistry,
-            @Nullable TensorOperations conversionOperations, Lighter lighter, int[] layerKvLengths) {
+            Lighter lighter, int[] layerKvLengths) {
         this.blockIndex = blockIndex;
         this.blockSize = blockSize;
         this.layers = layers;
         this.kvLength = kvLength;
-        this.allocator = allocator;
         this.settings = settings;
         this.metricRegistry = metricRegistry;
-        this.conversionOperations = conversionOperations;
         this.writtenRows = new BitSet(layers * blockSize * 2);
         this.lighter = lighter;
         this.layerKvLengths = layerKvLengths == null ? null : layerKvLengths.clone();
@@ -100,14 +88,6 @@ final class MutableKvBlock implements AutoCloseable {
         }
     }
 
-    TensorRef keyRowCopy(int layer, int position, TensorAllocator allocator) {
-        return rowCopy(layer, position, 0, allocator);
-    }
-
-    TensorRef valueRowCopy(int layer, int position, TensorAllocator allocator) {
-        return rowCopy(layer, position, 1, allocator);
-    }
-
     TensorRef keyRowCopy(int layer, int position, Lighter lighter) {
         return rowCopy(layer, position, 0, null);
     }
@@ -149,14 +129,14 @@ final class MutableKvBlock implements AutoCloseable {
                     keyStorage, valueStorage, layerKvLengths, lighter);
             case MSE_TURBOQUANT -> tokenCount == blockSize && !heterogeneous()
                     ? MseTurboQuantKvBlockStorage.encode(combinedStorageForTurboQuant(), layers, tokenCount, blockSize, kvLength,
-                    settings.getKvTurboQuantBits(), allocator, metricRegistry)
+                    settings.getKvTurboQuantBits(), lighter, metricRegistry)
                     : new DenseKvBlockStorage(layers, tokenCount, blockSize, kvLength,
                             keyStorage, valueStorage, layerKvLengths, lighter);
         };
         return new KvBlock(blockIndex, blockSize, tokenCount, layers, kvLength, blockStorage, layerKvLengths);
     }
 
-    private TensorRef rowCopy(int layer, int position, int keyOrValue, TensorAllocator allocator) {
+    private TensorRef rowCopy(int layer, int position, int keyOrValue, Lighter ignored) {
         requireOpen();
         validateLayer(layer);
         Preconditions.checkArgument(containsPosition(position), "position not in mutable block");

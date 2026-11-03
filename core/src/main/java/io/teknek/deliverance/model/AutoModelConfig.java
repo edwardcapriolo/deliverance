@@ -125,7 +125,7 @@ public record AutoModelConfig(
         }
 
         KvBufferCacheSettings toSettings() {
-            KvBufferCacheSettings settings = new KvBufferCacheSettings(true);
+            KvBufferCacheSettings settings = new KvBufferCacheSettings();
             maxEntries.ifPresent(settings::setMaxEntries);
             blockSize.ifPresent(settings::setBlockSize);
             maxPrefixTokensPerPrompt.ifPresent(settings::setMaxPrefixTokensPerPrompt);

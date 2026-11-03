@@ -954,8 +954,12 @@ public class Lighter {
                     : a.shape().size() * (long) a.dType().size();
             if ("cpu".equals(a.device())) {
                 allocator.upload(output, a.memorySegment().asSlice(a.memorySegmentOffset(0), bytes), bytes);
+                copySidecar(a, output, a.dType() == DType.I8 ? Q8Layout.SCALE_SIDECAR :
+                        a.dType() == DType.Q4 ? Q4Layout.SCALE_SIDECAR : null, true);
             } else if ("cpu".equals(device)) {
                 allocator.download(a, output.memorySegment().asSlice(output.memorySegmentOffset(0), bytes), bytes);
+                copySidecar(a, output, a.dType() == DType.I8 ? Q8Layout.SCALE_SIDECAR :
+                        a.dType() == DType.Q4 ? Q4Layout.SCALE_SIDECAR : null, false);
             } else {
                 throw new UnsupportedOperationException("Only CPU/GPU transfers are supported currently");
             }
@@ -963,6 +967,21 @@ public class Lighter {
         } catch (RuntimeException e) {
             output.close();
             throw e;
+        }
+    }
+
+    private void copySidecar(TensorRef source, TensorRef target, String name, boolean upload) {
+        if (name == null) return;
+        TensorRef sourceScale = source.sidecar(name);
+        TensorRef targetScale = target.sidecar(name);
+        if (sourceScale == null || targetScale == null) return;
+        long bytes = sourceScale.shape().size() * (long) sourceScale.dType().size();
+        if (upload) {
+            allocator.upload(targetScale,
+                    sourceScale.memorySegment().asSlice(sourceScale.memorySegmentOffset(0), bytes), bytes);
+        } else {
+            allocator.download(sourceScale,
+                    targetScale.memorySegment().asSlice(targetScale.memorySegmentOffset(0), bytes), bytes);
         }
     }
 }

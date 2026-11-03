@@ -21,7 +21,6 @@ public abstract class AbstractTensor implements AutoCloseable, ReadableTensor {
     protected final DType dType;
     protected final AbstractTensor[] sliceCache;
     protected final int stride;
-    protected volatile TensorAllocator originCache = null;
     private volatile TensorLocality locality;
 
 
@@ -124,25 +123,6 @@ public abstract class AbstractTensor implements AutoCloseable, ReadableTensor {
             sliceCache[dims[0]] = r;
         }
         return r;
-    }
-
-    /**
-     * Copies a logical slice into a newly allocated tensor owned by the caller.
-     *
-     * <p>Unlike {@link #slice(int...)}, this method does not return a view into this tensor's backing storage and does
-     * not use the slice cache. Mutating or closing the returned tensor does not mutate or release this tensor. The caller
-     * owns the returned tensor and must close it when finished.</p>
-     *
-     * @param allocator allocator used to create the returned tensor
-     * @param dims dimensions identifying the slice, using the same coordinate convention as {@link #slice(int...)}
-     * @return a newly allocated tensor containing a copy of the requested slice
-     */
-    public AbstractTensor copySlice(TensorAllocator allocator, int... dims) {
-        Preconditions.checkArgument(allocator != null, "allocator must not be null");
-        TensorShape copiedShape = shape.slice(dims.length);
-        AbstractTensor copy = allocator.get(dType, copiedShape);
-        copy.copyFrom(this, sliceOffset(dims), 0, Ints.checkedCast(copiedShape.size()));
-        return copy;
     }
 
     private int sliceOffset(int... dims) {
@@ -293,17 +273,7 @@ public abstract class AbstractTensor implements AutoCloseable, ReadableTensor {
     /** Zero out the tensor */
     public abstract void clear();
 
-    /**
-     * If the tensor was allocated from a TensorAllocator release it so it may be reused again
-     */
     public void close() {
-        if (originCache != null) {
-            originCache.release(this);
-        }
-    }
-
-    void setOwnerCache(TensorAllocator cache) {
-        this.originCache = cache;
     }
 
 

@@ -1,17 +1,15 @@
 package io.teknek.sketches;
 
-import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
-import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 
 //https://github.com/dottxt-ai/outlines-core/blob/main/outlines_core/kernels/numpy.py
 public class DeliveranceKernel {
 
     public AbstractTensor allocateTokenBitmask(int vocabSize){
-        ArrayQueueTensorAllocator c = new ArrayQueueTensorAllocator(new MetricRegistry());
-        AbstractTensor tensor = c.getDirty(DType.F32, TensorShape.of(1, (vocabSize + 31 ) / 32));
+        AbstractTensor tensor = new FloatBufferTensor(TensorShape.of(1, (vocabSize + 31 ) / 32));
         for (int i = 0; i < 3; i++ ){
             tensor.set(-1, new int [] { 0, i});
         }

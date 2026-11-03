@@ -9,9 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class KvBufferCacheSettings {
-    private final Boolean useTensorAllocator;
     private final File workingDirectory;
-    private final TensorAllocator dedicatedCache;
     private boolean deleteDiskPagesOnClose = true;
     private boolean diskPageSweeperEnabled = true;
     private Duration diskPageSweepInterval = Duration.ofMinutes(5);
@@ -92,18 +90,7 @@ public class KvBufferCacheSettings {
     /**
      * Use the tensor cache shared with model
      */
-    public KvBufferCacheSettings(boolean ephemeral) {
-        this.useTensorAllocator = ephemeral;
-        this.dedicatedCache = null;
-        this.workingDirectory = null;
-    }
-
-    /**
-     * Use a dedicated tensor cache
-     */
-    public KvBufferCacheSettings(TensorAllocator cache){
-        this.useTensorAllocator = true;
-        this.dedicatedCache = cache;
+    public KvBufferCacheSettings() {
         this.workingDirectory = null;
     }
 
@@ -112,22 +99,15 @@ public class KvBufferCacheSettings {
             throw new IllegalArgumentException("workingDirectory must not be null");
         }
         this.workingDirectory = workingDirectory;
-        this.useTensorAllocator = false;
-        this.dedicatedCache = null;
     }
 
     public boolean isEphemeral() {
-        return Boolean.TRUE.equals(useTensorAllocator);
+        return workingDirectory == null;
     }
 
     @Nullable
     public File getWorkingDirectory() {
         return this.workingDirectory;
-    }
-
-    @Nullable
-    public TensorAllocator getDedicatedCache(){
-        return this.dedicatedCache;
     }
 
     public int getMaxPrefixTokensPerPrompt() {

@@ -3,6 +3,8 @@ package io.teknek.deliverance.benchmark;
 import com.sun.management.OperatingSystemMXBean;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.model.AbstractModel;
+import io.teknek.deliverance.model.GenerationCursor;
+import io.teknek.deliverance.model.LocalGenerationBackend;
 import io.teknek.deliverance.model.AutoModelConfig;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.model.InferenceProfiler;
@@ -74,7 +76,10 @@ public final class PrefillTokenBenchmark {
                     event.processedLayers(), event.totalLayers(), event.elapsedSeconds(),
                     seconds(event.remainingSeconds()), event.tokensPerSecond(), cpuMs, cpuUtil);
         })) {
-            try (AbstractTensor output = model.batchForward(tokenIds, 0)) {
+            try (LocalGenerationBackend backend = new LocalGenerationBackend(model);
+                 var session = backend.openRef(java.util.UUID.randomUUID(), tokenIds,
+                         new io.teknek.deliverance.generator.GeneratorParameters());
+                 var output = session.prefill(GenerationCursor.from(tokenIds, session.prefixLength()))) {
                 // The returned final hidden state is intentionally unused; this benchmark measures prefill only.
             }
         }

@@ -3,17 +3,10 @@ package io.teknek.deliverance.tensor2;
 import io.dropwizard.metrics5.MetricName;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
-import io.teknek.deliverance.math.WrappedForkJoinPool;
-import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
-import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorShape;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.deliverance.tensor.impl.Q8ByteBufferTensor;
-import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
-import io.teknek.deliverance.tensor.operations.MachineSpec;
-import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
-import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -25,73 +18,11 @@ import java.util.Map;
 import java.util.Random;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
-import java.util.concurrent.ForkJoinPool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @Tensor2PerformanceCase
 class Tensor2LighterDotProductRowsFuzzTest {
-    @org.junit.jupiter.api.Test
-    void qwen06GateUpProjectionCharacterization() {
-        Assumptions.assumeTrue(NativeOps.isAvailable(), "Native Tensor2 operations are unavailable");
-        MetricRegistry metrics = new MetricRegistry();
-        ArrayQueueTensorAllocator allocator = new ArrayQueueTensorAllocator(metrics);
-        int inputColumns = 1024;
-        int outputColumns = 3072;
-        int chunkSize = 64;
-        int repetitions = 32;
-        try (WrappedForkJoinPool pool = new WrappedForkJoinPool(new ForkJoinPool(8));
-             FloatBufferTensor denseInput = denseInput(1, inputColumns, 17);
-             Q8ByteBufferTensor oldInput = new Q8ByteBufferTensor(denseInput);
-             Q4ByteBufferTensor oldGateWeights = q4Weights(outputColumns, inputColumns, 41);
-             Q4ByteBufferTensor oldUpWeights = q4Weights(outputColumns, inputColumns, 53);
-             FloatBufferTensor oldGateOutput = new FloatBufferTensor(TensorShape.of(1, outputColumns));
-             FloatBufferTensor oldUpOutput = new FloatBufferTensor(TensorShape.of(1, outputColumns));
-             TensorRef input = TensorRef.borrowed(oldInput);
-             TensorRef gateWeights = TensorRef.borrowed(oldGateWeights);
-             TensorRef upWeights = TensorRef.borrowed(oldUpWeights);
-             TensorRef newGateOutput = new Lighter(metrics, Map.of(TensorProviderKind.SIMD, new NativeOps()))
-                     .allocate(DType.F32, TensorShape.of(1, outputColumns));
-             TensorRef newUpOutput = new Lighter(metrics, Map.of(TensorProviderKind.SIMD, new NativeOps()))
-                     .allocate(DType.F32, TensorShape.of(1, outputColumns))) {
-            NativeSimdTensorOperations oldOps = new NativeSimdTensorOperations(
-                    new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, allocator, pool), chunkSize);
-            Lighter newOps = new Lighter(metrics, Map.of(TensorProviderKind.SIMD, new NativeOps()));
-            CompositeOps newComposite = new CompositeOps(newOps);
-            AbstractTensor[] oldOutputs = {oldGateOutput, oldUpOutput};
-            AbstractTensor[] oldWeights = {oldGateWeights, oldUpWeights};
-
-            for (int i = 0; i < 8; i++) {
-                runLegacyGateUp(oldOps, oldOutputs, oldInput, oldWeights, outputColumns, inputColumns, chunkSize);
-                runTensorRefGateUp(newComposite, newGateOutput, newUpOutput, input, gateWeights, upWeights,
-                        outputColumns, inputColumns, chunkSize);
-            }
-            long oldStart = System.nanoTime();
-            for (int i = 0; i < repetitions; i++) {
-                runLegacyGateUp(oldOps, oldOutputs, oldInput, oldWeights, outputColumns, inputColumns, chunkSize);
-            }
-            double oldMs = (System.nanoTime() - oldStart) / 1_000_000.0 / repetitions;
-            long newStart = System.nanoTime();
-            for (int i = 0; i < repetitions; i++) {
-                runTensorRefGateUp(newComposite, newGateOutput, newUpOutput, input, gateWeights, upWeights,
-                        outputColumns, inputColumns, chunkSize);
-            }
-            double newMs = (System.nanoTime() - newStart) / 1_000_000.0 / repetitions;
-            System.out.printf(java.util.Locale.ROOT,
-                    "[tensor2-gate-up-characterization] shape=1x%d->%d chunks=%d repetitions=%d "
-                            + "old_mean_ms=%.3f new_mean_ms=%.3f delta_ms=%.3f speedup=%.3fx%n",
-                    inputColumns, outputColumns, outputColumns / chunkSize, repetitions, oldMs, newMs,
-                    oldMs - newMs, oldMs / newMs);
-        }
-    }
-
-    private static void runLegacyGateUp(NativeSimdTensorOperations ops, AbstractTensor[] outputs,
-            AbstractTensor input, AbstractTensor[] weights, int outputColumns, int inputColumns, int chunkSize) {
-        for (int chunkStart = 0; chunkStart < outputColumns; chunkStart += chunkSize) {
-            ops.dotProductBatchChunk(outputs, input, weights, 0, inputColumns, chunkStart, chunkSize);
-        }
-    }
-
     private static void runTensorRefGateUp(CompositeOps ops, TensorRef gateOutput, TensorRef upOutput, TensorRef input,
             TensorRef gateWeights, TensorRef upWeights, int outputColumns, int inputColumns, int chunkSize) {
         for (int chunkStart = 0; chunkStart < outputColumns; chunkStart += chunkSize) {
@@ -484,37 +415,6 @@ class Tensor2LighterDotProductRowsFuzzTest {
         }
     }
 
-    @ParameterizedTest(name = "legacy i8-q4 projection {0}")
-    @MethodSource("legacyI8Q4ProjectionCases")
-    void i8Q4ProjectionMatchesLegacyTensorOperations(I8Q4Case c, GemmKernel kernel) {
-        Lighter tensorRefOps = new Lighter(new MetricRegistry(), Map.of(TensorProviderKind.PANAMA, new PanamaOps()));
-        try (FloatBufferTensor denseInput = denseInput(c.rows(), c.inputColumns(), c.seed());
-             FloatBufferTensor denseWeights = denseWeights(c.weightRows(), c.weightColumns(), c.seed() + 17);
-             Q8ByteBufferTensor legacyInput = new Q8ByteBufferTensor(denseInput);
-             Q4ByteBufferTensor legacyWeights = new Q4ByteBufferTensor(denseWeights);
-             FloatBufferTensor legacyOutput = new FloatBufferTensor(TensorShape.of(c.rows(), c.outputColumns()));
-             TensorRef inputF32 = tensorRefOps.allocate(DType.F32, TensorShape.of(c.rows(), c.inputColumns()));
-             TensorRef weightF32 = tensorRefOps.allocate(DType.F32, TensorShape.of(c.weightRows(), c.weightColumns()));
-             TensorRef tensorRefOutput = tensorRefOps.allocate(DType.F32, TensorShape.of(c.rows(), c.outputColumns()))) {
-            copy(denseInput, inputF32);
-            copy(denseWeights, weightF32);
-            try (TensorRef input = tensorRefOps.reshape(inputF32, DType.I8);
-                 TensorRef weights = tensorRefOps.reshape(weightF32, DType.Q4)) {
-                new NaiveTensorOperations().dotProductChunk(legacyOutput, legacyInput, legacyWeights,
-                        c.inputColumnStart(), c.columnLength(), c.weightRowStart(), c.weightRowCount());
-                tensorRefOps.dotProductRows(tensorRefOutput, input, weights, c.inputColumnStart(), c.weightColumnStart(),
-                        c.columnLength(), c.weightRowStart(), c.weightRowCount(), c.outputColumnStart(), kernel,
-                        Threading.PROVIDER);
-                for (int row = 0; row < c.rows(); row++) {
-                    for (int column = 0; column < c.outputColumns(); column++) {
-                        assertEquals(legacyOutput.get(row, column), tensorRefOutput.get(row, column), 0.03f,
-                                c + " row=" + row + " column=" + column);
-                    }
-                }
-            }
-        }
-    }
-
     static Stream<Arguments> f32Cases() {
         List<Case> cases = new ArrayList<>();
         int id = 0;
@@ -598,25 +498,6 @@ class Tensor2LighterDotProductRowsFuzzTest {
         return i8Q4Candidates().filter(ProviderCandidate::enabled).flatMap(candidate -> cases.stream().flatMap(c -> kernelsFor(c, DType.I8, DType.Q4,
                 DType.F32)
                 .stream().map(kernel -> Arguments.of(c, candidate, kernel))));
-    }
-
-    static Stream<Arguments> legacyI8Q4ProjectionCases() {
-        List<I8Q4Case> cases = new ArrayList<>();
-        int id = 0;
-        int[] lengths = {32, 64, 96, 128, 256, 768, 2048};
-        int[] rowCounts = {1, 3, 17, 33, 128};
-        int[] rows = {1, 4, 16};
-        for (int rowCount : rows) {
-            for (int length : lengths) {
-                int inputStart = (id % 3) * 32;
-                int weightStart = inputStart;
-                int weightRowCount = rowCounts[id % rowCounts.length];
-                cases.add(new I8Q4Case("legacy_i8_q4_" + id, rowCount, inputStart, weightStart, length,
-                        inputStart + length, weightStart + length, 0, weightRowCount, 0, id++));
-            }
-        }
-        return cases.stream().flatMap(c -> kernelsFor(c, DType.I8, DType.Q4, DType.F32)
-                .stream().map(kernel -> Arguments.of(c, kernel)));
     }
 
     private static Stream<Candidate> candidates() {

@@ -1,7 +1,7 @@
 package io.teknek.deliverance.model.tensorparallel.transport;
 
 import io.teknek.deliverance.JsonUtils;
-import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor2.TensorRef;
 
 import java.io.IOException;
 import java.net.URI;
@@ -33,12 +33,12 @@ public class HttpTensorParallelRankClient implements TensorParallelRankService {
     }
 
     @Override
-    public AbstractTensor batchForward(UUID sessionId, int[] tokenIds, int startPosition) {
+    public TensorRef batchForward(UUID sessionId, int[] tokenIds, int startPosition) {
         return post("/batchForward", new BatchForwardRequest(sessionId, tokenIds, startPosition));
     }
 
     @Override
-    public AbstractTensor forward(UUID sessionId, int tokenId, int position) {
+    public TensorRef forward(UUID sessionId, int tokenId, int position) {
         return post("/forward", new ForwardRequest(sessionId, tokenId, position));
     }
 
@@ -57,7 +57,7 @@ public class HttpTensorParallelRankClient implements TensorParallelRankService {
         postNoBody("/storeSharedKvPrefix", request);
     }
 
-    private AbstractTensor post(String path, Object requestBody) {
+    private TensorRef post(String path, Object requestBody) {
         try {
             byte[] json = JsonUtils.om.writeValueAsBytes(requestBody);
             URI uri = baseUri.resolve(path);

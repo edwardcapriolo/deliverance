@@ -23,12 +23,7 @@ import io.teknek.deliverance.model.tensorparallel.TensorParallelGenerationGroup;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptContext;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
-import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import io.teknek.deliverance.tensor.operations.MachineSpec;
-import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
-import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.gossip.GossipSettings;
 import io.teknek.gossip.Member;
 import io.teknek.gossip.RemoteMember;
@@ -168,7 +163,7 @@ public final class InferenceBenchmark {
                     .withWorkingQuantType(options.workingQType)
                     .withKvBufferCacheSettings(kvBufferCacheSettings(options))
                     .withWrappedForkJoinPool(newPool(options));
-            builder = applyOutputHeadQuantization(options, applyTensorProvider(options, applyModelConfig(options, builder)));
+            builder = applyOutputHeadQuantization(options, applyModelConfig(options, builder));
             return new LocalDeliveranceRunner(options.owner + "/" + options.model,
                     builder.build());
         }
@@ -177,34 +172,6 @@ public final class InferenceBenchmark {
 
     private static AutoModelForCausaLm.Builder applyModelConfig(Options options, AutoModelForCausaLm.Builder builder) {
         return options.modelConfig == null ? builder : builder.withConfig(AutoModelConfig.fromJson(options.modelConfig));
-    }
-
-    private static AutoModelForCausaLm.Builder applyTensorProvider(Options options,
-            AutoModelForCausaLm.Builder builder) {
-        if ("auto".equals(options.tensorProvider)) {
-            return builder;
-        }
-        if ("native-gpu".equals(options.tensorProvider)) {
-            return builder.withTensorProvider(new ConfigurableTensorProvider(loadTensorOperations(
-                    "io.teknek.deliverance.tensor.operations.NativeGPUTensorOperations")));
-        }
-        if ("native-simd".equals(options.tensorProvider)) {
-            return builder;
-        }
-        if ("panama".equals(options.tensorProvider)) {
-            WrappedForkJoinPool pool = builder.getPool();
-            return builder.withTensorProvider(new ConfigurableTensorProvider(new PanamaTensorOperations(
-                    MachineSpec.VECTOR_TYPE, new ArrayQueueTensorAllocator(builder.getMr()), pool)));
-        }
-        throw new IllegalArgumentException("--tensor-provider must be auto, native-simd, native-gpu, or panama");
-    }
-
-    private static TensorOperations loadTensorOperations(String className) {
-        try {
-            return (TensorOperations) Class.forName(className).getConstructor().newInstance();
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("Unable to load tensor provider " + className, e);
-        }
     }
 
     private static AutoModelForCausaLm.Builder applyOutputHeadQuantization(Options options,
@@ -221,7 +188,7 @@ public final class InferenceBenchmark {
     }
 
     private static KvBufferCacheSettings kvBufferCacheSettings(Options options) {
-        return new KvBufferCacheSettings(true)
+        return new KvBufferCacheSettings()
                 .withMaxEntries(options.prefixCacheMaxEntries)
                 .withBlockSize(options.prefixCacheBlockSize)
                 .withMaxPrefixTokensPerPrompt(options.prefixCacheMaxPrefixTokens)
@@ -241,8 +208,7 @@ public final class InferenceBenchmark {
     /** Prints runtime details for one local transformer executor. */
     private static void printLocalModelRuntime(String label, AbstractModel localModel) {
             System.out.println("[deliverance] " + label
-                    + " tensor_provider=" + localModel.getTensorProviderName()
-                    + " parallel_split_size=" + localModel.getTensorProviderParallelSplitSize()
+                    + " tensor_provider=tensor2 parallel_split_size=32"
                     + " model_dtype=" + localModel.getModelDType()
                     + " working_dtype=" + localModel.getWorkingDType()
                     + " working_qtype=" + localModel.getWorkingQType()
@@ -1069,7 +1035,6 @@ public final class InferenceBenchmark {
         private int prefixCacheBlockSize = 32;
         private int prefixCacheMaxPrefixTokens = 512;
         private int kvContextRowsPerPageTarget = 32;
-        private String tensorProvider = "auto";
         private boolean profileStages = false;
         private boolean printResponse = false;
         private boolean quietMetrics = false;
@@ -1117,7 +1082,6 @@ public final class InferenceBenchmark {
                     case "--prefix-cache-max-prefix-tokens" -> options.prefixCacheMaxPrefixTokens = Integer.parseInt(args[++i]);
                     case "--kv-context-rows-per-page" -> options.kvContextRowsPerPageTarget = Integer.parseInt(args[++i]);
                     case "--model-config" -> options.modelConfig = Path.of(args[++i]);
-                    case "--tensor-provider" -> options.tensorProvider = args[++i].toLowerCase(Locale.ROOT);
                     case "--profile-stages" -> options.profileStages = true;
                     case "--print-response" -> options.printResponse = true;
                     case "--quiet-metrics" -> options.quietMetrics = true;
@@ -1141,12 +1105,6 @@ public final class InferenceBenchmark {
             }
             if (options.kvContextRowsPerPageTarget < 1) {
                 throw new IllegalArgumentException("--kv-context-rows-per-page must be >= 1");
-            }
-            if (!options.tensorProvider.equals("auto")
-                    && !options.tensorProvider.equals("native-simd")
-                    && !options.tensorProvider.equals("native-gpu")
-                    && !options.tensorProvider.equals("panama")) {
-                throw new IllegalArgumentException("--tensor-provider must be auto, native-simd, native-gpu, or panama");
             }
             if (!options.tensorParallelCollectiveTransport.equals("http")
                     && !options.tensorParallelCollectiveTransport.equals("netty")) {
@@ -1211,7 +1169,6 @@ public final class InferenceBenchmark {
                       --kv-context-rows-per-page N        Active KV page context-row target, default 32
                       --model-config PATH                 AutoModelForCausaLm JSON builder config
                       --model-config PATH                 AutoModelForCausaLm JSON builder config
-                      --tensor-provider auto|native-simd|native-gpu|panama Tensor provider for local Deliverance runner, default auto
                       --profile-stages                   Print accumulated broad-stage timing after each Deliverance turn
                       --print-response                   Print measured generated response text
                       --quiet-metrics                    Suppress profile/counter/allocator detail output

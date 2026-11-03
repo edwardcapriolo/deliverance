@@ -43,9 +43,10 @@ public class DirectPromptTest {
                     """;
             assertEquals(expected, ctx.getPrompt());
 
-            m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(42).withMaxTokens(50),
+            var response = m.generate(UUID.randomUUID(), ctx, new GeneratorParameters().withSeed(42).withMaxTokens(50),
                     new DoNothingGenerateEvent());
-            assertTrue(TinyLlamaSuite.getBuilder().getMr().meter("tensorcache.dirtyget").getCount() > 100);
+            assertFalse(response.generatedTokens.isEmpty());
+            assertFalse(response.responseText.isBlank());
         }
 
     }

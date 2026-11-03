@@ -19,9 +19,10 @@ void upload_gpu_buffer(int64_t id, const void *data, int size);
 
 int download_gpu_buffer(int64_t id, void *destination, int size);
 
-int64_t register_scale_shader(const char *data, int size);
-void free_scale_shader(int64_t id);
-void gpu_scale_f32(int64_t id, int64_t tensor, float factor, int offset, int length, int rows, int columns);
+int64_t tensor2_register_scale_shader(const char *data, int size);
+void tensor2_free_scale_shader(int64_t id);
+void tensor2_gpu_scale_f32_device(int64_t shader, int64_t tensor, float factor, int offset, int length,
+        int rows, int columns);
 
 int64_t register_scratch_buffers(int params_size, int input_size, int result_size);
 
@@ -40,6 +41,12 @@ void tensor2_gpu_batch_dot_i8_q4(int64_t scratch_id, int64_t shader, const void 
 void tensor2_gpu_batch_dot_f32_q4(int64_t scratch_id, int64_t shader, const void *a, int aoffset, int alimit,
         int64_t bid, int64_t bid2, int boffset, int blimit, float *r, int roffset, int rlimit,
         int m, int n0, int n, int k, int lda, int ldb, int ldc);
+void tensor2_gpu_batch_dot_i8_q4_device(int64_t scratch_id, int64_t shader, int64_t a, int64_t a2,
+        int aoffset, int alimit, int64_t bid, int64_t bid2, int boffset, int blimit, int64_t r,
+        int roffset, int rlimit, int m, int n0, int n, int k, int lda, int ldb, int ldc);
+void tensor2_gpu_batch_dot_f32_q4_device(int64_t scratch_id, int64_t shader, int64_t a, int64_t a2,
+        int aoffset, int alimit, int64_t bid, int64_t bid2, int boffset, int blimit, int64_t r,
+        int roffset, int rlimit, int m, int n0, int n, int k, int lda, int ldb, int ldc);
 void gpu_gemm_batch(int64_t scratch_id, int64_t shader, int batch_num, const void *a, const void *a2, int aoffset, int alimit, const int64_t *bid, const int64_t *bid2, int boffset, int blimit, float **r, int roffset, int rlimit, int m, int n0, int n, int k, int lda, int ldb, int ldc, int m1_optimized);
 void gpu_decode_paged_attention_head(int64_t scratch_id, int64_t shader, const void *query, int qoffset, const int64_t *kid, const int64_t *vid, int page_count, int visible_rows, int page_rows, int head_size, int kv_offset, int key_stride, int value_stride, float *out, int out_offset, int out_stride, float scale, int key_buffer_size, int value_buffer_size);
 void gpu_decode_attention_packed_head(int64_t scratch_id, int64_t shader, const void *query, int qoffset, const void *key, int key_size, const void *value, int value_size, float *out, int out_offset, int visible_rows, int head_size, float scale);

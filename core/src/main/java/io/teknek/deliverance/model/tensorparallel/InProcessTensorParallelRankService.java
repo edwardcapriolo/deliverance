@@ -6,8 +6,8 @@ import io.teknek.deliverance.model.tensorparallel.transport.SharedKvPrefixRestor
 import io.teknek.deliverance.model.tensorparallel.transport.SharedKvPrefixRestoreResult;
 import io.teknek.deliverance.model.tensorparallel.transport.SharedKvPrefixStoreRequest;
 import io.teknek.deliverance.model.tensorparallel.transport.TensorParallelRankService;
-import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.kv.KvCacheSession;
+import io.teknek.deliverance.tensor2.TensorRef;
 
 import java.util.Map;
 import java.util.Optional;
@@ -27,18 +27,18 @@ public class InProcessTensorParallelRankService implements TensorParallelRankSer
     }
 
     @Override
-    public synchronized AbstractTensor batchForward(UUID sessionId, int[] tokenIds, int startPosition) {
+    public synchronized TensorRef batchForward(UUID sessionId, int[] tokenIds, int startPosition) {
         KvCacheSession kvSession = kvSession(sessionId);
         try (var ignored = model.getTensorParallelCollectives().enterSession(sessionId)) {
-            return model.batchForward(tokenIds, startPosition, kvSession);
+            return model.batchForwardRef(tokenIds, startPosition, kvSession);
         }
     }
 
     @Override
-    public synchronized AbstractTensor forward(UUID sessionId, int tokenId, int position) {
+    public synchronized TensorRef forward(UUID sessionId, int tokenId, int position) {
         KvCacheSession kvSession = kvSession(sessionId);
         try (var ignored = model.getTensorParallelCollectives().enterSession(sessionId)) {
-            return model.forward(tokenId, position, kvSession, Optional.empty());
+            return model.forwardRef(tokenId, position, kvSession, Optional.empty());
         }
     }
 

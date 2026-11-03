@@ -46,15 +46,7 @@ import io.teknek.deliverance.safetensors.DefaultWeightLoader;
 import io.teknek.deliverance.safetensors.WeightLoader;
 import io.teknek.deliverance.safetensors.fetch.LoraAdapterModelFetcher;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
-import io.teknek.deliverance.tensor.ArrayQueueTensorAllocator;
-import io.teknek.deliverance.tensor.TensorAllocator;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import io.teknek.deliverance.tensor.operations.MachineSpec;
-import io.teknek.deliverance.tensor.operations.NaiveTensorOperations;
-import io.teknek.deliverance.tensor.operations.PanamaTensorOperations;
-import io.teknek.deliverance.tensor.operations.ParallelSplitSizedTensorOperations;
-import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.tensorlib.TensorRuntime;
 import io.teknek.deliverance.tensorlib.TensorRuntimeMode;
 import io.teknek.deliverance.tensorlib.TensorRuntimeNative;
@@ -69,7 +61,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.lang.reflect.InvocationTargetException;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -121,15 +112,12 @@ public class AutoModelForCausaLm {
 
         private final ModelFetcher fetch;
         private MetricRegistry mr = new MetricRegistry();
-        private TensorAllocator allocator = new ArrayQueueTensorAllocator(mr);
         private DType workingMem = DType.F32;
         private DType workingQuant = DType.I8;
         private boolean allowDirtyTensors = true;
         private ToolCallParser toolCallParser = new DefaultToolCallParser();
 
-        private KvBufferCacheSettings settings = new KvBufferCacheSettings(true);
-        private ConfigurableTensorProvider provider;
-        private boolean tensorProviderExplicit;
+        private KvBufferCacheSettings settings = new KvBufferCacheSettings();
         private WrappedForkJoinPool pool;
         private String oobCheck = "2";
         private TensorParallelContext tensorParallelContext = new StaticTensorParallelContext(0, 1);
@@ -138,7 +126,6 @@ public class AutoModelForCausaLm {
         private Optional<DType> outputHeadQuantization = Optional.empty();
         private Optional<QuantizeOnDemand> quantizeOnDemand = Optional.empty();
         private LoraAdapterModelFetcher loraAdapterFetcher;
-        private final EnumMap<TensorProviderKind, TensorOperations> additionalTensorOperations = new EnumMap<>(TensorProviderKind.class);
         private boolean download = true;
         private int maxPrefillBatchSize = AbstractModel.DEFAULT_MAX_PREFILL_BATCH_SIZE;
         private SketchesSettings sketchesSettings = SketchesSettings.DEFAULT;
@@ -178,12 +165,6 @@ public class AutoModelForCausaLm {
             mr = metricRegistry;
             return this;
         }
-        /** @deprecated V1 allocator injection; migrated builders will use {@code Lighter}. */
-        @Deprecated(forRemoval = true)
-        public Builder withTensorAllocator(TensorAllocator tensorAllocator){
-            this.allocator = tensorAllocator;
-            return this;
-        }
         public Builder withKvBufferCacheSettings(KvBufferCacheSettings settings){
             this.settings = settings;
             validatePrefixCacheSettingsForModel();
@@ -204,28 +185,6 @@ public class AutoModelForCausaLm {
 
         public Builder withAllowDirtyTensors(boolean allowDirtyTensors) {
             this.allowDirtyTensors = allowDirtyTensors;
-            return this;
-        }
-        /** @deprecated V1 provider injection; migrated builders will use {@code Lighter}. */
-        @Deprecated(forRemoval = true)
-        public Builder withTensorProvider(ConfigurableTensorProvider provider){
-            this.provider = provider;
-            this.tensorProviderExplicit = true;
-            return this;
-        }
-
-        public Builder withPrimaryTensorProvider(ConfigurableTensorProvider provider){
-            this.provider = provider;
-            this.tensorProviderExplicit = false;
-            return this;
-        }
-        public Builder withAdditionalTensorOperations(TensorProviderKind kind, TensorOperations operations) {
-            this.additionalTensorOperations.put(Objects.requireNonNull(kind, "kind"),
-                    Objects.requireNonNull(operations, "operations"));
-            return this;
-        }
-        public Builder withoutAdditionalTensorOperations(TensorProviderKind kind) {
-            this.additionalTensorOperations.remove(Objects.requireNonNull(kind, "kind"));
             return this;
         }
         public Builder withToolCallParser(ToolCallParser toolCallParser){
@@ -539,14 +498,11 @@ public class AutoModelForCausaLm {
         private Builder copyForRank(TensorParallelContext context, TensorParallelCollectives collectives) {
             Builder copy = new Builder(fetch);
             copy.mr = this.mr;
-            copy.allocator = this.allocator;
             copy.workingMem = this.workingMem;
             copy.workingQuant = this.workingQuant;
             copy.allowDirtyTensors = this.allowDirtyTensors;
             copy.toolCallParser = this.toolCallParser;
             copy.settings = this.settings;
-            copy.provider = this.provider;
-            copy.tensorProviderExplicit = this.tensorProviderExplicit;
             copy.pool = this.pool;
             copy.oobCheck = this.oobCheck;
             copy.tensorParallelContext = context;
@@ -554,7 +510,6 @@ public class AutoModelForCausaLm {
             copy.outputHeadQuantization = this.outputHeadQuantization;
             copy.quantizeOnDemand = this.quantizeOnDemand;
             copy.loraAdapterFetcher = this.loraAdapterFetcher;
-            copy.additionalTensorOperations.putAll(this.additionalTensorOperations);
             copy.parallelSplitSizeFixed.putAll(this.parallelSplitSizeFixed);
             copy.parallelSplitSizeMultiplier.putAll(this.parallelSplitSizeMultiplier);
             copy.groupedDecodeQkvSplitSize = this.groupedDecodeQkvSplitSize;
@@ -624,33 +579,13 @@ public class AutoModelForCausaLm {
                 pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
             }
             String modelType = readModelType(new File(modelRoot, "config.json"));
-            if (Boolean.getBoolean("deliverance.gemma4.legacy") && "GEMMA4".equals(modelType)
-                    && provider == null) {
-                ConfigurableTensorProvider base = new ConfigurableTensorProvider(allocator, pool);
-                Optional<TensorOperations> maybe = getNative(base.get());
-                TensorOperations primary = maybe.map(ops -> tunedTensorOperations(TensorProviderKind.SIMD, ops))
-                        .orElseGet(() -> tunedTensorOperations(TensorProviderKind.PANAMA, base.get()));
-                provider = new ConfigurableTensorProvider(primary);
-                lighter = null;
-            } else if ("LLAMA".equals(modelType) || "QWEN2".equals(modelType) || "QWEN3".equals(modelType)
-                    || "QWEN3_MOE".equals(modelType) || "MISTRAL".equals(modelType)
-                    || "GEMMA3_TEXT".equals(modelType) || "GEMMA4".equals(modelType)
-                    || "DIFFUSION_GEMMA".equals(modelType)) {
-                lighter = new Lighter(mr, pool.getUnderlying());
-            } else if (provider == null){
-                ConfigurableTensorProvider base = new ConfigurableTensorProvider(allocator, pool);
-                Optional<TensorOperations> maybe = getNative(base.get());
-                TensorOperations primary = maybe.map(ops -> tunedTensorOperations(TensorProviderKind.SIMD, ops))
-                        .orElseGet(() -> tunedTensorOperations(TensorProviderKind.PANAMA, base.get()));
-                provider = new ConfigurableTensorProvider(primary);
-            }
+            lighter = new Lighter(mr, pool.getUnderlying());
             Optional<LoraAdapter> loraAdapter = loraAdapterFetcher == null
                     ? Optional.empty()
                     : Optional.of(LoraAdapter.fromPretrained(loraAdapterFetcher, mr));
             AbstractModel model = constructModel(modelRoot, loraAdapter);
             model.getLighter().allowDirtyTensors(allowDirtyTensors);
             model.setMaxPrefillBatchSize(maxPrefillBatchSize);
-            model.setTensorProviderExplicit(tensorProviderExplicit);
             model.setGpuPrefillEnabled(gpuPrefill);
             model.setGpuDecodeEnabled(gpuDecode);
             model.setGpuDecodeAttentionEnabled(gpuDecodeAttention);
@@ -663,9 +598,6 @@ public class AutoModelForCausaLm {
             model.setTensorRuntimeMode(tensorRuntimeMode);
             model.setTensorRuntime(createTensorRuntime());
             model.setTensorPlanTraceEnabled(tensorPlanTrace);
-            if (!tensorProviderExplicit && lighter == null) {
-                model.addTensorOperations(hydrateTensorOperations());
-            }
             installNativeTensor2Ops(model);
             logBuilderState(model);
             model.init();
@@ -716,19 +648,14 @@ public class AutoModelForCausaLm {
         }
 
         private void logBuilderState(AbstractModel model) {
-            TensorOperations primary = model.configurableTensorProvider == null ? null : model.configurableTensorProvider.get();
             String lighterProviders = model.getLighter().tensorOperations().entrySet().stream()
                     .sorted(Map.Entry.comparingByKey())
                     .map(entry -> entry.getKey() + "=" + entry.getValue().getClass().getSimpleName())
                     .collect(java.util.stream.Collectors.joining(", "));
-            String primaryProvider = primary == null ? "tensor2" : primary.name();
-            int parallelSplitSize = primary == null
-                    ? model.getTensorProviderParallelSplitSize()
-                    : primary.parallelSplitSize();
             LOGGER.info("""
                     Model builder final state
                       model={}
-                      primaryProvider={} parallelSplitSize={}
+                      primaryProvider=tensor2 parallelSplitSize=32
                       registeredProviders=[{}]
                       parallelSplitPolicy=availableProcessors={} defaultMultipliers=disabled simdAlignment={} panamaAlignment={} fixedOverrides={} multiplierOverrides={}
                       modelType={} workingMemoryType={} quantizedMemoryType={}
@@ -736,8 +663,7 @@ public class AutoModelForCausaLm {
                       prefixCacheMode={} kvBlockStoragePolicy={} kvTurboQuantBits={} kvKeyDType={} kvValueDType={} sharedPrefixBlockCacheMaxBytes={} sharedPrefixDiskCacheEnabled={} sharedPrefixDiskCacheMaxBytes={}
                       generationOptions={}
                     """,
-                    fetch.getName(), primaryProvider, parallelSplitSize,
-                    primary == null ? lighterProviders : model.tensorOperationsSummary(),
+                    fetch.getName(), lighterProviders,
                     Runtime.getRuntime().availableProcessors(), SIMD_PARALLEL_SPLIT_ALIGNMENT,
                     PANAMA_PARALLEL_SPLIT_ALIGNMENT, parallelSplitSizeFixed, parallelSplitSizeMultiplier,
                     model.modelDType, model.workingDType, model.workingQType,
@@ -795,10 +721,7 @@ public class AutoModelForCausaLm {
                 PreTrainedTokenizer tokenizer = AutoTokenizer.fromPretrained(modelRoot.toPath());
                 WeightLoader weightLoader = new DefaultWeightLoader(modelRoot);
                 if (loraAdapter.isPresent()) {
-                    if (lighter != null) {
-                        throw new IllegalArgumentException("LoRA merging is not supported by the TensorRef Qwen3 path");
-                    }
-                    weightLoader = new MergingWeightLoader(weightLoader, loraAdapter.get(), provider.get());
+                    throw new IllegalArgumentException("LoRA merging is not supported by the TensorRef path");
                 }
                 return newModel(modelType, inferenceType(), config, weightLoader, tokenizer);
             } catch (IOException e) {
@@ -849,13 +772,10 @@ public class AutoModelForCausaLm {
                         effectiveModelQType, mr, settings, toolCallParser, pool, tensorParallelContext,
                         tensorParallelCollectives, outputHeadQuantization, lighter);
                 case "GEMMA2" -> new Gemma2Model(inferenceType, config, weightLoader,
-                        tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
-                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
-                case "GEMMA4" -> Boolean.getBoolean("deliverance.gemma4.legacy")
-                        ? new Gemma4Model(inferenceType, config, weightLoader,
-                        tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
-                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization)
-                        : new Gemma4Model(inferenceType, config, weightLoader,
+                        tokenizer, workingMem, workingQuant, effectiveModelQType, mr, settings,
+                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization,
+                        lighter);
+                case "GEMMA4" -> new Gemma4Model(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, effectiveModelQType, mr, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization,
                         lighter);
@@ -866,80 +786,34 @@ public class AutoModelForCausaLm {
                         workingQuant, effectiveModelQType, mr, settings, toolCallParser, pool, tensorParallelContext,
                         tensorParallelCollectives, outputHeadQuantization, lighter);
                 case "GPT2" -> new Gpt2Model(inferenceType, config, weightLoader,
-                        tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
-                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                        tokenizer, workingMem, workingQuant, effectiveModelQType, mr, settings,
+                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization,
+                        lighter);
                 case "MIXTRAL" -> new MixtralModel(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, effectiveModelQType, mr, settings,
                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization,
                         lighter);
                 case "GRANITEMOEHYBRID" -> new GraniteMoeHybridModel(inferenceType,
-                        config, weightLoader, tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr,
-                        allocator, settings, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives,
-                        outputHeadQuantization, lighter);
+                         config, weightLoader, tokenizer, workingMem, workingQuant, effectiveModelQType, mr,
+                         settings, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives,
+                         outputHeadQuantization, lighter);
                 case "BERT" -> new io.teknek.deliverance.model.bert.BertModel(inferenceType, config, weightLoader,
-                        tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
-                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                        tokenizer, workingMem, workingQuant, effectiveModelQType, mr, settings,
+                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization,
+                        lighter);
                 case "XLM-ROBERTA" -> new io.teknek.deliverance.model.bert.XlmRobertaModel(inferenceType, config,
-                        weightLoader, tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr,
-                        allocator, settings, toolCallParser, pool, tensorParallelContext, tensorParallelCollectives,
-                        outputHeadQuantization);
+                        weightLoader, tokenizer, workingMem, workingQuant, effectiveModelQType, mr, settings,
+                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives,
+                        outputHeadQuantization, lighter);
                 case "DIFFUSION_GEMMA" -> new DiffusionGemmaModel(inferenceType, config, weightLoader,
                         tokenizer, workingMem, workingQuant, effectiveModelQType, mr, settings, toolCallParser, pool,
                         tensorParallelContext, tensorParallelCollectives, outputHeadQuantization, lighter);
                 case "NEMOTRON_LABS_DIFFUSION" -> new NemotronLabsDiffusionModel(inferenceType, config, weightLoader,
-                        tokenizer, workingMem, workingQuant, effectiveModelQType, provider, mr, allocator, settings,
-                        toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                         tokenizer, workingMem, workingQuant, effectiveModelQType, mr, settings,
+                         toolCallParser, pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization,
+                         lighter);
                 default -> throw new IllegalArgumentException(modelType + " not supported by AutoModelForCausaLm");
             };
-        }
-
-        private Map<TensorProviderKind, TensorOperations> hydrateTensorOperations() {
-            EnumMap<TensorProviderKind, TensorOperations> operations = new EnumMap<>(TensorProviderKind.class);
-
-            TensorOperations naive = tunedTensorOperations(TensorProviderKind.NAIVE,
-                    additionalTensorOperations.getOrDefault(TensorProviderKind.NAIVE, new NaiveTensorOperations()));
-            operations.put(TensorProviderKind.NAIVE, naive);
-
-            TensorOperations panama = tunedTensorOperations(TensorProviderKind.PANAMA,
-                    additionalTensorOperations.getOrDefault(TensorProviderKind.PANAMA,
-                            new PanamaTensorOperations(MachineSpec.VECTOR_TYPE, allocator, pool)));
-            operations.put(TensorProviderKind.PANAMA, panama);
-
-            TensorOperations simd = additionalTensorOperations.get(TensorProviderKind.SIMD);
-            if (simd == null) {
-                simd = getNative(panama).orElse(panama);
-            }
-            simd = tunedTensorOperations(TensorProviderKind.SIMD, simd);
-            operations.put(TensorProviderKind.SIMD, simd);
-
-            TensorOperations gpu = additionalTensorOperations.get(TensorProviderKind.GPU);
-            if (gpu == null) {
-                Optional<TensorOperations> maybeGpu = gpuProvider
-                        ? tryLoadTensorOperations("io.teknek.deliverance.tensor.operations.NativeGPUTensorOperations")
-                        : Optional.empty();
-                maybeGpu.ifPresent(value -> operations.put(TensorProviderKind.GPU,
-                        tunedTensorOperations(TensorProviderKind.GPU, value)));
-                if ((gpuPrefill || gpuDecode || gpuDecodeAttention || gpuDiffusionBlockProjection) && maybeGpu.isEmpty()) {
-                    throw new IllegalStateException("GPU projection requested but NativeGPUTensorOperations is not available");
-                }
-            } else {
-                operations.put(TensorProviderKind.GPU, tunedTensorOperations(TensorProviderKind.GPU, gpu));
-            }
-
-            return Map.copyOf(operations);
-        }
-
-        private TensorOperations tunedTensorOperations(TensorProviderKind kind, TensorOperations operations) {
-            Integer fixed = parallelSplitSizeFixed.get(kind);
-            if (fixed != null) {
-                return new ParallelSplitSizedTensorOperations(operations, fixed);
-            }
-            Double configuredMultiplier = parallelSplitSizeMultiplier.get(kind);
-            if (configuredMultiplier != null) {
-                int splitSize = multiplierSplitSize(kind, configuredMultiplier, true);
-                return new ParallelSplitSizedTensorOperations(operations, splitSize);
-            }
-            return operations;
         }
 
         private int multiplierSplitSize(TensorProviderKind kind, double multiplier, boolean configuredOverride) {
@@ -969,15 +843,6 @@ public class AutoModelForCausaLm {
 
         private static int roundUp(int value, int alignment) {
             return ((value + alignment - 1) / alignment) * alignment;
-        }
-
-        private Optional<TensorOperations> tryLoadTensorOperations(String className) {
-            try {
-                return Optional.of((TensorOperations) Class.forName(className).getConstructor().newInstance());
-            } catch (Throwable t) {
-                LOGGER.debug("tensor operations provider {} is not available", className, t);
-                return Optional.empty();
-            }
         }
 
         public ModelFetcher resolveModelFetcherForLoad() {
@@ -1057,11 +922,6 @@ public class AutoModelForCausaLm {
             return mr;
         }
 
-        /** @deprecated V1 allocator accessor; migrated builders will expose {@code Lighter}. */
-        @Deprecated(forRemoval = true)
-        public TensorAllocator getAllocator() {
-            return allocator;
-        }
 
         public DType getWorkingMem() {
             return workingMem;
@@ -1119,11 +979,6 @@ public class AutoModelForCausaLm {
             return generationOptions;
         }
 
-        /** @deprecated V1 provider accessor; migrated builders will expose {@code Lighter}. */
-        @Deprecated(forRemoval = true)
-        public ConfigurableTensorProvider getProvider() {
-            return provider;
-        }
 
         public WrappedForkJoinPool getPool() {
             return this.pool;
@@ -1142,17 +997,4 @@ public class AutoModelForCausaLm {
         }
     }
 
-    public static Optional<TensorOperations> getNative(TensorOperations inject){
-        String nm = "io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations";
-        try {
-            return Optional.of((TensorOperations) Class.forName(nm)
-                    .getConstructor(TensorOperations.class).newInstance(inject));
-        } catch (InstantiationException | ClassNotFoundException | NoSuchMethodException |
-                 InvocationTargetException | IllegalAccessException e) {
-            LOGGER.warn("unable to load native SIMD support", e);
-        } catch (UnsatisfiedLinkError e){
-            LOGGER.warn("unable to load native SIMD support", e);
-        }
-        return Optional.empty();
-    }
 }

@@ -12,7 +12,7 @@ class AutoModelForCausaLmPrefixCachePolicyTest {
 
     @Test
     void qwen06bRejectsTurboQuantPrefixCacheInBuilder() {
-        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+        KvBufferCacheSettings settings = new KvBufferCacheSettings()
                 .withPrefixCompression(KvBufferCacheSettings.PrefixCompression.MSE_TURBOQUANT);
 
         IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
@@ -24,7 +24,7 @@ class AutoModelForCausaLmPrefixCachePolicyTest {
 
     @Test
     void qwen06bAllowsExactPrefixCacheInBuilder() {
-        KvBufferCacheSettings settings = new KvBufferCacheSettings(true)
+        KvBufferCacheSettings settings = new KvBufferCacheSettings()
                 .withPrefixCompression(KvBufferCacheSettings.PrefixCompression.NONE);
 
         assertDoesNotThrow(() -> AutoModelForCausaLm.newBuilder(new ModelFetcher("edwardcapriolo", "Qwen3-0.6B-JQ4"))

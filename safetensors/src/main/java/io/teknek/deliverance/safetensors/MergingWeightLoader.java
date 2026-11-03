@@ -4,12 +4,12 @@ import com.google.common.primitives.Ints;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.TensorInfo;
-import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.TensorRef;
 
 import java.util.Map;
 import java.nio.file.Path;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -26,12 +26,12 @@ public class MergingWeightLoader implements WeightLoader {
 
     private final WeightLoader delegate;
     private final LoraAdapter adapter;
-    private final TensorOperations tensorOps;
+    private final Lighter lighter;
 
-    public MergingWeightLoader(WeightLoader delegate, LoraAdapter adapter, TensorOperations tensorOps) {
+    public MergingWeightLoader(WeightLoader delegate, LoraAdapter adapter, Lighter lighter) {
         this.delegate = delegate;
         this.adapter = adapter;
-        this.tensorOps = tensorOps;
+        this.lighter = Objects.requireNonNull(lighter, "lighter");
         DType baseDType = delegate.getModelDType();
         if (baseDType != DType.F32 && baseDType != DType.BF16 && baseDType != DType.F16) {
             throw new UnsupportedOperationException(
@@ -134,7 +134,7 @@ public class MergingWeightLoader implements WeightLoader {
      * <p>{@code base} has shape {@code [out, in]}. {@code loraA} has shape {@code [rank, in]} and
      * {@code loraB} has shape {@code [out, rank]} (standard PEFT layout). For each output row
      * {@code o}, {@code delta[o,:] = scale * sum_k loraB[o,k] * loraA[k,:]} -- exactly what {@link
-     * TensorOperations}'s batched {@code saxpy} computes when given one row of (pre-scaled) {@code
+     * TensorRef}'s batched {@code saxpy} computes when given one row of (pre-scaled) {@code
      * loraB} as {@code alpha} and all of {@code loraA} as {@code x}. The batched primitive requires
      * both its {@code alpha} and {@code y} arguments to be single-row tensors, so this loops over
      * output rows, slicing one row of {@code merged} (as {@code y}) and one row of {@code scaledB}
@@ -146,7 +146,7 @@ public class MergingWeightLoader implements WeightLoader {
      * {@code y}, and a real-world adapter's stored dtype (commonly F32) has no guaranteed relationship
      * to the base model's dtype (commonly BF16 for HF-distributed dense checkpoints). {@code loraB} is
      * pre-scaled by {@code adapter.scale()} during that same conversion pass rather than via {@link
-     * TensorOperations#scale}: on this codebase's ARM/Panama path, {@code scale()} only implements BF16
+     * {@code scale}: on this codebase's ARM/Panama path, {@code scale()} only implements BF16
      * for AVX_512/AVX_256 and has no native ARM kernel (unlike {@code saxpy}, which does fall back
      * correctly for BF16), so calling it here would make merging fail on BF16 base models under ARM.</p>
      */
@@ -164,7 +164,11 @@ public class MergingWeightLoader implements WeightLoader {
         for (int o = 0; o < outFeatures; o++) {
             AbstractTensor mergedRow = merged.slice(o);
             AbstractTensor scaledBRow = scaledB.slice(o);
-            tensorOps.saxpy(scaledBRow, loraA, mergedRow, 0, 0, inFeatures, 0, 0, rank);
+            try (TensorRef scaledBRef = TensorRef.borrowed(scaledBRow);
+                 TensorRef loraARef = TensorRef.borrowed(loraA);
+                 TensorRef mergedRef = TensorRef.borrowed(mergedRow)) {
+                lighter.saxpy(scaledBRef, loraARef, mergedRef, 0, 0, inFeatures, 0, 0, rank);
+            }
         }
         return merged;
     }

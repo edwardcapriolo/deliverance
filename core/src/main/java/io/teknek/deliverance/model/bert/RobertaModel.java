@@ -2,7 +2,6 @@ package io.teknek.deliverance.model.bert;
 
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.DType;
-import io.teknek.deliverance.classifier.ClassifyOutput;
 import io.teknek.deliverance.embedding.PoolingType;
 import io.teknek.deliverance.grace.EncodeOptions;
 import io.teknek.deliverance.grace.Encoding;
@@ -14,10 +13,8 @@ import io.teknek.deliverance.model.tensorparallel.TensorParallelCollectives;
 import io.teknek.deliverance.model.tensorparallel.TensorParallelContext;
 import io.teknek.deliverance.safetensors.Config;
 import io.teknek.deliverance.safetensors.WeightLoader;
-import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorAllocator;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
+import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.TensorRef;
 import io.teknek.deliverance.tensorlib.PlannedTensorRef;
 import io.teknek.deliverance.tensor.kv.KvCacheSession;
@@ -33,13 +30,12 @@ public class RobertaModel extends BertFamilyModel {
 
     public RobertaModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer tokenizer,
             DType workingDType, DType workingQType, Optional<DType> modelQType,
-            ConfigurableTensorProvider configurableTensorProvider, MetricRegistry metricRegistry,
-            TensorAllocator tensorAllocator, KvBufferCacheSettings kvBufferCacheSettings,
+            MetricRegistry metricRegistry, KvBufferCacheSettings kvBufferCacheSettings,
             ToolCallParser toolCallParser, WrappedForkJoinPool pool, TensorParallelContext tensorParallelContext,
-            TensorParallelCollectives tensorParallelCollectives, Optional<DType> outputHeadQuantization) {
+            TensorParallelCollectives tensorParallelCollectives, Optional<DType> outputHeadQuantization, Lighter lighter) {
         super(inferenceType, c, w, tokenizer, workingDType, workingQType, modelQType,
-                configurableTensorProvider, metricRegistry, tensorAllocator, kvBufferCacheSettings, toolCallParser,
-                pool, tensorParallelContext, tensorParallelCollectives, outputHeadQuantization);
+                metricRegistry, kvBufferCacheSettings, toolCallParser, pool, tensorParallelContext,
+                tensorParallelCollectives, outputHeadQuantization, lighter);
     }
 
     @Override
@@ -65,28 +61,13 @@ public class RobertaModel extends BertFamilyModel {
                 });
     }
 
-    @Override
-    protected ClassifyOutput loadClassifierWeights() {
-        if (!config.isClassifier()) {
-            throw new UnsupportedOperationException("Classification not supported by this model");
-        }
+    private void loadClassificationHead() {
         TensorRef denseWeight = registerModelTensorRef(loadClassifierRef("classifier.dense.weight"));
         TensorRef denseBias = registerModelTensorRef(loadClassifierRef("classifier.dense.bias"));
         TensorRef outputWeight = registerModelTensorRef(loadClassifierRef("classifier.out_proj.weight"));
         TensorRef outputBias = registerModelTensorRef(loadClassifierRef("classifier.out_proj.bias"));
         classificationHead = new RobertaClassificationHead(denseWeight, denseBias, outputWeight, outputBias,
                 config.embeddingLength, outputWeight.shape().first());
-        return new ClassifyOutput() {
-            @Override
-            public AbstractTensor getClassificationWeights() {
-                throw new UnsupportedOperationException("RoBERTa uses a multi-stage classification head");
-            }
-
-            @Override
-            public Optional<AbstractTensor> getClassificationBias() {
-                return Optional.empty();
-            }
-        };
     }
 
     protected int positionPaddingId() {
@@ -97,13 +78,12 @@ public class RobertaModel extends BertFamilyModel {
         return weights.isWeightPresent(name) ? weights.loadRef(name) : loadWeightRef(name);
     }
 
-    @Override
-    protected io.teknek.deliverance.generator.SampleOutput loadOutputWeights() {
-        throw new UnsupportedOperationException();
-    }
 
     @Override
     protected SortedMap<String, Float> classifyInput(String input, PoolingType poolingType) {
+        if (classificationHead == null) {
+            loadClassificationHead();
+        }
         EncodeOptions options = EncodeOptions.defaults();
         Encoding encoding = tokenizer.encode(input, options);
         BertInput modelInput = inputForEncoding(encoding);

@@ -50,7 +50,7 @@ class Gemma4V2SharedKvHistoryTest {
                      weights,
                      org.mockito.Mockito.mock(PreTrainedTokenizer.class),
                      DType.F32, DType.F32, Optional.empty(), metrics,
-                     new KvBufferCacheSettings(true).withBlockSize(2), new DefaultToolCallParser(), pool,
+                      new KvBufferCacheSettings().withBlockSize(2), new DefaultToolCallParser(), pool,
                       new StaticTensorParallelContext(0, 1), new SingleRankTensorParallelCollectives(),
                       Optional.empty(), new Lighter(metrics, pool.getUnderlying()))) {
             model.init();

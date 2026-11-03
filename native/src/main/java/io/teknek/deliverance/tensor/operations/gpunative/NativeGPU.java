@@ -308,47 +308,47 @@ public class NativeGPU {
         }
     }
 
-    private static class register_scale_shader {
+    private static class tensor2_register_scale_shader {
         public static final FunctionDescriptor DESC = FunctionDescriptor.of(
             NativeGPU.C_LONG, NativeGPU.C_POINTER, NativeGPU.C_INT);
-        public static final MemorySegment ADDR = NativeGPU.findOrThrow("register_scale_shader");
+        public static final MemorySegment ADDR = NativeGPU.findOrThrow("tensor2_register_scale_shader");
         public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
     }
 
-    public static long register_scale_shader(MemorySegment data, int size) {
+    public static long tensor2_register_scale_shader(MemorySegment data, int size) {
         try {
-            return (long) register_scale_shader.HANDLE.invokeExact(data, size);
+            return (long) tensor2_register_scale_shader.HANDLE.invokeExact(data, size);
         } catch (Throwable ex$) {
             throw new AssertionError("should not reach here", ex$);
         }
     }
 
-    private static class free_scale_shader {
+    private static class tensor2_free_scale_shader {
         public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(NativeGPU.C_LONG);
-        public static final MemorySegment ADDR = NativeGPU.findOrThrow("free_scale_shader");
+        public static final MemorySegment ADDR = NativeGPU.findOrThrow("tensor2_free_scale_shader");
         public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
     }
 
-    public static void free_scale_shader(long id) {
+    public static void tensor2_free_scale_shader(long id) {
         try {
-            free_scale_shader.HANDLE.invokeExact(id);
+            tensor2_free_scale_shader.HANDLE.invokeExact(id);
         } catch (Throwable ex$) {
             throw new AssertionError("should not reach here", ex$);
         }
     }
 
-    private static class gpu_scale_f32 {
+    private static class tensor2_gpu_scale_f32_device {
         public static final FunctionDescriptor DESC = FunctionDescriptor.ofVoid(
             NativeGPU.C_LONG, NativeGPU.C_LONG, NativeGPU.C_FLOAT, NativeGPU.C_INT, NativeGPU.C_INT,
             NativeGPU.C_INT, NativeGPU.C_INT);
-        public static final MemorySegment ADDR = NativeGPU.findOrThrow("gpu_scale_f32");
+        public static final MemorySegment ADDR = NativeGPU.findOrThrow("tensor2_gpu_scale_f32_device");
         public static final MethodHandle HANDLE = Linker.nativeLinker().downcallHandle(ADDR, DESC);
     }
 
-    public static void gpu_scale_f32(long id, long tensor, float factor, int offset, int length,
+    public static void tensor2_gpu_scale_f32_device(long id, long tensor, float factor, int offset, int length,
             int rows, int columns) {
         try {
-            gpu_scale_f32.HANDLE.invokeExact(id, tensor, factor, offset, length, rows, columns);
+            tensor2_gpu_scale_f32_device.HANDLE.invokeExact(id, tensor, factor, offset, length, rows, columns);
         } catch (Throwable ex$) {
             throw new AssertionError("should not reach here", ex$);
         }

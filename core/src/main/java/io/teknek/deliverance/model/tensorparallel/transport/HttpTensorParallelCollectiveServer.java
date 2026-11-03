@@ -79,7 +79,7 @@ public class HttpTensorParallelCollectiveServer implements AutoCloseable {
                 byte[] tensorBytes = new byte[bodyBuffer.remaining()];
                 bodyBuffer.get(tensorBytes);
                 AllReduceSumRequest request = JsonUtils.om.readValue(header, AllReduceSumRequest.class);
-                decoded = new DecodedRequest(request, codec.decode(tensorBytes));
+                decoded = new DecodedRequest(request, codec.decodeAbstract(tensorBytes));
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }

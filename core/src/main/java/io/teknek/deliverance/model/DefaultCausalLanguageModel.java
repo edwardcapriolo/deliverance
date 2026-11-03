@@ -19,25 +19,23 @@ import java.util.UUID;
 /**
  * Standard {@link CausalLanguageModel} returned by the causal-LM loader.
  *
- * <p>The facade exposes the task-level API while delegating transformer execution to a {@link GenerationBackend}. The
+ * <p>The facade exposes the task-level API while delegating transformer execution to a {@link GenerationBackendRef}. The
  * same facade can therefore serve a normal local model or a distributed/tensor-parallel runtime without changing caller
  * code. The coordinator model supplies tokenizer, prompt support, output projection, sampling helpers, and
  * model-specific response post-processing.</p>
  */
 public final class DefaultCausalLanguageModel implements CausalLanguageModel {
     private final AbstractModel coordinatorModel;
-    private final GenerationBackend backend;
-    private final GenerationEngine engine;
+    private final GenerationBackendRef backend;
 
-    public DefaultCausalLanguageModel(AbstractModel coordinatorModel, GenerationBackend backend) {
+    public DefaultCausalLanguageModel(AbstractModel coordinatorModel, GenerationBackendRef backend) {
         this(coordinatorModel, backend, SketchesSettings.DEFAULT);
     }
 
-    public DefaultCausalLanguageModel(AbstractModel coordinatorModel, GenerationBackend backend,
+    public DefaultCausalLanguageModel(AbstractModel coordinatorModel, GenerationBackendRef backend,
             SketchesSettings sketchesSettings) {
         this.coordinatorModel = Objects.requireNonNull(coordinatorModel, "coordinatorModel");
         this.backend = Objects.requireNonNull(backend, "backend");
-        this.engine = new GenerationEngine(Objects.requireNonNull(sketchesSettings, "sketchesSettings"));
     }
 
     /**
@@ -66,11 +64,8 @@ public final class DefaultCausalLanguageModel implements CausalLanguageModel {
         if (coordinatorModel.usesModelSpecificGeneration()) {
             return coordinatorModel.generate(sessionId, promptContext, generatorParameters, eventFired);
         }
-        if (coordinatorModel.usesKvCache2Generation() && backend instanceof GenerationBackendRef backendRef) {
-            return new GenerationEngineRef().generate(coordinatorModel, backendRef, sessionId, promptContext,
-                    generatorParameters, eventFired);
-        }
-        return engine.generate(coordinatorModel, backend, sessionId, promptContext, generatorParameters, eventFired);
+        return new GenerationEngineRef().generate(coordinatorModel, backend, sessionId, promptContext,
+                generatorParameters, eventFired);
     }
 
     @Override

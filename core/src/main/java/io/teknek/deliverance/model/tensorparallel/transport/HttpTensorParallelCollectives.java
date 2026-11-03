@@ -74,7 +74,7 @@ public class HttpTensorParallelCollectives implements TensorParallelCollectives 
             throw new IllegalStateException("Collective server returned HTTP " + response.statusCode());
         }
         try (Timer.Context ignored = InferenceProfiler.timer(METRICS, "collective.client.deserialize").time()) {
-            return codec.decode(response.body());
+            return codec.decodeAbstract(response.body());
         }
     }
 

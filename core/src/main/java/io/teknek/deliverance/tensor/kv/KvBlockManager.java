@@ -4,7 +4,7 @@ import com.google.common.base.Preconditions;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.deliverance.model.InferenceProfiler;
 import io.teknek.deliverance.tensor.KvBufferCacheSettings;
-import io.teknek.deliverance.tensor.TensorAllocator;
+import io.teknek.deliverance.tensor2.Lighter;
 
 import javax.annotation.Nullable;
 import java.util.Comparator;
@@ -124,9 +124,9 @@ public final class KvBlockManager implements AutoCloseable {
         this(metricRegistry, Objects.requireNonNull(settings, "settings").getSharedPrefixBlockCacheMaxBytes(), null);
     }
 
-    public KvBlockManager(MetricRegistry metricRegistry, KvBufferCacheSettings settings, TensorAllocator allocator) {
+    public KvBlockManager(MetricRegistry metricRegistry, KvBufferCacheSettings settings, Lighter lighter) {
         this(metricRegistry, Objects.requireNonNull(settings, "settings").getSharedPrefixBlockCacheMaxBytes(),
-                KvBlockDiskStore.open(settings, allocator, metricRegistry));
+                KvBlockDiskStore.open(settings, lighter, metricRegistry));
     }
 
     public KvBlockManager(MetricRegistry metricRegistry, long maxResidentBytes) {

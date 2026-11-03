@@ -116,7 +116,7 @@ public final class BertSelfAttention2 implements SelfAttention2 {
     private void project(TensorRef output, TensorRef input, TensorRef weight, TensorRef bias) {
         int outputLength = (int) output.shape().last();
         model.runChunks("bertselfattention2.projection", 0, outputLength,
-                model.getTensorProviderParallelSplitSize(), Optional.empty(),
+                32, Optional.empty(),
                 (chunkStart, chunkSize) -> lighter.dotProductRows(output, input, weight, 0,
                         attentionLength, chunkStart, chunkSize, chunkStart));
         addBias(output, bias);

@@ -3,6 +3,8 @@ package io.teknek.deliverance.model.tensorparallel.transport;
 import io.teknek.deliverance.DType;
 import io.teknek.deliverance.tensor.AbstractTensor;
 import io.teknek.deliverance.tensor.impl.FloatBufferTensor;
+import io.teknek.deliverance.tensor.TensorShape;
+import io.teknek.deliverance.tensor2.TensorRef;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -21,12 +23,12 @@ public class BinaryTensorPayloadCodec implements TensorPayloadCodec {
     }
 
     @Override
-    public byte[] encode(AbstractTensor tensor) {
+    public byte[] encode(TensorRef tensor) {
         if (tensor.dType() != DType.F32) {
             throw new UnsupportedOperationException("Binary tensor payload currently supports F32 tensors");
         }
         int[] shape = tensor.shape().shapeArray();
-        int byteLength = Math.toIntExact(tensor.size() * tensor.dType().size());
+        int byteLength = Math.toIntExact(tensor.shape().size() * tensor.dType().size());
         ByteBuffer buffer = ByteBuffer.allocate(Integer.BYTES * 4 + Integer.BYTES * shape.length + Long.BYTES + byteLength)
                 .order(ByteOrder.LITTLE_ENDIAN);
         buffer.putInt(MAGIC);
@@ -37,12 +39,23 @@ public class BinaryTensorPayloadCodec implements TensorPayloadCodec {
             buffer.putInt(dim);
         }
         buffer.putLong(byteLength);
-        buffer.put(tensor.getMemorySegment().asByteBuffer().duplicate().order(ByteOrder.LITTLE_ENDIAN).slice(0, byteLength));
+        buffer.put(tensor.memorySegment().asByteBuffer().duplicate().order(ByteOrder.LITTLE_ENDIAN)
+                .slice(tensor.memorySegmentOffset(0), byteLength));
         return buffer.array();
     }
 
     @Override
-    public AbstractTensor decode(byte[] bytes) {
+    public byte[] encode(AbstractTensor tensor) {
+        return encode(TensorRef.borrowed(tensor));
+    }
+
+    @Override
+    public TensorRef decode(byte[] bytes) {
+        return TensorRef.owned(decodeAbstract(bytes));
+    }
+
+    @Override
+    public AbstractTensor decodeAbstract(byte[] bytes) {
         ByteBuffer buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
         int magic = buffer.getInt();
         if (magic != MAGIC) {

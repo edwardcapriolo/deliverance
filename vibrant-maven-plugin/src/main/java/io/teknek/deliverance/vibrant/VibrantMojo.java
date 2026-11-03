@@ -8,8 +8,6 @@ import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.AutoModelForCausaLm;
 import io.teknek.deliverance.safetensors.fetch.ModelFetcher;
 import io.teknek.deliverance.safetensors.prompt.PromptSupport;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
-import io.teknek.deliverance.tensor.operations.NativeSimdTensorOperations;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
@@ -126,11 +124,8 @@ public class VibrantMojo extends AbstractMojo {
         DType quantized = DType.valueOf(modelConfig.getQuantizedMemType());
         AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(fetch);
         WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
-        NativeSimdTensorOperations operation = new NativeSimdTensorOperations(
-                new ConfigurableTensorProvider(builder.getAllocator(), pool).get());
         builder.withWorkingMemoryType(working);
         builder.withWorkingQuantType(quantized);
-        builder.withTensorProvider(new ConfigurableTensorProvider(operation));
 
         try (AbstractModel m = builder.buildLocalTransformerModel()) {
             for (VibeSpec spec : vibeSpecs) {

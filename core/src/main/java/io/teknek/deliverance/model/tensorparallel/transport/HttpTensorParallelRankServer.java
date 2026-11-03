@@ -3,7 +3,7 @@ package io.teknek.deliverance.model.tensorparallel.transport;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.teknek.deliverance.JsonUtils;
-import io.teknek.deliverance.tensor.AbstractTensor;
+import io.teknek.deliverance.tensor2.TensorRef;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -86,7 +86,7 @@ public class HttpTensorParallelRankServer implements AutoCloseable {
 
     private void handleBatchForward(HttpExchange exchange, TensorParallelRankService service) throws IOException {
         BatchForwardRequest request = JsonUtils.om.readValue(exchange.getRequestBody(), BatchForwardRequest.class);
-        try (AbstractTensor output = service.batchForward(request.sessionId(), request.tokenIds(), request.startPosition())) {
+        try (TensorRef output = service.batchForward(request.sessionId(), request.tokenIds(), request.startPosition())) {
             writeTensor(exchange, output);
         }
     }
@@ -118,7 +118,7 @@ public class HttpTensorParallelRankServer implements AutoCloseable {
 
     private void handleForward(HttpExchange exchange, TensorParallelRankService service) throws IOException {
         ForwardRequest request = JsonUtils.om.readValue(exchange.getRequestBody(), ForwardRequest.class);
-        try (AbstractTensor output = service.forward(request.sessionId(), request.tokenId(), request.position())) {
+        try (TensorRef output = service.forward(request.sessionId(), request.tokenId(), request.position())) {
             writeTensor(exchange, output);
         }
     }
@@ -152,7 +152,7 @@ public class HttpTensorParallelRankServer implements AutoCloseable {
         exchange.close();
     }
 
-    private void writeTensor(HttpExchange exchange, AbstractTensor tensor) throws IOException {
+    private void writeTensor(HttpExchange exchange, TensorRef tensor) throws IOException {
         byte[] response = codec.encode(tensor);
         exchange.getResponseHeaders().add("Content-Type", codec.contentType());
         exchange.sendResponseHeaders(200, response.length);

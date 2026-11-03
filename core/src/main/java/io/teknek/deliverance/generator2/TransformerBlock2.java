@@ -4,7 +4,6 @@ import io.dropwizard.metrics5.Timer;
 import io.teknek.deliverance.generator.ForwardPhase;
 import io.teknek.deliverance.model.AbstractModel;
 import io.teknek.deliverance.model.InferenceProfiler;
-import io.teknek.deliverance.tensor.operations.ConfigurableTensorProvider;
 import io.teknek.deliverance.tensor.kv.KvCacheSession;
 import io.teknek.deliverance.tensor.kv.CacheExecutionMode;
 import io.teknek.deliverance.tensor2.CompositeOps;
@@ -27,7 +26,6 @@ public class TransformerBlock2 {
     final FeedForward2 ffBlock;
     final Optional<LayerNorm2> postFFNorm;
     final Optional<LayerNorm2> preResponseNorm;
-    final ConfigurableTensorProvider configurableTensorProvider;
     private final CompositeOps compositeOps;
     private final float layerScalar;
     private final TensorRef pleGateWeights;
@@ -42,8 +40,7 @@ public class TransformerBlock2 {
     public TransformerBlock2(AbstractModel model, int layerIndex, LayerNorm2 preAttentionNorm,
             Qwen3KvCacheSelfAttention2 attention, LayerNorm2 postAttentionNorm, FeedForward2 mlp) {
         this(model, layerIndex, Optional.of(preAttentionNorm), attention, Optional.empty(),
-                Optional.of(postAttentionNorm), mlp, Optional.empty(), Optional.empty(),
-                model.getConfigurableTensorProvider(), 1.0f);
+                Optional.of(postAttentionNorm), mlp, Optional.empty(), Optional.empty());
     }
 
     public TransformerBlock2(
@@ -55,37 +52,35 @@ public class TransformerBlock2 {
             Optional<LayerNorm2> preFFNorm,
             FeedForward2 ffBlock,
             Optional<LayerNorm2> postFFNorm,
-            Optional<LayerNorm2> preResponseNorm,
-            ConfigurableTensorProvider configurableTensorProvider
+            Optional<LayerNorm2> preResponseNorm
     ) {
         this(model, layerIndex, preAttentionNorm, attention, postAttentionNorm, preFFNorm, ffBlock,
-                postFFNorm, preResponseNorm, configurableTensorProvider, 1.0f);
+                postFFNorm, preResponseNorm, 1.0f);
     }
 
     public TransformerBlock2(
             AbstractModel model, int layerIndex, Optional<LayerNorm2> preAttentionNorm, SelfAttention2 attention,
             Optional<LayerNorm2> postAttentionNorm, Optional<LayerNorm2> preFFNorm, FeedForward2 ffBlock,
-            Optional<LayerNorm2> postFFNorm, Optional<LayerNorm2> preResponseNorm,
-            ConfigurableTensorProvider configurableTensorProvider, float layerScalar
+            Optional<LayerNorm2> postFFNorm, Optional<LayerNorm2> preResponseNorm, float layerScalar
     ) {
         this(model, layerIndex, preAttentionNorm, attention, postAttentionNorm, preFFNorm, ffBlock, postFFNorm,
-                preResponseNorm, configurableTensorProvider, layerScalar, null, null, Optional.empty(), 0);
+                preResponseNorm, layerScalar, null, null, Optional.empty(), 0);
     }
 
     public TransformerBlock2(AbstractModel model, int layerIndex, Optional<LayerNorm2> preAttentionNorm,
             SelfAttention2 attention, Optional<LayerNorm2> postAttentionNorm, Optional<LayerNorm2> preFFNorm,
             FeedForward2 ffBlock, Optional<LayerNorm2> postFFNorm, Optional<LayerNorm2> preResponseNorm,
-            ConfigurableTensorProvider configurableTensorProvider, float layerScalar, TensorRef pleGateWeights,
+            float layerScalar, TensorRef pleGateWeights,
             TensorRef pleProjectionWeights, Optional<LayerNorm2> pleNorm, int pleLength) {
         this(model, layerIndex, preAttentionNorm, attention, postAttentionNorm, preFFNorm, ffBlock, postFFNorm,
-                preResponseNorm, configurableTensorProvider, layerScalar, pleGateWeights, pleProjectionWeights,
+                preResponseNorm, layerScalar, pleGateWeights, pleProjectionWeights,
                 pleNorm, pleLength, Optional.empty(), Optional.empty(), Optional.empty(), null);
     }
 
     public TransformerBlock2(AbstractModel model, int layerIndex, Optional<LayerNorm2> preAttentionNorm,
             SelfAttention2 attention, Optional<LayerNorm2> postAttentionNorm, Optional<LayerNorm2> preFFNorm,
             FeedForward2 ffBlock, Optional<LayerNorm2> postFFNorm, Optional<LayerNorm2> preResponseNorm,
-            ConfigurableTensorProvider configurableTensorProvider, float layerScalar, TensorRef pleGateWeights,
+            float layerScalar, TensorRef pleGateWeights,
             TensorRef pleProjectionWeights, Optional<LayerNorm2> pleNorm, int pleLength,
             Optional<LayerNorm2> moeDenseNorm, Optional<LayerNorm2> moeInputNorm,
             Optional<LayerNorm2> moeOutputNorm, FeedForward2 moeBlock) {
@@ -98,7 +93,6 @@ public class TransformerBlock2 {
         this.ffBlock = java.util.Objects.requireNonNull(ffBlock, "ffBlock");
         this.postFFNorm = java.util.Objects.requireNonNull(postFFNorm, "postFFNorm");
         this.preResponseNorm = java.util.Objects.requireNonNull(preResponseNorm, "preResponseNorm");
-        this.configurableTensorProvider = configurableTensorProvider;
         this.compositeOps = new CompositeOps(model.getLighter(), model.getMetricRegistry());
         this.layerScalar = layerScalar;
         this.pleGateWeights = pleGateWeights;

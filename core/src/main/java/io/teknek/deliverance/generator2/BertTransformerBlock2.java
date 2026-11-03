@@ -22,7 +22,7 @@ public final class BertTransformerBlock2 extends TransformerBlock2 {
     public BertTransformerBlock2(AbstractModel model, int layerIndex, SelfAttention2 attention,
             LayerNorm2 attentionNorm, FeedForward2 feedForward, LayerNorm2 outputNorm) {
         super(model, layerIndex, Optional.empty(), attention, Optional.empty(), Optional.empty(), feedForward,
-                Optional.empty(), Optional.empty(), model.getConfigurableTensorProvider());
+                Optional.empty(), Optional.empty());
         this.model = model;
         this.attention = attention;
         this.attentionNorm = attentionNorm;

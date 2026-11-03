@@ -14,7 +14,7 @@ import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.Random;
 
-/** TensorRef-native equivalent of {@link DeliveranceSampler}. */
+/** TensorRef-native generation sampler. */
 final class DeliveranceSamplerRef extends AbstractGeneratorSamplerRef {
     private final TensorRef outputWeights;
 
@@ -103,7 +103,7 @@ final class DeliveranceSamplerRef extends AbstractGeneratorSamplerRef {
         }
         candidates.sort(Comparator.comparingDouble((IndexValueToken t) -> t.value).reversed());
         int candidateCount = candidates.size();
-        int limit = parameters.topK.map(k -> DeliveranceSampler.topKCandidateCount(k, candidateCount))
+            int limit = parameters.topK.map(k -> topKCandidateCount(k, candidateCount))
                 .orElse(candidateCount);
         candidates = new ArrayList<>(candidates.subList(0, Math.min(limit, candidates.size())));
         float maxValue = max;
@@ -129,6 +129,12 @@ final class DeliveranceSamplerRef extends AbstractGeneratorSamplerRef {
             if (pick <= 0) return token.index;
         }
         return candidates.getLast().index;
+    }
+
+    private static int topKCandidateCount(float topK, int vocabularySize) {
+        if (topK <= 0) throw new IllegalArgumentException("topK must be > 0");
+        if (topK < 1.0f) return Math.max(1, vocabularySize - (int) (topK * vocabularySize));
+        return Math.min(vocabularySize, Math.round(topK));
     }
 
     /** Validates TensorRef sampling parameters with the legacy sampler's control-flow rules. */

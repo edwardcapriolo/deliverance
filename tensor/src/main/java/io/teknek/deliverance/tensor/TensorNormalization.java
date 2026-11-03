@@ -2,7 +2,6 @@ package io.teknek.deliverance.tensor;
 
 import com.google.common.base.Preconditions;
 import io.teknek.deliverance.math.WrappedForkJoinPool;
-import io.teknek.deliverance.tensor.operations.TensorOperations;
 import io.teknek.deliverance.tensor2.CompositeOps;
 import io.teknek.deliverance.tensor2.Lighter;
 import io.teknek.deliverance.tensor2.MultiplyInPlace;
@@ -21,13 +20,13 @@ public final class TensorNormalization {
      * Applies row-wise RMSNorm to a 2D tensor using a short-lived TensorPlan.
      *
      * <p>This convenience overload preserves the requested call shape. Production code that already owns a pool should
-     * prefer {@link #rmsNorm(AbstractTensor, AbstractTensor, AbstractTensor, float, TensorOperations, WrappedForkJoinPool)}
+     * prefer the TensorRef-native normalization operations.
      * to avoid creating a pool per call.</p>
      */
     public static void rmsNorm(AbstractTensor output, AbstractTensor input, AbstractTensor weight, float eps,
-            TensorOperations ops) {
+            io.teknek.deliverance.tensor2.Lighter lighter) {
         try (WrappedForkJoinPool pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores())) {
-            rmsNorm(output, input, weight, eps, ops, pool);
+            throw new UnsupportedOperationException("AbstractTensor normalization was removed; use TensorRef");
         }
     }
 
@@ -42,13 +41,12 @@ public final class TensorNormalization {
      * <p>If {@code weight} is {@code null}, the scale term is omitted. This is needed for DiffusionGemma's
      * self-conditioning post norm, where HF constructs `DiffusionGemmaRMSNorm(..., with_scale=False)`.</p>
      *
-     * <p>The plan is intentionally composed from existing tensor primitives: row copy, elementwise multiply for squaring,
-     * row sum, row scale, and optional row multiply by the norm weight. Current gap: {@link TensorOperations} does not
-     * expose a provider-backed fused RMSNorm primitive, so the only scalar work left here is per-row control flow and the
-     * reciprocal square-root scalar derived from the provider-backed row sum.</p>
+     * <p>Legacy AbstractTensor normalization is no longer part of production execution.</p>
      */
     public static void rmsNorm(AbstractTensor output, AbstractTensor input, AbstractTensor weight, float eps,
-            TensorOperations ops, WrappedForkJoinPool pool) {
+            io.teknek.deliverance.tensor2.Lighter lighter, WrappedForkJoinPool pool) {
+        throw new UnsupportedOperationException("AbstractTensor normalization was removed; use TensorRef");
+        /*
         Objects.requireNonNull(output, "output");
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(ops, "ops");
@@ -130,6 +128,7 @@ public final class TensorNormalization {
                 normalizedWeight.close();
             }
         }
+        */
     }
 
     /**
@@ -137,12 +136,14 @@ public final class TensorNormalization {
      *
      * <p>The input and output are shaped {@code [batch, rows, hidden]}. This method flattens the leading dimensions into
      * a temporary 2D tensor {@code [batch * rows, hidden]}, delegates to the TensorPlan-backed 2D
-     * {@link #rmsNorm(AbstractTensor, AbstractTensor, AbstractTensor, float, TensorOperations, WrappedForkJoinPool)}, then
+     * the TensorRef-native normalization operation, then
      * copies the normalized rows back into the 3D output. This keeps the RMSNorm formula in one place while supporting
      * DiffusionGemma canvas tensors.</p>
      */
     public static void rmsNormLastDim(AbstractTensor output, AbstractTensor input, AbstractTensor weight, float eps,
-            TensorOperations ops, WrappedForkJoinPool pool) {
+            io.teknek.deliverance.tensor2.Lighter lighter, WrappedForkJoinPool pool) {
+        throw new UnsupportedOperationException("AbstractTensor normalization was removed; use TensorRef");
+        /*
         Objects.requireNonNull(output, "output");
         Objects.requireNonNull(input, "input");
         TensorMutability.requireWritable(output, "rmsNormLastDim");
@@ -198,5 +199,6 @@ public final class TensorNormalization {
                     .tensor()
                     .materialize();
         }
+        */
     }
 }
