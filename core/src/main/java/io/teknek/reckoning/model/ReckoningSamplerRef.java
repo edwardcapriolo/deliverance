@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.Random;
+import java.util.function.IntFunction;
 
 /** TensorRef-native generation sampler. */
 final class ReckoningSamplerRef extends AbstractGeneratorSamplerRef {
@@ -82,10 +83,27 @@ final class ReckoningSamplerRef extends AbstractGeneratorSamplerRef {
     }
 
     private PriorityQueue<IndexValueToken> topLogProbs(boolean enabled, int limit) {
+        if (!enabled) return new PriorityQueue<>();
+        return topLogProbs(logits, limit, model::decodeToken);
+    }
+
+    static PriorityQueue<IndexValueToken> topLogProbs(TensorRef logits, int limit,
+            IntFunction<String> tokenDecoder) {
         PriorityQueue<IndexValueToken> result = new PriorityQueue<>();
-        if (!enabled || limit <= 0) return result;
+        if (limit <= 0) return result;
+        double max = Double.NEGATIVE_INFINITY;
+        double sum = 0.0;
         for (int i = 0; i < logits.shape().last(); i++) {
-            IndexValueToken token = new IndexValueToken(i, logits.get(0, i), model.decodeToken(i));
+            max = Math.max(max, logits.get(0, i));
+        }
+        for (int i = 0; i < logits.shape().last(); i++) {
+            sum += FastMath.exp(logits.get(0, i) - max);
+        }
+        double logNormalizer = max + FastMath.log(sum);
+        for (int i = 0; i < logits.shape().last(); i++) {
+            float logit = logits.get(0, i);
+            IndexValueToken token = new IndexValueToken(i, logit, tokenDecoder.apply(i));
+            token.logProb = (float) (logit - logNormalizer);
             if (result.size() < limit) result.offer(token);
             else if (token.compareTo(result.peek()) > 0) { result.poll(); result.offer(token); }
         }

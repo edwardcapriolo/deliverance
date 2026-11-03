@@ -86,6 +86,10 @@ public final class GenerationEngineRef {
                 try (Timer.Context ignoredPrefill = InferenceProfiler.timer(model.getMetricRegistry(), "generation.prefill").time()) {
                     prefillOutput = session.prefill(cursor);
                 }
+                model.emitGenerationDebug(new AbstractModel.GenerationDebugEvent(
+                        AbstractModel.GenerationDebugEventType.AFTER_PROMPT_PREFILL,
+                        promptTokens, cursor.prefixLength(), cursor.startPosition(),
+                        cursor.tokensToProcess().length, null));
                 SamplerReturn nextSample;
                 try (TensorRef output = prefillOutput;
                      Timer.Context ignoredSample = InferenceProfiler.timer(model.getMetricRegistry(), "generation.first_sample").time()) {

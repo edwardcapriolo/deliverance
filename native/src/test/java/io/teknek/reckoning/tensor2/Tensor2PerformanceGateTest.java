@@ -281,14 +281,14 @@ class Tensor2PerformanceGateTest {
 
     private static Path hostRoot() {
         try {
-            return Path.of(System.getProperty(ROOT_PROPERTY, "target/tensor2-performance-gate"),
+            return Path.of(System.getProperty(ROOT_PROPERTY, "target/dead-reckoning"),
                     java.net.InetAddress.getLocalHost().getHostName());
         } catch (IOException e) {
             throw new IllegalStateException("Unable to determine hostname", e);
         }
     }
 
-    private static Path historyDirectory(Path root) { return root.resolve("history"); }
+    private static Path historyDirectory(Path root) { return root; }
     private static Path failureDirectory(Path root) { return root.resolve("failures"); }
     private static String timestamp() { return Long.toString(Instant.now().toEpochMilli()); }
 
