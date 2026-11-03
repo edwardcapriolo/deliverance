@@ -256,6 +256,9 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     private final ThreadLocal<UUID> activeTensorPlanTraceId = new ThreadLocal<>();
     private volatile Consumer<GenerationDebugEvent> generationDebugHook = event -> {};
     private volatile Consumer<LayerDebugEvent> layerDebugHook = event -> {};
+    private DeadReckoningTrace deadReckoningTrace;
+    private String deadReckoningOwner;
+    private String deadReckoningModel;
 
      protected AbstractModel(InferenceType inferenceType, Config c, WeightLoader w, PreTrainedTokenizer t, DType workingMemoryDType,
                               DType workingQType, Optional<DType> modelQType,
@@ -658,6 +661,31 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         this.layerDebugHook = event -> {};
     }
 
+    void configureDeadReckoning(DeadReckoningParams params, String owner, String model) {
+        if (deadReckoningTrace != null) {
+            deadReckoningTrace.close();
+            deadReckoningTrace = null;
+        }
+        if (params != null) {
+            deadReckoningTrace = new DeadReckoningTrace(params);
+            deadReckoningOwner = owner;
+            deadReckoningModel = model;
+            setLayerDebugHook(deadReckoningTrace::recordLayer);
+        }
+    }
+
+    void deadReckoningHeader(PromptContext prompt, GeneratorParameters parameters) {
+        if (deadReckoningTrace != null) {
+            deadReckoningTrace.recordHeader(deadReckoningOwner, deadReckoningModel, prompt, parameters);
+        }
+    }
+
+    void deadReckoningResponse(Response response) {
+        if (deadReckoningTrace != null) {
+            deadReckoningTrace.recordResponse(response);
+        }
+    }
+
     public void emitLayerDebug(int layerIndex, String stage, AbstractTensor hiddenStates) {
         layerDebugHook.accept(new LayerDebugEvent(layerIndex, stage, tensorParallelContext, hiddenStates));
     }
@@ -668,6 +696,9 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
 
     void emitGenerationDebug(GenerationDebugEvent event) {
         generationDebugHook.accept(event);
+        if (deadReckoningTrace != null) {
+            deadReckoningTrace.recordGenerationDebug(event);
+        }
     }
 
     private final ConcurrentHashMap<String, ResolvedLoraAdapter> registeredLoraAdapters = new ConcurrentHashMap<>();
@@ -842,6 +873,10 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
 
     @Override
     public void close() {
+        if (deadReckoningTrace != null) {
+            deadReckoningTrace.close();
+            deadReckoningTrace = null;
+        }
         registeredLoraAdapters.values().forEach(ResolvedLoraAdapter::close);
         registeredLoraAdapters.clear();
         activeLoraAdapter.set(null);
@@ -1075,8 +1110,11 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
                                            GenerateEvent eventFired, GenerationForwarder forwarder) {
         Objects.requireNonNull(sessionId, "sessionId");
         Objects.requireNonNull(forwarder, "forwarder");
-        return new GenerationEngineRef().generate(this, new ForwarderGenerationBackend(forwarder), sessionId,
+        deadReckoningHeader(promptContext, generatorParameters);
+        Response response = new GenerationEngineRef().generate(this, new ForwarderGenerationBackend(forwarder), sessionId,
                 promptContext, generatorParameters, eventFired);
+        deadReckoningResponse(response);
+        return response;
     }
 
     /** Runs standard generation through the TensorRef-native backend boundary. */
@@ -1084,7 +1122,11 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
             GeneratorParameters generatorParameters, GenerateEvent eventFired, GenerationBackendRef backend) {
         Objects.requireNonNull(sessionId, "sessionId");
         Objects.requireNonNull(backend, "backend");
-        return new GenerationEngineRef().generate(this, backend, sessionId, promptContext, generatorParameters, eventFired);
+        deadReckoningHeader(promptContext, generatorParameters);
+        Response response = new GenerationEngineRef().generate(this, backend, sessionId, promptContext, generatorParameters,
+                eventFired);
+        deadReckoningResponse(response);
+        return response;
     }
 
     @Override

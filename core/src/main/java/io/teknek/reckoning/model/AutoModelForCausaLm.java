@@ -145,6 +145,7 @@ public class AutoModelForCausaLm {
         private Optional<Integer> groupedDecodeQkvSplitSize = Optional.empty();
         private AbstractModel.InferenceType requestedInferenceType = AbstractModel.InferenceType.FULL_GENERATION;
         private Lighter lighter;
+        private DeadReckoningParams deadReckoningParams;
 
         record QuantizeOnDemand(DType targetType, String outputOwner, String outputModel) {
             QuantizeOnDemand {
@@ -159,6 +160,11 @@ public class AutoModelForCausaLm {
 
         public Builder(ModelFetcher fetch){
             this.fetch = fetch;
+        }
+
+        public Builder withDeadReckoning(DeadReckoningParams params) {
+            this.deadReckoningParams = Objects.requireNonNull(params, "params");
+            return this;
         }
 
         public Builder withMetricRegistry(MetricRegistry metricRegistry){
@@ -584,6 +590,7 @@ public class AutoModelForCausaLm {
                     ? Optional.empty()
                     : Optional.of(LoraAdapter.fromPretrained(loraAdapterFetcher, mr));
             AbstractModel model = constructModel(modelRoot, loraAdapter);
+            model.configureDeadReckoning(deadReckoningParams, fetch.owner(), fetch.name());
             model.getLighter().allowDirtyTensors(allowDirtyTensors);
             model.setMaxPrefillBatchSize(maxPrefillBatchSize);
             model.setGpuPrefillEnabled(gpuPrefill);

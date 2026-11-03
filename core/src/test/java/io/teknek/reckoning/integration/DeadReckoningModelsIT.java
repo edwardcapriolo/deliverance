@@ -1,0 +1,117 @@
+package io.teknek.reckoning.integration;
+
+import io.teknek.reckoning.generator.GeneratorParameters;
+import io.teknek.reckoning.generator.Response;
+import io.teknek.reckoning.model.AbstractModel;
+import io.teknek.reckoning.model.AutoModelConfig;
+import io.teknek.reckoning.model.AutoModelForCausaLm;
+import io.teknek.reckoning.model.DeadReckoningParams;
+import io.teknek.reckoning.model.DeadReckoningSelector;
+import io.teknek.reckoning.model.DoNothingGenerateEvent;
+import io.teknek.reckoning.safetensors.fetch.ModelFetcher;
+import io.teknek.reckoning.safetensors.prompt.PromptContext;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
+import java.net.InetAddress;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Instant;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.UUID;
+
+/** Fast six-token Dead Reckoning traces for the supported small model families. */
+@Tag("small-model")
+public class DeadReckoningModelsIT {
+    private static final String PROMPT = "generate the first three letters of the alphabet.";
+
+    @Test
+    void qwen06bDense() throws Exception {
+        trace("qwen06b-dense", "Qwen", "Qwen3-0.6B", null);
+    }
+
+    @Test
+    void qwen06bJq4() throws Exception {
+        trace("qwen06b-jq4", "edwardcapriolo", "Qwen3-0.6B-JQ4", null);
+    }
+
+    @Test
+    void tinyLlamaDeliverance() throws Exception {
+        trace("tinyllama-deliverance", "tjake", "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4", null);
+    }
+
+    @Test
+    void tinyLlamaJq4() throws Exception {
+        trace("tinyllama-jq4", "tjake", "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4", null);
+    }
+
+    @Test
+    void gemma2Jq4() throws Exception {
+        trace("gemma2-jq4", "tjake", "gemma-2-2b-it-JQ4", null);
+    }
+
+    @Test
+    void nemotron3bArJq4() throws Exception {
+        trace("nemotron3b-ar-jq4", "edwardcapriolo", "Nemotron-Labs-Diffusion-3B-JQ4",
+                "benchmarks/configs/nemotron-labs-diffusion-3b-base-jq4-ar.json");
+    }
+
+    @Test
+    void nemotron3bDiffusionJq4() throws Exception {
+        trace("nemotron3b-diffusion-jq4", "edwardcapriolo", "Nemotron-Labs-Diffusion-3B-JQ4",
+                "benchmarks/configs/nemotron-labs-diffusion-3b-base-jq4-diffusion.json");
+    }
+
+    @Test
+    void antares1bJq4() throws Exception {
+        trace("antares1b-jq4", "edwardcapriolo", "antares-1b-JQ4", null);
+    }
+
+    private static void trace(String traceName, String owner, String modelName, String configPath) throws Exception {
+        ModelFetcher fetcher = new ModelFetcher(owner, modelName).withDownload(false);
+        fetcher.maybeDownload();
+
+        String host = InetAddress.getLocalHost().getHostName();
+        Path output = Path.of("dead-reckoning", host,
+                traceName + "-" + Instant.now().toEpochMilli() + ".jsonl");
+        DeadReckoningSelector selector = DeadReckoningSelector.regex(null, null, null, null,
+                DeadReckoningSelector.Capture.STATS, 32,
+                EnumSet.allOf(DeadReckoningSelector.Statistic.class));
+        AutoModelForCausaLm.Builder builder = AutoModelForCausaLm.newBuilder(fetcher)
+                .withDeadReckoning(new DeadReckoningParams(output, 32, List.of(selector)));
+        if (configPath != null) {
+            builder.withConfig(AutoModelConfig.fromJson(resolveRepoPath(configPath)));
+        }
+        try (AbstractModel model = builder.buildLocalTransformerModel()) {
+            PromptContext prompt = model.promptSupport()
+                    .map(support -> support.builder().addUserMessage(PROMPT).build())
+                    .orElseGet(() -> PromptContext.of("user: " + PROMPT + "\nassistant: "));
+            Response response = model.generate(UUID.randomUUID(), prompt,
+                    new GeneratorParameters()
+                            .withTemperature(0.0f)
+                            .withSeed(42)
+                            .withMaxTokens(6)
+                            .withLogProbs(true)
+                            .withTopLogProbs(10),
+                    new DoNothingGenerateEvent());
+            System.out.println("DEAD_RECKONING_RESPONSE model=" + modelName
+                    + " text=" + response.responseTextWithSpecialTokens.replace("\n", "\\n")
+                    + " tokens=" + response.generatedTokens
+                    + " finish=" + response.finishReason);
+        }
+        System.out.println("DEAD_RECKONING_TRACE=" + output.toAbsolutePath());
+    }
+
+    private static Path resolveRepoPath(String relativePath) {
+        Path current = Path.of("").toAbsolutePath();
+        while (current != null) {
+            Path candidate = current.resolve(relativePath);
+            if (Files.exists(candidate)) {
+                return candidate;
+            }
+            current = current.getParent();
+        }
+        throw new IllegalStateException("Unable to locate " + relativePath);
+    }
+}
