@@ -86,6 +86,7 @@ class EmbeddingGemma2TokenizerLoadTest {
         Path cache = Files.createTempDirectory("embeddinggemma2-tokenizer");
         ModelFetcher fetcher = new ModelFetcher("google", "embeddinggemma-2");
         fetcher.setBaseDir(cache);
+        fetcher.setLegacyBaseDir(cache);
         File modelDirectory = fetcher.maybeDownload(ModelFetcher.FetchPolicy.TOKENIZER_ONLY);
         assertFalse(Files.exists(modelDirectory.toPath().resolve("model.safetensors")));
         return AutoTokenizer.fromPretrained(modelDirectory.toPath());

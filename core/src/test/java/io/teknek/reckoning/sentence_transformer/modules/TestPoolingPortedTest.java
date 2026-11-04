@@ -1,8 +1,8 @@
 package io.teknek.reckoning.sentence_transformer.modules;
 
 import io.teknek.reckoning.embedding.SentenceTransformersPooling;
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.impl.FloatBufferTensor;
+import io.teknek.reckoning.tensor2.TensorRef;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -30,7 +30,7 @@ class TestPoolingPortedTest {
     @ParameterizedTest
     @EnumSource(SentenceTransformersPooling.Mode.class)
     void testPoolingForwardAllStrategies(SentenceTransformersPooling.Mode poolingMode) {
-        try (AbstractTensor tokenEmbeddings = new FloatBufferTensor(3 * 5, 8)) {
+        try (TensorRef tokenEmbeddings = TensorRef.owned(new FloatBufferTensor(3 * 5, 8))) {
             int[] attentionMask = {
                     1, 1, 1, 0, 0,
                     0, 1, 1, 1, 1,
@@ -56,7 +56,7 @@ class TestPoolingPortedTest {
 
     @Test
     void testPoolingClsRightPaddedUsesPositionZero() {
-        try (AbstractTensor tokenEmbeddings = tensor(new float[][] {
+        try (TensorRef tokenEmbeddings = tensor(new float[][] {
                 { 1.0f }, { 2.0f }, { 3.0f }, { 4.0f },
                 { 5.0f }, { 6.0f }, { 7.0f }, { 8.0f }
         })) {
@@ -71,7 +71,7 @@ class TestPoolingPortedTest {
 
     @Test
     void testPoolingClsLeftPaddedFindsFirstRealToken() {
-        try (AbstractTensor tokenEmbeddings = tensor(new float[][] {
+        try (TensorRef tokenEmbeddings = tensor(new float[][] {
                 { 1.0f }, { 2.0f }, { 3.0f }, { 4.0f },
                 { 5.0f }, { 6.0f }, { 7.0f }, { 8.0f }
         })) {
@@ -86,7 +86,7 @@ class TestPoolingPortedTest {
 
     @Test
     void testPoolingMaxRespectsAttentionMask() {
-        try (AbstractTensor tokenEmbeddings = tensor(new float[][] { { 1.0f }, { 3.0f }, { 5.0f }, { 10.0f } })) {
+        try (TensorRef tokenEmbeddings = tensor(new float[][] { { 1.0f }, { 3.0f }, { 5.0f }, { 10.0f } })) {
             float[][] output = SentenceTransformersPooling.pool(tokenEmbeddings,
                     new int[] { 1, 1, 1, 0 }, 1, 4, SentenceTransformersPooling.Mode.MAX);
 
@@ -96,7 +96,7 @@ class TestPoolingPortedTest {
 
     @Test
     void testPoolingMeanAndMeanSqrtLenTokens() {
-        try (AbstractTensor tokenEmbeddings = tensor(new float[][] { { 1.0f }, { 3.0f }, { 5.0f } })) {
+        try (TensorRef tokenEmbeddings = tensor(new float[][] { { 1.0f }, { 3.0f }, { 5.0f } })) {
             float[][] output = SentenceTransformersPooling.pool(tokenEmbeddings, new int[] { 1, 1, 0 }, 1, 3,
                     SentenceTransformersPooling.Mode.MEAN,
                     SentenceTransformersPooling.Mode.MEAN_SQRT_LEN_TOKENS);
@@ -107,7 +107,7 @@ class TestPoolingPortedTest {
 
     @Test
     void testPoolingWeightedmeanRespectsAttentionMask() {
-        try (AbstractTensor tokenEmbeddings = tensor(new float[][] { { 1.0f }, { 3.0f }, { 10.0f } })) {
+        try (TensorRef tokenEmbeddings = tensor(new float[][] { { 1.0f }, { 3.0f }, { 10.0f } })) {
             float[][] output = SentenceTransformersPooling.pool(tokenEmbeddings, new int[] { 1, 1, 0 }, 1, 3,
                     SentenceTransformersPooling.Mode.WEIGHTED_MEAN);
 
@@ -117,7 +117,7 @@ class TestPoolingPortedTest {
 
     @Test
     void testPoolingLasttokenFindsLastAttendedToken() {
-        try (AbstractTensor tokenEmbeddings = tensor(new float[][] {
+        try (TensorRef tokenEmbeddings = tensor(new float[][] {
                 { 0.0f }, { 1.0f }, { 2.0f }, { 3.0f },
                 { 5.0f }, { 6.0f }, { 7.0f }, { 8.0f }
         })) {
@@ -132,7 +132,7 @@ class TestPoolingPortedTest {
 
     @Test
     void testPoolingLasttokenAllPaddingReturnsZeroVector() {
-        try (AbstractTensor tokenEmbeddings = tensor(new float[][] { { 1.0f, 1.0f }, { 1.0f, 1.0f },
+        try (TensorRef tokenEmbeddings = tensor(new float[][] { { 1.0f, 1.0f }, { 1.0f, 1.0f },
                 { 1.0f, 1.0f }, { 1.0f, 1.0f } })) {
             float[][] output = SentenceTransformersPooling.pool(tokenEmbeddings, new int[] { 0, 0, 0, 0 }, 1, 4,
                     SentenceTransformersPooling.Mode.LAST_TOKEN);
@@ -149,7 +149,7 @@ class TestPoolingPortedTest {
     @ParameterizedTest
     @EnumSource(SentenceTransformersPooling.Mode.class)
     void testPoolingExactValues(SentenceTransformersPooling.Mode poolingMode) {
-        try (AbstractTensor tokenEmbeddings = tokenEmbeddings()) {
+        try (TensorRef tokenEmbeddings = tokenEmbeddings()) {
             float[][] output = SentenceTransformersPooling.pool(tokenEmbeddings, ATTENTION_MASK, BATCH, SEQ,
                     poolingMode);
             assertMatrixEquals(expectedByMode(poolingMode), output, 1.0e-5f);
@@ -159,7 +159,7 @@ class TestPoolingPortedTest {
     @ParameterizedTest
     @MethodSource("multiModes")
     void testPoolingMultiMode(SentenceTransformersPooling.Mode[] modes) {
-        try (AbstractTensor tokenEmbeddings = tokenEmbeddings()) {
+        try (TensorRef tokenEmbeddings = tokenEmbeddings()) {
             float[][] output = SentenceTransformersPooling.pool(tokenEmbeddings, ATTENTION_MASK, BATCH, SEQ, modes);
             assertMatrixEquals(concatExpected(modes), output, 1.0e-5f);
         }
@@ -221,7 +221,7 @@ class TestPoolingPortedTest {
                         SentenceTransformersPooling.Mode.LAST_TOKEN }));
     }
 
-    private static AbstractTensor tokenEmbeddings() {
+    private static TensorRef tokenEmbeddings() {
         return tensor(new float[][] {
                 { 1.0f, 2.0f }, { 3.0f, 4.0f }, { 5.0f, 6.0f }, { 99.0f, 99.0f },
                 { 10.0f, 20.0f }, { 30.0f, 40.0f }, { 50.0f, 60.0f }, { 70.0f, 80.0f }
@@ -252,8 +252,8 @@ class TestPoolingPortedTest {
         return output;
     }
 
-    private static AbstractTensor tensor(float[][] values) {
-        AbstractTensor tensor = new FloatBufferTensor(values.length, values[0].length);
+    private static TensorRef tensor(float[][] values) {
+        TensorRef tensor = TensorRef.owned(new FloatBufferTensor(values.length, values[0].length));
         for (int row = 0; row < values.length; row++) {
             for (int col = 0; col < values[row].length; col++) {
                 tensor.set(values[row][col], row, col);

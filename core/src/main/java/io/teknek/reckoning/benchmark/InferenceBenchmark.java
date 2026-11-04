@@ -1048,7 +1048,7 @@ public final class InferenceBenchmark {
             Options options = new Options();
             for (int i = 0; i < args.length; i++) {
                 switch (args[i]) {
-                    case "--engine" -> options.engine = Engine.valueOf(args[++i].toUpperCase(Locale.ROOT));
+                    case "--engine" -> options.engine = parseEngine(args[++i]);
                     case "--owner" -> options.owner = args[++i];
                     case "--model" -> options.model = args[++i];
                     case "--ollama-model" -> options.ollamaModel = args[++i];
@@ -1111,6 +1111,16 @@ public final class InferenceBenchmark {
                 throw new IllegalArgumentException("--tensor-parallel-collective-transport must be http or netty");
             }
             return options;
+        }
+
+        private static Engine parseEngine(String value) {
+            return switch (value.toLowerCase(Locale.ROOT)) {
+                case "reckoning", "deliverance" -> Engine.DELIVERANCE;
+                case "ollama" -> Engine.OLLAMA;
+                case "both" -> Engine.BOTH;
+                default -> throw new IllegalArgumentException("Unknown benchmark engine: " + value
+                        + " (expected reckoning, deliverance, ollama, or both)");
+            };
         }
 
         private void applyModelConfigDefaults() {

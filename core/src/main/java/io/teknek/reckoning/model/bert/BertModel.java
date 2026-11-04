@@ -18,11 +18,9 @@ import io.teknek.reckoning.model.tensorparallel.TensorParallelContext;
 import io.teknek.reckoning.safetensors.Config;
 import io.teknek.reckoning.safetensors.WeightLoader;
 import io.teknek.reckoning.tensor.KvBufferCacheSettings;
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor2.Lighter;
 import io.teknek.reckoning.tensor.kv.KvCacheSession;
 import io.teknek.reckoning.tensor2.TensorRef;
-import io.teknek.reckoning.tensor2.TensorRefBackedTensor;
 import io.teknek.reckoning.tensorlib.PlannedTensorRef;
 import io.teknek.reckoning.toolcallparser.ToolCallParser;
 
@@ -61,7 +59,7 @@ public class BertModel extends BertFamilyModel {
             PlannedTensorRef planned = forward(plannedInputEmbeddingsRef("bert_input_embeddings", inputEmbeddings,
                     ForwardPhase.PREFILL), 0, kvSession, Optional.empty(), ForwardPhase.PREFILL,
                     bertInput.batchSize(), bertInput.sequenceLength(), bertInput.attentionMask());
-            try (TensorRefBackedTensor tokenEmbeddings = new TensorRefBackedTensor(planned.tensor())) {
+            try (TensorRef tokenEmbeddings = planned.tensor()) {
                 if (poolingType == PoolingType.MODEL) {
                     if (poolingWeightRef == null || poolingBiasRef == null) {
                         throw new UnsupportedOperationException("no pooling layer for this model");
@@ -119,18 +117,16 @@ public class BertModel extends BertFamilyModel {
         if (!weights.isWeightPresent("pooler.dense.weight") && !weights.isWeightPresent("bert.pooler.dense.weight")) {
             return null;
         }
-        final AbstractTensor poolerDenseWeight = loadWeight("pooler.dense.weight");
-        final AbstractTensor poolerDenseBias = loadWeight("pooler.dense.bias");
         poolingWeightRef = registerModelTensorRef(loadAndMaybeQuantizedExcluding1DTensors(
                 "pooler.dense.weight", this::loadWeightRef, modelQType.orElse(modelDType)));
         poolingBiasRef = registerModelTensorRef(loadWeightRef("pooler.dense.bias"));
         return new PoolingLayer() {
-            public AbstractTensor getPoolingWeights() {
-                return poolerDenseWeight;
+            public TensorRef getPoolingWeights() {
+                return poolingWeightRef;
             }
 
-            public Optional<AbstractTensor> getPoolingBias() {
-                return Optional.of(poolerDenseBias);
+            public Optional<TensorRef> getPoolingBias() {
+                return Optional.of(poolingBiasRef);
             }
         };
     }

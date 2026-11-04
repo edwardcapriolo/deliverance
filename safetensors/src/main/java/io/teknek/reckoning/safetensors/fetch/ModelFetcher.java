@@ -366,6 +366,11 @@ public class ModelFetcher {
         this.baseDir = baseDir;
     }
 
+    /** Overrides the legacy cache root, primarily for isolated tests. */
+    public void setLegacyBaseDir(Path legacyBaseDir) {
+        this.legacyBaseDir = legacyBaseDir;
+    }
+
     public boolean isDownload() {
         return download;
     }

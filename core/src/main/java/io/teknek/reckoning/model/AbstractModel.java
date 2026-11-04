@@ -1234,8 +1234,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         try (LocalGenerationBackend backend = new LocalGenerationBackend(this);
              GenerationBackendRef.GenerationSessionRef session = backend.openRef(java.util.UUID.randomUUID(), encoded,
                      new GeneratorParameters());
-             AbstractTensor r = new TensorRefBackedTensor(session.prefill(GenerationCursor.from(encoded,
-                     session.prefixLength())))) {
+             TensorRef r = session.prefill(GenerationCursor.from(encoded, session.prefixLength()))) {
             int promptLength = encoded.length;
             float avgp = 1.0f / promptLength;
             CausualWhisperer.LOGGER.debug("1.0f / promptLength {} = avgp {}", promptLength, avgp);
@@ -1245,45 +1244,35 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
                     if (poolingLayer.isEmpty()){
                         throw new UnsupportedOperationException("no pooling layer for this model");
                     }
-                    AbstractTensor output = r.slice(promptLength - 1);
-                     AbstractTensor pooled = allocateDirty(workingDType, TensorShape.of(1, config.embeddingLength));
-                    try (TensorRef pooledRef = TensorRef.borrowed(pooled);
-                         TensorRef outputRef = TensorRef.borrowed(output);
-                         TensorRef weightsRef = TensorRef.borrowed(poolingLayer.get().getPoolingWeights())) {
+                    try (TensorRef output = r.slice(promptLength - 1);
+                         TensorRef pooled = makeDenseTensorRef(1, config.embeddingLength)) {
                         lighter.batchDotProduct(new io.teknek.reckoning.tensor2.BatchDotProduct()
-                                .result(pooledRef).a(outputRef).b(weightsRef)
+                                .result(pooled).a(output).b(poolingLayer.get().getPoolingWeights())
                                 .aColumnOffset(0).bColumnOffset(0).columnLength(config.embeddingLength)
                                 .resultRowOffset(0).bRowOffset(0).rowChunkSize(config.embeddingLength));
+                        poolingLayer.get().getPoolingBias().ifPresent(bias ->
+                                lighter.accumulate(new io.teknek.reckoning.tensor2.Accumulate(bias)
+                                        .into(pooled).offsetAndLength(0, config.embeddingLength)));
+                        VectorMath.pfor(0, config.embeddingLength, i -> {
+                            outputEmbedding[i] = ActivationFunction.eval(config.activationFunction, pooled.get(0, i));
+                        }, pool);
+                        return outputEmbedding;
                     }
-                    poolingLayer.get().getPoolingBias().ifPresent(bias -> {
-                        try (TensorRef pooledRef = TensorRef.borrowed(pooled);
-                             TensorRef biasRef = TensorRef.borrowed(bias)) {
-                            lighter.accumulate(new io.teknek.reckoning.tensor2.Accumulate(biasRef)
-                                    .into(pooledRef).offsetAndLength(0, config.embeddingLength));
-                        }
-                    });
-                    VectorMath.pfor(0, config.embeddingLength, i -> {
-                        // BERT seems to use tanh for pooling rather than gelu
-                        //outputEmbedding[i] = ActivationFunction.eval(ActivationFunction.Type.TANH, pooled.get(0, i));
-                        outputEmbedding[i] = ActivationFunction.eval(config.activationFunction, pooled.get(0, i));
-                    }, pool);
-                    return outputEmbedding;
                 }
                 for (int i = 0; i < promptLength; i++) {
-                    AbstractTensor output = r.slice(i);
-                    // Pooling
-                    for (int ii = 0; ii < config.embeddingLength; ii++) {
-
-                        switch (poolingType) {
-                            case AVG:
-                                outputEmbedding[ii] += output.get(0, ii) * avgp;
-                                break;
-                            case MAX:
-                                outputEmbedding[ii] = Math.max(outputEmbedding[ii], output.get(0, ii));
-                                break;
-                            case SUM:
-                                outputEmbedding[ii] += output.get(0, ii);
-                                break;
+                    try (TensorRef output = r.slice(i)) {
+                        for (int ii = 0; ii < config.embeddingLength; ii++) {
+                            switch (poolingType) {
+                                case AVG:
+                                    outputEmbedding[ii] += output.get(0, ii) * avgp;
+                                    break;
+                                case MAX:
+                                    outputEmbedding[ii] = Math.max(outputEmbedding[ii], output.get(0, ii));
+                                    break;
+                                case SUM:
+                                    outputEmbedding[ii] += output.get(0, ii);
+                                    break;
+                            }
                         }
                     }
                 }

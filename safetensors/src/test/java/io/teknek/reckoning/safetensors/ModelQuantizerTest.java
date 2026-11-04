@@ -6,6 +6,7 @@ import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.TensorDisplayUtil;
 import io.teknek.reckoning.tensor.TensorInfo;
 import io.teknek.reckoning.tensor.impl.FloatBufferTensor;
+import io.teknek.reckoning.safetensors.fetch.ModelFetcher;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -397,8 +398,8 @@ public class ModelQuantizerTest {
         String previousHome = System.getProperty("user.home");
         try {
             System.setProperty("user.home", fakeHome.toString());
-            Path sourceDir = fakeHome.resolve(".deliverance").resolve("acme_demo-model");
-            Path outputDir = fakeHome.resolve(".deliverance").resolve("acme_demo-model-q4");
+            Path sourceDir = new ModelFetcher("acme", "demo-model").pathForModel();
+            Path outputDir = new ModelFetcher("acme", "demo-model-q4").pathForModel();
             Files.createDirectories(sourceDir);
             Files.writeString(sourceDir.resolve("config.json"), "{\"model_type\":\"llama\"}");
 

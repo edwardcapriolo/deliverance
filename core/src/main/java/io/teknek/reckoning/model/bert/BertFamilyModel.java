@@ -17,7 +17,6 @@ import io.teknek.reckoning.model.tensorparallel.TensorParallelCollectives;
 import io.teknek.reckoning.model.tensorparallel.TensorParallelContext;
 import io.teknek.reckoning.safetensors.Config;
 import io.teknek.reckoning.safetensors.WeightLoader;
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.KvBufferCacheSettings;
 import io.teknek.reckoning.tensor2.Lighter;
 import io.teknek.reckoning.tensor2.TensorRef;
@@ -56,17 +55,17 @@ public abstract class BertFamilyModel extends AbstractModel {
         return true;
     }
 
-    protected AbstractTensor loadWeight(String name) {
+    protected TensorRef loadWeight(String name) {
         for (String prefix : weightPrefixes()) {
             String key = prefix + name;
             if (weights.isWeightPresent(key)) {
-                return weights.load(key);
+                return weights.loadRef(key);
             }
             String alias = bertWeightAlias(name);
             if (!alias.equals(name)) {
                 String aliasKey = prefix + alias;
                 if (weights.isWeightPresent(aliasKey)) {
-                    return weights.load(aliasKey);
+                    return weights.loadRef(aliasKey);
                 }
             }
         }

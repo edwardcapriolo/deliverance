@@ -2,7 +2,7 @@ package io.teknek.reckoning.embedding;
 
 import com.google.common.base.Preconditions;
 import io.teknek.reckoning.math.VectorMathUtils;
-import io.teknek.reckoning.tensor.AbstractTensor;
+import io.teknek.reckoning.tensor2.TensorRef;
 
 /** SentenceTransformers-compatible pooling helpers for flattened [batch, seq, hidden] token embeddings. */
 public final class SentenceTransformersPooling {
@@ -18,7 +18,7 @@ public final class SentenceTransformersPooling {
     private SentenceTransformersPooling() {
     }
 
-    public static float[][] pool(AbstractTensor tokenEmbeddings, int[] attentionMask, int batchSize, int sequenceLength,
+    public static float[][] pool(TensorRef tokenEmbeddings, int[] attentionMask, int batchSize, int sequenceLength,
             Mode... modes) {
         Preconditions.checkArgument(tokenEmbeddings.dims() == 2, "tokenEmbeddings must be flattened 2D");
         Preconditions.checkArgument(tokenEmbeddings.shape().first() == (long) batchSize * sequenceLength,
@@ -49,7 +49,7 @@ public final class SentenceTransformersPooling {
         VectorMathUtils.l2normalize(embedding);
     }
 
-    private static float[] cls(AbstractTensor tokenEmbeddings, int[] attentionMask, int batch, int sequenceLength,
+    private static float[] cls(TensorRef tokenEmbeddings, int[] attentionMask, int batch, int sequenceLength,
             int hidden) {
         int first = batch * sequenceLength;
         for (int token = 0; token < sequenceLength; token++) {
@@ -61,7 +61,7 @@ public final class SentenceTransformersPooling {
         return new float[hidden];
     }
 
-    private static float[] max(AbstractTensor tokenEmbeddings, int[] attentionMask, int batch, int sequenceLength,
+    private static float[] max(TensorRef tokenEmbeddings, int[] attentionMask, int batch, int sequenceLength,
             int hidden) {
         float[] output = new float[hidden];
         boolean seen = false;
@@ -81,7 +81,7 @@ public final class SentenceTransformersPooling {
         return seen ? output : new float[hidden];
     }
 
-    private static float[] mean(AbstractTensor tokenEmbeddings, int[] attentionMask, int batch, int sequenceLength,
+    private static float[] mean(TensorRef tokenEmbeddings, int[] attentionMask, int batch, int sequenceLength,
             int hidden, boolean sqrtLength) {
         float[] output = new float[hidden];
         int count = 0;
@@ -105,7 +105,7 @@ public final class SentenceTransformersPooling {
         return output;
     }
 
-    private static float[] weightedMean(AbstractTensor tokenEmbeddings, int[] attentionMask, int batch,
+    private static float[] weightedMean(TensorRef tokenEmbeddings, int[] attentionMask, int batch,
             int sequenceLength, int hidden) {
         float[] output = new float[hidden];
         float weightSum = 0.0f;
@@ -129,7 +129,7 @@ public final class SentenceTransformersPooling {
         return output;
     }
 
-    private static float[] lastToken(AbstractTensor tokenEmbeddings, int[] attentionMask, int batch,
+    private static float[] lastToken(TensorRef tokenEmbeddings, int[] attentionMask, int batch,
             int sequenceLength, int hidden) {
         for (int token = sequenceLength - 1; token >= 0; token--) {
             int row = batch * sequenceLength + token;
@@ -140,7 +140,7 @@ public final class SentenceTransformersPooling {
         return new float[hidden];
     }
 
-    private static float[] row(AbstractTensor tokenEmbeddings, int row, int hidden) {
+    private static float[] row(TensorRef tokenEmbeddings, int row, int hidden) {
         float[] output = new float[hidden];
         for (int col = 0; col < hidden; col++) {
             output[col] = tokenEmbeddings.get(row, col);

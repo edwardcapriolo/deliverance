@@ -1,7 +1,7 @@
 package io.teknek.reckoning.embedding;
 
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.impl.FloatBufferTensor;
+import io.teknek.reckoning.tensor2.TensorRef;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -22,7 +22,7 @@ class SentenceTransformersPoolingPortedTest {
 
     @Test
     void testPoolingMeanAndMeanSqrtLenTokens() {
-        try (AbstractTensor tokenEmbeddings = tensor(new float[][] {
+        try (TensorRef tokenEmbeddings = tensor(new float[][] {
                 { 1.0f }, { 3.0f }, { 5.0f }
         })) {
             int[] attentionMask = { 1, 1, 0 };
@@ -40,7 +40,7 @@ class SentenceTransformersPoolingPortedTest {
     @ParameterizedTest
     @EnumSource(SentenceTransformersPooling.Mode.class)
     void testPoolingExactValues(SentenceTransformersPooling.Mode poolingMode) {
-        try (AbstractTensor tokenEmbeddings = tokenEmbeddings()) {
+        try (TensorRef tokenEmbeddings = tokenEmbeddings()) {
             float[][] output = SentenceTransformersPooling.pool(tokenEmbeddings, ATTENTION_MASK, BATCH, SEQ,
                     poolingMode);
             assertMatrixEquals(expectedByMode(poolingMode), output, 1.0e-5f);
@@ -50,7 +50,7 @@ class SentenceTransformersPoolingPortedTest {
     @ParameterizedTest
     @MethodSource("multiModes")
     void testPoolingMultiMode(SentenceTransformersPooling.Mode[] modes) {
-        try (AbstractTensor tokenEmbeddings = tokenEmbeddings()) {
+        try (TensorRef tokenEmbeddings = tokenEmbeddings()) {
             float[][] output = SentenceTransformersPooling.pool(tokenEmbeddings, ATTENTION_MASK, BATCH, SEQ, modes);
             float[][] expected = concatExpected(modes);
             assertMatrixEquals(expected, output, 1.0e-5f);
@@ -82,7 +82,7 @@ class SentenceTransformersPoolingPortedTest {
                         SentenceTransformersPooling.Mode.LAST_TOKEN }));
     }
 
-    private static AbstractTensor tokenEmbeddings() {
+    private static TensorRef tokenEmbeddings() {
         return tensor(new float[][] {
                 { 1.0f, 2.0f }, { 3.0f, 4.0f }, { 5.0f, 6.0f }, { 99.0f, 99.0f },
                 { 10.0f, 20.0f }, { 30.0f, 40.0f }, { 50.0f, 60.0f }, { 70.0f, 80.0f }
@@ -113,8 +113,8 @@ class SentenceTransformersPoolingPortedTest {
         return output;
     }
 
-    private static AbstractTensor tensor(float[][] values) {
-        AbstractTensor tensor = new FloatBufferTensor(values.length, values[0].length);
+    private static TensorRef tensor(float[][] values) {
+        TensorRef tensor = TensorRef.owned(new FloatBufferTensor(values.length, values[0].length));
         for (int row = 0; row < values.length; row++) {
             for (int col = 0; col < values[row].length; col++) {
                 tensor.set(values[row][col], row, col);

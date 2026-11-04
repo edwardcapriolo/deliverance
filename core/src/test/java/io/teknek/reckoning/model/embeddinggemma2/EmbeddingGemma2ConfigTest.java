@@ -73,6 +73,7 @@ class EmbeddingGemma2ConfigTest {
         Path cache = Files.createTempDirectory("embeddinggemma2-fetch");
         ModelFetcher fetcher = new ModelFetcher("google", "embeddinggemma-2");
         fetcher.setBaseDir(cache);
+        fetcher.setLegacyBaseDir(cache);
 
         File modelDirectory = fetcher.maybeDownload(ModelFetcher.FetchPolicy.TOKENIZER_ONLY);
 

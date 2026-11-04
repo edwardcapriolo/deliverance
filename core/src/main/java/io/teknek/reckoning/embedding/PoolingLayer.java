@@ -1,12 +1,11 @@
 package io.teknek.reckoning.embedding;
 
-import io.teknek.reckoning.tensor.AbstractTensor;
+import io.teknek.reckoning.tensor2.TensorRef;
 
 import java.util.Optional;
 
 public interface PoolingLayer {
-    AbstractTensor getPoolingWeights();
+    TensorRef getPoolingWeights();
 
-    Optional<AbstractTensor> getPoolingBias();
+    Optional<TensorRef> getPoolingBias();
 }
-

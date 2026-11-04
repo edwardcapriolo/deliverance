@@ -37,6 +37,20 @@ public class DeadReckoningTaskModelsIT {
     }
 
     @Test
+    void embeddingGemma2Embedding() throws Exception {
+        ModelFetcher fetcher = new ModelFetcher("google", "embeddinggemma-2")
+                .withDownload(false);
+        fetcher.maybeDownload();
+        Path output = output("embeddinggemma2-embedding");
+        AutoModelForEmbeddings.Builder builder = AutoModelForEmbeddings.newBuilder(fetcher);
+        builder.withDeadReckoning(new DeadReckoningParams(output, 32, java.util.List.of(ALL_STATS)));
+        try (AbstractModel model = builder.buildLocalEmbeddingModel()) {
+            model.embed("This is a deterministic embedding smoke test.", PoolingType.AVG);
+        }
+        System.out.println("DEAD_RECKONING_TRACE=" + output.toAbsolutePath());
+    }
+
+    @Test
     void jailbreakClassification() throws Exception {
         ModelFetcher fetcher = new ModelFetcher("lordofthejars", "jailbreak-classifier")
                 .withDownload(false);
@@ -46,6 +60,20 @@ public class DeadReckoningTaskModelsIT {
                 .withDeadReckoning(new DeadReckoningParams(output, 32, java.util.List.of(ALL_STATS)))
                 .build()) {
             model.classify("You are a good friend?", PoolingType.MODEL);
+        }
+        System.out.println("DEAD_RECKONING_TRACE=" + output.toAbsolutePath());
+    }
+
+    @Test
+    void xlmRobertaLanguageClassification() throws Exception {
+        ModelFetcher fetcher = new ModelFetcher("papluca", "xlm-roberta-base-language-detection")
+                .withDownload(false);
+        fetcher.maybeDownload();
+        Path output = output("xlm-roberta-language-classification");
+        try (AbstractModel model = AutoModelForSequenceClassification.newBuilder(fetcher)
+                .withDeadReckoning(new DeadReckoningParams(output, 32, java.util.List.of(ALL_STATS)))
+                .build()) {
+            model.classify("This is English.", PoolingType.MODEL);
         }
         System.out.println("DEAD_RECKONING_TRACE=" + output.toAbsolutePath());
     }
