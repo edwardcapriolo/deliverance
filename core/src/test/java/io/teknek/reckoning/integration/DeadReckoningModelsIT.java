@@ -7,6 +7,7 @@ import io.teknek.reckoning.model.AutoModelConfig;
 import io.teknek.reckoning.model.AutoModelForCausaLm;
 import io.teknek.reckoning.model.DeadReckoningParams;
 import io.teknek.reckoning.model.DeadReckoningSelector;
+import io.teknek.reckoning.model.DeadReckoningTraceCheck;
 import io.teknek.reckoning.model.DoNothingGenerateEvent;
 import io.teknek.reckoning.safetensors.fetch.ModelFetcher;
 import io.teknek.reckoning.safetensors.prompt.PromptContext;
@@ -33,17 +34,17 @@ public class DeadReckoningModelsIT {
 
     @Test
     void qwen06bJq4() throws Exception {
-        trace("qwen06b-jq4", "edwardcapriolo", "Qwen3-0.6B-JQ4", null);
+        traceAndCompare("qwen06b-jq4", "edwardcapriolo", "Qwen3-0.6B-JQ4", null);
     }
 
     @Test
     void tinyLlamaDeliverance() throws Exception {
-        trace("tinyllama-deliverance", "tjake", "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4", null);
+        traceAndCompare("tinyllama-deliverance", "tjake", "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4", null);
     }
 
     @Test
     void tinyLlamaJq4() throws Exception {
-        trace("tinyllama-jq4", "tjake", "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4", null);
+        traceAndCompare("tinyllama-jq4", "tjake", "TinyLlama-1.1B-Chat-v1.0-Jlama-Q4", null);
     }
 
     @Test
@@ -68,7 +69,15 @@ public class DeadReckoningModelsIT {
         trace("antares1b-jq4", "edwardcapriolo", "antares-1b-JQ4", null);
     }
 
-    private static void trace(String traceName, String owner, String modelName, String configPath) throws Exception {
+    private static void traceAndCompare(String traceName, String owner, String modelName, String configPath)
+            throws Exception {
+        Path current = trace(traceName, owner, modelName, configPath);
+        if (!DeadReckoningTraceCheck.sameAsPrevious(current)) {
+            throw new AssertionError("Dead Reckoning trace changed for " + modelName);
+        }
+    }
+
+    private static Path trace(String traceName, String owner, String modelName, String configPath) throws Exception {
         ModelFetcher fetcher = new ModelFetcher(owner, modelName).withDownload(false);
         fetcher.maybeDownload();
 
@@ -101,6 +110,7 @@ public class DeadReckoningModelsIT {
                     + " finish=" + response.finishReason);
         }
         System.out.println("DEAD_RECKONING_TRACE=" + output.toAbsolutePath());
+        return output;
     }
 
     private static Path resolveRepoPath(String relativePath) {

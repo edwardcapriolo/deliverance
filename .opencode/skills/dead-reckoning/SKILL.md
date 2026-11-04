@@ -44,6 +44,17 @@ the run should fail loudly. Record the generated trace paths from the test outpu
 
 ## Compare Traces
 
+Prefer the built-in Java check for same-environment equality:
+
+```java
+DeadReckoningTraceCheck.same(expectedTrace, actualTrace);
+DeadReckoningTraceCheck.sameAsPrevious(currentTrace);
+```
+
+It returns `true` only when the semantic records are exactly equal. It returns `false` and prints a
+summary containing missing records, unexpected records, or changed fields. JSONL line ordering is
+ignored so parallel instrumentation does not create a false failure.
+
 For each trace, inspect the JSONL records with `jq`. Start with the response and token sequence:
 
 ```bash

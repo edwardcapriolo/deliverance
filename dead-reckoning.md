@@ -90,3 +90,18 @@ The first changed checkpoint is usually more useful than the final text. A small
 early projection may propagate through later layers without changing the selected tokens. A change
 in shape, dtype, checkpoint topology, non-finite counts, or token selection is more significant than
 a changed hash alone.
+
+## Exact Trace Check
+
+Java callers can perform an exact semantic trace check. The check returns `true` when all records and
+fields match, and returns `false` while printing a concise difference report otherwise:
+
+```java
+DeadReckoningTraceCheck.same(expectedTrace, actualTrace);
+DeadReckoningTraceCheck.sameAsPrevious(currentTrace);
+```
+
+The check ignores JSONL record ordering, but it does not apply numeric tolerances. It requires exact
+statistics, hashes, shapes, dtypes, tokens, responses, and lifecycle records. Use it for same-machine
+reruns and same-environment migration gates. It reports the semantic checkpoint key and changed
+fields when the result is false.
