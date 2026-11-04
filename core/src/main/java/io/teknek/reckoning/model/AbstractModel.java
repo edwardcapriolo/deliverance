@@ -159,7 +159,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
             int layerIndex,
             String stage,
             TensorParallelContext tensorParallelContext,
-            AbstractTensor hiddenStates
+            TensorRef hiddenStates
     ) {
     }
 
@@ -687,11 +687,13 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     }
 
     public void emitLayerDebug(int layerIndex, String stage, AbstractTensor hiddenStates) {
-        layerDebugHook.accept(new LayerDebugEvent(layerIndex, stage, tensorParallelContext, hiddenStates));
+        try (TensorRef tensor = TensorRef.borrowed(hiddenStates)) {
+            emitLayerDebug(layerIndex, stage, tensor);
+        }
     }
 
     public void emitLayerDebug(int layerIndex, String stage, TensorRef hiddenStates) {
-        emitLayerDebug(layerIndex, stage, new TensorRefBackedTensor(hiddenStates));
+        layerDebugHook.accept(new LayerDebugEvent(layerIndex, stage, tensorParallelContext, hiddenStates));
     }
 
     void emitGenerationDebug(GenerationDebugEvent event) {
@@ -831,9 +833,9 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
      * @param mmTokenTypeIds optional one-dimensional multimodal token type ids aligned to the sequence dimension;
      * non-null values are sliced to match the prepared sequence length.
      */
-    protected GenerationStepInputs prepareInputsForGeneration(int[] inputIds, Integer nextSequenceLength, PastKeyValues pastKeyValues, int[] attentionMask, int[] encoderAttentionMask, AbstractTensor inputsEmbeds, boolean firstIteration, int[] positionIds, int[] tokenTypeIds, int[] mmTokenTypeIds) {
+    protected GenerationStepInputs prepareInputsForGeneration(int[] inputIds, Integer nextSequenceLength, PastKeyValues pastKeyValues, int[] attentionMask, int[] encoderAttentionMask, TensorRef inputsEmbeds, boolean firstIteration, int[] positionIds, int[] tokenTypeIds, int[] mmTokenTypeIds) {
         return GenerationInputPreparer.prepareInputsForGeneration(config, inputIds, nextSequenceLength, pastKeyValues, attentionMask, encoderAttentionMask, inputsEmbeds, firstIteration, positionIds, tokenTypeIds, mmTokenTypeIds,
-                shape -> new TensorRefBackedTensor(makeDenseTensorRef(shape)));
+                this::makeDenseTensorRef, lighter);
     }
 
     protected abstract EmbedInput loadInputWeights();

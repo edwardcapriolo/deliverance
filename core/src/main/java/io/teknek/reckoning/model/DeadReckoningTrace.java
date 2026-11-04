@@ -6,7 +6,7 @@ import io.teknek.reckoning.JsonUtils;
 import io.teknek.reckoning.generator.GeneratorParameters;
 import io.teknek.reckoning.generator.Response;
 import io.teknek.reckoning.safetensors.prompt.PromptContext;
-import io.teknek.reckoning.tensor.AbstractTensor;
+import io.teknek.reckoning.tensor2.TensorRef;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -37,7 +37,7 @@ final class DeadReckoningTrace implements AutoCloseable {
 
     synchronized void recordLayer(AbstractModel.LayerDebugEvent event) {
         try {
-            AbstractTensor tensor = event.hiddenStates();
+            TensorRef tensor = event.hiddenStates();
             ObjectNode record = JsonUtils.om.createObjectNode();
             record.put("kind", "CHECKPOINT");
             record.put("phase", phase);
@@ -61,7 +61,7 @@ final class DeadReckoningTrace implements AutoCloseable {
                 ArrayNode values = record.putArray("values");
                 int requested = selector == null ? maxValues : selector.maxValues();
                 int count = capture == DeadReckoningSelector.Capture.FULL || requested == 0
-                        ? Math.toIntExact(tensor.size()) : Math.min(requested, Math.toIntExact(tensor.size()));
+                        ? Math.toIntExact(tensor.shape().size()) : Math.min(requested, Math.toIntExact(tensor.shape().size()));
                 int columns = tensor.shape().last();
                 for (int index = 0; index < count; index++) {
                     values.add(tensor.get(index / columns, index % columns));
@@ -80,7 +80,7 @@ final class DeadReckoningTrace implements AutoCloseable {
         }
     }
 
-    private static void addStats(ObjectNode record, AbstractTensor tensor,
+    private static void addStats(ObjectNode record, TensorRef tensor,
             java.util.Set<DeadReckoningSelector.Statistic> requested) {
         double sum = 0.0;
         double sumSquares = 0.0;
@@ -94,7 +94,7 @@ final class DeadReckoningTrace implements AutoCloseable {
         int negativeInfinity = 0;
         int zeros = 0;
         int columns = tensor.shape().last();
-        for (int index = 0; index < tensor.size(); index++) {
+        for (int index = 0; index < tensor.shape().size(); index++) {
             float value = tensor.get(index / columns, index % columns);
             if (!Float.isFinite(value)) {
                 nonFinite++;
@@ -111,11 +111,11 @@ final class DeadReckoningTrace implements AutoCloseable {
             maxAbs = Math.max(maxAbs, Math.abs(value));
             sumSquares += (double) value * value;
         }
-        double count = tensor.size() - nonFinite;
+        double count = tensor.shape().size() - nonFinite;
         double mean = count == 0 ? Double.NaN : sum / count;
         double rms = count == 0 ? Double.NaN : Math.sqrt(sumSquares / count);
         double variance = count == 0 ? Double.NaN : Math.max(0.0, sumSquares / count - mean * mean);
-        put(requested, record, DeadReckoningSelector.Statistic.COUNT, "count", tensor.size());
+        put(requested, record, DeadReckoningSelector.Statistic.COUNT, "count", tensor.shape().size());
         put(requested, record, DeadReckoningSelector.Statistic.MIN, "min", count == 0 ? Double.NaN : min);
         put(requested, record, DeadReckoningSelector.Statistic.MAX, "max", count == 0 ? Double.NaN : max);
         put(requested, record, DeadReckoningSelector.Statistic.MEAN, "mean", mean);
@@ -137,7 +137,7 @@ final class DeadReckoningTrace implements AutoCloseable {
         if (requested.contains(DeadReckoningSelector.Statistic.FIRST_VALUES)) {
             ArrayNode values = record.putArray("first_values");
             int sampleColumns = tensor.shape().last();
-            int sampleCount = Math.min(32, Math.toIntExact(tensor.size()));
+            int sampleCount = Math.min(32, Math.toIntExact(tensor.shape().size()));
             for (int index = 0; index < sampleCount; index++) {
                 values.add(tensor.get(index / sampleColumns, index % sampleColumns));
             }
@@ -149,7 +149,7 @@ final class DeadReckoningTrace implements AutoCloseable {
         if (requested.contains(statistic)) record.put(name, value.doubleValue());
     }
 
-    private static String hash(AbstractTensor tensor) {
+    private static String hash(TensorRef tensor) {
         final java.security.MessageDigest digest;
         try {
             digest = java.security.MessageDigest.getInstance("SHA-256");
@@ -157,7 +157,7 @@ final class DeadReckoningTrace implements AutoCloseable {
             throw new IllegalStateException("SHA-256 is unavailable", e);
         }
         int columns = tensor.shape().last();
-        for (int index = 0; index < tensor.size(); index++) {
+        for (int index = 0; index < tensor.shape().size(); index++) {
             int bits = Float.floatToRawIntBits(tensor.get(index / columns, index % columns));
             digest.update((byte) bits);
             digest.update((byte) (bits >>> 8));

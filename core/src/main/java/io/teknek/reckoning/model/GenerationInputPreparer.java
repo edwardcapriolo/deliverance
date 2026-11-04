@@ -1,8 +1,9 @@
 package io.teknek.reckoning.model;
 
 import io.teknek.reckoning.safetensors.Config;
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.TensorShape;
+import io.teknek.reckoning.tensor2.Lighter;
+import io.teknek.reckoning.tensor2.TensorRef;
 
 import java.util.Arrays;
 import java.util.function.Function;
@@ -18,21 +19,22 @@ final class GenerationInputPreparer {
             PastKeyValues pastKeyValues,
             int[] attentionMask,
             int[] encoderAttentionMask,
-            AbstractTensor inputsEmbeds,
+            TensorRef inputsEmbeds,
             boolean firstIteration,
             int[] positionIds,
             int[] tokenTypeIds,
             int[] mmTokenTypeIds,
-            Function<TensorShape, AbstractTensor> tensorFactory
+            Function<TensorShape, TensorRef> tensorFactory,
+            Lighter lighter
     ) {
         GenerationInputNames names = GenerationInputNames.forConfig(config);
         int[] preparedInputIds = null;
-        AbstractTensor preparedInputsEmbeds = null;
+        TensorRef preparedInputsEmbeds = null;
         int batchSize;
         int sequenceLength;
 
         if (!config.isEncoderDecoder && inputsEmbeds != null && firstIteration) {
-            preparedInputsEmbeds = copyLastEmbeddings(inputsEmbeds, nextSequenceLength, tensorFactory);
+            preparedInputsEmbeds = copyLastEmbeddings(inputsEmbeds, nextSequenceLength, tensorFactory, lighter);
             batchSize = preparedInputsEmbeds.shape().first();
             sequenceLength = preparedInputsEmbeds.shape().dim(1);
         } else {
@@ -88,10 +90,11 @@ final class GenerationInputPreparer {
         return Arrays.copyOfRange(values, values.length - sequenceLength, values.length);
     }
 
-    private static AbstractTensor copyLastEmbeddings(
-            AbstractTensor inputsEmbeds,
+    private static TensorRef copyLastEmbeddings(
+            TensorRef inputsEmbeds,
             Integer nextSequenceLength,
-            Function<TensorShape, AbstractTensor> tensorFactory
+            Function<TensorShape, TensorRef> tensorFactory,
+            Lighter lighter
     ) {
         if (inputsEmbeds.shape().dims() != 3) {
             throw new IllegalArgumentException("inputsEmbeds must have shape [batch, sequence, embedding]");
@@ -101,14 +104,12 @@ final class GenerationInputPreparer {
         int embeddingLength = inputsEmbeds.shape().last();
         int selectedSequenceLength = selectedLength(sourceSequenceLength, nextSequenceLength, "inputsEmbeds");
         int sourceStart = sourceSequenceLength - selectedSequenceLength;
-        AbstractTensor copy = tensorFactory.apply(TensorShape.of(batchSize, selectedSequenceLength, embeddingLength));
+        TensorRef copy = tensorFactory.apply(TensorShape.of(batchSize, selectedSequenceLength, embeddingLength));
         for (int batch = 0; batch < batchSize; batch++) {
-            copy.copyFrom(
-                    inputsEmbeds,
-                    inputsEmbeds.getOffset(batch, sourceStart, 0),
-                    copy.getOffset(batch, 0, 0),
-                    selectedSequenceLength * embeddingLength
-            );
+            int length = selectedSequenceLength * embeddingLength;
+            int sourceOffset = inputsEmbeds.shape().getOffset(batch, sourceStart, 0);
+            int targetOffset = copy.shape().getOffset(batch, 0, 0);
+            lighter.copy(inputsEmbeds, sourceOffset, copy, targetOffset, length);
         }
         return copy;
     }

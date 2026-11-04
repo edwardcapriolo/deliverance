@@ -4,7 +4,11 @@ import io.teknek.reckoning.math.ActivationFunction;
 import io.teknek.reckoning.safetensors.Config;
 import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.TensorDisplayUtil;
+import io.teknek.reckoning.tensor.TensorShape;
 import io.teknek.reckoning.tensor.impl.FloatBufferTensor;
+import io.teknek.reckoning.tensor2.TensorRef;
+import io.teknek.reckoning.tensor2.TensorRefBackedTensor;
+import io.teknek.reckoning.tensor2.Lighter;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -32,7 +36,8 @@ public class GenerationInputPreparerTest {
                 new int[]{0, 1, 2, 3},
                 new int[]{7, 7, 8, 8},
                 new int[]{0, 0, 9, 9},
-                FloatBufferTensor::new
+                GenerationInputPreparerTest::newTensor,
+                new Lighter()
         );
 
         assertFalse(inputs.usesInputEmbeds());
@@ -49,7 +54,7 @@ public class GenerationInputPreparerTest {
 
     @Test
     public void decoderOnlyFirstIterationUsesInputEmbedsWhenProvided() {
-        try (AbstractTensor embeds = embeddings(1, 4, 3)) {
+        try (TensorRef embeds = embeddings(1, 4, 3)) {
             GenerationStepInputs inputs = GenerationInputPreparer.prepareInputsForGeneration(
                     decoderOnlyConfig(),
                     new int[]{10, 11, 12, 13},
@@ -62,10 +67,11 @@ public class GenerationInputPreparerTest {
                     null,
                     null,
                     null,
-                    FloatBufferTensor::new
+                    GenerationInputPreparerTest::newTensor,
+                    new Lighter()
             );
 
-            try (AbstractTensor prepared = inputs.inputsEmbeds()) {
+            try (TensorRef prepared = inputs.inputsEmbeds()) {
                 assertTrue(inputs.usesInputEmbeds());
                 assertNull(inputs.inputIds());
                 assertEquals(1, inputs.batchSize());
@@ -80,7 +86,7 @@ public class GenerationInputPreparerTest {
 
     @Test
     public void decoderOnlyFirstIterationUsesFullInputEmbedsWhenNextSequenceLengthIsNull() {
-        try (AbstractTensor embeds = embeddings(1, 3, 2)) {
+        try (TensorRef embeds = embeddings(1, 3, 2)) {
             GenerationStepInputs inputs = GenerationInputPreparer.prepareInputsForGeneration(
                     decoderOnlyConfig(),
                     new int[]{10, 11, 12},
@@ -93,10 +99,11 @@ public class GenerationInputPreparerTest {
                     null,
                     null,
                     null,
-                    FloatBufferTensor::new
+                    GenerationInputPreparerTest::newTensor,
+                    new Lighter()
             );
 
-            try (AbstractTensor prepared = inputs.inputsEmbeds()) {
+            try (TensorRef prepared = inputs.inputsEmbeds()) {
                 assertTrue(inputs.usesInputEmbeds());
                 assertNull(inputs.inputIds());
                 assertEquals(3, inputs.sequenceLength());
@@ -111,7 +118,7 @@ public class GenerationInputPreparerTest {
 
     @Test
     public void decoderOnlyAfterFirstIterationUsesInputIdsEvenWhenEmbedsExist() {
-        try (AbstractTensor embeds = embeddings(1, 4, 3)) {
+        try (TensorRef embeds = embeddings(1, 4, 3)) {
             GenerationStepInputs inputs = GenerationInputPreparer.prepareInputsForGeneration(
                     decoderOnlyConfig(),
                     new int[]{10, 11, 12, 13},
@@ -124,7 +131,8 @@ public class GenerationInputPreparerTest {
                     null,
                     null,
                     null,
-                    FloatBufferTensor::new
+                    GenerationInputPreparerTest::newTensor,
+                    new Lighter()
             );
 
             assertFalse(inputs.usesInputEmbeds());
@@ -147,7 +155,8 @@ public class GenerationInputPreparerTest {
                 new int[]{0, 1, 2, 3},
                 null,
                 null,
-                FloatBufferTensor::new
+                GenerationInputPreparerTest::newTensor,
+                new Lighter()
         );
 
         assertArrayEquals(new int[]{10, 11, 12, 13}, inputs.inputIds());
@@ -170,7 +179,8 @@ public class GenerationInputPreparerTest {
                 new int[]{0, 1, 2},
                 null,
                 new int[]{3, 4, 5},
-                FloatBufferTensor::new
+                GenerationInputPreparerTest::newTensor,
+                new Lighter()
         );
 
         assertArrayEquals(new int[]{5, 6}, inputs.inputIds());
@@ -184,7 +194,7 @@ public class GenerationInputPreparerTest {
 
     @Test
     public void encoderDecoderUsesInputIdsEvenOnFirstIterationWhenEmbedsExist() {
-        try (AbstractTensor embeds = embeddings(1, 3, 2)) {
+        try (TensorRef embeds = embeddings(1, 3, 2)) {
             GenerationStepInputs inputs = GenerationInputPreparer.prepareInputsForGeneration(
                     encoderDecoderConfig(),
                     new int[]{4, 5, 6},
@@ -197,7 +207,8 @@ public class GenerationInputPreparerTest {
                     null,
                     null,
                     null,
-                    FloatBufferTensor::new
+                    GenerationInputPreparerTest::newTensor,
+                    new Lighter()
             );
 
             assertFalse(inputs.usesInputEmbeds());
@@ -221,7 +232,8 @@ public class GenerationInputPreparerTest {
                 null,
                 null,
                 null,
-                FloatBufferTensor::new
+                    GenerationInputPreparerTest::newTensor,
+                    new Lighter()
         ));
     }
 
@@ -239,7 +251,8 @@ public class GenerationInputPreparerTest {
                 null,
                 null,
                 null,
-                FloatBufferTensor::new
+                    GenerationInputPreparerTest::newTensor,
+                    new Lighter()
         ));
     }
 
@@ -257,11 +270,12 @@ public class GenerationInputPreparerTest {
                 null,
                 null,
                 null,
-                FloatBufferTensor::new
+                    GenerationInputPreparerTest::newTensor,
+                    new Lighter()
         ));
     }
 
-    private static AbstractTensor embeddings(int batchSize, int sequenceLength, int embeddingLength) {
+    private static TensorRef embeddings(int batchSize, int sequenceLength, int embeddingLength) {
         AbstractTensor tensor = new FloatBufferTensor(batchSize, sequenceLength, embeddingLength);
         int value = 0;
         for (int batch = 0; batch < batchSize; batch++) {
@@ -271,11 +285,15 @@ public class GenerationInputPreparerTest {
                 }
             }
         }
-        return tensor;
+        return TensorRef.owned(tensor);
     }
 
-    private static String displayBatch(AbstractTensor tensor, int batchIndex) {
-        try (AbstractTensor batch = tensor.slice(batchIndex)) {
+    private static TensorRef newTensor(TensorShape shape) {
+        return TensorRef.owned(new FloatBufferTensor(shape.shapeArray()));
+    }
+
+    private static String displayBatch(TensorRef tensor, int batchIndex) {
+        try (AbstractTensor batch = new TensorRefBackedTensor(tensor.slice(batchIndex))) {
             return TensorDisplayUtil.pretty2dDisplayAll(batch);
         }
     }

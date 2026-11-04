@@ -10,7 +10,7 @@ import io.teknek.reckoning.model.CausalLanguageModel;
 import io.teknek.reckoning.model.DefaultCausalLanguageModel;
 import io.teknek.reckoning.model.DoNothingGenerateEvent;
 import io.teknek.reckoning.JsonUtils;
-import io.teknek.reckoning.tensor.AbstractTensor;
+import io.teknek.reckoning.tensor2.TensorRef;
 import io.teknek.reckoning.safetensors.fetch.ModelFetcher;
 import io.teknek.reckoning.safetensors.prompt.PromptContext;
 import io.teknek.reckoning.tensor.KvBufferCacheSettings;
@@ -86,7 +86,7 @@ public class Llama32ThreeBSmokeReproIT {
 
     private static void writeTrace(BufferedWriter trace, String run, AbstractModel.LayerDebugEvent event) {
         try {
-            AbstractTensor tensor = event.hiddenStates();
+            TensorRef tensor = event.hiddenStates();
             Map<String, Object> record = new LinkedHashMap<>();
             record.put("run", run);
             record.put("layer", event.layerIndex());

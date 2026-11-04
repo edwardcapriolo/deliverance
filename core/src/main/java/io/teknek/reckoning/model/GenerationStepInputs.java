@@ -1,6 +1,6 @@
 package io.teknek.reckoning.model;
 
-import io.teknek.reckoning.tensor.AbstractTensor;
+import io.teknek.reckoning.tensor2.TensorRef;
 
 /**
  * Typed model inputs for one generation forward step.
@@ -20,7 +20,7 @@ public record GenerationStepInputs(
         int[] positionIds,
         int[] tokenTypeIds,
         int[] mmTokenTypeIds,
-        AbstractTensor inputsEmbeds,
+        TensorRef inputsEmbeds,
         boolean firstIteration,
         int batchSize,
         int sequenceLength
