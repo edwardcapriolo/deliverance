@@ -6,11 +6,8 @@ import io.teknek.reckoning.DType;
 import io.teknek.reckoning.model.InferenceProfiler;
 import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.KvBufferCacheSettings;
-import io.teknek.reckoning.tensor.ReadOnlyTensor;
-import io.teknek.reckoning.tensor.TrackedReadOnlyTensor;
 import io.teknek.reckoning.tensor2.Lighter;
 import io.teknek.reckoning.tensor2.TensorRef;
-import io.teknek.reckoning.tensor2.TensorRefBackedTensor;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -141,41 +138,12 @@ public final class KvCacheSession implements AutoCloseable {
         return new KvReadView(this, layer, visibleTokens, Objects.requireNonNull(pattern, "pattern"));
     }
 
-    public AbstractTensor keyRowCopy(int layer, int position) {
-        return new TensorRefBackedTensor(keyRowCopyRef(layer, position));
-    }
-
-    public AbstractTensor valueRowCopy(int layer, int position) {
-        return new TensorRefBackedTensor(valueRowCopyRef(layer, position));
-    }
-
     TensorRef keyRowCopyRef(int layer, int position) {
         return rowCopyRef(layer, position, true);
     }
 
     TensorRef valueRowCopyRef(int layer, int position) {
         return rowCopyRef(layer, position, false);
-    }
-
-    AbstractTensor keyRowView(int layer, int position) {
-        return rowView(layer, position, true);
-    }
-
-    AbstractTensor valueRowView(int layer, int position) {
-        return rowView(layer, position, false);
-    }
-
-    void write(CacheExecutionMode mode, int layer, int position, AbstractTensor key, AbstractTensor value) {
-        requireOpen();
-        Preconditions.checkArgument(mode != CacheExecutionMode.DENOISE_BLOCK_NO_UPDATE
-                        && mode != CacheExecutionMode.READ_PREFIX_NO_UPDATE,
-                mode + " must not write KV rows");
-        validateLayer(layer);
-        validatePosition(position);
-        int blockIndex = position / blockSize;
-        Preconditions.checkArgument(!committedBlocks.containsKey(blockIndex), "cannot overwrite committed KV block");
-        writeToMutableBlock(mutableBlock(blockIndex), layer, position, key, value);
-        metricRegistry.meter("kvcache.v2.row.write").mark();
     }
 
     void write(CacheExecutionMode mode, int layer, int position, TensorRef key, TensorRef value) {
@@ -187,47 +155,24 @@ public final class KvCacheSession implements AutoCloseable {
         validatePosition(position);
         int blockIndex = position / blockSize;
         Preconditions.checkArgument(!committedBlocks.containsKey(blockIndex), "cannot overwrite committed KV block");
-        mutableBlock(blockIndex).write(layer, position, key, value);
-        metricRegistry.meter("kvcache.v2.row.write").mark();
-    }
-
-    private void writeToMutableBlock(MutableKvBlock mutable, int layer, int position, AbstractTensor key,
-            AbstractTensor value) {
-        AbstractTensor convertedKey = null;
-        AbstractTensor convertedValue = null;
+        TensorRef keyToWrite = key;
+        TensorRef valueToWrite = value;
+        TensorRef convertedKey = null;
+        TensorRef convertedValue = null;
         try {
-            AbstractTensor keyToWrite = key;
-            AbstractTensor valueToWrite = value;
             if (key.dType() != settings.getKvKeyDType()) {
-                try (var ignored = InferenceProfiler.timer(metricRegistry,
-                        "kvcache.v2.write.quantize.to_" + settings.getKvKeyDType()).time()) {
-                    InferenceProfiler.counter(metricRegistry, "kvcache.v2.write.quantize.lighter").inc();
-                    try (TensorRef keyRef = TensorRef.borrowed(key)) {
-                        convertedKey = new TensorRefBackedTensor(lighter.reshape(keyRef, settings.getKvKeyDType()));
-                    }
-                    keyToWrite = convertedKey;
-                }
+                convertedKey = lighter.reshape(key, settings.getKvKeyDType());
+                keyToWrite = convertedKey;
             }
             if (value.dType() != settings.getKvValueDType()) {
-                try (var ignored = InferenceProfiler.timer(metricRegistry,
-                        "kvcache.v2.write.quantize.to_" + settings.getKvValueDType()).time()) {
-                    InferenceProfiler.counter(metricRegistry, "kvcache.v2.write.quantize.lighter").inc();
-                    try (TensorRef valueRef = TensorRef.borrowed(value)) {
-                        convertedValue = new TensorRefBackedTensor(lighter.reshape(valueRef, settings.getKvValueDType()));
-                    }
-                    valueToWrite = convertedValue;
-                }
+                convertedValue = lighter.reshape(value, settings.getKvValueDType());
+                valueToWrite = convertedValue;
             }
-            try (TensorRef keyRef = TensorRef.borrowed(keyToWrite); TensorRef valueRef = TensorRef.borrowed(valueToWrite)) {
-                mutable.write(layer, position, keyRef, valueRef);
-            }
+            mutableBlock(blockIndex).write(layer, position, keyToWrite, valueToWrite);
+            metricRegistry.meter("kvcache.v2.row.write").mark();
         } finally {
-            if (convertedKey != null) {
-                convertedKey.close();
-            }
-            if (convertedValue != null) {
-                convertedValue.close();
-            }
+            if (convertedKey != null) convertedKey.close();
+            if (convertedValue != null) convertedValue.close();
         }
     }
 
@@ -327,37 +272,37 @@ public final class KvCacheSession implements AutoCloseable {
         return committedBlockLeases.containsKey(blockIndex);
     }
 
-    AbstractTensor copyVisibleKeys(int layer, int visibleTokens) {
+    TensorRef copyVisibleKeysRef(int layer, int visibleTokens) {
         return copyVisible(layer, visibleTokens, true);
     }
 
-    AbstractTensor copyVisibleValues(int layer, int visibleTokens) {
+    TensorRef copyVisibleValuesRef(int layer, int visibleTokens) {
         return copyVisible(layer, visibleTokens, false);
     }
 
-    void copyKeyRows(int layer, int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart) {
+    void copyKeyRows(int layer, int positionStart, int rowCount, TensorRef destination, int destinationRowStart) {
         copyRows(layer, positionStart, rowCount, destination, destinationRowStart, true);
     }
 
-    void copyValueRows(int layer, int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart) {
+    void copyValueRows(int layer, int positionStart, int rowCount, TensorRef destination, int destinationRowStart) {
         copyRows(layer, positionStart, rowCount, destination, destinationRowStart, false);
     }
 
-    AbstractTensor[] keyPages(int layer, int visibleTokens) {
+    TensorRef[] keyPageRefs(int layer, int visibleTokens) {
         return pages(layer, visibleTokens, true);
     }
 
-    AbstractTensor[] valuePages(int layer, int visibleTokens) {
+    TensorRef[] valuePageRefs(int layer, int visibleTokens) {
         return pages(layer, visibleTokens, false);
     }
 
-    private AbstractTensor copyVisible(int layer, int visibleTokens, boolean key) {
-        AbstractTensor result = new TensorRefBackedTensor(lighter.allocateDirty(dtype,
-                io.teknek.reckoning.tensor.TensorShape.of(visibleTokens, layerKvLength(layer))));
+    private TensorRef copyVisible(int layer, int visibleTokens, boolean key) {
+        TensorRef result = lighter.allocateDirty(dtype,
+                io.teknek.reckoning.tensor.TensorShape.of(visibleTokens, layerKvLength(layer)));
         try {
             for (int position = 0; position < visibleTokens; position++) {
-                try (AbstractTensor row = rowCopy(layer, position, key)) {
-                    result.copyFrom(row, 0, result.getOffset(position, 0), layerKvLength(layer));
+                try (TensorRef row = rowCopyRef(layer, position, key)) {
+                    lighter.copyFrom(row, result, 0, result.shape().getOffset(position, 0), layerKvLength(layer));
                 }
             }
             return result;
@@ -367,7 +312,7 @@ public final class KvCacheSession implements AutoCloseable {
         }
     }
 
-    private void copyRows(int layer, int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart,
+    private void copyRows(int layer, int positionStart, int rowCount, TensorRef destination, int destinationRowStart,
             boolean key) {
         requireOpen();
         validateLayer(layer);
@@ -388,13 +333,9 @@ public final class KvCacheSession implements AutoCloseable {
             if (committed != null) {
                 rowsInBlock = Math.min(rowsInBlock, committed.endPositionExclusive() - sourcePosition);
                 if (key) {
-                    try (TensorRef destinationRef = TensorRef.borrowed(destination)) {
-                        committed.copyKeyRows(layer, sourcePosition, rowsInBlock, destinationRef, destRow);
-                    }
+                    committed.copyKeyRows(layer, sourcePosition, rowsInBlock, destination, destRow);
                 } else {
-                    try (TensorRef destinationRef = TensorRef.borrowed(destination)) {
-                        committed.copyValueRows(layer, sourcePosition, rowsInBlock, destinationRef, destRow);
-                    }
+                    committed.copyValueRows(layer, sourcePosition, rowsInBlock, destination, destRow);
                 }
             } else {
                 MutableKvBlock mutable = mutableBlocks.get(blockIndex);
@@ -402,13 +343,9 @@ public final class KvCacheSession implements AutoCloseable {
                     throw new IllegalStateException("No KV block for position " + sourcePosition);
                 }
                 if (key) {
-                    try (TensorRef destinationRef = TensorRef.borrowed(destination)) {
-                        mutable.copyKeyRows(layer, sourcePosition, rowsInBlock, destinationRef, destRow);
-                    }
+                    mutable.copyKeyRows(layer, sourcePosition, rowsInBlock, destination, destRow);
                 } else {
-                    try (TensorRef destinationRef = TensorRef.borrowed(destination)) {
-                        mutable.copyValueRows(layer, sourcePosition, rowsInBlock, destinationRef, destRow);
-                    }
+                    mutable.copyValueRows(layer, sourcePosition, rowsInBlock, destination, destRow);
                 }
             }
             remaining -= rowsInBlock;
@@ -417,49 +354,43 @@ public final class KvCacheSession implements AutoCloseable {
         }
     }
 
-    private AbstractTensor[] pages(int layer, int visibleTokens, boolean key) {
+    private TensorRef[] pages(int layer, int visibleTokens, boolean key) {
         requireOpen();
         validateLayer(layer);
         Preconditions.checkArgument(visibleTokens >= 0 && visibleTokens <= length,
                 "visibleTokens must be within session length");
         if (visibleTokens == 0) {
-            return new AbstractTensor[0];
+            return new TensorRef[0];
         }
         int pageCount = (visibleTokens + blockSize - 1) / blockSize;
         // TensorRef-backed pages are caller-owned views and are closed after each attention pass.
         return buildPages(layer, pageCount, key);
     }
 
-    private AbstractTensor[] buildPages(int layer, int pageCount, boolean key) {
-        AbstractTensor[] pages = new AbstractTensor[pageCount];
+    private TensorRef[] buildPages(int layer, int pageCount, boolean key) {
+        TensorRef[] pages = new TensorRef[pageCount];
         try {
             for (int blockIndex = 0; blockIndex < pageCount; blockIndex++) {
                 KvBlock committed = committedBlocks.get(blockIndex);
                 if (committed != null) {
-                    pages[blockIndex] = new TensorRefBackedTensor(
-                            key ? committed.keyPageView(layer) : committed.valuePageView(layer));
+                    pages[blockIndex] = key ? committed.keyPageView(layer) : committed.valuePageView(layer);
                 } else {
                     MutableKvBlock mutable = mutableBlocks.get(blockIndex);
                     if (mutable == null) {
                         throw new IllegalStateException("No KV block for block index " + blockIndex);
                     }
-                    pages[blockIndex] = new TensorRefBackedTensor(key ? mutable.keyPageView(layer)
-                            : mutable.valuePageView(layer));
+                    pages[blockIndex] = key ? mutable.keyPageView(layer) : mutable.valuePageView(layer);
                 }
             }
             return pages;
         } catch (RuntimeException | Error e) {
-            for (AbstractTensor page : pages) {
+            for (TensorRef page : pages) {
                 if (page != null) {
                     page.close();
                 }
             }
             throw e;
         }
-    }
-
-    private AbstractTensor rowCopy(int layer, int position, boolean key) {
-        return new TensorRefBackedTensor(rowCopyRef(layer, position, key));
     }
 
     private TensorRef rowCopyRef(int layer, int position, boolean key) {
@@ -478,28 +409,46 @@ public final class KvCacheSession implements AutoCloseable {
         return key ? mutable.keyRowCopy(layer, position, lighter) : mutable.valueRowCopy(layer, position, lighter);
     }
 
-    private AbstractTensor rowView(int layer, int position, boolean key) {
+    TensorRef keyRowViewRef(int layer, int position) {
+        return rowViewRef(layer, position, true);
+    }
+
+    TensorRef valueRowViewRef(int layer, int position) {
+        return rowViewRef(layer, position, false);
+    }
+
+    private TensorRef rowViewRef(int layer, int position, boolean key) {
         requireOpen();
         validateLayer(layer);
         Preconditions.checkArgument(position >= 0 && position < length, "position out of visible length");
         if (isHeterogeneous()) {
-            return new TensorRefBackedTensor(rowCopyRef(layer, position, key));
+            return rowCopyRef(layer, position, key);
         }
         int blockIndex = position / blockSize;
-        AbstractTensor view;
+        TensorRef view;
         KvBlock committed = committedBlocks.get(blockIndex);
         if (committed != null) {
-            view = new TensorRefBackedTensor(key ? committed.keyRowView(layer, position)
-                    : committed.valueRowView(layer, position));
+            view = key ? committed.keyRowView(layer, position) : committed.valueRowView(layer, position);
         } else {
             MutableKvBlock mutable = mutableBlocks.get(blockIndex);
             if (mutable == null) {
                 throw new IllegalStateException("No KV block for position " + position);
             }
-            view = new TensorRefBackedTensor(key ? mutable.keyRowView(layer, position)
-                    : mutable.valueRowView(layer, position));
+            view = key ? mutable.keyRowView(layer, position) : mutable.valueRowView(layer, position);
         }
-        return trackReadViews ? new TrackedReadOnlyTensor(view, true) : new ReadOnlyTensor(view, true);
+        return view;
+    }
+
+    void copyKeyRows(int layer, int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart) {
+        try (TensorRef destinationRef = TensorRef.borrowed(destination)) {
+            copyKeyRows(layer, positionStart, rowCount, destinationRef, destinationRowStart);
+        }
+    }
+
+    void copyValueRows(int layer, int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart) {
+        try (TensorRef destinationRef = TensorRef.borrowed(destination)) {
+            copyValueRows(layer, positionStart, rowCount, destinationRef, destinationRowStart);
+        }
     }
 
     private MutableKvBlock mutableBlock(int blockIndex) {

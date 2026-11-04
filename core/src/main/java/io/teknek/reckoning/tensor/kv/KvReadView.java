@@ -1,6 +1,5 @@
 package io.teknek.reckoning.tensor.kv;
 
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor2.TensorRef;
 
 /** Immutable logical read view over a KV cache session. */
@@ -37,16 +36,8 @@ public final class KvReadView implements AutoCloseable {
         return session.valueDType();
     }
 
-    public AbstractTensor keyRowCopy(int position) {
-        return session.keyRowCopy(layer, position);
-    }
-
     public TensorRef keyRowCopyRef(int position) {
         return session.keyRowCopyRef(layer, position);
-    }
-
-    public AbstractTensor valueRowCopy(int position) {
-        return session.valueRowCopy(layer, position);
     }
 
     public TensorRef valueRowCopyRef(int position) {
@@ -57,81 +48,40 @@ public final class KvReadView implements AutoCloseable {
      * Returns a non-copying read-only key row view. In tracked mode, closing the returned tensor asserts that the
      * underlying KV row was not mutated while borrowed.
      */
-    public AbstractTensor keyRow(int position) {
-        return session.keyRowView(layer, position);
-    }
-
     public TensorRef keyRowRef(int position) {
-        return TensorRef.owned(session.keyRowView(layer, position));
+        return session.keyRowViewRef(layer, position);
     }
 
     /**
      * Returns a non-copying read-only value row view. In tracked mode, closing the returned tensor asserts that the
      * underlying KV row was not mutated while borrowed.
      */
-    public AbstractTensor valueRow(int position) {
-        return session.valueRowView(layer, position);
-    }
-
     public TensorRef valueRowRef(int position) {
-        return TensorRef.owned(session.valueRowView(layer, position));
-    }
-
-    public AbstractTensor copyVisibleKeys() {
-        return session.copyVisibleKeys(layer, visibleTokens);
+        return session.valueRowViewRef(layer, position);
     }
 
     public TensorRef copyVisibleKeysRef() {
-        return TensorRef.owned(session.copyVisibleKeys(layer, visibleTokens));
-    }
-
-    public AbstractTensor copyVisibleValues() {
-        return session.copyVisibleValues(layer, visibleTokens);
+        return session.copyVisibleKeysRef(layer, visibleTokens);
     }
 
     public TensorRef copyVisibleValuesRef() {
-        return TensorRef.owned(session.copyVisibleValues(layer, visibleTokens));
+        return session.copyVisibleValuesRef(layer, visibleTokens);
     }
 
-    public void copyKeyRows(int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart) {
+    public void copyKeyRows(int positionStart, int rowCount, TensorRef destination, int destinationRowStart) {
         session.copyKeyRows(layer, positionStart, rowCount, destination, destinationRowStart);
     }
 
-    public void copyValueRows(int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart) {
+    public void copyValueRows(int positionStart, int rowCount, TensorRef destination, int destinationRowStart) {
         session.copyValueRows(layer, positionStart, rowCount, destination, destinationRowStart);
     }
 
-    public AbstractTensor[] keyPages() {
-        return session.keyPages(layer, visibleTokens);
-    }
-
     public TensorRef[] keyPageRefs() {
-        return ownedRefs(session.keyPages(layer, visibleTokens));
-    }
-
-    public AbstractTensor[] valuePages() {
-        return session.valuePages(layer, visibleTokens);
+        return session.keyPageRefs(layer, visibleTokens);
     }
 
     public TensorRef[] valuePageRefs() {
-        return ownedRefs(session.valuePages(layer, visibleTokens));
-    }
-
-    private static TensorRef[] ownedRefs(AbstractTensor[] tensors) {
-        TensorRef[] refs = new TensorRef[tensors.length];
-        try {
-            for (int i = 0; i < tensors.length; i++) {
-                refs[i] = TensorRef.owned(tensors[i]);
-            }
-            return refs;
-        } catch (RuntimeException | Error e) {
-            for (TensorRef ref : refs) {
-                if (ref != null) {
-                    ref.close();
-                }
-            }
-            throw e;
-        }
+        return session.valuePageRefs(layer, visibleTokens);
     }
 
     @Override

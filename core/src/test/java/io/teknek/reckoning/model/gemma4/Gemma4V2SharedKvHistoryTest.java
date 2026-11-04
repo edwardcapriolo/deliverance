@@ -15,6 +15,8 @@ import io.teknek.reckoning.tensor.KvBufferCacheSettings;
 import io.teknek.reckoning.tensor.TensorShape;
 import io.teknek.reckoning.tensor.impl.FloatBufferTensor;
 import io.teknek.reckoning.tensor.kv.KvCacheSession;
+import io.teknek.reckoning.tensor.kv.AttentionPattern;
+import io.teknek.reckoning.tensor.kv.KvReadView;
 import io.teknek.reckoning.tensor2.Lighter;
 import io.teknek.reckoning.tensor2.TensorRef;
 import io.teknek.reckoning.toolcallparser.DefaultToolCallParser;
@@ -72,11 +74,13 @@ class Gemma4V2SharedKvHistoryTest {
                 }
 
                 assertEquals(4, session.length());
-                for (int row = 0; row < 4; row++) {
-                    try (AbstractTensor key = session.keyRowCopy(0, row);
-                         AbstractTensor value = session.valueRowCopy(0, row)) {
+                try (KvReadView view = session.readView(0, session.length(), AttentionPattern.CAUSAL)) {
+                    for (int row = 0; row < 4; row++) {
+                        try (TensorRef key = view.keyRowCopyRef(row);
+                             TensorRef value = view.valueRowCopyRef(row)) {
                         assertEquals(1, key.shape().first());
                         assertEquals(1, value.shape().first());
+                        }
                     }
                 }
 

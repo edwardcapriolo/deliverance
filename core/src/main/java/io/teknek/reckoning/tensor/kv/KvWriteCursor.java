@@ -18,7 +18,9 @@ public final class KvWriteCursor implements AutoCloseable {
         if (closed) {
             throw new IllegalStateException("KV write cursor is closed");
         }
-        session.write(mode, layer, position, key, value);
+        try (TensorRef keyRef = TensorRef.borrowed(key); TensorRef valueRef = TensorRef.borrowed(value)) {
+            session.write(mode, layer, position, keyRef, valueRef);
+        }
     }
 
     public void write(int layer, int position, TensorRef key, TensorRef value) {
