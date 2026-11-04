@@ -39,6 +39,11 @@ The current model smoke test is `DeadReckoningModelsIT`. It runs eight six-token
 - Nemotron 3B AR and diffusion modes.
 - Antares 1B JQ4.
 
+Dead Reckoning also covers non-generation tasks through `DeadReckoningTaskModelsIT`:
+
+- Embeddings from `edwardcapriolo/all-MiniLM-L6-v2-JQ4`.
+- Classification from `lordofthejars/jailbreak-classifier`.
+
 Traces are written outside Maven `target` so they can be reviewed and checked in:
 
 ```text
@@ -62,6 +67,28 @@ text. This is expected to be reported as numerical drift, not automatically as a
 Some model-specific generation paths, notably Nemotron's custom AR and diffusion paths, currently
 emit checkpoint records without the complete standard response-event sequence. The test therefore
 prints the returned response, token IDs, and finish reason separately.
+
+## Task Results
+
+Embedding and classification calls use the same trace sink and selectors as generation, with task
+specific terminal records:
+
+- `TASK_START`: task name, input text, and pooling type.
+- `EMBEDDING_RESULT`: vector shape, dtype, statistics, hash, and first values.
+- `CLASSIFICATION_RESULT`: exact label scores, selected label, and selected score.
+
+Classification may also contain an `EMBEDDING_RESULT` because the default classification path first
+produces an embedding and then applies the classifier head.
+
+The task integration test is:
+
+```text
+core/src/test/java/io/teknek/reckoning/integration/DeadReckoningTaskModelsIT.java
+```
+
+Task traces are checked the same way as generation traces. Same-environment reruns require exact
+vector statistics, hashes, label scores, and selected labels. Generated prose is not involved in
+these checks, making task traces especially useful for deterministic regression coverage.
 
 ## Running The Test
 

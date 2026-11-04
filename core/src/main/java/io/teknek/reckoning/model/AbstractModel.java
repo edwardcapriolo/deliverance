@@ -1136,7 +1136,10 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         if (!config.isClassifier()) {
             throw new UnsupportedOperationException("Classification not supported by this model");
         }
-        return classifyInput(input, poolingType);
+        deadReckoningTaskStart("CLASSIFICATION", input, poolingType.name());
+        SortedMap<String, Float> result = classifyInput(input, poolingType);
+        deadReckoningClassificationResult(result);
+        return result;
     }
 
     /**
@@ -1192,12 +1195,33 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     }
 
     public float[] embed(String input, PoolingType poolingType) {
+        deadReckoningTaskStart("EMBEDDING", input, poolingType.name());
         //TODO better recipe then this? timed callable
         Timer.Context c = metricRegistry.timer("abstractmodel.embed").time();
         try {
-            return timedEmbedding(input, poolingType);
+            float[] result = timedEmbedding(input, poolingType);
+            deadReckoningEmbeddingResult(result);
+            return result;
         } finally {
             c.stop();
+        }
+    }
+
+    private void deadReckoningTaskStart(String task, String input, String poolingType) {
+        if (deadReckoningTrace != null) {
+            deadReckoningTrace.recordTaskStart(task, input, poolingType);
+        }
+    }
+
+    private void deadReckoningEmbeddingResult(float[] embedding) {
+        if (deadReckoningTrace != null) {
+            deadReckoningTrace.recordEmbeddingResult(embedding);
+        }
+    }
+
+    private void deadReckoningClassificationResult(SortedMap<String, Float> scores) {
+        if (deadReckoningTrace != null) {
+            deadReckoningTrace.recordClassificationResult(scores);
         }
     }
     protected float[] timedEmbedding(String input, PoolingType poolingType) {

@@ -47,6 +47,11 @@ public final class AutoModelForSequenceClassification {
             return this;
         }
 
+        public Builder withDeadReckoning(DeadReckoningParams params) {
+            delegate.withDeadReckoning(params);
+            return this;
+        }
+
         public Builder withToolCallParser(ToolCallParser value) {
             delegate.withToolCallParser(value);
             return this;

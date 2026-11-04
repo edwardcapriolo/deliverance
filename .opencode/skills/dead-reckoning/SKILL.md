@@ -32,6 +32,15 @@ The current test is:
 core/src/test/java/io/teknek/reckoning/integration/DeadReckoningModelsIT.java
 ```
 
+Non-generation task coverage is in:
+
+```text
+core/src/test/java/io/teknek/reckoning/integration/DeadReckoningTaskModelsIT.java
+```
+
+It exercises the commonly used embedding and classification models. Embedding builders inherit
+`withDeadReckoning(...)`; sequence-classification builders expose the same method directly.
+
 Run it through Failsafe. Do not use a normal `-Dtest` invocation for this `*IT` class:
 
 ```bash
@@ -78,6 +87,16 @@ Useful checkpoint fields are:
 - `hash`: exact captured-value identity, not a tolerance result.
 - `first_values`: a quick local view of the actual numeric drift.
 
+Task records must also be checked:
+
+- `TASK_START`: task, input, and pooling type.
+- `EMBEDDING_RESULT`: vector shape, dtype, statistics, hash, and first values.
+- `CLASSIFICATION_RESULT`: every label score, selected label, and selected score.
+
+Classification commonly emits both an embedding result and a classification result because the
+classification path may first compute an embedding and then apply a classifier head. Compare both;
+matching only the selected label is insufficient.
+
 ## Classify Differences
 
 Use these categories in the report:
@@ -110,6 +129,10 @@ look reasonable.
 
 Selected token IDs, finish reason, response structure, or model-specific control flow changes. This
 is more important than a hash difference and should be reported prominently.
+
+For task models, behavioral divergence includes changed embedding shape, changed label set, changed
+selected class, or materially changed classification scores. Embedding vectors should be compared
+exactly on the same machine and by statistics/hash across different environments.
 
 ### Incomplete Trace
 

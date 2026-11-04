@@ -13,6 +13,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.Map;
+import java.util.SortedMap;
 
 final class DeadReckoningTrace implements AutoCloseable {
     private final BufferedWriter writer;
@@ -167,6 +169,73 @@ final class DeadReckoningTrace implements AutoCloseable {
         return java.util.HexFormat.of().formatHex(digest.digest());
     }
 
+    private static void addStats(ObjectNode record, float[] values) {
+        double sum = 0.0;
+        double sumSquares = 0.0;
+        double sumAbs = 0.0;
+        float min = Float.POSITIVE_INFINITY;
+        float max = Float.NEGATIVE_INFINITY;
+        float maxAbs = 0.0f;
+        int nan = 0;
+        int positiveInfinity = 0;
+        int negativeInfinity = 0;
+        int zeros = 0;
+        for (float value : values) {
+            if (!Float.isFinite(value)) {
+                if (Float.isNaN(value)) nan++;
+                else if (value > 0) positiveInfinity++;
+                else negativeInfinity++;
+                continue;
+            }
+            if (value == 0.0f) zeros++;
+            min = Math.min(min, value);
+            max = Math.max(max, value);
+            sum += value;
+            sumAbs += Math.abs(value);
+            maxAbs = Math.max(maxAbs, Math.abs(value));
+            sumSquares += (double) value * value;
+        }
+        int nonFinite = nan + positiveInfinity + negativeInfinity;
+        double count = values.length - nonFinite;
+        double mean = count == 0 ? Double.NaN : sum / count;
+        double rms = count == 0 ? Double.NaN : Math.sqrt(sumSquares / count);
+        double variance = count == 0 ? Double.NaN : Math.max(0.0, sumSquares / count - mean * mean);
+        record.put("count", values.length);
+        record.put("min", count == 0 ? Double.NaN : min);
+        record.put("max", count == 0 ? Double.NaN : max);
+        record.put("mean", mean);
+        record.put("sum", sum);
+        record.put("mean_abs", count == 0 ? Double.NaN : sumAbs / count);
+        record.put("max_abs", maxAbs);
+        record.put("l2_norm", Math.sqrt(sumSquares));
+        record.put("rms", rms);
+        record.put("stddev", Math.sqrt(variance));
+        record.put("zero_count", zeros);
+        record.put("nan_count", nan);
+        record.put("positive_infinity_count", positiveInfinity);
+        record.put("negative_infinity_count", negativeInfinity);
+        record.put("hash", hash(values));
+        ArrayNode firstValues = record.putArray("first_values");
+        for (int i = 0; i < Math.min(32, values.length); i++) firstValues.add(values[i]);
+    }
+
+    private static String hash(float[] values) {
+        final java.security.MessageDigest digest;
+        try {
+            digest = java.security.MessageDigest.getInstance("SHA-256");
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
+        for (float value : values) {
+            int bits = Float.floatToRawIntBits(value);
+            digest.update((byte) bits);
+            digest.update((byte) (bits >>> 8));
+            digest.update((byte) (bits >>> 16));
+            digest.update((byte) (bits >>> 24));
+        }
+        return java.util.HexFormat.of().formatHex(digest.digest());
+    }
+
     synchronized void recordHeader(String owner, String model, PromptContext prompt,
             GeneratorParameters parameters) {
         ObjectNode record = JsonUtils.om.createObjectNode();
@@ -185,6 +254,42 @@ final class DeadReckoningTrace implements AutoCloseable {
         prefill.put("kind", "PREFILL_START");
         prefill.put("prompt_tokens", -1);
         write(prefill);
+    }
+
+    synchronized void recordTaskStart(String task, String input, String poolingType) {
+        ObjectNode record = JsonUtils.om.createObjectNode();
+        record.put("kind", "TASK_START");
+        record.put("task", task);
+        record.put("input", input);
+        record.put("pooling_type", poolingType);
+        write(record);
+    }
+
+    synchronized void recordEmbeddingResult(float[] embedding) {
+        ObjectNode record = JsonUtils.om.createObjectNode();
+        record.put("kind", "EMBEDDING_RESULT");
+        record.putArray("shape").add(embedding.length);
+        record.put("dtype", "F32");
+        addStats(record, embedding);
+        write(record);
+    }
+
+    synchronized void recordClassificationResult(SortedMap<String, Float> scores) {
+        ObjectNode record = JsonUtils.om.createObjectNode();
+        record.put("kind", "CLASSIFICATION_RESULT");
+        ObjectNode values = record.putObject("scores");
+        String selectedLabel = null;
+        float selectedScore = Float.NEGATIVE_INFINITY;
+        for (Map.Entry<String, Float> entry : scores.entrySet()) {
+            values.put(entry.getKey(), entry.getValue());
+            if (entry.getValue() > selectedScore) {
+                selectedLabel = entry.getKey();
+                selectedScore = entry.getValue();
+            }
+        }
+        record.put("selected_label", selectedLabel);
+        record.put("selected_score", selectedScore);
+        write(record);
     }
 
     synchronized void recordGenerationDebug(AbstractModel.GenerationDebugEvent event) {
