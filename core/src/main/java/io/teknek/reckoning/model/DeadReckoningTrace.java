@@ -237,7 +237,7 @@ final class DeadReckoningTrace implements AutoCloseable {
     }
 
     synchronized void recordHeader(String owner, String model, PromptContext prompt,
-            GeneratorParameters parameters) {
+            GeneratorParameters parameters, long[] inputIds) {
         ObjectNode record = JsonUtils.om.createObjectNode();
         record.put("kind", "RUN_START");
         record.put("owner", owner);
@@ -249,6 +249,9 @@ final class DeadReckoningTrace implements AutoCloseable {
         generator.put("seed", parameters.seed.orElse(null));
         generator.put("log_probs", parameters.logProbs.orElse(null));
         generator.put("top_log_probs", parameters.topLogProbs.orElse(null));
+        record.put("prompt_tokens", inputIds.length);
+        ArrayNode tokens = record.putArray("input_ids");
+        for (long inputId : inputIds) tokens.add(inputId);
         write(record);
         ObjectNode prefill = JsonUtils.om.createObjectNode();
         prefill.put("kind", "PREFILL_START");

@@ -164,6 +164,27 @@ When comparing Mac with Colima/Linux ARM:
 - Check finite counts, shapes, dtypes, selected tokens, finish reason, and response behavior.
 - Do not require exact hashes across environments.
 
+For dense HF versus Reckoning traces, use the threshold checker rather than exact equality:
+
+```java
+DeadReckoningCrossRuntimeCheck.Result result = DeadReckoningCrossRuntimeCheck.compare(
+        hfTrace,
+        reckoningTrace,
+        DeadReckoningCrossRuntimeCheck.Policy.causalDefaults());
+```
+
+Interpret the result as follows:
+
+- `GREEN`: all mapped stages are within pass thresholds.
+- `YELLOW`: numerical warnings exist, but no hard structural or threshold failure occurred.
+- `RED`: a required mapped stage is missing, shapes are incompatible, token IDs differ, or values
+  exceed warning thresholds.
+
+The checker maps common HF Qwen/Llama/Gemma stage names to Reckoning names and treats a leading
+single batch dimension as compatible with Reckoning's flattened sequence shape. Add model-specific
+stage mappings and thresholds for architectures such as Gemma4 rather than weakening the global
+thresholds.
+
 The most useful report is concise and ordered:
 
 1. Whether both runs completed.

@@ -45,6 +45,12 @@ public class Qwen3Model extends LlamaModel {
         return true;
     }
 
+    /** Qwen3's tokenizer config sets add_bos_token=false; its chat template supplies the prompt framing. */
+    @Override
+    protected boolean addBosToken() {
+        return false;
+    }
+
     @Override
     protected boolean usesTensorRefExecution() {
         return true;

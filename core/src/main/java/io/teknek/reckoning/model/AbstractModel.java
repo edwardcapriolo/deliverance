@@ -676,7 +676,8 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
 
     void deadReckoningHeader(PromptContext prompt, GeneratorParameters parameters) {
         if (deadReckoningTrace != null) {
-            deadReckoningTrace.recordHeader(deadReckoningOwner, deadReckoningModel, prompt, parameters);
+            deadReckoningTrace.recordHeader(deadReckoningOwner, deadReckoningModel, prompt, parameters,
+                    encodeText(prompt.getPrompt()));
         }
     }
 

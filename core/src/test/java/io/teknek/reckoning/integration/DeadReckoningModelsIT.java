@@ -29,7 +29,7 @@ public class DeadReckoningModelsIT {
 
     @Test
     void qwen06bDense() throws Exception {
-        trace("qwen06b-dense", "Qwen", "Qwen3-0.6B", null);
+        traceAndCompare("qwen06b-dense", "Qwen", "Qwen3-0.6B", null);
     }
 
     @Test

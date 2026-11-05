@@ -109,6 +109,12 @@ public class Gemma4Model extends LlamaModel {
         return v2Lighter != null;
     }
 
+    /** Gemma4's chat template emits BOS; runtime prompt construction retains exactly one BOS token. */
+    @Override
+    protected boolean addBosToken() {
+        return true;
+    }
+
     @Override
     public TensorRef batchForwardRef(int[] tokenIds, int startPos,
             io.teknek.reckoning.tensor.kv.KvCacheSession kvSession,

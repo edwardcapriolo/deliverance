@@ -132,3 +132,24 @@ The check ignores JSONL record ordering, but it does not apply numeric tolerance
 statistics, hashes, shapes, dtypes, tokens, responses, and lifecycle records. Use it for same-machine
 reruns and same-environment migration gates. It reports the semantic checkpoint key and changed
 fields when the result is false.
+
+## HF Cross-Runtime Check
+
+Dense HF traces use a separate threshold-based checker:
+
+```java
+DeadReckoningCrossRuntimeCheck.compare(
+        hfTrace,
+        reckoningTrace,
+        DeadReckoningCrossRuntimeCheck.Policy.causalDefaults());
+```
+
+The result is classified as:
+
+- `GREEN`: mapped stages are within pass thresholds.
+- `YELLOW`: the run is close but produces threshold warnings.
+- `RED`: stages are structurally missing/mismatched or values exceed warning thresholds.
+
+The causal profile maps common HF module names to Reckoning checkpoints, normalizes a leading batch
+dimension, compares summary statistics with absolute/relative thresholds, and verifies generated
+token IDs. It intentionally ignores HF-only modules and Java-only checkpoints until a mapping exists.

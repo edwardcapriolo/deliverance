@@ -78,6 +78,12 @@ public class Gemma2Model extends LlamaModel {
         return true;
     }
 
+    /** Gemma2 uses one BOS token for the constructed runtime prompt. */
+    @Override
+    protected boolean addBosToken() {
+        return true;
+    }
+
     @Override
     protected TransformerBlock2[] loadTransformerBlockWeights2() {
         DType qType = modelQType.orElse(this.modelDType);
