@@ -6,6 +6,7 @@ import io.teknek.reckoning.tensor.TensorInfo;
 import io.teknek.reckoning.tensor.impl.BFloat16BufferTensor;
 import io.teknek.reckoning.tensor.impl.FloatBufferTensor;
 import io.teknek.reckoning.tensor2.Lighter;
+import io.teknek.reckoning.tensor2.TensorRef;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -81,6 +82,38 @@ public class MergingWeightLoaderTest {
                 for (int o = 0; o < OUT_FEATURES; o++) {
                     for (int i = 0; i < IN_FEATURES; i++) {
                         assertEquals(expected[o][i], merged.get(o, i), 1e-4f,
+                                "mismatch at [" + o + "," + i + "]");
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    void mergesDeltaIntoTargetedTensorRef() throws IOException {
+        Path baseDir = tempDir.resolve("ref-base");
+        Path adapterDir = tempDir.resolve("ref-adapter");
+        float[][] base = matrix(new float[][] {
+                { 1f, 2f, 3f, 4f }, { 5f, 6f, 7f, 8f }, { 9f, 10f, 11f, 12f }, { 13f, 14f, 15f, 16f } });
+        float[][] loraA = matrix(new float[][] {{ 0.1f, 0.2f, 0.3f, 0.4f }, { 0.5f, 0.6f, 0.7f, 0.8f }});
+        float[][] loraB = matrix(new float[][] {{ 1f, 2f }, { 3f, 4f }, { 5f, 6f }, { 7f, 8f }});
+        writeBaseModel(baseDir, Map.of(Q_PROJ, base));
+        writeAdapter(adapterDir, RANK, 4.0, "q_proj", Map.of(
+                LoraTensorNames.loraA(Q_PROJ), loraA,
+                LoraTensorNames.loraB(Q_PROJ), loraB));
+
+        try (DefaultWeightLoader delegate = DefaultWeightLoader.open(baseDir.toFile());
+             LoraAdapter adapter = LoraAdapter.load(adapterDir.toFile())) {
+            MergingWeightLoader merging = new MergingWeightLoader(delegate, adapter, new Lighter());
+            try (TensorRef merged = merging.loadRef(Q_PROJ)) {
+                assertEquals(DType.F32, merged.dType());
+                for (int o = 0; o < OUT_FEATURES; o++) {
+                    for (int i = 0; i < IN_FEATURES; i++) {
+                        float expected = base[o][i];
+                        for (int k = 0; k < RANK; k++) {
+                            expected += 2.0f * loraB[o][k] * loraA[k][i];
+                        }
+                        assertEquals(expected, merged.get(o, i), 1e-4f,
                                 "mismatch at [" + o + "," + i + "]");
                     }
                 }

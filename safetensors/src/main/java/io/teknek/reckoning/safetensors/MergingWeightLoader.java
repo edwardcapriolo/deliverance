@@ -4,7 +4,11 @@ import com.google.common.primitives.Ints;
 import io.teknek.reckoning.DType;
 import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.TensorInfo;
+import io.teknek.reckoning.tensor.TensorShape;
+import io.teknek.reckoning.tensor2.Accumulate;
+import io.teknek.reckoning.tensor2.BatchDotProduct;
 import io.teknek.reckoning.tensor2.Lighter;
+import io.teknek.reckoning.tensor2.Transpose;
 import io.teknek.reckoning.tensor2.TensorRef;
 
 import java.util.Map;
@@ -77,10 +81,16 @@ public class MergingWeightLoader implements WeightLoader {
 
     @Override
     public TensorRef loadRef(String name) {
-        if (adapter.deltaFor(name).isPresent()) {
-            throw new UnsupportedOperationException("TensorRef loading does not support merged LoRA weights: " + name);
+        Optional<LoraAdapter.LoraDelta> delta = adapter.deltaFor(name);
+        TensorRef base = delegate.loadRef(name);
+        if (delta.isEmpty()) {
+            return base;
         }
-        return delegate.loadRef(name);
+        try {
+            return mergeRef(base, delta.get());
+        } finally {
+            base.close();
+        }
     }
 
     @Override
@@ -171,5 +181,63 @@ public class MergingWeightLoader implements WeightLoader {
             }
         }
         return merged;
+    }
+
+    private TensorRef mergeRef(TensorRef base, LoraAdapter.LoraDelta delta) {
+        int outFeatures = Math.toIntExact(base.shape().first());
+        int inFeatures = Math.toIntExact(base.shape().last());
+        int rank = Math.toIntExact(delta.loraA().shape().first());
+        if (delta.loraA().shape().last() != inFeatures
+                || delta.loraB().shape().first() != outFeatures
+                || delta.loraB().shape().last() != rank) {
+            throw new IllegalArgumentException("LoRA shape does not match base weight: base=" + base.shape()
+                    + " loraA=" + delta.loraA().shape() + " loraB=" + delta.loraB().shape());
+        }
+
+        TensorRef merged = lighter.allocate(base.dType(), base.shape());
+        AbstractTensor loraA = LoraTensorMath.toDType(delta.loraA(), base.dType());
+        AbstractTensor scaledB = LoraTensorMath.scaledCopy(delta.loraB(), base.dType(), (float) adapter.scale());
+        boolean closeLoraA = loraA != delta.loraA();
+        try {
+            lighter.copy(base, 0, merged, 0, Math.toIntExact(base.shape().size()));
+            try (TensorRef loraARef = TensorRef.borrowed(loraA);
+                 TensorRef scaledBRef = TensorRef.borrowed(scaledB)) {
+                if (base.dType() == DType.F32 || base.dType() == DType.BF16) {
+                    try (TensorRef transposedA = lighter.allocate(base.dType(), TensorShape.of(inFeatures, rank));
+                         TensorRef deltaRef = lighter.allocate(base.dType(),
+                                 TensorShape.of(outFeatures, inFeatures))) {
+                        lighter.transpose(new Transpose(loraARef).destination(transposedA));
+                        lighter.batchDotProduct(new BatchDotProduct()
+                                .result(deltaRef)
+                                .a(scaledBRef)
+                                .b(transposedA)
+                                .aColumnOffset(0)
+                                .bColumnOffset(0)
+                                .columnLength(rank)
+                                .resultRowOffset(0)
+                                .bRowOffset(0)
+                                .rowChunkSize(inFeatures));
+                        lighter.accumulate(new Accumulate(deltaRef).into(merged)
+                                .offsetAndLength(0, inFeatures));
+                    }
+                } else {
+                    for (int row = 0; row < outFeatures; row++) {
+                        try (TensorRef mergedRow = merged.slice(row);
+                             TensorRef scaledBRow = scaledBRef.slice(row)) {
+                            lighter.saxpy(scaledBRow, loraARef, mergedRow, 0, 0, inFeatures, 0, 0, rank);
+                        }
+                    }
+                }
+            }
+            return merged;
+        } catch (RuntimeException | Error e) {
+            merged.close();
+            throw e;
+        } finally {
+            scaledB.close();
+            if (closeLoraA) {
+                loraA.close();
+            }
+        }
     }
 }

@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
  * Requires network access, same base/adapter pairing as {@code MergingWeightLoaderIntegrationTest}
  * (Phase 1's equivalent test) so the two are directly comparable.
  */
-@Tag("small-model")
+@Tag("large-model")
 public class LoraHotSwapIT {
 
     private static final String PROMPT = "Hello! Who are you and what can you help me with?";

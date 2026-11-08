@@ -728,7 +728,7 @@ public class AutoModelForCausaLm {
                 PreTrainedTokenizer tokenizer = AutoTokenizer.fromPretrained(modelRoot.toPath());
                 WeightLoader weightLoader = new DefaultWeightLoader(modelRoot);
                 if (loraAdapter.isPresent()) {
-                    throw new IllegalArgumentException("LoRA merging is not supported by the TensorRef path");
+                    weightLoader = new MergingWeightLoader(weightLoader, loraAdapter.get(), lighter);
                 }
                 return newModel(modelType, inferenceType(), config, weightLoader, tokenizer);
             } catch (IOException e) {

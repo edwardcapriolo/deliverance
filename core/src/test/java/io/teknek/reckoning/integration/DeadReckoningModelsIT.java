@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import java.net.InetAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.EnumSet;
 import java.util.List;
@@ -50,6 +51,12 @@ public class DeadReckoningModelsIT {
     @Test
     void gemma2Jq4() throws Exception {
         trace("gemma2-jq4", "tjake", "gemma-2-2b-it-JQ4", null);
+    }
+
+    @Test
+    @Tag("large-model")
+    void gemma4E2bJq4() throws Exception {
+        traceAndCompare("gemma4-e2b", "google", "gemma-4-E2B-it", null);
     }
 
     @Test
@@ -102,6 +109,7 @@ public class DeadReckoningModelsIT {
                             .withSeed(42)
                             .withMaxTokens(6)
                             .withLogProbs(true)
+                            .withTimeout(Duration.ofSeconds(30))
                             .withTopLogProbs(10),
                     new DoNothingGenerateEvent());
             System.out.println("DEAD_RECKONING_RESPONSE model=" + modelName
