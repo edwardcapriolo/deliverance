@@ -23,26 +23,17 @@ import io.teknek.reckoning.model.tensorparallel.TensorParallelShardPlan;
 import io.teknek.reckoning.model.tensorparallel.TensorParallelWeightLoader;
 import io.teknek.reckoning.safetensors.Config;
 import io.teknek.reckoning.safetensors.WeightLoader;
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.KvBufferCacheSettings;
 import io.teknek.reckoning.tensor2.Lighter;
 import io.teknek.reckoning.tensor2.TensorRef;
-import io.teknek.reckoning.tensor2.TensorRefBackedTensor;
 import io.teknek.reckoning.toolcallparser.ToolCallParser;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
 import java.util.stream.IntStream;
 
-import static io.teknek.reckoning.tensor.AbstractTensorUtils.quantize;
 
 public class Gemma2Model extends LlamaModel {
-    private static final Logger logger = LoggerFactory.getLogger(Gemma2Model.class);
-
     private final float embeddingScalingFactor;
-    private AbstractTensor wte;
-    private AbstractTensor outputLogitsWeights;
     private TensorRef wteRef;
 
     public Gemma2Model(
@@ -190,35 +181,6 @@ public class Gemma2Model extends LlamaModel {
                 }
             };
         }
-        // this comment is it true or not?
-        // Don't quantize this, it's used for the embedding layer
-        if (wte == null) {
-            wte = quantize(loadLegacyWeight("model.embed_tokens.weight"), workingDType);
-        }
-        return new EmbedInput(this) {
-            @Override
-            public TensorRef inputTokenToEmbedding(int inputToken, int position) {
-                    AbstractTensor embedding = new TensorRefBackedTensor(makeDenseTensorRef(config.embeddingLength));
-                    AbstractTensor at = wte.slice(true, inputToken);
-                    if (wte.dType() != embedding.dType()) {
-                        at = quantize(at, embedding.dType());
-                    }
-                    embedding.copyFrom(at, 0, 0, config.embeddingLength);
-                    // This is important for Gemma, but not for Llama
-                    scale(embeddingScalingFactor, embedding, 0, config.embeddingLength);
-                    return TensorRef.owned(embedding);
-            }
-        };
-    }
-
-    private AbstractTensor loadOutputLogitsWeights(DType outputHeadDType, boolean force) {
-        AbstractTensor original = loadLegacyWeight("model.embed_tokens.weight");
-        AbstractTensor result = force
-                ? io.teknek.reckoning.tensor.AbstractTensorUtils.quantize(original, outputHeadDType, true)
-                : quantize(original, outputHeadDType);
-        if (result != original) {
-            original.close();
-        }
-        return result;
+        throw new IllegalStateException("Gemma2 requires TensorRef execution");
     }
 }

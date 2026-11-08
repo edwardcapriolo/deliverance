@@ -1,7 +1,6 @@
 package io.teknek.reckoning.model.granitemoehybrid;
 
 import io.dropwizard.metrics5.MetricRegistry;
-import io.dropwizard.metrics5.Timer;
 import io.teknek.reckoning.DType;
 import io.teknek.reckoning.generator.EmbedInput;
 import io.teknek.reckoning.generator2.CausalSelfAttention2;
@@ -13,14 +12,11 @@ import io.teknek.reckoning.generator2.TransformerBlock2;
 import io.teknek.reckoning.grace.PreTrainedTokenizer;
 import io.teknek.reckoning.math.WrappedForkJoinPool;
 import io.teknek.reckoning.model.AbstractModel;
-import io.teknek.reckoning.model.InferenceProfiler;
 import io.teknek.reckoning.model.tensorparallel.TensorParallelCollectives;
 import io.teknek.reckoning.model.tensorparallel.TensorParallelContext;
 import io.teknek.reckoning.safetensors.Config;
 import io.teknek.reckoning.safetensors.WeightLoader;
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.KvBufferCacheSettings;
-import io.teknek.reckoning.tensor.TensorShape;
 import io.teknek.reckoning.tensor2.TensorRef;
 import io.teknek.reckoning.tensor2.Lighter;
 import io.teknek.reckoning.toolcallparser.ToolCallParser;
@@ -28,11 +24,9 @@ import io.teknek.reckoning.toolcallparser.ToolCallParser;
 import java.util.Optional;
 import java.util.stream.IntStream;
 
-import static io.teknek.reckoning.tensor.AbstractTensorUtils.quantize;
 
 public class GraniteMoeHybridModel extends AbstractModel {
 
-    private volatile AbstractTensor embedTokenWeights;
     private volatile TensorRef embedTokenWeightsRef;
 
     public GraniteMoeHybridModel(InferenceType inferenceType, Config config, WeightLoader weightLoader,
@@ -48,9 +42,8 @@ public class GraniteMoeHybridModel extends AbstractModel {
 
     @Override
     protected EmbedInput loadInputWeights() {
-        if (usesTensorRefExecution()) {
-            embedTokenWeightsRef = registerModelTensorRef(weights.loadRef("model.embed_tokens.weight"));
-            return new EmbedInput(this) {
+        embedTokenWeightsRef = registerModelTensorRef(weights.loadRef("model.embed_tokens.weight"));
+        return new EmbedInput(this) {
                 @Override
                 public TensorRef batchInputsToEmbeddings(int[] inputTokens, int startPos) {
                     TensorRef embeddings = makeDenseTensorRef(inputTokens.length, config.embeddingLength);
@@ -106,61 +99,6 @@ public class GraniteMoeHybridModel extends AbstractModel {
                         }
                     }
                 }
-            };
-        }
-        if (this.embedTokenWeights == null) {
-            // Keep quantized embeddings compressed. TensorRef generation only reads token rows;
-            // expanding the entire vocabulary matrix here makes Q4 model startup unnecessarily expensive.
-            AbstractTensor loaded = loadLegacyWeight("model.embed_tokens.weight");
-            this.embedTokenWeights = ((GraniteMoeHybridConfig) this.config).denseAttentionOnly()
-                    ? loaded : quantize(loaded, this.workingDType);
-        }
-        return new EmbedInput(this) {
-            @Override
-            public TensorRef batchInputsToEmbeddings(int[] inputTokens, int startPos) {
-                try (Timer.Context ignored = InferenceProfiler.timer(parent.getMetricRegistry(), "embedinput.batch_inputs").time()) {
-                    int hidden = parent.getConfig().embeddingLength;
-                    AbstractTensor embeddings = parent.allocateDirty(GraniteMoeHybridModel.this.workingDType,
-                            TensorShape.of(inputTokens.length, hidden));
-                    for (int i = 0; i < inputTokens.length; i++) {
-                        AbstractTensor tokenEmbedding = GraniteMoeHybridModel.this.embedTokenWeights.slice(true, inputTokens[i]);
-                        AbstractTensor source = tokenEmbedding;
-                        if (tokenEmbedding.dType() != GraniteMoeHybridModel.this.workingDType) {
-                            source = quantize(tokenEmbedding, GraniteMoeHybridModel.this.workingDType);
-                        }
-                        embeddings.copyFrom(source, 0, embeddings.getOffset(i, 0), hidden);
-                        if (source != tokenEmbedding) {
-                            source.close();
-                        }
-                    }
-                    if (parent.getConfig().embeddingMultiplier != null) {
-                        GraniteMoeHybridModel.this.scale(parent.getConfig().embeddingMultiplier, embeddings, 0, hidden);
-                    }
-                    return TensorRef.owned(embeddings);
-                }
-            }
-
-            @Override
-            public TensorRef inputTokenToEmbedding(int inputToken, int position) {
-                AbstractTensor tokenEmbedding = GraniteMoeHybridModel.this.embedTokenWeights.slice(true, inputToken);
-                AbstractTensor source = tokenEmbedding;
-                if (tokenEmbedding.dType() != GraniteMoeHybridModel.this.workingDType) {
-                    // Embedding scaling happens on the working tensor. Some providers do not
-                    // support scaling BF16 rows directly, and the rest of the forward path
-                    // expects working dtype activations anyway.
-                    source = quantize(tokenEmbedding, GraniteMoeHybridModel.this.workingDType);
-                }
-                AbstractTensor embedding = parent.allocateDirty(GraniteMoeHybridModel.this.workingDType, source.shape());
-                embedding.copyFrom(source, 0, 0, parent.getConfig().embeddingLength);
-                if (source != tokenEmbedding) {
-                    source.close();
-                }
-                if (parent.getConfig().embeddingMultiplier != null) {
-                    GraniteMoeHybridModel.this.scale(parent.getConfig().embeddingMultiplier,
-                            embedding, 0, parent.getConfig().embeddingLength);
-                }
-                return TensorRef.owned(embedding);
-            }
         };
     }
 
