@@ -9,7 +9,6 @@ import io.teknek.reckoning.tensor.KvBufferCacheSettings;
 import io.teknek.reckoning.tensor.TensorShape;
 import io.teknek.reckoning.tensor2.Lighter;
 import io.teknek.reckoning.tensor2.TensorRef;
-import io.teknek.reckoning.tensor2.TensorRefBackedTensor;
 
 import java.util.BitSet;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -219,7 +218,7 @@ final class MutableKvBlock implements AutoCloseable {
         }
     }
 
-    private TensorRefBackedTensor combinedStorageForTurboQuant() {
+    private TensorRef combinedStorageForTurboQuant() {
         Preconditions.checkArgument(keyStorage[0].dType() == DType.F32 && valueStorage[0].dType() == DType.F32,
                 "TurboQuant KV requires F32 key/value dense rows before compression");
         TensorRef combined = lighter.allocate(DType.F32, TensorShape.of(layers, 2, blockSize, kvLength));
@@ -233,7 +232,7 @@ final class MutableKvBlock implements AutoCloseable {
         }
         for (TensorRef ref : keyStorage) ref.close();
         for (TensorRef ref : valueStorage) ref.close();
-        return new TensorRefBackedTensor(combined);
+        return combined;
     }
 
     private int writtenIndex(int layer, int blockRow, int keyOrValue) {

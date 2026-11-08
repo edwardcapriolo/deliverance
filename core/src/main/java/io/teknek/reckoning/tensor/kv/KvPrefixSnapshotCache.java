@@ -4,11 +4,9 @@ import com.google.common.base.Preconditions;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.reckoning.DType;
 import io.teknek.reckoning.model.InferenceProfiler;
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.KvBufferCacheSettings;
 import io.teknek.reckoning.tensor2.Lighter;
-import io.teknek.reckoning.tensor2.TensorRefBackedTensor;
-import io.teknek.reckoning.tensor.TensorShape;
+import io.teknek.reckoning.tensor2.TensorRef;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -43,11 +41,11 @@ public final class KvPrefixSnapshotCache implements AutoCloseable {
 
     private final class DenseStoredPrefixEntry implements StoredPrefixEntry {
         private final int length;
-        private final AbstractTensor[] keysByLayer;
-        private final AbstractTensor[] valuesByLayer;
+        private final TensorRef[] keysByLayer;
+        private final TensorRef[] valuesByLayer;
         private final AtomicBoolean closed = new AtomicBoolean(false);
 
-        private DenseStoredPrefixEntry(int length, AbstractTensor[] keysByLayer, AbstractTensor[] valuesByLayer) {
+        private DenseStoredPrefixEntry(int length, TensorRef[] keysByLayer, TensorRef[] valuesByLayer) {
             this.length = length;
             this.keysByLayer = keysByLayer;
             this.valuesByLayer = valuesByLayer;
@@ -67,8 +65,8 @@ public final class KvPrefixSnapshotCache implements AutoCloseable {
             try (KvWriteCursor writer = destination.writer(CacheExecutionMode.PREFILL_UPDATE_CACHE)) {
                 for (int position = 0; position < length; position++) {
                     for (int layer = 0; layer < layers; layer++) {
-                        try (AbstractTensor key = keysByLayer[layer].slice(position);
-                             AbstractTensor value = valuesByLayer[layer].slice(position)) {
+                        try (TensorRef key = keysByLayer[layer].slice(position);
+                             TensorRef value = valuesByLayer[layer].slice(position)) {
                             writer.write(layer, position, key, value);
                         }
                     }
@@ -82,10 +80,10 @@ public final class KvPrefixSnapshotCache implements AutoCloseable {
         @Override
         public void close() {
             if (closed.compareAndSet(false, true)) {
-                for (AbstractTensor key : keysByLayer) {
+                for (TensorRef key : keysByLayer) {
                     key.close();
                 }
-                for (AbstractTensor value : valuesByLayer) {
+                for (TensorRef value : valuesByLayer) {
                     value.close();
                 }
             }
@@ -268,13 +266,13 @@ public final class KvPrefixSnapshotCache implements AutoCloseable {
 
     private StoredPrefixEntry snapshot(KvCacheSession source, int prefixLen) {
         long start = System.nanoTime();
-        AbstractTensor[] keys = new AbstractTensor[layers];
-        AbstractTensor[] values = new AbstractTensor[layers];
+        TensorRef[] keys = new TensorRef[layers];
+        TensorRef[] values = new TensorRef[layers];
         try {
             for (int layer = 0; layer < layers; layer++) {
                 int width = layerKvLength(layer);
-                keys[layer] = new TensorRefBackedTensor(lighter.allocateDirty(keyDType, TensorShape.of(prefixLen, width)));
-                values[layer] = new TensorRefBackedTensor(lighter.allocateDirty(valueDType, TensorShape.of(prefixLen, width)));
+                keys[layer] = lighter.allocateDirty(keyDType, io.teknek.reckoning.tensor.TensorShape.of(prefixLen, width));
+                values[layer] = lighter.allocateDirty(valueDType, io.teknek.reckoning.tensor.TensorShape.of(prefixLen, width));
                 source.copyKeyRows(layer, 0, prefixLen, keys[layer], 0);
                 source.copyValueRows(layer, 0, prefixLen, values[layer], 0);
             }
@@ -285,12 +283,12 @@ public final class KvPrefixSnapshotCache implements AutoCloseable {
             InferenceProfiler.counter(metricRegistry, "kvcache.v2.prefix.snapshot.bytes").inc(bytes);
             return new DenseStoredPrefixEntry(prefixLen, keys, values);
         } catch (RuntimeException | Error e) {
-            for (AbstractTensor key : keys) {
+            for (TensorRef key : keys) {
                 if (key != null) {
                     key.close();
                 }
             }
-            for (AbstractTensor value : values) {
+            for (TensorRef value : values) {
                 if (value != null) {
                     value.close();
                 }

@@ -3,6 +3,7 @@ package io.teknek.reckoning.tensor2;
 import com.google.common.base.Preconditions;
 import io.teknek.reckoning.DType;
 import io.teknek.reckoning.tensor.AbstractTensor;
+import io.teknek.reckoning.tensor.ReadableTensor;
 import io.teknek.reckoning.tensor.TensorShape;
 import io.teknek.reckoning.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.reckoning.tensor.impl.Q8ByteBufferTensor;
@@ -17,7 +18,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 
-public class TensorRef implements AutoCloseable {
+public class TensorRef implements AutoCloseable, ReadableTensor {
 
     private final AtomicReference<TensorRefState> state;
     private final TensorRef parent;
@@ -379,6 +380,11 @@ public class TensorRef implements AutoCloseable {
     }
     public TensorShape shape(){
         return requireOpen().shape();
+    }
+
+    @Override
+    public long size() {
+        return shape().size();
     }
 
     public int dims() {

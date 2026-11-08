@@ -15,11 +15,9 @@ import io.teknek.reckoning.model.tensorparallel.TensorParallelCollectives;
 import io.teknek.reckoning.model.tensorparallel.TensorParallelContext;
 import io.teknek.reckoning.safetensors.Config;
 import io.teknek.reckoning.safetensors.WeightLoader;
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.KvBufferCacheSettings;
 import io.teknek.reckoning.tensor2.Lighter;
 import io.teknek.reckoning.tensor2.TensorRef;
-import io.teknek.reckoning.tensor2.TensorRefBackedTensor;
 import io.teknek.reckoning.tensor2.Split;
 import io.teknek.reckoning.tensor2.Transpose;
 import io.teknek.reckoning.tensor.TensorShape;
@@ -57,20 +55,7 @@ public class Gpt2Model extends AbstractModel{
                 }
             };
         }
-        final AbstractTensor wte = loadLegacyWeight("wte.weight");
-        final AbstractTensor wpe = loadLegacyWeight("wpe.weight");
-
-        return new EmbedInput(this) {
-            @Override
-            public TensorRef inputTokenToEmbedding(int inputToken, int position) {
-                AbstractTensor embedding = new TensorRefBackedTensor(makeDenseTensorRef(1, config.embeddingLength));
-                for (int i = 0; i < config.embeddingLength; i++) {
-                    float v = wte.get(inputToken, i) + wpe.get(position, i);
-                    embedding.set(v, 0, i);
-                }
-                return TensorRef.owned(embedding);
-            }
-        };
+        throw new IllegalStateException("GPT2 requires TensorRef execution");
     }
 
 

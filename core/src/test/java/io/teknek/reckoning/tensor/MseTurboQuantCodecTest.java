@@ -1,6 +1,9 @@
 package io.teknek.reckoning.tensor;
 
+import io.teknek.reckoning.DType;
 import io.teknek.reckoning.tensor.impl.FloatBufferTensor;
+import io.teknek.reckoning.tensor2.Lighter;
+import io.teknek.reckoning.tensor2.TensorRef;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -100,8 +103,9 @@ class MseTurboQuantCodecTest {
 
     @Test
     void encodeDecodeRowProducesOwnedApproximationAndShrinksPayload() {
+        Lighter lighter = new Lighter();
         try (FloatBufferTensor source = new FloatBufferTensor(1, 8);
-             FloatBufferTensor restored = new FloatBufferTensor(1, 8)) {
+             TensorRef restored = lighter.allocate(DType.F32, TensorShape.of(1, 8))) {
             for (int i = 0; i < 8; i++) {
                 source.set((i + 1) * (i % 2 == 0 ? 1.0f : -1.0f), 0, i);
             }

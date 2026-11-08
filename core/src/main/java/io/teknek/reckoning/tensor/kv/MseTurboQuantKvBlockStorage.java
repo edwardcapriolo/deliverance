@@ -5,11 +5,9 @@ import io.dropwizard.metrics5.MetricRegistry;
 import io.dropwizard.metrics5.Timer;
 import io.teknek.reckoning.DType;
 import io.teknek.reckoning.model.InferenceProfiler;
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.MseTurboQuantCodec;
 import io.teknek.reckoning.tensor.TensorShape;
 import io.teknek.reckoning.tensor2.TensorRef;
-import io.teknek.reckoning.tensor2.TensorRefBackedTensor;
 import io.teknek.reckoning.tensor2.Lighter;
 
 import java.util.concurrent.TimeUnit;
@@ -38,7 +36,7 @@ final class MseTurboQuantKvBlockStorage implements KvBlockStorage {
         this.encodedRows = encodedRows;
     }
 
-    static MseTurboQuantKvBlockStorage encode(AbstractTensor denseStorage, int layers, int tokenCount, int blockSize,
+    static MseTurboQuantKvBlockStorage encode(TensorRef denseStorage, int layers, int tokenCount, int blockSize,
             int kvLength, int bitWidth, Lighter lighter, MetricRegistry metricRegistry) {
         Preconditions.checkArgument(tokenCount == blockSize, "TurboQuant KV initially supports full committed blocks only");
         long start = System.nanoTime();
@@ -48,7 +46,7 @@ final class MseTurboQuantKvBlockStorage implements KvBlockStorage {
         for (int layer = 0; layer < layers; layer++) {
             for (int blockRow = 0; blockRow < blockSize; blockRow++) {
                 for (int keyOrValue = 0; keyOrValue < 2; keyOrValue++) {
-                    try (AbstractTensor row = denseStorage.slice(true, layer, keyOrValue, blockRow)) {
+                    try (TensorRef row = denseStorage.slice(layer, keyOrValue, blockRow)) {
                         rowIndex = MseTurboQuantCodec.encodeRow(row, encoded, rowIndex, metricRegistry, scratch,
                                 METRIC_PREFIX + ".block.encode");
                     }
@@ -166,8 +164,7 @@ final class MseTurboQuantKvBlockStorage implements KvBlockStorage {
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, METRIC_PREFIX + ".block.decode.rows").time()) {
             for (int i = 0; i < rowCount; i++) {
                 try (TensorRef row = destination.slice(destinationRowStart + i)) {
-                    AbstractTensor legacyRow = new TensorRefBackedTensor(row);
-                    MseTurboQuantCodec.decodeRow(encodedRows, legacyRow, rowIndex(layer, blockRowStart + i, keyOrValue),
+                    MseTurboQuantCodec.decodeRow(encodedRows, row, rowIndex(layer, blockRowStart + i, keyOrValue),
                             null, scratch, METRIC_PREFIX + ".block.decode");
                 }
             }
@@ -181,7 +178,7 @@ final class MseTurboQuantKvBlockStorage implements KvBlockStorage {
                 && destination.shape().last() == kvLength, "destination must be [1, kvLength]");
         Preconditions.checkArgument(destination.dType() == dtype, "destination dtype must match KV dtype");
         try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, METRIC_PREFIX + ".block.decode.row").time()) {
-            MseTurboQuantCodec.decodeRow(encodedRows, new TensorRefBackedTensor(destination), rowIndex(layer, blockRow, keyOrValue), metricRegistry,
+            MseTurboQuantCodec.decodeRow(encodedRows, destination, rowIndex(layer, blockRow, keyOrValue), metricRegistry,
                     new MseTurboQuantCodec.Scratch(encodedRows.rotatedDim()), METRIC_PREFIX + ".block.decode");
         }
     }

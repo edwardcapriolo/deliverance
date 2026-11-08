@@ -2,6 +2,7 @@ package io.teknek.reckoning.tensor;
 
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.reckoning.model.InferenceProfiler;
+import io.teknek.reckoning.tensor2.TensorRef;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -153,25 +154,25 @@ public final class MseTurboQuantCodec {
      *
      * <p>The destination row is borrowed; this method does not close it.</p>
      */
-    public static int decodeRow(EncodedRows encoded, AbstractTensor row, int rowIndex) {
+    public static int decodeRow(EncodedRows encoded, TensorRef row, int rowIndex) {
         return decodeRow(encoded, row, rowIndex, null, new Scratch(encoded.rotatedDim()));
     }
 
     /**
      * Decodes one row and records optional substep metrics when {@code metricRegistry} is non-null.
      */
-    public static int decodeRow(EncodedRows encoded, AbstractTensor row, int rowIndex, MetricRegistry metricRegistry) {
+    public static int decodeRow(EncodedRows encoded, TensorRef row, int rowIndex, MetricRegistry metricRegistry) {
         return decodeRow(encoded, row, rowIndex, metricRegistry, new Scratch(encoded.rotatedDim()));
     }
 
     /** Decodes one row using caller-provided scratch storage. */
-    public static int decodeRow(EncodedRows encoded, AbstractTensor row, int rowIndex, MetricRegistry metricRegistry,
+    public static int decodeRow(EncodedRows encoded, TensorRef row, int rowIndex, MetricRegistry metricRegistry,
             Scratch scratch) {
         return decodeRow(encoded, row, rowIndex, metricRegistry, scratch, "kvbuffercache.prefix.turboquant");
     }
 
     /** Decodes one row using caller-provided scratch storage and metric prefix. */
-    public static int decodeRow(EncodedRows encoded, AbstractTensor row, int rowIndex, MetricRegistry metricRegistry,
+    public static int decodeRow(EncodedRows encoded, TensorRef row, int rowIndex, MetricRegistry metricRegistry,
             Scratch scratch, String metricPrefix) {
         float[] codebook = codebook(encoded.bitWidth());
         float[] signs = rotationSigns(encoded.rotatedDim());

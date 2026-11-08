@@ -4,7 +4,6 @@ import com.google.common.base.Preconditions;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.reckoning.DType;
 import io.teknek.reckoning.model.InferenceProfiler;
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.KvBufferCacheSettings;
 import io.teknek.reckoning.tensor2.Lighter;
 import io.teknek.reckoning.tensor2.TensorRef;
@@ -437,18 +436,6 @@ public final class KvCacheSession implements AutoCloseable {
             view = key ? mutable.keyRowView(layer, position) : mutable.valueRowView(layer, position);
         }
         return view;
-    }
-
-    void copyKeyRows(int layer, int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart) {
-        try (TensorRef destinationRef = TensorRef.borrowed(destination)) {
-            copyKeyRows(layer, positionStart, rowCount, destinationRef, destinationRowStart);
-        }
-    }
-
-    void copyValueRows(int layer, int positionStart, int rowCount, AbstractTensor destination, int destinationRowStart) {
-        try (TensorRef destinationRef = TensorRef.borrowed(destination)) {
-            copyValueRows(layer, positionStart, rowCount, destinationRef, destinationRowStart);
-        }
     }
 
     private MutableKvBlock mutableBlock(int blockIndex) {

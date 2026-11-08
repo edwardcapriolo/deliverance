@@ -49,8 +49,14 @@ public class DeadReckoningModelsIT {
     }
 
     @Test
+    void gpt2() throws Exception {
+        traceAndCompare("gpt2", "openai-community", "gpt2", null,
+                "The first three letters of the alphabet are");
+    }
+
+    @Test
     void gemma2Jq4() throws Exception {
-        trace("gemma2-jq4", "tjake", "gemma-2-2b-it-JQ4", null);
+        traceAndLog("gemma2-jq4", "tjake", "gemma-2-2b-it-JQ4", null);
     }
 
     /*
@@ -75,19 +81,35 @@ public class DeadReckoningModelsIT {
 
     @Test
     void antares1bJq4() throws Exception {
-        trace("antares1b-jq4", "edwardcapriolo", "antares-1b-JQ4", null);
+        traceAndLog("antares1b-jq4", "edwardcapriolo", "antares-1b-JQ4", null);
     }
 
     private static void traceAndCompare(String traceName, String owner, String modelName, String configPath)
             throws Exception {
-        Path current = trace(traceName, owner, modelName, configPath);
+        Path current = traceAndLog(traceName, owner, modelName, configPath);
+        compareWithPrevious(current, modelName);
+    }
+
+    private static void traceAndCompare(String traceName, String owner, String modelName, String configPath,
+            String promptText) throws Exception {
+        Path current = traceAndLog(traceName, owner, modelName, configPath, promptText);
+        compareWithPrevious(current, modelName);
+    }
+
+    private static void compareWithPrevious(Path current, String modelName) {
         if (!DeadReckoningTraceCheck.sameAsPrevious(current)) {
             throw new AssertionError("Dead Reckoning trace changed for " + modelName);
         }
     }
 
-    private static Path trace(String traceName, String owner, String modelName, String configPath) throws Exception {
-        ModelFetcher fetcher = new ModelFetcher(owner, modelName).withDownload(false);
+    private static Path traceAndLog(String traceName, String owner, String modelName, String configPath)
+            throws Exception {
+        return traceAndLog(traceName, owner, modelName, configPath, PROMPT);
+    }
+
+    private static Path traceAndLog(String traceName, String owner, String modelName, String configPath,
+            String promptText) throws Exception {
+        ModelFetcher fetcher = new ModelFetcher(owner, modelName).withDownload(true);
         fetcher.maybeDownload();
 
         String host = InetAddress.getLocalHost().getHostName();
@@ -103,8 +125,8 @@ public class DeadReckoningModelsIT {
         }
         try (AbstractModel model = builder.buildLocalTransformerModel()) {
             PromptContext prompt = model.promptSupport()
-                    .map(support -> support.builder().addUserMessage(PROMPT).build())
-                    .orElseGet(() -> PromptContext.of("user: " + PROMPT + "\nassistant: "));
+                    .map(support -> support.builder().addUserMessage(promptText).build())
+                    .orElseGet(() -> PromptContext.of(promptText));
             Response response = model.generate(UUID.randomUUID(), prompt,
                     new GeneratorParameters()
                             .withTemperature(0.0f)
