@@ -37,6 +37,8 @@ public class MergingWeightLoaderTest {
     @TempDir
     Path tempDir;
 
+    private final Lighter lighter = new Lighter();
+
     @Test
     void mergesDeltaIntoTargetedModule() throws IOException {
         Path baseDir = tempDir.resolve("base");
@@ -77,8 +79,10 @@ public class MergingWeightLoaderTest {
 
         try (DefaultWeightLoader delegate = DefaultWeightLoader.open(baseDir.toFile());
                 LoraAdapter adapter = LoraAdapter.load(adapterDir.toFile())) {
-            MergingWeightLoader merging = new MergingWeightLoader(delegate, adapter, new Lighter());
-            try (AbstractTensor merged = merging.load(Q_PROJ)) {
+            delegate.setLighter(lighter);
+            adapter.setLighter(lighter);
+            MergingWeightLoader merging = new MergingWeightLoader(delegate, adapter, lighter);
+             try (TensorRef merged = merging.load(Q_PROJ)) {
                 for (int o = 0; o < OUT_FEATURES; o++) {
                     for (int i = 0; i < IN_FEATURES; i++) {
                         assertEquals(expected[o][i], merged.get(o, i), 1e-4f,
@@ -104,7 +108,9 @@ public class MergingWeightLoaderTest {
 
         try (DefaultWeightLoader delegate = DefaultWeightLoader.open(baseDir.toFile());
              LoraAdapter adapter = LoraAdapter.load(adapterDir.toFile())) {
-            MergingWeightLoader merging = new MergingWeightLoader(delegate, adapter, new Lighter());
+            delegate.setLighter(lighter);
+            adapter.setLighter(lighter);
+            MergingWeightLoader merging = new MergingWeightLoader(delegate, adapter, lighter);
             try (TensorRef merged = merging.loadRef(Q_PROJ)) {
                 assertEquals(DType.F32, merged.dType());
                 for (int o = 0; o < OUT_FEATURES; o++) {
@@ -141,8 +147,10 @@ public class MergingWeightLoaderTest {
 
         try (DefaultWeightLoader delegate = DefaultWeightLoader.open(baseDir.toFile());
                 LoraAdapter adapter = LoraAdapter.load(adapterDir.toFile())) {
-            MergingWeightLoader merging = new MergingWeightLoader(delegate, adapter, new Lighter());
-            try (AbstractTensor unchanged = merging.load(K_PROJ)) {
+            delegate.setLighter(lighter);
+            adapter.setLighter(lighter);
+            MergingWeightLoader merging = new MergingWeightLoader(delegate, adapter, lighter);
+             try (TensorRef unchanged = merging.load(K_PROJ)) {
                 for (int o = 0; o < OUT_FEATURES; o++) {
                     for (int i = 0; i < IN_FEATURES; i++) {
                         assertEquals(base[o][i], unchanged.get(o, i), 1e-6f);
@@ -185,7 +193,7 @@ public class MergingWeightLoaderTest {
             adapter = LoraAdapter.load(adapterDir.toFile());
             LoraAdapter finalAdapter = adapter;
             assertThrows(UnsupportedOperationException.class,
-                     () -> new MergingWeightLoader(q4Delegate, finalAdapter, new Lighter()));
+                     () -> new MergingWeightLoader(q4Delegate, finalAdapter, lighter));
         } catch (IOException e) {
             throw new RuntimeException(e);
         } finally {
@@ -210,7 +218,9 @@ public class MergingWeightLoaderTest {
 
         try (DefaultWeightLoader delegate = DefaultWeightLoader.open(baseDir.toFile());
              LoraAdapter adapter = LoraAdapter.load(adapterDir.toFile())) {
-            MergingWeightLoader merging = new MergingWeightLoader(delegate, adapter, new Lighter());
+            delegate.setLighter(lighter);
+            adapter.setLighter(lighter);
+            MergingWeightLoader merging = new MergingWeightLoader(delegate, adapter, lighter);
             assertThrows(UnsupportedOperationException.class, () -> merging.loadRows(Q_PROJ, 0, 2));
             assertThrows(UnsupportedOperationException.class,
                     () -> merging.load(Q_PROJ, new TensorShardSpec(TensorShardAxis.ROWS, 0, 2)));
@@ -236,8 +246,10 @@ public class MergingWeightLoaderTest {
 
         try (DefaultWeightLoader delegate = DefaultWeightLoader.open(baseDir.toFile());
              LoraAdapter adapter = LoraAdapter.load(adapterDir.toFile())) {
-            MergingWeightLoader merging = new MergingWeightLoader(delegate, adapter, new Lighter());
-            try (AbstractTensor merged = merging.load(Q_PROJ)) {
+            delegate.setLighter(lighter);
+            adapter.setLighter(lighter);
+            MergingWeightLoader merging = new MergingWeightLoader(delegate, adapter, lighter);
+             try (TensorRef merged = merging.load(Q_PROJ)) {
                 assertEquals(DType.BF16, merged.dType());
                 assertEquals(3.0f, merged.get(0, 0), 0.05f);
                 assertEquals(6.0f, merged.get(0, 1), 0.05f);

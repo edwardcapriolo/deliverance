@@ -57,8 +57,8 @@ public class Gpt2Model extends AbstractModel{
                 }
             };
         }
-        final AbstractTensor wte = weights.load("wte.weight");
-        final AbstractTensor wpe = weights.load("wpe.weight");
+        final AbstractTensor wte = loadLegacyWeight("wte.weight");
+        final AbstractTensor wpe = loadLegacyWeight("wpe.weight");
 
         return new EmbedInput(this) {
             @Override

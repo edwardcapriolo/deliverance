@@ -7,6 +7,8 @@ import io.teknek.reckoning.tensor.impl.FloatBufferTensor;
 import io.teknek.reckoning.tensor.impl.Float16BufferTensor;
 import io.teknek.reckoning.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.reckoning.tensor.impl.Q8ByteBufferTensor;
+import io.teknek.reckoning.tensor2.TensorRef;
+import io.teknek.reckoning.tensor2.Lighter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -22,6 +24,8 @@ public class SafeTensorWriterTest {
     @TempDir
     Path tempDir;
 
+    private final Lighter lighter = new Lighter();
+
     @Test
     public void writesQ4TensorWithBlockFactors() throws Exception {
         FloatBufferTensor source = new FloatBufferTensor(1, 32);
@@ -35,14 +39,16 @@ public class SafeTensorWriterTest {
         Path output = tempDir.resolve("model.safetensors");
         SafeTensorWriter.write(output, Map.of("format", "pt"), tensors);
 
-        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile());
-             AbstractTensor tensor = loader.load("layer.weight");
-             AbstractTensor block = loader.load("layer.weight.qb")) {
+        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile())) {
+            loader.setLighter(lighter);
+            try (TensorRef tensor = loader.load("layer.weight");
+                 TensorRef block = loader.load("layer.weight.qb")) {
             assertEquals(DType.Q4, loader.tensorInfoMap().get("layer.weight").dType);
             assertTrue(loader.isWeightPresent("layer.weight.qb"));
             assertEquals(1, tensor.shape().first());
             assertEquals(32, tensor.shape().last());
             assertEquals(1, block.shape().last());
+            }
         }
     }
 
@@ -78,13 +84,15 @@ public class SafeTensorWriterTest {
         Path output = tempDir.resolve("model.safetensors");
         SafeTensorWriter.write(output, Map.of(), Map.of("experts.gate_up_proj", tensor3d));
 
-        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile());
-             AbstractTensor loaded = loader.load("experts.gate_up_proj")) {
+        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile())) {
+            loader.setLighter(lighter);
+            try (TensorRef loaded = loader.load("experts.gate_up_proj")) {
             assertEquals(3, loader.tensorInfoMap().get("experts.gate_up_proj").shape.length);
             assertEquals(2, loader.tensorInfoMap().get("experts.gate_up_proj").shape[0]);
             assertEquals(3, loader.tensorInfoMap().get("experts.gate_up_proj").shape[1]);
             assertEquals(4, loader.tensorInfoMap().get("experts.gate_up_proj").shape[2]);
             assertEquals(123.0f, loaded.get(1, 2, 3), 0.0f);
+            }
         }
     }
 
@@ -119,16 +127,18 @@ public class SafeTensorWriterTest {
         Path output = tempDir.resolve("model.safetensors");
         SafeTensorWriter.write(output, Map.of(), Map.of("layer.weight", q8));
 
-        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile());
-             AbstractTensor loaded = loader.load("layer.weight");
-             AbstractTensor block = loader.load("layer.weight.qb")) {
+        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile())) {
+            loader.setLighter(lighter);
+            try (TensorRef loaded = loader.load("layer.weight");
+                 TensorRef block = loader.load("layer.weight.qb")) {
             assertEquals(DType.I8, loader.tensorInfoMap().get("layer.weight").dType);
             assertEquals(DType.F32, loader.tensorInfoMap().get("layer.weight.qb").dType);
             assertEquals(32, loaded.shape().last());
             assertEquals(1, block.shape().last());
             assertEquals(source.get(0, 7), loaded.get(0, 7), 0.2f);
-        }
+            }
         source.close();
+        }
     }
 
     @Test
@@ -142,14 +152,16 @@ public class SafeTensorWriterTest {
         SafeTensorWriter.write(tempDir.resolve("model.safetensors"), Map.of(), Map.of(
                 "bf16.weight", bf16, "f16.weight", f16));
 
-        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile());
-             AbstractTensor loadedBf16 = loader.load("bf16.weight");
-            AbstractTensor loadedF16 = loader.load("f16.weight")) {
+        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile())) {
+            loader.setLighter(lighter);
+            try (TensorRef loadedBf16 = loader.load("bf16.weight");
+                 TensorRef loadedF16 = loader.load("f16.weight")) {
             assertEquals(DType.BF16, loadedBf16.dType());
             assertEquals(DType.F16, loader.tensorInfoMap().get("f16.weight").dType);
-            assertEquals(DType.F32, loadedF16.dType());
+            assertEquals(DType.F16, loadedF16.dType());
             assertEquals(1.25f, loadedBf16.get(0, 0), 0.02f);
-            assertEquals(-4.5f, loadedF16.get(0, 1), 0.01f);
+             assertEquals(-4.5f, loadedF16.get(0, 1), 0.01f);
+             }
         }
         bf16.close();
         f16.close();

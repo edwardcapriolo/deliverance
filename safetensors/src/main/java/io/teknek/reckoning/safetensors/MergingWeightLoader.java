@@ -38,6 +38,8 @@ public class MergingWeightLoader implements WeightLoader {
         this.adapter = adapter;
         this.lighter = Objects.requireNonNull(lighter, "lighter");
         this.compositeOps = new CompositeOps(lighter);
+        delegate.setLighter(lighter);
+        adapter.setLighter(lighter);
         DType baseDType = delegate.getModelDType();
         if (baseDType != DType.F32 && baseDType != DType.BF16 && baseDType != DType.F16) {
             throw new UnsupportedOperationException(
@@ -79,12 +81,13 @@ public class MergingWeightLoader implements WeightLoader {
     @Override
     public void setLighter(Lighter lighter) {
         delegate.setLighter(lighter);
+        adapter.setLighter(lighter);
     }
 
     @Override
-    public TensorRef loadRef(String name) {
+    public TensorRef load(String name) {
         Optional<LoraAdapter.LoraDelta> delta = adapter.deltaFor(name);
-        TensorRef base = delegate.loadRef(name);
+        TensorRef base = delegate.load(name);
         if (delta.isEmpty()) {
             return base;
         }
@@ -96,22 +99,16 @@ public class MergingWeightLoader implements WeightLoader {
     }
 
     @Override
-    public TensorRef loadRef(String name, TensorShardSpec shardSpec) {
+    public TensorRef load(String name, TensorShardSpec shardSpec) {
         if (adapter.deltaFor(name).isPresent()) {
             throw new UnsupportedOperationException(
                     "TensorRef loading does not support merged LoRA weights: " + name);
         }
-        return delegate.loadRef(name, shardSpec);
+        return delegate.load(name, shardSpec);
     }
 
     @Override
-    public AbstractTensor load(String name) {
-        AbstractTensor base = delegate.load(name);
-        return adapter.deltaFor(name).map(delta -> merge(base, delta)).orElse(base);
-    }
-
-    @Override
-    public AbstractTensor loadRows(String name, int rowOffset, int rowCount) {
+    public TensorRef loadRows(String name, int rowOffset, int rowCount) {
         if (adapter.deltaFor(name).isPresent()) {
             throw new UnsupportedOperationException(
                     "LoRA merge-at-load does not support partial-row loading for targeted module: " + name);
@@ -120,13 +117,13 @@ public class MergingWeightLoader implements WeightLoader {
     }
 
     @Override
-    public AbstractTensor load(String name, TensorShardSpec shardSpec) {
-        if (adapter.deltaFor(name).isPresent()) {
-            throw new UnsupportedOperationException(
-                    "LoRA merge-at-load does not support tensor-parallel sharded loading for targeted module: "
-                            + name + " -- tensor-parallel + LoRA is an explicit non-goal for this PR");
-        }
-        return delegate.load(name, shardSpec);
+    public TensorRef loadRef(String name) {
+        return load(name);
+    }
+
+    @Override
+    public TensorRef loadRef(String name, TensorShardSpec shardSpec) {
+        return load(name, shardSpec);
     }
 
     /** Closes both the delegate loader and the adapter -- this loader is the adapter's sole owner. */

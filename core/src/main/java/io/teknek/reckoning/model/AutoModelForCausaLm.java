@@ -579,16 +579,17 @@ public class AutoModelForCausaLm {
         protected AbstractModel loadLocalTransformerModel(){
             validatePrefixCacheSettingsForModel();
             System.setProperty("jdk.incubator.vector.VECTOR_ACCESS_OOB_CHECK", this.oobCheck);
-            ModelFetcher fetcherForLoad = resolveModelFetcherForLoad();
-            File modelRoot = fetcherForLoad.maybeDownload();
             if (pool == null){
                 pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
             }
-            String modelType = readModelType(new File(modelRoot, "config.json"));
             lighter = new Lighter(mr, pool.getUnderlying());
+            ModelFetcher fetcherForLoad = resolveModelFetcherForLoad();
+            File modelRoot = fetcherForLoad.maybeDownload();
+            String modelType = readModelType(new File(modelRoot, "config.json"));
             Optional<LoraAdapter> loraAdapter = loraAdapterFetcher == null
                     ? Optional.empty()
                     : Optional.of(LoraAdapter.fromPretrained(loraAdapterFetcher, mr));
+            loraAdapter.ifPresent(adapter -> adapter.setLighter(lighter));
             AbstractModel model = constructModel(modelRoot, loraAdapter);
             model.configureDeadReckoning(deadReckoningParams, fetch.owner(), fetch.name());
             model.getLighter().allowDirtyTensors(allowDirtyTensors);
@@ -874,7 +875,7 @@ public class AutoModelForCausaLm {
             try {
                 Files.createDirectories(targetDir.getParent());
                 LOGGER.info("Creating quantized model target {} via staging directory {}", targetDir, stagingDir);
-                new ModelQuantizer().quantizeModelDirectory(sourceDir, stagingDir, quantize.targetType(),
+                new ModelQuantizer(lighter).quantizeModelDirectory(sourceDir, stagingDir, quantize.targetType(),
                         ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER);
                 Files.move(stagingDir, targetDir);
                 LOGGER.info("Installed quantized model target {}", targetDir);

@@ -4,8 +4,8 @@ import com.google.common.base.Preconditions;
 import io.teknek.reckoning.tensor.SparseOffset;
 import io.teknek.reckoning.tensor.TensorShape;
 
-final class Q4Layout {
-    static final int BLOCK_SIZE = 32;
+public final class Q4Layout {
+    public static final int BLOCK_SIZE = 32;
     static final int HALF_BLOCK = BLOCK_SIZE / 2;
     static final String SCALE_SIDECAR = "q4.scale";
 

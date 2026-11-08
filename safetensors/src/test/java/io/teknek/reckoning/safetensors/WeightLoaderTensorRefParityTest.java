@@ -7,7 +7,6 @@ import io.teknek.reckoning.tensor.impl.Float16BufferTensor;
 import io.teknek.reckoning.tensor.impl.FloatBufferTensor;
 import io.teknek.reckoning.tensor.impl.Q4ByteBufferTensor;
 import io.teknek.reckoning.tensor.impl.Q8ByteBufferTensor;
-import io.teknek.reckoning.tensor2.TensorRefBackedTensor;
 import io.teknek.reckoning.tensor2.Lighter;
 import io.teknek.reckoning.tensor2.TensorRef;
 import org.junit.jupiter.api.Test;
@@ -22,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class WeightLoaderTensorRefParityTest {
     @TempDir
     Path tempDir;
+
+    private final Lighter lighter = new Lighter();
 
     @Test
     void loadRefMatchesLoadAcrossDenseAndQuantizedDTypes() throws Exception {
@@ -51,7 +52,7 @@ class WeightLoaderTensorRefParityTest {
         SafeTensorWriter.write(tempDir.resolve("model.safetensors"), Map.of(), tensors);
 
         try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile())) {
-            loader.setLighter(new Lighter());
+            loader.setLighter(lighter);
             assertParity(loader, "f32.weight", 0, 0, 1.0f, "F32");
             assertParity(loader, "f16.weight", 0, 3, -3.25f, "F16");
             assertParity(loader, "bf16.weight", 0, 3, -4.5f, "BF16");
@@ -71,12 +72,10 @@ class WeightLoaderTensorRefParityTest {
         SafeTensorWriter.write(tempDir.resolve("model.safetensors"), Map.of(), Map.of("q4.weight", q4));
 
         try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile())) {
-            Lighter lighter = new Lighter();
             loader.setLighter(lighter);
-            try (AbstractTensor legacy = loader.load("q4.weight");
-                 TensorRef mapped = loader.loadRef("q4.weight");
-                 TensorRefBackedTensor dense = new TensorRefBackedTensor(
-                         lighter.reshape(mapped, io.teknek.reckoning.DType.F32))) {
+             try (TensorRef legacy = loader.load("q4.weight");
+                  TensorRef mapped = loader.loadRef("q4.weight");
+                  TensorRef dense = lighter.reshape(mapped, io.teknek.reckoning.DType.F32)) {
                 for (int row = 0; row < legacy.shape().first(); row++) {
                     for (int column = 0; column < legacy.shape().last(); column++) {
                         assertEquals(legacy.get(row, column), dense.get(row, column), 1.0e-4f,
@@ -103,12 +102,11 @@ class WeightLoaderTensorRefParityTest {
         SafeTensorWriter.write(tempDir.resolve("model.safetensors"), Map.of(), Map.of("q8.weight", q8));
 
         try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile())) {
-            Lighter lighter = new Lighter();
             loader.setLighter(lighter);
-            try (AbstractTensor legacy = loader.load("q8.weight");
-                 AbstractTensor legacyScale = loader.load("q8.weight.qb");
-                 TensorRef mapped = loader.loadRef("q8.weight");
-                 TensorRefBackedTensor dense = new TensorRefBackedTensor(lighter.reshape(mapped, DType.F32))) {
+             try (TensorRef legacy = loader.load("q8.weight");
+                  TensorRef legacyScale = loader.load("q8.weight.qb");
+                  TensorRef mapped = loader.loadRef("q8.weight");
+                  TensorRef dense = lighter.reshape(mapped, DType.F32)) {
                 TensorRef mappedScale = mapped.sidecar("q8.scale");
                 for (int row = 0; row < legacy.shape().first(); row++) {
                     for (int block = 0; block < legacyScale.shape().last(); block++) {
@@ -131,12 +129,12 @@ class WeightLoaderTensorRefParityTest {
 
     private static void assertParity(DefaultWeightLoader loader, String name, int row, int column,
             float expected, String refDType) {
-        try (AbstractTensor legacy = loader.load(name);
-             TensorRefBackedTensor refView = new TensorRefBackedTensor(loader.loadRef(name))) {
-            assertEquals(legacy.shape(), refView.shape(), name);
-            assertEquals(refDType, refView.dType().name(), name);
-            assertEquals(legacy.get(row, column), refView.get(row, column), 0.0f, name);
-            assertEquals(expected, refView.get(row, column), 0.1f, name);
+         try (TensorRef loaded = loader.load(name);
+              TensorRef ref = loader.loadRef(name)) {
+            assertEquals(loaded.shape(), ref.shape(), name);
+            assertEquals(refDType, ref.dType().name(), name);
+            assertEquals(loaded.get(row, column), ref.get(row, column), 0.0f, name);
+            assertEquals(expected, ref.get(row, column), 0.1f, name);
         }
     }
 }

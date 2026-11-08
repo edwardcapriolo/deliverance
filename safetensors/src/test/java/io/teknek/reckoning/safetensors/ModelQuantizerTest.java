@@ -6,6 +6,8 @@ import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.TensorDisplayUtil;
 import io.teknek.reckoning.tensor.TensorInfo;
 import io.teknek.reckoning.tensor.impl.FloatBufferTensor;
+import io.teknek.reckoning.tensor2.TensorRef;
+import io.teknek.reckoning.tensor2.Lighter;
 import io.teknek.reckoning.safetensors.fetch.ModelFetcher;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -25,6 +27,8 @@ public class ModelQuantizerTest {
     @TempDir
     Path tempDir;
 
+    private final Lighter lighter = new Lighter();
+
     @Test
     public void keepsEmbeddingsDenseAndQuantizesMatrixWeights() throws Exception {
         Path sourceDir = tempDir.resolve("source");
@@ -43,7 +47,7 @@ public class ModelQuantizerTest {
         tensors.put("model.layers.0.self_attn.q_proj.weight", proj);
         SafeTensorWriter.write(sourceDir.resolve("model.safetensors"), Map.of(), tensors);
 
-        new ModelQuantizer(64).quantizeModelDirectory(sourceDir, outputDir);
+         new ModelQuantizer(64, lighter).quantizeModelDirectory(sourceDir, outputDir);
 
         assertTrue(Files.exists(outputDir.resolve("config.json")));
         assertTrue(Files.exists(outputDir.resolve(".finished")));
@@ -70,7 +74,7 @@ public class ModelQuantizerTest {
         SafeTensorWriter.write(sourceDir.resolve("model.safetensors"), Map.of(),
                 Map.of("model.layers.0.self_attn.q_proj.weight", proj));
 
-        new ModelQuantizer(64).quantizeModelDirectory(sourceDir, outputDir);
+         new ModelQuantizer(64, lighter).quantizeModelDirectory(sourceDir, outputDir);
 
         String readme = Files.readString(outputDir.resolve("README.md"));
         assertTrue(readme.startsWith("# Original Model"));
@@ -165,7 +169,7 @@ public class ModelQuantizerTest {
         tensors.put("model.layers.0.mlp.experts.0.down_proj.weight", vector(4.0f));
         SafeTensorWriter.write(sourceDir.resolve("model.safetensors"), Map.of(), tensors);
 
-        new ModelQuantizer(256).quantizeModelDirectory(sourceDir, outputDir);
+         new ModelQuantizer(256, lighter).quantizeModelDirectory(sourceDir, outputDir);
 
         try (DefaultWeightLoader loader = new DefaultWeightLoader(outputDir.toFile())) {
             assertEquals(DType.F32, loader.tensorInfoMap().get("model.layers.0.mlp.gate.weight").dType);
@@ -201,7 +205,7 @@ public class ModelQuantizerTest {
         tensors.put("model.layers.0.block_sparse_moe.experts.0.w3.weight", vector(4.0f));
         SafeTensorWriter.write(sourceDir.resolve("model.safetensors"), Map.of(), tensors);
 
-        new ModelQuantizer(256).quantizeModelDirectory(sourceDir, outputDir);
+         new ModelQuantizer(256, lighter).quantizeModelDirectory(sourceDir, outputDir);
 
         try (DefaultWeightLoader loader = new DefaultWeightLoader(outputDir.toFile())) {
             assertEquals(DType.F32, loader.tensorInfoMap().get("model.layers.0.block_sparse_moe.gate.weight").dType);
@@ -226,7 +230,7 @@ public class ModelQuantizerTest {
         tensors.put("model.layers.0.mamba.conv1d.weight", conv3d());
         SafeTensorWriter.write(sourceDir.resolve("model.safetensors"), Map.of(), tensors);
 
-        new ModelQuantizer(256).quantizeModelDirectory(sourceDir, outputDir);
+         new ModelQuantizer(256, lighter).quantizeModelDirectory(sourceDir, outputDir);
 
         try (DefaultWeightLoader loader = new DefaultWeightLoader(outputDir.toFile())) {
             assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.shared_mlp.input_linear.weight").dType);
@@ -250,25 +254,26 @@ public class ModelQuantizerTest {
         tensors.put("model.layers.0.block_sparse_moe.input_linear.weight", expert);
         SafeTensorWriter.write(sourceDir.resolve("model.safetensors"), Map.of(), tensors);
 
-        new ModelQuantizer(256).quantizeModelDirectory(sourceDir, outputDir);
+         new ModelQuantizer(256, lighter).quantizeModelDirectory(sourceDir, outputDir);
 
         try (DefaultWeightLoader loader = new DefaultWeightLoader(outputDir.toFile())) {
+            loader.setLighter(lighter);
             assertTensorInfo(loader.tensorInfoMap(), "model.layers.0.block_sparse_moe.input_linear.weight",
                     DType.Q4, new int[]{2, 2, 32}, expert);
             assertTensorInfo(loader.tensorInfoMap(), "model.layers.0.block_sparse_moe.input_linear.weight.qb",
                     DType.F32, new int[]{2, 2, 1}, expert);
-            try (AbstractTensor loaded = loader.load("model.layers.0.block_sparse_moe.input_linear.weight");
-                 AbstractTensor expertOne = loaded.slice(1)) {
+             try (TensorRef loaded = loader.load("model.layers.0.block_sparse_moe.input_linear.weight");
+                  TensorRef expertOne = loaded.slice(1)) {
                 assertEquals(DType.Q4, loaded.dType());
                 assertEquals("[2, 2, 32]", java.util.Arrays.toString(loaded.shape().shapeArray()));
-                assertEquals(-8.0f, loaded.get(0, 0, 0), 0.0f, TensorDisplayUtil.pretty3dDisplayAll(loaded));
-                assertEquals(7.0f, loaded.get(0, 0, 15), 0.0f, TensorDisplayUtil.pretty3dDisplayAll(loaded));
-                assertEquals(-8.0f, loaded.get(1, 1, 16), 0.0f, TensorDisplayUtil.pretty3dDisplayAll(loaded));
-                assertEquals(7.0f, loaded.get(1, 1, 31), 0.0f, TensorDisplayUtil.pretty3dDisplayAll(loaded));
+                 assertEquals(-8.0f, loaded.get(0, 0, 0), 0.0f);
+                 assertEquals(7.0f, loaded.get(0, 0, 15), 0.0f);
+                 assertEquals(-8.0f, loaded.get(1, 1, 16), 0.0f);
+                 assertEquals(7.0f, loaded.get(1, 1, 31), 0.0f);
 
                 assertEquals("[2, 32]", java.util.Arrays.toString(expertOne.shape().shapeArray()));
-                assertEquals(-8.0f, expertOne.get(0, 0), 0.0f, TensorDisplayUtil.pretty2dDisplayAll(expertOne));
-                assertEquals(7.0f, expertOne.get(1, 31), 0.0f, TensorDisplayUtil.pretty2dDisplayAll(expertOne));
+                 assertEquals(-8.0f, expertOne.get(0, 0), 0.0f);
+                 assertEquals(7.0f, expertOne.get(1, 31), 0.0f);
             }
         }
     }
@@ -283,7 +288,7 @@ public class ModelQuantizerTest {
         SafeTensorWriter.write(sourceDir.resolve("model.safetensors"), Map.of(),
                 Map.of("model.layers.0.self_attn.q_proj.weight", vector(1.0f)));
 
-        new ModelQuantizer(256, ModelQuantizer.ReadMode.DEFAULT_WEIGHT_LOADER).quantizeModelDirectory(sourceDir, outputDir);
+         new ModelQuantizer(256, ModelQuantizer.ReadMode.DEFAULT_WEIGHT_LOADER, lighter).quantizeModelDirectory(sourceDir, outputDir);
 
         try (DefaultWeightLoader loader = new DefaultWeightLoader(outputDir.toFile())) {
             assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.self_attn.q_proj.weight").dType);
@@ -306,7 +311,7 @@ public class ModelQuantizerTest {
                         "model.layers.0.self_attn.q_proj.weight", "model-00001-of-00002.safetensors",
                         "model.layers.0.mlp.experts.0.gate_proj.weight", "model-00002-of-00002.safetensors")));
 
-        new ModelQuantizer(256, ModelQuantizer.ReadMode.SHARD_WEIGHT_LOADER).quantizeModelDirectory(sourceDir, outputDir);
+         new ModelQuantizer(256, ModelQuantizer.ReadMode.SHARD_WEIGHT_LOADER, lighter).quantizeModelDirectory(sourceDir, outputDir);
 
         try (DefaultWeightLoader loader = new DefaultWeightLoader(outputDir.toFile())) {
             assertEquals(DType.Q4, loader.tensorInfoMap().get("model.layers.0.self_attn.q_proj.weight").dType);
@@ -329,7 +334,7 @@ public class ModelQuantizerTest {
         tensors.put("model.layers.0.self_attn.v_proj.weight", vector(3.0f));
         SafeTensorWriter.write(sourceDir.resolve("model.safetensors"), Map.of(), tensors);
 
-        new ModelQuantizer(64).quantizeModelDirectory(sourceDir, outputDir);
+         new ModelQuantizer(64, lighter).quantizeModelDirectory(sourceDir, outputDir);
 
         SafeTensorIndexPojo index = JsonUtils.om.readValue(
                 outputDir.resolve(SafeTensorIndexPojo.MODEL_INDEX_JSON).toFile(), SafeTensorIndexPojo.class);
@@ -362,7 +367,7 @@ public class ModelQuantizerTest {
         tensors.put("model.layers.0.self_attn.q_proj.weight", proj);
         SafeTensorWriter.write(sourceDir.resolve("model.safetensors"), Map.of(), tensors);
 
-        new ModelQuantizer(64).quantizeModelDirectory(sourceDir, outputDir);
+         new ModelQuantizer(64, lighter).quantizeModelDirectory(sourceDir, outputDir);
 
         try (DefaultWeightLoader loader = new DefaultWeightLoader(outputDir.toFile())) {
             assertEquals(DType.F32, loader.tensorInfoMap().get("model.layers.0.input_layernorm.weight").dType);
@@ -385,7 +390,7 @@ public class ModelQuantizerTest {
         tensors.put("model.layers.0.some_other.weight", misc);
         SafeTensorWriter.write(sourceDir.resolve("model.safetensors"), Map.of(), tensors);
 
-        new ModelQuantizer(64).quantizeModelDirectory(sourceDir, outputDir);
+         new ModelQuantizer(64, lighter).quantizeModelDirectory(sourceDir, outputDir);
 
         try (DefaultWeightLoader loader = new DefaultWeightLoader(outputDir.toFile())) {
             assertEquals(DType.F32, loader.tensorInfoMap().get("model.layers.0.some_other.weight").dType);
@@ -411,7 +416,7 @@ public class ModelQuantizerTest {
             tensors.put("model.layers.0.self_attn.q_proj.weight", proj);
             SafeTensorWriter.write(sourceDir.resolve("model.safetensors"), Map.of(), tensors);
 
-            new ModelQuantizer(16).quantizeCachedModel("acme", "demo-model", "acme", "demo-model-q4");
+             new ModelQuantizer(16, lighter).quantizeCachedModel("acme", "demo-model", "acme", "demo-model-q4");
 
             assertTrue(Files.exists(outputDir.resolve(SafeTensorIndexPojo.MODEL_INDEX_JSON)));
             try (DefaultWeightLoader loader = new DefaultWeightLoader(outputDir.toFile())) {
@@ -441,7 +446,7 @@ public class ModelQuantizerTest {
         tensors.put("model.audio_tower.layers.8.lconv1d.depthwise_conv1d.weight", conv);
         SafeTensorWriter.write(sourceDir.resolve("model.safetensors"), Map.of(), tensors);
 
-        new ModelQuantizer(64).quantizeModelDirectory(sourceDir, outputDir);
+         new ModelQuantizer(64, lighter).quantizeModelDirectory(sourceDir, outputDir);
 
         try (DefaultWeightLoader loader = new DefaultWeightLoader(outputDir.toFile())) {
             assertEquals(DType.F32, loader.tensorInfoMap().get("model.audio_tower.layers.8.lconv1d.depthwise_conv1d.weight").dType);
@@ -477,7 +482,8 @@ public class ModelQuantizerTest {
 
         try (DefaultWeightLoader loader = new DefaultWeightLoader(sourceDir.toFile())) {
             tensorInfoMap(loader).put("logical.weight", new io.teknek.reckoning.tensor.TensorInfo(DType.F32, new long[]{5, 4}, new long[]{0, 80}));
-            ModelQuantizer quantizer = new ModelQuantizer();
+             loader.setLighter(lighter);
+             ModelQuantizer quantizer = new ModelQuantizer(lighter);
             assertTrue(quantizer.isLogicalSplitTensor("logical.weight", loader));
             assertFalse(quantizer.isLogicalSplitTensor("logical.weight-part-0", loader));
         }
@@ -487,7 +493,7 @@ public class ModelQuantizerTest {
     //@Test
     void fullModelQuantizerTest(){
         //google_gemma-4-E2B-it
-        new ModelQuantizer().quantizeCachedModel("google", "gemma-4-E2B-it",
+         new ModelQuantizer(lighter).quantizeCachedModel("google", "gemma-4-E2B-it",
                 "edward", "gemma-4-E2B-it-JQ4", DType.Q4,
                 ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER);
     }
@@ -495,7 +501,7 @@ public class ModelQuantizerTest {
     @Disabled
     void fullModelQuantizerTest2() {
         //google_gemma-4-E2B-it
-        new ModelQuantizer().quantizeCachedModel("google", "gemma-4-E4B-it",
+         new ModelQuantizer(lighter).quantizeCachedModel("google", "gemma-4-E4B-it",
                 "edward", "gemma-4-E4B-it-JQ4", DType.Q4,
                 ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER);
     }

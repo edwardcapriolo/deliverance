@@ -3,17 +3,14 @@ package io.teknek.reckoning.safetensors;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.primitives.Ints;
 import io.teknek.reckoning.DType;
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.TensorInfo;
 import io.teknek.reckoning.tensor.TensorShape;
-import io.teknek.reckoning.tensor.impl.*;
 import io.teknek.reckoning.tensor2.Lighter;
+import io.teknek.reckoning.tensor2.Q4Layout;
 import io.teknek.reckoning.tensor2.TensorRef;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.FloatBuffer;
-import java.nio.ShortBuffer;
 import java.util.*;
 
 public class Weights implements WeightLoader {
@@ -22,6 +19,7 @@ public class Weights implements WeightLoader {
     private final ByteBuffer bytes;
     private final DType majorityDType;
     private final Optional<WeightLoader> parent;
+    private Lighter lighter;
 
 
     Weights(Map<String, String> metadata, Map<String, TensorInfo> tensorInfoMap, ByteBuffer bytes, Optional<WeightLoader> parent) {
@@ -65,20 +63,16 @@ public class Weights implements WeightLoader {
 
 
     @Override
-    public AbstractTensor load(String name) {
-        TensorInfo info = tensorInfoMap.get(name);
-        if (info == null) {
-            throw new NoSuchElementException(name + " not found in weights");
-        }
-        ByteBuffer b = bytes.duplicate()
-                .order(ByteOrder.LITTLE_ENDIAN)
-                .position(Ints.checkedCast(info.dataOffsets[0]))
-                .limit(Ints.checkedCast(info.dataOffsets[1]));
-        return loadTensorFromBuffer(name, info.dType, majorityDType, toTensorShape(info.shape), b,
-                parent.orElse(this));
+    public TensorRef load(String name) {
+        return load(name, requireLighter(), parent.orElse(this));
     }
 
-    TensorRef loadRef(String name, Lighter lighter, WeightLoader sidecarLoader) {
+    @Override
+    public void setLighter(Lighter lighter) {
+        this.lighter = Objects.requireNonNull(lighter, "lighter");
+    }
+
+    TensorRef load(String name, Lighter lighter, WeightLoader sidecarLoader) {
         TensorInfo info = tensorInfoMap.get(name);
         if (info == null) {
             throw new NoSuchElementException(name + " not found in weights");
@@ -94,11 +88,29 @@ public class Weights implements WeightLoader {
         return TensorRef.mapped(this.bytes, payloadOffset, payloadLength, shape, info.dType, stride(shape), sidecars);
     }
 
+    @Override
+    public TensorRef loadRows(String name, int rowOffset, int rowCount) {
+        return load(name, new TensorShardSpec(TensorShardAxis.ROWS, rowOffset, rowOffset + rowCount),
+                requireLighter(), parent.orElse(this));
+    }
+
+    @Override
+    public TensorRef load(String name, TensorShardSpec shardSpec) {
+        return load(name, shardSpec, requireLighter(), parent.orElse(this));
+    }
+
+    private Lighter requireLighter() {
+        if (lighter == null) {
+            throw new IllegalStateException("TensorRef weight loading requires a configured Lighter");
+        }
+        return lighter;
+    }
+
     private static int stride(TensorShape shape) {
         return shape.first() > 1 && shape.dims() == 2 ? Math.toIntExact(shape.getOffset(1, 0)) : 0;
     }
 
-    TensorRef loadRef(String name, TensorShardSpec shardSpec, Lighter lighter, WeightLoader sidecarLoader) {
+    TensorRef load(String name, TensorShardSpec shardSpec, Lighter lighter, WeightLoader sidecarLoader) {
         TensorInfo info = tensorInfoMap.get(name);
         if (info == null) {
             throw new NoSuchElementException(name + " not found in weights");
@@ -131,8 +143,8 @@ public class Weights implements WeightLoader {
             if (info.dType == DType.Q4) {
                 validateQ4ColumnRange(shardSpec, name);
                 sidecarSpec = new TensorShardSpec(TensorShardAxis.COLUMNS,
-                        shardSpec.startInclusive() / Q4ByteBufferTensor.BLOCK_SIZE,
-                        shardSpec.endExclusive() / Q4ByteBufferTensor.BLOCK_SIZE);
+                        shardSpec.startInclusive() / Q4Layout.BLOCK_SIZE,
+                        shardSpec.endExclusive() / Q4Layout.BLOCK_SIZE);
             }
             payload = ByteBuffer.allocateDirect(rows * shardBytesPerRow).order(ByteOrder.LITTLE_ENDIAN);
             for (int row = 0; row < rows; row++) {
@@ -179,9 +191,9 @@ public class Weights implements WeightLoader {
     }
 
     private static int q4BytesPerRow(int cols, String name) {
-        if (cols % Q4ByteBufferTensor.BLOCK_SIZE != 0) {
+        if (cols % Q4Layout.BLOCK_SIZE != 0) {
             throw new IllegalArgumentException("Q4 sharding requires column count aligned to "
-                    + Q4ByteBufferTensor.BLOCK_SIZE + ": " + name);
+                    + Q4Layout.BLOCK_SIZE + ": " + name);
         }
         return cols / 2;
     }
@@ -194,10 +206,10 @@ public class Weights implements WeightLoader {
     }
 
     private static void validateQ4ColumnRange(TensorShardSpec shardSpec, String name) {
-        if (shardSpec.startInclusive() % Q4ByteBufferTensor.BLOCK_SIZE != 0
-                || shardSpec.endExclusive() % Q4ByteBufferTensor.BLOCK_SIZE != 0) {
+        if (shardSpec.startInclusive() % Q4Layout.BLOCK_SIZE != 0
+                || shardSpec.endExclusive() % Q4Layout.BLOCK_SIZE != 0) {
             throw new IllegalArgumentException("Q4 column sharding requires shard range aligned to "
-                    + Q4ByteBufferTensor.BLOCK_SIZE + ": " + name);
+                    + Q4Layout.BLOCK_SIZE + ": " + name);
         }
     }
 
@@ -214,209 +226,6 @@ public class Weights implements WeightLoader {
             return TensorShape.of(1, 1);
         }
         return TensorShape.of(shape);
-    }
-
-    static AbstractTensor loadTensorFromBuffer(
-            String name,
-            DType dType,
-            DType majorityDType,
-            TensorShape shape,
-            ByteBuffer b,
-            WeightLoader loader
-    ) {
-        int len;
-        FloatBuffer fb;
-        ShortBuffer sb;
-        AbstractTensor t;
-        switch (dType) {
-            case F32:
-                fb = b.asFloatBuffer().slice();
-                t = new FloatBufferTensor(name, fb, shape, true);
-                break;
-            case F16:
-                // Preserve the legacy loader behavior: F16 weights are promoted when F32 is the model majority dtype.
-                if (majorityDType == DType.F32) {
-                    len = b.remaining() / DType.F16.size();
-                    ByteBuffer bb = ByteBuffer.allocate(len * DType.F32.size()).order(ByteOrder.LITTLE_ENDIAN);
-                    for (int i = 0; i < len * DType.F32.size(); i += DType.F32.size()) {
-                        short s = b.getShort();
-                        float v = Float.float16ToFloat(s);
-                        bb.putFloat(i, v);
-                    }
-                    t = new FloatBufferTensor(bb.asFloatBuffer(), shape, true);
-                } else {
-                    sb = b.asShortBuffer().slice();
-                    t = new Float16BufferTensor(name, sb, shape, true);
-                }
-                break;
-            case BF16:
-                sb = b.asShortBuffer().slice();
-                t = new BFloat16BufferTensor(name, sb, shape, true);
-                break;
-            case Q4:
-                FloatBufferTensor qb = (FloatBufferTensor) loader.load(name + ".qb");
-                t = new Q4ByteBufferTensor(name, b.slice(), qb, shape, true);
-                break;
-            case I8:
-                FloatBufferTensor qb1 = (FloatBufferTensor) loader.load(name + ".qb");
-                t = new Q8ByteBufferTensor(name, b.slice(), qb1, shape, true);
-                break;
-            default:
-                throw new IllegalArgumentException("Unsupported Tensor type: " + dType.name() + " for " + name);
-        }
-
-        return t;
-    }
-
-    @Override
-    public AbstractTensor loadRows(String name, int rowOffset, int rowCount) {
-        TensorInfo info = tensorInfoMap.get(name);
-        if (info == null) {
-            throw new NoSuchElementException(name + " not found in weights");
-        }
-        if (info.shape.length != 2) {
-            throw new IllegalArgumentException("Row slicing only supported for 2D tensors: " + name);
-        }
-        if (info.dType == DType.Q4) {
-            return loadQ4RowShard(name, rowOffset, rowCount, info);
-        }
-        if (info.dType == DType.I8) {
-            throw new UnsupportedOperationException("Row slicing for I8 tensors is not supported: " + name);
-        }
-
-        int rows = Ints.checkedCast(info.shape[0]);
-        int cols = Ints.checkedCast(info.shape[1]);
-        if (rowOffset < 0 || rowCount < 0 || rowOffset + rowCount > rows) {
-            throw new IllegalArgumentException("Invalid row range " + rowOffset + "," + rowCount + " for " + name);
-        }
-
-        int bytesPerRow = info.dType.size() * cols;
-        long positionOffset = info.dataOffsets[0] + ((long) rowOffset * bytesPerRow);
-        long positionLimit = positionOffset + ((long) rowCount * bytesPerRow);
-        TensorShape shape = TensorShape.of(rowCount, cols);
-        ByteBuffer b = bytes.duplicate()
-                .order(ByteOrder.LITTLE_ENDIAN)
-                .position(Ints.checkedCast(positionOffset))
-                .limit(Ints.checkedCast(positionLimit));
-        return loadTensorFromBuffer(name, info.dType, majorityDType, shape, b, parent.orElse(this));
-    }
-
-    @Override
-    public AbstractTensor load(String name, TensorShardSpec shardSpec) {
-        TensorInfo info = tensorInfoMap.get(name);
-        if (info == null) {
-            throw new NoSuchElementException(name + " not found in weights");
-        }
-        if (info.shape.length != 2) {
-            throw new IllegalArgumentException("Tensor sharding only supported for 2D tensors: " + name);
-        }
-        return switch (shardSpec.axis()) {
-            case ROWS -> loadRows(name, shardSpec.startInclusive(), shardSpec.length());
-            case COLUMNS -> loadColumnShard(name, shardSpec, info);
-        };
-    }
-
-    private AbstractTensor loadColumnShard(String name, TensorShardSpec shardSpec, TensorInfo info) {
-        if (info.dType == DType.Q4) {
-            return loadQ4ColumnShard(name, shardSpec, info);
-        }
-        if (info.dType == DType.I8) {
-            throw new UnsupportedOperationException("Column sharding for I8 tensors is not supported: " + name);
-        }
-        try (AbstractTensor full = load(name)) {
-            int rows = full.shape().first();
-            int cols = full.shape().last();
-            if (shardSpec.endExclusive() > cols) {
-                throw new IllegalArgumentException("Invalid column range " + shardSpec.startInclusive() + ","
-                        + shardSpec.endExclusive() + " for " + name);
-            }
-            AbstractTensor shard = allocateLike(info.dType, rows, shardSpec.length());
-            for (int row = 0; row < rows; row++) {
-                if (info.dType == DType.Q4 || info.dType == DType.I8) {
-                    for (int col = 0; col < shardSpec.length(); col++) {
-                        shard.set(full.get(row, shardSpec.startInclusive() + col), row, col);
-                    }
-                } else {
-                    shard.copyFrom(full, Math.toIntExact(full.getOffset(row, shardSpec.startInclusive())),
-                            Math.toIntExact(shard.getOffset(row, 0)),
-                            shardSpec.length());
-                }
-            }
-            return shard;
-        }
-    }
-
-    private AbstractTensor loadQ4RowShard(String name, int rowOffset, int rowCount, TensorInfo info) {
-        int rows = Ints.checkedCast(info.shape[0]);
-        int cols = Ints.checkedCast(info.shape[1]);
-        if (cols % Q4ByteBufferTensor.BLOCK_SIZE != 0) {
-            throw new IllegalArgumentException("Q4 row sharding requires column count aligned to "
-                    + Q4ByteBufferTensor.BLOCK_SIZE + ": " + name);
-        }
-        if (rowOffset < 0 || rowCount < 0 || rowOffset + rowCount > rows) {
-            throw new IllegalArgumentException("Invalid row range " + rowOffset + "," + rowCount + " for " + name);
-        }
-        int bytesPerRow = cols / 2;
-        long positionOffset = info.dataOffsets[0] + ((long) rowOffset * bytesPerRow);
-        int byteLength = Ints.checkedCast((long) rowCount * bytesPerRow);
-        ByteBuffer shardBytes = bytes.duplicate()
-                .order(ByteOrder.LITTLE_ENDIAN)
-                .position(Ints.checkedCast(positionOffset))
-                .limit(Ints.checkedCast(positionOffset + byteLength))
-                .slice()
-                .order(ByteOrder.LITTLE_ENDIAN);
-        FloatBufferTensor qBlocks = (FloatBufferTensor) parent.orElse(this).load(name + ".qb",
-                new TensorShardSpec(TensorShardAxis.ROWS, rowOffset, rowOffset + rowCount));
-        return new Q4ByteBufferTensor(name, shardBytes, qBlocks, TensorShape.of(rowCount, cols), true);
-    }
-
-    private AbstractTensor loadQ4ColumnShard(String name, TensorShardSpec shardSpec, TensorInfo info) {
-        int rows = Ints.checkedCast(info.shape[0]);
-        int cols = Ints.checkedCast(info.shape[1]);
-        if (cols % Q4ByteBufferTensor.BLOCK_SIZE != 0) {
-            throw new IllegalArgumentException("Q4 column sharding requires full column count aligned to "
-                    + Q4ByteBufferTensor.BLOCK_SIZE + ": " + name);
-        }
-        if (shardSpec.startInclusive() % Q4ByteBufferTensor.BLOCK_SIZE != 0
-                || shardSpec.endExclusive() % Q4ByteBufferTensor.BLOCK_SIZE != 0) {
-            throw new IllegalArgumentException("Q4 column sharding requires shard range aligned to "
-                    + Q4ByteBufferTensor.BLOCK_SIZE + ": " + name);
-        }
-        if (shardSpec.endExclusive() > cols) {
-            throw new IllegalArgumentException("Invalid column range " + shardSpec.startInclusive() + ","
-                    + shardSpec.endExclusive() + " for " + name);
-        }
-        int shardCols = shardSpec.length();
-        int sourceBytesPerRow = cols / 2;
-        int shardBytesPerRow = shardCols / 2;
-        ByteBuffer shardBytes = ByteBuffer.allocateDirect(rows * shardBytesPerRow).order(ByteOrder.LITTLE_ENDIAN);
-        for (int row = 0; row < rows; row++) {
-            int sourceOffset = Ints.checkedCast(info.dataOffsets[0] + ((long) row * sourceBytesPerRow)
-                    + (shardSpec.startInclusive() / 2));
-            ByteBuffer source = bytes.duplicate()
-                    .order(ByteOrder.LITTLE_ENDIAN)
-                    .position(sourceOffset)
-                    .limit(sourceOffset + shardBytesPerRow)
-                    .slice();
-            shardBytes.position(row * shardBytesPerRow);
-            shardBytes.put(source);
-        }
-        shardBytes.clear();
-        int blockStart = shardSpec.startInclusive() / Q4ByteBufferTensor.BLOCK_SIZE;
-        int blockEnd = shardSpec.endExclusive() / Q4ByteBufferTensor.BLOCK_SIZE;
-        FloatBufferTensor qBlocks = (FloatBufferTensor) parent.orElse(this).load(name + ".qb",
-                new TensorShardSpec(TensorShardAxis.COLUMNS, blockStart, blockEnd));
-        return new Q4ByteBufferTensor(name, shardBytes, qBlocks, TensorShape.of(rows, shardCols), true);
-    }
-
-    private static AbstractTensor allocateLike(DType dType, int rows, int cols) {
-        TensorShape shape = TensorShape.of(rows, cols);
-        return switch (dType) {
-            case F32 -> new FloatBufferTensor(shape);
-            case BF16 -> new BFloat16BufferTensor(shape);
-            case F16 -> new Float16BufferTensor(shape);
-            default -> throw new UnsupportedOperationException("Unsupported dtype for tensor shard: " + dType);
-        };
     }
 
     @Override

@@ -4,6 +4,9 @@ import io.teknek.reckoning.DType;
 import io.teknek.reckoning.safetensors.fetch.ModelFetcher;
 import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.AbstractTensorUtils;
+import io.teknek.reckoning.tensor2.TensorRef;
+import io.teknek.reckoning.tensor2.TensorRefBackedTensor;
+import io.teknek.reckoning.tensor2.Lighter;
 import io.teknek.reckoning.tensor.TensorInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,6 +27,7 @@ import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Comparator;
+import java.util.Objects;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
@@ -39,6 +43,7 @@ public class ModelQuantizer {
     private static final int Q4_WRITE_BUFFER_BYTES = 1 << 20;
     private final long maxShardSize;
     private final ReadMode readMode;
+    private final Lighter lighter;
 
     public enum ReadMode {
         DEFAULT_WEIGHT_LOADER,
@@ -97,17 +102,18 @@ public class ModelQuantizer {
         return name.matches(".*\\.block_sparse_moe\\.experts\\.\\d+\\.(w1|w2|w3)\\.weight$");
     }
 
-    public ModelQuantizer() {
-        this(SafeTensorWriter.DEFAULT_MAX_SHARD_SIZE);
+    public ModelQuantizer(Lighter lighter) {
+        this(SafeTensorWriter.DEFAULT_MAX_SHARD_SIZE, ReadMode.SHARD_WEIGHT_LOADER, lighter);
     }
 
-    public ModelQuantizer(long maxShardSize) {
-        this(maxShardSize, ReadMode.SHARD_WEIGHT_LOADER);
+    public ModelQuantizer(long maxShardSize, Lighter lighter) {
+        this(maxShardSize, ReadMode.SHARD_WEIGHT_LOADER, lighter);
     }
 
-    public ModelQuantizer(long maxShardSize, ReadMode readMode) {
+    public ModelQuantizer(long maxShardSize, ReadMode readMode, Lighter lighter) {
         this.maxShardSize = maxShardSize;
         this.readMode = readMode;
+        this.lighter = Objects.requireNonNull(lighter, "lighter");
     }
 
     public void quantizeCachedModel(String inputOwner, String inputModel, String outputOwner, String outputModel) {
@@ -161,6 +167,7 @@ public class ModelQuantizer {
     private QuantizationRun quantizeWithDefaultLoader(Path sourceDir, Path outputDir, DType targetType,
             Predicate<String> tensorFilter, Instant startedAt) {
         try (DefaultWeightLoader loader = new DefaultWeightLoader(sourceDir.toFile())) {
+            loader.setLighter(lighter);
             List<String> tensorNames = tensorNamesToProcess(loader, sourceDir);
             LOGGER.info("Loaded {} tensors for quantization from {} using default loader", tensorNames.size(), sourceDir);
             return quantizeTensorList(loader, tensorNames, outputDir, targetType, tensorFilter, startedAt);
@@ -173,6 +180,7 @@ public class ModelQuantizer {
         if (sourceShardMap.isEmpty()) {
             Path single = sourceDir.resolve(SafeTensorIndexPojo.SINGLE_MODEL_NAME);
             try (SafetensorsShardWeightLoader loader = new SafetensorsShardWeightLoader(single)) {
+                loader.setLighter(lighter);
                 return quantizeTensorList(loader, tensorNamesToProcess(loader, sourceDir), outputDir,
                         targetType, tensorFilter, startedAt);
             }
@@ -193,6 +201,7 @@ public class ModelQuantizer {
         for (Map.Entry<String, List<String>> shard : byShard.entrySet()) {
             LOGGER.info("Opening source shard {} with {} tensors", shard.getKey(), shard.getValue().size());
             try (SafetensorsShardWeightLoader loader = new SafetensorsShardWeightLoader(sourceDir.resolve(shard.getKey()))) {
+                loader.setLighter(lighter);
                 metadata = loader.metadata();
                 List<String> names = shard.getValue().stream().sorted().toList();
                 quantizeNames(loader, names, outputDir, targetType, tensorFilter, startedAt,
@@ -223,7 +232,7 @@ public class ModelQuantizer {
         }
         for (String name : tensorNames) {
             processed[0]++;
-            AbstractTensor original = loader.load(name);
+            AbstractTensor original = legacyTensor(loader.load(name));
             boolean quantized = false;
             if (tensorFilter.test(name) && canQuantize(name, original, targetType)) {
                 LOGGER.info("Quantizing tensor {}/{} {} from {} to {}", processed[0], total, name,
@@ -333,7 +342,7 @@ public class ModelQuantizer {
                         logProgress(processed[0], total, startedAt);
                         continue;
                     }
-                    try (AbstractTensor original = loader.load(tensor.name())) {
+                    try (AbstractTensor original = legacyTensor(loader.load(tensor.name()))) {
                         if (tensor.quantized()) {
                             LOGGER.info("Quantizing tensor {}/{} {} from {} to {}", processed[0], total,
                                     tensor.name(), original.dType(), DType.Q4);
@@ -358,6 +367,15 @@ public class ModelQuantizer {
             }
         } catch (IOException e) {
             throw new RuntimeException("Unable to write packed Q4 shard " + outputFile, e);
+        }
+    }
+
+    private static AbstractTensor legacyTensor(TensorRef ref) {
+        try {
+            return TensorRefBackedTensor.as(ref, ref.dType());
+        } catch (RuntimeException e) {
+            ref.close();
+            throw e;
         }
     }
 

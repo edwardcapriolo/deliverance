@@ -3,6 +3,7 @@ package io.teknek.reckoning.safetensors;
 import io.teknek.reckoning.DType;
 import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.impl.FloatBufferTensor;
+import io.teknek.reckoning.tensor2.Lighter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -28,6 +29,8 @@ public class ResolvedLoraAdapterTest {
     @TempDir
     Path tempDir;
 
+    private final Lighter lighter = new Lighter();
+
     private static final String Q_PROJ = "model.layers.0.self_attn.q_proj.weight";
     private static final String K_PROJ = "model.layers.0.self_attn.k_proj.weight";
 
@@ -36,7 +39,7 @@ public class ResolvedLoraAdapterTest {
         writeAdapterConfig(tempDir, 4, 8.0, "q_proj");
         writeQProjTensors(tempDir, 4, 8, 6);
 
-        try (LoraAdapter adapter = LoraAdapter.load(tempDir.toFile());
+        try (LoraAdapter adapter = loadAdapter();
                 ResolvedLoraAdapter resolved = new ResolvedLoraAdapter(adapter, DType.F32)) {
             Optional<LoraLayerDelta> first = resolved.deltaFor(Q_PROJ);
             Optional<LoraLayerDelta> second = resolved.deltaFor(Q_PROJ);
@@ -65,7 +68,7 @@ public class ResolvedLoraAdapterTest {
         tensors.put(LoraTensorNames.loraB(Q_PROJ), loraB);
         SafeTensorWriter.write(tempDir.resolve(LoraAdapter.SAFETENSORS_FILE_NAME), Map.of(), tensors);
 
-        try (LoraAdapter adapter = LoraAdapter.load(tempDir.toFile());
+        try (LoraAdapter adapter = loadAdapter();
                 ResolvedLoraAdapter resolved = new ResolvedLoraAdapter(adapter, DType.F32)) {
             LoraLayerDelta delta = resolved.deltaFor(Q_PROJ).orElseThrow();
             assertEquals(rank, delta.rank());
@@ -93,7 +96,7 @@ public class ResolvedLoraAdapterTest {
         tensors.put(LoraTensorNames.loraB(Q_PROJ), loraB);
         SafeTensorWriter.write(tempDir.resolve(LoraAdapter.SAFETENSORS_FILE_NAME), Map.of(), tensors);
 
-        try (LoraAdapter adapter = LoraAdapter.load(tempDir.toFile());
+        try (LoraAdapter adapter = loadAdapter();
              ResolvedLoraAdapter resolved = new ResolvedLoraAdapter(adapter, DType.BF16)) {
             LoraLayerDelta delta = resolved.deltaFor(Q_PROJ).orElseThrow();
 
@@ -109,7 +112,7 @@ public class ResolvedLoraAdapterTest {
         writeAdapterConfig(tempDir, 4, 8.0, "q_proj");
         writeQProjTensors(tempDir, 4, 8, 6);
 
-        try (LoraAdapter adapter = LoraAdapter.load(tempDir.toFile());
+        try (LoraAdapter adapter = loadAdapter();
                 ResolvedLoraAdapter resolved = new ResolvedLoraAdapter(adapter, DType.F32)) {
             assertFalse(resolved.deltaFor(K_PROJ).isPresent());
             assertFalse(resolved.deltaFor(K_PROJ).isPresent());
@@ -121,6 +124,12 @@ public class ResolvedLoraAdapterTest {
         tensors.put(LoraTensorNames.loraA(Q_PROJ), new FloatBufferTensor(rank, inFeatures));
         tensors.put(LoraTensorNames.loraB(Q_PROJ), new FloatBufferTensor(outFeatures, rank));
         SafeTensorWriter.write(adapterDir.resolve(LoraAdapter.SAFETENSORS_FILE_NAME), Map.of(), tensors);
+    }
+
+    private LoraAdapter loadAdapter() {
+        LoraAdapter adapter = LoraAdapter.load(tempDir.toFile());
+        adapter.setLighter(lighter);
+        return adapter;
     }
 
     private static void writeAdapterConfig(Path adapterDir, int rank, double alpha, String... targetModules)

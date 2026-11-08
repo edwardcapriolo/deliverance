@@ -3,6 +3,7 @@ package io.teknek.reckoning.safetensors;
 import io.teknek.reckoning.DType;
 import io.teknek.reckoning.safetensors.fetch.ModelFetcher;
 import io.teknek.reckoning.tensor.TensorInfo;
+import io.teknek.reckoning.tensor2.Lighter;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -83,8 +84,10 @@ public class ModelInspectionTool {
             throw new IllegalArgumentException("Model directory not found: " + modelDirectory);
         }
 
-        ModelQuantizer quantizer = new ModelQuantizer();
+        Lighter lighter = new Lighter();
+        ModelQuantizer quantizer = new ModelQuantizer(lighter);
         try (DefaultWeightLoader loader = new DefaultWeightLoader(modelDirectory.toFile())) {
+            loader.setLighter(lighter);
             ArrayList<TensorInspection> tensors = new ArrayList<>();
             LinkedHashMap<String, Integer> dtypeCounts = new LinkedHashMap<>();
             int logicalParents = 0;

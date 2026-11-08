@@ -1,7 +1,8 @@
 package io.teknek.reckoning.safetensors;
 
 import io.teknek.reckoning.DType;
-import io.teknek.reckoning.tensor.AbstractTensor;
+import io.teknek.reckoning.tensor2.TensorRef;
+import io.teknek.reckoning.tensor2.Lighter;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,12 +20,15 @@ public final class QwenShardReproTool {
         System.out.println("repro shard_dir=" + shardDir);
         System.out.println("repro output_dir=" + outputDir);
         System.out.println("repro tensor=" + tensorName);
+        Lighter lighter = new Lighter();
         try (SafetensorsShardWeightLoader loader = new SafetensorsShardWeightLoader(shardDir.resolve("model-00004-of-00017.safetensors"))) {
+            loader.setLighter(lighter);
             System.out.println("tensor_count=" + loader.tensorInfoMap().size());
             System.out.println("info=" + loader.tensorInfoMap().get(tensorName));
             long before = usedMemory();
-            try (AbstractTensor tensor = loader.load(tensorName)) {
-                System.out.println("loaded dtype=" + tensor.dType() + " shape=" + tensor.shape() + " size=" + tensor.size());
+             try (TensorRef tensor = loader.load(tensorName)) {
+                 System.out.println("loaded dtype=" + tensor.dType() + " shape=" + tensor.shape()
+                         + " size=" + tensor.shape().size());
                 System.out.println("used_memory_after_load=" + usedMemory() + " delta=" + (usedMemory() - before));
                 Path miniSource = outputDir.resolveSibling(outputDir.getFileName() + "-source");
                 Files.createDirectories(miniSource);
@@ -39,7 +43,7 @@ public final class QwenShardReproTool {
                 }
                 JsonUtils.om.writeValue(miniSource.resolve(SafeTensorIndexPojo.MODEL_INDEX_JSON).toFile(),
                         new SafeTensorIndexPojo(Map.of(), Map.of(tensorName, "model-00004-of-00017.safetensors")));
-                new ModelQuantizer(64L * 1024L * 1024L, ModelQuantizer.ReadMode.SHARD_WEIGHT_LOADER)
+                 new ModelQuantizer(64L * 1024L * 1024L, ModelQuantizer.ReadMode.SHARD_WEIGHT_LOADER, lighter)
                         .quantizeModelDirectory(miniSource, outputDir, DType.Q4, name -> name.equals(tensorName));
             }
             System.out.println("used_memory_after_close=" + usedMemory());

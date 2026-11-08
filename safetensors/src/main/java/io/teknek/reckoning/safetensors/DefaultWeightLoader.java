@@ -5,12 +5,8 @@ import com.fasterxml.jackson.databind.type.MapType;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.primitives.Ints;
 import io.teknek.reckoning.DType;
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.TensorInfo;
 import io.teknek.reckoning.tensor.TensorShape;
-import io.teknek.reckoning.tensor.impl.BFloat16BufferTensor;
-import io.teknek.reckoning.tensor.impl.Float16BufferTensor;
-import io.teknek.reckoning.tensor.impl.FloatBufferTensor;
 import io.teknek.reckoning.tensor2.Lighter;
 import io.teknek.reckoning.tensor2.TensorRef;
 import org.slf4j.Logger;
@@ -47,6 +43,7 @@ public class DefaultWeightLoader implements WeightLoader {
     private final DType majorityDType;
     private volatile boolean useMajorityDType = true;
     private Lighter lighter;
+    private boolean lighterConfigured;
 
 
     public DefaultWeightLoader(File baseDir){
@@ -74,10 +71,12 @@ public class DefaultWeightLoader implements WeightLoader {
     @Override
     public void setLighter(Lighter lighter) {
         Objects.requireNonNull(lighter, "lighter");
-        if (this.lighter != null && this.lighter != lighter) {
+        if (lighterConfigured && this.lighter != lighter) {
             throw new IllegalStateException("Lighter is already configured for this weight loader");
         }
         this.lighter = lighter;
+        this.lighterConfigured = true;
+        weightMap.values().forEach(weights -> weights.setLighter(lighter));
     }
 
     private static LoadedWeights openWeights(File baseDir) {
@@ -173,7 +172,7 @@ public class DefaultWeightLoader implements WeightLoader {
         }
 
         @Override
-        public AbstractTensor load(String name) {
+        public TensorRef load(String name) {
             Weights w = weightMap.get(name);
             if (w == null){
                 throw new RuntimeException("weight cant be found " + name + " list" + weightMap.keySet());
@@ -182,7 +181,7 @@ public class DefaultWeightLoader implements WeightLoader {
         }
 
         @Override
-        public AbstractTensor loadRows(String name, int rowOffset, int rowCount) {
+        public TensorRef loadRows(String name, int rowOffset, int rowCount) {
             Weights w = weightMap.get(name);
             if (w == null){
                 throw new RuntimeException("weight cant be found " + name + " list" + weightMap.keySet());
@@ -191,7 +190,7 @@ public class DefaultWeightLoader implements WeightLoader {
         }
 
         @Override
-        public AbstractTensor load(String name, TensorShardSpec shardSpec) {
+        public TensorRef load(String name, TensorShardSpec shardSpec) {
             Weights w = weightMap.get(name);
             if (w == null){
                 throw new RuntimeException("weight cant be found " + name + " list" + weightMap.keySet());
@@ -388,58 +387,44 @@ public class DefaultWeightLoader implements WeightLoader {
     }
 
     @Override
-    public AbstractTensor load(String name) {
+    public TensorRef load(String name) {
         Weights w = this.weightMap.get(name);
         if (w == null){
             throw new RuntimeException("weight cant be found " +name + " list" + this.weightMap.keySet());
         }
-        return w.load(name);
+        return w.load(name, requireLighter(), this);
     }
 
     @Override
     public TensorRef loadRef(String name) {
-        Weights w = weightMap.get(name);
-        if (w == null) {
-            throw new RuntimeException("weight cant be found " + name + " list" + weightMap.keySet());
-        }
-        return w.loadRef(name, lighter, this);
+        return load(name);
     }
 
     @Override
     public TensorRef loadRef(String name, TensorShardSpec shardSpec) {
-        Weights w = weightMap.get(name);
-        if (w == null) {
-            throw new RuntimeException("weight cant be found " + name + " list" + weightMap.keySet());
-        }
-        return w.loadRef(name, shardSpec, lighter, this);
+        return load(name, shardSpec);
     }
 
     @Override
-    public AbstractTensor loadRows(String name, int rowOffset, int rowCount) {
+    public TensorRef loadRows(String name, int rowOffset, int rowCount) {
         Weights direct = this.weightMap.get(name);
         if (direct != null) {
-            return direct.loadRows(name, rowOffset, rowCount);
-        }
-
-        TensorInfo logicalInfo = allTensorInfoMap.get(name);
-        if ((logicalInfo != null && logicalInfo.shape.length != 2) || !allTensorInfoMap.containsKey(name + "-part-0")) {
-            throw new RuntimeException("weight cant be found " + name + " list" + this.weightMap.keySet());
+            return direct.load(name, new TensorShardSpec(TensorShardAxis.ROWS, rowOffset, rowOffset + rowCount),
+                    requireLighter(), this);
         }
 
         TensorInfo firstPart = allTensorInfoMap.get(name + "-part-0");
         if (firstPart == null || firstPart.shape.length != 2) {
-            throw new IllegalArgumentException("Split tensor row slicing only supported for 2D tensors: " + name);
+            throw new RuntimeException("weight cant be found " + name + " list" + this.weightMap.keySet());
         }
-
         int cols = Ints.checkedCast(firstPart.shape[1]);
         int totalRows = 0;
         DType dType = firstPart.dType;
         for (int partIndex = 0; ; partIndex++) {
             TensorInfo partInfo = allTensorInfoMap.get(name + "-part-" + partIndex);
-            if (partInfo == null) {
-                break;
-            }
-            if (partInfo.shape.length != 2 || Ints.checkedCast(partInfo.shape[1]) != cols || partInfo.dType != dType) {
+            if (partInfo == null) break;
+            if (partInfo.shape.length != 2 || Ints.checkedCast(partInfo.shape[1]) != cols
+                    || partInfo.dType != dType) {
                 throw new IllegalArgumentException("Incompatible split tensor metadata for " + name);
             }
             totalRows += Ints.checkedCast(partInfo.shape[0]);
@@ -448,74 +433,73 @@ public class DefaultWeightLoader implements WeightLoader {
             throw new IllegalArgumentException("Invalid row range " + rowOffset + "," + rowCount + " for " + name);
         }
 
-        AbstractTensor merged = null;
+        TensorRef merged = requireLighter().allocate(dType, TensorShape.of(rowCount, cols));
         int copiedRows = 0;
         int rowsSeen = 0;
         try {
             for (int partIndex = 0; ; partIndex++) {
                 String partName = name + "-part-" + partIndex;
                 TensorInfo partInfo = allTensorInfoMap.get(partName);
-                if (partInfo == null) {
-                    break;
-                }
+                if (partInfo == null) break;
                 int partRows = Ints.checkedCast(partInfo.shape[0]);
                 int partStart = rowsSeen;
                 int partEnd = rowsSeen + partRows;
                 int requestedStart = Math.max(rowOffset, partStart);
                 int requestedEnd = Math.min(rowOffset + rowCount, partEnd);
-                    if (requestedStart < requestedEnd) {
-                        int localOffset = requestedStart - partStart;
-                        int localCount = requestedEnd - requestedStart;
-                        try (AbstractTensor partSlice = weightMap.get(partName).loadRows(partName, localOffset, localCount)) {
-                            if (merged == null) {
-                                merged = allocateLike(dType, rowCount, cols);
-                            }
-                            for (int row = 0; row < localCount; row++) {
-                                merged.copyFrom(partSlice, Math.toIntExact(partSlice.getOffset(row, 0)),
-                                        Math.toIntExact(merged.getOffset(copiedRows + row, 0)), cols);
-                            }
-                        copiedRows += localCount;
+                if (requestedStart < requestedEnd) {
+                    int localOffset = requestedStart - partStart;
+                    int localCount = requestedEnd - requestedStart;
+                    try (TensorRef partSlice = weightMap.get(partName).load(partName,
+                            new TensorShardSpec(TensorShardAxis.ROWS, localOffset, localOffset + localCount),
+                            requireLighter(), this)) {
+                        requireLighter().copy(partSlice, 0, merged, copiedRows * cols, localCount * cols);
                     }
+                    copiedRows += localCount;
                 }
                 rowsSeen = partEnd;
-                if (copiedRows == rowCount) {
-                    break;
-                }
+                if (copiedRows == rowCount) break;
             }
-            if (merged == null || copiedRows != rowCount) {
+            if (copiedRows != rowCount) {
                 throw new IllegalArgumentException("Unable to load requested rows for split tensor " + name);
             }
             return merged;
-        } catch (Exception e) {
-            if (merged != null) {
-                merged.close();
-            }
+        } catch (RuntimeException e) {
+            merged.close();
             throw e;
         }
     }
 
     @Override
-    public AbstractTensor load(String name, TensorShardSpec shardSpec) {
+    public TensorRef load(String name, TensorShardSpec shardSpec) {
         Weights direct = this.weightMap.get(name);
         if (direct != null) {
-            return direct.load(name, shardSpec);
+            return direct.load(name, shardSpec, requireLighter(), this);
         }
         if (shardSpec.axis() == TensorShardAxis.ROWS) {
             return loadRows(name, shardSpec.startInclusive(), shardSpec.length());
         }
-        try (AbstractTensor full = load(name)) {
-            return full.sparsify(shardSpec.startInclusive(), shardSpec.length());
+        try (TensorRef full = loadRows(name, 0,
+                Ints.checkedCast(allTensorInfoMap.get(name + "-part-0").shape[0]))) {
+            int rows = Math.toIntExact(full.shape().first());
+            TensorRef shard = requireLighter().allocate(full.dType(), TensorShape.of(rows, shardSpec.length()));
+            try {
+                for (int row = 0; row < rows; row++) {
+                    requireLighter().copy(full, full.shape().getOffset(row, shardSpec.startInclusive()), shard,
+                            shard.shape().getOffset(row, 0), shardSpec.length());
+                }
+                return shard;
+            } catch (RuntimeException e) {
+                shard.close();
+                throw e;
+            }
         }
     }
 
-    private AbstractTensor allocateLike(DType dType, int rows, int cols) {
-        TensorShape shape = TensorShape.of(rows, cols);
-        return switch (dType) {
-            case F32 -> new FloatBufferTensor(shape);
-            case BF16 -> new BFloat16BufferTensor(shape);
-            case F16 -> new Float16BufferTensor(shape);
-            default -> throw new UnsupportedOperationException("Unsupported dtype for row merge: " + dType);
-        };
+    private Lighter requireLighter() {
+        if (lighter == null) {
+            throw new IllegalStateException("TensorRef weight loading requires a configured Lighter");
+        }
+        return lighter;
     }
 
     @Override

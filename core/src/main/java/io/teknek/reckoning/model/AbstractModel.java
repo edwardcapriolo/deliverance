@@ -727,6 +727,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
             throw new UnsupportedOperationException(getClass().getSimpleName()
                     + " does not support LoRA runtime hot-swap -- see step 4 plan Section 6");
         }
+        adapter.setLighter(getLighter());
         registeredLoraAdapters.put(adapterId, new ResolvedLoraAdapter(adapter, getWorkingDType()));
     }
 
@@ -926,6 +927,28 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     /** Allocates a dense model-working-dtype tensor2 result owned by the caller. */
     public TensorRef makeDenseTensorRef(TensorShape s) {
         return lighter.allocate(workingDType, s);
+    }
+
+    /** Temporary adapter for model components that still consume the legacy tensor type. */
+    protected AbstractTensor loadLegacyWeight(String name) {
+        TensorRef ref = weights.load(name);
+        try {
+            return TensorRefBackedTensor.as(ref, ref.dType());
+        } catch (RuntimeException e) {
+            ref.close();
+            throw e;
+        }
+    }
+
+    /** Temporary adapter for legacy row-sliced model components. */
+    protected AbstractTensor loadLegacyWeightRows(String name, int rowOffset, int rowCount) {
+        TensorRef ref = weights.loadRows(name, rowOffset, rowCount);
+        try {
+            return TensorRefBackedTensor.as(ref, ref.dType());
+        } catch (RuntimeException e) {
+            ref.close();
+            throw e;
+        }
     }
 
     public DType getWorkingDType() {

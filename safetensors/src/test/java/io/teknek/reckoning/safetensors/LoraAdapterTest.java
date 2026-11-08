@@ -4,6 +4,7 @@ import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.impl.FloatBufferTensor;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.teknek.reckoning.safetensors.fetch.LoraAdapterModelFetcher;
+import io.teknek.reckoning.tensor2.Lighter;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -24,6 +25,8 @@ public class LoraAdapterTest {
 
     @TempDir
     Path tempDir;
+
+    private final Lighter lighter = new Lighter();
 
     /**
      * No network access -- builds a tiny synthetic adapter directory with {@link
@@ -46,6 +49,7 @@ public class LoraAdapterTest {
         SafeTensorWriter.write(tempDir.resolve(LoraAdapter.SAFETENSORS_FILE_NAME), Map.of(), tensors);
 
         try (LoraAdapter adapter = LoraAdapter.load(tempDir.toFile())) {
+            adapter.setLighter(lighter);
             assertEquals(4, adapter.rank());
             assertEquals(8.0, adapter.alpha());
             assertEquals(2.0, adapter.scale());
@@ -119,6 +123,7 @@ public class LoraAdapterTest {
         MetricRegistry metrics = new MetricRegistry();
 
         try (LoraAdapter adapter = LoraAdapter.load(tempDir.toFile(), metrics)) {
+            adapter.setLighter(lighter);
             LoraAdapter.LoraDelta delta = adapter.deltaFor(base).orElseThrow();
             try (AbstractTensor ignoredA = delta.loraA(); AbstractTensor ignoredB = delta.loraB()) {
             assertEquals(1, metrics.timer("loraadapter.parse_header").getCount());
@@ -142,6 +147,7 @@ public class LoraAdapterTest {
         LoraAdapterModelFetcher fetcher = new LoraAdapterModelFetcher("bunnycore", "Llama-3.2-1b-chatml-lora_model");
 
         try (LoraAdapter adapter = LoraAdapter.fromPretrained(fetcher)) {
+            adapter.setLighter(lighter);
             assertEquals(16, adapter.rank());
             assertEquals(16.0, adapter.alpha());
             assertEquals(1.0, adapter.scale());
@@ -167,6 +173,7 @@ public class LoraAdapterTest {
                 "linear_spec_lora", true);
 
         try (LoraAdapter adapter = LoraAdapter.fromPretrained(fetcher)) {
+            adapter.setLighter(lighter);
             assertEquals(128, adapter.rank());
             assertEquals(512.0, adapter.alpha());
             assertEquals(4.0, adapter.scale());

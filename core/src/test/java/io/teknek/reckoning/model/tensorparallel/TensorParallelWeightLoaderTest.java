@@ -4,7 +4,6 @@ import io.teknek.reckoning.DType;
 import io.teknek.reckoning.safetensors.TensorShardAxis;
 import io.teknek.reckoning.safetensors.TensorShardSpec;
 import io.teknek.reckoning.safetensors.WeightLoader;
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.TensorInfo;
 import io.teknek.reckoning.tensor.impl.FloatBufferTensor;
 import io.teknek.reckoning.tensor2.TensorRef;
@@ -119,17 +118,17 @@ public class TensorParallelWeightLoaderTest {
         }
 
         @Override
-        public AbstractTensor load(String name) {
+        public TensorRef load(String name) {
             lastFullLoad = name;
             lastShardSpec = null;
-            return new FloatBufferTensor(1, 1);
+            return TensorRef.owned(new FloatBufferTensor(1, 1));
         }
 
         @Override
-        public AbstractTensor load(String name, TensorShardSpec shardSpec) {
+        public TensorRef load(String name, TensorShardSpec shardSpec) {
             lastFullLoad = null;
             lastShardSpec = shardSpec;
-            return new FloatBufferTensor(1, 1);
+            return TensorRef.owned(new FloatBufferTensor(1, 1));
         }
 
         @Override

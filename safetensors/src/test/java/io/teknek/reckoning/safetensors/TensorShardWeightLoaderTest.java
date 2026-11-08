@@ -5,6 +5,9 @@ import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.TensorDisplayUtil;
 import io.teknek.reckoning.tensor.impl.FloatBufferTensor;
 import io.teknek.reckoning.tensor.impl.Q4ByteBufferTensor;
+import io.teknek.reckoning.tensor2.TensorRef;
+import io.teknek.reckoning.tensor2.Lighter;
+import io.teknek.reckoning.tensor2.TensorRefBackedTensor;
 import io.teknek.reckoning.tensor.operations.MachineSpec;
 import io.teknek.reckoning.math.WrappedForkJoinPool;
 import org.junit.jupiter.api.Test;
@@ -21,16 +24,18 @@ public class TensorShardWeightLoaderTest {
     @TempDir
     Path tempDir;
 
+    private final Lighter lighter = new Lighter();
+
     @Test
     public void loadsRowShardAsLocalDenseTensor() {
         writeMatrix();
 
-        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile());
-             AbstractTensor shard = loader.load("layer.weight", new TensorShardSpec(TensorShardAxis.ROWS, 2, 4))) {
+        try (DefaultWeightLoader loader = configuredLoader();
+             TensorRef shard = loader.load("layer.weight", new TensorShardSpec(TensorShardAxis.ROWS, 2, 4))) {
             assertEquals("""
                     [0][0]= 12.0000 [0][1]= 13.0000 [0][2]= 14.0000 [0][3]= 15.0000 [0][4]= 16.0000 [0][5]= 17.0000
                     [1][0]= 18.0000 [1][1]= 19.0000 [1][2]= 20.0000 [1][3]= 21.0000 [1][4]= 22.0000 [1][5]= 23.0000
-                    """.trim(), normalize(TensorDisplayUtil.pretty2dDisplayAll(shard)));
+                    """.trim(), normalize(TensorDisplayUtil.pretty2dDisplayAll(new TensorRefBackedTensor(shard))));
         }
     }
 
@@ -38,14 +43,14 @@ public class TensorShardWeightLoaderTest {
     public void loadsColumnShardAsLocalDenseTensor() {
         writeMatrix();
 
-        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile());
-             AbstractTensor shard = loader.load("layer.weight", new TensorShardSpec(TensorShardAxis.COLUMNS, 2, 4))) {
+        try (DefaultWeightLoader loader = configuredLoader();
+             TensorRef shard = loader.load("layer.weight", new TensorShardSpec(TensorShardAxis.COLUMNS, 2, 4))) {
             assertEquals("""
                     [0][0]=  2.0000 [0][1]=  3.0000
                     [1][0]=  8.0000 [1][1]=  9.0000
                     [2][0]= 14.0000 [2][1]= 15.0000
                     [3][0]= 20.0000 [3][1]= 21.0000
-                    """.trim(), normalize(TensorDisplayUtil.pretty2dDisplayAll(shard)));
+                    """.trim(), normalize(TensorDisplayUtil.pretty2dDisplayAll(new TensorRefBackedTensor(shard))));
         }
     }
 
@@ -53,7 +58,7 @@ public class TensorShardWeightLoaderTest {
     public void rejectsInvalidShardRanges() {
         writeMatrix();
 
-        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile())) {
+        try (DefaultWeightLoader loader = configuredLoader()) {
             assertThrows(IllegalArgumentException.class,
                     () -> loader.load("layer.weight", new TensorShardSpec(TensorShardAxis.ROWS, 3, 5)));
             assertThrows(IllegalArgumentException.class,
@@ -65,9 +70,9 @@ public class TensorShardWeightLoaderTest {
     public void loadsQ4RowShardAsLocalQ4Tensor() {
         writeQ4Matrix();
 
-        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile());
-             AbstractTensor full = loader.load("q4.weight");
-             AbstractTensor shard = loader.load("q4.weight", new TensorShardSpec(TensorShardAxis.ROWS, 1, 3))) {
+        try (DefaultWeightLoader loader = configuredLoader();
+             TensorRef full = loader.load("q4.weight");
+             TensorRef shard = loader.load("q4.weight", new TensorShardSpec(TensorShardAxis.ROWS, 1, 3))) {
             assertEquals(DType.Q4, shard.dType());
             assertEquals(2, shard.shape().first());
             assertEquals(64, shard.shape().last());
@@ -79,9 +84,9 @@ public class TensorShardWeightLoaderTest {
     public void loadsWideQ4RowShardUsingLocalPackedLayout() {
         writeWideQ4Matrix();
 
-        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile());
-             AbstractTensor full = loader.load("wide_q4.weight");
-             AbstractTensor shard = loader.load("wide_q4.weight", new TensorShardSpec(TensorShardAxis.ROWS, 96, 128))) {
+        try (DefaultWeightLoader loader = configuredLoader();
+             TensorRef full = loader.load("wide_q4.weight");
+             TensorRef shard = loader.load("wide_q4.weight", new TensorShardSpec(TensorShardAxis.ROWS, 96, 128))) {
             assertEquals(DType.Q4, shard.dType());
             assertEquals(32, shard.shape().first());
             assertEquals(2304, shard.shape().last());
@@ -93,9 +98,9 @@ public class TensorShardWeightLoaderTest {
     public void loadsWideQ4RowShardFromIndexedShardFile() {
         writeWideQ4IndexedModel();
 
-        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile());
-             AbstractTensor full = loader.load("wide_q4.weight");
-             AbstractTensor shard = loader.load("wide_q4.weight", new TensorShardSpec(TensorShardAxis.ROWS, 96, 128))) {
+        try (DefaultWeightLoader loader = configuredLoader();
+             TensorRef full = loader.load("wide_q4.weight");
+             TensorRef shard = loader.load("wide_q4.weight", new TensorShardSpec(TensorShardAxis.ROWS, 96, 128))) {
             assertEquals(DType.Q4, shard.dType());
             assertEquals(32, shard.shape().first());
             assertEquals(2304, shard.shape().last());
@@ -107,9 +112,9 @@ public class TensorShardWeightLoaderTest {
     public void loadsQ4ColumnShardAsLocalQ4Tensor() {
         writeQ4Matrix();
 
-        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile());
-             AbstractTensor full = loader.load("q4.weight");
-             AbstractTensor shard = loader.load("q4.weight", new TensorShardSpec(TensorShardAxis.COLUMNS, 32, 64))) {
+        try (DefaultWeightLoader loader = configuredLoader();
+             TensorRef full = loader.load("q4.weight");
+             TensorRef shard = loader.load("q4.weight", new TensorShardSpec(TensorShardAxis.COLUMNS, 32, 64))) {
             assertEquals(DType.Q4, shard.dType());
             assertEquals(4, shard.shape().first());
             assertEquals(32, shard.shape().last());
@@ -121,7 +126,7 @@ public class TensorShardWeightLoaderTest {
     public void rejectsUnalignedQ4ColumnShard() {
         writeQ4Matrix();
 
-        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile())) {
+        try (DefaultWeightLoader loader = configuredLoader()) {
             assertThrows(IllegalArgumentException.class,
                     () -> loader.load("q4.weight", new TensorShardSpec(TensorShardAxis.COLUMNS, 16, 48)));
         }
@@ -137,15 +142,15 @@ public class TensorShardWeightLoaderTest {
                 "model.layers.0.mlp.up_proj.weight", new Q4ByteBufferTensor(up),
                 "model.layers.0.mlp.down_proj.weight", new Q4ByteBufferTensor(down)));
 
-        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile());
-             AbstractTensor fullGate = loader.load("model.layers.0.mlp.gate_proj.weight");
-             AbstractTensor gateShard = loader.load("model.layers.0.mlp.gate_proj.weight",
+        try (DefaultWeightLoader loader = configuredLoader();
+             TensorRef fullGate = loader.load("model.layers.0.mlp.gate_proj.weight");
+             TensorRef gateShard = loader.load("model.layers.0.mlp.gate_proj.weight",
                      new TensorShardSpec(TensorShardAxis.ROWS, 32, 64));
-             AbstractTensor fullUp = loader.load("model.layers.0.mlp.up_proj.weight");
-             AbstractTensor upShard = loader.load("model.layers.0.mlp.up_proj.weight",
+             TensorRef fullUp = loader.load("model.layers.0.mlp.up_proj.weight");
+             TensorRef upShard = loader.load("model.layers.0.mlp.up_proj.weight",
                      new TensorShardSpec(TensorShardAxis.ROWS, 64, 96));
-             AbstractTensor fullDown = loader.load("model.layers.0.mlp.down_proj.weight");
-             AbstractTensor downShard = loader.load("model.layers.0.mlp.down_proj.weight",
+             TensorRef fullDown = loader.load("model.layers.0.mlp.down_proj.weight");
+             TensorRef downShard = loader.load("model.layers.0.mlp.down_proj.weight",
                      new TensorShardSpec(TensorShardAxis.COLUMNS, 32, 64))) {
             assertEquals(DType.Q4, gateShard.dType());
             assertEquals(DType.Q4, upShard.dType());
@@ -158,6 +163,12 @@ public class TensorShardWeightLoaderTest {
             up.close();
             down.close();
         }
+    }
+
+    private DefaultWeightLoader configuredLoader() {
+        DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile());
+        loader.setLighter(lighter);
+        return loader;
     }
 
     private void writeMatrix() {
@@ -213,7 +224,7 @@ public class TensorShardWeightLoaderTest {
         return matrix;
     }
 
-    private static void assertProjectionShardEquals(AbstractTensor full, AbstractTensor shard, int batchRow,
+    private static void assertProjectionShardEquals(TensorRef full, TensorRef shard, int batchRow,
             float tolerance) {
         for (int col = 0; col < shard.shape().last(); col++) {
             float expected = full.get(batchRow, col);
@@ -223,7 +234,7 @@ public class TensorShardWeightLoaderTest {
         }
     }
 
-    private static void assertQ4ShardEquals(AbstractTensor full, AbstractTensor shard, int rowOffset, int colOffset) {
+    private static void assertQ4ShardEquals(TensorRef full, TensorRef shard, int rowOffset, int colOffset) {
         for (int row = 0; row < shard.shape().first(); row++) {
             for (int col = 0; col < shard.shape().last(); col++) {
                 assertEquals(full.get(row + rowOffset, col + colOffset), shard.get(row, col), 0.0f,

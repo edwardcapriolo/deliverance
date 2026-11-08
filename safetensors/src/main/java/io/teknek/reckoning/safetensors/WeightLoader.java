@@ -1,7 +1,6 @@
 package io.teknek.reckoning.safetensors;
 
 import io.teknek.reckoning.DType;
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.TensorInfo;
 import io.teknek.reckoning.tensor2.Lighter;
 import io.teknek.reckoning.tensor2.TensorRef;
@@ -20,24 +19,22 @@ public interface WeightLoader extends AutoCloseable {
         return tensorInfoMap().containsKey(name);
     }
 
-    default AbstractTensor load(String name) {
+    default TensorRef load(String name) {
         throw new UnsupportedOperationException("Weight loading not supported for " + getClass().getName());
     }
 
     /**
-     * Loads a tensor through the tensor2 bridge without copying its backing storage.
-     * Implementations may override this to construct a native tensor2 view directly.
+     * Compatibility alias for callers that still spell the TensorRef load operation explicitly.
      */
     default TensorRef loadRef(String name) {
-        throw new UnsupportedOperationException("TensorRef weight loading not supported for " + getClass().getName());
+        return load(name);
     }
 
     default TensorRef loadRef(String name, TensorShardSpec shardSpec) {
-        throw new UnsupportedOperationException("Sharded TensorRef weight loading not supported for "
-                + getClass().getName());
+        return load(name, shardSpec);
     }
 
-    default AbstractTensor loadRows(String name, int rowOffset, int rowCount) {
+    default TensorRef loadRows(String name, int rowOffset, int rowCount) {
         throw new UnsupportedOperationException("Row slicing not supported for " + getClass().getName());
     }
 
@@ -48,7 +45,7 @@ public interface WeightLoader extends AutoCloseable {
      * {@code [8, 16)} of a {@code [4, 32]} tensor is returned as a dense {@code [4, 8]} tensor, not as a sparse view with
      * the original global column indexes.</p>
      */
-    default AbstractTensor load(String name, TensorShardSpec shardSpec) {
+    default TensorRef load(String name, TensorShardSpec shardSpec) {
         throw new UnsupportedOperationException("Tensor sharding not supported for " + getClass().getName());
     }
 

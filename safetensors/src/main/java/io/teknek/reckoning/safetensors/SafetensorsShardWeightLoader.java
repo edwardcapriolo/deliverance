@@ -1,7 +1,6 @@
 package io.teknek.reckoning.safetensors;
 
 import io.teknek.reckoning.DType;
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.TensorInfo;
 import io.teknek.reckoning.tensor2.Lighter;
 import io.teknek.reckoning.tensor2.TensorRef;
@@ -34,6 +33,7 @@ public final class SafetensorsShardWeightLoader implements WeightLoader {
     private final DType modelDType;
     private final int dataStartOffset;
     private Lighter lighter;
+    private boolean lighterConfigured;
 
     public SafetensorsShardWeightLoader(Path shardFile) {
         try {
@@ -81,28 +81,25 @@ public final class SafetensorsShardWeightLoader implements WeightLoader {
     @Override
     public void setLighter(Lighter lighter) {
         Objects.requireNonNull(lighter, "lighter");
-        if (this.lighter != null && this.lighter != lighter) {
+        if (lighterConfigured && this.lighter != lighter) {
             throw new IllegalStateException("Lighter is already configured for this weight loader");
         }
         this.lighter = lighter;
+        this.lighterConfigured = true;
     }
 
     @Override
-    public AbstractTensor load(String name) {
+    public TensorRef load(String name) {
         Weights weights = weightMap.get(name);
         if (weights == null) {
             throw new RuntimeException("weight cant be found " + name + " list" + weightMap.keySet());
         }
-        return weights.load(name);
+        return weights.load(name, requireLighter(), this);
     }
 
     @Override
     public TensorRef loadRef(String name) {
-        Weights weights = weightMap.get(name);
-        if (weights == null) {
-            throw new RuntimeException("weight cant be found " + name + " list" + weightMap.keySet());
-        }
-        return weights.loadRef(name, lighter, this);
+        return load(name);
     }
 
     @Override
@@ -111,7 +108,14 @@ public final class SafetensorsShardWeightLoader implements WeightLoader {
         if (weights == null) {
             throw new RuntimeException("weight cant be found " + name + " list" + weightMap.keySet());
         }
-        return weights.loadRef(name, shardSpec, lighter, this);
+        return weights.load(name, shardSpec, requireLighter(), this);
+    }
+
+    private Lighter requireLighter() {
+        if (lighter == null) {
+            throw new IllegalStateException("TensorRef weight loading requires a configured Lighter");
+        }
+        return lighter;
     }
 
     @Override

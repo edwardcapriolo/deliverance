@@ -1,5 +1,6 @@
 package io.teknek.reckoning.safetensors;
 
+import io.teknek.reckoning.tensor2.Lighter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -15,6 +16,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 public class ScalarTensorLoadTest {
     @TempDir
     Path tempDir;
+
+    private final Lighter lighter = new Lighter();
 
     @Test
     public void loadsZeroDimensionalScalarTensor() throws Exception {
@@ -37,11 +40,13 @@ public class ScalarTensorLoadTest {
             channel.write(payload);
         }
 
-        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile());
-             var scalar = loader.load("scalar")) {
+        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile())) {
+            loader.setLighter(lighter);
+            try (var scalar = loader.load("scalar")) {
             assertEquals(1, scalar.shape().first());
             assertEquals(1, scalar.shape().last());
             assertEquals(42.5f, scalar.get(0, 0), 1.0e-6f);
+            }
         }
     }
 }

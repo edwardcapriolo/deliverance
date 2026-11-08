@@ -193,7 +193,7 @@ public class Gemma2Model extends LlamaModel {
         // this comment is it true or not?
         // Don't quantize this, it's used for the embedding layer
         if (wte == null) {
-            wte = quantize(weights.load("model.embed_tokens.weight"), workingDType);
+            wte = quantize(loadLegacyWeight("model.embed_tokens.weight"), workingDType);
         }
         return new EmbedInput(this) {
             @Override
@@ -212,7 +212,7 @@ public class Gemma2Model extends LlamaModel {
     }
 
     private AbstractTensor loadOutputLogitsWeights(DType outputHeadDType, boolean force) {
-        AbstractTensor original = weights.load("model.embed_tokens.weight");
+        AbstractTensor original = loadLegacyWeight("model.embed_tokens.weight");
         AbstractTensor result = force
                 ? io.teknek.reckoning.tensor.AbstractTensorUtils.quantize(original, outputHeadDType, true)
                 : quantize(original, outputHeadDType);

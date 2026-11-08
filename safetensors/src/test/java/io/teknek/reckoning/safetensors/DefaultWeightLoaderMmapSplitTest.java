@@ -1,8 +1,8 @@
 package io.teknek.reckoning.safetensors;
 
 import io.teknek.reckoning.DType;
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.TensorInfo;
+import io.teknek.reckoning.tensor2.TensorRef;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
@@ -69,7 +69,7 @@ class DefaultWeightLoaderMmapSplitTest {
              RandomAccessFile file = new RandomAccessFile(tensorFile.toFile(), "r")) {
             for (int row : rowsToCheck) {
                 byte[] raw = readRow(file.getChannel(), info, row, bytesPerRow);
-                try (AbstractTensor loaded = loader.loadRows(name, row, 1)) {
+                 try (TensorRef loaded = loader.loadRows(name, row, 1)) {
                     for (int column = 0; column < columns; column++) {
                         int actual = Short.toUnsignedInt(ByteBuffer.wrap(raw, column * 2, 2)
                                 .order(ByteOrder.LITTLE_ENDIAN).getShort());

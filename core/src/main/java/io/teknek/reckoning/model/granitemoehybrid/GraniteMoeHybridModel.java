@@ -111,7 +111,7 @@ public class GraniteMoeHybridModel extends AbstractModel {
         if (this.embedTokenWeights == null) {
             // Keep quantized embeddings compressed. TensorRef generation only reads token rows;
             // expanding the entire vocabulary matrix here makes Q4 model startup unnecessarily expensive.
-            AbstractTensor loaded = this.weights.load("model.embed_tokens.weight");
+            AbstractTensor loaded = loadLegacyWeight("model.embed_tokens.weight");
             this.embedTokenWeights = ((GraniteMoeHybridConfig) this.config).denseAttentionOnly()
                     ? loaded : quantize(loaded, this.workingDType);
         }

@@ -5,6 +5,9 @@ import io.dropwizard.metrics5.Timer;
 import io.teknek.reckoning.safetensors.fetch.LoraAdapterModelFetcher;
 import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.TensorInfo;
+import io.teknek.reckoning.tensor2.TensorRef;
+import io.teknek.reckoning.tensor2.TensorRefBackedTensor;
+import io.teknek.reckoning.tensor2.Lighter;
 
 import java.io.File;
 import java.io.IOException;
@@ -94,6 +97,10 @@ public class LoraAdapter implements AutoCloseable {
         return load(adapterDir, metricRegistry);
     }
 
+    public void setLighter(Lighter lighter) {
+        weights.setLighter(lighter);
+    }
+
     public int rank() {
         return config.rank;
     }
@@ -126,9 +133,19 @@ public class LoraAdapter implements AutoCloseable {
             return Optional.empty();
         }
         try (Timer.Context ignored = metricRegistry.timer("loraadapter.load_tensor").time()) {
-            AbstractTensor loraA = weights.load(LoraTensorNames.loraA(baseTensorName));
-            AbstractTensor loraB = weights.load(LoraTensorNames.loraB(baseTensorName));
+            AbstractTensor loraA = loadLegacyTensor(LoraTensorNames.loraA(baseTensorName));
+            AbstractTensor loraB = loadLegacyTensor(LoraTensorNames.loraB(baseTensorName));
             return Optional.of(new LoraDelta(loraA, loraB));
+        }
+    }
+
+    private AbstractTensor loadLegacyTensor(String name) {
+        TensorRef ref = weights.load(name);
+        try {
+            return TensorRefBackedTensor.as(ref, ref.dType());
+        } catch (RuntimeException e) {
+            ref.close();
+            throw e;
         }
     }
 

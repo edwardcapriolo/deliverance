@@ -3,7 +3,6 @@ package io.teknek.reckoning.model.tensorparallel;
 import io.teknek.reckoning.safetensors.TensorShardAxis;
 import io.teknek.reckoning.safetensors.TensorShardSpec;
 import io.teknek.reckoning.safetensors.WeightLoader;
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor2.TensorRef;
 
 /**
@@ -27,7 +26,7 @@ public class TensorParallelWeightLoader {
         this.resolver = resolver;
     }
 
-    public AbstractTensor load(String weightName) {
+    public TensorRef load(String weightName) {
         if (!context.enabled()) {
             return delegate.load(weightName);
         }

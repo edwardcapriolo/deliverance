@@ -1,8 +1,9 @@
 package io.teknek.reckoning.safetensors;
 
 import io.teknek.reckoning.DType;
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.impl.FloatBufferTensor;
+import io.teknek.reckoning.tensor2.TensorRef;
+import io.teknek.reckoning.tensor2.Lighter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -23,17 +24,21 @@ class SafetensorsShardWeightLoaderTest {
     @TempDir
     Path tempDir;
 
+    private final Lighter lighter = new Lighter();
+
     @Test
     void loadsMetadataAndTensorFromOneShard() {
         Path shard = writeModel();
 
-        try (SafetensorsShardWeightLoader loader = new SafetensorsShardWeightLoader(shard);
-             AbstractTensor tensor = loader.load("layer.weight")) {
+        try (SafetensorsShardWeightLoader loader = new SafetensorsShardWeightLoader(shard)) {
+            loader.setLighter(lighter);
+            try (TensorRef tensor = loader.load("layer.weight")) {
             assertEquals(Map.of("format", "pt"), loader.metadata());
             assertEquals(DType.F32, loader.getModelDType());
             assertEquals(2, tensor.shape().first());
             assertEquals(3, tensor.shape().last());
             assertEquals(6.0f, tensor.get(1, 2));
+            }
         }
     }
 

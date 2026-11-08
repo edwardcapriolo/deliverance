@@ -382,7 +382,7 @@ public class Gemma4Model extends LlamaModel {
             return loadInputWeightsV2();
         }
         if (embedTokenWeights == null) {
-            embedTokenWeights = quantize(weights.load(resolveTextModelWeight("embed_tokens.weight")), workingDType);
+            embedTokenWeights = quantize(loadLegacyWeight(resolveTextModelWeight("embed_tokens.weight")), workingDType);
         }
         final float embeddingScalingFactor = FloatConversions.bFloat16ToFloat32(
                 FloatConversions.float32ToBFloat16((float) Math.pow(config.embeddingLength, 0.5))
@@ -521,8 +521,10 @@ public class Gemma4Model extends LlamaModel {
             return;
         }
         DType qType = modelQType.orElse(this.modelDType);
-        perLayerModelProjectionWeights = quantize(weights.load(resolveTextModelWeight("per_layer_model_projection.weight")), qType);
-        perLayerProjectionNormWeights = quantize(weights.load(resolveTextModelWeight("per_layer_projection_norm.weight")), qType);
+        perLayerModelProjectionWeights = quantize(
+                loadLegacyWeight(resolveTextModelWeight("per_layer_model_projection.weight")), qType);
+        perLayerProjectionNormWeights = quantize(
+                loadLegacyWeight(resolveTextModelWeight("per_layer_projection_norm.weight")), qType);
     }
 
     private synchronized void ensurePerLayerWeightsLoadedRef() {
@@ -583,7 +585,7 @@ public class Gemma4Model extends LlamaModel {
     private void loadPerLayerIdentityRows(int[] tokenIds, TensorRef destination) {
         String name = resolveTextModelWeight("embed_tokens_per_layer.weight");
         for (int row = 0; row < tokenIds.length; row++) {
-            try (AbstractTensor source = weights.loadRows(name, tokenIds[row], 1)) {
+            try (AbstractTensor source = loadLegacyWeightRows(name, tokenIds[row], 1)) {
                 for (int column = 0; column < destination.shape().last(); column++) {
                     destination.set(source.get(0, column), row, column);
                 }
@@ -685,7 +687,7 @@ public class Gemma4Model extends LlamaModel {
         if (!weights.isWeightPresent(name)) {
             return 1.0f;
         }
-        try (AbstractTensor tensor = weights.load(name)) {
+        try (AbstractTensor tensor = loadLegacyWeight(name)) {
             return tensor.shape().dims() == 1 ? tensor.get(0) : tensor.get(0, 0);
         }
     }
@@ -792,7 +794,8 @@ public class Gemma4Model extends LlamaModel {
     }
 
     private void copyPerLayerEmbeddingRow(int tokenId, AbstractTensor destination, int batchIndex, int packedLength) {
-        try (AbstractTensor row = weights.loadRows(resolveTextModelWeight("embed_tokens_per_layer.weight"), tokenId, 1)) {
+        try (AbstractTensor row = loadLegacyWeightRows(
+                resolveTextModelWeight("embed_tokens_per_layer.weight"), tokenId, 1)) {
             AbstractTensor source = row;
             if (row.dType() != destination.dType()) {
                 source = quantize(row, destination.dType());

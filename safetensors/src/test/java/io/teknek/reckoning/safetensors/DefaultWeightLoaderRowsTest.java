@@ -1,9 +1,10 @@
 package io.teknek.reckoning.safetensors;
 
 import io.teknek.reckoning.DType;
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.TensorInfo;
 import io.teknek.reckoning.tensor.impl.FloatBufferTensor;
+import io.teknek.reckoning.tensor2.TensorRef;
+import io.teknek.reckoning.tensor2.Lighter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -17,13 +18,15 @@ public class DefaultWeightLoaderRowsTest {
     @TempDir
     Path tempDir;
 
+    private final Lighter lighter = new Lighter();
+
     @Test
     public void loadsRowsFromUnsplitTensor() throws Exception {
         FloatBufferTensor source = matrix(4, 4, 0);
         SafeTensorWriter.write(tempDir.resolve("model.safetensors"), Map.of(), Map.of("plain.weight", source));
 
-        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile());
-             AbstractTensor rows = loader.loadRows("plain.weight", 1, 2)) {
+        try (DefaultWeightLoader loader = configuredLoader();
+             TensorRef rows = loader.loadRows("plain.weight", 1, 2)) {
             assertEquals(2, rows.shape().first());
             assertEquals(4, rows.shape().last());
             assertEquals(4.0f, rows.get(0, 0));
@@ -58,11 +61,11 @@ public class DefaultWeightLoaderRowsTest {
                         )
                 ));
 
-        try (DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile())) {
+        try (DefaultWeightLoader loader = configuredLoader()) {
             tensorInfoMap(loader).put("logical.weight",
                     new TensorInfo(DType.F32, new long[]{5, 4}, new long[]{0, 80}));
 
-            try (AbstractTensor rows = loader.loadRows("logical.weight", 1, 3)) {
+            try (TensorRef rows = loader.loadRows("logical.weight", 1, 3)) {
                 assertEquals(3, rows.shape().first());
                 assertEquals(4, rows.shape().last());
                 assertEquals(4.0f, rows.get(0, 0));
@@ -73,6 +76,12 @@ public class DefaultWeightLoaderRowsTest {
                 assertEquals(15.0f, rows.get(2, 3));
             }
         }
+    }
+
+    private DefaultWeightLoader configuredLoader() {
+        DefaultWeightLoader loader = new DefaultWeightLoader(tempDir.toFile());
+        loader.setLighter(lighter);
+        return loader;
     }
 
     private static FloatBufferTensor matrix(int rows, int cols, int start) {
