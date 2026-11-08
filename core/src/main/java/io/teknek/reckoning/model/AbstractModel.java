@@ -959,31 +959,6 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         return workingQType;
     }
 
-    /**
-     * Returns whether a tensor is already in this model's working quantized dtype.
-     *
-     * <p>This method exists to keep tensor ownership explicit at call sites. Older code used {@code maybeQuantize(...)},
-     * which can return different temporary/copy forms depending on dtype and makes close behavior hard to reason about.
-     * New code should branch on this predicate: use the original tensor directly when it is already in the desired dtype,
-     * or call {@link #quantizeToWorkingQuantizedType(AbstractTensor)} when a new temporary tensor is required.</p>
-     */
-    public boolean isInWorkingQuantizedType(AbstractTensor tensor) {
-        return tensor.dType() == workingQType;
-    }
-
-    /**
-     * Quantizes a tensor to this model's working quantized dtype and always returns a new caller-owned tensor.
-     *
-     * <p>This method deliberately does not return the input tensor even if it already has the target dtype. Callers that
-     * want to avoid an unnecessary temporary must first check {@link #isInWorkingQuantizedType(AbstractTensor)} and use the
-     * original tensor in that branch. This keeps resource ownership visible: tensors returned by this method must be
-     * closed by the caller.</p>
-     */
-    public AbstractTensor quantizeToWorkingQuantizedType(AbstractTensor tensor) {
-        TensorRef converted = lighter.reshape(TensorRef.borrowed(tensor), workingQType);
-        return new TensorRefBackedTensor(converted);
-    }
-
     public DType getModelDType() {
         return modelDType;
     }
@@ -1439,23 +1414,6 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
             return "unknown";
         }
         return String.format(Locale.ROOT, "%.1f", tokensPerSecond);
-    }
-
-    /** Returns an owned working tensor that callers may safely close. */
-    public AbstractTensor maybeQuantize(AbstractTensor t) {
-        AbstractTensor t2 = allocateDirty(t.dType(), t.shape());
-        t2.copyFrom(t, 0, 0, Ints.checkedCast(t.size()));
-        return t2;
-    }
-
-    /** Returns a close-safe read-only tensor when no dtype conversion is needed; otherwise returns an owned tensor. */
-    public AbstractTensor maybeQuantizeReadOnly(AbstractTensor t, String counterPrefix) {
-        if (t.dType() == workingQType) {
-            InferenceProfiler.counter(metricRegistry, counterPrefix + ".read_only").inc();
-            return new ReadOnlyTensor(t);
-        }
-        InferenceProfiler.counter(metricRegistry, counterPrefix + ".copy_or_quantize").inc();
-        return quantizeToWorkingQuantizedType(t);
     }
 
     /** Close-safe TensorRef equivalent of {@link #maybeQuantizeReadOnly(AbstractTensor, String)}. */

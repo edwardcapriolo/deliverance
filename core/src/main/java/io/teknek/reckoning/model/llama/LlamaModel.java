@@ -1,8 +1,6 @@
 package io.teknek.reckoning.model.llama;
 
 import io.dropwizard.metrics5.MetricRegistry;
-import com.google.common.base.Preconditions;
-import com.google.common.primitives.Ints;
 import io.teknek.reckoning.DType;
 import io.teknek.reckoning.generator.*;
 import io.teknek.reckoning.generator2.LayerNorm2;
@@ -18,7 +16,6 @@ import io.teknek.reckoning.model.tensorparallel.TensorParallelCollectives;
 import io.teknek.reckoning.model.tensorparallel.TensorParallelContext;
 import io.teknek.reckoning.safetensors.Config;
 import io.teknek.reckoning.safetensors.WeightLoader;
-import io.teknek.reckoning.tensor.AbstractTensor;
 
 import io.teknek.reckoning.tensor.KvBufferCacheSettings;
 import io.teknek.reckoning.tensor2.TensorRef;
@@ -27,7 +24,6 @@ import io.teknek.reckoning.toolcallparser.ToolCallParser;
 import java.util.Optional;
 import java.util.stream.IntStream;
 
-import static io.teknek.reckoning.tensor.AbstractTensorUtils.quantize;
 
 public class LlamaModel extends AbstractModel {
     private volatile TensorRef embedTokenWeightsRef;
@@ -176,14 +172,6 @@ public class LlamaModel extends AbstractModel {
                 return finalHead;
             }
         };
-    }
-
-    public AbstractTensor maybeQuantize(AbstractTensor t) {
-        Preconditions.checkArgument(t.dims() == 2, "Unexpected shape");
-        if (t.dType() == workingQType) {
-            return super.maybeQuantize(t);
-        }
-        return quantize(t, workingQType);
     }
 
 }
