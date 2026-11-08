@@ -582,7 +582,9 @@ public class AutoModelForCausaLm {
             if (pool == null){
                 pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
             }
-            lighter = new Lighter(mr, pool.getUnderlying());
+            if (lighter == null) {
+                lighter = new Lighter(mr, pool.getUnderlying());
+            }
             ModelFetcher fetcherForLoad = resolveModelFetcherForLoad();
             File modelRoot = fetcherForLoad.maybeDownload();
             String modelType = readModelType(new File(modelRoot, "config.json"));
@@ -857,6 +859,12 @@ public class AutoModelForCausaLm {
             fetch.setDownload(download);
             if (quantizeOnDemand.isEmpty()) {
                 return fetch;
+            }
+            if (lighter == null) {
+                if (pool == null) {
+                    pool = new WrappedForkJoinPool(WrappedForkJoinPool.autoSizeByCores());
+                }
+                lighter = new Lighter(mr, pool.getUnderlying());
             }
             QuantizeOnDemand quantize = quantizeOnDemand.get();
             ModelFetcher target = cachePeerFetcher(quantize.outputOwner(), quantize.outputModel()).withDownload(false);
