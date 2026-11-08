@@ -61,13 +61,13 @@ public class DeadReckoningModelsIT {
 
     @Test
     void nemotron3bArJq4() throws Exception {
-        trace("nemotron3b-ar-jq4", "edwardcapriolo", "Nemotron-Labs-Diffusion-3B-JQ4",
+        traceAndCompare("nemotron3b-ar-jq4", "edwardcapriolo", "Nemotron-Labs-Diffusion-3B-JQ4",
                 "benchmarks/configs/nemotron-labs-diffusion-3b-base-jq4-ar.json");
     }
 
     @Test
     void nemotron3bDiffusionJq4() throws Exception {
-        trace("nemotron3b-diffusion-jq4", "edwardcapriolo", "Nemotron-Labs-Diffusion-3B-JQ4",
+        traceAndCompare("nemotron3b-diffusion-jq4", "edwardcapriolo", "Nemotron-Labs-Diffusion-3B-JQ4",
                 "benchmarks/configs/nemotron-labs-diffusion-3b-base-jq4-diffusion.json");
     }
 

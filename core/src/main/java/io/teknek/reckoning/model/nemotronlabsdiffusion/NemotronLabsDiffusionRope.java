@@ -1,9 +1,6 @@
 package io.teknek.reckoning.model.nemotronlabsdiffusion;
 
 import com.google.common.base.Preconditions;
-import io.teknek.reckoning.tensor.AbstractTensor;
-import io.teknek.reckoning.tensor2.CompositeOps;
-import io.teknek.reckoning.tensor2.MultiplyInPlace;
 import io.teknek.reckoning.tensor2.TensorRef;
 import net.jafama.FastMath;
 
@@ -66,29 +63,6 @@ final class NemotronLabsDiffusionRope {
                 * StrictMath.log(1.0 + StrictMath.floor((double) position / originalMaxPositionEmbeddings)));
     }
 
-    void apply(AbstractTensor query, AbstractTensor key, int queryHeads, int keyValueHeads, CompositeOps ops) {
-        apply(query, key, 0, queryHeads, keyValueHeads, ops);
-    }
-
-    void apply(AbstractTensor query, AbstractTensor key, int startPosition, int queryHeads, int keyValueHeads,
-            CompositeOps ops) {
-        Preconditions.checkArgument(query.dims() == 2 && key.dims() == 2, "query/key must be 2D");
-        Preconditions.checkArgument(query.shape().first() == key.shape().first(), "query/key rows must match");
-        for (int row = 0; row < query.shape().first(); row++) {
-            int absolutePosition = startPosition + row;
-            applyToTensor(query, row, absolutePosition, queryHeads);
-            applyToTensor(key, row, absolutePosition, keyValueHeads);
-            float queryScale = llama4QueryScale(absolutePosition);
-            if (queryScale != 1.0f) {
-                try (AbstractTensor queryRow = query.slice(row);
-                     TensorRef queryRef = TensorRef.borrowed(queryRow)) {
-                    ops.multiplyInPlace(new MultiplyInPlace(queryScale).target(queryRef)
-                            .offsetAndLength(0, queryHeads * headDim));
-                }
-            }
-        }
-    }
-
     /** Applies the same YaRN transform directly to the TensorRef execution path. */
     void apply(TensorRef query, TensorRef key, int startPosition, int queryHeads, int keyValueHeads) {
         Preconditions.checkArgument(query.dims() == 2 && key.dims() == 2, "query/key must be 2D");
@@ -108,24 +82,6 @@ final class NemotronLabsDiffusionRope {
     }
 
     private void applyToTensor(TensorRef tensor, int row, int absolutePosition, int heads) {
-        int half = rotaryDim / 2;
-        for (int i = 0; i < half; i++) {
-            float angle = absolutePosition * invFreq[i];
-            float cos = (float) FastMath.cos(angle) * attentionScaling;
-            float sin = (float) FastMath.sin(angle) * attentionScaling;
-            for (int head = 0; head < heads; head++) {
-                int headOffset = head * headDim;
-                int xOffset = headOffset + i;
-                int yOffset = headOffset + i + half;
-                float x = tensor.get(row, xOffset);
-                float y = tensor.get(row, yOffset);
-                tensor.set(x * cos - y * sin, row, xOffset);
-                tensor.set(y * cos + x * sin, row, yOffset);
-            }
-        }
-    }
-
-    private void applyToTensor(AbstractTensor tensor, int row, int absolutePosition, int heads) {
         int half = rotaryDim / 2;
         for (int i = 0; i < half; i++) {
             float angle = absolutePosition * invFreq[i];
