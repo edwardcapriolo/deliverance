@@ -4,7 +4,6 @@ import io.teknek.reckoning.generator.ForwardPhase;
 import io.teknek.reckoning.generator2.SelfAttention2;
 import io.teknek.reckoning.math.ActivationFunction;
 import io.teknek.reckoning.model.AbstractModel;
-import io.teknek.reckoning.tensor.KvBufferCache;
 import io.teknek.reckoning.tensor.kv.KvCacheSession;
 import io.teknek.reckoning.tensor2.BatchDotProduct;
 import io.teknek.reckoning.tensor2.TensorRef;
@@ -87,12 +86,6 @@ final class GraniteMoeHybridMambaLayer2 implements SelfAttention2 {
             projected.close();
             scan.close();
         }
-    }
-
-    @Override
-    public TensorRef forward(TensorRef input, int startPosition, KvBufferCache.KvBuffer kvMem,
-            Optional<Consumer<List<TensorRef>>> reducer) {
-        throw new UnsupportedOperationException("Granite Mamba2 requires KVCache2 session");
     }
 
     private void forwardRow(TensorRef projected, TensorRef scan, int row, MambaState state, Scratch s) {

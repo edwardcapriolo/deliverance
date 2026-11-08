@@ -81,7 +81,7 @@ import static io.teknek.reckoning.tensor.DebugSupport.debug;
  * Base implementation for generation, classification, embedding, and shared model utilities.
  *
  * <h2>Prefix KV-cache contract</h2>
- * <p>Generation can reuse block-aligned KV prefixes through {@link KvBufferCache}. The cache is an internal
+ * <p>Generation can reuse block-aligned KV prefixes through KVCache2. The cache is an internal
  * performance path: it avoids recomputing already-seen prompt prefixes, then runs any uncached suffix tokens and
  * begins decoding after the full prompt length. The position invariant is strict: cache hits must not change the
  * decode start position or the token budget. For example, with an 8-token cached prefix and a 9-token prompt, the
@@ -150,8 +150,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
             int[] promptTokens,
             int prefixLength,
             int startPos,
-            int tokensToProcessLength,
-            KvBufferCache.KvBuffer kvBuffer
+            int tokensToProcessLength
     ) {
     }
 
@@ -210,7 +209,6 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     protected EmbedInput embedInput;
     protected SampleOutputRef sampleOutputRef;
     protected io.teknek.reckoning.generator2.TransformerBlock2[] transformerBlocks2;
-    protected KvBufferCache kvBufferCache;
     protected KvCacheManager kvCacheManager;
     protected KvPrefixSnapshotCache kvPrefixSnapshotCache;
     protected KvBlockManager kvBlockManager;
@@ -243,7 +241,6 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     private final Queue<ModelLineageEntry> modelLineageEntries = new ConcurrentLinkedQueue<>();
     private final Queue<TensorRef> modelTensorRefs = new ConcurrentLinkedQueue<>();
     private final Set<TensorRef> registeredModelTensorRefSet = ConcurrentHashMap.newKeySet();
-    private final Map<KvBufferCache.KvBuffer, KvCacheSession> kvCache2SessionAdapters = Collections.synchronizedMap(new WeakHashMap<>());
     private Optional<TensorRuntimeMode> tensorRuntimeMode = Optional.empty();
     private TensorRuntime tensorRuntime;
     private Map<String, Object> generationOptions = Map.of();
@@ -299,7 +296,6 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         w.setLighter(this.lighter);
         this.compositeOps = new CompositeOps(lighter, metricRegistry);
          this.kvBufferCacheSettings = kvBufferCacheSettings;
-         this.kvBufferCache = new KvBufferCache(this, kvBufferCacheSettings, lighter);
          this.kvBlockManager = new KvBlockManager(metricRegistry, kvBufferCacheSettings, lighter);
          this.kvCacheManager = new KvCacheManager(c.numberOfLayers, c.contextLength,
                  c.kvLength / tensorParallelContext.size(), workingMemoryDType, kvBufferCacheSettings,
@@ -441,10 +437,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         return tensorParallelCollectives;
     }
 
-    public KvBufferCache.KvBuffer newKvBuffer() {
-        return kvBufferCache.getEphemeralKvBuffer();
-    }
-
+    
     public KvCacheManager kvCacheManager() {
         return kvCacheManager;
     }
@@ -604,14 +597,13 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     }
 
     public void emitPromptPrefillDebug(int[] promptTokens, int prefixLength, int startPosition,
-            int tokensToProcessLength, KvBufferCache.KvBuffer kvBuffer) {
+            int tokensToProcessLength) {
         generationDebugHook.accept(new GenerationDebugEvent(
                 GenerationDebugEventType.AFTER_PROMPT_PREFILL,
                 promptTokens,
                 prefixLength,
                 startPosition,
-                tokensToProcessLength,
-                kvBuffer));
+                tokensToProcessLength));
     }
 
     public int getLocalNumberOfHeads() {
@@ -677,7 +669,8 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     void deadReckoningHeader(PromptContext prompt, GeneratorParameters parameters) {
         if (deadReckoningTrace != null) {
             deadReckoningTrace.recordHeader(deadReckoningOwner, deadReckoningModel, prompt, parameters,
-                    encodeText(prompt.getPrompt()));
+                    Arrays.stream(constructPromptTokens(encodeText(prompt.getPrompt())))
+                            .asLongStream().toArray());
         }
     }
 
@@ -797,16 +790,6 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     }
 
     /**
-     * Forces the model's disk-backed KV page cleanup pass to run immediately.
-     *
-     * <p>This is a maintenance/test hook for active disk KV page storage. It does not operate on prefix-cache entries or
-     * any persistent token-prefix manifest.</p>
-     */
-    public void runDiskKvPageSweep() {
-        kvBufferCache.runDiskPageSweep();
-    }
-
-    /**
      * Returns the primary input kind accepted by this model at its forward/generation boundary.
      *
      * <p>Text generation models normally use {@link ModelInputName#INPUT_IDS}. Models with non-text primary inputs,
@@ -895,15 +878,12 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
                 throw new RuntimeException(e);
             }
         }
-        kvBufferCache.close();
         if (kvPrefixSnapshotCache != null) {
             kvPrefixSnapshotCache.close();
         }
         if (kvBlockManager != null) {
             kvBlockManager.close();
         }
-        kvCache2SessionAdapters.values().forEach(KvCacheSession::close);
-        kvCache2SessionAdapters.clear();
         modelTensorRefs.forEach(TensorRef::close);
         modelTensorRefs.clear();
         registeredModelTensorRefSet.clear();

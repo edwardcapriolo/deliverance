@@ -141,9 +141,4 @@ public final class BertSelfAttention2 implements SelfAttention2 {
         }
     }
 
-    @Override
-    public TensorRef forward(TensorRef input, int startPosition, io.teknek.reckoning.tensor.KvBufferCache.KvBuffer kvMem,
-            Optional<Consumer<List<TensorRef>>> tensorReducer) {
-        throw new UnsupportedOperationException("BERT TensorRef attention requires batch and mask metadata");
-    }
 }

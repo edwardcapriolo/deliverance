@@ -46,7 +46,7 @@ public final class LocalGenerationBackend implements GenerationBackendRef {
             if (prefixLength > 0) {
                 model.emitGenerationDebug(new AbstractModel.GenerationDebugEvent(
                         AbstractModel.GenerationDebugEventType.AFTER_PREFIX_COPY,
-                        promptTokens, prefixLength, prefixLength, promptTokens.length - prefixLength, null));
+                        promptTokens, prefixLength, prefixLength, promptTokens.length - prefixLength));
             }
         }
 

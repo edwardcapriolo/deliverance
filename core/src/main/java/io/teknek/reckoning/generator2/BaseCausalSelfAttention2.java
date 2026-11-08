@@ -10,7 +10,6 @@ import io.dropwizard.metrics5.Timer;
 import io.teknek.reckoning.DType;
 import io.teknek.reckoning.model.InferenceProfiler;
 import io.teknek.reckoning.tensor.TensorShape;
-import io.teknek.reckoning.tensor.KvBufferCache;
 import net.jafama.FastMath;
 
 import java.util.List;
@@ -23,12 +22,6 @@ public abstract class BaseCausalSelfAttention2 implements SelfAttention2 {
 
     protected BaseCausalSelfAttention2(Lighter lighter) {
         this.compositeOps = new CompositeOps(lighter);
-    }
-
-    @Override
-    public TensorRef forward(TensorRef input, int startPosition, KvBufferCache.KvBuffer kvMem,
-            Optional<Consumer<List<TensorRef>>> tensorReducer) {
-        throw new UnsupportedOperationException(getClass().getSimpleName() + " does not support KVBufferCache");
     }
 
     protected void softmax(TensorRef attn, int visibleLength) {

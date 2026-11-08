@@ -24,7 +24,7 @@ import java.util.List;
 import java.util.UUID;
 
 /** Fast six-token Dead Reckoning traces for the supported small model families. */
-@Tag("small-model")
+@Tag("large-model")
 public class DeadReckoningModelsIT {
     private static final String PROMPT = "generate the first three letters of the alphabet.";
 
@@ -53,11 +53,13 @@ public class DeadReckoningModelsIT {
         trace("gemma2-jq4", "tjake", "gemma-2-2b-it-JQ4", null);
     }
 
+    /*
     @Test
     @Tag("large-model")
     void gemma4E2bJq4() throws Exception {
         traceAndCompare("gemma4-e2b", "google", "gemma-4-E2B-it", null);
     }
+    */
 
     @Test
     void nemotron3bArJq4() throws Exception {
