@@ -10,8 +10,12 @@ import io.teknek.reckoning.safetensors.prompt.PromptContext;
 import io.teknek.reckoning.safetensors.prompt.PromptSupport;
 import io.teknek.reckoning.toolcallparser.ToolCallParser;
 import io.teknek.sketches.SketchesSettings;
+import io.github.resilience4j.timelimiter.TimeLimiter;
 
 import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -61,6 +65,29 @@ public final class DefaultCausalLanguageModel implements CausalLanguageModel {
     @Override
     public Response generate(UUID sessionId, PromptContext promptContext, GeneratorParameters generatorParameters,
             GenerateEvent eventFired) {
+        if (generatorParameters.timeout.isPresent()) {
+            TimeLimiter limiter = TimeLimiter.of(generatorParameters.timeout.get());
+            try {
+                return limiter.executeFutureSupplier(() -> CompletableFuture.supplyAsync(
+                        () -> generateWithoutTimeout(sessionId, promptContext, generatorParameters, eventFired)));
+            } catch (TimeoutException e) {
+                throw new GenerationException("Generation timed out after " + generatorParameters.timeout.get(), e);
+            } catch (ExecutionException e) {
+                Throwable cause = e.getCause();
+                if (cause instanceof RuntimeException runtime) throw runtime;
+                throw new GenerationException("Generation failed", cause);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new GenerationException("Generation interrupted", e);
+            } catch (Exception e) {
+                throw new GenerationException("Generation failed", e);
+            }
+        }
+        return generateWithoutTimeout(sessionId, promptContext, generatorParameters, eventFired);
+    }
+
+    private Response generateWithoutTimeout(UUID sessionId, PromptContext promptContext,
+            GeneratorParameters generatorParameters, GenerateEvent eventFired) {
         coordinatorModel.deadReckoningHeader(promptContext, generatorParameters);
         Response response;
         if (coordinatorModel.usesModelSpecificGeneration()) {

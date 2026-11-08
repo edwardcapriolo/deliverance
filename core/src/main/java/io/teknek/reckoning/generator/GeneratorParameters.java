@@ -2,6 +2,7 @@ package io.teknek.reckoning.generator;
 
 import java.util.List;
 import java.util.Optional;
+import java.time.Duration;
 
 /**
  * The parameters of the request that are not part of the PromptSupport. For example a field like stopWords isnt
@@ -27,6 +28,7 @@ public class GeneratorParameters {
     public Optional<Float> topP = Optional.empty();
     public Optional<Float> uniformTopP = Optional.empty();
     public Optional<Integer> diffusionBlockLength = Optional.empty();
+    public Optional<Duration> timeout = Optional.empty();
 
     public GeneratorParameters withSeed(int seed){
         this.seed = Optional.of(seed);
@@ -116,6 +118,14 @@ public class GeneratorParameters {
             throw new IllegalArgumentException("diffusionBlockLength must be > 0");
         }
         this.diffusionBlockLength = Optional.of(diffusionBlockLength);
+        return this;
+    }
+
+    public GeneratorParameters withTimeout(Duration timeout) {
+        if (timeout == null || timeout.isZero() || timeout.isNegative()) {
+            throw new IllegalArgumentException("timeout must be positive");
+        }
+        this.timeout = Optional.of(timeout);
         return this;
     }
 }
