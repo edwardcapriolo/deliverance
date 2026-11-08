@@ -60,6 +60,44 @@ public final class CompositeOps {
         lighter.dotProductBatchChunk(operation);
     }
 
+    /** Applies a fused-style matrix product with a composed provider fallback. */
+    public void gemmAccumulate(GemmAccumulate operation) {
+        Objects.requireNonNull(operation, "operation");
+        validateGemmAccumulate(operation);
+        if (lighter.gemmAccumulate(operation).isRight()) return;
+
+        TensorRef target = operation.target();
+        TensorRef left = operation.left();
+        TensorRef right = operation.right();
+        try (TensorRef delta = lighter.allocate(target.dType(), target.shape())) {
+            lighter.batchDotProduct(new BatchDotProduct()
+                    .result(delta).a(left).b(right)
+                    .aColumnOffset(0).bColumnOffset(0)
+                    .columnLength(left.shape().last())
+                    .resultRowOffset(0).bRowOffset(0).rowChunkSize(right.shape().first()));
+            if (operation.scale() != 1.0f) {
+                lighter.scale(new Scale(operation.scale()).target(delta)
+                        .offsetAndLength(0, target.shape().last()));
+            }
+            lighter.accumulate(new Accumulate(delta).into(target)
+                    .offsetAndLength(0, target.shape().last()));
+        }
+    }
+
+    private static void validateGemmAccumulate(GemmAccumulate operation) {
+        TensorRef target = operation.target();
+        TensorRef left = operation.left();
+        TensorRef right = operation.right();
+        Preconditions.checkArgument(target.dims() == 2 && left.dims() == 2 && right.dims() == 2,
+                "GemmAccumulate requires rank-2 tensors");
+        Preconditions.checkArgument(target.dType() == left.dType() && target.dType() == right.dType(),
+                "GemmAccumulate requires matching dtypes");
+        Preconditions.checkArgument(left.shape().first() == target.shape().first()
+                        && left.shape().last() == right.shape().last()
+                        && right.shape().first() == target.shape().last(),
+                "GemmAccumulate matrix shapes are incompatible");
+    }
+
     public TensorRef activationMultiplyQuantize(ActivationMultiplyQuantize operation) {
         Objects.requireNonNull(operation, "operation");
         TensorRef output = operation.output();

@@ -4,6 +4,14 @@ import io.teknek.dysfx.Either;
 
 /** Optional provider accelerators for semantic composite operations. */
 public interface CompositeOpsProvider {
+    default boolean supportsGemmAccumulate(GemmAccumulate operation) {
+        return false;
+    }
+
+    default Either<OpSupport, Void> gemmAccumulate(GemmAccumulate operation) {
+        return Either.Left(OpSupport.Unsupported);
+    }
+
     default boolean supportsActivationMultiplyQuantize(ActivationMultiplyQuantize operation) {
         return false;
     }

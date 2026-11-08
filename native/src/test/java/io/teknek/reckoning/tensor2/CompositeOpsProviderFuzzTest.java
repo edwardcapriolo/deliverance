@@ -22,6 +22,65 @@ class CompositeOpsProviderFuzzTest {
     private record Provider(String name, TensorProviderKind kind, TensorOps ops, boolean enabled) {
     }
 
+    @ParameterizedTest(name = "gemm accumulate {0}")
+    @MethodSource("providers")
+    void gemmAccumulateMatchesReference(Provider provider) {
+        assume(provider);
+        Lighter lighter = strict(provider);
+        CompositeOps composite = new CompositeOps(lighter);
+        int rows = 3;
+        int columns = 7;
+        int inner = 5;
+        float scale = 0.75f;
+        try (TensorRef target = lighter.allocate(DType.F32, TensorShape.of(rows, columns));
+             TensorRef left = lighter.allocate(DType.F32, TensorShape.of(rows, inner));
+             TensorRef right = lighter.allocate(DType.F32, TensorShape.of(columns, inner))) {
+            fill(target, 101);
+            fill(left, 103);
+            fill(right, 107);
+            float[][] expected = values(target);
+            for (int row = 0; row < rows; row++) {
+                for (int column = 0; column < columns; column++) {
+                    float sum = 0.0f;
+                    for (int k = 0; k < inner; k++) {
+                        sum += left.get(row, k) * right.get(column, k);
+                    }
+                    expected[row][column] += scale * sum;
+                }
+            }
+            composite.gemmAccumulate(new GemmAccumulate(target, left, right, scale));
+            assertValues(target, expected, 1.0e-5f);
+        }
+    }
+
+    @ParameterizedTest(name = "bf16 gemm accumulate {0}")
+    @MethodSource("providers")
+    void bf16GemmAccumulateMatchesReference(Provider provider) {
+        assume(provider);
+        Lighter lighter = strict(provider);
+        CompositeOps composite = new CompositeOps(lighter);
+        int rows = 2;
+        int columns = 7;
+        int inner = 5;
+        try (TensorRef target = lighter.allocate(DType.BF16, TensorShape.of(rows, columns));
+             TensorRef left = lighter.allocate(DType.BF16, TensorShape.of(rows, inner));
+             TensorRef right = lighter.allocate(DType.BF16, TensorShape.of(columns, inner))) {
+            fill(target, 109);
+            fill(left, 113);
+            fill(right, 127);
+            float[][] expected = values(target);
+            for (int row = 0; row < rows; row++) {
+                for (int column = 0; column < columns; column++) {
+                    float sum = 0.0f;
+                    for (int k = 0; k < inner; k++) sum += left.get(row, k) * right.get(column, k);
+                    expected[row][column] += sum;
+                }
+            }
+            composite.gemmAccumulate(new GemmAccumulate(target, left, right, 1.0f));
+            assertValues(target, expected, 0.15f);
+        }
+    }
+
     @ParameterizedTest(name = "multiply slice {0}")
     @MethodSource("providers")
     void multiplyInPlaceSupportsSlices(Provider provider) {

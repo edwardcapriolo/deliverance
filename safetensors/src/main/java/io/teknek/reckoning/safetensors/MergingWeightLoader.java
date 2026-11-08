@@ -5,8 +5,8 @@ import io.teknek.reckoning.DType;
 import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.TensorInfo;
 import io.teknek.reckoning.tensor.TensorShape;
-import io.teknek.reckoning.tensor2.Accumulate;
-import io.teknek.reckoning.tensor2.BatchDotProduct;
+import io.teknek.reckoning.tensor2.CompositeOps;
+import io.teknek.reckoning.tensor2.GemmAccumulate;
 import io.teknek.reckoning.tensor2.Lighter;
 import io.teknek.reckoning.tensor2.Transpose;
 import io.teknek.reckoning.tensor2.TensorRef;
@@ -31,11 +31,13 @@ public class MergingWeightLoader implements WeightLoader {
     private final WeightLoader delegate;
     private final LoraAdapter adapter;
     private final Lighter lighter;
+    private final CompositeOps compositeOps;
 
     public MergingWeightLoader(WeightLoader delegate, LoraAdapter adapter, Lighter lighter) {
         this.delegate = delegate;
         this.adapter = adapter;
         this.lighter = Objects.requireNonNull(lighter, "lighter");
+        this.compositeOps = new CompositeOps(lighter);
         DType baseDType = delegate.getModelDType();
         if (baseDType != DType.F32 && baseDType != DType.BF16 && baseDType != DType.F16) {
             throw new UnsupportedOperationException(
@@ -203,22 +205,9 @@ public class MergingWeightLoader implements WeightLoader {
             try (TensorRef loraARef = TensorRef.borrowed(loraA);
                  TensorRef scaledBRef = TensorRef.borrowed(scaledB)) {
                 if (base.dType() == DType.F32 || base.dType() == DType.BF16) {
-                    try (TensorRef transposedA = lighter.allocate(base.dType(), TensorShape.of(inFeatures, rank));
-                         TensorRef deltaRef = lighter.allocate(base.dType(),
-                                 TensorShape.of(outFeatures, inFeatures))) {
+                    try (TensorRef transposedA = lighter.allocate(base.dType(), TensorShape.of(inFeatures, rank))) {
                         lighter.transpose(new Transpose(loraARef).destination(transposedA));
-                        lighter.batchDotProduct(new BatchDotProduct()
-                                .result(deltaRef)
-                                .a(scaledBRef)
-                                .b(transposedA)
-                                .aColumnOffset(0)
-                                .bColumnOffset(0)
-                                .columnLength(rank)
-                                .resultRowOffset(0)
-                                .bRowOffset(0)
-                                .rowChunkSize(inFeatures));
-                        lighter.accumulate(new Accumulate(deltaRef).into(merged)
-                                .offsetAndLength(0, inFeatures));
+                        compositeOps.gemmAccumulate(new GemmAccumulate(merged, scaledBRef, transposedA, 1.0f));
                     }
                 } else {
                     for (int row = 0; row < outFeatures; row++) {

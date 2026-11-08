@@ -20,7 +20,7 @@ import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinTask;
 import net.jafama.FastMath;
 
-class PanamaOps implements TensorOps {
+class PanamaOps implements TensorOps, CompositeOpsProvider {
     private final ForkJoinPool providerPool;
 
     PanamaOps() {
@@ -29,6 +29,71 @@ class PanamaOps implements TensorOps {
 
     PanamaOps(ForkJoinPool providerPool) {
         this.providerPool = java.util.Objects.requireNonNull(providerPool, "providerPool");
+    }
+
+    @Override
+    public boolean supportsGemmAccumulate(GemmAccumulate operation) {
+        return (operation.target().dType() == DType.F32 || operation.target().dType() == DType.BF16)
+                && operation.target().dType() == operation.left().dType()
+                && operation.target().dType() == operation.right().dType()
+                && operation.target().shape().first() == operation.left().shape().first()
+                && operation.target().shape().last() == operation.right().shape().first()
+                && operation.left().shape().last() == operation.right().shape().last();
+    }
+
+    @Override
+    public Either<OpSupport, Void> gemmAccumulate(GemmAccumulate operation) {
+        if (!supportsGemmAccumulate(operation)) return Either.Left(OpSupport.Unsupported);
+        if (operation.target().dType() == DType.BF16) {
+            gemmAccumulateBf16(operation);
+            return Either.Right(null);
+        }
+        TensorRef target = operation.target();
+        TensorRef left = operation.left();
+        TensorRef right = operation.right();
+        int rows = target.shape().first();
+        int columns = target.shape().last();
+        int inner = left.shape().last();
+        parallelRows(left, row -> {
+            for (int column = 0; column < columns; column++) {
+                FloatVector sum = FloatVector.zero(F32_SPECIES);
+                int k = 0;
+                int upper = F32_SPECIES.loopBound(inner);
+                for (; k < upper; k += F32_SPECIES.length()) {
+                    FloatVector leftValues = FloatVector.fromMemorySegment(F32_SPECIES, left.memorySegment(),
+                            memoryOffset(left, row, k), ByteOrder.LITTLE_ENDIAN);
+                    FloatVector rightValues = FloatVector.fromMemorySegment(F32_SPECIES, right.memorySegment(),
+                            memoryOffset(right, column, k), ByteOrder.LITTLE_ENDIAN);
+                    sum = leftValues.fma(rightValues, sum);
+                }
+                float value = sum.reduceLanes(VectorOperators.ADD);
+                for (; k < inner; k++) value += left.get(row, k) * right.get(column, k);
+                target.set(target.get(row, column) + operation.scale() * value, row, column);
+            }
+        });
+        return Either.Right(null);
+    }
+
+    private void gemmAccumulateBf16(GemmAccumulate operation) {
+        TensorRef target = operation.target();
+        TensorRef left = operation.left();
+        TensorRef right = operation.right();
+        int rows = target.shape().first();
+        int columns = target.shape().last();
+        int inner = left.shape().last();
+        for (int row = 0; row < rows; row++) {
+            for (int column = 0; column < columns; column++) {
+                FloatVector sum = FloatVector.zero(F32_BF16_SPECIES);
+                int k = 0;
+                int upper = F32_BF16_SPECIES.loopBound(inner);
+                for (; k < upper; k += F32_BF16_SPECIES.length()) {
+                    sum = bf16Vector(left, row, k).fma(bf16Vector(right, column, k), sum);
+                }
+                float value = sum.reduceLanes(VectorOperators.ADD);
+                for (; k < inner; k++) value += left.get(row, k) * right.get(column, k);
+                target.set(target.get(row, column) + operation.scale() * value, row, column);
+            }
+        }
     }
 
     @Override

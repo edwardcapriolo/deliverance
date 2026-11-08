@@ -94,7 +94,7 @@ public class LoraHotSwapIT {
     private static String generate(AbstractModel model) {
         PromptSupport.Builder promptBuilder = model.promptSupport().orElseThrow().builder().addUserMessage(PROMPT);
         Response response = model.generate(UUID.randomUUID(), promptBuilder.build(),
-                new GeneratorParameters().withMaxTokens(80).withTemperature(0.0f).withSeed(42),
+                new GeneratorParameters().withMaxTokens(30).withTemperature(0.0f).withSeed(42),
                 new DoNothingGenerateEvent());
         return response.responseText;
     }

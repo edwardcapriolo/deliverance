@@ -82,7 +82,7 @@ public class Lighter {
             Map<TensorProviderKind, TensorOps> tensorOperations){
         this.metricRegistry = metricRegistry;
         this.providerPool = java.util.Objects.requireNonNull(providerPool, "providerPool");
-        this.tensorOperations.putAll(tensorOperations);
+        tensorOperations.forEach(this::putTensorOperations);
     }
 
     public ForkJoinPool providerPool() {
@@ -813,6 +813,16 @@ public class Lighter {
             Either<OpSupport, Void> outcome = provider.activationMultiplyQuantize(operation);
             if (outcome.isRight()) {
                 return outcome;
+            }
+        }
+        return Either.Left(OpSupport.Unsupported);
+    }
+
+    Either<OpSupport, Void> gemmAccumulate(GemmAccumulate operation) {
+        for (CompositeOpsProvider provider : compositeOperations.values()) {
+            if (provider.supportsGemmAccumulate(operation)) {
+                Either<OpSupport, Void> outcome = provider.gemmAccumulate(operation);
+                if (outcome.isRight()) return outcome;
             }
         }
         return Either.Left(OpSupport.Unsupported);
