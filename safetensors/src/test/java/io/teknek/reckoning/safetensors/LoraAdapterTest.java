@@ -14,12 +14,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class LoraAdapterTest {
 
@@ -54,12 +52,12 @@ public class LoraAdapterTest {
             assertEquals(8.0, adapter.alpha());
             assertEquals(2.0, adapter.scale());
 
-            Optional<LoraAdapter.LoraDelta> delta = adapter.deltaFor(base);
-            assertTrue(delta.isPresent());
-            assertEquals(rankDim, delta.get().loraA().shape().first());
-            assertEquals(inFeatures, delta.get().loraA().shape().last());
-            assertEquals(outFeatures, delta.get().loraB().shape().first());
-            assertEquals(rankDim, delta.get().loraB().shape().last());
+            try (LoraAdapter.LoraDelta delta = adapter.deltaFor(base).orElseThrow()) {
+                assertEquals(rankDim, delta.loraA().shape().first());
+                assertEquals(inFeatures, delta.loraA().shape().last());
+                assertEquals(outFeatures, delta.loraB().shape().first());
+                assertEquals(rankDim, delta.loraB().shape().last());
+            }
 
             // k_proj was never a target_modules entry for this adapter.
             assertFalse(adapter.deltaFor("model.layers.0.self_attn.k_proj.weight").isPresent());
@@ -124,8 +122,7 @@ public class LoraAdapterTest {
 
         try (LoraAdapter adapter = LoraAdapter.load(tempDir.toFile(), metrics)) {
             adapter.setLighter(lighter);
-            LoraAdapter.LoraDelta delta = adapter.deltaFor(base).orElseThrow();
-            try (AbstractTensor ignoredA = delta.loraA(); AbstractTensor ignoredB = delta.loraB()) {
+            try (LoraAdapter.LoraDelta delta = adapter.deltaFor(base).orElseThrow()) {
             assertEquals(1, metrics.timer("loraadapter.parse_header").getCount());
             assertEquals(1, metrics.timer("loraadapter.load_tensor").getCount());
             }
@@ -153,12 +150,12 @@ public class LoraAdapterTest {
             assertEquals(1.0, adapter.scale());
 
             String base = "model.layers.0.self_attn.q_proj.weight";
-            Optional<LoraAdapter.LoraDelta> delta = adapter.deltaFor(base);
-            assertTrue(delta.isPresent());
-            assertEquals(16, delta.get().loraA().shape().first());
-            assertEquals(2048, delta.get().loraA().shape().last());
-            assertEquals(2048, delta.get().loraB().shape().first());
-            assertEquals(16, delta.get().loraB().shape().last());
+            try (LoraAdapter.LoraDelta delta = adapter.deltaFor(base).orElseThrow()) {
+                assertEquals(16, delta.loraA().shape().first());
+                assertEquals(2048, delta.loraA().shape().last());
+                assertEquals(2048, delta.loraB().shape().first());
+                assertEquals(16, delta.loraB().shape().last());
+            }
 
             // This adapter has no modules_to_save and doesn't target embeddings/lm_head.
             assertFalse(adapter.deltaFor("model.embed_tokens.weight").isPresent());
@@ -178,12 +175,12 @@ public class LoraAdapterTest {
             assertEquals(512.0, adapter.alpha());
             assertEquals(4.0, adapter.scale());
 
-            Optional<LoraAdapter.LoraDelta> delta = adapter.deltaFor("encoder.layers.0.self_attn.o_proj.weight");
-            assertTrue(delta.isPresent());
-            assertEquals(128, delta.get().loraA().shape().first());
-            assertEquals(4096, delta.get().loraA().shape().last());
-            assertEquals(3072, delta.get().loraB().shape().first());
-            assertEquals(128, delta.get().loraB().shape().last());
+            try (LoraAdapter.LoraDelta delta = adapter.deltaFor("encoder.layers.0.self_attn.o_proj.weight").orElseThrow()) {
+                assertEquals(128, delta.loraA().shape().first());
+                assertEquals(4096, delta.loraA().shape().last());
+                assertEquals(3072, delta.loraB().shape().first());
+                assertEquals(128, delta.loraB().shape().last());
+            }
 
             assertFalse(adapter.deltaFor("encoder.layers.0.self_attn.q_proj.weight").isPresent());
         }

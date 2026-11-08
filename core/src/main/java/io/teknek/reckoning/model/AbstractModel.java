@@ -728,7 +728,7 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
                     + " does not support LoRA runtime hot-swap -- see step 4 plan Section 6");
         }
         adapter.setLighter(getLighter());
-        registeredLoraAdapters.put(adapterId, new ResolvedLoraAdapter(adapter, getWorkingDType()));
+        registeredLoraAdapters.put(adapterId, new ResolvedLoraAdapter(adapter, getWorkingDType(), getLighter()));
     }
 
     public void registerLoraAdapter(String adapterId, LoraAdapterModelFetcher fetcher) {

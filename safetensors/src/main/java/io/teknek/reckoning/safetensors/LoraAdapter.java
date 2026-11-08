@@ -3,10 +3,8 @@ package io.teknek.reckoning.safetensors;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.dropwizard.metrics5.Timer;
 import io.teknek.reckoning.safetensors.fetch.LoraAdapterModelFetcher;
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.TensorInfo;
 import io.teknek.reckoning.tensor2.TensorRef;
-import io.teknek.reckoning.tensor2.TensorRefBackedTensor;
 import io.teknek.reckoning.tensor2.Lighter;
 
 import java.io.File;
@@ -133,19 +131,14 @@ public class LoraAdapter implements AutoCloseable {
             return Optional.empty();
         }
         try (Timer.Context ignored = metricRegistry.timer("loraadapter.load_tensor").time()) {
-            AbstractTensor loraA = loadLegacyTensor(LoraTensorNames.loraA(baseTensorName));
-            AbstractTensor loraB = loadLegacyTensor(LoraTensorNames.loraB(baseTensorName));
-            return Optional.of(new LoraDelta(loraA, loraB));
-        }
-    }
-
-    private AbstractTensor loadLegacyTensor(String name) {
-        TensorRef ref = weights.load(name);
-        try {
-            return TensorRefBackedTensor.as(ref, ref.dType());
-        } catch (RuntimeException e) {
-            ref.close();
-            throw e;
+            TensorRef loraA = weights.load(LoraTensorNames.loraA(baseTensorName));
+            try {
+                TensorRef loraB = weights.load(LoraTensorNames.loraB(baseTensorName));
+                return Optional.of(new LoraDelta(loraA, loraB));
+            } catch (RuntimeException e) {
+                loraA.close();
+                throw e;
+            }
         }
     }
 
@@ -240,6 +233,14 @@ public class LoraAdapter implements AutoCloseable {
         return "LoraAdapter{" + config + '}';
     }
 
-    public record LoraDelta(AbstractTensor loraA, AbstractTensor loraB) {
+    public record LoraDelta(TensorRef loraA, TensorRef loraB) implements AutoCloseable {
+        @Override
+        public void close() {
+            try {
+                loraA.close();
+            } finally {
+                loraB.close();
+            }
+        }
     }
 }

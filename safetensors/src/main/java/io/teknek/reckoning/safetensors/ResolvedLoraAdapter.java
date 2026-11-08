@@ -1,7 +1,8 @@
 package io.teknek.reckoning.safetensors;
 
 import io.teknek.reckoning.DType;
-import io.teknek.reckoning.tensor.AbstractTensor;
+import io.teknek.reckoning.tensor2.Lighter;
+import io.teknek.reckoning.tensor2.TensorRef;
 
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,11 +22,14 @@ public class ResolvedLoraAdapter implements AutoCloseable {
 
     private final LoraAdapter adapter;
     private final DType targetDType;
+    private final Lighter lighter;
     private final ConcurrentHashMap<String, Optional<LoraLayerDelta>> cache = new ConcurrentHashMap<>();
 
-    public ResolvedLoraAdapter(LoraAdapter adapter, DType targetDType) {
+    public ResolvedLoraAdapter(LoraAdapter adapter, DType targetDType, Lighter lighter) {
         this.adapter = adapter;
         this.targetDType = targetDType;
+        this.lighter = java.util.Objects.requireNonNull(lighter, "lighter");
+        adapter.setLighter(lighter);
     }
 
     public Optional<LoraLayerDelta> deltaFor(String baseTensorName) {
@@ -33,13 +37,34 @@ public class ResolvedLoraAdapter implements AutoCloseable {
     }
 
     private LoraLayerDelta resolve(LoraAdapter.LoraDelta delta) {
-        AbstractTensor loraA = LoraTensorMath.toDType(delta.loraA(), targetDType);
-        AbstractTensor scaledLoraB = LoraTensorMath.scaledCopy(delta.loraB(), targetDType, (float) adapter.scale());
-        return new LoraLayerDelta(loraA, scaledLoraB, delta.loraA().shape().first());
+        TensorRef sourceA = delta.loraA();
+        TensorRef sourceB = delta.loraB();
+        TensorRef loraA = sourceA;
+        int rank = Math.toIntExact(sourceA.shape().first());
+        try {
+            loraA = LoraTensorMath.toDType(sourceA, targetDType, lighter);
+            TensorRef scaledLoraB = LoraTensorMath.scaledCopy(sourceB, targetDType,
+                    (float) adapter.scale(), lighter);
+            if (loraA != sourceA) {
+                sourceA.close();
+            }
+            sourceB.close();
+            return new LoraLayerDelta(loraA, scaledLoraB, rank);
+        } catch (RuntimeException e) {
+            if (loraA != sourceA) {
+                loraA.close();
+            } else {
+                sourceA.close();
+            }
+            sourceB.close();
+            throw e;
+        }
     }
 
     @Override
     public void close() {
+        cache.values().forEach(value -> value.ifPresent(LoraLayerDelta::close));
+        cache.clear();
         adapter.close();
     }
 }

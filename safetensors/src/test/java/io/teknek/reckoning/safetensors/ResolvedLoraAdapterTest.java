@@ -40,7 +40,7 @@ public class ResolvedLoraAdapterTest {
         writeQProjTensors(tempDir, 4, 8, 6);
 
         try (LoraAdapter adapter = loadAdapter();
-                ResolvedLoraAdapter resolved = new ResolvedLoraAdapter(adapter, DType.F32)) {
+                ResolvedLoraAdapter resolved = new ResolvedLoraAdapter(adapter, DType.F32, lighter)) {
             Optional<LoraLayerDelta> first = resolved.deltaFor(Q_PROJ);
             Optional<LoraLayerDelta> second = resolved.deltaFor(Q_PROJ);
 
@@ -69,7 +69,7 @@ public class ResolvedLoraAdapterTest {
         SafeTensorWriter.write(tempDir.resolve(LoraAdapter.SAFETENSORS_FILE_NAME), Map.of(), tensors);
 
         try (LoraAdapter adapter = loadAdapter();
-                ResolvedLoraAdapter resolved = new ResolvedLoraAdapter(adapter, DType.F32)) {
+                ResolvedLoraAdapter resolved = new ResolvedLoraAdapter(adapter, DType.F32, lighter)) {
             LoraLayerDelta delta = resolved.deltaFor(Q_PROJ).orElseThrow();
             assertEquals(rank, delta.rank());
             for (int row = 0; row < outFeatures; row++) {
@@ -97,7 +97,7 @@ public class ResolvedLoraAdapterTest {
         SafeTensorWriter.write(tempDir.resolve(LoraAdapter.SAFETENSORS_FILE_NAME), Map.of(), tensors);
 
         try (LoraAdapter adapter = loadAdapter();
-             ResolvedLoraAdapter resolved = new ResolvedLoraAdapter(adapter, DType.BF16)) {
+             ResolvedLoraAdapter resolved = new ResolvedLoraAdapter(adapter, DType.BF16, lighter)) {
             LoraLayerDelta delta = resolved.deltaFor(Q_PROJ).orElseThrow();
 
             assertEquals(DType.BF16, delta.loraA().dType());
@@ -113,7 +113,7 @@ public class ResolvedLoraAdapterTest {
         writeQProjTensors(tempDir, 4, 8, 6);
 
         try (LoraAdapter adapter = loadAdapter();
-                ResolvedLoraAdapter resolved = new ResolvedLoraAdapter(adapter, DType.F32)) {
+                ResolvedLoraAdapter resolved = new ResolvedLoraAdapter(adapter, DType.F32, lighter)) {
             assertFalse(resolved.deltaFor(K_PROJ).isPresent());
             assertFalse(resolved.deltaFor(K_PROJ).isPresent());
         }

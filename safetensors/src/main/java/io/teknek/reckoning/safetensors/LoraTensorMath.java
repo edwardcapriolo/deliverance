@@ -1,11 +1,9 @@
 package io.teknek.reckoning.safetensors;
 
 import io.teknek.reckoning.DType;
-import io.teknek.reckoning.tensor.AbstractTensor;
-import io.teknek.reckoning.tensor.TensorShape;
-import io.teknek.reckoning.tensor.impl.BFloat16BufferTensor;
-import io.teknek.reckoning.tensor.impl.Float16BufferTensor;
-import io.teknek.reckoning.tensor.impl.FloatBufferTensor;
+import io.teknek.reckoning.tensor2.Lighter;
+import io.teknek.reckoning.tensor2.Scale;
+import io.teknek.reckoning.tensor2.TensorRef;
 
 /**
  * Dtype-conversion helpers shared by {@link MergingWeightLoader} (Phase 1, merge-at-load) and
@@ -22,30 +20,33 @@ final class LoraTensorMath {
     private LoraTensorMath() {
     }
 
-    static AbstractTensor toDType(AbstractTensor src, DType target) {
+    static TensorRef toDType(TensorRef src, DType target, Lighter lighter) {
+        validateDenseDType(target);
         if (src.dType() == target) {
             return src;
         }
-        return scaledCopy(src, target, 1.0f);
+        return lighter.reshape(src, target);
     }
 
-    static AbstractTensor scaledCopy(AbstractTensor src, DType target, float factor) {
-        AbstractTensor converted = allocateLike(target, src.shape().first(), src.shape().last());
-        for (int row = 0; row < src.shape().first(); row++) {
-            for (int col = 0; col < src.shape().last(); col++) {
-                converted.set(src.get(row, col) * factor, row, col);
-            }
+    static TensorRef scaledCopy(TensorRef src, DType target, float factor, Lighter lighter) {
+        validateDenseDType(target);
+        TensorRef converted = lighter.reshape(src, target);
+        if (factor == 1.0f) {
+            return converted;
+        }
+        try {
+            lighter.scale(new Scale(factor).target(converted).offsetAndLength(0,
+                    Math.toIntExact(converted.shape().last())));
+        } catch (RuntimeException e) {
+            converted.close();
+            throw e;
         }
         return converted;
     }
 
-    static AbstractTensor allocateLike(DType dType, int rows, int cols) {
-        TensorShape shape = TensorShape.of(rows, cols);
-        return switch (dType) {
-            case F32 -> new FloatBufferTensor(shape);
-            case BF16 -> new BFloat16BufferTensor(shape);
-            case F16 -> new Float16BufferTensor(shape);
-            default -> throw new UnsupportedOperationException("Unsupported dtype for LoRA tensor math: " + dType);
-        };
+    private static void validateDenseDType(DType dType) {
+        if (dType != DType.F32 && dType != DType.BF16 && dType != DType.F16) {
+            throw new UnsupportedOperationException("Unsupported dtype for LoRA tensor math: " + dType);
+        }
     }
 }

@@ -1,8 +1,6 @@
 package io.teknek.reckoning.safetensors;
 
-import com.google.common.primitives.Ints;
 import io.teknek.reckoning.DType;
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.TensorInfo;
 import io.teknek.reckoning.tensor.TensorShape;
 import io.teknek.reckoning.tensor2.CompositeOps;
@@ -91,16 +89,20 @@ public class MergingWeightLoader implements WeightLoader {
         if (delta.isEmpty()) {
             return base;
         }
-        try {
-            return mergeRef(base, delta.get());
-        } finally {
-            base.close();
+        try (LoraAdapter.LoraDelta resolved = delta.get()) {
+            try {
+                return mergeRef(base, resolved);
+            } finally {
+                base.close();
+            }
         }
     }
 
     @Override
     public TensorRef load(String name, TensorShardSpec shardSpec) {
-        if (adapter.deltaFor(name).isPresent()) {
+        Optional<LoraAdapter.LoraDelta> delta = adapter.deltaFor(name);
+        if (delta.isPresent()) {
+            delta.get().close();
             throw new UnsupportedOperationException(
                     "TensorRef loading does not support merged LoRA weights: " + name);
         }
@@ -109,7 +111,9 @@ public class MergingWeightLoader implements WeightLoader {
 
     @Override
     public TensorRef loadRows(String name, int rowOffset, int rowCount) {
-        if (adapter.deltaFor(name).isPresent()) {
+        Optional<LoraAdapter.LoraDelta> delta = adapter.deltaFor(name);
+        if (delta.isPresent()) {
+            delta.get().close();
             throw new UnsupportedOperationException(
                     "LoRA merge-at-load does not support partial-row loading for targeted module: " + name);
         }
@@ -137,51 +141,20 @@ public class MergingWeightLoader implements WeightLoader {
     }
 
     /**
-     * Computes {@code base + scale * (loraB @ loraA)} and returns a freshly allocated tensor;
+     * Computes {@code base + scale * (loraB @ loraA)} into a freshly allocated TensorRef;
      * {@code base} is left untouched.
      *
      * <p>{@code base} has shape {@code [out, in]}. {@code loraA} has shape {@code [rank, in]} and
-     * {@code loraB} has shape {@code [out, rank]} (standard PEFT layout). For each output row
-     * {@code o}, {@code delta[o,:] = scale * sum_k loraB[o,k] * loraA[k,:]} -- exactly what {@link
-     * TensorRef}'s batched {@code saxpy} computes when given one row of (pre-scaled) {@code
-     * loraB} as {@code alpha} and all of {@code loraA} as {@code x}. The batched primitive requires
-     * both its {@code alpha} and {@code y} arguments to be single-row tensors, so this loops over
-     * output rows, slicing one row of {@code merged} (as {@code y}) and one row of {@code scaledB}
-     * (as {@code alpha}) per iteration -- both slices are views over the allocated tensors, not
-     * copies, so the accumulation writes straight into {@code merged}.</p>
+     * {@code loraB} has shape {@code [out, rank]} (standard PEFT layout). The adapter scale is
+     * applied to {@code loraB} before accumulation. Dense F32/BF16 bases use the fused GEMM path;
+     * F16 and other supported dense paths use row-wise TensorRef saxpy.</p>
      *
-     * <p>{@code loraA}/{@code loraB} are converted to {@code base}'s dtype first: the underlying
-     * {@code saxpy} implementations only support matching dtypes, or a BF16 {@code x} against an F32
-     * {@code y}, and a real-world adapter's stored dtype (commonly F32) has no guaranteed relationship
-     * to the base model's dtype (commonly BF16 for HF-distributed dense checkpoints). {@code loraB} is
-     * pre-scaled by {@code adapter.scale()} during that same conversion pass rather than via {@link
-     * {@code scale}: on this codebase's ARM/Panama path, {@code scale()} only implements BF16
-     * for AVX_512/AVX_256 and has no native ARM kernel (unlike {@code saxpy}, which does fall back
-     * correctly for BF16), so calling it here would make merging fail on BF16 base models under ARM.</p>
+     * <p>LoRA weights are converted to the base dtype before the provider operation. This is
+     * required because the saxpy implementations require compatible dtypes, while adapter weights
+     * are commonly stored as F32 and the base model may be BF16. Scaling is performed through the
+     * TensorRef Lighter scale operation rather than a separate scalar conversion path so the
+     * Panama and ARM providers share the same behavior.</p>
      */
-    private AbstractTensor merge(AbstractTensor base, LoraAdapter.LoraDelta delta) {
-        int outFeatures = base.shape().first();
-        int inFeatures = base.shape().last();
-        int rank = delta.loraA().shape().first();
-
-        AbstractTensor merged = LoraTensorMath.allocateLike(base.dType(), outFeatures, inFeatures);
-        merged.copyFrom(base, 0, 0, Ints.checkedCast(base.size()));
-
-        AbstractTensor loraA = LoraTensorMath.toDType(delta.loraA(), base.dType());
-        AbstractTensor scaledB = LoraTensorMath.scaledCopy(delta.loraB(), base.dType(), (float) adapter.scale());
-
-        for (int o = 0; o < outFeatures; o++) {
-            AbstractTensor mergedRow = merged.slice(o);
-            AbstractTensor scaledBRow = scaledB.slice(o);
-            try (TensorRef scaledBRef = TensorRef.borrowed(scaledBRow);
-                 TensorRef loraARef = TensorRef.borrowed(loraA);
-                 TensorRef mergedRef = TensorRef.borrowed(mergedRow)) {
-                lighter.saxpy(scaledBRef, loraARef, mergedRef, 0, 0, inFeatures, 0, 0, rank);
-            }
-        }
-        return merged;
-    }
-
     private TensorRef mergeRef(TensorRef base, LoraAdapter.LoraDelta delta) {
         int outFeatures = Math.toIntExact(base.shape().first());
         int inFeatures = Math.toIntExact(base.shape().last());
@@ -194,29 +167,27 @@ public class MergingWeightLoader implements WeightLoader {
         }
 
         TensorRef merged = lighter.allocate(base.dType(), base.shape());
-        AbstractTensor loraA = LoraTensorMath.toDType(delta.loraA(), base.dType());
-        AbstractTensor scaledB = LoraTensorMath.scaledCopy(delta.loraB(), base.dType(), (float) adapter.scale());
+        TensorRef loraA = LoraTensorMath.toDType(delta.loraA(), base.dType(), lighter);
+        TensorRef scaledB = LoraTensorMath.scaledCopy(delta.loraB(), base.dType(),
+                (float) adapter.scale(), lighter);
         boolean closeLoraA = loraA != delta.loraA();
         try {
             lighter.copy(base, 0, merged, 0, Math.toIntExact(base.shape().size()));
-            try (TensorRef loraARef = TensorRef.borrowed(loraA);
-                 TensorRef scaledBRef = TensorRef.borrowed(scaledB)) {
-                if (base.dType() == DType.F32 || base.dType() == DType.BF16) {
-                    try (TensorRef transposedA = lighter.allocate(base.dType(), TensorShape.of(inFeatures, rank))) {
-                        lighter.transpose(new Transpose(loraARef).destination(transposedA));
-                        compositeOps.gemmAccumulate(new GemmAccumulate(merged, scaledBRef, transposedA, 1.0f));
-                    }
-                } else {
-                    for (int row = 0; row < outFeatures; row++) {
-                        try (TensorRef mergedRow = merged.slice(row);
-                             TensorRef scaledBRow = scaledBRef.slice(row)) {
-                            lighter.saxpy(scaledBRow, loraARef, mergedRow, 0, 0, inFeatures, 0, 0, rank);
-                        }
+            if (base.dType() == DType.F32 || base.dType() == DType.BF16) {
+                try (TensorRef transposedA = lighter.allocate(base.dType(), TensorShape.of(inFeatures, rank))) {
+                    lighter.transpose(new Transpose(loraA).destination(transposedA));
+                    compositeOps.gemmAccumulate(new GemmAccumulate(merged, scaledB, transposedA, 1.0f));
+                }
+            } else {
+                for (int row = 0; row < outFeatures; row++) {
+                    try (TensorRef mergedRow = merged.slice(row);
+                         TensorRef scaledBRow = scaledB.slice(row)) {
+                        lighter.saxpy(scaledBRow, loraA, mergedRow, 0, 0, inFeatures, 0, 0, rank);
                     }
                 }
             }
             return merged;
-        } catch (RuntimeException | Error e) {
+        } catch (RuntimeException e) {
             merged.close();
             throw e;
         } finally {

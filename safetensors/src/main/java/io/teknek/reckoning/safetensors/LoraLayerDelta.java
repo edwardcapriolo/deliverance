@@ -1,6 +1,6 @@
 package io.teknek.reckoning.safetensors;
 
-import io.teknek.reckoning.tensor.AbstractTensor;
+import io.teknek.reckoning.tensor2.TensorRef;
 
 /**
  * One resolved, already-dtype-converted, already-scale-pre-multiplied LoRA delta for a single
@@ -12,5 +12,13 @@ import io.teknek.reckoning.tensor.AbstractTensor;
  * {@code [outFeatures, rank]} and already has the adapter's {@code alpha/r} scale baked in, so
  * applying this delta never needs a separate provider scale call.</p>
  */
-public record LoraLayerDelta(AbstractTensor loraA, AbstractTensor scaledLoraB, int rank) {
+public record LoraLayerDelta(TensorRef loraA, TensorRef scaledLoraB, int rank) implements AutoCloseable {
+    @Override
+    public void close() {
+        try {
+            loraA.close();
+        } finally {
+            scaledLoraB.close();
+        }
+    }
 }

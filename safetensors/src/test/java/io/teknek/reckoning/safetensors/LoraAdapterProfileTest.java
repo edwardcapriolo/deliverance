@@ -3,6 +3,7 @@ package io.teknek.reckoning.safetensors;
 import io.dropwizard.metrics5.MetricRegistry;
 import io.dropwizard.metrics5.Timer;
 import io.teknek.reckoning.safetensors.fetch.LoraAdapterModelFetcher;
+import io.teknek.reckoning.tensor2.Lighter;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -33,12 +34,15 @@ public class LoraAdapterProfileTest {
     @Tag("large-model")
     void profilesAdapterFetchAndLoadPhases() {
         MetricRegistry metricRegistry = new MetricRegistry();
+        Lighter lighter = new Lighter();
         LoraAdapterModelFetcher fetcher = new LoraAdapterModelFetcher("bunnycore", "Llama-3.2-1b-chatml-lora_model");
 
         try (LoraAdapter adapter = LoraAdapter.fromPretrained(fetcher, metricRegistry)) {
-            adapter.deltaFor("model.layers.0.self_attn.q_proj.weight");
-            adapter.deltaFor("model.layers.1.self_attn.q_proj.weight");
-            adapter.deltaFor("model.layers.2.mlp.down_proj.weight");
+            adapter.setLighter(lighter);
+            try (LoraAdapter.LoraDelta ignored = adapter.deltaFor("model.layers.0.self_attn.q_proj.weight").orElseThrow();
+                 LoraAdapter.LoraDelta ignored2 = adapter.deltaFor("model.layers.1.self_attn.q_proj.weight").orElseThrow();
+                 LoraAdapter.LoraDelta ignored3 = adapter.deltaFor("model.layers.2.mlp.down_proj.weight").orElseThrow()) {
+            }
         }
 
         printSummary(metricRegistry);
