@@ -63,7 +63,6 @@ import io.teknek.reckoning.tensor2.CompositeOps;
 import io.teknek.reckoning.tensor2.Lighter;
 import io.teknek.reckoning.tensor2.ScaledSoftMax;
 import io.teknek.reckoning.tensor2.TensorRef;
-import io.teknek.reckoning.tensorlib.PlannedTensor;
 import io.teknek.reckoning.tensorlib.PlannedTensorRef;
 import io.teknek.reckoning.tensorlib.TensorPlan;
 import io.teknek.reckoning.tensorlib.TensorPlanAdaptiveSplitTuner;
@@ -1727,16 +1726,6 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         if (context != null) {
             context.record(ownerClass, path, phase, layerIndex, runMode, planText);
         }
-    }
-
-    protected TensorPlan.ImmutableTensor registerModelLineageTensor(String name, AbstractTensor tensor) {
-        if (modelLineagePlan == null) {
-            return null;
-        }
-        TensorPlan.ImmutableTensor planned = modelLineagePlan.immutable(name, tensor);
-        modelLineageTensors.put(name, planned);
-        modelLineageEntries.add(new ModelLineageEntry(name, tensor.shape().toString(), tensor.dType().name(), planned.plan()));
-        return planned;
     }
 
     protected TensorRef registerModelTensorRef(TensorRef ref) {

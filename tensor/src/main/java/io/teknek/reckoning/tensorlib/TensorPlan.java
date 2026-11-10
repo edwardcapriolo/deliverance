@@ -6,16 +6,11 @@ import io.dropwizard.metrics5.Timer;
 import io.teknek.reckoning.DType;
 import io.teknek.reckoning.math.ActivationFunction;
 import io.teknek.reckoning.math.WrappedForkJoinPool;
-import io.teknek.reckoning.tensor.AbstractTensor;
 import io.teknek.reckoning.tensor.TensorShape;
-import io.teknek.reckoning.tensor.impl.FloatBufferTensor;
-import io.teknek.reckoning.tensor2.CompositeOps;
 import io.teknek.reckoning.tensor2.BatchDotProduct;
 import io.teknek.reckoning.tensor2.GemmKernel;
 import io.teknek.reckoning.tensor2.Lighter;
-import io.teknek.reckoning.tensor2.MultiplyInPlace;
 import io.teknek.reckoning.tensor2.Scale;
-import io.teknek.reckoning.tensor2.TensorProviderKind;
 import io.teknek.reckoning.tensor2.TensorRef;
 import io.teknek.reckoning.tensor2.Threading;
 
@@ -26,7 +21,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.ForkJoinTask;
 import java.util.concurrent.ForkJoinPool;
 import java.util.stream.IntStream;
@@ -36,13 +30,11 @@ import org.slf4j.LoggerFactory;
 /**
  * Small lazy tensor workflow for experimenting with logical tensor plans and local fusion rules.
  *
- * <p>External tensors are introduced with {@link #input(AbstractTensor)} or {@link #mutable(AbstractTensor)}. Operations
- * build a logical graph and execute only when {@link Tensor#materialize()} is called.</p>
+ * <p>External tensors are introduced with {@link #input(String, TensorRef)}. Operations build a logical graph and
+ * execute only when {@link Tensor#materializeRef()} is called.</p>
  */
 public final class TensorPlan {
     private static final Logger LOGGER = LoggerFactory.getLogger(TensorPlan.class);
-    private static final int SCALE_DOT_IN_TIME_CHUNK_MULTIPLE = 16;
-    private static final long SCALE_DOT_IN_TIME_MIN_PARALLEL_ELEMENTS = 4096;
     public enum RunMode {
         DEFAULT,
         CALLER_THREAD
@@ -95,15 +87,6 @@ public final class TensorPlan {
         return ownerClass;
     }
 
-    public Tensor input(AbstractTensor tensor) {
-        return input("input", tensor);
-    }
-
-    public Tensor input(String name, AbstractTensor tensor) {
-        ensureLocality(tensor);
-        return new Tensor(new InputNode(name, tensor, false));
-    }
-
     public Tensor input(String name, TensorRef tensor) {
         Objects.requireNonNull(tensor, "tensor");
         return new Tensor(new RefInputNode(name, tensor, false));
@@ -113,28 +96,6 @@ public final class TensorPlan {
         Objects.requireNonNull(upstream, "upstream");
         Objects.requireNonNull(materialized, "materialized");
         return new Tensor(new RefImportedInputNode(name, upstream.node, materialized));
-    }
-
-    /**
-     * Adds a normal borrowed input tensor annotated with the TensorPlan node that produced it.
-     *
-     * <p>The upstream tensor is used only for rendering lineage. This plan still executes against {@code materialized};
-     * it does not evaluate, retain, or close the upstream plan.</p>
-     */
-    public Tensor input(String name, Tensor upstream, AbstractTensor materialized) {
-        ensureLocality(materialized);
-        return new Tensor(new ImportedInputNode(name, upstream.node, materialized));
-    }
-
-    /** Adds a borrowed input tensor annotated with the immutable model tensor that produced it. */
-    public Tensor input(String name, ImmutableTensor upstream, AbstractTensor materialized) {
-        ensureLocality(materialized);
-        return new Tensor(new ImportedInputNode(name, upstream.node, materialized));
-    }
-
-    public ImmutableTensor immutable(String name, AbstractTensor tensor) {
-        ensureLocality(tensor);
-        return new ImmutableTensor(new InputNode(name, tensor, false));
     }
 
     public ImmutableTensor immutable(String name, TensorRef tensor) {
@@ -148,26 +109,11 @@ public final class TensorPlan {
         return new Tensor(new RefImportedInputNode(name, upstream.node, materialized));
     }
 
-    /** Adds an immutable tensor annotated with the model/plan immutable that produced it. */
-    public ImmutableTensor immutable(String name, ImmutableTensor upstream, AbstractTensor materialized) {
-        ensureLocality(materialized);
-        return new ImmutableTensor(new ImportedInputNode(name, upstream.node, materialized));
-    }
-
-    public Tensor mutable(AbstractTensor tensor) {
-        return mutable("mutable", tensor);
-    }
-
-    public Tensor mutable(String name, AbstractTensor tensor) {
-        ensureLocality(tensor);
-        return new Tensor(new InputNode(name, tensor, true));
-    }
-
     /**
      * Creates a fused node with an explicit iteration/output shape.
      *
      * <p>The shape is both the default output shape when the fuse creates a new tensor and the iteration domain used by
-     * {@link FusedMap}. For {@link FusedExecution#FIXED_POOL_LINEAR}, materialization splits {@code shape.size()} into
+     * {@link FusedRefMap}. For {@link FusedExecution#FIXED_POOL_LINEAR}, materialization splits {@code shape.size()} into
      * linear chunks and passes each chunk as {@code offset}/{@code length} to every fused map. Callers that want row-chunk
      * semantics should use a one-dimensional shape such as {@code TensorShape.of(rowCount)} and interpret the map offset
      * as a row start.</p>
@@ -344,31 +290,14 @@ public final class TensorPlan {
             return new Tensor(new JustInTimeNode(this.node, minSplit, maxSplit));
         }
 
-        /** Adds split-count candidates to the following {@link #dotInTime} adaptive execution choice. */
-        public Tensor dotInTimeSplits(int minSplit, int maxSplit) {
-            return new Tensor(new DotInTimeSplitsNode(this.node, minSplit, maxSplit));
-        }
-
-        public Tensor dotInTime(Lighter.ProviderSelection providers, Lighter.ProviderChoice fallback) {
-            return dotInTime(this.node.label(), providers, fallback);
-        }
-
-        public Tensor dotInTime(String planName, Lighter.ProviderSelection providers, Lighter.ProviderChoice fallback) {
-            return new Tensor(new DotInTimeNode(this.node, planName, providers, fallback));
-        }
-
         public TensorShape shape() {
             return node.shape();
         }
 
-        public AbstractTensor materialize() {
+        public TensorRef materializeRef() {
             if (LOGGER.isDebugEnabled()) {
                 LOGGER.debug("TensorPlan:\n{}", plan());
             }
-            return node.eval().tensor();
-        }
-
-        public TensorRef materializeRef() {
             return node.evalRef().tensor();
         }
 
@@ -408,29 +337,8 @@ public final class TensorPlan {
     }
 
     @FunctionalInterface
-    public interface FusedMap {
-        void map(FusedContext context, long offset, long length);
-    }
-
-    @FunctionalInterface
     public interface FusedRefMap {
         void map(FusedRefContext context, long offset, long length);
-    }
-
-    public final class FusedContext {
-        private final Map<String, AbstractTensor> tensors;
-
-        private FusedContext(Map<String, AbstractTensor> tensors) {
-            this.tensors = tensors;
-        }
-
-        public AbstractTensor tensor(String name) {
-            AbstractTensor tensor = tensors.get(name);
-            if (tensor == null) {
-                throw new IllegalArgumentException("Unknown fused tensor " + name);
-            }
-            return tensor;
-        }
     }
 
     public final class FusedRefContext {
@@ -454,7 +362,6 @@ public final class TensorPlan {
         private final TensorShape shape;
         private final FusedExecution execution;
         private final Map<String, Node> inputs = new LinkedHashMap<>();
-        private final List<FusedStep> steps = new ArrayList<>();
         private final List<FusedRefStep> refSteps = new ArrayList<>();
         private String outputInputName;
         private Integer splitCount;
@@ -478,15 +385,6 @@ public final class TensorPlan {
         public FusedBuilder write(String name, Tensor tensor) {
             read(name, tensor);
             outputInputName = name;
-            return this;
-        }
-
-        public FusedBuilder map(String description, TensorOp op, FusedMap map) {
-            return map(description, op, null, map);
-        }
-
-        public FusedBuilder map(String description, TensorOp op, String metricName, FusedMap map) {
-            steps.add(new FusedStep(description, op, metricName, map));
             return this;
         }
 
@@ -517,15 +415,7 @@ public final class TensorPlan {
         public Tensor tensor() {
             return new Tensor(new FusedNode(name, shape, execution,
                     Collections.unmodifiableMap(new LinkedHashMap<>(inputs)), outputInputName,
-                    List.copyOf(steps), List.copyOf(refSteps), splitCount));
-        }
-    }
-
-    private record FusedStep(String description, TensorOp op, String metricName, FusedMap map) {
-        private FusedStep {
-            Objects.requireNonNull(description, "description");
-            Objects.requireNonNull(op, "op");
-            Objects.requireNonNull(map, "map");
+                    List.copyOf(refSteps), splitCount));
         }
     }
 
@@ -534,27 +424,6 @@ public final class TensorPlan {
             Objects.requireNonNull(description, "description");
             Objects.requireNonNull(op, "op");
             Objects.requireNonNull(map, "map");
-        }
-    }
-
-    private record ScaleCandidate(TensorProviderKind provider, int splitCount, String name) {
-        private ScaleCandidate {
-            Objects.requireNonNull(provider, "provider");
-            Objects.requireNonNull(name, "name");
-            if (splitCount < 1) {
-                throw new IllegalArgumentException("splitCount must be >= 1");
-            }
-        }
-    }
-
-    private record ScaleCandidateExecution(boolean supported, int chunks, int tailLength, int length) {
-        private ScaleCandidateExecution {
-            if (chunks < 1) {
-                throw new IllegalArgumentException("chunks must be >= 1");
-            }
-            if (tailLength < 0 || length < 0) {
-                throw new IllegalArgumentException("lengths must be >= 0");
-            }
         }
     }
 
@@ -568,10 +437,10 @@ public final class TensorPlan {
         }
 
         @Override
-        public Eval eval() {
+        public RefEval evalRef() {
             Timer.Context timer = startTimer(metricName);
             try {
-                return delegate.eval();
+                return delegate.evalRef();
             } finally {
                 stopTimer(timer);
             }
@@ -609,19 +478,19 @@ public final class TensorPlan {
         }
 
         @Override
-        public Eval eval() {
+        public RefEval evalRef() {
             if (!(delegate instanceof FusedNode fused)) {
                 throw new UnsupportedOperationException("justInTime currently supports fused TensorPlan nodes only");
             }
             if (adaptiveSplitTuner == null) {
-                return fused.eval();
+                return fused.evalRef();
             }
             int max = Math.min(maxSplit, Math.toIntExact(Math.max(1, shape().size())));
             int min = Math.min(minSplit, max);
             int split = adaptiveSplitTuner.chooseSplit(fused.name, fused.shape(), fused.defaultSplitCount(), min, max);
             long start = System.nanoTime();
             try {
-                return fused.evalWithSplitCount(split);
+                return fused.evalRefWithSplitCount(split);
             } finally {
                 adaptiveSplitTuner.observeSplit(fused.name, fused.shape(), split, System.nanoTime() - start);
             }
@@ -645,49 +514,8 @@ public final class TensorPlan {
         }
     }
 
-    private final class DotInTimeSplitsNode implements Node {
-        private final Node delegate;
-        private final int minSplit;
-        private final int maxSplit;
-
-        private DotInTimeSplitsNode(Node delegate, int minSplit, int maxSplit) {
-            if (minSplit < 1 || maxSplit < minSplit) {
-                throw new IllegalArgumentException("invalid dotInTime split range");
-            }
-            this.delegate = Objects.requireNonNull(delegate, "delegate");
-            this.minSplit = minSplit;
-            this.maxSplit = maxSplit;
-        }
-
-        @Override
-        public Eval eval() {
-            throw new UnsupportedOperationException("dotInTimeSplits must be composed with dotInTime");
-        }
-
-        @Override
-        public TensorShape shape() {
-            return delegate.shape();
-        }
-
-        @Override
-        public void render(StringBuilder sb, String indent, boolean last) {
-            renderLine(sb, indent, last, "dotInTimeSplits=" + minSplit + ".." + maxSplit + " -> "
-                    + delegate.label() + " " + compactShape(shape()));
-            delegate.render(sb, indent + (last ? "   " : "│  "), true);
-        }
-
-        @Override
-        public String label() {
-            return delegate.label();
-        }
-    }
-
     private interface Node {
-        Eval eval();
-
-        default RefEval evalRef() {
-            throw new UnsupportedOperationException("TensorRef materialization is not ported for " + label());
-        }
+        RefEval evalRef();
 
         TensorShape shape();
 
@@ -702,11 +530,6 @@ public final class TensorPlan {
         private RefInputNode {
             Objects.requireNonNull(name, "name");
             Objects.requireNonNull(tensor, "tensor");
-        }
-
-        @Override
-        public Eval eval() {
-            throw new UnsupportedOperationException("Legacy materialization is not available for TensorRef input " + name);
         }
 
         @Override
@@ -739,11 +562,6 @@ public final class TensorPlan {
         }
 
         @Override
-        public Eval eval() {
-            throw new UnsupportedOperationException("Legacy materialization is not available for TensorRef input " + name);
-        }
-
-        @Override
         public RefEval evalRef() {
             return new RefEval(tensor, false, false);
         }
@@ -765,71 +583,11 @@ public final class TensorPlan {
         }
     }
 
-    private record Eval(AbstractTensor tensor, boolean owned, boolean mutable) {
-    }
-
     private record RefEval(TensorRef tensor, boolean owned, boolean mutable) {
     }
 
     private static void renderLine(StringBuilder sb, String indent, boolean last, String text) {
         sb.append(indent).append(last ? "└─ " : "├─ ").append(text).append('\n');
-    }
-
-    private record InputNode(String name, AbstractTensor tensor, boolean mutable) implements Node {
-        private InputNode {
-            Objects.requireNonNull(name, "name");
-            Objects.requireNonNull(tensor, "tensor");
-        }
-
-        @Override
-        public Eval eval() {
-            return new Eval(tensor, false, mutable);
-        }
-
-        @Override
-        public TensorShape shape() {
-            return tensor.shape();
-        }
-
-        @Override
-        public void render(StringBuilder sb, String indent, boolean last) {
-            renderLine(sb, indent, last, name + " " + compactShape(shape()) + " " + tensor.dType()
-                    + " " + (mutable ? "mutable" : "borrowed"));
-        }
-
-        @Override
-        public String label() {
-            return name;
-        }
-    }
-
-    private record ImportedInputNode(String name, Node upstream, AbstractTensor tensor) implements Node {
-        private ImportedInputNode {
-            Objects.requireNonNull(name, "name");
-            Objects.requireNonNull(upstream, "upstream");
-            Objects.requireNonNull(tensor, "tensor");
-        }
-
-        @Override
-        public Eval eval() {
-            return new Eval(tensor, false, false);
-        }
-
-        @Override
-        public TensorShape shape() {
-            return tensor.shape();
-        }
-
-        @Override
-        public void render(StringBuilder sb, String indent, boolean last) {
-            renderLine(sb, indent, last, name + " <- " + upstream.label() + " " + compactShape(shape()) + " "
-                    + tensor.dType() + " borrowed");
-        }
-
-        @Override
-        public String label() {
-            return name;
-        }
     }
 
     private record NamedNode(String name, Node delegate) implements Node {
@@ -839,8 +597,8 @@ public final class TensorPlan {
         }
 
         @Override
-        public Eval eval() {
-            return delegate.eval();
+        public RefEval evalRef() {
+            return delegate.evalRef();
         }
 
         @Override
@@ -867,11 +625,6 @@ public final class TensorPlan {
         private BatchDotNode(Node input, Node weight) {
             this.input = input;
             this.weight = weight;
-        }
-
-        @Override
-        public Eval eval() {
-            throw new UnsupportedOperationException("AbstractTensor TensorPlan execution was removed; use TensorRef");
         }
 
         @Override
@@ -931,69 +684,6 @@ public final class TensorPlan {
             this.downWeight = Objects.requireNonNull(downWeight, "downWeight");
             this.activation = Objects.requireNonNull(activation, "activation");
             this.quantizedType = Objects.requireNonNull(quantizedType, "quantizedType");
-        }
-
-        @Override
-        public Eval eval() {
-            throw new UnsupportedOperationException("AbstractTensor TensorPlan execution was removed; use TensorRef");
-            /* Eval inputEval = input.eval();
-            Eval gateWeightEval = gateWeight.eval();
-            int batchSize = (int) inputEval.tensor().shape().first();
-            int embeddingLength = (int) inputEval.tensor().shape().last();
-            int hiddenLength = (int) gateWeightEval.tensor().shape().first();
-            int outputLength = (int) downWeightEval.tensor().shape().first();
-            AbstractTensor gate = new FloatBufferTensor(batchSize, hiddenLength);
-            AbstractTensor up = new FloatBufferTensor(batchSize, hiddenLength);
-            AbstractTensor[] hidden = new AbstractTensor[1];
-            AbstractTensor output = new FloatBufferTensor(batchSize, outputLength);
-            inputEval.tensor().locality().ifPresent(output::setLocality);
-            try {
-                Runnable compute = () -> {
-                    AbstractTensor[] projectionResults = new AbstractTensor[] { gate, up };
-                    AbstractTensor[] projectionWeights = new AbstractTensor[] { gateWeightEval.tensor(), upWeightEval.tensor() };
-                    Timer.Context gateUpTimer = startTimer("tensorplan.mlp.gate_up_projection");
-                    try {
-                        runProviderRowChunks(hiddenLength,
-                                (chunkStart, chunkSize) -> operations.dotProductBatchChunk(projectionResults,
-                                        inputEval.tensor(), projectionWeights, 0, embeddingLength, chunkStart, chunkSize));
-                    } finally {
-                        stopTimer(gateUpTimer);
-                    }
-                    Timer.Context activationTimer = startTimer("tensorplan.mlp.fused_activation_multiply_quantize");
-                    try {
-                        hidden[0] = operations.activationMultiplyQuantize(gate, up, activation, quantizedType, 0,
-                                hiddenLength);
-                    } finally {
-                        stopTimer(activationTimer);
-                    }
-                    hidden[0].locality().or(() -> inputEval.tensor().locality()).ifPresent(output::setLocality);
-                    AbstractTensor hiddenTensor = hidden[0];
-                    Timer.Context downTimer = startTimer("tensorplan.mlp.down_projection");
-                    try {
-                        runProviderRowChunks(outputLength,
-                                (chunkStart, chunkSize) -> operations.dotProductChunk(output, hiddenTensor,
-                                        downWeightEval.tensor(), 0, hiddenLength, chunkStart, chunkSize));
-                    } finally {
-                        stopTimer(downTimer);
-                    }
-                };
-                if (useTensorRuntime()) {
-                    runtime.runAndWait("tensorplan.mlp", 0, Optional.of(inputEval.tensor()), compute);
-                } else {
-                    compute.run();
-                }
-                return new Eval(output, true, true);
-            } finally {
-                gate.close();
-                up.close();
-                if (hidden[0] != null) {
-                    hidden[0].close();
-                }
-                closeIfOwned(inputEval);
-                closeIfOwned(gateWeightEval);
-                closeIfOwned(upWeightEval);
-                closeIfOwned(downWeightEval);
-            } */
         }
 
         @Override
@@ -1096,16 +786,6 @@ public final class TensorPlan {
         }
 
         @Override
-        public Eval eval() {
-            Eval in = input.eval();
-            AbstractTensor out = in.owned() || in.mutable() ? in.tensor() : copyOf(in.tensor());
-                // Activation remains a TensorPlan operation on the legacy tensor representation.
-            // Java loop. Add a provider-backed activation op or fused physical lowering before relying on this broadly.
-            applyActivationInPlace(out, activation);
-            return new Eval(out, in.owned(), in.mutable());
-        }
-
-        @Override
         public RefEval evalRef() {
             RefEval in = input.evalRef();
             TensorRef output = lighter.allocate(in.tensor().dType(), in.tensor().shape());
@@ -1150,24 +830,6 @@ public final class TensorPlan {
         private MultiplyNode(Node left, Node right) {
             this.left = left;
             this.right = right;
-        }
-
-        @Override
-        public Eval eval() {
-            if (left instanceof ActivationNode activationNode) {
-                Eval base = activationNode.input.eval();
-                Eval rhs = right.eval();
-                AbstractTensor out = base.owned() || base.mutable() ? base.tensor() : copyOf(base.tensor());
-                // Optimization gap: this fused activation*multiply avoids an extra pass, but still performs activation
-                // through a Java loop because no provider-backed activation primitive is available here.
-                applyActivationMultiplyInPlace(out, rhs.tensor(), activationNode.activation);
-                closeIfOwned(rhs);
-                return new Eval(out, base.owned(), base.mutable());
-            }
-            Eval lhs = left.eval();
-            Eval rhs = right.eval();
-            AbstractTensor out = lhs.owned() || lhs.mutable() ? lhs.tensor() : copyOf(lhs.tensor());
-            throw new UnsupportedOperationException("AbstractTensor TensorPlan execution was removed; use TensorRef");
         }
 
         @Override
@@ -1225,14 +887,6 @@ public final class TensorPlan {
         }
 
         @Override
-        public Eval eval() {
-            Eval lhs = left.eval();
-            Eval rhs = right.eval();
-            AbstractTensor out = lhs.owned() || lhs.mutable() ? lhs.tensor() : copyOf(lhs.tensor());
-            throw new UnsupportedOperationException("AbstractTensor TensorPlan execution was removed; use TensorRef");
-        }
-
-        @Override
         public RefEval evalRef() {
             RefEval lhs = left.evalRef();
             RefEval rhs = right.evalRef();
@@ -1285,20 +939,6 @@ public final class TensorPlan {
         }
 
         @Override
-        public Eval eval() {
-            Eval in = input.eval();
-            AbstractTensor out = in.owned() || in.mutable() ? in.tensor() : copyOf(in.tensor());
-            run("tensorplan.scale", 0, Optional.of(out), () -> {
-                try (TensorRef outRef = TensorRef.borrowed(out)) {
-                    new CompositeOps(lighter, metricRegistry).multiplyInPlace(new MultiplyInPlace(factor)
-                            .target(outRef)
-                            .offsetAndLength(0, (int) out.shape().last()));
-                }
-            });
-            return new Eval(out, in.owned(), in.mutable());
-        }
-
-        @Override
         public RefEval evalRef() {
             RefEval in = input.evalRef();
             TensorRef output = lighter.allocate(in.tensor().dType(), in.tensor().shape());
@@ -1313,108 +953,6 @@ public final class TensorPlan {
                 closeRefIfOwned(in);
                 throw e;
             }
-        }
-
-        Eval eval(String planName, Lighter.ProviderSelection providers, Lighter.ProviderChoice fallback) {
-            Eval in = input.eval();
-            AbstractTensor out = in.owned() || in.mutable() ? in.tensor() : copyOf(in.tensor());
-            run("tensorplan.dotintime.scale", 0, Optional.of(out), () -> scaleWithProviders(planName, out, providers,
-                    fallback, null));
-            return new Eval(out, in.owned(), in.mutable());
-        }
-
-        Eval eval(String planName, Lighter.ProviderSelection providers, Lighter.ProviderChoice fallback,
-                DotInTimeSplitsNode splits) {
-            Eval in = input.eval();
-            AbstractTensor out = in.owned() || in.mutable() ? in.tensor() : copyOf(in.tensor());
-            run("tensorplan.dotintime.scale", 0, Optional.of(out), () -> scaleWithProviders(planName, out, providers,
-                    fallback, splits));
-            return new Eval(out, in.owned(), in.mutable());
-        }
-
-        private void scaleWithProviders(String planName, AbstractTensor out, Lighter.ProviderSelection providers,
-                Lighter.ProviderChoice fallback, DotInTimeSplitsNode splits) {
-            if (providers.lighter() != fallback.lighter()) {
-                throw new IllegalArgumentException("dotInTime providers and fallback must come from the same Lighter");
-            }
-            try (TensorRef target = TensorRef.borrowed(out)) {
-                ScaleCandidate selected = selectScaleCandidate(planName, out, providers, splits);
-                if (selected != null) {
-                    long startNanos = System.nanoTime();
-                    ScaleCandidateExecution execution = scaleWithCandidate(providers.lighter(), target, out, selected);
-                    if (execution.supported()) {
-                        observeCandidate(planName, selected, execution, System.nanoTime() - startNanos);
-                        return;
-                    }
-                    observeCandidate(planName, selected, execution, Long.MAX_VALUE / 4);
-                }
-                if (scaleWithCandidate(fallback.lighter(), target, out, new ScaleCandidate(fallback.kind(), 1,
-                        fallback.kind().name())).supported()) {
-                    return;
-                }
-            }
-            throw new IllegalStateException("No tensor operations support dotInTime scale");
-        }
-
-        private ScaleCandidateExecution scaleWithCandidate(Lighter candidateLighter, TensorRef target, AbstractTensor out,
-                ScaleCandidate candidate) {
-            if (candidate.splitCount() <= 1) {
-                return new ScaleCandidateExecution(candidateLighter.scale(scale(target, out), Map.of(),
-                        candidate.provider()), 1, 0, (int) out.shape().last());
-            }
-            List<TensorSplit> chunks = scaleChunks(0, (int) out.shape().last(), candidate.splitCount());
-            AtomicBoolean supported = new AtomicBoolean(true);
-            List<ForkJoinTask<?>> tasks = new ArrayList<>();
-            for (TensorSplit chunk : chunks) {
-                int chunkOffset = Math.toIntExact(chunk.offset());
-                int chunkLength = Math.toIntExact(chunk.length());
-                tasks.add(pool.getUnderlying().submit(() -> {
-                    if (!candidateLighter.scale(new Scale(factor).target(target).offsetAndLength(chunkOffset,
-                            chunkLength), Map.of("split", Integer.toString(candidate.splitCount())),
-                            candidate.provider())) {
-                        supported.set(false);
-                    }
-                }));
-            }
-            tasks.forEach(ForkJoinTask::join);
-            return new ScaleCandidateExecution(supported.get(), chunks.size(), tailLength(chunks),
-                    (int) out.shape().last());
-        }
-
-        private int tailLength(List<TensorSplit> chunks) {
-            TensorSplit last = chunks.getLast();
-            return last.length() % SCALE_DOT_IN_TIME_CHUNK_MULTIPLE == 0 ? 0 : Math.toIntExact(last.length());
-        }
-
-        private List<TensorSplit> scaleChunks(int offset, int length, int splitCount) {
-            if (splitCount <= 1 || length <= SCALE_DOT_IN_TIME_CHUNK_MULTIPLE) {
-                return List.of(new TensorSplit(offset, length));
-            }
-            int alignedLength = (length / SCALE_DOT_IN_TIME_CHUNK_MULTIPLE) * SCALE_DOT_IN_TIME_CHUNK_MULTIPLE;
-            if (alignedLength == 0) {
-                return List.of(new TensorSplit(offset, length));
-            }
-            int alignedBlocks = alignedLength / SCALE_DOT_IN_TIME_CHUNK_MULTIPLE;
-            int chunks = Math.min(splitCount, alignedBlocks);
-            int baseBlocks = alignedBlocks / chunks;
-            int extraBlocks = alignedBlocks % chunks;
-            List<TensorSplit> result = new ArrayList<>(chunks + 1);
-            int cursor = offset;
-            for (int chunk = 0; chunk < chunks; chunk++) {
-                int blocks = baseBlocks + (chunk < extraBlocks ? 1 : 0);
-                int chunkLength = blocks * SCALE_DOT_IN_TIME_CHUNK_MULTIPLE;
-                result.add(new TensorSplit(cursor, chunkLength));
-                cursor += chunkLength;
-            }
-            int tailLength = length - alignedLength;
-            if (tailLength > 0) {
-                result.add(new TensorSplit(cursor, tailLength));
-            }
-            return result;
-        }
-
-        private Scale scale(TensorRef target, AbstractTensor out) {
-            return new Scale(factor).target(target).offsetAndLength(0, (int) out.shape().last());
         }
 
         @Override
@@ -1434,49 +972,6 @@ public final class TensorPlan {
         }
     }
 
-    private final class DotInTimeNode implements Node {
-        private final Node delegate;
-        private final String planName;
-        private final Lighter.ProviderSelection providers;
-        private final Lighter.ProviderChoice fallback;
-
-        private DotInTimeNode(Node delegate, String planName, Lighter.ProviderSelection providers,
-                Lighter.ProviderChoice fallback) {
-            this.delegate = Objects.requireNonNull(delegate, "delegate");
-            this.planName = Objects.requireNonNull(planName, "planName");
-            this.providers = Objects.requireNonNull(providers, "providers");
-            this.fallback = Objects.requireNonNull(fallback, "fallback");
-        }
-
-        @Override
-        public Eval eval() {
-            if (delegate instanceof ScaleNode scaleNode) {
-                return scaleNode.eval(planName, providers, fallback);
-            }
-            if (delegate instanceof DotInTimeSplitsNode splits && splits.delegate instanceof ScaleNode scaleNode) {
-                return scaleNode.eval(planName, providers, fallback, splits);
-            }
-            throw new IllegalStateException("dotInTime currently supports scale nodes only");
-        }
-
-        @Override
-        public TensorShape shape() {
-            return delegate.shape();
-        }
-
-        @Override
-        public void render(StringBuilder sb, String indent, boolean last) {
-            renderLine(sb, indent, last, "dotInTime(" + planName + " " + providers.providers().keySet()
-                    + " fallback=" + fallback.kind() + ") -> " + compactShape(shape()));
-            delegate.render(sb, indent + (last ? "   " : "│  "), true);
-        }
-
-        @Override
-        public String label() {
-            return "dotInTime";
-        }
-    }
-
     private final class QuantizeNode implements Node {
         private final Node input;
         private final DType dtype;
@@ -1484,19 +979,6 @@ public final class TensorPlan {
         private QuantizeNode(Node input, DType dtype) {
             this.input = input;
             this.dtype = dtype;
-        }
-
-        @Override
-        public Eval eval() {
-            if (input instanceof MultiplyNode multiplyNode && multiplyNode.left instanceof ActivationNode activationNode) {
-                Eval base = activationNode.input.eval();
-                Eval rhs = multiplyNode.right.eval();
-                final AbstractTensor[] result = new AbstractTensor[1];
-                throw new UnsupportedOperationException("AbstractTensor TensorPlan execution was removed; use TensorRef");
-            }
-            Eval in = input.eval();
-            final AbstractTensor[] result = new AbstractTensor[1];
-            throw new UnsupportedOperationException("AbstractTensor TensorPlan execution was removed; use TensorRef");
         }
 
         @Override
@@ -1535,29 +1017,26 @@ public final class TensorPlan {
         private final FusedExecution execution;
         private final Map<String, Node> inputs;
         private final String outputInputName;
-        private final List<FusedStep> steps;
         private final List<FusedRefStep> refSteps;
         private final Integer splitCount;
 
         private FusedNode(String name, TensorShape shape, FusedExecution execution, Map<String, Node> inputs,
-                String outputInputName, List<FusedStep> steps, List<FusedRefStep> refSteps, Integer splitCount) {
+                String outputInputName, List<FusedRefStep> refSteps, Integer splitCount) {
             this.name = name;
             this.shape = shape;
             this.execution = execution;
             this.inputs = inputs;
             this.outputInputName = outputInputName;
-            this.steps = steps;
             this.refSteps = refSteps;
             this.splitCount = splitCount;
         }
 
         @Override
-        public Eval eval() {
-            return evalWithSplitCount(splitCount);
+        public RefEval evalRef() {
+            return evalRefWithSplitCount(splitCount);
         }
 
-        @Override
-        public RefEval evalRef() {
+        private RefEval evalRefWithSplitCount(Integer splitOverride) {
             if (refSteps.isEmpty()) {
                 throw new UnsupportedOperationException("TensorRef fused node has no Ref callbacks: " + name);
             }
@@ -1571,7 +1050,7 @@ public final class TensorPlan {
             RefEval outputEval = outputInputName == null ? null : evals.get(outputInputName);
             TensorRef output = outputEval == null ? lighter.allocate(DType.F32, shape) : outputEval.tensor();
             tensors.put(name, output);
-            executeRef(tensors, splitCount);
+            executeRef(tensors, splitOverride);
             evals.entrySet().stream()
                     .filter(entry -> outputInputName == null || !outputInputName.equals(entry.getKey()))
                     .map(Map.Entry::getValue)
@@ -1609,91 +1088,8 @@ public final class TensorPlan {
             }
         }
 
-        private Eval evalWithSplitCount(Integer splitOverride) {
-            Map<String, Eval> evals = new LinkedHashMap<>();
-            Map<String, AbstractTensor> tensors = new LinkedHashMap<>();
-            for (Map.Entry<String, Node> entry : inputs.entrySet()) {
-                Eval eval = entry.getValue().eval();
-                evals.put(entry.getKey(), eval);
-                tensors.put(entry.getKey(), eval.tensor());
-            }
-            Eval outputEval = outputInputName == null ? null : evals.get(outputInputName);
-            AbstractTensor output = outputEval == null ? new FloatBufferTensor(shape) : outputEval.tensor();
-            if (outputEval == null) {
-                tensors.values().stream().findFirst().flatMap(AbstractTensor::locality).ifPresent(output::setLocality);
-            }
-            tensors.put(name, output);
-            FusedContext context = new FusedContext(tensors);
-            if (execution == FusedExecution.INT_STREAM_COLUMNS) {
-                executeIntStreamColumns(context);
-            } else if (execution == FusedExecution.INT_STREAM_ROWS) {
-                executeIntStreamRows(context);
-            } else {
-                executeFixedPoolLinear(context, splitOverride);
-            }
-            evals.entrySet().stream()
-                    .filter(entry -> outputInputName == null || !outputInputName.equals(entry.getKey()))
-                    .map(Map.Entry::getValue)
-                    .forEach(TensorPlan::closeIfOwned);
-            return new Eval(output, outputEval == null || outputEval.owned(), true);
-        }
-
         private int defaultSplitCount() {
             return splitCount == null ? Math.max(1, pool.getCoreCount()) : splitCount;
-        }
-
-        private void executeFixedPoolLinear(FusedContext context, Integer splitOverride) {
-            long length = shape.size();
-            int splitsCount = splitOverride == null ? defaultSplitCount() : splitOverride;
-            List<TensorSplit> splits = TensorLib.calculateTSplits(0, length, splitsCount);
-            if (useTensorRuntime()) {
-                runtime.runChunks("tensorplan.fuse.linear", 0, Math.toIntExact(length), splits.size(),
-                        representativeTensor(context), (chunkStart, chunkSize) -> runSteps(context, chunkStart, chunkSize));
-                return;
-            }
-            List<ForkJoinTask<?>> tasks = new ArrayList<>();
-            for (TensorSplit split : splits) {
-                tasks.add(pool.getUnderlying().submit(() -> runSteps(context, split.offset, split.length)));
-            }
-            tasks.forEach(ForkJoinTask::join);
-        }
-
-        private void executeIntStreamColumns(FusedContext context) {
-            int columns = (int) shape.last();
-            if (useTensorRuntime()) {
-                runtime.runChunks("tensorplan.fuse.columns", 0, columns, columns, representativeTensor(context),
-                        (column, ignored) -> runSteps(context, column, 1));
-                return;
-            }
-            IntStream.range(0, columns).parallel().forEach(column -> runSteps(context, column, 1));
-        }
-
-        private void executeIntStreamRows(FusedContext context) {
-            int rows = (int) shape.first();
-            if (useTensorRuntime()) {
-                runtime.runChunks("tensorplan.fuse.rows", 0, rows, rows, representativeTensor(context),
-                        (row, ignored) -> runSteps(context, row, 1));
-                return;
-            }
-            IntStream.range(0, rows).parallel().forEach(row -> runSteps(context, row, 1));
-        }
-
-        private Optional<AbstractTensor> representativeTensor(FusedContext context) {
-            if (outputInputName != null) {
-                return Optional.ofNullable(context.tensors.get(outputInputName));
-            }
-            return context.tensors.values().stream().findFirst();
-        }
-
-        private void runSteps(FusedContext context, long offset, long length) {
-            for (FusedStep step : steps) {
-                Timer.Context timer = startTimer(step.metricName());
-                try {
-                    step.map().map(context, offset, length);
-                } finally {
-                    stopTimer(timer);
-                }
-            }
         }
 
         @Override
@@ -1706,8 +1102,8 @@ public final class TensorPlan {
             renderLine(sb, indent, last, name + " = fuse -> " + compactShape(shape));
             String childIndent = indent + (last ? "   " : "│  ");
             int idx = 0;
-            for (FusedStep step : steps) {
-                renderLine(sb, childIndent, false, "map " + (idx++) + " [" + step.op() + "] " + step.description());
+            for (FusedRefStep step : refSteps) {
+                renderLine(sb, childIndent, false, "mapRef " + (idx++) + " [" + step.op() + "] " + step.description());
             }
             int inputIndex = 0;
             for (Map.Entry<String, Node> entry : inputs.entrySet()) {
@@ -1744,182 +1140,9 @@ public final class TensorPlan {
         }
     }
 
-    private static void closeIfOwned(Eval eval) {
-        if (eval.owned()) {
-            eval.tensor().close();
-        }
-    }
-
     private static void closeRefIfOwned(RefEval eval) {
         if (eval.owned()) {
             eval.tensor().close();
-        }
-    }
-
-    private static AbstractTensor copyOf(AbstractTensor tensor) {
-        FloatBufferTensor copy = new FloatBufferTensor(tensor.shape());
-        copy.copyFrom(tensor, 0, 0, (int) tensor.size());
-        tensor.locality().ifPresent(copy::setLocality);
-        return copy;
-    }
-
-    private ScaleCandidate selectScaleCandidate(String planName, AbstractTensor out, Lighter.ProviderSelection providers,
-            DotInTimeSplitsNode splits) {
-        if (providers.providers().isEmpty()) {
-            return null;
-        }
-        List<ScaleCandidate> candidates = scaleCandidates(out, providers, splits);
-        if (adaptiveSplitTuner == null) {
-            return candidates.getFirst();
-        }
-        List<String> candidateNames = candidates.stream().map(ScaleCandidate::name).toList();
-        String selected = adaptiveSplitTuner.chooseAlternate(planName, candidateNames);
-        for (ScaleCandidate candidate : candidates) {
-            if (candidate.name().equals(selected)) {
-                return candidate;
-            }
-        }
-        return candidates.getFirst();
-    }
-
-    private List<ScaleCandidate> scaleCandidates(AbstractTensor out, Lighter.ProviderSelection providers,
-            DotInTimeSplitsNode splits) {
-        List<ScaleCandidate> candidates = new ArrayList<>();
-        if (splits == null || scaleWorkElements(out) < SCALE_DOT_IN_TIME_MIN_PARALLEL_ELEMENTS) {
-            for (TensorProviderKind provider : providers.providers().keySet()) {
-                candidates.add(new ScaleCandidate(provider, 1, provider.name()));
-            }
-            return candidates;
-        }
-        int maxSplit = Math.min(splits.maxSplit, Math.max(1, (int) out.shape().last()));
-        int minSplit = Math.min(splits.minSplit, maxSplit);
-        for (TensorProviderKind provider : providers.providers().keySet()) {
-            for (int split = minSplit; split <= maxSplit; split++) {
-                candidates.add(new ScaleCandidate(provider, split, provider.name() + " split=" + split));
-            }
-        }
-        return candidates;
-    }
-
-    private static long scaleWorkElements(AbstractTensor out) {
-        return out.shape().first() * out.shape().last();
-    }
-
-    private void observeCandidate(String planName, ScaleCandidate candidate, ScaleCandidateExecution execution,
-            long elapsedNanos) {
-        if (adaptiveSplitTuner != null) {
-            adaptiveSplitTuner.observeAlternate(planName, candidate.name(), elapsedNanos, Map.of(
-                    "provider", candidate.provider().name(),
-                    "split", Integer.toString(candidate.splitCount()),
-                    "length", Integer.toString(execution.length()),
-                    "chunks", Integer.toString(execution.chunks()),
-                    "chunk_multiple", Integer.toString(SCALE_DOT_IN_TIME_CHUNK_MULTIPLE),
-                    "tail", Integer.toString(execution.tailLength())));
-        }
-    }
-
-    private void applyActivationInPlace(AbstractTensor tensor, ActivationFunction.Type activation) {
-        forEachElement(tensor, (row, col) -> tensor.set(ActivationFunction.eval(activation, tensor.get(row, col)), row, col));
-    }
-
-    private void applyActivationMultiplyInPlace(AbstractTensor lhs, AbstractTensor rhs,
-            ActivationFunction.Type activation) {
-        forEachElement(lhs, (row, col) -> lhs.set(ActivationFunction.eval(activation, lhs.get(row, col))
-                * rhs.get(row, col), row, col));
-    }
-
-    private void multiplyInPlace(AbstractTensor lhs, AbstractTensor rhs) {
-        forEachElement(lhs, (row, col) -> lhs.set(lhs.get(row, col) * rhs.get(row, col), row, col));
-    }
-
-    private void forEachElement(AbstractTensor tensor, ElementConsumer consumer) {
-        int rows = (int) tensor.shape().first();
-        int cols = (int) tensor.shape().last();
-        long length = (long) rows * cols;
-        List<TensorSplit> splits = TensorLib.calculateTSplits(0, length, Math.max(1, pool.getCoreCount()));
-        if (useTensorRuntime()) {
-            runtime.runChunks("tensorplan.foreach", 0, Math.toIntExact(length), splits.size(), Optional.of(tensor),
-                    (chunkStart, chunkSize) -> {
-                    long end = (long) chunkStart + chunkSize;
-                    for (long index = chunkStart; index < end; index++) {
-                        int row = (int) (index / cols);
-                        int col = (int) (index % cols);
-                        consumer.accept(row, col);
-                    }
-                });
-            return;
-        }
-        List<ForkJoinTask<?>> tasks = new ArrayList<>();
-        for (TensorSplit split : splits) {
-            tasks.add(pool.getUnderlying().submit(() -> {
-                long end = split.offset + split.length;
-                for (long index = split.offset; index < end; index++) {
-                    int row = (int) (index / cols);
-                    int col = (int) (index % cols);
-                    consumer.accept(row, col);
-                }
-            }));
-        }
-        tasks.forEach(ForkJoinTask::join);
-    }
-
-    @FunctionalInterface
-    private interface ElementConsumer {
-        void accept(int row, int col);
-    }
-
-    private void run(String operation, int chunkId, Optional<AbstractTensor> tensor, Runnable action) {
-        if (runtime == null) {
-            action.run();
-            return;
-        }
-        if (!useTensorRuntime()) {
-            action.run();
-            return;
-        }
-        runtime.runAndWait(operation, chunkId, tensor, action);
-    }
-
-    private void runRowChunks(String operation, int rowCount, AbstractTensor representative, RowChunk action) {
-        List<TensorSplit> splits = TensorLib.calculateTSplits(0, rowCount,
-                Math.max(1, pool.getUnderlying().getParallelism()));
-        if (useTensorRuntime()) {
-            runtime.runChunks(operation, 0, rowCount, splits.size(), Optional.of(representative), action::run);
-            return;
-        }
-        List<ForkJoinTask<?>> tasks = new ArrayList<>();
-        for (TensorSplit split : splits) {
-            int chunkStart = (int) split.offset;
-            int chunkSize = (int) split.length;
-            tasks.add(pool.getUnderlying().submit(() -> action.run(chunkStart, chunkSize)));
-        }
-        tasks.forEach(ForkJoinTask::join);
-    }
-
-    private void runProviderRowChunks(int rowCount, RowChunk action) {
-        List<TensorSplit> splits = TensorLib.calculateTSplits(0, rowCount,
-                Math.max(1, pool.getUnderlying().getParallelism()));
-        if (useTensorRuntime()) {
-            runtime.runChunks("tensorplan.provider_row_chunks", 0, rowCount, splits.size(), Optional.empty(), action::run);
-            return;
-        }
-        List<ForkJoinTask<?>> tasks = new ArrayList<>();
-        for (TensorSplit split : splits) {
-            int chunkStart = (int) split.offset;
-            int chunkSize = (int) split.length;
-            tasks.add(pool.getUnderlying().submit(() -> action.run(chunkStart, chunkSize)));
-        }
-        tasks.forEach(ForkJoinTask::join);
-    }
-
-    @FunctionalInterface
-    private interface RowChunk {
-        void run(int chunkStart, int chunkSize);
-    }
-
-    private void ensureLocality(AbstractTensor tensor) {
-        if (useTensorRuntime() && tensor.locality().isEmpty()) {
-            runtime.ensureLocality(tensor);
         }
     }
 
