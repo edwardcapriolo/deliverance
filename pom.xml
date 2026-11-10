@@ -7,7 +7,7 @@
     <name>reckoning-parent</name>
     <description>reckoning parent pom</description>
     <url>http://github.com/edwardcapriolo/reckoning</url>
-    <version>0.0.17-SNAPSHOT</version>
+    <version>0.0.17</version>
 
     <parent>
         <groupId>org.sonatype.oss</groupId>
