@@ -61,7 +61,6 @@ import io.teknek.reckoning.tensor.kv.KvPrefixSnapshotCache;
 import io.teknek.reckoning.tensor.impl.Q8ByteBufferTensor;
 import io.teknek.reckoning.tensor2.CompositeOps;
 import io.teknek.reckoning.tensor2.Lighter;
-import io.teknek.reckoning.tensor2.MultiplyInPlace;
 import io.teknek.reckoning.tensor2.ScaledSoftMax;
 import io.teknek.reckoning.tensor2.TensorRef;
 import io.teknek.reckoning.tensorlib.PlannedTensor;
@@ -680,12 +679,6 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         }
     }
 
-    public void emitLayerDebug(int layerIndex, String stage, AbstractTensor hiddenStates) {
-        try (TensorRef tensor = TensorRef.borrowed(hiddenStates)) {
-            emitLayerDebug(layerIndex, stage, tensor);
-        }
-    }
-
     public void emitLayerDebug(int layerIndex, String stage, TensorRef hiddenStates) {
         layerDebugHook.accept(new LayerDebugEvent(layerIndex, stage, tensorParallelContext, hiddenStates));
     }
@@ -927,28 +920,6 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
     /** Allocates a dense model-working-dtype tensor2 result owned by the caller. */
     public TensorRef makeDenseTensorRef(TensorShape s) {
         return lighter.allocate(workingDType, s);
-    }
-
-    /** Temporary adapter for model components that still consume the legacy tensor type. */
-    protected AbstractTensor loadLegacyWeight(String name) {
-        TensorRef ref = weights.load(name);
-        try {
-            return TensorRefBackedTensor.as(ref, ref.dType());
-        } catch (RuntimeException e) {
-            ref.close();
-            throw e;
-        }
-    }
-
-    /** Temporary adapter for legacy row-sliced model components. */
-    protected AbstractTensor loadLegacyWeightRows(String name, int rowOffset, int rowCount) {
-        TensorRef ref = weights.loadRows(name, rowOffset, rowCount);
-        try {
-            return TensorRefBackedTensor.as(ref, ref.dType());
-        } catch (RuntimeException e) {
-            ref.close();
-            throw e;
-        }
     }
 
     public DType getWorkingDType() {
@@ -1339,32 +1310,6 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         }
     }
 
-    public PlannedTensor forward(PlannedTensor embedding, int startPos, KvCacheSession kvSession,
-            Optional<Consumer<List<AbstractTensor>>> tensorReducer, io.teknek.reckoning.generator.ForwardPhase phase) {
-        try (Timer.Context ignored = InferenceProfiler.timer(metricRegistry, "abstractmodel.forward_layers").time()) {
-            emitLayerDebug(-1, "input", embedding.tensor());
-            int batchTokens = embedding.tensor().shape().first();
-            for (int i = 0; i < config.numberOfLayers; i++) {
-                throwIfGenerationInterrupted();
-                int relativeLayer = i;
-                AbstractTensor ref = embedding.tensor();
-                TensorRef inputRef = TensorRef.borrowed(embedding.tensor());
-                TensorRef outputRef = transformerBlocks2[relativeLayer].forward(inputRef, startPos, kvSession,
-                        Optional.empty(), phase);
-                embedding = new PlannedTensor(new TensorRefBackedTensor(outputRef), embedding.plan());
-                emitLayerDebug(relativeLayer, "layer_output", embedding.tensor());
-                ref.close();
-                long now = System.nanoTime();
-                PrefillProgress progress = PREFILL_PROGRESS.get();
-                if (progress != null && batchTokens > 1 && i + 1 < config.numberOfLayers && now >= progress.nextLogNanos) {
-                    logPrefillProgress(progress, progress.chunkStart, i + 1, config.numberOfLayers, now);
-                    progress.nextLogNanos = now + PREFILL_PROGRESS_INTERVAL_NANOS;
-                }
-            }
-            return embedding;
-        }
-    }
-
     private static void throwIfGenerationInterrupted() {
         if (Thread.interrupted()) {
             throw new CancellationException("generation interrupted");
@@ -1443,10 +1388,6 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
         return tokenizer.allSpecialIds().contains(token);
     }
 
-    public AbstractTensor allocateDirty(DType dtype, TensorShape shape) {
-        return new TensorRefBackedTensor(lighter.allocateDirty(dtype, shape));
-    }
-
     protected  ClassifyOutput loadClassifierWeights(){
         return null;
     }
@@ -1473,12 +1414,6 @@ public abstract class AbstractModel implements Generator, Classifier, TensorPlan
 
     public CompositeOps getCompositeOps() {
         return compositeOps;
-    }
-
-    public void scale(float factor, AbstractTensor target, int offset, int length) {
-        try (TensorRef targetRef = TensorRef.borrowed(target)) {
-            compositeOps.multiplyInPlace(new MultiplyInPlace(factor).target(targetRef).offsetAndLength(offset, length));
-        }
     }
 
     /**

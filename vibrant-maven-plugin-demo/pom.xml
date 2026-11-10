@@ -22,8 +22,9 @@
             <plugin>
                 <groupId>org.sonatype.central</groupId>
                 <artifactId>central-publishing-maven-plugin</artifactId>
+                <version>${central.publishing.plugin.version}</version>
                 <configuration>
-                    <!-- Demo module is not intended for Maven Central. Set false if you want to publish it. -->
+                    <publishingServerId>central</publishingServerId>
                     <skipPublishing>true</skipPublishing>
                 </configuration>
             </plugin>
