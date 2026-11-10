@@ -24,8 +24,7 @@ class TensorRuntimeTest {
              AbstractTensor tensor = new FloatBufferTensor(1, 32)) {
             tensor.setLocality(locality(tensor, 1));
 
-            runtime.runAndWait("test", 0, Optional.of(tensor), () -> {});
-            runtime.runAndWait("test", 1, Optional.of(tensor), () -> {});
+            runtime.runChunks("test", 0, 2, 2, Optional.of(tensor), (offset, length) -> {});
 
             TensorRuntime.LocalitySnapshot snapshot = runtime.snapshot();
             assertEquals(2, snapshot.totalTasks());
@@ -42,8 +41,7 @@ class TensorRuntimeTest {
              AbstractTensor tensor = new FloatBufferTensor(1, 32)) {
             tensor.setLocality(locality(tensor, 1));
 
-            runtime.runAndWait("test", 0, Optional.of(tensor), calls::incrementAndGet);
-            runtime.runAndWait("test", 1, Optional.of(tensor), calls::incrementAndGet);
+            runtime.runChunks("test", 0, 2, 2, Optional.of(tensor), (offset, length) -> calls.incrementAndGet());
 
             TensorRuntime.LocalitySnapshot snapshot = runtime.snapshot();
             assertEquals(2, calls.get());
