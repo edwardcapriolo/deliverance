@@ -56,7 +56,7 @@ public class DeadReckoningModelsIT {
 
     @Test
     void gemma2Jq4() throws Exception {
-        traceAndLog("gemma2-jq4", "tjake", "gemma-2-2b-it-JQ4", null);
+        traceAndCompare("gemma2-jq4", "tjake", "gemma-2-2b-it-JQ4", null);
     }
 
     /*
@@ -81,25 +81,39 @@ public class DeadReckoningModelsIT {
 
     @Test
     void antares1bJq4() throws Exception {
-        traceAndLog("antares1b-jq4", "edwardcapriolo", "antares-1b-JQ4", null);
+        traceAndCompare("antares1b-jq4", "edwardcapriolo", "antares-1b-JQ4", null);
     }
 
     private static void traceAndCompare(String traceName, String owner, String modelName, String configPath)
             throws Exception {
         Path current = traceAndLog(traceName, owner, modelName, configPath);
-        compareWithPrevious(current, modelName);
+        compareWithGolden(current, traceName);
     }
 
     private static void traceAndCompare(String traceName, String owner, String modelName, String configPath,
             String promptText) throws Exception {
         Path current = traceAndLog(traceName, owner, modelName, configPath, promptText);
-        compareWithPrevious(current, modelName);
+        compareWithGolden(current, traceName);
     }
 
-    private static void compareWithPrevious(Path current, String modelName) {
-        if (!DeadReckoningTraceCheck.sameAsPrevious(current)) {
-            throw new AssertionError("Dead Reckoning trace changed for " + modelName);
+    private static void compareWithGolden(Path current, String traceName) {
+        Path golden = resolveRepoPath("core/src/test/resources/dead-reckoning/" + runtimeProfile()
+                + "/" + traceName + ".jsonl");
+        if (!Files.isRegularFile(golden)) {
+            throw new AssertionError("Missing Dead Reckoning golden for " + traceName + " profile="
+                    + runtimeProfile() + ": " + golden);
         }
+        if (!DeadReckoningTraceCheck.same(golden, current)) {
+            throw new AssertionError("Dead Reckoning trace differs from immutable golden for " + traceName
+                    + " profile=" + runtimeProfile() + "\ngolden=" + golden + "\nactual=" + current);
+        }
+    }
+
+    private static String runtimeProfile() {
+        String osName = System.getProperty("os.name");
+        String os = osName.startsWith("Mac") ? "Darwin" : osName.replaceAll("\\s+", "");
+        String arch = os.equals("Darwin") ? "arm64" : System.getProperty("os.arch");
+        return arch + "-" + os;
     }
 
     private static Path traceAndLog(String traceName, String owner, String modelName, String configPath)
