@@ -127,7 +127,7 @@ public class DeadReckoningModelsIT {
         fetcher.maybeDownload();
 
         String host = InetAddress.getLocalHost().getHostName();
-        Path output = Path.of("dead-reckoning", host,
+        Path output = Path.of("target", "dead-reckoning", host,
                 traceName + "-" + Instant.now().toEpochMilli() + ".jsonl");
         DeadReckoningSelector selector = DeadReckoningSelector.regex(null, null, null, null,
                 DeadReckoningSelector.Capture.STATS, 32,

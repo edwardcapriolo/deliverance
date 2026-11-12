@@ -79,7 +79,7 @@ public class DeadReckoningTaskModelsIT {
     }
 
     private static Path output(String name) throws Exception {
-        return Path.of("dead-reckoning", InetAddress.getLocalHost().getHostName(),
+        return Path.of("target", "dead-reckoning", InetAddress.getLocalHost().getHostName(),
                 name + "-" + Instant.now().toEpochMilli() + ".jsonl");
     }
 }
