@@ -16,7 +16,6 @@ import io.teknek.sketches.guide.LazyIndexGuide;
 import io.teknek.sketches.guide.Vocabulary;
 import io.teknek.sketches.json.JsonSchemaRegexBuilder;
 import io.teknek.sketches.types.Choice;
-import io.teknek.reckoning.tensor2.TensorRef;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -34,40 +33,6 @@ public class LogitsProcessorFactory {
     private static final ConcurrentMap<JsonRegexCacheKey, String> JSON_REGEX_CACHE = new ConcurrentHashMap<>();
 
     private LogitsProcessorFactory() {
-    }
-
-    public static Optional<LogitsProcessor> create(AbstractModel model, GeneratorParameters parameters) {
-        return create(model, parameters, SketchesSettings.DEFAULT);
-    }
-
-    public static Optional<LogitsProcessor> create(AbstractModel model, GeneratorParameters parameters,
-            SketchesSettings settings) {
-        MetricRegistry metrics = model.getMetricRegistry();
-        try (Timer.Context ignored = InferenceProfiler.timer(metrics, "guided.factory").time()) {
-        int guidanceModes = 0;
-        guidanceModes += parameters.guidedChoice.isPresent() ? 1 : 0;
-        guidanceModes += parameters.guidedRegex.isPresent() ? 1 : 0;
-        guidanceModes += parameters.guidedJson.isPresent() ? 1 : 0;
-        if (guidanceModes > 1) {
-            throw new IllegalArgumentException("Only one guided mode can be set");
-        }
-        if (parameters.guidedChoice.isPresent()) {
-            metrics.meter("guided.mode.choice").mark();
-            Choice choice = new Choice(parameters.guidedChoice.get());
-            Guide guide = new ChoiceGuide(encodeChoices(model, choice), model.getConfig().eosTokens);
-            return Optional.of(new GuideLogitsProcessor(guide, metrics));
-        }
-        if (parameters.guidedRegex.isPresent()) {
-            metrics.meter("guided.mode.regex").mark();
-            return Optional.of(new GuideLogitsProcessor(guideFor(model, parameters.guidedRegex.get(), settings), metrics));
-        }
-        if (parameters.guidedJson.isPresent()) {
-            metrics.meter("guided.mode.json").mark();
-            String regex = regexForJsonSchema(model, parameters.guidedJson.get());
-            return Optional.of(new GuideLogitsProcessor(guideFor(model, regex, settings), metrics));
-        }
-        return Optional.empty();
-        }
     }
 
     /** Builds the same guide state for the TensorRef-native generation boundary. */

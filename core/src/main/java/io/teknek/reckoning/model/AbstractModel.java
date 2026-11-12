@@ -26,7 +26,6 @@ import io.teknek.reckoning.embedding.PoolingLayer;
 import io.teknek.reckoning.embedding.PoolingType;
 import io.teknek.reckoning.generator.*;
 import io.teknek.reckoning.generator2.SampleOutputRef;
-import io.teknek.reckoning.guided.LogitsProcessor;
 import io.teknek.reckoning.guided.LogitsProcessorRef;
 import io.teknek.reckoning.grace.EncodeOptions;
 import io.teknek.reckoning.grace.PreTrainedTokenizer;
