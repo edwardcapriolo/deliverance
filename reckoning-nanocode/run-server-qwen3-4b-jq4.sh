@@ -26,7 +26,7 @@ fi
 
 WEB_JAR=${RECKONING_WEB_JAR:-}
 if [ -z "$WEB_JAR" ]; then
-  for candidate in "$WEB_DIR"/target/web-*-SNAPSHOT.jar; do
+  for candidate in "$WEB_DIR"/target/web-*-exec.jar; do
     [ -e "$candidate" ] || continue
     case "$candidate" in
       *-sources.jar|*-javadoc.jar|*.original) continue ;;
@@ -37,7 +37,7 @@ if [ -z "$WEB_JAR" ]; then
   done
 fi
 if [ -z "$WEB_JAR" ]; then
-  printf '%s\n' "No web jar found. Run: mvn -pl web -am -DskipTests package" >&2
+  printf '%s\n' "No web jar found. Run: mvn -pl web -am -DskipTests -Dreckoning.bundle.skip=false package" >&2
   exit 1
 fi
 

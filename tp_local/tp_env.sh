@@ -116,9 +116,9 @@ tp_start_web() {
     printf '%s\n' "$name already running pid=$(cat "$pid_file")"
     exit 0
   fi
-  web_jar=$(set -- "$RECKONING_ROOT"/web/target/web-*-SNAPSHOT.jar; printf '%s' "$1")
+  web_jar=$(set -- "$RECKONING_ROOT"/web/target/web-*-exec.jar; printf '%s' "$1")
   if [ ! -f "$web_jar" ]; then
-    printf '%s\n' "web jar not found. Package first: mvn -pl web -am -DskipTests package" >&2
+    printf '%s\n' "web jar not found. Package first: mvn -pl web -am -DskipTests -Dreckoning.bundle.skip=false package" >&2
     exit 1
   fi
   nohup java \

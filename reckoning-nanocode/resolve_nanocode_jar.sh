@@ -5,7 +5,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 set -- "$SCRIPT_DIR"/target/reckoning-nanocode-*-all.jar
 if [ ! -f "$1" ]; then
-  printf '%s\n' "nanocode shaded jar not found. Build it first: mvn -q -pl reckoning-nanocode -am -DskipTests package" >&2
+  printf '%s\n' "nanocode shaded jar not found. Build it first: mvn -q -pl reckoning-nanocode -am -DskipTests -Dreckoning.bundle.skip=false package" >&2
   exit 1
 fi
 if [ "$#" -gt 1 ]; then

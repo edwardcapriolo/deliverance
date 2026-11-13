@@ -13,7 +13,7 @@ if [ -z "$GAME_JAR" ]; then
   done
 fi
 if [ -z "$GAME_JAR" ]; then
-  printf '%s\n' "No reckoning-nanocode shaded jar found. Run: mvn -pl reckoning-nanocode -am -DskipTests package" >&2
+  printf '%s\n' "No reckoning-nanocode shaded jar found. Run: mvn -pl reckoning-nanocode -am -DskipTests -Dreckoning.bundle.skip=false package" >&2
   exit 1
 fi
 

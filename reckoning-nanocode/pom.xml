@@ -80,6 +80,7 @@
                             <goal>shade</goal>
                         </goals>
                         <configuration>
+                            <skip>${reckoning.bundle.skip}</skip>
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <shadedArtifactAttached>true</shadedArtifactAttached>
                             <shadedClassifierName>all</shadedClassifierName>

@@ -9,7 +9,7 @@ The current Java CLI lives in [`../reckoning-antares-cli`](../reckoning-antares-
 ## Start Antares
 
 ```sh
-mvn -pl web,reckoning-antares-cli -am -DskipTests package
+mvn -pl web,reckoning-antares-cli -am -DskipTests -Dreckoning.bundle.skip=false package
 ./reckoning-antares-cli/run-server-antares-1b.sh
 ```
 

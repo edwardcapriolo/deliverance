@@ -14,7 +14,7 @@ RUN git clone "$REPO_URL" reckoning
 WORKDIR /build/reckoning
 RUN git checkout "$REPO_COMMIT_SHA"
 RUN --mount=type=cache,target=/root/.m2 mvn dependency:go-offline -Dmaven.javadoc.skip=true -Dgpg.skip=true
-RUN --mount=type=cache,target=/root/.m2 mvn install -Dmaven.test.skip.exec=true -Dmaven.javadoc.skip=true -Dgpg.skip=true
+RUN --mount=type=cache,target=/root/.m2 mvn install -Dmaven.test.skip.exec=true -Dmaven.javadoc.skip=true -Dgpg.skip=true -Dreckoning.bundle.skip=false
 
 FROM ${JDK_IMAGE_REPO}:${JDK_RUNTIME_TAG} AS reckoning
 RUN apk add --no-cache bash libstdc++ \
@@ -24,7 +24,7 @@ RUN apk add --no-cache bash libstdc++ \
  && mkdir /reckoning/logs \
  && chown reckoning:reckoning /reckoning/logs
 
-COPY --from=reckoning-build /build/reckoning/web/target/web-*.jar /reckoning/web.jar
+COPY --from=reckoning-build /build/reckoning/web/target/web-*-exec.jar /reckoning/web.jar
 COPY entry_point.sh /reckoning/entry_point.sh
 COPY inlinerules.json /reckoning/inlinerules.json
 COPY simple.yaml /reckoning/

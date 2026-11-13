@@ -60,4 +60,4 @@ java \
   -Dserver.undertow.accesslog.prefix=access_log \
   -Dserver.undertow.accesslog.suffix=.log \
   -Dspring.config.location=file:./antares-350m.yaml \
-  -jar target/web-*-SNAPSHOT.jar
+  -jar target/web-*-exec.jar

@@ -14,7 +14,7 @@ This module intentionally stays small:
 ## Build
 
 ```sh
-mvn -pl reckoning-nanocode -am -DskipTests package
+mvn -pl reckoning-nanocode -am -DskipTests -Dreckoning.bundle.skip=false package
 ```
 
 Runnable jar:
