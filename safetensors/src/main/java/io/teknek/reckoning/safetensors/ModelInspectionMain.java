@@ -10,18 +10,22 @@ public final class ModelInspectionMain {
     }
 
     public static void main(String[] args) {
-        //if (args.length < 1) {
-        //    throw new IllegalArgumentException(usage());
-        //}
-        args = new String[] { "compare", "google", "gemma-2-2b-it", "tjake", "gemma-2-2b-it-JQ4", "/Users/edward.capriolo/gemma_comp.json"};
+        if (args.length < 1) {
+            throw new IllegalArgumentException(usage());
+        }
         ModelInspectionTool tool = new ModelInspectionTool();
         switch (args[0]) {
             case "inspect" -> {
-                if (args.length != 4) {
+                if (args.length != 4 && args.length != 5) {
                     throw new IllegalArgumentException(usage());
                 }
                 var report = tool.inspectCachedModel(args[1], args[2]);
-                tool.writeJsonReport(Path.of(args[3]), report);
+                Path output = Path.of(args[3]);
+                if (args.length == 5 && "markdown".equals(args[4])) {
+                    tool.writeMarkdownReport(output, report);
+                } else {
+                    tool.writeJsonReport(output, report);
+                }
             }
             case "compare" -> {
                 if (args.length != 6) {
@@ -35,6 +39,6 @@ public final class ModelInspectionMain {
     }
 
     private static String usage() {
-        return "usage: ModelInspectionMain inspect <owner> <model> <output.json> | compare <leftOwner> <leftModel> <rightOwner> <rightModel> <output.json>";
+        return "usage: ModelInspectionMain inspect <owner> <model> <output> [markdown] | compare <leftOwner> <leftModel> <rightOwner> <rightModel> <output.json>";
     }
 }

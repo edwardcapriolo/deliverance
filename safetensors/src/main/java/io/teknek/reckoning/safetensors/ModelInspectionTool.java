@@ -98,6 +98,9 @@ public class ModelInspectionTool {
             for (Map.Entry<String, TensorInfo> entry : loader.tensorInfoMap().entrySet()) {
                 String name = entry.getKey();
                 TensorInfo info = entry.getValue();
+                try (var ignored = loader.loadRef(name)) {
+                    // Loading every tensor is intentional: metadata-only inspection must not hide loader failures.
+                }
                 boolean logicalParent = quantizer.isLogicalSplitTensor(name, loader);
                 boolean splitPart = name.contains("-part-");
                 boolean selected = ModelQuantizer.DEFAULT_Q4_TENSOR_FILTER.test(name);
@@ -210,6 +213,54 @@ public class ModelInspectionTool {
             JsonUtils.om.writerWithDefaultPrettyPrinter().writeValue(outputFile.toFile(), report);
         } catch (IOException e) {
             throw new UncheckedIOException("Unable to write report to " + outputFile, e);
+        }
+    }
+
+    public void writeMarkdownReport(Path outputFile, ModelInspectionReport report) {
+        try {
+            if (outputFile.getParent() != null) {
+                Files.createDirectories(outputFile.getParent());
+            }
+            StringBuilder markdown = new StringBuilder()
+                    .append("# Model Inventory\n\n")
+                    .append("- Source: `").append(report.source()).append("`\n")
+                    .append("- Model directory: `").append(report.modelDirectory()).append("`\n")
+                    .append("- Tensor count: ").append(report.tensorCount()).append("\n")
+                    .append("- Dtypes: ").append(report.dtypeCounts()).append("\n")
+                    .append("- Logical split parents: ").append(report.logicalSplitParentCount()).append("\n")
+                    .append("- Split parts: ").append(report.splitPartCount()).append("\n")
+                    .append("- Q4 selected: ").append(report.quantizerSelectedCount()).append("\n")
+                    .append("- Q4 eligible: ").append(report.quantizableToQ4Count()).append("\n\n")
+                    .append("## Files\n\n")
+                    .append("| File | Bytes |\n| --- | ---: |\n");
+            try (var files = Files.list(report.modelDirectory())) {
+                files.filter(Files::isRegularFile)
+                        .sorted()
+                        .forEach(file -> {
+                            try {
+                                markdown.append('|').append(report.modelDirectory().relativize(file)).append('|')
+                                        .append(Files.size(file)).append("|\n");
+                            } catch (IOException e) {
+                                throw new UncheckedIOException(e);
+                            }
+                        });
+            }
+            markdown.append('\n')
+                    .append("## Metadata\n\n");
+            report.metadata().forEach((key, value) -> markdown.append("- `").append(key).append("`: `")
+                    .append(value).append("`\n"));
+            markdown.append("\n## Tensors\n\n")
+                    .append("| Name | Dtype | Shape | Elements | Estimated bytes | Q4 | Note |\n")
+                    .append("| --- | --- | --- | ---: | ---: | --- | --- |\n");
+            for (TensorInspection tensor : report.tensors()) {
+                markdown.append('|').append(tensor.name()).append('|').append(tensor.dType()).append('|')
+                        .append(java.util.Arrays.toString(tensor.shape())).append('|').append(tensor.elementCount())
+                        .append('|').append(tensor.estimatedBytes()).append('|').append(tensor.quantizableToQ4())
+                        .append('|').append(tensor.quantizationNote()).append("|\n");
+            }
+            Files.writeString(outputFile, markdown.toString());
+        } catch (IOException e) {
+            throw new UncheckedIOException("Unable to write Markdown report to " + outputFile, e);
         }
     }
 
